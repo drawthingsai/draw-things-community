@@ -1,0 +1,17 @@
+diff --git a/WORKSPACE b/WORKSPACE
+diff --git a/WORKSPACE b/WORKSPACE
+index c3a32764..e9b10335 100644
+--- a/WORKSPACE
++++ b/WORKSPACE
+@@ -44,9 +44,9 @@ dflat_deps()
+ 
+ git_repository(
+     name = "s4nnc",
+-    commit = "9954497bab164014ea4e17e11d74c5b79201e9f2",
++    commit = "048d733d3d0c98983b80dc5f64516a69ff0bcd7b",
+     remote = "https://github.com/liuliu/s4nnc.git",
+-    shallow_since = "1711070749 -0400",
++    shallow_since = "1711132639 -0400",
+ )
+ 
+ load("@s4nnc//:deps.bzl", "s4nnc_deps")
