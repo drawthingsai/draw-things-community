@@ -1,0 +1,104 @@
+enum SamplerType: byte {
+  DPMPP2MKarras,
+  EulerA,
+  DDIM,
+  PLMS,
+  DPMPPSDEKarras,
+  UniPC,
+  LCM,
+  EulerASubstep,
+  DPMPPSDESubstep,
+  TCD
+}
+
+enum SeedMode: byte {
+  Legacy,
+  TorchCpuCompatible,
+  ScaleAlike,
+  NvidiaGpuCompatible,
+}
+
+enum ControlMode: byte {
+  Balanced,
+  Prompt,
+  Control,
+}
+
+table Control {
+  file: string;
+  weight: float = 1;
+  guidance_start: float = 0;
+  guidance_end: float = 1;
+  no_prompt: bool = false;
+  global_average_pooling: bool = true;
+  down_sampling_rate: float = 1;
+  control_mode: ControlMode = Balanced;
+}
+
+table LoRA {
+  file: string;
+  weight: float = 0.6;
+}
+
+table GenerationConfiguration {
+  id: long (primary);
+  start_width: ushort;
+  start_height: ushort;
+  seed: uint;
+  steps: uint;
+  guidance_scale: float;
+  strength: float;
+  model: string;
+  sampler: SamplerType = DPMPP2MKarras;
+  batch_count: uint = 1;
+  batch_size: uint = 1;
+  hires_fix: bool = false;
+  hires_fix_start_width: ushort;
+  hires_fix_start_height: ushort;
+  hires_fix_strength: float = 0.7;
+  upscaler: string;
+  image_guidance_scale: float = 1.5;
+  seed_mode: SeedMode = Legacy;
+  clip_skip: uint = 1;
+  controls: [Control];
+  loras: [LoRA];
+  mask_blur: float;
+  face_restoration: string;
+  decode_with_attention: bool = true (deprecated);
+  hires_fix_decode_with_attention: bool = true (deprecated);
+  clip_weight: float = 1;
+  negative_prompt_for_image_prior: bool = true;
+  image_prior_steps: uint = 5;
+  refiner_model: string;
+  original_image_height: uint;
+  original_image_width: uint;
+  crop_top: int;
+  crop_left: int;
+  target_image_height: uint;
+  target_image_width: uint;
+  aesthetic_score: float = 6;
+  negative_aesthetic_score: float = 2.5;
+  zero_negative_prompt: bool = false;
+  refiner_start: float = 0.7;
+  negative_original_image_height: uint;
+  negative_original_image_width: uint;
+  name: string (indexed);
+  fps_id: uint = 5;
+  motion_bucket_id: uint = 127;
+  cond_aug: float = 0.02;
+  start_frame_cfg: float = 1.0;
+  num_frames: uint = 14;
+  mask_blur_outset: int = 0;
+  sharpness: float = 0;
+  shift: float = 1.0;
+  stage_2_steps: uint = 10;
+  stage_2_cfg: float = 1.0;
+  stage_2_shift: float = 1.0;
+  tiled_decoding: bool = false;
+  decoding_tile_width: ushort = 10;
+  decoding_tile_height: ushort = 10;
+  decoding_tile_overlap: ushort = 2;
+  stochastic_sampling_gamma: float = 0.3;
+}
+
+root_type GenerationConfiguration;

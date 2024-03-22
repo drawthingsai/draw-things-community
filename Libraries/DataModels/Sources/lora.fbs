@@ -1,0 +1,31 @@
+
+table LoRATrainingConfiguration {
+  id: long (primary);
+  name: string;
+  start_width: ushort;
+  start_height: ushort;
+  seed: uint;
+  training_steps: uint;
+  base_model: string;
+  network_dim: ushort;
+  network_scale: float;
+  unet_learning_rate: float;
+  save_every_n_steps: uint;
+  warmup_steps: uint;
+  gradient_accumulation_steps: uint;
+  cotrain_text_model: bool;
+  text_model_learning_rate: float;
+  clip_skip: uint = 1;
+  noise_offset: float;
+  denoising_start: float;
+  denoising_end: float;
+  trigger_word: string;
+  auto_fill_prompt: string;
+  auto_captioning: bool;
+  cotrain_custom_embedding: bool;
+  custom_embedding_learning_rate: float = 0.05;
+  custom_embedding_length: uint = 4;
+  stop_embedding_training_at_step: uint = 500;
+}
+
+root_type LoRATrainingConfiguration;
