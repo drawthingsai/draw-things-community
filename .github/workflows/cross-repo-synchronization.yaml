@@ -4,9 +4,6 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,10 +20,10 @@ jobs:
           token: ${{ secrets.GHA_BOT_ORG_ACCESS_TOKEN }}
           path: app
 
-    - name: Setup Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.x'
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
 
       - name: Generate patch file.
         run: |
