@@ -1,5 +1,6 @@
 import subprocess
 import re
+import os
 
 def apply_custom_patch(patch_file_path):
     # Read the patch file content

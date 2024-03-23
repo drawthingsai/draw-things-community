@@ -29,8 +29,10 @@ jobs:
         run: |
           cd "${GITHUB_WORKSPACE}/main"
           python3 Scripts/commit/commit.py
-          cat custom_patch_with_metadata.patch
-          mv custom_patch_with_metadata.patch ../app
-          cd "${GITHUB_WORKSPACE}/app"
-          python3 ../main/Scripts/commit/apply.py
-          git push
+          if [[ -f custom_patch_with_metadata.patch ]]; then
+            cat custom_patch_with_metadata.patch
+            mv custom_patch_with_metadata.patch ../app
+            cd "${GITHUB_WORKSPACE}/app"
+            python3 ../main/Scripts/commit/apply.py
+            git push
+          fi
