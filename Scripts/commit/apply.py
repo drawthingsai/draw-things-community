@@ -15,9 +15,6 @@ def apply_custom_patch(patch_file_path):
     author_name = author_match.group(1) if author_match else ""
     author_email = author_match.group(2) if author_match else ""
 
-    # Author information for git commit
-    author_info = f"{author_name} <{author_email}>" if author_name and author_email else ""
-
     # Isolate the diff part
     diff_content_start = patch_content.find('\n\n---\n\n') + 5
     diff_content = patch_content[diff_content_start:] if diff_content_start > 4 else ""
@@ -42,11 +39,11 @@ def apply_custom_patch(patch_file_path):
 
     # Stage changes
     subprocess.run(['git', 'add', '.'], check=True)
+    subprocess.run(['git', 'config', 'user.email', author_email], check=True)
+    subprocess.run(['git', 'config', 'user.name', author_name], check=True)
 
     # Commit changes with extracted metadata
     commit_command = ['git', 'commit', '-m', commit_message]
-    if author_info:
-        commit_command += ['--author', author_info]
     try:
         subprocess.run(commit_command, check=True)
         print("Changes committed with extracted metadata.")
