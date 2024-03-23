@@ -33,7 +33,7 @@ def generate_custom_patch(paths_to_filter):
                 patch_file.write(f'Subject: [PATCH] {commit_message}\n')
                 patch_content = f'\n\n---\n\n'
                 for file in filtered_files:
-                    diff_cmd = ['git', 'diff', commit_hash + '^', commit_hash, '--', file]
+                    diff_cmd = ['git', 'diff', '--binary', commit_hash + '^', commit_hash, '--', file]
                     diff_output = subprocess.check_output(diff_cmd).decode('utf-8')
                     if diff_output:
                         patch_content += diff_output
