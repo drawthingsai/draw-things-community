@@ -1,5 +1,5 @@
 Libraries/SwiftDiffusion
 Libraries/DataModels
 Libraries/Utils
-Libraries/Vendors/ZIPFoundation
+Vendors/ZIPFoundation
 WORKSPACE
