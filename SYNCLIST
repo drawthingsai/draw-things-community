@@ -1,5 +1,10 @@
-Libraries/SwiftDiffusion
 Libraries/DataModels
+Libraries/ModelOp
+Libraries/ModelZoo
+Libraries/SwiftDiffusion
+Libraries/Trainer
+Libraries/Upscaler
 Libraries/Utils
 Vendors/ZIPFoundation
 WORKSPACE
+SYNCLIST

@@ -1,0 +1,312 @@
+import Diffusion
+import Foundation
+import NNC
+
+public struct TextualInversionZoo: DownloadZoo {
+  public struct Specification: Codable {
+    public var name: String
+    public var file: String
+    public var keyword: String
+    public var length: Int
+    public var version: ModelVersion
+    public init(name: String, file: String, keyword: String, length: Int, version: ModelVersion) {
+      self.name = name
+      self.file = file
+      self.keyword = keyword
+      self.length = length
+      self.version = version
+    }
+  }
+
+  private static let fileSHA256: [String: String] = [
+    "carhelper_ti_f16.ckpt":
+      "1d9c8434a3670f3a9deff463b59286514a04746f163946c43de5801f968664c5",
+    "charturner_ti_f16.ckpt":
+      "9155904e44c0329ebdea8885b9729bf0e5dae5c627e5acfcb13f31ad86383e0f",
+    "cloudport_v1.0_ti_f16.ckpt":
+      "a38337995db9714ca1d9d7d94022fedb3db0c9168a03601ce0aa7f94cdbccf49",
+    "double_exposure_ti_f16.ckpt":
+      "e0ae6626d444e420f55d2b5e111ac341ccb3bd1c825d1e98748f532dcfdc1b9a",
+    "drd_point_e_768_v_ti_f16.ckpt":
+      "508b1e299fe57facedba37f039b7fe69e2f2fd1f6d00135399b7b691ae4ce6f6",
+    "pure_eros_ti_f16.ckpt":
+      "71514c3f85e99bee61f7c2e6218c14bcef5abaa010f11dd6bf290454ff1fbc72",
+    "sd2_papercut_ti_f16.ckpt":
+      "63435a02c05306183e24909caa5cd48678b5d649c9f7d4c57b50c969c94e27cf",
+    "birb_style_ti_f16.ckpt":
+      "a2029299f377aef2dda1bb8e994d868af13b025d727676a2a3bc7417fbd5ea85",
+    "knollingcase_v4_kc16_5000_ti_f16.ckpt":
+      "c8041e652941a0874d178f26fb6fd6ef60b5215b336fad5b54ad2e7543f24769",
+    "laxpeint_v2_ti_f16.ckpt":
+      "36cb7e2d23238dba0f24607522b3a286aa32469c2083b0da016d332573e52e23",
+    "classipeint_ti_f16.ckpt":
+      "e1eb0ac8dbd82c5734645164071a4812ace48d03c1ca345410e502e639b2b250",
+    "parchart_ti_f16.ckpt":
+      "dc50bd7af6e24f8278c74ff9619404aa2da8fb60a64417731499585725460888",
+    "cinemahelper_ti_f16.ckpt":
+      "e7be077a65aed7763b1d9a2207e8c6b60a4727bf43ba2cca3a8e966096cda390",
+    "animescreencap_ti_f16.ckpt":
+      "e1355bbec52b755240ec7c860683d843ed8c0021f4ca3e6d2bdf25c044c021ff",
+    "v2_dreamink_ti_f16.ckpt":
+      "af9319aebe884dbc2e8a82afd40c8bc87fa838e0167aa76f2f3d2b61f5db7aa9",
+    "photohelper_ti_f16.ckpt":
+      "d928695339f094a8f685d9b4e01366ea05589701533ad6e9cc5c9d193c6089a3",
+    "vintagehelper_ti_f16.ckpt":
+      "3c4e3c989cac24c05d677b8ca7bd04738d7f00e0d53210d16b398583ed7db8b6",
+    "actionhelper_ti_f16.ckpt":
+      "bccaf7ed6a5c2f35a4e80c62567eb0b221f6e68fdb066630446b364d14fbc550",
+    "bad_prompt_v2_ti_f16.ckpt":
+      "4eedda1636bd07f4f5e4da1451fba82476420c944203122501f667c54ff6fe8e",
+  ]
+
+  static let builtinSpecifications: [Specification] = [
+    Specification(
+      name: "Action Helper", file: "actionhelper_ti_f16.ckpt", keyword: "actionhelper", length: 6,
+      version: .v2),
+    Specification(
+      name: "Anime ScreenCap", file: "animescreencap_ti_f16.ckpt", keyword: "animescreencap",
+      length: 6,
+      version: .v2),
+    Specification(
+      name: "Bad Prompt (v2)", file: "bad_prompt_v2_ti_f16.ckpt", keyword: "bad_prompt", length: 8,
+      version: .v1),
+    Specification(
+      name: "Birb Style", file: "birb_style_ti_f16.ckpt", keyword: "birb_style", length: 1,
+      version: .v1),
+    Specification(
+      name: "Car Helper", file: "carhelper_ti_f16.ckpt", keyword: "carhelper", length: 4,
+      version: .v2),
+    Specification(
+      name: "Character Turner", file: "charturner_ti_f16.ckpt", keyword: "charturner", length: 4,
+      version: .v1),
+    Specification(
+      name: "Cinema Helper", file: "cinemahelper_ti_f16.ckpt", keyword: "cinemahelper", length: 10,
+      version: .v2),
+    Specification(
+      name: "Classipeint", file: "classipeint_ti_f16.ckpt", keyword: "classipeint", length: 15,
+      version: .v2),
+    Specification(
+      name: "Cloudport v1.0", file: "cloudport_v1.0_ti_f16.ckpt", keyword: "cloudport", length: 4,
+      version: .v1),
+    Specification(
+      name: "Doctor Diffusion's \"Point E\" Negative Embedding",
+      file: "drd_point_e_768_v_ti_f16.ckpt", keyword: "drd_pnte768", length: 8, version: .v2),
+    Specification(
+      name: "Double Exposure", file: "double_exposure_ti_f16.ckpt", keyword: "double_exposure",
+      length: 8, version: .v2),
+    Specification(
+      name: "Knollingcase (v4)", file: "knollingcase_v4_kc16_5000_ti_f16.ckpt",
+      keyword: "kc16_5000", length: 16,
+      version: .v2),
+    Specification(
+      name: "Laxpeint (v2)", file: "laxpeint_v2_ti_f16.ckpt", keyword: "laxpeintv2", length: 9,
+      version: .v2),
+    Specification(
+      name: "ParchArt", file: "parchart_ti_f16.ckpt", keyword: "parchart", length: 10,
+      version: .v2),
+    Specification(
+      name: "Photo Helper", file: "photohelper_ti_f16.ckpt", keyword: "photohelper", length: 8,
+      version: .v2),
+    Specification(
+      name: "Pure Eros Face", file: "pure_eros_ti_f16.ckpt", keyword: "pure_eros", length: 1,
+      version: .v1),
+    Specification(
+      name: "SD2 Papercut", file: "sd2_papercut_ti_f16.ckpt", keyword: "sd2_papercut", length: 8,
+      version: .v2),
+    Specification(
+      name: "V2 Dreamink", file: "v2_dreamink_ti_f16.ckpt", keyword: "v2_dreamink", length: 4,
+      version: .v2),
+    Specification(
+      name: "Vintage Helper", file: "vintagehelper_ti_f16.ckpt", keyword: "vintagehelper",
+      length: 8,
+      version: .v2),
+  ]
+
+  private static let builtinModels: Set<String> = Set(builtinSpecifications.map { $0.file })
+
+  public static func isBuiltinTextualInversion(_ name: String) -> Bool {
+    return builtinModels.contains(name)
+  }
+
+  public static var availableSpecifications: [Specification] = {
+    var specifications = builtinSpecifications
+    let jsonFile = TextualInversionZoo.filePathForModelDownloaded("custom_textual_inversions.json")
+    guard let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) else {
+      return specifications
+    }
+    let jsonDecoder = JSONDecoder()
+    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    guard let jsonSpecification = try? jsonDecoder.decode([Specification].self, from: jsonData)
+    else {
+      return specifications
+    }
+    specifications.append(contentsOf: jsonSpecification)
+    return specifications
+  }()
+
+  private static var specificationMapping: [String: Specification] = {
+    var mapping = [String: Specification]()
+    for specification in availableSpecifications {
+      mapping[specification.file] = specification
+    }
+    return mapping
+  }()
+
+  private static var fileMappingFromKeyword: [String: [String]] = {
+    var mapping = [String: [String]]()
+    for specification in availableSpecifications {
+      var files = mapping[specification.keyword, default: []]
+      files.append(specification.file)
+      mapping[specification.keyword] = files
+    }
+    return mapping
+  }()
+
+  public static func appendCustomSpecification(_ specification: Specification) {
+    dispatchPrecondition(condition: .onQueue(.main))
+    var customSpecifications = [Specification]()
+    let jsonFile = TextualInversionZoo.filePathForModelDownloaded("custom_textual_inversions.json")
+    if let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) {
+      let jsonDecoder = JSONDecoder()
+      jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+      if let jsonSpecification = try? jsonDecoder.decode([Specification].self, from: jsonData) {
+        customSpecifications.append(contentsOf: jsonSpecification)
+      }
+    }
+    if let firstIndex = (customSpecifications.firstIndex { $0.name == specification.name }) {
+      customSpecifications[firstIndex] = specification
+    } else if let firstIndex = (customSpecifications.firstIndex { $0.file == specification.file }) {
+      customSpecifications[firstIndex] = specification
+    } else {
+      customSpecifications.append(specification)
+    }
+    let jsonEncoder = JSONEncoder()
+    jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+    jsonEncoder.outputFormatting = .prettyPrinted
+    guard let jsonData = try? jsonEncoder.encode(customSpecifications) else { return }
+    try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
+    // Modify these two are not thread safe. availableSpecifications are OK. specificationMapping is particularly problematic (as it is access on both main thread and a background thread).
+    if let firstIndex = (availableSpecifications.firstIndex { $0.name == specification.name }) {
+      availableSpecifications[firstIndex] = specification
+    } else if let firstIndex =
+      (availableSpecifications.firstIndex { $0.file == specification.file })
+    {
+      availableSpecifications[firstIndex] = specification
+    } else {
+      availableSpecifications.append(specification)
+    }
+    specificationMapping[specification.file] = specification
+    var files = fileMappingFromKeyword[specification.keyword, default: []]
+    files.append(specification.file)
+    fileMappingFromKeyword[specification.keyword] = files
+  }
+
+  public static func filePathForModelDownloaded(_ name: String) -> String {
+    return ModelZoo.filePathForModelDownloaded(name)
+  }
+
+  public static func isModelDownloaded(_ name: String) -> Bool {
+    return ModelZoo.isModelDownloaded(name)
+  }
+
+  public static func modelFromKeyword(_ keyword: String, potentials: [String]) -> String? {
+    guard !potentials.isEmpty else {
+      return fileMappingFromKeyword[keyword]?.last
+    }
+    guard let files = fileMappingFromKeyword[keyword] else { return nil }
+    let existingFiles = Set(files)
+    for potential in potentials {
+      if existingFiles.contains(potential) {
+        return potential
+      }
+    }
+    return files.last
+  }
+
+  public static func humanReadableNameForModel(_ name: String) -> String {
+    guard let specification = specificationMapping[name] else { return name }
+    return specification.name
+  }
+
+  public static func specificationForModel(_ name: String) -> Specification? {
+    return specificationMapping[name]
+  }
+
+  public static func keywordForModel(_ name: String) -> String {
+    guard let specification = specificationMapping[name] else { return "" }
+    return specification.keyword
+  }
+
+  public static func tokenLengthForModel(_ name: String) -> Int {
+    guard let specification = specificationMapping[name] else { return 0 }
+    return specification.length
+  }
+
+  public static func versionForModel(_ name: String) -> ModelVersion {
+    guard let specification = specificationMapping[name] else { return .v1 }
+    return specification.version
+  }
+
+  public static func fileSHA256ForModelDownloaded(_ name: String) -> String? {
+    return fileSHA256[name]
+  }
+
+  public enum Modifier {
+    case clipG
+    case clipL
+  }
+
+  public static func embeddingForModel<FloatType: TensorNumeric>(
+    _ name: String, graph: DynamicGraph, modifier: Modifier, of: FloatType.Type = FloatType.self
+  ) -> Tensor<FloatType>? {
+    guard let specification = specificationMapping[name] else { return nil }
+    let version = specification.version
+    let tokenLength = specification.length
+    let count: Int
+    switch version {
+    case .v1:
+      count = 768
+    case .v2:
+      count = 1024
+    case .sdxlBase, .sdxlRefiner, .ssd1b:
+      switch modifier {
+      case .clipG:
+        count = 1280
+      case .clipL:
+        count = 768
+      }
+    case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      fatalError()
+    }
+    var tensor: Tensor<FloatType>? = nil
+    graph.openStore(filePathForModelDownloaded(name), flags: .readOnly) {
+      let tensorName: String
+      switch version {
+      case .v1, .v2:
+        tensorName = "string_to_param"
+      case .sdxlBase, .sdxlRefiner, .ssd1b:
+        switch modifier {
+        case .clipG:
+          tensorName = "string_to_param_clip_g"
+        case .clipL:
+          tensorName = "string_to_param_clip_l"
+        }
+      case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        fatalError()
+      }
+      guard let anyTensor = $0.read(tensorName) else { return }
+      tensor = Tensor<FloatType>(from: anyTensor).reshaped(.NC(tokenLength, count)).toCPU()
+    }
+    return tensor
+  }
+
+  public static func availableFiles(excluding file: String?) -> Set<String> {
+    var files = Set<String>()
+    for specification in availableSpecifications {
+      guard specification.file != file, TextualInversionZoo.isModelDownloaded(specification.file)
+      else { continue }
+      files.insert(specification.file)
+    }
+    return files
+  }
+}
