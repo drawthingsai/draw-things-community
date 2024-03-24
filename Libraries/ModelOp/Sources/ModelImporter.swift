@@ -12,8 +12,6 @@ public final class ModelImporter {
     case textEncoder(Swift.Error)
     case autoencoder(Swift.Error)
   }
-  public static let queue = DispatchQueue(
-    label: "com.draw-things.model-import", qos: .userInitiated)
   private let filePath: String
   private let modelName: String
   private let isTextEncoderCustomized: Bool
@@ -35,7 +33,7 @@ public final class ModelImporter {
     completion: @escaping (Result<([String], ModelVersion, SamplerModifier), Swift.Error>) -> Void
   ) {
     self.progress = progress
-    Self.queue.async {
+    Importer.queue.async {
       Interpreter.inflateInterrupter = self.interrupt
       do {
         self.access = 0
