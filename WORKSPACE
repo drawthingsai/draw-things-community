@@ -70,10 +70,6 @@ ccv_setting(
     have_pthread = True,
 )
 
-load("@s4nnc//:deps.bzl", "s4nnc_extra_deps")
-
-s4nnc_extra_deps()
-
 git_repository(
     name = "swift-fickling",
     commit = "296c8eb774332a3a49c8c403fdbec373d9fb2f96",
@@ -122,41 +118,57 @@ new_git_repository(
 new_git_repository(
     name = "SwiftArgumentParser",
     build_file = "swift-argument-parser.BUILD",
-    commit = "82905286cc3f0fa8adc4674bf49437cab65a8373",
+    commit = "46989693916f56d1186bd59ac15124caef896560",
     remote = "https://github.com/apple/swift-argument-parser.git",
-    shallow_since = "1647436700 -0500",
+    shallow_since = "1710612947 -0700",
 )
 
 new_git_repository(
     name = "SwiftSystem",
     build_file = "swift-system.BUILD",
-    commit = "836bc4557b74fe6d2660218d56e3ce96aff76574",
+    commit = "dae787c1998f57b62ee9b1393bcb40684d206e44",
     remote = "https://github.com/apple/swift-system.git",
-    shallow_since = "1638472952 -0800",
+    shallow_since = "1710897818 -0700",
 )
 
 new_git_repository(
     name = "SwiftToolsSupportCore",
     build_file = "swift-tools-support-core.BUILD",
-    commit = "b7667f3e266af621e5cc9c77e74cacd8e8c00cb4",
+    commit = "930e82e5ae2432c71fe05f440b5d778285270bdb",
     remote = "https://github.com/apple/swift-tools-support-core.git",
-    shallow_since = "1643831290 -0800",
+    shallow_since = "1708729686 -0800",
 )
 
 new_git_repository(
     name = "SwiftSyntax",
     build_file = "swift-syntax.BUILD",
-    commit = "cd793adf5680e138bf2bcbaacc292490175d0dcd",
+    commit = "fa8f95c2d536d6620cc2f504ebe8a6167c9fc2dd",
     remote = "https://github.com/apple/swift-syntax.git",
-    shallow_since = "1676877517 +0100",
+    shallow_since = "1709941517 -0800",
+)
+
+new_git_repository(
+    name = "SwiftCMark",
+    build_file = "swift-cmark.BUILD",
+    commit = "3bc2f3e25df0cecc5dc269f7ccae65d0f386f06a",
+    remote = "https://github.com/apple/swift-cmark.git",
+    shallow_since = "1690895253 +0200",
+)
+
+new_git_repository(
+    name = "SwiftMarkdown",
+    build_file = "swift-markdown.BUILD",
+    commit = "907674c2ae2d24c32fba50101821b1a7fdd291e2",
+    remote = "https://github.com/apple/swift-markdown.git",
+    shallow_since = "1708535643 -0800",
 )
 
 new_git_repository(
     name = "SwiftFormat",
     build_file = "swift-format.BUILD",
-    commit = "9f1cc7172f100118229644619ce9c8f9ebc1032c",
+    commit = "3191b8f3109730af449c6332d0b1ca6653b857a0",
     remote = "https://github.com/apple/swift-format.git",
-    shallow_since = "1676404655 +0000",
+    shallow_since = "1710847777 +0100",
 )
 
 new_git_repository(
@@ -190,6 +202,10 @@ new_git_repository(
     remote = "https://github.com/yhirose/cpp-httplib",
     shallow_since = "1686982714 -0400",
 )
+
+load("@s4nnc//:deps.bzl", "s4nnc_extra_deps")
+
+s4nnc_extra_deps()
 
 # buildifier is written in Go and hence needs rules_go to be built.
 # See https://github.com/bazelbuild/rules_go for the up to date setup instructions.

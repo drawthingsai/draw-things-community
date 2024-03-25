@@ -3,9 +3,12 @@ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
 swift_library(
     name = "SwiftSyntax",
-    srcs = glob([
-        "Sources/SwiftSyntax/**/*.swift",
-    ]),
+    srcs = glob(
+        [
+            "Sources/SwiftSyntax/**/*.swift",
+        ],
+        exclude = ["Sources/SwiftSyntax/Documentation.docc/**/*.swift"],
+    ),
     module_name = "SwiftSyntax",
     visibility = ["//visibility:public"],
     deps = [],
@@ -57,9 +60,9 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":SwiftBasicFormat",
-        ":SwiftSyntax",
-        ":SwiftParser",
         ":SwiftDiagnostics",
+        ":SwiftParser",
+        ":SwiftSyntax",
     ],
 )
 
@@ -72,22 +75,24 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":SwiftBasicFormat",
-        ":SwiftSyntax",
         ":SwiftParser",
         ":SwiftParserDiagnostics",
+        ":SwiftSyntax",
     ],
 )
 
 swift_library(
-    name = "SwiftSyntaxParser",
+    name = "SwiftSyntaxMacros",
     srcs = glob([
-        "Sources/SwiftSyntaxParser/**/*.swift",
+        "Sources/SwiftSyntaxMacros/**/*.swift",
     ]),
-    module_name = "SwiftSyntaxParser",
+    module_name = "SwiftSyntaxMacros",
     visibility = ["//visibility:public"],
     deps = [
-        ":SwiftSyntax",
+        ":SwiftDiagnostics",
         ":SwiftParser",
+        ":SwiftSyntax",
+        ":SwiftSyntaxBuilder",
     ],
 )
 
@@ -99,8 +104,24 @@ swift_library(
     module_name = "SwiftOperators",
     visibility = ["//visibility:public"],
     deps = [
-        ":SwiftSyntax",
-        ":SwiftParser",
         ":SwiftDiagnostics",
+        ":SwiftParser",
+        ":SwiftSyntax",
+    ],
+)
+
+swift_library(
+    name = "SwiftSyntaxMacroExpansion",
+    srcs = glob([
+        "Sources/SwiftSyntaxMacroExpansion/**/*.swift",
+    ]),
+    module_name = "SwiftSyntaxMacroExpansion",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":SwiftDiagnostics",
+        ":SwiftOperators",
+        ":SwiftSyntax",
+        ":SwiftSyntaxBuilder",
+        ":SwiftSyntaxMacros",
     ],
 )

@@ -34,3 +34,18 @@ swift_library(
         "@SwiftSystem//:SystemPackage",
     ],
 )
+
+swift_library(
+    name = "TSCUtility",
+    srcs = glob([
+        "Sources/TSCUtility/**/*.swift",
+    ]),
+    module_name = "TSCUtility",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":TSCBasic",
+        ":TSCLibc",
+        ":TSCclibc",
+        "@SwiftSystem//:SystemPackage",
+    ],
+)
