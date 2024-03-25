@@ -33,9 +33,9 @@ apple_support_dependencies()
 
 git_repository(
     name = "dflat",
-    commit = "23ef1087cf768fc88193898c8cdd539c0b76449e",
+    commit = "86a069dc7be0995e4c5d0983216a0ddb0f6590d5",
     remote = "https://github.com/liuliu/dflat.git",
-    shallow_since = "1686929921 -0700",
+    shallow_since = "1711389225 -0400",
 )
 
 load("@dflat//:deps.bzl", "dflat_deps")
