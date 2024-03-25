@@ -1,3 +1,4 @@
+external/
 Libraries/DataModels
 Libraries/ModelOp
 Libraries/ModelZoo
