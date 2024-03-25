@@ -173,15 +173,9 @@ extension FileManager {
   class func attributes(from entry: Entry) -> [FileAttributeKey: Any] {
     let centralDirectoryStructure = entry.centralDirectoryStructure
     let entryType = entry.type
-    let fileTime = centralDirectoryStructure.lastModFileTime
-    let fileDate = centralDirectoryStructure.lastModFileDate
     let defaultPermissions =
       entryType == .directory ? defaultDirectoryPermissions : defaultFilePermissions
     var attributes = [.posixPermissions: defaultPermissions] as [FileAttributeKey: Any]
-    // Certain keys are not yet supported in swift-corelibs
-    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
-      attributes[.modificationDate] = Date(dateTime: (fileDate, fileTime))
-    #endif
     let versionMadeBy = centralDirectoryStructure.versionMadeBy
     guard let osType = Entry.OSType(rawValue: UInt(versionMadeBy >> 8)) else { return attributes }
 
@@ -224,32 +218,16 @@ extension FileManager {
   }
 
   class func permissionsForItem(at URL: URL) throws -> UInt16 {
-    let fileManager = FileManager()
-    let entryFileSystemRepresentation = fileManager.fileSystemRepresentation(withPath: URL.path)
-    var fileStat = stat()
-    lstat(entryFileSystemRepresentation, &fileStat)
-    let permissions = fileStat.st_mode
-    return UInt16(permissions)
+    let values = try URL.resourceValues(forKeys: [.isDirectoryKey])
+    if values.isDirectory ?? false {
+      return defaultDirectoryPermissions
+    } else {
+      return defaultFilePermissions
+    }
   }
 
   class func fileModificationDateTimeForItem(at url: URL) throws -> Date {
-    let fileManager = FileManager()
-    guard fileManager.itemExists(at: url) else {
-      throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: url.path])
-    }
-    let entryFileSystemRepresentation = fileManager.fileSystemRepresentation(withPath: url.path)
-    var fileStat = stat()
-    lstat(entryFileSystemRepresentation, &fileStat)
-    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
-      let modTimeSpec = fileStat.st_mtimespec
-    #else
-      let modTimeSpec = fileStat.st_mtim
-    #endif
-
-    let timeStamp =
-      TimeInterval(modTimeSpec.tv_sec) + TimeInterval(modTimeSpec.tv_nsec) / 1000000000.0
-    let modDate = Date(timeIntervalSince1970: timeStamp)
-    return modDate
+    return Date()
   }
 
   class func fileSizeForItem(at url: URL) throws -> Int64 {
@@ -257,14 +235,8 @@ extension FileManager {
     guard fileManager.itemExists(at: url) else {
       throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: url.path])
     }
-    let entryFileSystemRepresentation = fileManager.fileSystemRepresentation(withPath: url.path)
-    var fileStat = stat()
-    lstat(entryFileSystemRepresentation, &fileStat)
-    guard fileStat.st_size >= 0 else {
-      throw CocoaError(.fileReadTooLarge, userInfo: [NSFilePathErrorKey: url.path])
-    }
-    // `st_size` is a signed int value
-    return Int64(fileStat.st_size)
+    let values = try url.resourceValues(forKeys: [.fileSizeKey])
+    return Int64(values.fileSize ?? 0)
   }
 
   class func typeForItem(at url: URL) throws -> Entry.EntryType {
@@ -272,10 +244,14 @@ extension FileManager {
     guard url.isFileURL, fileManager.itemExists(at: url) else {
       throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: url.path])
     }
-    let entryFileSystemRepresentation = fileManager.fileSystemRepresentation(withPath: url.path)
-    var fileStat = stat()
-    lstat(entryFileSystemRepresentation, &fileStat)
-    return Entry.EntryType(mode: mode_t(fileStat.st_mode))
+    let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+    if values.isDirectory ?? false {
+      return Entry.EntryType.directory
+    } else if values.isSymbolicLink ?? false {
+      return Entry.EntryType.symlink
+    } else {
+      return Entry.EntryType.file
+    }
   }
 }
 
