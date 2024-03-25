@@ -29,23 +29,14 @@ public final class ModelImporter {
   }
 
   public func `import`(
-    versionCheck: @escaping (ModelVersion) -> Void, progress: @escaping (Float) -> Void,
-    completion: @escaping (Result<([String], ModelVersion, SamplerModifier), Swift.Error>) -> Void
-  ) {
+    versionCheck: @escaping (ModelVersion) -> Void, progress: @escaping (Float) -> Void
+  ) throws -> ([String], ModelVersion, SamplerModifier) {
     self.progress = progress
-    Importer.queue.async {
-      Interpreter.inflateInterrupter = self.interrupt
-      do {
-        self.access = 0
-        let result = try self.internalImport(versionCheck: versionCheck)
-        Interpreter.inflateInterrupter = nil
-        completion(.success(result))
-      } catch let error {
-        Interpreter.inflateInterrupter = nil
-        completion(.failure(error))
-      }
-      self.progress = nil
-    }
+    defer { self.progress = nil }
+    Interpreter.inflateInterrupter = self.interrupt
+    defer { Interpreter.inflateInterrupter = nil }
+    self.access = 0
+    return try self.internalImport(versionCheck: versionCheck)
   }
 
   private func interrupt() -> Bool {
