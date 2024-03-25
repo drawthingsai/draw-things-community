@@ -1,7 +1,9 @@
 import Atomics
 import Diffusion
 import Foundation
-import Metal
+#if canImport(Metal)
+  import Metal
+#endif
 import Utils
 
 #if canImport(UIKit)

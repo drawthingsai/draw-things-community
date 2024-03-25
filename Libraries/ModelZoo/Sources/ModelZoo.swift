@@ -712,8 +712,10 @@ public struct ModelZoo: DownloadZoo {
 
   public static var externalUrl: URL? = nil {
     didSet {
+#if (os(macOS) || (os(iOS) && targetEnvironment(macCatalyst)))
       oldValue?.stopAccessingSecurityScopedResource()
       let _ = externalUrl?.startAccessingSecurityScopedResource()
+#endif
     }
   }
 
