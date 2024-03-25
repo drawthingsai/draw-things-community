@@ -1,6 +1,7 @@
 Libraries/DataModels
 Libraries/ModelOp
 Libraries/ModelZoo
+Libraries/SFMT
 Libraries/SwiftDiffusion
 Libraries/Trainer
 Libraries/Upscaler
