@@ -1,5 +1,6 @@
 .bazelrc.darwin
 .bazelrc.linux
+.swift-format.json
 external/
 Apps/ModelConverter
 Libraries/DataModels
