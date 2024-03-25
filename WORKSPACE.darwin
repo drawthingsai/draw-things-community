@@ -67,6 +67,7 @@ nccl_configure(name = "local_config_nccl")
 ccv_setting(
     name = "local_config_ccv",
     have_accelerate_framework = True,
+    have_pthread = True,
 )
 
 git_repository(
@@ -93,6 +94,7 @@ swift_sentencepiece_deps()
 
 new_git_repository(
     name = "SwiftAlgorithms",
+    build_file = "swift-algorithms.BUILD",
     remote = "https://github.com/apple/swift-algorithms.git",
     commit = "195e0316d7ba71e134d0f6c677f64b4db6160c46",
     shallow_since = "1645643239 -0600",
