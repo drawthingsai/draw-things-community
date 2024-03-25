@@ -11,6 +11,7 @@ common:mps --define=enable_mps=true
 common --disk_cache=.cache
 
 build --cxxopt='-std=c++17'
+build --host_linkopt="-lm"
 
 common:release --compilation_mode=opt
 

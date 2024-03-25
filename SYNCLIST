@@ -1,3 +1,5 @@
+.bazelrc.darwin
+.bazelrc.linux
 external/
 Libraries/DataModels
 Libraries/ModelOp
