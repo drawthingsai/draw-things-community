@@ -262,7 +262,9 @@ extension LCMSampler: Sampler {
               var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
               tensor.withUnsafeMutableBytes {
                 let size = shape.reduce(MemoryLayout<Float16>.size, *)
-                memset($0.baseAddress, 0, size)
+                if let baseAddress = $0.baseAddress {
+                  memset(baseAddress, 0, size)
+                }
               }
               return .final(tensor)
             #else
@@ -272,7 +274,9 @@ extension LCMSampler: Sampler {
             var tensor = Tensor<Float32>(.CPU, format: format, shape: shape)
             tensor.withUnsafeMutableBytes {
               let size = shape.reduce(MemoryLayout<Float32>.size, *)
-              memset($0.baseAddress, 0, size)
+              if let baseAddress = $0.baseAddress {
+                memset(baseAddress, 0, size)
+              }
             }
             return .final(tensor)
           case .Float64, .Int32, .Int64, .UInt8:

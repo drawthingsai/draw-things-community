@@ -918,7 +918,7 @@ extension ControlModel {
     // In ControlNet implementation, we degrade influence as it approaches lower level.
     if controlMode != .balanced {
       return result.enumerated().map {
-        return pow(0.825, Float(12 - $0)) * $1 * strength
+        return powf(0.825, Float(12 - $0)) * $1 * strength
       }
     } else {
       if strength != 1 {

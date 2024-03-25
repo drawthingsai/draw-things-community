@@ -17,7 +17,7 @@ public final class SafeTensors {
     }
     guard
       let jsonDict = try? JSONSerialization.jsonObject(
-        with: data[8..<(8 + headerSize)], options: .topLevelDictionaryAssumed) as? [String: Any]
+        with: data[8..<(8 + headerSize)]) as? [String: Any]
     else { return nil }
     var states = [String: TensorDescriptor]()
     for (key, value) in jsonDict {

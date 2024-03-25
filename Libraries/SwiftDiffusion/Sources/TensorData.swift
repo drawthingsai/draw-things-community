@@ -68,7 +68,6 @@ public enum TensorData {
     guard !TensorData.externalStoreExists(filePath: filePath) else { return }
     // First, checking the externalStore, if the file has size, we need to move data back into the database prior to move it out (we cannot write to the externalStore while reading from it).
     let externalStoreFilePath = TensorData.externalStore(filePath: filePath)
-    let fileManager = FileManager.default
     if let externalFileSize =
       (try? URL(fileURLWithPath: externalStoreFilePath).resourceValues(forKeys: [.fileSizeKey]))?
       .fileSize, externalFileSize > 0
