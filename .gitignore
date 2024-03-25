@@ -91,6 +91,7 @@ iOSInjectionProject/
 
 bazel-*
 
+.bazelrc
 .bazelrc.local
 clang.bazelrc
 .cache

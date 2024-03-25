@@ -1,0 +1,21 @@
+#!/bin/sh
+FILES=$(git diff --cached --name-only --diff-filter=ACMR "*BUILD*" | sed 's| |\\ |g')
+[ -z "$FILES" ] && exit 0
+
+GIT_ROOT=$(git rev-parse --show-toplevel)
+
+# Bazel invocation may git clone some repositories, and override these env vars.
+
+_GIT_INDEX_FILE=$GIT_INDEX_FILE
+
+unset GIT_INDEX_FILE
+
+# Prettify all selected files
+echo "$FILES" | xargs -I {} bazel run --compilation_mode=opt @com_github_bazelbuild_buildtools//buildifier:buildifier -- -r "$GIT_ROOT/{}"
+
+export GIT_INDEX_FILE=$_GIT_INDEX_FILE
+
+# Add back the modified/prettified files to staging
+echo "$FILES" | xargs git add
+
+exit 0
