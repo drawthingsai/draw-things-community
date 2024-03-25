@@ -1,6 +1,7 @@
 .bazelrc.darwin
 .bazelrc.linux
 external/
+Apps/ModelConverter
 Libraries/DataModels
 Libraries/ModelOp
 Libraries/ModelZoo
@@ -12,4 +13,6 @@ Libraries/Utils
 Scripts/
 Vendors/ZIPFoundation
 WORKSPACE
+WORKSPACE.linux
+WORKSPACE.darwin
 SYNCLIST

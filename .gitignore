@@ -111,3 +111,5 @@ compile_commands.json
 *.dot
 *.xcodeproj
 .DS_Store
+
+WORKSPACE

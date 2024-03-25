@@ -67,7 +67,6 @@ nccl_configure(name = "local_config_nccl")
 ccv_setting(
     name = "local_config_ccv",
     have_accelerate_framework = True,
-    have_pthread = True,
 )
 
 git_repository(
