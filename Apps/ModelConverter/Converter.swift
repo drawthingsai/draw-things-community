@@ -37,12 +37,10 @@ struct Converter: ParsableCommand {
       filePath: file, modelName: fileName,
       isTextEncoderCustomized: textEncoders,
       autoencoderFilePath: autoencoderFile)
-    let result = try importer.import { _ in
+    let (filePaths, modelVersion, modifier) = try importer.import { _ in
     } progress: { _ in
     }
-    let fileNames = result.0.map { ($0 as NSString).lastPathComponent }
-    let modelVersion = result.1
-    let modifier = result.2
+    let fileNames = filePaths.map { ($0 as NSString).lastPathComponent }
     var clipEncoder: String? = nil
     let textEncoder: String?
     switch modelVersion {

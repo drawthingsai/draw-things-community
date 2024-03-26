@@ -2,6 +2,7 @@
 .bazelrc.linux
 .swift-format.json
 external/
+Apps/LoRAConverter
 Apps/ModelConverter
 Apps/ModelQuantizer
 Libraries/DataModels
