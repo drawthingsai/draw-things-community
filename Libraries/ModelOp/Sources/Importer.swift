@@ -10,7 +10,7 @@ extension Importer {
     // Convert the model name into file name.
     var finalName = ""
     for character in filename {
-      if character.isASCII && (character.isLetter || character.isNumber) {
+      if character.isASCII && (character.isLetter || character.isNumber || character == ".") {
         finalName += String(character)
       } else {
         finalName += "_"

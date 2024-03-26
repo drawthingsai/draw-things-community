@@ -3,6 +3,7 @@
 .swift-format.json
 external/
 Apps/ModelConverter
+Apps/ModelQuantizer
 Libraries/DataModels
 Libraries/ModelOp
 Libraries/ModelZoo

@@ -10,3 +10,13 @@ swift_binary(
         "@s4nnc//nnc",
     ],
 )
+
+swift_binary(
+    name = "ModelQuantizer",
+    srcs = glob(["ModelQuantizer/*.swift"]),
+    deps = [
+        "//Libraries/SwiftDiffusion",
+        "@SwiftArgumentParser//:ArgumentParser",
+        "@s4nnc//nnc",
+    ],
+)
