@@ -14,6 +14,24 @@ The Draw Things app is managed through a private mono-repository. We do per-comm
 
 That being said, we don't plan to publish roadmap for internal mono-repository. Whether we would like to publish roadmap for public community repository would require further deliberation and feedback from the community.
 
+# Getting Started
+
+We use [Bazel](https://bazel.build/) as our main build system. You can build components either on Linux or on macOS. On macOS, you need to have Xcode installed. On Linux, depending on whether you have NVIDIA CUDA-compatible GPU, the setup can be different.
+
+After neccessary dependencies installed, you can run:
+
+```bash
+./Scripts/install.sh
+```
+
+To setup the repo properly.
+
+To verify the installation, run:
+
+```bash
+bazel run Apps:ModelConverter
+```
+
 # License
 
 This repository is licensed under GNU General Public License version 3 (GPL-v3) just like [A1111](https://github.com/AUTOMATIC1111/stable-diffusion-webui) or [Fooocus](https://github.com/lllyasviel/Fooocus/).
