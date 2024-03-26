@@ -22,7 +22,8 @@ struct Converter: ParsableCommand {
   mutating func run() throws {
     ModelZoo.externalUrl = URL(fileURLWithPath: outputDirectory)
     let importer = ModelImporter(
-      filePath: file, modelName: name, isTextEncoderCustomized: textEncoders,
+      filePath: file, modelName: Importer.cleanup(filename: name),
+      isTextEncoderCustomized: textEncoders,
       autoencoderFilePath: autoencoderFile)
     let result = try importer.import { _ in
     } progress: { _ in
