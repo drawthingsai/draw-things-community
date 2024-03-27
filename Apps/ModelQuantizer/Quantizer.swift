@@ -18,8 +18,7 @@ struct Quantizer: ParsableCommand {
     ) { store in
       let keys = store.keys
       graph.openStore(outputFile) {
-        let total = keys.count
-        for (i, key) in keys.enumerated() {
+        for key in keys {
           guard let tensor = store.read(key, codec: [.q6p, .q8p, .ezm7, .externalData]) else {
             continue
           }

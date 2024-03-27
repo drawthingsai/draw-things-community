@@ -41,6 +41,9 @@ struct Converter: ParsableCommand {
     } progress: { _ in
     }
     let fileNames = filePaths.map { ($0 as NSString).lastPathComponent }
+    var autoencoder = fileNames.first {
+      $0.hasSuffix("_vae_f16.ckpt")
+    }
     var clipEncoder: String? = nil
     let textEncoder: String?
     switch modelVersion {
@@ -59,15 +62,18 @@ struct Converter: ParsableCommand {
       textEncoder = fileNames.first {
         $0.hasSuffix("_open_clip_vit_bigg14_f16.ckpt")
       }
+      if autoencoder == nil {
+        autoencoder = "sdxl_vae_v1.0_f16.ckpt"
+      }
     case .sdxlRefiner:
       textEncoder = fileNames.first {
         $0.hasSuffix("_open_clip_vit_bigg14_f16.ckpt")
       }
+      if autoencoder == nil {
+        autoencoder = "sdxl_vae_v1.0_f16.ckpt"
+      }
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
-    }
-    let autoencoder = fileNames.first {
-      $0.hasSuffix("_vae_f16.ckpt")
     }
     let specification = Specification(
       name: name, file: "\(fileName)_f16.ckpt", version: modelVersion, modifier: modifier,
