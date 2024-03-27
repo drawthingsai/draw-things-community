@@ -24,9 +24,9 @@ if [ "$OS" == "Darwin" ]; then
   # Install realpath
   brew install coreutils
   # Install xcode cmd line tools
-  xcode-select --install
+  xcode-select --install || true
 else
   echo "try-import %workspace%/.bazelrc.linux" > $GIT_ROOT/.bazelrc
   ln -s $GIT_ROOT/WORKSPACE.linux $GIT_ROOT/WORKSPACE
-  $GIT_ROOT/Scripts/setup_clang.sh /usr/local
+  $GIT_ROOT/Scripts/setup_clang.sh /usr/local || true
 fi
