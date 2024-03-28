@@ -336,13 +336,13 @@ public struct ModelZoo: DownloadZoo {
       name: "LCM SDXL Base (v1.0)", file: "lcm_sd_xl_base_1.0_f16.ckpt", prefix: "",
       version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
       isConsistencyModel: true),
     Specification(
       name: "LCM SDXL Base v1.0 (8-bit)", file: "lcm_sd_xl_base_1.0_q6p_q8p.ckpt", prefix: "",
       version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
       isConsistencyModel: true),
     Specification(
       name: "SDXL Refiner (v1.0)", file: "sd_xl_refiner_1.0_f16.ckpt", prefix: "",
@@ -363,7 +363,8 @@ public struct ModelZoo: DownloadZoo {
       textEncoder: "open_clip_vit_bigg14_f16.ckpt", autoencoder: "sdxl_vae_v1.0_f16.ckpt",
       modifier: .inpainting, clipEncoder: "clip_vit_l14_f16.ckpt"),
     Specification(
-      name: "Generic (Stable Diffusion v1.4)", file: "sd_v1.4_f16.ckpt", prefix: "", version: .v1),
+      name: "Generic (Stable Diffusion v1.4)", file: "sd_v1.4_f16.ckpt", prefix: "", version: .v1,
+      deprecated: true),
     Specification(
       name: "Generic (Stable Diffusion v1.5)", file: "sd_v1.5_f16.ckpt", prefix: "", version: .v1),
     Specification(
@@ -371,10 +372,11 @@ public struct ModelZoo: DownloadZoo {
       prefix: "", version: .v1, modifier: .inpainting),
     Specification(
       name: "Generic (Stable Diffusion v2.0)", file: "sd_v2.0_f16.ckpt", prefix: "", version: .v2,
-      textEncoder: "open_clip_vit_h14_f16.ckpt"),
+      textEncoder: "open_clip_vit_h14_f16.ckpt", deprecated: true),
     Specification(
       name: "Generic HD (Stable Diffusion v2.0 768-v)", file: "sd_v2.0_768_v_f16.ckpt", prefix: "",
-      version: .v2, defaultScale: 12, textEncoder: "open_clip_vit_h14_f16.ckpt", objective: .v),
+      version: .v2, defaultScale: 12, textEncoder: "open_clip_vit_h14_f16.ckpt", deprecated: true,
+      objective: .v),
     Specification(
       name: "Inpainting (Stable Diffusion v2.0 Inpainting)", file: "sd_v2.0_inpainting_f16.ckpt",
       prefix: "", version: .v2, textEncoder: "open_clip_vit_h14_f16.ckpt", modifier: .inpainting),
@@ -436,7 +438,7 @@ public struct ModelZoo: DownloadZoo {
       name: "Playground v2.5", file: "playground_v2.5_f16.ckpt", prefix: "",
       version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
       conditioning: .noise, objective: .edm(sigmaData: 0.5), noiseDiscretization: .edm(.init()),
       latentsMean: [-1.6574, 1.886, -1.383, 2.5155], latentsStd: [8.4927, 5.9022, 6.5498, 5.2299],
       latentsScalingFactor: 0.5),
@@ -444,7 +446,7 @@ public struct ModelZoo: DownloadZoo {
       name: "Playground v2.5 (8-bit)", file: "playground_v2.5_q6p_q8p.ckpt", prefix: "",
       version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
       conditioning: .noise, objective: .edm(sigmaData: 0.5), noiseDiscretization: .edm(.init()),
       latentsMean: [-1.6574, 1.886, -1.383, 2.5155], latentsStd: [8.4927, 5.9022, 6.5498, 5.2299],
       latentsScalingFactor: 0.5),
@@ -452,23 +454,23 @@ public struct ModelZoo: DownloadZoo {
       name: "SSD 1B (Segmind SDXL)", file: "ssd_1b_f16.ckpt", prefix: "",
       version: .ssd1b,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt"),
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt"),
     Specification(
       name: "SSD 1B (8-bit)", file: "ssd_1b_q6p_q8p.ckpt", prefix: "",
       version: .ssd1b,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt"),
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt"),
     Specification(
       name: "LCM SSD 1B (Segmind SDXL)", file: "lcm_ssd_1b_f16.ckpt", prefix: "",
       version: .ssd1b,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
       isConsistencyModel: true),
     Specification(
       name: "LCM SSD 1B (8-bit)", file: "lcm_ssd_1b_q6p_q8p.ckpt", prefix: "",
       version: .ssd1b,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
       isConsistencyModel: true),
     Specification(
       name: "Generic SD (MiniSD v1.4)", file: "minisd_v1.4_f16.ckpt", prefix: "", version: .v1,
@@ -476,135 +478,151 @@ public struct ModelZoo: DownloadZoo {
     Specification(
       name: "Editing (Instruct Pix2Pix)", file: "instruct_pix2pix_22000_f16.ckpt", prefix: "",
       version: .v1,
-      defaultScale: 8, modifier: .editing),
+      defaultScale: 8, modifier: .editing, deprecated: true),
     Specification(
-      name: "Anime (Waifu Diffusion v1.3)", file: "wd_v1.3_f16.ckpt", prefix: "", version: .v1),
+      name: "Anime (Waifu Diffusion v1.3)", file: "wd_v1.3_f16.ckpt", prefix: "", version: .v1,
+      deprecated: true),
     Specification(
       name: "Multi-Style (Nitro Diffusion v1)", file: "nitro_v1_f16.ckpt", prefix: "", version: .v1,
-      textEncoder: "nitro_v1_clip_vit_l14_f16.ckpt"),
+      textEncoder: "nitro_v1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Cyberpunk Anime", file: "cyberpunk_anime_f16.ckpt", prefix: "dgs illustration style ",
       version: .v1,
-      textEncoder: "cyberpunk_anime_clip_vit_l14_f16.ckpt"),
+      textEncoder: "cyberpunk_anime_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "3D Model (Redshift v1)", file: "redshift_v1_f16.ckpt", prefix: "redshift style ",
       version: .v1,
-      textEncoder: "redshift_v1_clip_vit_l14_f16.ckpt"),
+      textEncoder: "redshift_v1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "3D Model 768 (Redshift 768)", file: "redshift_768_v_f16.ckpt",
       prefix: "redshift style ",
       version: .v2, defaultScale: 12,
-      textEncoder: "redshift_768_v_open_clip_vit_h14_f16.ckpt", objective: .v),
+      textEncoder: "redshift_768_v_open_clip_vit_h14_f16.ckpt", deprecated: true, objective: .v),
     Specification(
       name: "Dungeons and Diffusion (30000)", file: "dnd_30000_f16.ckpt", prefix: "", version: .v1,
-      textEncoder: "dnd_30000_clip_vit_l14_f16.ckpt"),
+      textEncoder: "dnd_30000_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Tron Legacy", file: "trnlgcy_f16.ckpt", prefix: "trnlgcy style ", version: .v1,
-      textEncoder: "trnlgcy_clip_vit_l14_f16.ckpt"),
+      textEncoder: "trnlgcy_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Openjourney", file: "mdjrny_v4_f16.ckpt", prefix: "mdjrny-v4 style ", version: .v1,
-      textEncoder: "mdjrny_v4_clip_vit_l14_f16.ckpt"),
+      textEncoder: "mdjrny_v4_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Anime (Anything v3)", file: "anything_v3_f16.ckpt", prefix: "", version: .v1,
-      textEncoder: "anything_v3_clip_vit_l14_f16.ckpt", autoencoder: "anything_v3_vae_f16.ckpt"),
+      textEncoder: "anything_v3_clip_vit_l14_f16.ckpt", autoencoder: "anything_v3_vae_f16.ckpt",
+      deprecated: true),
     Specification(
       name: "Classic Animation (v1)", file: "classicanim_v1_f16.ckpt",
       prefix: "classic disney style ", version: .v1,
-      textEncoder: "classicanim_v1_clip_vit_l14_f16.ckpt"),
+      textEncoder: "classicanim_v1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Modern Disney (v1)", file: "modi_v1_f16.ckpt", prefix: "modern disney style ",
       version: .v1,
-      textEncoder: "modi_v1_clip_vit_l14_f16.ckpt"),
+      textEncoder: "modi_v1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Arcane (v3)", file: "arcane_v3_f16.ckpt", prefix: "arcane style ", version: .v1,
-      textEncoder: "arcane_v3_clip_vit_l14_f16.ckpt"),
+      textEncoder: "arcane_v3_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Hassanblend (v1.4)", file: "hassanblend_v1.4_f16.ckpt", prefix: "", version: .v1,
       deprecated: true),
     Specification(
       name: "Hassanblend (v1.5.1.2)", file: "hassanblend_v1.5.1.2_f16.ckpt", prefix: "",
-      version: .v1, textEncoder: "hassanblend_v1.5.1.2_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "hassanblend_v1.5.1.2_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Van Gogh Style (Lvngvncnt v2)", file: "lvngvncnt_v2_f16.ckpt", prefix: "lvngvncnt ",
-      version: .v1, textEncoder: "lvngvncnt_v2_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "lvngvncnt_v2_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Spider-Verse (v1)", file: "spiderverse_v1_f16.ckpt", prefix: "spiderverse style ",
-      version: .v1, textEncoder: "spiderverse_v1_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "spiderverse_v1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Elden Ring (v3)", file: "eldenring_v3_f16.ckpt", prefix: "elden ring style ",
-      version: .v1, textEncoder: "eldenring_v3_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "eldenring_v3_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Paper Cut (v1)", file: "papercut_v1_f16.ckpt", prefix: "papercut ",
-      version: .v1, textEncoder: "papercut_v1_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "papercut_v1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "VoxelArt (v1)", file: "voxelart_v1_f16.ckpt", prefix: "voxelart ",
-      version: .v1, textEncoder: "voxelart_v1_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "voxelart_v1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Balloon Art (v1)", file: "balloonart_v1_f16.ckpt", prefix: "balloonart ",
-      version: .v1, textEncoder: "balloonart_v1_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "balloonart_v1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
-      name: "F222", file: "f222_f16.ckpt", prefix: "", version: .v1),
+      name: "F222", file: "f222_f16.ckpt", prefix: "", version: .v1, deprecated: true),
     Specification(
       name: "Super Mario Nation (v2)", file: "supermarionation_v2_f16.ckpt",
       prefix: "supermarionation ", version: .v1,
-      textEncoder: "supermarionation_v2_clip_vit_l14_f16.ckpt"),
+      textEncoder: "supermarionation_v2_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Inkpunk (v2)", file: "inkpunk_v2_f16.ckpt", prefix: "nvinkpunk ", version: .v1,
-      textEncoder: "inkpunk_v2_clip_vit_l14_f16.ckpt"),
+      textEncoder: "inkpunk_v2_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "SamDoesArt (v3)", file: "samdoesart_v3_f16.ckpt", prefix: "samdoesart ", version: .v1,
-      textEncoder: "samdoesart_v3_clip_vit_l14_f16.ckpt"),
+      textEncoder: "samdoesart_v3_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Ghibli (v1)", file: "ghibli_v1_f16.ckpt", prefix: "ghibli style ", version: .v1,
-      textEncoder: "ghibli_v1_clip_vit_l14_f16.ckpt"),
+      textEncoder: "ghibli_v1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Analog (v1)", file: "analog_v1_f16.ckpt", prefix: "analog style ", version: .v1,
-      textEncoder: "analog_v1_clip_vit_l14_f16.ckpt"),
+      textEncoder: "analog_v1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "DnD Classes and Species", file: "dnd_classes_and_species_f16.ckpt", prefix: "",
       version: .v1,
-      textEncoder: "dnd_classes_and_species_clip_vit_l14_f16.ckpt"),
+      textEncoder: "dnd_classes_and_species_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "AloeVera's SimpMaker 3K1", file: "aloeveras_simpmaker_3k1_f16.ckpt", prefix: "",
-      version: .v1),
+      version: .v1, deprecated: true),
     Specification(
       name: "H&A's 3DKX 1.0b", file: "hna_3dkx_1.0b_f16.ckpt", prefix: "a 3d render / cartoon of ",
       version: .v1, textEncoder: "hna_3dkx_1.0b_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "H&A's 3DKX 1.1", file: "hna_3dkx_1.1_f16.ckpt", prefix: "a 3d render / cartoon of ",
-      version: .v1, textEncoder: "hna_3dkx_1.1_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "hna_3dkx_1.1_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "seek.art MEGA (v1)", file: "seek_art_mega_v1_f16.ckpt", prefix: "",
-      version: .v1, defaultScale: 10, textEncoder: "seek_art_mega_v1_clip_vit_l14_f16.ckpt"),
+      version: .v1, defaultScale: 10, textEncoder: "seek_art_mega_v1_clip_vit_l14_f16.ckpt",
+      deprecated: true),
     Specification(
       name: "Deliberate v2.0 (8-bit)", file: "deliberate_v2_q6p_q8p.ckpt", prefix: "",
-      version: .v1, textEncoder: "deliberate_v2_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "deliberate_v2_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "Disney Pixar Cartoon Type B (8-bit)", file: "disney_pixar_cartoon_type_b_q6p_q8p.ckpt",
-      prefix: "", version: .v1, textEncoder: "disney_pixar_cartoon_type_b_clip_vit_l14_f16.ckpt"),
+      prefix: "", version: .v1, textEncoder: "disney_pixar_cartoon_type_b_clip_vit_l14_f16.ckpt",
+      deprecated: true),
     Specification(
       name: "Realistic Vision v3.0 (8-bit)", file: "realistic_vision_v3.0_q6p_q8p.ckpt", prefix: "",
-      version: .v1, textEncoder: "realistic_vision_v3.0_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "realistic_vision_v3.0_clip_vit_l14_f16.ckpt", deprecated: true),
     Specification(
       name: "DreamShaper v6.31 (8-bit)", file: "dreamshaper_v6.31_q6p_q8p.ckpt", prefix: "",
-      version: .v1, textEncoder: "dreamshaper_v6.31_clip_vit_l14_f16.ckpt"),
+      version: .v1, textEncoder: "dreamshaper_v6.31_clip_vit_l14_f16.ckpt", deprecated: true),
   ]
 
-  public static var availableSpecifications: [Specification] = {
+  private static let builtinModelsAndAvailableSpecifications: (Set<String>, [Specification]) = {
     let jsonFile = ModelZoo.filePathForOtherModelDownloaded("custom.json")
     guard let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) else {
-      return builtinSpecifications
+      return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
     }
-
     let jsonDecoder = JSONDecoder()
     jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-    guard let jsonSpecification = try? jsonDecoder.decode([Specification].self, from: jsonData)
+    guard let jsonSpecifications = try? jsonDecoder.decode([Specification].self, from: jsonData)
     else {
-      return builtinSpecifications
+      return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
     }
-
-    return builtinSpecifications + jsonSpecification
+    var availableSpecifications = builtinSpecifications
+    var builtinModels = Set(builtinSpecifications.map { $0.file })
+    for specification in jsonSpecifications {
+      if builtinModels.contains(specification.file) {
+        builtinModels.remove(specification.file)
+        // Remove this from previous list.
+        availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+      }
+      availableSpecifications.append(specification)
+    }
+    return (builtinModels, availableSpecifications)
   }()
+
+  private static let builtinModels: Set<String> = builtinModelsAndAvailableSpecifications.0
+  public static var availableSpecifications: [Specification] =
+    builtinModelsAndAvailableSpecifications.1
 
   public static func availableSpecificationForTriggerWord(_ triggerWord: String) -> Specification? {
     let cleanupTriggerWord = String(triggerWord.lowercased().filter { $0.isLetter || $0.isNumber })
@@ -639,7 +657,16 @@ public struct ModelZoo: DownloadZoo {
     guard let jsonData = try? jsonEncoder.encode(customSpecifications) else { return }
     try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
 
-    availableSpecifications = builtinSpecifications + customSpecifications
+    // Because this only does sorting, it won't impact the builtinModels set.
+    var availableSpecifications = builtinSpecifications
+    let builtinModels = Set(builtinSpecifications.map { $0.file })
+    for specification in customSpecifications {
+      if builtinModels.contains(specification.file) {
+        availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+      }
+      availableSpecifications.append(specification)
+    }
+    self.availableSpecifications = availableSpecifications
   }
 
   public static func appendCustomSpecification(_ specification: Specification) {
@@ -653,28 +680,19 @@ public struct ModelZoo: DownloadZoo {
         customSpecifications.append(contentsOf: jsonSpecification)
       }
     }
-    if let firstIndex = (customSpecifications.firstIndex { $0.name == specification.name }) {
-      customSpecifications[firstIndex] = specification
-    } else if let firstIndex = (customSpecifications.firstIndex { $0.file == specification.file }) {
-      customSpecifications[firstIndex] = specification
-    } else {
-      customSpecifications.append(specification)
-    }
+    customSpecifications = customSpecifications.filter { $0.file != specification.file }
+    customSpecifications.append(specification)
     let jsonEncoder = JSONEncoder()
     jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
     jsonEncoder.outputFormatting = .prettyPrinted
     guard let jsonData = try? jsonEncoder.encode(customSpecifications) else { return }
     try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
     // Modify these two are not thread safe. availableSpecifications are OK. specificationMapping is particularly problematic (as it is access on both main thread and a background thread).
-    if let firstIndex = (availableSpecifications.firstIndex { $0.name == specification.name }) {
-      availableSpecifications[firstIndex] = specification
-    } else if let firstIndex =
-      (availableSpecifications.firstIndex { $0.file == specification.file })
-    {
-      availableSpecifications[firstIndex] = specification
-    } else {
-      availableSpecifications.append(specification)
-    }
+    var availableSpecifications = availableSpecifications
+    availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+    // Still respect the order.
+    availableSpecifications.append(specification)
+    self.availableSpecifications = availableSpecifications
     specificationMapping[specification.file] = specification
   }
 
@@ -712,10 +730,10 @@ public struct ModelZoo: DownloadZoo {
 
   public static var externalUrl: URL? = nil {
     didSet {
-#if (os(macOS) || (os(iOS) && targetEnvironment(macCatalyst)))
-      oldValue?.stopAccessingSecurityScopedResource()
-      let _ = externalUrl?.startAccessingSecurityScopedResource()
-#endif
+      #if (os(macOS) || (os(iOS) && targetEnvironment(macCatalyst)))
+        oldValue?.stopAccessingSecurityScopedResource()
+        let _ = externalUrl?.startAccessingSecurityScopedResource()
+      #endif
     }
   }
 
@@ -793,8 +811,6 @@ public struct ModelZoo: DownloadZoo {
     }
     return false
   }
-
-  private static let builtinModels: Set<String> = Set(builtinSpecifications.map { $0.file })
 
   public static func isBuiltinModel(_ name: String) -> Bool {
     return builtinModels.contains(name)

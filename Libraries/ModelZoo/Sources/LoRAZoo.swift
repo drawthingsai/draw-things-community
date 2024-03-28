@@ -10,9 +10,11 @@ public struct LoRAZoo: DownloadZoo {
     public var isConsistencyModel: Bool? = nil
     public var isLoHa: Bool? = nil
     public var modifier: SamplerModifier? = nil
+    public var deprecated: Bool? = nil
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
-      isConsistencyModel: Bool? = nil, isLoHa: Bool? = nil, modifier: SamplerModifier? = nil
+      isConsistencyModel: Bool? = nil, isLoHa: Bool? = nil, modifier: SamplerModifier? = nil,
+      deprecated: Bool? = nil
     ) {
       self.name = name
       self.file = file
@@ -21,6 +23,7 @@ public struct LoRAZoo: DownloadZoo {
       self.isConsistencyModel = isConsistencyModel
       self.isLoHa = isLoHa
       self.modifier = modifier
+      self.deprecated = deprecated
     }
   }
 
@@ -101,79 +104,92 @@ public struct LoRAZoo: DownloadZoo {
       name: "Fooocus Inpaint v2.6 (8-bit)", file: "fooocus_inpaint_v2.6_lora_q8p.ckpt",
       prefix: "", version: .sdxlBase, modifier: .inpainting),
     Specification(
-      name: "Moxin v1.0", file: "moxin_v1.0_lora_f16.ckpt", prefix: "shuimobysim ", version: .v1),
+      name: "Moxin v1.0", file: "moxin_v1.0_lora_f16.ckpt", prefix: "shuimobysim ", version: .v1,
+      deprecated: true),
     Specification(
       name: "Moxin Shukezouma v1.1", file: "moxin_shukezouma_v1.1_lora_f16.ckpt",
-      prefix: "shukezouma ", version: .v1),
+      prefix: "shukezouma ", version: .v1, deprecated: true),
     Specification(
       name: "Openjourney v1.0", file: "openjourney_v1_lora_f16.ckpt",
-      prefix: "mdjrny-v4 ", version: .v1),
+      prefix: "mdjrny-v4 ", version: .v1, deprecated: true),
     Specification(
       name: "Analog Diffusion v1.0", file: "analog_diffusion_v1_lora_f16.ckpt",
-      prefix: "analog ", version: .v1),
+      prefix: "analog ", version: .v1, deprecated: true),
     Specification(
       name: "Adam's Artwork Style v.1", file: "adams_artwork_style_v0.1_lora_f16.ckpt",
-      prefix: "ajaws ", version: .v1),
+      prefix: "ajaws ", version: .v1, deprecated: true),
     Specification(
       name: "Cyberpunk 2077 Nightcity v1.15",
       file: "cyberpunk_2007_concept_art_nightcity_v1.15_lora_f16.ckpt",
-      prefix: "", version: .v1),
+      prefix: "", version: .v1, deprecated: true),
     Specification(
       name: "Epi Noise Offset v2", file: "epi_noiseoffset_v2_lora_f16.ckpt",
-      prefix: "", version: .v1),
+      prefix: "", version: .v1, deprecated: true),
     Specification(
       name: "Anime LineArt Style v2.0", file: "anime_lineart_style_v2.0_lora_f16.ckpt",
-      prefix: "", version: .v1),
+      prefix: "", version: .v1, deprecated: true),
     Specification(
       name: "Theovercomer8's Contrast Fix",
       file: "theovercomer8s_contrast_fix_lora_f16.ckpt",
-      prefix: "to8contrast style ", version: .v1),
+      prefix: "to8contrast style ", version: .v1, deprecated: true),
     Specification(
       name: "Theovercomer8's Contrast Fix",
       file: "theovercomer8s_contrast_fix_sd_v2.x_lora_f16.ckpt",
-      prefix: "to8contrast style ", version: .v2),
+      prefix: "to8contrast style ", version: .v2, deprecated: true),
     Specification(
       name: "Arcane Style", file: "arcane_style_lora_f16.ckpt",
-      prefix: "arcane style ", version: .v1),
+      prefix: "arcane style ", version: .v1, deprecated: true),
     Specification(
       name: "Crazy Expressions", file: "crazy_expressions_lora_f16.ckpt",
-      prefix: "crazy face ", version: .v1),
+      prefix: "crazy face ", version: .v1, deprecated: true),
     Specification(
       name: "TO8's High Key", file: "to8s_high_key_lora_f16.ckpt",
-      prefix: "to8highkey ", version: .v1),
+      prefix: "to8highkey ", version: .v1, deprecated: true),
     Specification(
       name: "TO8's High Key", file: "to8s_high_key_sd_v2.x_lora_f16.ckpt",
-      prefix: "to8highkey ", version: .v2),
+      prefix: "to8highkey ", version: .v2, deprecated: true),
     Specification(
       name: "Hipoly 3D Model", file: "hipoly_3d_model_lora_f16.ckpt",
-      prefix: "hiqcgbody ", version: .v1),
+      prefix: "hiqcgbody ", version: .v1, deprecated: true),
     Specification(
       name: "Haute Couture or Gowns v1.0",
       file: "haute_couture_or_gowns_v1.0_lora_f16.ckpt",
-      prefix: "hc_gown ", version: .v1),
+      prefix: "hc_gown ", version: .v1, deprecated: true),
   ]
-
-  private static let builtinModels: Set<String> = Set(builtinSpecifications.map { $0.file })
 
   public static func isBuiltinLoRA(_ name: String) -> Bool {
     return builtinModels.contains(name)
   }
 
-  public static var availableSpecifications: [Specification] = {
+  private static let builtinModelsAndAvailableSpecifications: (Set<String>, [Specification]) = {
     let jsonFile = filePathForModelDownloaded("custom_lora.json")
     guard let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) else {
-      return builtinSpecifications
+      return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
     }
 
     let jsonDecoder = JSONDecoder()
     jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-    guard let jsonSpecification = try? jsonDecoder.decode([Specification].self, from: jsonData)
+    guard let jsonSpecifications = try? jsonDecoder.decode([Specification].self, from: jsonData)
     else {
-      return builtinSpecifications
+      return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
     }
 
-    return builtinSpecifications + jsonSpecification
+    var availableSpecifications = builtinSpecifications
+    var builtinModels = Set(builtinSpecifications.map { $0.file })
+    for specification in jsonSpecifications {
+      if builtinModels.contains(specification.file) {
+        builtinModels.remove(specification.file)
+        // Remove this from previous list.
+        availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+      }
+      availableSpecifications.append(specification)
+    }
+    return (builtinModels, availableSpecifications)
   }()
+
+  private static let builtinModels: Set<String> = builtinModelsAndAvailableSpecifications.0
+  public static var availableSpecifications: [Specification] =
+    builtinModelsAndAvailableSpecifications.1
 
   private static var specificationMapping: [String: Specification] = {
     var mapping = [String: Specification]()
@@ -210,28 +226,18 @@ public struct LoRAZoo: DownloadZoo {
         customSpecifications.append(contentsOf: jsonSpecification)
       }
     }
-    if let firstIndex = (customSpecifications.firstIndex { $0.name == specification.name }) {
-      customSpecifications[firstIndex] = specification
-    } else if let firstIndex = (customSpecifications.firstIndex { $0.file == specification.file }) {
-      customSpecifications[firstIndex] = specification
-    } else {
-      customSpecifications.append(specification)
-    }
+    customSpecifications = customSpecifications.filter { $0.file != specification.file }
+    customSpecifications.append(specification)
     let jsonEncoder = JSONEncoder()
     jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
     jsonEncoder.outputFormatting = .prettyPrinted
     guard let jsonData = try? jsonEncoder.encode(customSpecifications) else { return }
     try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
     // Modify these two are not thread safe. availableSpecifications are OK. specificationMapping is particularly problematic (as it is access on both main thread and a background thread).
-    if let firstIndex = (availableSpecifications.firstIndex { $0.name == specification.name }) {
-      availableSpecifications[firstIndex] = specification
-    } else if let firstIndex =
-      (availableSpecifications.firstIndex { $0.file == specification.file })
-    {
-      availableSpecifications[firstIndex] = specification
-    } else {
-      availableSpecifications.append(specification)
-    }
+    var availableSpecifications = availableSpecifications
+    availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+    availableSpecifications.append(specification)
+    self.availableSpecifications = availableSpecifications
     specificationMapping[specification.file] = specification
   }
 
@@ -256,7 +262,16 @@ public struct LoRAZoo: DownloadZoo {
     guard let jsonData = try? jsonEncoder.encode(customSpecifications) else { return }
     try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
 
-    availableSpecifications = builtinSpecifications + customSpecifications
+    // Because this only does sorting, it won't impact the builtinModels set.
+    var availableSpecifications = builtinSpecifications
+    let builtinModels = Set(builtinSpecifications.map { $0.file })
+    for specification in customSpecifications {
+      if builtinModels.contains(specification.file) {
+        availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+      }
+      availableSpecifications.append(specification)
+    }
+    self.availableSpecifications = availableSpecifications
   }
 
   public static func isModelDownloaded(_ name: String) -> Bool {
