@@ -91,7 +91,7 @@ public struct ModelZoo: DownloadZoo {
     fileprivate var predictV: Bool? = nil
   }
 
-  private static let fileSHA256: [String: String] = [
+  private static var fileSHA256: [String: String] = [
     "clip_vit_l14_f16.ckpt": "809bfd12c8d4b3d79c14e850b99130a70854f6fd8dedcacdf429417c02fa3007",
     "open_clip_vit_h14_f16.ckpt":
       "cdaa1b93cb099d4aff8831ba248780cebbb54bcd2810dd242513c4a8c70ba577",
@@ -959,6 +959,14 @@ public struct ModelZoo: DownloadZoo {
   public static func defaultRefinerForModel(_ name: String) -> String? {
     guard let specification = specificationMapping[name] else { return nil }
     return specification.defaultRefiner
+  }
+
+  public static func mergeFileSHA256(_ sha256: [String: String]) {
+    var fileSHA256 = fileSHA256
+    for (key, value) in sha256 {
+      fileSHA256[key] = value
+    }
+    self.fileSHA256 = fileSHA256
   }
 
   public static func fileSHA256ForModelDownloaded(_ name: String) -> String? {

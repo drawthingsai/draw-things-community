@@ -27,7 +27,7 @@ public struct LoRAZoo: DownloadZoo {
     }
   }
 
-  private static let fileSHA256: [String: String] = [
+  private static var fileSHA256: [String: String] = [
     "openjourney_v1_lora_f16.ckpt":
       "82b8d1f442c80c60edc506adb56cda128742e4661511a873c0b97b26b584dddb",
     "moxin_v1.0_lora_f16.ckpt":
@@ -96,7 +96,7 @@ public struct LoRAZoo: DownloadZoo {
       prefix: "", version: .sdxlRefiner, isConsistencyModel: true),
     Specification(
       name: "LCM SSD 1B (Segmind)", file: "lcm_ssd_1b_lora_f16.ckpt",
-      prefix: "", version: .ssd1b, isConsistencyModel: true),
+      prefix: "", version: .ssd1b, isConsistencyModel: true, deprecated: true),
     Specification(
       name: "Fooocus Inpaint v2.6", file: "fooocus_inpaint_v2.6_lora_f16.ckpt",
       prefix: "", version: .sdxlBase, modifier: .inpainting),
@@ -159,6 +159,14 @@ public struct LoRAZoo: DownloadZoo {
 
   public static func isBuiltinLoRA(_ name: String) -> Bool {
     return builtinModels.contains(name)
+  }
+
+  public static func mergeFileSHA256(_ sha256: [String: String]) {
+    var fileSHA256 = fileSHA256
+    for (key, value) in sha256 {
+      fileSHA256[key] = value
+    }
+    self.fileSHA256 = fileSHA256
   }
 
   private static let builtinModelsAndAvailableSpecifications: (Set<String>, [Specification]) = {
@@ -276,6 +284,11 @@ public struct LoRAZoo: DownloadZoo {
 
   public static func isModelDownloaded(_ name: String) -> Bool {
     return ModelZoo.isModelDownloaded(name)
+  }
+
+  public static func isModelDeprecated(_ name: String) -> Bool {
+    guard let specification = specificationMapping[name] else { return false }
+    return specification.deprecated ?? false
   }
 
   public static func humanReadableNameForModel(_ name: String) -> String {
