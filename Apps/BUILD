@@ -23,6 +23,17 @@ swift_binary(
 )
 
 swift_binary(
+    name = "EmbeddingConverter",
+    srcs = glob(["EmbeddingConverter/*.swift"]),
+    deps = [
+        "//Libraries/ModelOp",
+        "//Libraries/SwiftDiffusion",
+        "@SwiftArgumentParser//:ArgumentParser",
+        "@s4nnc//nnc",
+    ],
+)
+
+swift_binary(
     name = "ModelQuantizer",
     srcs = glob(["ModelQuantizer/*.swift"]),
     deps = [
