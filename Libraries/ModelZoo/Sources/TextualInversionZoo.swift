@@ -9,16 +9,21 @@ public struct TextualInversionZoo: DownloadZoo {
     public var keyword: String
     public var length: Int
     public var version: ModelVersion
-    public init(name: String, file: String, keyword: String, length: Int, version: ModelVersion) {
+    public var deprecated: Bool?
+    public init(
+      name: String, file: String, keyword: String, length: Int, version: ModelVersion,
+      deprecated: Bool? = false
+    ) {
       self.name = name
       self.file = file
       self.keyword = keyword
       self.length = length
       self.version = version
+      self.deprecated = deprecated
     }
   }
 
-  private static let fileSHA256: [String: String] = [
+  private static var fileSHA256: [String: String] = [
     "carhelper_ti_f16.ckpt":
       "1d9c8434a3670f3a9deff463b59286514a04746f163946c43de5801f968664c5",
     "charturner_ti_f16.ckpt":
@@ -62,87 +67,105 @@ public struct TextualInversionZoo: DownloadZoo {
   static let builtinSpecifications: [Specification] = [
     Specification(
       name: "Action Helper", file: "actionhelper_ti_f16.ckpt", keyword: "actionhelper", length: 6,
-      version: .v2),
+      version: .v2, deprecated: true),
     Specification(
       name: "Anime ScreenCap", file: "animescreencap_ti_f16.ckpt", keyword: "animescreencap",
-      length: 6,
-      version: .v2),
+      length: 6, version: .v2, deprecated: true),
     Specification(
       name: "Bad Prompt (v2)", file: "bad_prompt_v2_ti_f16.ckpt", keyword: "bad_prompt", length: 8,
-      version: .v1),
+      version: .v1, deprecated: true),
     Specification(
       name: "Birb Style", file: "birb_style_ti_f16.ckpt", keyword: "birb_style", length: 1,
-      version: .v1),
+      version: .v1, deprecated: true),
     Specification(
       name: "Car Helper", file: "carhelper_ti_f16.ckpt", keyword: "carhelper", length: 4,
-      version: .v2),
+      version: .v2, deprecated: true),
     Specification(
       name: "Character Turner", file: "charturner_ti_f16.ckpt", keyword: "charturner", length: 4,
-      version: .v1),
+      version: .v1, deprecated: true),
     Specification(
       name: "Cinema Helper", file: "cinemahelper_ti_f16.ckpt", keyword: "cinemahelper", length: 10,
-      version: .v2),
+      version: .v2, deprecated: true),
     Specification(
       name: "Classipeint", file: "classipeint_ti_f16.ckpt", keyword: "classipeint", length: 15,
-      version: .v2),
+      version: .v2, deprecated: true),
     Specification(
       name: "Cloudport v1.0", file: "cloudport_v1.0_ti_f16.ckpt", keyword: "cloudport", length: 4,
-      version: .v1),
+      version: .v1, deprecated: true),
     Specification(
       name: "Doctor Diffusion's \"Point E\" Negative Embedding",
-      file: "drd_point_e_768_v_ti_f16.ckpt", keyword: "drd_pnte768", length: 8, version: .v2),
+      file: "drd_point_e_768_v_ti_f16.ckpt", keyword: "drd_pnte768", length: 8, version: .v2,
+      deprecated: true),
     Specification(
       name: "Double Exposure", file: "double_exposure_ti_f16.ckpt", keyword: "double_exposure",
-      length: 8, version: .v2),
+      length: 8, version: .v2, deprecated: true),
     Specification(
       name: "Knollingcase (v4)", file: "knollingcase_v4_kc16_5000_ti_f16.ckpt",
-      keyword: "kc16_5000", length: 16,
-      version: .v2),
+      keyword: "kc16_5000", length: 16, version: .v2, deprecated: true),
     Specification(
       name: "Laxpeint (v2)", file: "laxpeint_v2_ti_f16.ckpt", keyword: "laxpeintv2", length: 9,
-      version: .v2),
+      version: .v2, deprecated: true),
     Specification(
       name: "ParchArt", file: "parchart_ti_f16.ckpt", keyword: "parchart", length: 10,
-      version: .v2),
+      version: .v2, deprecated: true),
     Specification(
       name: "Photo Helper", file: "photohelper_ti_f16.ckpt", keyword: "photohelper", length: 8,
-      version: .v2),
+      version: .v2, deprecated: true),
     Specification(
       name: "Pure Eros Face", file: "pure_eros_ti_f16.ckpt", keyword: "pure_eros", length: 1,
-      version: .v1),
+      version: .v1, deprecated: true),
     Specification(
       name: "SD2 Papercut", file: "sd2_papercut_ti_f16.ckpt", keyword: "sd2_papercut", length: 8,
-      version: .v2),
+      version: .v2, deprecated: true),
     Specification(
       name: "V2 Dreamink", file: "v2_dreamink_ti_f16.ckpt", keyword: "v2_dreamink", length: 4,
-      version: .v2),
+      version: .v2, deprecated: true),
     Specification(
       name: "Vintage Helper", file: "vintagehelper_ti_f16.ckpt", keyword: "vintagehelper",
-      length: 8,
-      version: .v2),
+      length: 8, version: .v2, deprecated: true),
   ]
 
-  private static let builtinModels: Set<String> = Set(builtinSpecifications.map { $0.file })
+  private static let builtinModelsAndAvailableSpecifications: (Set<String>, [Specification]) = {
+    let jsonFile = filePathForModelDownloaded("custom_textual_inversions.json")
+    guard let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) else {
+      return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
+    }
+
+    let jsonDecoder = JSONDecoder()
+    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    guard let jsonSpecifications = try? jsonDecoder.decode([Specification].self, from: jsonData)
+    else {
+      return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
+    }
+
+    var availableSpecifications = builtinSpecifications
+    var builtinModels = Set(builtinSpecifications.map { $0.file })
+    for specification in jsonSpecifications {
+      if builtinModels.contains(specification.file) {
+        builtinModels.remove(specification.file)
+        // Remove this from previous list.
+        availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+      }
+      availableSpecifications.append(specification)
+    }
+    return (builtinModels, availableSpecifications)
+  }()
+
+  private static let builtinModels: Set<String> = builtinModelsAndAvailableSpecifications.0
+  public static var availableSpecifications: [Specification] =
+    builtinModelsAndAvailableSpecifications.1
 
   public static func isBuiltinTextualInversion(_ name: String) -> Bool {
     return builtinModels.contains(name)
   }
 
-  public static var availableSpecifications: [Specification] = {
-    var specifications = builtinSpecifications
-    let jsonFile = TextualInversionZoo.filePathForModelDownloaded("custom_textual_inversions.json")
-    guard let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) else {
-      return specifications
+  public static func mergeFileSHA256(_ sha256: [String: String]) {
+    var fileSHA256 = fileSHA256
+    for (key, value) in sha256 {
+      fileSHA256[key] = value
     }
-    let jsonDecoder = JSONDecoder()
-    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-    guard let jsonSpecification = try? jsonDecoder.decode([Specification].self, from: jsonData)
-    else {
-      return specifications
-    }
-    specifications.append(contentsOf: jsonSpecification)
-    return specifications
-  }()
+    self.fileSHA256 = fileSHA256
+  }
 
   private static var specificationMapping: [String: Specification] = {
     var mapping = [String: Specification]()
@@ -162,6 +185,11 @@ public struct TextualInversionZoo: DownloadZoo {
     return mapping
   }()
 
+  public static func isModelDeprecated(_ name: String) -> Bool {
+    guard let specification = specificationMapping[name] else { return false }
+    return specification.deprecated ?? false
+  }
+
   public static func appendCustomSpecification(_ specification: Specification) {
     dispatchPrecondition(condition: .onQueue(.main))
     var customSpecifications = [Specification]()
@@ -173,28 +201,18 @@ public struct TextualInversionZoo: DownloadZoo {
         customSpecifications.append(contentsOf: jsonSpecification)
       }
     }
-    if let firstIndex = (customSpecifications.firstIndex { $0.name == specification.name }) {
-      customSpecifications[firstIndex] = specification
-    } else if let firstIndex = (customSpecifications.firstIndex { $0.file == specification.file }) {
-      customSpecifications[firstIndex] = specification
-    } else {
-      customSpecifications.append(specification)
-    }
+    customSpecifications = customSpecifications.filter { $0.file != specification.file }
+    customSpecifications.append(specification)
     let jsonEncoder = JSONEncoder()
     jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
     jsonEncoder.outputFormatting = .prettyPrinted
     guard let jsonData = try? jsonEncoder.encode(customSpecifications) else { return }
     try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
     // Modify these two are not thread safe. availableSpecifications are OK. specificationMapping is particularly problematic (as it is access on both main thread and a background thread).
-    if let firstIndex = (availableSpecifications.firstIndex { $0.name == specification.name }) {
-      availableSpecifications[firstIndex] = specification
-    } else if let firstIndex =
-      (availableSpecifications.firstIndex { $0.file == specification.file })
-    {
-      availableSpecifications[firstIndex] = specification
-    } else {
-      availableSpecifications.append(specification)
-    }
+    var availableSpecifications = availableSpecifications
+    availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+    availableSpecifications.append(specification)
+    self.availableSpecifications = availableSpecifications
     specificationMapping[specification.file] = specification
     var files = fileMappingFromKeyword[specification.keyword, default: []]
     files.append(specification.file)
