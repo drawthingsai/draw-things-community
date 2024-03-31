@@ -329,7 +329,7 @@ extension UNetFromNNC {
       filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
     ) { store in
       if !lora.isEmpty && version != .kandinsky21 {
-        if !isLoHa && is8BitModel && rankOfLoRA > 0 && canRunLoRASeparately {
+        if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
           let mapping: [Int: Int] = {
             switch version {
             case .sdxlBase:
