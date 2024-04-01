@@ -124,10 +124,9 @@ extension Denoiser {
     public init(_ parameterization: Parameterization, objective: Objective, s: Double = 0.008) {
       switch parameterization {
       case .edm(let edm):
-        self.init(
-          objective: objective, timesteps: 1, s: s,
-          range: (1.0 / (edm.sigmaMax * edm.sigmaMax + 1))...(1.0
-            / (edm.sigmaMin * edm.sigmaMin + 1)))
+        let range: ClosedRange<Double> =
+          (1.0 / (edm.sigmaMax * edm.sigmaMax + 1))...(1.0 / (edm.sigmaMin * edm.sigmaMin + 1))
+        self.init(objective: objective, timesteps: 1, s: s, range: range)
       case .ddpm(let ddpm):
         let alphasCumprod = ddpm.alphasCumprod
         let sigmas = alphasCumprod.map { ((1 - $0) / $0).squareRoot() }
@@ -271,12 +270,18 @@ extension Denoiser {
 
 extension Denoiser {
   public struct LinearDiscretization: Discretization {
+    private let internalObjective: Objective
     private let internalTimesteps: Int
     private let sigmas: [Double]
     private let isLegacy: Bool
     private let EDMDiscretization: KarrasDiscretization?
     public let alphasCumprod: [Double]
-    public let objective: Objective
+    public var objective: Objective {
+      if let EDMDiscretization = EDMDiscretization {
+        return EDMDiscretization.objective
+      }
+      return internalObjective
+    }
     public var timesteps: Float {
       if let EDMDiscretization = EDMDiscretization {
         return EDMDiscretization.timesteps
@@ -284,7 +289,7 @@ extension Denoiser {
       return Float(internalTimesteps)
     }
     init(objective: Objective, isLegacy: Bool, ddpm: Parameterization.DDPM) {
-      self.objective = objective
+      self.internalObjective = objective
       self.isLegacy = isLegacy
       internalTimesteps = ddpm.timesteps
       alphasCumprod = ddpm.alphasCumprod
@@ -296,7 +301,7 @@ extension Denoiser {
       internalTimesteps = 0
       alphasCumprod = []
       sigmas = []
-      objective = .edm(sigmaData: 0)
+      internalObjective = .edm(sigmaData: 0)
       isLegacy = false
     }
     public init(_ parameterization: Parameterization, objective: Objective, isLegacy: Bool = false)
@@ -315,6 +320,9 @@ extension Denoiser {
       return timestep(for: alphaCumprod, in: sigmas)
     }
     public func alphaCumprod(timestep: Float, shift: Double) -> Double {
+      if let EDMDiscretization = EDMDiscretization {
+        return EDMDiscretization.alphaCumprod(timestep: timestep, shift: shift)
+      }
       let alphaCumprod = alphasCumprod[
         max(min(Int((timestep).rounded()), alphasCumprod.count - 1), 0)]
       if shift != 1 {

@@ -1,3 +1,4 @@
+import Foundation
 import NNC
 
 /// UNet for Stable Diffusion XL
@@ -538,14 +539,14 @@ func BasicTimeTransformerBlock(
   let reader: PythonReader = { stateDict, archive in
     guard
       let norm_in_weight = stateDict[
-        "diffusion_model.\(prefix.0).norm_in.weight"
+        "\(prefix.0).norm_in.weight"
       ]
     else {
       throw UnpickleError.tensorNotFound
     }
     guard
       let norm_in_bias = stateDict[
-        "diffusion_model.\(prefix.0).norm_in.bias"
+        "\(prefix.0).norm_in.bias"
       ]
     else {
       throw UnpickleError.tensorNotFound
@@ -554,14 +555,14 @@ func BasicTimeTransformerBlock(
     try normIn.bias.copy(from: norm_in_bias, zip: archive, of: FloatType.self)
     guard
       let ff_in_net_0_proj_weight = try stateDict[
-        "diffusion_model.\(prefix.0).ff_in.net.0.proj.weight"
+        "\(prefix.0).ff_in.net.0.proj.weight"
       ]?.inflate(from: archive, of: FloatType.self)
     else {
       throw UnpickleError.tensorNotFound
     }
     guard
       let ff_in_net_0_proj_bias = try stateDict[
-        "diffusion_model.\(prefix.0).ff_in.net.0.proj.bias"
+        "\(prefix.0).ff_in.net.0.proj.bias"
       ]?.inflate(from: archive, of: FloatType.self)
     else {
       throw UnpickleError.tensorNotFound
@@ -577,14 +578,14 @@ func BasicTimeTransformerBlock(
       from: ff_in_net_0_proj_bias[intermediateSize..<ff_in_net_0_proj_bias.shape[0]])
     guard
       let ff_in_net_2_weight = stateDict[
-        "diffusion_model.\(prefix.0).ff_in.net.2.weight"
+        "\(prefix.0).ff_in.net.2.weight"
       ]
     else {
       throw UnpickleError.tensorNotFound
     }
     guard
       let ff_in_net_2_bias = stateDict[
-        "diffusion_model.\(prefix.0).ff_in.net.2.bias"
+        "\(prefix.0).ff_in.net.2.bias"
       ]
     else {
       throw UnpickleError.tensorNotFound
@@ -593,7 +594,7 @@ func BasicTimeTransformerBlock(
     try ffIn2.bias.copy(from: ff_in_net_2_bias, zip: archive, of: FloatType.self)
     guard
       let attn1_to_k_weight = stateDict[
-        "diffusion_model.\(prefix.0).attn1.to_k.weight"
+        "\(prefix.0).attn1.to_k.weight"
       ]
     else {
       throw UnpickleError.tensorNotFound
@@ -601,7 +602,7 @@ func BasicTimeTransformerBlock(
     try tokeys1.weight.copy(from: attn1_to_k_weight, zip: archive, of: FloatType.self)
     guard
       let attn1_to_q_weight = stateDict[
-        "diffusion_model.\(prefix.0).attn1.to_q.weight"
+        "\(prefix.0).attn1.to_q.weight"
       ]
     else {
       throw UnpickleError.tensorNotFound
@@ -609,7 +610,7 @@ func BasicTimeTransformerBlock(
     try toqueries1.weight.copy(from: attn1_to_q_weight, zip: archive, of: FloatType.self)
     guard
       let attn1_to_v_weight = stateDict[
-        "diffusion_model.\(prefix.0).attn1.to_v.weight"
+        "\(prefix.0).attn1.to_v.weight"
       ]
     else {
       throw UnpickleError.tensorNotFound
@@ -617,14 +618,14 @@ func BasicTimeTransformerBlock(
     try tovalues1.weight.copy(from: attn1_to_v_weight, zip: archive, of: FloatType.self)
     guard
       let attn1_to_out_weight = stateDict[
-        "diffusion_model.\(prefix.0).attn1.to_out.0.weight"
+        "\(prefix.0).attn1.to_out.0.weight"
       ]
     else {
       throw UnpickleError.tensorNotFound
     }
     guard
       let attn1_to_out_bias = stateDict[
-        "diffusion_model.\(prefix.0).attn1.to_out.0.bias"
+        "\(prefix.0).attn1.to_out.0.bias"
       ]
     else {
       throw UnpickleError.tensorNotFound
@@ -634,14 +635,14 @@ func BasicTimeTransformerBlock(
     try unifyheads1.bias.copy(from: attn1_to_out_bias, zip: archive, of: FloatType.self)
     guard
       let ff_net_0_proj_weight = try stateDict[
-        "diffusion_model.\(prefix.0).ff.net.0.proj.weight"
+        "\(prefix.0).ff.net.0.proj.weight"
       ]?.inflate(from: archive, of: FloatType.self)
     else {
       throw UnpickleError.tensorNotFound
     }
     guard
       let ff_net_0_proj_bias = try stateDict[
-        "diffusion_model.\(prefix.0).ff.net.0.proj.bias"
+        "\(prefix.0).ff.net.0.proj.bias"
       ]?.inflate(from: archive, of: FloatType.self)
     else {
       throw UnpickleError.tensorNotFound
@@ -657,14 +658,14 @@ func BasicTimeTransformerBlock(
       from: ff_net_0_proj_bias[intermediateSize..<ff_net_0_proj_bias.shape[0]])
     guard
       let ff_net_2_weight = stateDict[
-        "diffusion_model.\(prefix.0).ff.net.2.weight"
+        "\(prefix.0).ff.net.2.weight"
       ]
     else {
       throw UnpickleError.tensorNotFound
     }
     guard
       let ff_net_2_bias = stateDict[
-        "diffusion_model.\(prefix.0).ff.net.2.bias"
+        "\(prefix.0).ff.net.2.bias"
       ]
     else {
       throw UnpickleError.tensorNotFound
@@ -674,14 +675,14 @@ func BasicTimeTransformerBlock(
     if let layerNorm2 = layerNorm2, let toqueries2 = toqueries2, let unifyheads2 = unifyheads2 {
       guard
         let norm2_weight = stateDict[
-          "diffusion_model.\(prefix.0).norm2.weight"
+          "\(prefix.0).norm2.weight"
         ]
       else {
         throw UnpickleError.tensorNotFound
       }
       guard
         let norm2_bias = stateDict[
-          "diffusion_model.\(prefix.0).norm2.bias"
+          "\(prefix.0).norm2.bias"
         ]
       else {
         throw UnpickleError.tensorNotFound
@@ -690,7 +691,7 @@ func BasicTimeTransformerBlock(
       try layerNorm2.bias.copy(from: norm2_bias, zip: archive, of: FloatType.self)
       guard
         let attn2_to_q_weight = stateDict[
-          "diffusion_model.\(prefix.0).attn2.to_q.weight"
+          "\(prefix.0).attn2.to_q.weight"
         ]
       else {
         throw UnpickleError.tensorNotFound
@@ -698,14 +699,14 @@ func BasicTimeTransformerBlock(
       try toqueries2.weight.copy(from: attn2_to_q_weight, zip: archive, of: FloatType.self)
       guard
         let attn2_to_out_weight = stateDict[
-          "diffusion_model.\(prefix.0).attn2.to_out.0.weight"
+          "\(prefix.0).attn2.to_out.0.weight"
         ]
       else {
         throw UnpickleError.tensorNotFound
       }
       guard
         let attn2_to_out_bias = stateDict[
-          "diffusion_model.\(prefix.0).attn2.to_out.0.bias"
+          "\(prefix.0).attn2.to_out.0.bias"
         ]
       else {
         throw UnpickleError.tensorNotFound
@@ -715,14 +716,14 @@ func BasicTimeTransformerBlock(
     }
     guard
       let norm1_weight = stateDict[
-        "diffusion_model.\(prefix.0).norm1.weight"
+        "\(prefix.0).norm1.weight"
       ]
     else {
       throw UnpickleError.tensorNotFound
     }
     guard
       let norm1_bias = stateDict[
-        "diffusion_model.\(prefix.0).norm1.bias"
+        "\(prefix.0).norm1.bias"
       ]
     else {
       throw UnpickleError.tensorNotFound
@@ -731,14 +732,14 @@ func BasicTimeTransformerBlock(
     try layerNorm1.bias.copy(from: norm1_bias, zip: archive, of: FloatType.self)
     guard
       let norm3_weight = stateDict[
-        "diffusion_model.\(prefix.0).norm3.weight"
+        "\(prefix.0).norm3.weight"
       ]
     else {
       throw UnpickleError.tensorNotFound
     }
     guard
       let norm3_bias = stateDict[
-        "diffusion_model.\(prefix.0).norm3.bias"
+        "\(prefix.0).norm3.bias"
       ]
     else {
       throw UnpickleError.tensorNotFound
@@ -837,7 +838,8 @@ private func SpatialTransformer<FloatType: TensorNumeric & BinaryFloatingPoint>(
         let values = Input()
         kvs.append(values)
         let (reader, mapper, block) = BasicTimeTransformerBlock(
-          prefix: ("\(prefix.0).time_stack.\(i)", "\(prefix.1).time_stack.\(i)"), k: k, h: h, b: b,
+          prefix: ("\(prefix.0).time_stack.\(i)", "\(prefix.1).temporal_transformer_blocks.\(i)"),
+          k: k, h: h, b: b,
           hw: hw, t: t, intermediateSize: intermediateSize,
           injectIPAdapterLengths: injectIPAdapterLengths, usesFlashAttention: usesFlashAttention)
         out = mixFactor .* out + (1 - mixFactor) .* block(out, timeEmb, values)
@@ -867,7 +869,8 @@ private func SpatialTransformer<FloatType: TensorNumeric & BinaryFloatingPoint>(
         let values = Input()
         kvs.append(values)
         let (reader, mapper, block) = BasicTimeTransformerBlock(
-          prefix: ("\(prefix.0).time_stack.\(i)", "\(prefix.1).time_stack.\(i)"), k: k, h: h, b: b,
+          prefix: ("\(prefix.0).time_stack.\(i)", "\(prefix.1).temporal_transformer_blocks.\(i)"),
+          k: k, h: h, b: b,
           hw: hw, t: t, intermediateSize: intermediateSize,
           injectIPAdapterLengths: injectIPAdapterLengths, usesFlashAttention: usesFlashAttention)
         out = mixFactor .* out + (1 - mixFactor) .* block(out, timeEmb, keys, values)
@@ -907,8 +910,17 @@ private func SpatialTransformer<FloatType: TensorNumeric & BinaryFloatingPoint>(
     }
     try projOut.weight.copy(from: proj_out_weight, zip: archive, of: FloatType.self)
     try projOut.bias.copy(from: proj_out_bias, zip: archive, of: FloatType.self)
-    if let _ = mixFactor {
-      // TODO: Need to apply sigmod when loading the mix factor.
+    if let mixFactor = mixFactor {
+      guard let mix_factor = stateDict["\(prefix.0).time_mixer.mix_factor"] else {
+        throw UnpickleError.tensorNotFound
+      }
+      // Apply sigmod when loading the mix factor.
+      try archive.with(mix_factor) {
+        var tensor = Tensor<Float>(from: $0).toCPU()
+        // Sigmoid.
+        tensor[0] = 1.0 / (1.0 + expf(-tensor[0]))
+        mixFactor.weight.copy(from: Tensor<FloatType>(from: tensor))
+      }
     }
   }
   let mapper: ModelWeightMapper = { format in
@@ -929,6 +941,9 @@ private func SpatialTransformer<FloatType: TensorNumeric & BinaryFloatingPoint>(
     mapping["\(formatPrefix).proj_in.bias"] = [projIn.bias.name]
     mapping["\(formatPrefix).proj_out.weight"] = [projOut.weight.name]
     mapping["\(formatPrefix).proj_out.bias"] = [projOut.bias.name]
+    if let mixFactor = mixFactor {
+      mapping["\(formatPrefix).time_mixer.mix_factor"] = [mixFactor.weight.name]
+    }
     return mapping
   }
   return (reader, mapper, Model([x] + kvs, [out]))
@@ -951,14 +966,28 @@ func BlockLayer<FloatType: TensorNumeric & BinaryFloatingPoint>(
     ResBlock(
       b: batchSize, outChannels: channels, skipConnection: skipConnection)
   var out = resBlock(x, emb)
+  let timeInLayerNorm: Model?
+  let timeInLayerConv2d: Model?
+  let timeEmbLayer: Model?
+  let timeOutLayerNorm: Model?
+  let timeOutLayerConv2d: Model?
+  let mixFactor: Parameter<FloatType>?
   if isTemporalMixEnabled {
-    // TODO: importing is not supported, yet.
-    let (
-      _, _, _, _, _,
+    let timeResBlock: Model
+    (
+      timeInLayerNorm, timeInLayerConv2d, timeEmbLayer, timeOutLayerNorm, timeOutLayerConv2d,
       timeResBlock
     ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels)
-    let mixFactor = Parameter<FloatType>(.GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
-    out = mixFactor .* out + (1 - mixFactor) .* timeResBlock(out, emb)
+    let mix = Parameter<FloatType>(.GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
+    out = mix .* out + (1 - mix) .* timeResBlock(out, emb)
+    mixFactor = mix
+  } else {
+    timeInLayerNorm = nil
+    timeInLayerConv2d = nil
+    timeEmbLayer = nil
+    timeOutLayerNorm = nil
+    timeOutLayerConv2d = nil
+    mixFactor = nil
   }
   var transformerReader: PythonReader? = nil
   var transformerMapper: ModelWeightMapper? = nil
@@ -1088,6 +1117,111 @@ func BlockLayer<FloatType: TensorNumeric & BinaryFloatingPoint>(
     if let transformerReader = transformerReader {
       try transformerReader(stateDict, archive)
     }
+    if let timeInLayerNorm = timeInLayerNorm, let timeInLayerConv2d = timeInLayerConv2d,
+      let timeEmbLayer = timeEmbLayer, let timeOutLayerNorm = timeOutLayerNorm,
+      let timeOutLayerConv2d = timeOutLayerConv2d, let mixFactor = mixFactor
+    {
+      guard
+        let time_stack_in_layers_0_weight = stateDict[
+          "\(prefix.0).0.time_stack.in_layers.0.weight"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard
+        let time_stack_in_layers_0_bias = stateDict[
+          "\(prefix.0).0.time_stack.in_layers.0.bias"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      try timeInLayerNorm.weight.copy(
+        from: time_stack_in_layers_0_weight, zip: archive, of: FloatType.self)
+      try timeInLayerNorm.bias.copy(
+        from: time_stack_in_layers_0_bias, zip: archive, of: FloatType.self)
+      guard
+        let time_stack_in_layers_2_weight = stateDict[
+          "\(prefix.0).0.time_stack.in_layers.2.weight"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard
+        let time_stack_in_layers_2_bias = stateDict[
+          "\(prefix.0).0.time_stack.in_layers.2.bias"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      try timeInLayerConv2d.weight.copy(
+        from: time_stack_in_layers_2_weight, zip: archive, of: FloatType.self)
+      try timeInLayerConv2d.bias.copy(
+        from: time_stack_in_layers_2_bias, zip: archive, of: FloatType.self)
+      guard
+        let time_stack_emb_layers_1_weight = stateDict[
+          "\(prefix.0).0.time_stack.emb_layers.1.weight"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard
+        let time_stack_emb_layers_1_bias = stateDict[
+          "\(prefix.0).0.time_stack.emb_layers.1.bias"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      try timeEmbLayer.weight.copy(
+        from: time_stack_emb_layers_1_weight, zip: archive, of: FloatType.self)
+      try timeEmbLayer.bias.copy(
+        from: time_stack_emb_layers_1_bias, zip: archive, of: FloatType.self)
+      guard
+        let time_stack_out_layers_0_weight = stateDict[
+          "\(prefix.0).0.time_stack.out_layers.0.weight"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard
+        let time_stack_out_layers_0_bias = stateDict[
+          "\(prefix.0).0.time_stack.out_layers.0.bias"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      try timeOutLayerNorm.weight.copy(
+        from: time_stack_out_layers_0_weight, zip: archive, of: FloatType.self)
+      try timeOutLayerNorm.bias.copy(
+        from: time_stack_out_layers_0_bias, zip: archive, of: FloatType.self)
+      guard
+        let time_stack_out_layers_3_weight = stateDict[
+          "\(prefix.0).0.time_stack.out_layers.3.weight"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard
+        let time_stack_out_layers_3_bias = stateDict[
+          "\(prefix.0).0.time_stack.out_layers.3.bias"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      try timeOutLayerConv2d.weight.copy(
+        from: time_stack_out_layers_3_weight, zip: archive, of: FloatType.self)
+      try timeOutLayerConv2d.bias.copy(
+        from: time_stack_out_layers_3_bias, zip: archive, of: FloatType.self)
+      guard let mix_factor = stateDict["\(prefix.0).0.time_mixer.mix_factor"] else {
+        throw UnpickleError.tensorNotFound
+      }
+      // Apply sigmod when loading the mix factor.
+      try archive.with(mix_factor) {
+        var tensor = Tensor<Float>(from: $0).toCPU()
+        // Sigmoid.
+        tensor[0] = 1.0 / (1.0 + expf(-tensor[0]))
+        mixFactor.weight.copy(from: Tensor<FloatType>(from: tensor))
+      }
+    }
   }
   let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
@@ -1110,20 +1244,115 @@ func BlockLayer<FloatType: TensorNumeric & BinaryFloatingPoint>(
         mapping["\(prefix.0).0.skip_connection.weight"] = [skipModel.weight.name]
         mapping["\(prefix.0).0.skip_connection.bias"] = [skipModel.bias.name]
       }
+      if let timeInLayerNorm = timeInLayerNorm, let timeInLayerConv2d = timeInLayerConv2d,
+        let timeEmbLayer = timeEmbLayer, let timeOutLayerNorm = timeOutLayerNorm,
+        let timeOutLayerConv2d = timeOutLayerConv2d, let mixFactor = mixFactor
+      {
+        mapping["\(prefix.0).0.time_stack.in_layers.0.weight"] = [timeInLayerNorm.weight.name]
+        mapping["\(prefix.0).0.time_stack.in_layers.0.bias"] = [timeInLayerNorm.bias.name]
+        mapping["\(prefix.0).0.time_stack.in_layers.2.weight"] = [timeInLayerConv2d.weight.name]
+        mapping["\(prefix.0).0.time_stack.in_layers.2.bias"] = [timeInLayerConv2d.bias.name]
+        mapping["\(prefix.0).0.time_stack.emb_layers.1.weight"] = [timeEmbLayer.weight.name]
+        mapping["\(prefix.0).0.time_stack.emb_layers.1.bias"] = [timeEmbLayer.bias.name]
+        mapping["\(prefix.0).0.time_stack.out_layers.0.weight"] = [timeOutLayerNorm.weight.name]
+        mapping["\(prefix.0).0.time_stack.out_layers.0.bias"] = [timeOutLayerNorm.bias.name]
+        mapping["\(prefix.0).0.time_stack.out_layers.3.weight"] = [timeOutLayerConv2d.weight.name]
+        mapping["\(prefix.0).0.time_stack.out_layers.3.bias"] = [timeOutLayerConv2d.bias.name]
+        mapping["\(prefix.0).0.time_mixer.mix_factor"] = [mixFactor.weight.name]
+      }
     case .diffusers:
-      mapping["\(prefix.1).resnets.\(repeatStart).norm1.weight"] = [inLayerNorm.weight.name]
-      mapping["\(prefix.1).resnets.\(repeatStart).norm1.bias"] = [inLayerNorm.bias.name]
-      mapping["\(prefix.1).resnets.\(repeatStart).conv1.weight"] = [inLayerConv2d.weight.name]
-      mapping["\(prefix.1).resnets.\(repeatStart).conv1.bias"] = [inLayerConv2d.bias.name]
-      mapping["\(prefix.1).resnets.\(repeatStart).time_emb_proj.weight"] = [embLayer.weight.name]
-      mapping["\(prefix.1).resnets.\(repeatStart).time_emb_proj.bias"] = [embLayer.bias.name]
-      mapping["\(prefix.1).resnets.\(repeatStart).norm2.weight"] = [outLayerNorm.weight.name]
-      mapping["\(prefix.1).resnets.\(repeatStart).norm2.bias"] = [outLayerNorm.bias.name]
-      mapping["\(prefix.1).resnets.\(repeatStart).conv2.weight"] = [outLayerConv2d.weight.name]
-      mapping["\(prefix.1).resnets.\(repeatStart).conv2.bias"] = [outLayerConv2d.bias.name]
-      if let skipModel = skipModel {
-        mapping["\(prefix.1).resnets.\(repeatStart).conv_shortcut.weight"] = [skipModel.weight.name]
-        mapping["\(prefix.1).resnets.\(repeatStart).conv_shortcut.bias"] = [skipModel.bias.name]
+      if let timeInLayerNorm = timeInLayerNorm, let timeInLayerConv2d = timeInLayerConv2d,
+        let timeEmbLayer = timeEmbLayer, let timeOutLayerNorm = timeOutLayerNorm,
+        let timeOutLayerConv2d = timeOutLayerConv2d, let mixFactor = mixFactor
+      {
+        mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.norm1.weight"] = [
+          inLayerNorm.weight.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.norm1.bias"] = [
+          inLayerNorm.bias.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.conv1.weight"] = [
+          inLayerConv2d.weight.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.conv1.bias"] = [
+          inLayerConv2d.bias.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.time_emb_proj.weight"] = [
+          embLayer.weight.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.time_emb_proj.bias"] = [
+          embLayer.bias.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.norm2.weight"] = [
+          outLayerNorm.weight.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.norm2.bias"] = [
+          outLayerNorm.bias.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.conv2.weight"] = [
+          outLayerConv2d.weight.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.conv2.bias"] = [
+          outLayerConv2d.bias.name
+        ]
+        if let skipModel = skipModel {
+          mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.conv_shortcut.weight"] = [
+            skipModel.weight.name
+          ]
+          mapping["\(prefix.1).resnets.\(repeatStart).spatial_res_block.conv_shortcut.bias"] = [
+            skipModel.bias.name
+          ]
+        }
+        mapping["\(prefix.1).resnets.\(repeatStart).temporal_res_block.norm1.weight"] = [
+          timeInLayerNorm.weight.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).temporal_res_block.norm1.bias"] = [
+          timeInLayerNorm.bias.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).temporal_res_block.conv1.weight"] = [
+          timeInLayerConv2d.weight.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).temporal_res_block.conv1.bias"] = [
+          timeInLayerConv2d.bias.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).temporal_res_block.time_emb_proj.weight"] = [
+          timeEmbLayer.weight.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).temporal_res_block.time_emb_proj.bias"] = [
+          timeEmbLayer.bias.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).temporal_res_block.norm2.weight"] = [
+          timeOutLayerNorm.weight.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).temporal_res_block.norm2.bias"] = [
+          timeOutLayerNorm.bias.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).temporal_res_block.conv2.weight"] = [
+          timeOutLayerConv2d.weight.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).temporal_res_block.conv2.bias"] = [
+          timeOutLayerConv2d.bias.name
+        ]
+        mapping["\(prefix.1).resnets.\(repeatStart).time_mixer.mix_factor"] = [
+          mixFactor.weight.name
+        ]
+      } else {
+        mapping["\(prefix.1).resnets.\(repeatStart).norm1.weight"] = [inLayerNorm.weight.name]
+        mapping["\(prefix.1).resnets.\(repeatStart).norm1.bias"] = [inLayerNorm.bias.name]
+        mapping["\(prefix.1).resnets.\(repeatStart).conv1.weight"] = [inLayerConv2d.weight.name]
+        mapping["\(prefix.1).resnets.\(repeatStart).conv1.bias"] = [inLayerConv2d.bias.name]
+        mapping["\(prefix.1).resnets.\(repeatStart).time_emb_proj.weight"] = [embLayer.weight.name]
+        mapping["\(prefix.1).resnets.\(repeatStart).time_emb_proj.bias"] = [embLayer.bias.name]
+        mapping["\(prefix.1).resnets.\(repeatStart).norm2.weight"] = [outLayerNorm.weight.name]
+        mapping["\(prefix.1).resnets.\(repeatStart).norm2.bias"] = [outLayerNorm.bias.name]
+        mapping["\(prefix.1).resnets.\(repeatStart).conv2.weight"] = [outLayerConv2d.weight.name]
+        mapping["\(prefix.1).resnets.\(repeatStart).conv2.bias"] = [outLayerConv2d.bias.name]
+        if let skipModel = skipModel {
+          mapping["\(prefix.1).resnets.\(repeatStart).conv_shortcut.weight"] = [
+            skipModel.weight.name
+          ]
+          mapping["\(prefix.1).resnets.\(repeatStart).conv_shortcut.bias"] = [skipModel.bias.name]
+        }
       }
     }
     return mapping
@@ -1146,13 +1375,28 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let (inLayerNorm1, inLayerConv2d1, embLayer1, outLayerNorm1, outLayerConv2d1, _, resBlock1) =
     ResBlock(b: batchSize, outChannels: channels, skipConnection: false)
   var out = resBlock1(x, emb)
+  let timeInLayerNorm1: Model?
+  let timeInLayerConv2d1: Model?
+  let timeEmbLayer1: Model?
+  let timeOutLayerNorm1: Model?
+  let timeOutLayerConv2d1: Model?
+  let mixFactor1: Model?
   if isTemporalMixEnabled {
-    let (
-      _, _, _, _, _,
+    let timeResBlock1: Model
+    (
+      timeInLayerNorm1, timeInLayerConv2d1, timeEmbLayer1, timeOutLayerNorm1, timeOutLayerConv2d1,
       timeResBlock1
     ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels)
-    let mixFactor1 = Parameter<FloatType>(.GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
-    out = mixFactor1 .* out + (1 - mixFactor1) .* timeResBlock1(out, emb)
+    let mix = Parameter<FloatType>(.GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
+    out = mix .* out + (1 - mix) .* timeResBlock1(out, emb)
+    mixFactor1 = mix
+  } else {
+    timeInLayerNorm1 = nil
+    timeInLayerConv2d1 = nil
+    timeEmbLayer1 = nil
+    timeOutLayerNorm1 = nil
+    timeOutLayerConv2d1 = nil
+    mixFactor1 = nil
   }
   var kvs: [Input]
   if embeddingLength.0 == 1 && embeddingLength.1 == 1 {
@@ -1167,6 +1411,12 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let embLayer2: Model?
   let outLayerNorm2: Model?
   let outLayerConv2d2: Model?
+  let timeInLayerNorm2: Model?
+  let timeInLayerConv2d2: Model?
+  let timeEmbLayer2: Model?
+  let timeOutLayerNorm2: Model?
+  let timeOutLayerConv2d2: Model?
+  let mixFactor2: Model?
   if attentionBlock > 0 {
     if isTemporalMixEnabled {
       if embeddingLength.0 == 1 && embeddingLength.1 == 1 {
@@ -1190,12 +1440,21 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
       ResBlock(b: batchSize, outChannels: channels, skipConnection: false)
     out = resBlock2(out, emb)
     if isTemporalMixEnabled {
-      let (
-        _, _, _, _, _,
+      let timeResBlock2: Model
+      (
+        timeInLayerNorm2, timeInLayerConv2d2, timeEmbLayer2, timeOutLayerNorm2, timeOutLayerConv2d2,
         timeResBlock2
       ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels)
-      let mixFactor2 = Parameter<FloatType>(.GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
-      out = mixFactor2 .* out + (1 - mixFactor2) .* timeResBlock2(out, emb)
+      let mix = Parameter<FloatType>(.GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
+      out = mix .* out + (1 - mix) .* timeResBlock2(out, emb)
+      mixFactor2 = mix
+    } else {
+      timeInLayerNorm2 = nil
+      timeInLayerConv2d2 = nil
+      timeEmbLayer2 = nil
+      timeOutLayerNorm2 = nil
+      timeOutLayerConv2d2 = nil
+      mixFactor2 = nil
     }
   } else {
     if retainingNormProjInProjOutAndSecondResNetWhenNoAttentionBlocks {
@@ -1214,13 +1473,22 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
         ResBlock(b: batchSize, outChannels: channels, skipConnection: false)
       out = resBlock2(out, emb)
       if isTemporalMixEnabled {
-        let (
-          _, _, _, _, _,
-          timeResBlock2
+        let timeResBlock2: Model
+        (
+          timeInLayerNorm2, timeInLayerConv2d2, timeEmbLayer2, timeOutLayerNorm2,
+          timeOutLayerConv2d2, timeResBlock2
         ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels)
-        let mixFactor2 = Parameter<FloatType>(
+        let mix = Parameter<FloatType>(
           .GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
-        out = mixFactor2 .* out + (1 - mixFactor2) .* timeResBlock2(out, emb)
+        out = mix .* out + (1 - mix) .* timeResBlock2(out, emb)
+        mixFactor2 = mix
+      } else {
+        timeInLayerNorm2 = nil
+        timeInLayerConv2d2 = nil
+        timeEmbLayer2 = nil
+        timeOutLayerNorm2 = nil
+        timeOutLayerConv2d2 = nil
+        mixFactor2 = nil
       }
     } else {
       transformerReader = nil
@@ -1230,6 +1498,12 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
       embLayer2 = nil
       outLayerNorm2 = nil
       outLayerConv2d2 = nil
+      timeInLayerNorm2 = nil
+      timeInLayerConv2d2 = nil
+      timeEmbLayer2 = nil
+      timeOutLayerNorm2 = nil
+      timeOutLayerConv2d2 = nil
+      mixFactor2 = nil
     }
   }
   let reader: PythonReader = { stateDict, archive in
@@ -1300,6 +1574,102 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
     }
     try outLayerConv2d1.weight.copy(from: out_layers_0_3_weight, zip: archive, of: FloatType.self)
     try outLayerConv2d1.bias.copy(from: out_layers_0_3_bias, zip: archive, of: FloatType.self)
+    if let timeInLayerNorm1 = timeInLayerNorm1, let timeInLayerConv2d1 = timeInLayerConv2d1,
+      let timeEmbLayer1 = timeEmbLayer1, let timeOutLayerNorm1 = timeOutLayerNorm1,
+      let timeOutLayerConv2d1 = timeOutLayerConv2d1, let mixFactor1 = mixFactor1
+    {
+      guard
+        let time_stack_in_layers_0_0_weight = stateDict[
+          "\(prefix).middle_block.0.time_stack.in_layers.0.weight"]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard
+        let time_stack_in_layers_0_0_bias = stateDict[
+          "\(prefix).middle_block.0.time_stack.in_layers.0.bias"]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      try timeInLayerNorm1.weight.copy(
+        from: time_stack_in_layers_0_0_weight, zip: archive, of: FloatType.self)
+      try timeInLayerNorm1.bias.copy(
+        from: time_stack_in_layers_0_0_bias, zip: archive, of: FloatType.self)
+      guard
+        let time_stack_in_layers_0_2_weight = stateDict[
+          "\(prefix).middle_block.0.time_stack.in_layers.2.weight"]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard
+        let time_stack_in_layers_0_2_bias = stateDict[
+          "\(prefix).middle_block.0.time_stack.in_layers.2.bias"]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      try timeInLayerConv2d1.weight.copy(
+        from: time_stack_in_layers_0_2_weight, zip: archive, of: FloatType.self)
+      try timeInLayerConv2d1.bias.copy(
+        from: time_stack_in_layers_0_2_bias, zip: archive, of: FloatType.self)
+      guard
+        let time_stack_emb_layers_0_1_weight = stateDict[
+          "\(prefix).middle_block.0.time_stack.emb_layers.1.weight"]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard
+        let time_stack_emb_layers_0_1_bias = stateDict[
+          "\(prefix).middle_block.0.time_stack.emb_layers.1.bias"]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      try timeEmbLayer1.weight.copy(
+        from: time_stack_emb_layers_0_1_weight, zip: archive, of: FloatType.self)
+      try timeEmbLayer1.bias.copy(
+        from: time_stack_emb_layers_0_1_bias, zip: archive, of: FloatType.self)
+      guard
+        let time_stack_out_layers_0_0_weight = stateDict[
+          "\(prefix).middle_block.0.time_stack.out_layers.0.weight"]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard
+        let time_stack_out_layers_0_0_bias = stateDict[
+          "\(prefix).middle_block.0.time_stack.out_layers.0.bias"
+        ]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      try timeOutLayerNorm1.weight.copy(
+        from: time_stack_out_layers_0_0_weight, zip: archive, of: FloatType.self)
+      try timeOutLayerNorm1.bias.copy(
+        from: time_stack_out_layers_0_0_bias, zip: archive, of: FloatType.self)
+      guard
+        let time_stack_out_layers_0_3_weight = stateDict[
+          "\(prefix).middle_block.0.time_stack.out_layers.3.weight"]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard
+        let time_stack_out_layers_0_3_bias = stateDict[
+          "\(prefix).middle_block.0.time_stack.out_layers.3.bias"]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      try timeOutLayerConv2d1.weight.copy(
+        from: time_stack_out_layers_0_3_weight, zip: archive, of: FloatType.self)
+      try timeOutLayerConv2d1.bias.copy(
+        from: time_stack_out_layers_0_3_bias, zip: archive, of: FloatType.self)
+      guard let mix_factor = stateDict["\(prefix).middle_block.0.time_mixer.mix_factor"] else {
+        throw UnpickleError.tensorNotFound
+      }
+      // Apply sigmod when loading the mix factor.
+      try archive.with(mix_factor) {
+        var tensor = Tensor<Float>(from: $0).toCPU()
+        // Sigmoid.
+        tensor[0] = 1.0 / (1.0 + expf(-tensor[0]))
+        mixFactor1.weight.copy(from: Tensor<FloatType>(from: tensor))
+      }
+    }
     try transformerReader?(stateDict, archive)
     if let inLayerNorm2 = inLayerNorm2, let inLayerConv2d2 = inLayerConv2d2,
       let embLayer2 = embLayer2, let outLayerNorm2 = outLayerNorm2,
@@ -1372,6 +1742,102 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
       }
       try outLayerConv2d2.weight.copy(from: out_layers_2_3_weight, zip: archive, of: FloatType.self)
       try outLayerConv2d2.bias.copy(from: out_layers_2_3_bias, zip: archive, of: FloatType.self)
+      if let timeInLayerNorm2 = timeInLayerNorm2, let timeInLayerConv2d2 = timeInLayerConv2d2,
+        let timeEmbLayer2 = timeEmbLayer2, let timeOutLayerNorm2 = timeOutLayerNorm2,
+        let timeOutLayerConv2d2 = timeOutLayerConv2d2, let mixFactor2 = mixFactor2
+      {
+        guard
+          let time_stack_in_layers_2_0_weight = stateDict[
+            "\(prefix).middle_block.2.time_stack.in_layers.0.weight"]
+        else {
+          throw UnpickleError.tensorNotFound
+        }
+        guard
+          let time_stack_in_layers_2_0_bias = stateDict[
+            "\(prefix).middle_block.2.time_stack.in_layers.0.bias"]
+        else {
+          throw UnpickleError.tensorNotFound
+        }
+        try timeInLayerNorm2.weight.copy(
+          from: time_stack_in_layers_2_0_weight, zip: archive, of: FloatType.self)
+        try timeInLayerNorm2.bias.copy(
+          from: time_stack_in_layers_2_0_bias, zip: archive, of: FloatType.self)
+        guard
+          let time_stack_in_layers_2_2_weight = stateDict[
+            "\(prefix).middle_block.2.time_stack.in_layers.2.weight"]
+        else {
+          throw UnpickleError.tensorNotFound
+        }
+        guard
+          let time_stack_in_layers_2_2_bias = stateDict[
+            "\(prefix).middle_block.2.time_stack.in_layers.2.bias"]
+        else {
+          throw UnpickleError.tensorNotFound
+        }
+        try timeInLayerConv2d2.weight.copy(
+          from: time_stack_in_layers_2_2_weight, zip: archive, of: FloatType.self)
+        try timeInLayerConv2d2.bias.copy(
+          from: time_stack_in_layers_2_2_bias, zip: archive, of: FloatType.self)
+        guard
+          let time_stack_emb_layers_2_1_weight = stateDict[
+            "\(prefix).middle_block.2.time_stack.emb_layers.1.weight"]
+        else {
+          throw UnpickleError.tensorNotFound
+        }
+        guard
+          let time_stack_emb_layers_2_1_bias = stateDict[
+            "\(prefix).middle_block.2.time_stack.emb_layers.1.bias"]
+        else {
+          throw UnpickleError.tensorNotFound
+        }
+        try timeEmbLayer2.weight.copy(
+          from: time_stack_emb_layers_2_1_weight, zip: archive, of: FloatType.self)
+        try timeEmbLayer2.bias.copy(
+          from: time_stack_emb_layers_2_1_bias, zip: archive, of: FloatType.self)
+        guard
+          let time_stack_out_layers_2_0_weight = stateDict[
+            "\(prefix).middle_block.2.time_stack.out_layers.0.weight"]
+        else {
+          throw UnpickleError.tensorNotFound
+        }
+        guard
+          let time_stack_out_layers_2_0_bias = stateDict[
+            "\(prefix).middle_block.2.time_stack.out_layers.0.bias"
+          ]
+        else {
+          throw UnpickleError.tensorNotFound
+        }
+        try timeOutLayerNorm2.weight.copy(
+          from: time_stack_out_layers_2_0_weight, zip: archive, of: FloatType.self)
+        try timeOutLayerNorm2.bias.copy(
+          from: time_stack_out_layers_2_0_bias, zip: archive, of: FloatType.self)
+        guard
+          let time_stack_out_layers_2_3_weight = stateDict[
+            "\(prefix).middle_block.2.time_stack.out_layers.3.weight"]
+        else {
+          throw UnpickleError.tensorNotFound
+        }
+        guard
+          let time_stack_out_layers_2_3_bias = stateDict[
+            "\(prefix).middle_block.2.time_stack.out_layers.3.bias"]
+        else {
+          throw UnpickleError.tensorNotFound
+        }
+        try timeOutLayerConv2d2.weight.copy(
+          from: time_stack_out_layers_2_3_weight, zip: archive, of: FloatType.self)
+        try timeOutLayerConv2d2.bias.copy(
+          from: time_stack_out_layers_2_3_bias, zip: archive, of: FloatType.self)
+        guard let mix_factor = stateDict["\(prefix).middle_block.2.time_mixer.mix_factor"] else {
+          throw UnpickleError.tensorNotFound
+        }
+        // Apply sigmod when loading the mix factor.
+        try archive.with(mix_factor) {
+          var tensor = Tensor<Float>(from: $0).toCPU()
+          // Sigmoid.
+          tensor[0] = 1.0 / (1.0 + expf(-tensor[0]))
+          mixFactor2.weight.copy(from: Tensor<FloatType>(from: tensor))
+        }
+      }
     }
   }
   let mapper: ModelWeightMapper = { format in
@@ -1391,6 +1857,40 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
       mapping["\(prefix).middle_block.0.out_layers.0.bias"] = [outLayerNorm1.bias.name]
       mapping["\(prefix).middle_block.0.out_layers.3.weight"] = [outLayerConv2d1.weight.name]
       mapping["\(prefix).middle_block.0.out_layers.3.bias"] = [outLayerConv2d1.bias.name]
+      if let timeInLayerNorm1 = timeInLayerNorm1, let timeInLayerConv2d1 = timeInLayerConv2d1,
+        let timeEmbLayer1 = timeEmbLayer1, let timeOutLayerNorm1 = timeOutLayerNorm1,
+        let timeOutLayerConv2d1 = timeOutLayerConv2d1, let mixFactor1 = mixFactor1
+      {
+        mapping["\(prefix).middle_block.0.time_stack.in_layers.0.weight"] = [
+          timeInLayerNorm1.weight.name
+        ]
+        mapping["\(prefix).middle_block.0.time_stack.in_layers.0.bias"] = [
+          timeInLayerNorm1.bias.name
+        ]
+        mapping["\(prefix).middle_block.0.time_stack.in_layers.2.weight"] = [
+          timeInLayerConv2d1.weight.name
+        ]
+        mapping["\(prefix).middle_block.0.time_stack.in_layers.2.bias"] = [
+          timeInLayerConv2d1.bias.name
+        ]
+        mapping["\(prefix).middle_block.0.time_stack.emb_layers.1.weight"] = [
+          timeEmbLayer1.weight.name
+        ]
+        mapping["\(prefix).middle_block.0.time_stack.emb_layers.1.bias"] = [timeEmbLayer1.bias.name]
+        mapping["\(prefix).middle_block.0.time_stack.out_layers.0.weight"] = [
+          timeOutLayerNorm1.weight.name
+        ]
+        mapping["\(prefix).middle_block.0.time_stack.out_layers.0.bias"] = [
+          timeOutLayerNorm1.bias.name
+        ]
+        mapping["\(prefix).middle_block.0.time_stack.out_layers.3.weight"] = [
+          timeOutLayerConv2d1.weight.name
+        ]
+        mapping["\(prefix).middle_block.0.time_stack.out_layers.3.bias"] = [
+          timeOutLayerConv2d1.bias.name
+        ]
+        mapping["\(prefix).middle_block.0.time_mixer.mix_factor"] = [mixFactor1.weight.name]
+      }
       if let inLayerNorm2 = inLayerNorm2, let inLayerConv2d2 = inLayerConv2d2,
         let embLayer2 = embLayer2, let outLayerNorm2 = outLayerNorm2,
         let outLayerConv2d2 = outLayerConv2d2
@@ -1405,18 +1905,101 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
         mapping["\(prefix).middle_block.2.out_layers.0.bias"] = [outLayerNorm2.bias.name]
         mapping["\(prefix).middle_block.2.out_layers.3.weight"] = [outLayerConv2d2.weight.name]
         mapping["\(prefix).middle_block.2.out_layers.3.bias"] = [outLayerConv2d2.bias.name]
+        if let timeInLayerNorm2 = timeInLayerNorm2, let timeInLayerConv2d2 = timeInLayerConv2d2,
+          let timeEmbLayer2 = timeEmbLayer2, let timeOutLayerNorm2 = timeOutLayerNorm2,
+          let timeOutLayerConv2d2 = timeOutLayerConv2d2, let mixFactor2 = mixFactor2
+        {
+          mapping["\(prefix).middle_block.2.time_stack.in_layers.0.weight"] = [
+            timeInLayerNorm2.weight.name
+          ]
+          mapping["\(prefix).middle_block.2.time_stack.in_layers.0.bias"] = [
+            timeInLayerNorm2.bias.name
+          ]
+          mapping["\(prefix).middle_block.2.time_stack.in_layers.2.weight"] = [
+            timeInLayerConv2d2.weight.name
+          ]
+          mapping["\(prefix).middle_block.2.time_stack.in_layers.2.bias"] = [
+            timeInLayerConv2d2.bias.name
+          ]
+          mapping["\(prefix).middle_block.2.time_stack.emb_layers.1.weight"] = [
+            timeEmbLayer2.weight.name
+          ]
+          mapping["\(prefix).middle_block.2.time_stack.emb_layers.1.bias"] = [
+            timeEmbLayer2.bias.name
+          ]
+          mapping["\(prefix).middle_block.2.time_stack.out_layers.0.weight"] = [
+            timeOutLayerNorm2.weight.name
+          ]
+          mapping["\(prefix).middle_block.2.time_stack.out_layers.0.bias"] = [
+            timeOutLayerNorm2.bias.name
+          ]
+          mapping["\(prefix).middle_block.2.time_stack.out_layers.3.weight"] = [
+            timeOutLayerConv2d2.weight.name
+          ]
+          mapping["\(prefix).middle_block.2.time_stack.out_layers.3.bias"] = [
+            timeOutLayerConv2d2.bias.name
+          ]
+          mapping["\(prefix).middle_block.2.time_mixer.mix_factor"] = [mixFactor2.weight.name]
+        }
       }
     case .diffusers:
-      mapping["mid_block.resnets.0.norm1.weight"] = [inLayerNorm1.weight.name]
-      mapping["mid_block.resnets.0.norm1.bias"] = [inLayerNorm1.bias.name]
-      mapping["mid_block.resnets.0.conv1.weight"] = [inLayerConv2d1.weight.name]
-      mapping["mid_block.resnets.0.conv1.bias"] = [inLayerConv2d1.bias.name]
-      mapping["mid_block.resnets.0.time_emb_proj.weight"] = [embLayer1.weight.name]
-      mapping["mid_block.resnets.0.time_emb_proj.bias"] = [embLayer1.bias.name]
-      mapping["mid_block.resnets.0.norm2.weight"] = [outLayerNorm1.weight.name]
-      mapping["mid_block.resnets.0.norm2.bias"] = [outLayerNorm1.bias.name]
-      mapping["mid_block.resnets.0.conv2.weight"] = [outLayerConv2d1.weight.name]
-      mapping["mid_block.resnets.0.conv2.bias"] = [outLayerConv2d1.bias.name]
+      if let timeInLayerNorm1 = timeInLayerNorm1, let timeInLayerConv2d1 = timeInLayerConv2d1,
+        let timeEmbLayer1 = timeEmbLayer1, let timeOutLayerNorm1 = timeOutLayerNorm1,
+        let timeOutLayerConv2d1 = timeOutLayerConv2d1, let mixFactor1 = mixFactor1
+      {
+        mapping["mid_block.resnets.0.spatial_res_block.norm1.weight"] = [inLayerNorm1.weight.name]
+        mapping["mid_block.resnets.0.spatial_res_block.norm1.bias"] = [inLayerNorm1.bias.name]
+        mapping["mid_block.resnets.0.spatial_res_block.conv1.weight"] = [inLayerConv2d1.weight.name]
+        mapping["mid_block.resnets.0.spatial_res_block.conv1.bias"] = [inLayerConv2d1.bias.name]
+        mapping["mid_block.resnets.0.spatial_res_block.time_emb_proj.weight"] = [
+          embLayer1.weight.name
+        ]
+        mapping["mid_block.resnets.0.spatial_res_block.time_emb_proj.bias"] = [embLayer1.bias.name]
+        mapping["mid_block.resnets.0.spatial_res_block.norm2.weight"] = [outLayerNorm1.weight.name]
+        mapping["mid_block.resnets.0.spatial_res_block.norm2.bias"] = [outLayerNorm1.bias.name]
+        mapping["mid_block.resnets.0.spatial_res_block.conv2.weight"] = [
+          outLayerConv2d1.weight.name
+        ]
+        mapping["mid_block.resnets.0.spatial_res_block.conv2.bias"] = [outLayerConv2d1.bias.name]
+        mapping["mid_block.resnets.0.temporal_res_block.norm1.weight"] = [
+          timeInLayerNorm1.weight.name
+        ]
+        mapping["mid_block.resnets.0.temporal_res_block.norm1.bias"] = [timeInLayerNorm1.bias.name]
+        mapping["mid_block.resnets.0.temporal_res_block.conv1.weight"] = [
+          timeInLayerConv2d1.weight.name
+        ]
+        mapping["mid_block.resnets.0.temporal_res_block.conv1.bias"] = [
+          timeInLayerConv2d1.bias.name
+        ]
+        mapping["mid_block.resnets.0.temporal_res_block.time_emb_proj.weight"] = [
+          timeEmbLayer1.weight.name
+        ]
+        mapping["mid_block.resnets.0.temporal_res_block.time_emb_proj.bias"] = [
+          timeEmbLayer1.bias.name
+        ]
+        mapping["mid_block.resnets.0.temporal_res_block.norm2.weight"] = [
+          timeOutLayerNorm1.weight.name
+        ]
+        mapping["mid_block.resnets.0.temporal_res_block.norm2.bias"] = [timeOutLayerNorm1.bias.name]
+        mapping["mid_block.resnets.0.temporal_res_block.conv2.weight"] = [
+          timeOutLayerConv2d1.weight.name
+        ]
+        mapping["mid_block.resnets.0.temporal_res_block.conv2.bias"] = [
+          timeOutLayerConv2d1.bias.name
+        ]
+        mapping["mid_block.resnets.0.time_mixer.mix_factor"] = [mixFactor1.weight.name]
+      } else {
+        mapping["mid_block.resnets.0.norm1.weight"] = [inLayerNorm1.weight.name]
+        mapping["mid_block.resnets.0.norm1.bias"] = [inLayerNorm1.bias.name]
+        mapping["mid_block.resnets.0.conv1.weight"] = [inLayerConv2d1.weight.name]
+        mapping["mid_block.resnets.0.conv1.bias"] = [inLayerConv2d1.bias.name]
+        mapping["mid_block.resnets.0.time_emb_proj.weight"] = [embLayer1.weight.name]
+        mapping["mid_block.resnets.0.time_emb_proj.bias"] = [embLayer1.bias.name]
+        mapping["mid_block.resnets.0.norm2.weight"] = [outLayerNorm1.weight.name]
+        mapping["mid_block.resnets.0.norm2.bias"] = [outLayerNorm1.bias.name]
+        mapping["mid_block.resnets.0.conv2.weight"] = [outLayerConv2d1.weight.name]
+        mapping["mid_block.resnets.0.conv2.bias"] = [outLayerConv2d1.bias.name]
+      }
       if let inLayerNorm2 = inLayerNorm2, let inLayerConv2d2 = inLayerConv2d2,
         let embLayer2 = embLayer2, let outLayerNorm2 = outLayerNorm2,
         let outLayerConv2d2 = outLayerConv2d2
@@ -1431,6 +2014,73 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
         mapping["mid_block.resnets.1.norm2.bias"] = [outLayerNorm2.bias.name]
         mapping["mid_block.resnets.1.conv2.weight"] = [outLayerConv2d2.weight.name]
         mapping["mid_block.resnets.1.conv2.bias"] = [outLayerConv2d2.bias.name]
+        if let timeInLayerNorm2 = timeInLayerNorm2, let timeInLayerConv2d2 = timeInLayerConv2d2,
+          let timeEmbLayer2 = timeEmbLayer2, let timeOutLayerNorm2 = timeOutLayerNorm2,
+          let timeOutLayerConv2d2 = timeOutLayerConv2d2, let mixFactor2 = mixFactor2
+        {
+          mapping["mid_block.resnets.1.spatial_res_block.norm1.weight"] = [inLayerNorm2.weight.name]
+          mapping["mid_block.resnets.1.spatial_res_block.norm1.bias"] = [inLayerNorm2.bias.name]
+          mapping["mid_block.resnets.1.spatial_res_block.conv1.weight"] = [
+            inLayerConv2d2.weight.name
+          ]
+          mapping["mid_block.resnets.1.spatial_res_block.conv1.bias"] = [inLayerConv2d2.bias.name]
+          mapping["mid_block.resnets.1.spatial_res_block.time_emb_proj.weight"] = [
+            embLayer2.weight.name
+          ]
+          mapping["mid_block.resnets.1.spatial_res_block.time_emb_proj.bias"] = [
+            embLayer2.bias.name
+          ]
+          mapping["mid_block.resnets.1.spatial_res_block.norm2.weight"] = [
+            outLayerNorm2.weight.name
+          ]
+          mapping["mid_block.resnets.1.spatial_res_block.norm2.bias"] = [outLayerNorm2.bias.name]
+          mapping["mid_block.resnets.1.spatial_res_block.conv2.weight"] = [
+            outLayerConv2d2.weight.name
+          ]
+          mapping["mid_block.resnets.1.spatial_res_block.conv2.bias"] = [outLayerConv2d2.bias.name]
+          mapping["mid_block.resnets.1.temporal_res_block.norm1.weight"] = [
+            timeInLayerNorm2.weight.name
+          ]
+          mapping["mid_block.resnets.1.temporal_res_block.norm1.bias"] = [
+            timeInLayerNorm2.bias.name
+          ]
+          mapping["mid_block.resnets.1.temporal_res_block.conv1.weight"] = [
+            timeInLayerConv2d2.weight.name
+          ]
+          mapping["mid_block.resnets.1.temporal_res_block.conv1.bias"] = [
+            timeInLayerConv2d2.bias.name
+          ]
+          mapping["mid_block.resnets.1.temporal_res_block.time_emb_proj.weight"] = [
+            timeEmbLayer2.weight.name
+          ]
+          mapping["mid_block.resnets.1.temporal_res_block.time_emb_proj.bias"] = [
+            timeEmbLayer2.bias.name
+          ]
+          mapping["mid_block.resnets.1.temporal_res_block.norm2.weight"] = [
+            timeOutLayerNorm2.weight.name
+          ]
+          mapping["mid_block.resnets.1.temporal_res_block.norm2.bias"] = [
+            timeOutLayerNorm2.bias.name
+          ]
+          mapping["mid_block.resnets.1.temporal_res_block.conv2.weight"] = [
+            timeOutLayerConv2d2.weight.name
+          ]
+          mapping["mid_block.resnets.1.temporal_res_block.conv2.bias"] = [
+            timeOutLayerConv2d2.bias.name
+          ]
+          mapping["mid_block.resnets.1.time_mixer.mix_factor"] = [mixFactor2.weight.name]
+        } else {
+          mapping["mid_block.resnets.1.norm1.weight"] = [inLayerNorm2.weight.name]
+          mapping["mid_block.resnets.1.norm1.bias"] = [inLayerNorm2.bias.name]
+          mapping["mid_block.resnets.1.conv1.weight"] = [inLayerConv2d2.weight.name]
+          mapping["mid_block.resnets.1.conv1.bias"] = [inLayerConv2d2.bias.name]
+          mapping["mid_block.resnets.1.time_emb_proj.weight"] = [embLayer2.weight.name]
+          mapping["mid_block.resnets.1.time_emb_proj.bias"] = [embLayer2.bias.name]
+          mapping["mid_block.resnets.1.norm2.weight"] = [outLayerNorm2.weight.name]
+          mapping["mid_block.resnets.1.norm2.bias"] = [outLayerNorm2.bias.name]
+          mapping["mid_block.resnets.1.conv2.weight"] = [outLayerConv2d2.weight.name]
+          mapping["mid_block.resnets.1.conv2.bias"] = [outLayerConv2d2.bias.name]
+        }
       }
     }
     return mapping
@@ -1979,7 +2629,7 @@ func BasicTransformerBlockFixed(
 
 func TimePosEmbedTransformerBlockFixed(
   prefix: (String, String), k: Int, h: Int
-) -> (PythonReader, Model) {
+) -> (PythonReader, ModelWeightMapper, Model) {
   let (timePosFc0, timePosFc2, timePosEmbed) = TimePosEmbed(modelChannels: k * h)
   let reader: PythonReader = { stateDict, archive in
     guard
@@ -2015,13 +2665,29 @@ func TimePosEmbedTransformerBlockFixed(
     try timePosFc2.weight.copy(from: time_pos_embed_2_weight, zip: archive, of: FloatType.self)
     try timePosFc2.bias.copy(from: time_pos_embed_2_bias, zip: archive, of: FloatType.self)
   }
-  return (reader, timePosEmbed)
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    switch format {
+    case .generativeModels:
+      mapping["\(prefix.0).time_pos_embed.0.weight"] = [timePosFc0.weight.name]
+      mapping["\(prefix.0).time_pos_embed.0.bias"] = [timePosFc0.bias.name]
+      mapping["\(prefix.0).time_pos_embed.2.weight"] = [timePosFc2.weight.name]
+      mapping["\(prefix.0).time_pos_embed.2.bias"] = [timePosFc2.bias.name]
+    case .diffusers:
+      mapping["\(prefix.1).time_pos_embed.linear_1.weight"] = [timePosFc0.weight.name]
+      mapping["\(prefix.1).time_pos_embed.linear_1.bias"] = [timePosFc0.bias.name]
+      mapping["\(prefix.1).time_pos_embed.linear_2.weight"] = [timePosFc2.weight.name]
+      mapping["\(prefix.1).time_pos_embed.linear_2.bias"] = [timePosFc2.bias.name]
+    }
+    return mapping
+  }
+  return (reader, mapper, timePosEmbed)
 }
 
 func BasicTimeTransformerBlockFixed(
   prefix: (String, String), k: Int, h: Int, b: Int, t: (Int, Int), intermediateSize: Int,
   usesFlashAttention: FlashAttentionLevel
-) -> (PythonReader, Model) {
+) -> (PythonReader, ModelWeightMapper, Model) {
   if t.0 == 1 && t.1 == 1 {
     let (tovalues2, unifyheads2, attn2) = Attention1Fixed(
       k: k, h: h, b: b, t: t, name: "time_stack")
@@ -2051,7 +2717,21 @@ func BasicTimeTransformerBlockFixed(
       try unifyheads2.weight.copy(from: attn2_to_out_weight, zip: archive, of: FloatType.self)
       try unifyheads2.bias.copy(from: attn2_to_out_bias, zip: archive, of: FloatType.self)
     }
-    return (reader, attn2)
+    let mapper: ModelWeightMapper = { format in
+      var mapping = [String: [String]]()
+      switch format {
+      case .generativeModels:
+        mapping["\(prefix.0).attn2.to_v.weight"] = [tovalues2.weight.name]
+        mapping["\(prefix.0).attn2.to_out.0.weight"] = [unifyheads2.weight.name]
+        mapping["\(prefix.0).attn2.to_out.0.bias"] = [unifyheads2.bias.name]
+      case .diffusers:
+        mapping["\(prefix.1).attn2.to_v.weight"] = [tovalues2.weight.name]
+        mapping["\(prefix.1).attn2.to_out.0.weight"] = [unifyheads2.weight.name]
+        mapping["\(prefix.1).attn2.to_out.0.bias"] = [unifyheads2.bias.name]
+      }
+      return mapping
+    }
+    return (reader, mapper, attn2)
   } else {
     let (tokeys2, tovalues2, attn2) = CrossAttentionFixed(
       k: k, h: h, b: b, t: t, usesFlashAttention: usesFlashAttention, name: "time_stack")
@@ -2073,7 +2753,19 @@ func BasicTimeTransformerBlockFixed(
       }
       try tovalues2.weight.copy(from: attn2_to_v_weight, zip: archive, of: FloatType.self)
     }
-    return (reader, attn2)
+    let mapper: ModelWeightMapper = { format in
+      var mapping = [String: [String]]()
+      switch format {
+      case .generativeModels:
+        mapping["\(prefix.0).attn2.to_k.weight"] = [tokeys2.weight.name]
+        mapping["\(prefix.0).attn2.to_v.weight"] = [tovalues2.weight.name]
+      case .diffusers:
+        mapping["\(prefix.1).attn2.to_k.weight"] = [tokeys2.weight.name]
+        mapping["\(prefix.1).attn2.to_v.weight"] = [tovalues2.weight.name]
+      }
+      return mapping
+    }
+    return (reader, mapper, attn2)
   }
 }
 
@@ -2089,9 +2781,11 @@ func SpatialTransformerFixed(
   var mappers = [ModelWeightMapper]()
   if isTemporalMixEnabled {
     let frames = Input()
-    let (_, timePosEmbed) = TimePosEmbedTransformerBlockFixed(
+    let (reader, mapper, timePosEmbed) = TimePosEmbedTransformerBlockFixed(
       prefix: prefix, k: k, h: h)
     outs.append(timePosEmbed(frames))
+    readers.append(reader)
+    mappers.append(mapper)
     numFrames = frames
   } else {
     numFrames = nil
@@ -2105,12 +2799,14 @@ func SpatialTransformerFixed(
     readers.append(reader)
     mappers.append(mapper)
     if isTemporalMixEnabled {
-      let (timeReader, timeBlock) = BasicTimeTransformerBlockFixed(
-        prefix: ("\(prefix.0).time_stack.\(i)", "\(prefix.1).time_stack.\(i)"), k: k, h: h, b: b,
+      let (timeReader, timeMapper, timeBlock) = BasicTimeTransformerBlockFixed(
+        prefix: ("\(prefix.0).time_stack.\(i)", "\(prefix.1).temporal_transformer_blocks.\(i)"),
+        k: k, h: h, b: b,
         t: t,
         intermediateSize: intermediateSize, usesFlashAttention: usesFlashAttention)
       outs.append(timeBlock(c))
       readers.append(timeReader)
+      mappers.append(timeMapper)
     }
   }
   let reader: PythonReader = { stateDict, archive in

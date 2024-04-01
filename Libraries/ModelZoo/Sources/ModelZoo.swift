@@ -281,6 +281,8 @@ public struct ModelZoo: DownloadZoo {
     "playground_v2.5_f16.ckpt": "9a8e167526a65d5caebfd6d5163705672cfd4d201cb273d11c174e46af041b4a",
     "playground_v2.5_q6p_q8p.ckpt":
       "18ddd151c7ae188b6a0036c72bf8b7cd395479472400a3ed4d1eb8e5e65b36e3",
+    "open_clip_vit_h14_visual_proj_f16.ckpt":
+      "ef03b8ac7805d5a862db048c452c4dbbd295bd95fed0bf5dae50a6e98815d30f",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
