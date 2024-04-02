@@ -48,6 +48,10 @@ extension SamplerType: CustomStringConvertible {
       return "DPM++ SDE Substep"
     case .TCD:
       return "TCD"
+    case .eulerATrailing:
+      return "Euler A Trailing"
+    case .dPMPPSDETrailing:
+      return "DPM++ SDE Trailing"
     }
   }
 
@@ -55,11 +59,23 @@ extension SamplerType: CustomStringConvertible {
     let sampler = rawString.lowercased()
     if sampler.contains("dpm") {
       if sampler.contains("sde") {
-        self = SamplerType.dPMPPSDEKarras
+        if sampler.contains("substep") {
+          self = SamplerType.dPMPPSDESubstep
+        } else if sampler.contains("trailing") {
+          self = SamplerType.dPMPPSDETrailing
+        } else {
+          self = SamplerType.dPMPPSDEKarras
+        }
       }
       self = SamplerType.dPMPP2MKarras
     } else if sampler.contains("euler") {
-      self = SamplerType.eulerA
+      if sampler.contains("substep") {
+        self = SamplerType.eulerASubstep
+      } else if sampler.contains("trailing") {
+        self = SamplerType.eulerATrailing
+      } else {
+        self = SamplerType.eulerA
+      }
     } else if sampler.contains("unipc") {
       self = SamplerType.uniPC
     } else if sampler.contains("plms") {

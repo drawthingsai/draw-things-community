@@ -270,10 +270,15 @@ extension Denoiser {
 
 extension Denoiser {
   public struct LinearDiscretization: Discretization {
+    public enum TimestepSpacing {
+      case linspace
+      case leading
+      case trailing
+    }
     private let internalObjective: Objective
     private let internalTimesteps: Int
     private let sigmas: [Double]
-    private let isLegacy: Bool
+    private let timestepSpacing: TimestepSpacing
     private let EDMDiscretization: KarrasDiscretization?
     public let alphasCumprod: [Double]
     public var objective: Objective {
@@ -288,9 +293,9 @@ extension Denoiser {
       }
       return Float(internalTimesteps)
     }
-    init(objective: Objective, isLegacy: Bool, ddpm: Parameterization.DDPM) {
+    init(objective: Objective, timestepSpacing: TimestepSpacing, ddpm: Parameterization.DDPM) {
       self.internalObjective = objective
-      self.isLegacy = isLegacy
+      self.timestepSpacing = timestepSpacing
       internalTimesteps = ddpm.timesteps
       alphasCumprod = ddpm.alphasCumprod
       sigmas = alphasCumprod.map { ((1 - $0) / $0).squareRoot() }
@@ -302,15 +307,17 @@ extension Denoiser {
       alphasCumprod = []
       sigmas = []
       internalObjective = .edm(sigmaData: 0)
-      isLegacy = false
+      timestepSpacing = .linspace
     }
-    public init(_ parameterization: Parameterization, objective: Objective, isLegacy: Bool = false)
-    {
+    public init(
+      _ parameterization: Parameterization, objective: Objective,
+      timestepSpacing: TimestepSpacing = .linspace
+    ) {
       switch parameterization {
       case .edm(_):
         self.init(EDMDiscretization: KarrasDiscretization(parameterization, objective: objective))
       case .ddpm(let ddpm):
-        self.init(objective: objective, isLegacy: isLegacy, ddpm: ddpm)
+        self.init(objective: objective, timestepSpacing: timestepSpacing, ddpm: ddpm)
       }
     }
     public func timestep(for alphaCumprod: Double) -> Float {
@@ -339,12 +346,16 @@ extension Denoiser {
       var fixedStepAlphasCumprod = [Double]()
       for i in 0..<steps {
         let timestep: Double
-        if isLegacy {
-          // This is for DDIM the same as original stable diffusion paper.
-          timestep = Double(steps - 1 - i) / Double(steps) * Double(internalTimesteps) + 1
-        } else {
+        switch timestepSpacing {
+        case .linspace:
           // This schedule is the same for Euler A.
           timestep = Double(steps - 1 - i) / Double(steps - 1) * Double(internalTimesteps - 1)
+        case .leading:
+          // This is for DDIM the same as original stable diffusion paper.
+          timestep = Double(steps - 1 - i) / Double(steps) * Double(internalTimesteps) + 1
+        case .trailing:
+          // This is otherwise called "SGM Uniform".
+          timestep = Double(steps - i) / Double(steps) * Double(internalTimesteps) - 1
         }
         let lowIdx = Int(floor(timestep))
         let highIdx = min(lowIdx + 1, internalTimesteps - 1)
@@ -368,10 +379,12 @@ extension Denoiser {
     public var timesteps: Float { linearDiscretization.timesteps }
     public var objective: Objective { linearDiscretization.objective }
     public init(
-      _ parameterization: Parameterization, objective: Objective, manual: @escaping (Int) -> [Int]
+      _ parameterization: Parameterization, objective: Objective,
+      timestepSpacing: LinearDiscretization.TimestepSpacing = .linspace,
+      manual: @escaping (Int) -> [Int]
     ) {
       linearDiscretization = LinearDiscretization(
-        parameterization, objective: objective, isLegacy: false)
+        parameterization, objective: objective, timestepSpacing: timestepSpacing)
       self.manual = manual
     }
     public func timestep(for alphaCumprod: Double) -> Float {

@@ -8,7 +8,9 @@ enum SamplerType: byte {
   LCM,
   EulerASubstep,
   DPMPPSDESubstep,
-  TCD
+  TCD,
+  EulerATrailing,
+  DPMPPSDETrailing
 }
 
 enum SeedMode: byte {
