@@ -103,6 +103,7 @@ public enum LoRAImporter {
       }
     }
     let keys = stateDict.keys
+    // Fix for one LoRA formulation (commonly found in LyCORIS)
     for key in keys {
       guard key.hasSuffix(".lora_A.weight") || key.hasSuffix(".lora_B.weight") else { continue }
       var components = key.components(separatedBy: ".")
@@ -112,6 +113,19 @@ public enum LoRAImporter {
       }
       let newKey = components[0..<(components.count - 2)].joined(separator: "_")
       let isUp = key.hasSuffix(".lora_B.weight")
+      if isUp {
+        stateDict[newKey + ".lora_up.weight"] = stateDict[key]
+      } else {
+        stateDict[newKey + ".lora_down.weight"] = stateDict[key]
+      }
+    }
+    // Fix for another LoRA formulation (commonly found in SD-Forge, particularly, layerdiffuse).
+    for key in keys {
+      guard key.hasSuffix("::lora::0") || key.hasSuffix("::lora::1") else { continue }
+      let components = key.components(separatedBy: ".")
+      guard components.count > 2 else { continue }
+      var newKey = components[0..<(components.count - 1)].joined(separator: "_")
+      let isUp = key.hasSuffix("::lora::0")
       if isUp {
         stateDict[newKey + ".lora_up.weight"] = stateDict[key]
       } else {
