@@ -73,8 +73,8 @@ private func SelfAttention(
     if b * h <= 256 {
       var outs = [Model.IO]()
       for i in 0..<(b * h) {
-        var key = keys.reshaped([1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
-        var query = queries.reshaped([1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+        let key = keys.reshaped([1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+        let query = queries.reshaped([1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
         let value = values.reshaped([1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
         var dot = Matmul(transposeB: (1, 2))(query, key)
         if let last = outs.last {
@@ -88,8 +88,6 @@ private func SelfAttention(
       out = Concat(axis: 0)(outs)
       out = out.reshaped([b, h, hw, k]).transposed(1, 2).reshaped([b, hw, h * k])
     } else {
-      var keys = keys
-      var queries = queries
       var dot = Matmul(transposeB: (2, 3))(queries, keys)
       dot = dot.reshaped([b * h * hw, hw])
       dot = dot.softmax()
@@ -109,8 +107,8 @@ private func DownBlock2D(
   var out: Model.IO = x
   var inChannels = inChannels
   var hiddenStates = [Model.IO]()
-  for i in 0..<numRepeat {
-    let (inLayerNorm, inLayerConv2d, outLayerNorm, outLayerConv2d, skipModel, resBlock) = ResBlock(
+  for _ in 0..<numRepeat {
+    let (_, _, _, _, _, resBlock) = ResBlock(
       b: batchSize, groups: 4, outChannels: outChannels, skipConnection: inChannels != outChannels)
     out = resBlock(out)
     hiddenStates.append(out)
@@ -132,14 +130,14 @@ private func AttnDownBlock2D(
   var out: Model.IO = x
   var inChannels = inChannels
   var hiddenStates = [Model.IO]()
-  for i in 0..<numRepeat {
-    let (inLayerNorm, inLayerConv2d, outLayerNorm, outLayerConv2d, skipModel, resBlock) = ResBlock(
+  for _ in 0..<numRepeat {
+    let (_, _, _, _, _, resBlock) = ResBlock(
       b: batchSize, groups: 4, outChannels: outChannels, skipConnection: inChannels != outChannels)
     out = resBlock(out)
     let norm = GroupNorm(axis: 3, groups: 4, epsilon: 1e-5, reduce: [1, 2])
     let residual = out
     out = norm(out)
-    let (tokeys, toqueries, tovalues, unifyheads, attn) = SelfAttention(
+    let (_, _, _, _, attn) = SelfAttention(
       k: outChannels / numHeads, h: numHeads, b: batchSize, hw: startHeight * startWidth,
       usesFlashAttention: usesFlashAttention)
     out =
@@ -165,14 +163,14 @@ private func AttnUpBlock2D(
 ) -> Model.IO {
   var out: Model.IO = x
   for i in 0..<numRepeat {
-    let (inLayerNorm, inLayerConv2d, outLayerNorm, outLayerConv2d, skipModel, resBlock) = ResBlock(
+    let (_, _, _, _, _, resBlock) = ResBlock(
       b: batchSize, groups: 4, outChannels: channels, skipConnection: true)
     out = Functional.concat(axis: 3, out, hiddenStates[i])
     out = resBlock(out)
     let norm = GroupNorm(axis: 3, groups: 4, epsilon: 1e-5, reduce: [1, 2])
     let residual = out
     out = norm(out)
-    let (tokeys, toqueries, tovalues, unifyheads, attn) = SelfAttention(
+    let (_, _, _, _, attn) = SelfAttention(
       k: channels / numHeads, h: numHeads, b: batchSize, hw: startHeight * startWidth,
       usesFlashAttention: usesFlashAttention)
     out =
@@ -194,7 +192,7 @@ private func UpBlock2D(
 ) -> Model.IO {
   var out: Model.IO = x
   for i in 0..<numRepeat {
-    let (inLayerNorm, inLayerConv2d, outLayerNorm, outLayerConv2d, skipModel, resBlock) = ResBlock(
+    let (_, _, _, _, _, resBlock) = ResBlock(
       b: batchSize, groups: 4, outChannels: channels, skipConnection: true)
     out = Functional.concat(axis: 3, out, hiddenStates[i])
     out = resBlock(out)
@@ -214,20 +212,20 @@ private func MidBlock2D(
   usesFlashAttention: FlashAttentionLevel, x: Model.IO
 ) -> Model.IO {
   var out: Model.IO = x
-  let (inLayerNorm1, inLayerConv2d1, outLayerNorm1, outLayerConv2d1, _, resBlock1) = ResBlock(
+  let (_, _, _, _, _, resBlock1) = ResBlock(
     b: batchSize, groups: 4, outChannels: channels, skipConnection: false)
   out = resBlock1(out)
   let norm = GroupNorm(axis: 3, groups: 4, epsilon: 1e-5, reduce: [1, 2])
   let residual = out
   out = norm(out)
-  let (tokeys, toqueries, tovalues, unifyheads, attn) = SelfAttention(
+  let (_, _, _, _, attn) = SelfAttention(
     k: channels / numHeads, h: numHeads, b: batchSize, hw: startHeight * startWidth,
     usesFlashAttention: usesFlashAttention)
   out =
     attn(out.reshaped([batchSize, channels, startHeight * startWidth]).transposed(1, 2)).transposed(
       1, 2
     ).reshaped([batchSize, channels, startHeight, startWidth]) + residual
-  let (inLayerNorm2, inLayerConv2d2, outLayerNorm2, outLayerConv2d2, _, resBlock2) = ResBlock(
+  let (_, _, _, _, _, resBlock2) = ResBlock(
     b: batchSize, groups: 4, outChannels: channels, skipConnection: false)
   out = resBlock2(out)
   return out
