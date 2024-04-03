@@ -73,9 +73,10 @@ struct Converter: ParsableCommand {
         autoencoder = "sdxl_vae_v1.0_f16.ckpt"
       }
     case .svdI2v:
-      textEncoder = fileNames.first {
-        $0.hasSuffix("_open_clip_vit_h14_f16.ckpt")
-      } ?? "open_clip_vit_h14_vision_model_f16.ckpt"
+      textEncoder =
+        fileNames.first {
+          $0.hasSuffix("_open_clip_vit_h14_f16.ckpt")
+        } ?? "open_clip_vit_h14_vision_model_f16.ckpt"
       if clipEncoder == nil {
         clipEncoder = "open_clip_vit_h14_visual_proj_f16.ckpt"
       }
