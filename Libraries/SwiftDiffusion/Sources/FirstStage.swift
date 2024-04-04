@@ -463,7 +463,7 @@ extension FirstStage {
     // Only scale RGB channels to -1 and 1. Multiply alpha channel to create "pre-multiplied" values.
     let alpha = result[0..<1, 0..<shape[1], 0..<shape[2], 0..<1].clamped(0...1)
     result[0..<1, 0..<shape[1], 0..<shape[2], 1..<shape[3]] =
-      (result[0..<1, 0..<shape[1], 0..<shape[2], 1..<shape[3]] - 0.5) * 2 .* alpha
+      (result[0..<1, 0..<shape[1], 0..<shape[2], 1..<shape[3]].clamped(0...1) .* alpha - 0.5) * 2
     result[0..<1, 0..<shape[1], 0..<shape[2], 0..<1] = alpha
     return result
   }
