@@ -5,6 +5,9 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let version: ModelVersion
   public let highPrecision: Bool
   public let externalOnDemand: Bool
+  private let alternativeUsesFlashAttention: Bool
+  private let alternativeFilePath: String?
+  private let alternativeDecoderVersion: AlternativeDecoderVersion?
   private let latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float)
   private let highPrecisionFallback: Bool
   private let tiledDecoding: Bool
@@ -15,7 +18,8 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float),
     highPrecision: Bool, highPrecisionFallback: Bool, tiledDecoding: Bool,
     decodingTileSize: (width: Int, height: Int), decodingTileOverlap: Int,
-    externalOnDemand: Bool
+    externalOnDemand: Bool, alternativeUsesFlashAttention: Bool, alternativeFilePath: String?,
+    alternativeDecoderVersion: AlternativeDecoderVersion?
   ) {
     self.filePath = filePath
     self.version = version
@@ -26,6 +30,9 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.tiledDecoding = tiledDecoding
     self.decodingTileSize = decodingTileSize
     self.decodingTileOverlap = decodingTileOverlap
+    self.alternativeUsesFlashAttention = alternativeUsesFlashAttention
+    self.alternativeFilePath = alternativeFilePath
+    self.alternativeDecoderVersion = alternativeDecoderVersion
   }
 }
 
@@ -55,6 +62,7 @@ extension FirstStage {
       z = x / scalingFactor
     }
     let decoder: Model
+    var transparentDecoder: Model? = nil
     let isMemoryEfficient = DynamicGraph.memoryEfficient
     if version == .kandinsky21 {
       DynamicGraph.memoryEfficient = true
@@ -76,6 +84,7 @@ extension FirstStage {
     let zoomFactor: Int
     let externalData: DynamicGraph.Store.Codec =
       externalOnDemand ? .externalOnDemand : .externalData
+    let outputChannels: Int
     switch version {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
@@ -100,6 +109,33 @@ extension FirstStage {
           $0.read("decoder", model: decoder, codec: [.jit, externalData])
         }
       }
+      if let alternativeFilePath = alternativeFilePath, alternativeDecoderVersion == .transparent {
+        let decoder = TransparentVAEDecoder(
+          startHeight: startHeight * 8, startWidth: startWidth * 8,
+          usesFlashAttention: alternativeUsesFlashAttention ? .scaleMerged : .none)
+        if highPrecision {
+          let pixels = graph.variable(
+            .GPU(0), .NHWC(1, startHeight * 8, startWidth * 8, 3), of: Float.self)
+          decoder.compile(
+            inputs: pixels,
+            DynamicGraph.Tensor<Float>(
+              from: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]]))
+        } else {
+          let pixels = graph.variable(
+            .GPU(0), .NHWC(1, startHeight * 8, startWidth * 8, 3), of: FloatType.self)
+          decoder.compile(inputs: pixels, z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        }
+        graph.openStore(
+          alternativeFilePath, flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: alternativeFilePath)
+        ) {
+          $0.read("decoder", model: decoder, codec: [.jit, .ezm7, externalData])
+        }
+        transparentDecoder = decoder
+        outputChannels = 4
+      } else {
+        outputChannels = 3
+      }
       zoomFactor = 8
     case .kandinsky21:
       tiledDecoding = false
@@ -116,6 +152,7 @@ extension FirstStage {
           $0.read("movq", model: decoder, codec: [.jit, externalData])
         }
       }
+      outputChannels = 3
       zoomFactor = 8
     case .wurstchenStageC, .wurstchenStageB:
       tiledDecoding = false
@@ -130,6 +167,7 @@ extension FirstStage {
           $0.read("decoder", model: decoder, codec: [.jit, externalData])
         }
       }
+      outputChannels = 3
       zoomFactor = 4
     }
     guard batchSize > 1 else {
@@ -137,31 +175,37 @@ extension FirstStage {
         let result: DynamicGraph.Tensor<Float>
         if tiledDecoding {
           result = tiledDecode(
-            DynamicGraph.Tensor<Float>(from: z), decoder: decoder, tileSize: decodingTileSize,
-            tileOverlap: decodingTileOverlap)
+            DynamicGraph.Tensor<Float>(from: z), decoder: decoder,
+            transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
+            tileOverlap: decodingTileOverlap, outputChannels: outputChannels)
         } else {
-          result = decoder(inputs: DynamicGraph.Tensor<Float>(from: z))[0].as(of: Float.self)
+          result = internalDecode(
+            DynamicGraph.Tensor<Float>(from: z), decoder: decoder,
+            transparentDecoder: transparentDecoder)
         }
         let shape = result.shape
         return (
           DynamicGraph.Tensor<FloatType>(
-            from: result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<3]),
+            from: result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<outputChannels]),
           decoder
         )
       } else {
         let result: DynamicGraph.Tensor<FloatType>
         if tiledDecoding {
           result = tiledDecode(
-            z, decoder: decoder, tileSize: decodingTileSize, tileOverlap: decodingTileOverlap)
+            z, decoder: decoder, transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
+            tileOverlap: decodingTileOverlap, outputChannels: outputChannels)
         } else {
-          result = decoder(inputs: z)[0].as(of: FloatType.self)
+          result = internalDecode(z, decoder: decoder, transparentDecoder: transparentDecoder)
         }
         let shape = result.shape
-        return (result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<3].copied(), decoder)
+        return (
+          result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<outputChannels].copied(), decoder
+        )
       }
     }
     var result = graph.variable(
-      .GPU(0), .NHWC(batchSize, startHeight * zoomFactor, startWidth * zoomFactor, 3),
+      .GPU(0), .NHWC(batchSize, startHeight * zoomFactor, startWidth * zoomFactor, outputChannels),
       of: FloatType.self)
     for i in 0..<batchSize {
       let zEnc = z[i..<(i + 1), 0..<startHeight, 0..<startWidth, 0..<shape[3]].copied()
@@ -169,27 +213,35 @@ extension FirstStage {
         let partial: DynamicGraph.Tensor<Float>
         if tiledDecoding {
           partial = tiledDecode(
-            DynamicGraph.Tensor<Float>(from: zEnc), decoder: decoder, tileSize: decodingTileSize,
-            tileOverlap: decodingTileOverlap)
+            DynamicGraph.Tensor<Float>(from: zEnc), decoder: decoder,
+            transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
+            tileOverlap: decodingTileOverlap, outputChannels: outputChannels)
         } else {
-          partial = decoder(
-            inputs: DynamicGraph.Tensor<Float>(from: zEnc))[0].as(of: Float.self)
+          partial = internalDecode(
+            DynamicGraph.Tensor<Float>(from: zEnc), decoder: decoder,
+            transparentDecoder: transparentDecoder)
         }
         let shape = partial.shape
-        result[i..<(i + 1), 0..<(startHeight * zoomFactor), 0..<(startWidth * zoomFactor), 0..<3] =
+        result[
+          i..<(i + 1), 0..<(startHeight * zoomFactor), 0..<(startWidth * zoomFactor),
+          0..<outputChannels] =
           DynamicGraph
-          .Tensor<FloatType>(from: partial[0..<1, 0..<shape[1], 0..<shape[2], 0..<3])
+          .Tensor<FloatType>(from: partial[0..<1, 0..<shape[1], 0..<shape[2], 0..<outputChannels])
       } else {
         let partial: DynamicGraph.Tensor<FloatType>
         if tiledDecoding {
           partial = tiledDecode(
-            zEnc, decoder: decoder, tileSize: decodingTileSize, tileOverlap: decodingTileOverlap)
+            zEnc, decoder: decoder, transparentDecoder: transparentDecoder,
+            tileSize: decodingTileSize, tileOverlap: decodingTileOverlap,
+            outputChannels: outputChannels)
         } else {
-          partial = decoder(inputs: zEnc)[0].as(of: FloatType.self)
+          partial = internalDecode(zEnc, decoder: decoder, transparentDecoder: transparentDecoder)
         }
         let shape = partial.shape
-        result[i..<(i + 1), 0..<(startHeight * zoomFactor), 0..<(startWidth * zoomFactor), 0..<3] =
-          partial[0..<1, 0..<shape[1], 0..<shape[2], 0..<3]
+        result[
+          i..<(i + 1), 0..<(startHeight * zoomFactor), 0..<(startWidth * zoomFactor),
+          0..<outputChannels] =
+          partial[0..<1, 0..<shape[1], 0..<shape[2], 0..<outputChannels]
       }
     }
     return (result, decoder)
@@ -397,6 +449,12 @@ extension FirstStage {
 }
 
 extension FirstStage {
+  private func internalDecode<T: TensorNumeric & BinaryFloatingPoint>(
+    _ z: DynamicGraph.Tensor<T>, decoder: Model, transparentDecoder: Model?
+  ) -> DynamicGraph.Tensor<T> {
+    return decoder(inputs: z)[0].as(of: T.self)
+  }
+
   private func paddedTileStartAndEnd(iOfs: Int, length: Int, tileSize: Int, tileOverlap: Int) -> (
     paddedStart: Int, paddedEnd: Int
   ) {
@@ -416,8 +474,8 @@ extension FirstStage {
   }
 
   private func tiledDecode<T: TensorNumeric & BinaryFloatingPoint>(
-    _ z: DynamicGraph.Tensor<T>, decoder: Model, tileSize: (width: Int, height: Int),
-    tileOverlap: Int
+    _ z: DynamicGraph.Tensor<T>, decoder: Model, transparentDecoder: Model?,
+    tileSize: (width: Int, height: Int), tileOverlap: Int, outputChannels: Int
   ) -> DynamicGraph.Tensor<T> {
     // Assuming batch is 1.
     let shape = z.shape
@@ -446,16 +504,16 @@ extension FirstStage {
           let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
             iOfs: xOfs, length: shape[2], tileSize: tileSize.width, tileOverlap: tileOverlap)
           decodedImages.append(
-            decoder(
-              inputs: z[
+            internalDecode(
+              z[
                 0..<1, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad, 0..<channels
-              ].copied())[0].as(of: T.self))
+              ].copied(), decoder: decoder, transparentDecoder: transparentDecoder))
         }
       }
       return decodedImages
     }
     let decodedRawValues = decodedImages.map { $0.rawValue.toCPU() }
-    var result = Tensor<T>(.CPU, .NHWC(1, shape[1] * 8, shape[2] * 8, channels))
+    var result = Tensor<T>(.CPU, .NHWC(1, shape[1] * 8, shape[2] * 8, outputChannels))
     var yWeightsAndIndexes = [[(weight: Float, index: Int, offset: Int)]]()
     for j in 0..<(shape[1] * 8) {
       var weightAndIndex = [(weight: Float, index: Int, offset: Int)]()
@@ -570,7 +628,7 @@ extension FirstStage {
         let yWeightAndIndex = yWeightsAndIndexes[j]
         for i in 0..<(shape[2] * 8) {
           let xWeightAndIndex = xWeightsAndIndexes[i]
-          for k in 0..<channels {
+          for k in 0..<outputChannels {
             fp[k] = 0
           }
           for y in yWeightAndIndex {
@@ -580,14 +638,15 @@ extension FirstStage {
               let tensor = decodedRawValues[index]
               tensor.withUnsafeBytes {
                 guard var v = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
+                // Note that while result is outputChannels, this is padded to 4 i.e. channels.
                 v = v + x.offset * channels + y.offset * tileSize.width * 8 * channels
-                for k in 0..<channels {
+                for k in 0..<outputChannels {
                   fp[k] += v[k] * weight
                 }
               }
             }
           }
-          fp += channels
+          fp += outputChannels
         }
       }
     }

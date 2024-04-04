@@ -13,6 +13,10 @@ public enum ModelVersion: String, Codable {
   case wurstchenStageB = "wurstchen_v3.0_stage_b"
 }
 
+public enum AlternativeDecoderVersion: String, Codable {
+  case transparent = "transparent"
+}
+
 public enum SamplerModifier: String, Codable {
   case none = "none"
   case inpainting = "inpainting"

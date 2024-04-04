@@ -124,7 +124,7 @@ public enum LoRAImporter {
       guard key.hasSuffix("::lora::0") || key.hasSuffix("::lora::1") else { continue }
       let components = key.components(separatedBy: ".")
       guard components.count > 2 else { continue }
-      var newKey = components[0..<(components.count - 1)].joined(separator: "_")
+      let newKey = components[0..<(components.count - 1)].joined(separator: "_")
       let isUp = key.hasSuffix("::lora::0")
       if isUp {
         stateDict[newKey + ".lora_up.weight"] = stateDict[key]

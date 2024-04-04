@@ -115,7 +115,8 @@ public struct LoRATrainer {
       filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
       latentsScaling: latentsScaling, highPrecision: false, highPrecisionFallback: true,
       tiledDecoding: false, decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
-      externalOnDemand: false)
+      externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
+      alternativeDecoderVersion: nil)
     let graph = DynamicGraph()
     let imageWidth = Int(scale.widthScale) * 64
     let imageHeight = Int(scale.heightScale) * 64
@@ -622,7 +623,8 @@ public struct LoRATrainer {
       filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
       latentsScaling: latentsScaling, highPrecision: false, highPrecisionFallback: true,
       tiledDecoding: false, decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
-      externalOnDemand: false)
+      externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
+      alternativeDecoderVersion: nil)
     graph.maxConcurrency = .limit(1)
     var dataFrame = dataFrame
     let cotrainUNet = unetLearningRate > 0

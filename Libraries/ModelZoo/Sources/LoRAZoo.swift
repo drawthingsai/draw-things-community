@@ -2,11 +2,6 @@ import Diffusion
 import Foundation
 
 public struct LoRAZoo: DownloadZoo {
-  public enum AlternativeDecoderVersion: String, Codable {
-    case same
-    case transparent
-  }
-
   public struct Specification: Codable {
     public var name: String
     public var file: String
@@ -335,6 +330,16 @@ public struct LoRAZoo: DownloadZoo {
   public static func isConsistencyModelForModel(_ name: String) -> Bool {
     guard let specification = specificationMapping[name] else { return false }
     return specification.isConsistencyModel ?? false
+  }
+
+  public static func alternativeDecoderForModel(_ name: String) -> (
+    String, AlternativeDecoderVersion
+  )? {
+    guard let specification = specificationMapping[name] else { return nil }
+    guard let alternativeDecoder = specification.alternativeDecoder,
+      let alternativeDecoderVersion = specification.alternativeDecoderVersion
+    else { return nil }
+    return (alternativeDecoder, alternativeDecoderVersion)
   }
 
   public static func isLoHaForModel(_ name: String) -> Bool {

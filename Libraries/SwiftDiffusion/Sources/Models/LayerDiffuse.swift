@@ -222,9 +222,9 @@ private func MidBlock2D(
     k: channels / numHeads, h: numHeads, b: batchSize, hw: startHeight * startWidth,
     usesFlashAttention: usesFlashAttention)
   out =
-    attn(out.reshaped([batchSize, channels, startHeight * startWidth]).transposed(1, 2)).transposed(
-      1, 2
-    ).reshaped([batchSize, channels, startHeight, startWidth]) + residual
+    attn(out.reshaped([batchSize, startHeight * startWidth, channels])).reshaped([
+      batchSize, startHeight, startWidth, channels,
+    ]) + residual
   let (_, _, _, _, _, resBlock2) = ResBlock(
     b: batchSize, groups: 4, outChannels: channels, skipConnection: false)
   out = resBlock2(out)
@@ -275,8 +275,8 @@ func TransparentVAEDecoder(
     }
   }
   let midOut = MidBlock2D(
-    prefix: "mid_block", channels: 512, batchSize: 1, numHeads: 512 / 8, startHeight: 16,
-    startWidth: 16, usesFlashAttention: usesFlashAttention, x: out)
+    prefix: "mid_block", channels: 512, batchSize: 1, numHeads: 512 / 8, startHeight: startHeight,
+    startWidth: startWidth, usesFlashAttention: usesFlashAttention, x: out)
   out = midOut
   for i in 0..<3 {
     let upOut = AttnUpBlock2D(
