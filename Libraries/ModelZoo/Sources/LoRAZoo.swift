@@ -2,6 +2,11 @@ import Diffusion
 import Foundation
 
 public struct LoRAZoo: DownloadZoo {
+  public enum AlternativeDecoderVersion: String, Codable {
+    case same
+    case transparent
+  }
+
   public struct Specification: Codable {
     public var name: String
     public var file: String
@@ -11,10 +16,13 @@ public struct LoRAZoo: DownloadZoo {
     public var isLoHa: Bool? = nil
     public var modifier: SamplerModifier? = nil
     public var deprecated: Bool? = nil
+    public var alternativeDecoder: String? = nil
+    public var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       isConsistencyModel: Bool? = nil, isLoHa: Bool? = nil, modifier: SamplerModifier? = nil,
-      deprecated: Bool? = nil
+      deprecated: Bool? = nil, alternativeDecoder: String? = nil,
+      alternativeDecoderVersion: AlternativeDecoderVersion? = nil
     ) {
       self.name = name
       self.file = file
@@ -24,6 +32,8 @@ public struct LoRAZoo: DownloadZoo {
       self.isLoHa = isLoHa
       self.modifier = modifier
       self.deprecated = deprecated
+      self.alternativeDecoder = alternativeDecoder
+      self.alternativeDecoderVersion = alternativeDecoderVersion
     }
   }
 
@@ -73,6 +83,8 @@ public struct LoRAZoo: DownloadZoo {
     "tcd_sd_v1.5_lora_f16.ckpt": "2b1f9acfa0a794cd733d667cd4e9c01d971f6c21e055b487a67345f049aeccec",
     "tcd_sd_xl_base_1.0_lora_f16.ckpt":
       "368c22ba70d2cd6984234bc4b2fb34d61cd60e84df618fe405eed8aa9e84fc9e",
+    "transparent_vae_decoder_v1.0_f16.ckpt":
+      "3cd044b3b9e4e21c75945c3bfb8e7f2d98effb2ca946f536b4af5c23a6558b18",
   ]
 
   public static let builtinSpecifications: [Specification] = [
@@ -286,6 +298,11 @@ public struct LoRAZoo: DownloadZoo {
     return ModelZoo.isModelDownloaded(name)
   }
 
+  public static func isModelDownloaded(_ specification: Specification) -> Bool {
+    return isModelDownloaded(specification.file)
+      && (specification.alternativeDecoder.map { isModelDownloaded($0) } ?? true)
+  }
+
   public static func isModelDeprecated(_ name: String) -> Bool {
     guard let specification = specificationMapping[name] else { return false }
     return specification.deprecated ?? false
@@ -357,6 +374,11 @@ public struct LoRAZoo: DownloadZoo {
         continue
       }
       files.insert(specification.file)
+      if let alternativeDecoder = specification.alternativeDecoder,
+        LoRAZoo.isModelDownloaded(alternativeDecoder)
+      {
+        files.insert(alternativeDecoder)
+      }
     }
     return files
   }
