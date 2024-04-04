@@ -80,6 +80,8 @@ public struct LoRAZoo: DownloadZoo {
       "368c22ba70d2cd6984234bc4b2fb34d61cd60e84df618fe405eed8aa9e84fc9e",
     "transparent_vae_decoder_v1.0_f16.ckpt":
       "3cd044b3b9e4e21c75945c3bfb8e7f2d98effb2ca946f536b4af5c23a6558b18",
+    "layer_xl_transparent_attn_v1.0_lora_f16.ckpt":
+      "089f7169f864609700c8283bfb1cf87aacfbf0c8ac35a64509e9d8c3d1afd96b",
   ]
 
   public static let builtinSpecifications: [Specification] = [
@@ -102,14 +104,19 @@ public struct LoRAZoo: DownloadZoo {
       name: "LCM SDXL Refiner (1.0)", file: "lcm_sd_xl_refiner_1.0_lora_f16.ckpt",
       prefix: "", version: .sdxlRefiner, isConsistencyModel: true),
     Specification(
-      name: "LCM SSD 1B (Segmind)", file: "lcm_ssd_1b_lora_f16.ckpt",
-      prefix: "", version: .ssd1b, isConsistencyModel: true, deprecated: true),
-    Specification(
       name: "Fooocus Inpaint v2.6", file: "fooocus_inpaint_v2.6_lora_f16.ckpt",
       prefix: "", version: .sdxlBase, modifier: .inpainting),
     Specification(
       name: "Fooocus Inpaint v2.6 (8-bit)", file: "fooocus_inpaint_v2.6_lora_q8p.ckpt",
       prefix: "", version: .sdxlBase, modifier: .inpainting),
+    Specification(
+      name: "Transparent Image SDXL (Attention Injection)",
+      file: "layer_xl_transparent_attn_v1.0_lora_f16.ckpt",
+      prefix: "", version: .sdxlBase, alternativeDecoder: "transparent_vae_decoder_v1.0_f16.ckpt",
+      alternativeDecoderVersion: .transparent),
+    Specification(
+      name: "LCM SSD 1B (Segmind)", file: "lcm_ssd_1b_lora_f16.ckpt",
+      prefix: "", version: .ssd1b, isConsistencyModel: true, deprecated: true),
     Specification(
       name: "Moxin v1.0", file: "moxin_v1.0_lora_f16.ckpt", prefix: "shuimobysim ", version: .v1,
       deprecated: true),
