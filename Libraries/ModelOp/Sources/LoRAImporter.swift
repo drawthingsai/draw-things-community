@@ -49,7 +49,8 @@ public enum LoRAImporter {
   }
 
   public static func `import`(
-    downloadedFile: String, name: String, filename: String, progress: (Float) -> Void
+    downloadedFile: String, name: String, filename: String, forceVersion: ModelVersion?,
+    progress: (Float) -> Void
   ) throws -> (ModelVersion, Bool, Int, Bool) {
     let filePath =
       downloadedFile.starts(with: "/")
@@ -132,49 +133,66 @@ public enum LoRAImporter {
         stateDict[newKey + ".lora_down.weight"] = stateDict[key]
       }
     }
-    guard
-      let tokey = stateDict.first(where: {
-        $0.key.hasSuffix(
-          "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
-          || $0.key.hasSuffix(
-            "up_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
-          || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.lora_down.weight")
-          || $0.key.hasSuffix(
-            "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.hada_w1_b")
-          || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w1_b")
-      })?.value
-        ?? stateDict.first(where: {
-          $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.lora_down.weight")
-            || $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.hada_w1_b")
+    // Fix for another LoRA formulation (Foocus, SD-Forge, diff based).
+    for key in keys {
+      guard key.hasSuffix("::diff::0") else { continue }
+      let components = key.components(separatedBy: ".")
+      guard components.count > 2 else { continue }
+      let newKey =
+        components[0..<(components.count - 1)].joined(separator: "_") + "."
+        + components[components.count - 1]
+      stateDict[newKey.dropLast(9) + ".diff"] = stateDict[key]
+    }
+    let modelVersion: ModelVersion = try {
+      guard
+        let tokey = stateDict.first(where: {
+          $0.key.hasSuffix(
+            "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
+            || $0.key.hasSuffix(
+              "up_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
+            || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.lora_down.weight")
+            || $0.key.hasSuffix(
+              "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.hada_w1_b")
+            || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w1_b")
         })?.value
-    else {
-      throw UnpickleError.tensorNotFound
-    }
-    let modelVersion: ModelVersion
-    switch tokey.shape.last {
-    case 2048:
-      if !stateDict.keys.contains(where: {
-        $0.contains("mid_block_attentions_0_transformer_blocks_")
-          || $0.contains("middle_block_1_transformer_blocks_")
-      }) {
-        modelVersion = .ssd1b
-      } else {
-        modelVersion = .sdxlBase
+          ?? stateDict.first(where: {
+            $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.lora_down.weight")
+              || $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.hada_w1_b")
+          })?.value
+      else {
+        if let forceVersion = forceVersion {
+          return forceVersion
+        }
+        throw UnpickleError.tensorNotFound
       }
-    case 1280:
-      modelVersion = .sdxlRefiner
-    case 1024:
-      modelVersion = .v2
-    case 768:
-      // Check if it has lora_te2, if it does, this might be text-encoder only SDXL Base.
-      if stateDict.contains(where: { $0.key.hasPrefix("lora_te2_") }) {
-        modelVersion = .sdxlBase
-      } else {
-        modelVersion = .v1
+      switch tokey.shape.last {
+      case 2048:
+        if !stateDict.keys.contains(where: {
+          $0.contains("mid_block_attentions_0_transformer_blocks_")
+            || $0.contains("middle_block_1_transformer_blocks_")
+        }) {
+          return .ssd1b
+        } else {
+          return .sdxlBase
+        }
+      case 1280:
+        return .sdxlRefiner
+      case 1024:
+        return .v2
+      case 768:
+        // Check if it has lora_te2, if it does, this might be text-encoder only SDXL Base.
+        if stateDict.contains(where: { $0.key.hasPrefix("lora_te2_") }) {
+          return .sdxlBase
+        } else {
+          return .v1
+        }
+      default:
+        if let forceVersion = forceVersion {
+          return forceVersion
+        }
+        throw UnpickleError.tensorNotFound
       }
-    default:
-      throw UnpickleError.tensorNotFound
-    }
+    }()
     var textModelMapping1: [String: [String]]
     var textModelMapping2: [String: [String]]
     switch modelVersion {
@@ -665,9 +683,14 @@ public enum LoRAImporter {
           let newParts = String(parts[2..<parts.count].joined(separator: "_")).components(
             separatedBy: ".")  // Remove the first two.
           guard newParts.count > 1 else { continue }
-          let newKey =
+          var newKey =
             newParts[0..<(newParts.count > 2 ? newParts.count - 2 : newParts.count - 1)].joined(
-              separator: ".") + ".weight"
+              separator: ".")
+          if newParts[newParts.count - 1] == "diff" && newParts.count > 2 {
+            newKey = newKey + "." + newParts[newParts.count - 2]
+          } else {
+            newKey = newKey + ".weight"
+          }
           if let unetParams = UNetMapping[newKey] {
             if key.hasSuffix("down.weight") {
               try archive.with(descriptor) {
@@ -716,6 +739,27 @@ public enum LoRAImporter {
                 }
               }
               isLoHa = true
+            } else if key.hasSuffix(".diff") {
+              try archive.with(descriptor) {
+                let tensor = Tensor<FloatType>(from: $0)
+                /* One-off code to import 8-channel to 9-channel as if it is a inpainting LoRA.
+                let shape = tensor.shape
+                if shape[1] == 8 && shape[2] == 3 && shape[3] == 3 {
+                  // Expand this tensor to 9 in the middle section.
+                  var newTensor = Tensor<FloatType>(.CPU, .NCHW(shape[0], 9, 3, 3))
+                  newTensor.withUnsafeMutableBytes {
+                    guard let f16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
+                    memset(f16, 0, 2 * shape[0] * 9 * 3 * 3)
+                  }
+                  newTensor[0..<shape[0], 0..<4, 0..<3, 0..<3] = tensor[0..<shape[0], 0..<4, 0..<3, 0..<3]
+                  newTensor[0..<shape[0], 5..<9, 0..<3, 0..<3] = tensor[0..<shape[0], 4..<8, 0..<3, 0..<3]
+                  tensor = newTensor
+                }
+                 */
+                for name in unetParams {
+                  store.write("__unet__[\(name)]", tensor: tensor)
+                }
+              }
             }
           } else if let unetParams = UNetMappingFixed[newKey] {
             if key.hasSuffix("down.weight") {
@@ -741,6 +785,13 @@ public enum LoRAImporter {
                 }
               }
               isLoHa = true
+            } else if key.hasSuffix(".diff") {
+              try archive.with(descriptor) {
+                let tensor = Tensor<FloatType>(from: $0)
+                for name in unetParams {
+                  store.write("__unet_fixed__[\(name)]", tensor: tensor)
+                }
+              }
             }
           } else {
             let textModelMapping: [String: [String]]
@@ -770,6 +821,15 @@ public enum LoRAImporter {
                   }
                 }
                 isLoHa = true
+              } else if key.hasSuffix(".diff") {
+                try archive.with(descriptor) {
+                  let tensor = Tensor<FloatType>(from: $0)
+                  if te2 != swapTE2 {
+                    store.write("__te2__text_model__[\(name)]", tensor: tensor)
+                  } else {
+                    store.write("__text_model__[\(name)]", tensor: tensor)
+                  }
+                }
               }
             }
           }

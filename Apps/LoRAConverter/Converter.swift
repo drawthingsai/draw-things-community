@@ -29,7 +29,7 @@ struct Converter: ParsableCommand {
     ModelZoo.externalUrl = URL(fileURLWithPath: outputDirectory)
     let fileName = Importer.cleanup(filename: name) + "_lora_f16.ckpt"
     let (modelVersion, didImportTIEmbedding, textEmbeddingLength, isLoHa) = try LoRAImporter.import(
-      downloadedFile: file, name: name, filename: fileName
+      downloadedFile: file, name: name, filename: fileName, forceVersion: nil
     ) { _ in
     }
     let specification = Specification(

@@ -82,6 +82,8 @@ public struct LoRAZoo: DownloadZoo {
       "3cd044b3b9e4e21c75945c3bfb8e7f2d98effb2ca946f536b4af5c23a6558b18",
     "layer_xl_transparent_attn_v1.0_lora_f16.ckpt":
       "089f7169f864609700c8283bfb1cf87aacfbf0c8ac35a64509e9d8c3d1afd96b",
+    "layer_xl_fg2ble_v1.0_lora_f16.ckpt":
+      "7e8e5ab52118b90ea4b50a878bea9270bba608f58aa7728f6cd3333b951e18e6",
   ]
 
   public static let builtinSpecifications: [Specification] = [
@@ -110,10 +112,14 @@ public struct LoRAZoo: DownloadZoo {
       name: "Fooocus Inpaint v2.6 (8-bit)", file: "fooocus_inpaint_v2.6_lora_q8p.ckpt",
       prefix: "", version: .sdxlBase, modifier: .inpainting),
     Specification(
-      name: "Transparent Image SDXL (Attention Injection)",
+      name: "Transparent Image (Attention Injection)",
       file: "layer_xl_transparent_attn_v1.0_lora_f16.ckpt",
       prefix: "", version: .sdxlBase, alternativeDecoder: "transparent_vae_decoder_v1.0_f16.ckpt",
       alternativeDecoderVersion: .transparent),
+    Specification(
+      name: "Foreground to Blending",
+      file: "layer_xl_fg2ble_v1.0_lora_f16.ckpt",
+      prefix: "", version: .sdxlBase, modifier: .inpainting),
     Specification(
       name: "LCM SSD 1B (Segmind)", file: "lcm_ssd_1b_lora_f16.ckpt",
       prefix: "", version: .ssd1b, isConsistencyModel: true, deprecated: true),
