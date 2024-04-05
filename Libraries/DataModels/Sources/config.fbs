@@ -101,6 +101,7 @@ table GenerationConfiguration {
   decoding_tile_height: ushort = 10;
   decoding_tile_overlap: ushort = 2;
   stochastic_sampling_gamma: float = 0.3;
+  preserve_original_after_inpaint: bool = true;
 }
 
 root_type GenerationConfiguration;
