@@ -460,10 +460,10 @@ extension FirstStage {
     var result = transparentDecoder(inputs: (rgb + 1) * 0.5, z)[0].as(of: T.self)
     // At this point, result should have 4 channels. The last 3 is RGB. Do so.
     let shape = result.shape
-    // Only scale RGB channels to -1 and 1. Multiply alpha channel to create "pre-multiplied" values.
+    // Only scale RGB channels to -1 and 1.
     let alpha = result[0..<1, 0..<shape[1], 0..<shape[2], 0..<1].clamped(0...1)
     result[0..<1, 0..<shape[1], 0..<shape[2], 1..<shape[3]] =
-      (result[0..<1, 0..<shape[1], 0..<shape[2], 1..<shape[3]].clamped(0...1) .* alpha - 0.5) * 2
+      (result[0..<1, 0..<shape[1], 0..<shape[2], 1..<shape[3]].clamped(0...1) - 0.5) * 2
     result[0..<1, 0..<shape[1], 0..<shape[2], 0..<1] = alpha
     return result
   }
