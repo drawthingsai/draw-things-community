@@ -55,7 +55,7 @@ public struct DeviceCapability {
     #endif
   }()
   public static let isMFACausalAttentionMaskSupported: Bool = {
-    #if arch(i386) || arch(x86_64) || !canImport(UIKit)
+    #if arch(i386) || arch(x86_64) || !canImport(Metal)
       return false
     #else
       if #available(iOS 16.5, macOS 13.4, macCatalyst 16.5, *) {
@@ -65,7 +65,7 @@ public struct DeviceCapability {
     #endif
   }()
   public static let isMFASupported: Bool = {
-    #if arch(i386) || arch(x86_64) || !canImport(UIKit)
+    #if arch(i386) || arch(x86_64) || !canImport(Metal)
       return false
     #else
       if #available(iOS 16, macOS 13, macCatalyst 16, *) {
@@ -78,7 +78,7 @@ public struct DeviceCapability {
     #endif
   }()
   public static let isMFAGEMMFaster: Bool = {
-    #if arch(i386) || arch(x86_64) || !canImport(UIKit)
+    #if arch(i386) || arch(x86_64) || !canImport(Metal)
       return false
     #else
       if #available(iOS 16, macOS 13, macCatalyst 16, *) {
