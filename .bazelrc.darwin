@@ -9,16 +9,12 @@ build --features=swift.use_global_module_cache
 build --strategy=SwiftCompile=worker
 build --features=swift.enable_batch_mode
 build --swiftcopt=-Xfrontend
-build --swiftcopt=-disable-reflection-metadata
-build --swiftcopt=-Xfrontend
 build --swiftcopt=-internalize-at-link
 
 common:release --define=enable_mps=true
 common:release --swiftcopt=-whole-module-optimization
 common:release --compilation_mode=opt
 common:release --apple_generate_dsym
-common:release --swiftcopt=-Xfrontend
-common:release --swiftcopt=-disable-reflection-metadata
 common:release --swiftcopt=-Xfrontend
 common:release --swiftcopt=-internalize-at-link
 

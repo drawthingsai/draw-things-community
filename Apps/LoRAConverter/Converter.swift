@@ -5,6 +5,8 @@ import ModelOp
 import ModelZoo
 import NNC
 
+extension ModelVersion: ExpressibleByArgument {}
+
 @main
 struct Converter: ParsableCommand {
   @Option(
@@ -13,6 +15,8 @@ struct Converter: ParsableCommand {
   var file: String
   @Option(name: .shortAndLong, help: "The name of the LoRA.")
   var name: String
+  @Option(help: "The model version for this LoRA.")
+  var version: ModelVersion?
   @Option(name: .shortAndLong, help: "The directory to write the output files to.")
   var outputDirectory: String
 
@@ -29,7 +33,7 @@ struct Converter: ParsableCommand {
     ModelZoo.externalUrl = URL(fileURLWithPath: outputDirectory)
     let fileName = Importer.cleanup(filename: name) + "_lora_f16.ckpt"
     let (modelVersion, didImportTIEmbedding, textEmbeddingLength, isLoHa) = try LoRAImporter.import(
-      downloadedFile: file, name: name, filename: fileName, forceVersion: nil
+      downloadedFile: file, name: name, filename: fileName, forceVersion: version
     ) { _ in
     }
     let specification = Specification(
