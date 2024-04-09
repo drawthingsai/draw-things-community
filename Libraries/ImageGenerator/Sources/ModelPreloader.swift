@@ -1,0 +1,1285 @@
+import Atomics
+import DataModels
+import Dflat
+import Diffusion
+import DiffusionCoreML
+import Foundation
+import ModelZoo
+import NNC
+
+public final class ModelPreloader {
+  public enum PreloadState: Equatable {
+    case countdown(Int)
+    case preloadStart(Double, Bool, String, [LoRAConfiguration])
+    case preloadDone
+  }
+  enum Mode {
+    case preload
+    case yes
+    case no
+    case coreml
+    case unet
+    static func from(_ i: Int) -> Self {
+      switch i {
+      case 0:
+        return .no
+      case 1:
+        return .yes
+      case 2:
+        return .preload
+      case 3:
+        return .coreml
+      case 4:
+        return .unet
+      default:
+        return .no
+      }
+    }
+  }
+  @Published
+  public private(set) var preloadState: PreloadState = .preloadDone
+  private let queue: DispatchQueue
+  private var workspace: Workspace
+  private var isGenerating: Bool = false
+  private var modelFile: String? = nil
+  private var imageScale: DeviceCapability.Scale? = nil
+  private var batchSize: Int? = nil
+  private var clipSkip: Int? = nil
+  private var lora: [LoRAConfiguration]? = nil
+  private var modelFilePath: String? = nil
+
+  private var firstStageEncoderFilePath: String? = nil
+  private var firstStageEncoderExternalOnDemand: Bool? = nil
+  private var firstStageEncoderVersion: ModelVersion? = nil
+  private var firstStageEncoderScale: DeviceCapability.Scale? = nil
+  private var firstStageEncoderHighPrecision: Bool? = nil
+
+  private var firstStageDecoderFilePath: String? = nil
+  private var firstStageDecoderExternalOnDemand: Bool? = nil
+  private var firstStageDecoderVersion: ModelVersion? = nil
+  private var firstStageDecoderScale: DeviceCapability.Scale? = nil
+  private var firstStageDecoderHighPrecision: Bool? = nil
+
+  private var textEncoderFilePaths: [String]? = nil
+  private var textEncoderVersion: ModelVersion? = nil
+  private var textEncoderUsesFlashAttention: Bool? = nil
+  private var textEncoderInjectEmbeddings: Bool = false
+  private var textEncoderMaxLength: Int = 77
+  private var textEncoderClipSkip: Int = 1
+  private var textEncoderLoRA: [LoRAConfiguration]? = nil
+
+  private var unetFilePath: String? = nil
+  private var unetModifier: SamplerModifier? = nil
+  private var unetVersion: ModelVersion? = nil
+  private var unetUpcastAttention: Bool? = nil
+  private var unetUsesFlashAttention: Bool? = nil
+  private var unetExternalOnDemand: Bool? = nil
+  private var unetInjectControls: Bool? = nil
+  private var unetInjectT2IAdapters: Bool? = nil
+  private var unetInjectIPAdapterLengths: [Int]? = nil
+  private var unetLoRA: [LoRAConfiguration]? = nil
+  private var unetTokenLengthUncond: Int = 77
+  private var unetTokenLengthCond: Int = 77
+  private var unetScale: DeviceCapability.Scale? = nil
+
+  private var unet = UNetWrapper<FloatType>()
+  private var firstStageDecoder: Model? = nil
+  private var firstStageEncoder: Model? = nil
+  private var textModel: Model? = nil
+  private var configuration: GenerationConfiguration?
+  // Subscription tokens.
+  private var configurationSubscription: Workspace.Subscription? = nil
+  private var keepModelInMemorySubscription: Workspace.Subscription? = nil
+  private var useCoreMLSubscription: Workspace.Subscription? = nil
+  private var coreMLComputeUnitSubscription: Workspace.Subscription? = nil
+  private var loraUseCoreMLSubscription: Workspace.Subscription? = nil
+  private var maxCoreMLCacheSizeSubscription: Workspace.Subscription? = nil
+  private var externalStoreSubscription: Workspace.Subscription? = nil
+  private var useMFASubscription: Workspace.Subscription? = nil
+  private var mergeLoRASubscription: Workspace.Subscription? = nil
+  private var mode: Mode
+  private var activeSentinel: Int = 0
+  private let sentinel = ManagedAtomic<Int>(0)
+  private var useCoreML: Bool? = nil
+  private var useMFA: Bool? = nil
+  private var coreMLComputeUnit: Int? = nil
+  private var loraUseCoreML: Bool? = nil
+  private var externalStore: Bool? = nil
+  private var mergeLoRA: Int? = nil
+  init(
+    queue: DispatchQueue, configurations: FetchedResult<GenerationConfiguration>,
+    workspace: Workspace
+  ) {
+    dispatchPrecondition(condition: .onQueue(.main))
+    self.queue = queue
+    self.workspace = workspace
+    self.configuration = configurations.first
+    if let configuration = configuration {
+      modelFile = configuration.model ?? ModelZoo.defaultSpecification.file
+      imageScale = DeviceCapability.Scale(
+        widthScale: configuration.startWidth, heightScale: configuration.startHeight)
+      batchSize = Int(configuration.batchSize)
+      clipSkip = Int(configuration.clipSkip)
+      let modelVersion = ModelZoo.versionForModel(modelFile ?? "")
+      lora = configuration.loras.compactMap {
+        guard let file = $0.file, LoRAZoo.isModelDownloaded(file),
+          LoRAZoo.versionForModel(file) == modelVersion
+        else { return nil }
+        return LoRAConfiguration(
+          file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: modelVersion,
+          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
+      }
+    }
+    let mode =
+      workspace.dictionary["keep_model_in_memory", Int.self]
+      ?? (DeviceCapability.keepModelPreloaded ? 2 : 0)
+    self.mode = Mode.from(mode)
+    queue.async { [weak self] in
+      guard let self = self else { return }
+      if let _ = self.workspace.dictionary["preload_guard", Bool.self] {
+        if self.mode == .preload || self.mode == .coreml || self.mode == .unet {
+          // If default is not to keep model preloaded, just remove the overwrite.
+          if !DeviceCapability.keepModelPreloaded {
+            self.workspace.dictionary["keep_model_in_memory", Int.self] = nil
+          } else {
+            // Otherwise, this is more curious, we disable it completely.
+            self.workspace.dictionary["keep_model_in_memory", Int.self] = 0
+          }
+          // Although we subscribe the update, need to do this now because we may immediately start to load in did active.
+          self.mode = .no
+        }
+        self.workspace.dictionary["preload_guard", Bool.self] = nil
+      }
+      if let _ = self.workspace.dictionary["coreml_guard", Bool.self] {
+        if !DeviceCapability.isCoreMLSupported {
+          // If we override to CoreML, just remove it.
+          self.workspace.dictionary["use_coreml", Bool.self] = nil
+        } else {
+          // Otherwise, this is curious, but we will disable it completely.
+          self.workspace.dictionary["use_coreml", Bool.self] = false
+        }
+        self.workspace.dictionary["coreml_guard", Bool.self] = nil
+      }
+      if let _ = self.workspace.dictionary["mfa_guard", Bool.self] {
+        if !DeviceCapability.isMFASupported {
+          self.workspace.dictionary["use_mfa_v2", Bool.self] = nil
+        } else {
+          self.workspace.dictionary["use_mfa_v2", Bool.self] = false
+        }
+        self.workspace.dictionary["mfa_guard", Bool.self] = nil
+      }
+    }
+    addLifecycleObservers()
+    configurationSubscription = workspace.subscribe(fetchedResult: configurations) {
+      [weak self]
+      newConfigurations in
+      guard let self = self else { return }
+      let sentinelValue = self.sentinel.wrappingIncrementThenLoad(ordering: .acquiringAndReleasing)
+      queue.async { [weak self] in
+        guard let self = self, let newConfiguration = newConfigurations.first else { return }
+        guard self.sentinel.load(ordering: .acquiring) == sentinelValue else { return }
+        self.newConfiguration(newConfiguration)
+      }
+    }
+    keepModelInMemorySubscription = workspace.dictionary.subscribe(
+      "keep_model_in_memory", of: Int.self
+    ) { value in
+      queue.async { [weak self] in
+        guard let self = self else { return }
+        switch value {
+        case .deleted:
+          self.updateKeepModelInMemory(nil)
+        case .initial(let value):
+          self.updateKeepModelInMemory(value)
+        case .updated(let value):
+          self.updateKeepModelInMemory(value)
+        }
+      }
+    }
+    useCoreMLSubscription = workspace.dictionary.subscribe("use_coreml", of: Bool.self) {
+      value in
+      queue.async { [weak self] in
+        guard let self = self else { return }
+        switch value {
+        case .deleted:
+          self.updateUseCoreML(nil)
+        case .initial(let value):
+          self.updateUseCoreML(value)
+        case .updated(let value):
+          self.updateUseCoreML(value)
+        }
+      }
+    }
+    coreMLComputeUnitSubscription = workspace.dictionary.subscribe(
+      "coreml_compute_unit", of: Int.self
+    ) {
+      value in
+      queue.async { [weak self] in
+        guard let self = self else { return }
+        switch value {
+        case .deleted:
+          self.updateCoreMLComputeUnit(nil)
+        case .initial(let value):
+          self.updateCoreMLComputeUnit(value)
+        case .updated(let value):
+          self.updateCoreMLComputeUnit(value)
+        }
+      }
+    }
+    loraUseCoreMLSubscription = workspace.dictionary.subscribe("lora_use_coreml", of: Bool.self) {
+      value in
+      queue.async { [weak self] in
+        guard let self = self else { return }
+        switch value {
+        case .deleted:
+          self.updateLoRAUseCoreML(nil)
+        case .initial(let value):
+          self.updateLoRAUseCoreML(value)
+        case .updated(let value):
+          self.updateLoRAUseCoreML(value)
+        }
+      }
+    }
+    maxCoreMLCacheSizeSubscription = workspace.dictionary.subscribe(
+      "max_coreml_cache", of: Int.self
+    ) { value in
+      queue.async { [weak self] in
+        guard let self = self else { return }
+        switch value {
+        case .deleted:
+          self.updateMaxCoreMLCacheSize(nil)
+        case .initial(let value):
+          self.updateMaxCoreMLCacheSize(value)
+        case .updated(let value):
+          self.updateMaxCoreMLCacheSize(value)
+        }
+      }
+    }
+    externalStore = workspace.dictionary["external_store", Bool.self]
+    externalStoreSubscription = workspace.dictionary.subscribe("external_store", of: Bool.self) {
+      value in
+      queue.async { [weak self] in
+        guard let self = self else { return }
+        switch value {
+        case .deleted:
+          self.updateExternalStore(nil)
+        case .initial(let value):
+          self.updateExternalStore(value)
+        case .updated(let value):
+          self.updateExternalStore(value)
+        }
+      }
+    }
+    useMFASubscription = workspace.dictionary.subscribe("use_mfa_v2", of: Bool.self) {
+      value in
+      queue.async { [weak self] in
+        guard let self = self else { return }
+        switch value {
+        case .deleted:
+          self.updateUseMFA(nil)
+        case .initial(let value):
+          self.updateUseMFA(value)
+        case .updated(let value):
+          self.updateUseMFA(value)
+        }
+      }
+    }
+    mergeLoRASubscription = workspace.dictionary.subscribe("merge_lora", of: Int.self) {
+      value in
+      queue.async { [weak self] in
+        guard let self = self else { return }
+        switch value {
+        case .deleted:
+          self.updateMergeLoRA(nil)
+        case .initial(let value):
+          self.updateMergeLoRA(value)
+        case .updated(let value):
+          self.updateMergeLoRA(value)
+        }
+      }
+    }
+    // If it is already active, trigger preload through didBecomeActive call.
+    if isAppActive() {
+      queue.async { [weak self] in
+        guard let self = self else { return }
+        self.didBecomeActive()
+      }
+    }
+  }
+}
+
+extension ModelPreloader {
+  public func beginCoreMLGuard() -> Bool {
+    dispatchPrecondition(condition: .onQueue(queue))
+    guard CoreMLModelManager.isCoreMLSupported.load(ordering: .acquiring) else { return false }
+    workspace.dictionary["coreml_guard", Bool.self] = true
+    workspace.dictionary.synchronize()
+    return true
+  }
+  public func endCoreMLGuard() {
+    workspace.dictionary["coreml_guard", Bool.self] = nil
+  }
+  public func beginMFAGuard() -> Bool {
+    dispatchPrecondition(condition: .onQueue(queue))
+    guard DeviceCapability.isMFAEnabled.load(ordering: .acquiring) else { return false }
+    // For these devices, we are very confident it just works, hence, no need to disable MFA upon crash.
+    guard !(DeviceCapability.isMFASupported && DeviceCapability.isMFACausalAttentionMaskSupported)
+    else { return true }
+    workspace.dictionary["mfa_guard", Bool.self] = true
+    workspace.dictionary.synchronize()
+    return true
+  }
+  public func endMFAGuard() {
+    workspace.dictionary["mfa_guard", Bool.self] = nil
+  }
+}
+
+extension ModelPreloader {
+  private var isEnabled: Bool {
+    #if targetEnvironment(simulator)
+      return false
+    #else
+      guard let modelFile = modelFile else { return false }
+      let modelVersion = ModelZoo.versionForModel(modelFile)
+      guard
+        modelVersion == .v1 || modelVersion == .v2 || modelVersion == .sdxlBase
+          || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
+      else { return false }
+      if DeviceCapability.isMaxPerformance {
+        return true
+      }
+      // We cannot cache model if it is SDXL models.
+      if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
+        return false
+      }
+      guard let imageScale = imageScale, let batchSize = batchSize,
+        let lora = lora, clipSkip != nil
+      else {
+        return false
+      }
+      let upcastAttention = ModelZoo.isUpcastAttentionForModel(modelFile)
+      var useCoreML = CoreMLModelManager.isCoreMLSupported.load(ordering: .acquiring)
+      let loraUseCoreML = CoreMLModelManager.isLoRASupported.load(ordering: .acquiring)
+      if useCoreML {
+        // Check if we satisfied all conditions to preload CoreML.
+        useCoreML =
+          imageScale.widthScale == 8 && imageScale.heightScale == 8 && !upcastAttention
+          && (lora.count == 0 || loraUseCoreML)
+      }
+      // We only preload when batchSize is 1 or we use CoreML, or we are at 16GiB RAM.
+      guard useCoreML || batchSize == 1 else { return false }
+      return imageScale.widthScale * imageScale.heightScale <= 64
+    #endif
+  }
+
+  private func removeAllCache() {
+    unet = UNetWrapper()
+    unetExternalOnDemand = nil
+    unetUpcastAttention = nil
+    unetInjectControls = nil
+    unetInjectT2IAdapters = nil
+    unetInjectIPAdapterLengths = nil
+    unetLoRA = nil
+    unetTokenLengthUncond = 77
+    unetTokenLengthCond = 77
+    unetFilePath = nil
+    unetModifier = nil
+    unetVersion = nil
+    unetScale = nil
+    firstStageEncoder = nil
+    firstStageEncoderFilePath = nil
+    firstStageEncoderScale = nil
+    firstStageEncoderExternalOnDemand = nil
+    firstStageEncoderVersion = nil
+    firstStageEncoderHighPrecision = nil
+    firstStageDecoder = nil
+    firstStageDecoderFilePath = nil
+    firstStageDecoderScale = nil
+    firstStageDecoderExternalOnDemand = nil
+    firstStageDecoderVersion = nil
+    firstStageDecoderHighPrecision = nil
+    textModel = nil
+    textEncoderVersion = nil
+    textEncoderInjectEmbeddings = false
+    textEncoderMaxLength = 77
+    textEncoderClipSkip = 1
+    textEncoderLoRA = nil
+    textEncoderFilePaths = nil
+  }
+
+  private func preloadIfPossible() {
+    defer { preloadState = .preloadDone }
+    guard let modelFile = modelFile, let imageScale = imageScale, let batchSize = batchSize,
+      let clipSkip = clipSkip, let lora = lora, let useMFA = useMFA, isEnabled
+    else {
+      return
+    }
+    // If we crashed, we know, and at that point, we will disable preload.
+    workspace.dictionary["preload_guard", Bool.self] = true
+    workspace.dictionary.synchronize()
+    defer {
+      workspace.dictionary["preload_guard", Bool.self] = nil
+    }
+    let autoencoderModel = ModelZoo.autoencoderForModel(modelFile) ?? "vae_ft_mse_840000_f16.ckpt"
+    let textEncoderModel = ModelZoo.textEncoderForModel(modelFile) ?? "clip_vit_l14_f16.ckpt"
+    guard
+      ModelZoo.isModelDownloaded(modelFile) && ModelZoo.isModelDownloaded(autoencoderModel)
+        && ModelZoo.isModelDownloaded(textEncoderModel)
+    else { return }
+    let modelPath = ModelZoo.filePathForModelDownloaded(modelFile)
+    let modelVersion = ModelZoo.versionForModel(modelFile)
+    let is8BitModel = ModelZoo.is8BitModel(modelFile)
+    let canRunLoRASeparately = canRunLoRASeparately
+    let upcastAttention = ModelZoo.isUpcastAttentionForModel(modelFile)
+    let modelModifier = ModelZoo.modifierForModel(modelFile)
+    let autoencoderPath = ModelZoo.filePathForModelDownloaded(autoencoderModel)
+    let textEncoderPath = ModelZoo.filePathForModelDownloaded(textEncoderModel)
+    let highPrecisionForAutoencoder = ModelZoo.isHighPrecisionAutoencoderForModel(modelFile)
+    var useCoreML = CoreMLModelManager.isCoreMLSupported.load(ordering: .acquiring)
+    let useLoRACoreML = CoreMLModelManager.isLoRASupported.load(ordering: .acquiring)
+    if useCoreML {
+      // Check if we satisfied all conditions to preload CoreML.
+      useCoreML =
+        imageScale.widthScale == 8 && imageScale.heightScale == 8 && !upcastAttention
+        && (lora.count == 0 || useLoRACoreML)
+    }
+    // No need to continue if we are not using CoreML for CoreML preload model.
+    if mode == .coreml && !useCoreML {
+      return
+    }
+    preloadState = .preloadStart(useCoreML ? 80 : 2, useCoreML, modelFile, lora)
+    let conditionalLength: Int
+    switch modelVersion {
+    case .v1:
+      conditionalLength = 768
+    case .v2:
+      conditionalLength = 1024
+    case .sdxlBase, .sdxlRefiner, .ssd1b:
+      conditionalLength = 1280
+    case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      fatalError()
+    }
+    let cfgChannels: Int
+    let numberOfChannels: Int
+    switch modelModifier {
+    case .depth:
+      cfgChannels = 2
+      numberOfChannels = 5
+    case .inpainting:
+      cfgChannels = 2
+      numberOfChannels = 9
+    case .editing:
+      cfgChannels = 3
+      numberOfChannels = 8
+    case .none:
+      cfgChannels = 2
+      numberOfChannels = 4
+    }
+    let graph = DynamicGraph()
+    graph.withNoGrad {
+      let startHeight = 8 * Int(imageScale.heightScale)
+      let startWidth = 8 * Int(imageScale.widthScale)
+      if !unet.isLoaded {
+        let externalOnDemand = externalOnDemand(
+          version: modelVersion, scale: imageScale, variant: .unet, injectedControls: 0)
+        let x = graph.variable(
+          .GPU(0), .NHWC(cfgChannels * batchSize, startHeight, startWidth, numberOfChannels),
+          of: FloatType.self)
+        let c = graph.variable(
+          .GPU(0), .HWC(cfgChannels * batchSize, 77, conditionalLength), of: FloatType.self)
+        let t = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: 981, batchSize: cfgChannels * batchSize, embeddingSize: 320,
+              maxPeriod: 10_000)
+          ).toGPU(0)
+        )
+        var cArr = [c]
+        if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
+          let fixedEncoder = UNetFixedEncoder<FloatType>(
+            filePath: modelPath, version: modelVersion, usesFlashAttention: useMFA,
+            zeroNegativePrompt: false)
+          cArr.insert(
+            graph.variable(.GPU(0), .HWC(cfgChannels * batchSize, 77, 768), of: FloatType.self),
+            at: 0)
+          cArr.append(
+            graph.variable(.GPU(0), .WC(cfgChannels * batchSize, 1280), of: FloatType.self))
+          for c in cArr {
+            c.full(0)
+          }
+          // These values doesn't matter, it won't affect the model shape, just the input vector.
+          let vector = fixedEncoder.vector(
+            textEmbedding: cArr[2], originalSize: (width: 1024, height: 1024),
+            cropTopLeft: (top: 0, left: 0),
+            targetSize: (width: 1024, height: 1024), aestheticScore: 6,
+            negativeOriginalSize: (width: 768, height: 768),
+            negativeAestheticScore: 2.5, fpsId: 5, motionBucketId: 127, condAug: 0.02)
+          cArr =
+            vector
+            + fixedEncoder.encode(
+              textEncoding: cArr, batchSize: batchSize, startHeight: startHeight,
+              startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: []
+            ).0  // No need to pass lora, one off use.
+        }
+        let _ = unet.compileModel(
+          filePath: modelPath, externalOnDemand: externalOnDemand,
+          version: modelVersion, upcastAttention: upcastAttention, usesFlashAttention: useMFA,
+          injectControls: false, injectT2IAdapters: false, injectIPAdapterLengths: [], lora: lora,
+          is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately,
+          inputs: x, t, cArr, tokenLengthUncond: 77, tokenLengthCond: 77, extraProjection: nil,
+          injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [])
+        unetFilePath = modelPath
+        unetExternalOnDemand = externalOnDemand
+        unetInjectControls = false
+        unetInjectT2IAdapters = false
+        unetInjectIPAdapterLengths = []
+        unetVersion = modelVersion
+        unetUpcastAttention = upcastAttention
+        unetUsesFlashAttention = useMFA
+        unetTokenLengthUncond = 77
+        unetTokenLengthCond = 77
+        unetModifier = modelModifier
+        unetScale = imageScale
+      }
+      // We only load UNet for CoreML only mode.
+      guard mode != .coreml && mode != .unet else {
+        return
+      }
+      if firstStageDecoder == nil {
+        let externalOnDemand = externalOnDemand(
+          version: modelVersion, scale: imageScale, variant: .autoencoder, injectedControls: 0)
+        let z = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 4), of: FloatType.self)
+        let decoder = Decoder(
+          channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
+          startHeight: startHeight, usesFlashAttention: false, paddingFinalConvLayer: true
+        ).0
+        decoder.compile(inputs: z)
+        graph.openStore(
+          autoencoderPath, flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: autoencoderPath)
+        ) {
+          $0.read("decoder", model: decoder, codec: [.jit, .externalData])
+        }
+        firstStageDecoder = decoder
+        firstStageDecoderScale = imageScale
+        firstStageDecoderFilePath = autoencoderPath
+        firstStageDecoderExternalOnDemand = externalOnDemand
+        firstStageDecoderVersion = modelVersion
+        firstStageDecoderHighPrecision = highPrecisionForAutoencoder
+      }
+      if firstStageEncoder == nil {
+        let externalOnDemand = externalOnDemand(
+          version: modelVersion, scale: imageScale, variant: .autoencoder, injectedControls: 0)
+        let x = graph.variable(
+          .GPU(0), .NHWC(1, startHeight * 8, startWidth * 8, 3), of: FloatType.self)
+        let encoder = Encoder(
+          channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
+          startHeight: startHeight, usesFlashAttention: false
+        ).0
+        encoder.compile(inputs: x)
+        graph.openStore(
+          autoencoderPath, flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: autoencoderPath)
+        ) {
+          $0.read("encoder", model: encoder, codec: [.jit, .externalData])
+        }
+        firstStageEncoder = encoder
+        firstStageEncoderScale = imageScale
+        firstStageEncoderFilePath = autoencoderPath
+        firstStageEncoderExternalOnDemand = externalOnDemand
+        firstStageEncoderVersion = modelVersion
+        firstStageEncoderHighPrecision = highPrecisionForAutoencoder
+      }
+      if textModel == nil {
+        let textModelToLoad: Model
+        let textModelLoRAPrefix: String
+        switch modelVersion {
+        case .v1:
+          textModelToLoad =
+            CLIPTextModel(
+              FloatType.self, injectEmbeddings: false,
+              vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 768,
+              numLayers: 13 - min(max(clipSkip, 1), 12),
+              numHeads: 12, batchSize: 2, intermediateSize: 3072,
+              usesFlashAttention: useMFA && DeviceCapability.isMFACausalAttentionMaskSupported
+            ).0
+          textModelLoRAPrefix = ""
+        case .v2:
+          textModelToLoad =
+            OpenCLIPTextModel(
+              FloatType.self, injectEmbeddings: false,
+              vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 1024,
+              numLayers: 24 - min(max(clipSkip, 1), 23),
+              numHeads: 16, batchSize: 2, intermediateSize: 4096,
+              usesFlashAttention: useMFA && DeviceCapability.isMFACausalAttentionMaskSupported
+            ).0
+          textModelLoRAPrefix = ""
+        case .sdxlBase, .sdxlRefiner, .ssd1b:
+          textModelToLoad =
+            OpenCLIPTextModel(
+              FloatType.self, injectEmbeddings: false,
+              vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 1280,
+              numLayers: 32 - min(max(clipSkip - 1, 0), 30), numHeads: 20, batchSize: 2,
+              intermediateSize: 5120,
+              usesFlashAttention: useMFA && DeviceCapability.isMFACausalAttentionMaskSupported,
+              outputPenultimate: true
+            ).0
+          textModelLoRAPrefix = "__te2"
+        case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+          fatalError()
+        }
+        let tokensTensor = graph.variable(.GPU(0), .C(2 * 77), of: Int32.self)
+        let positionTensor = graph.variable(.GPU(0), .C(2 * 77), of: Int32.self)
+        let causalAttentionMask = graph.variable(.GPU(0), .NHWC(1, 1, 77, 77), of: FloatType.self)
+        textModelToLoad.compile(inputs: tokensTensor, positionTensor, causalAttentionMask)
+        graph.openStore(
+          textEncoderPath, flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: textEncoderPath)
+        ) { store in
+          if lora.count > 0 {
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              if clipSkip > 1 {
+                store.read("text_model", model: textModelToLoad, codec: [.jit, .externalData]) {
+                  name, _, _, shape in
+                  // Retrieve the right final layer norm parameters.
+                  var name = name
+                  switch modelVersion {
+                  case .v1:
+                    if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
+                      name = "__text_model__[t-98-0]"
+                    } else if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-1]" {
+                      name = "__text_model__[t-98-1]"
+                    }
+                  case .v2:
+                    if name == "__text_model__[t-\(186 - (min(clipSkip, 23) - 1) * 8)-0]" {
+                      name = "__text_model__[t-186-0]"
+                    } else if name == "__text_model__[t-\(186 - (min(clipSkip, 23) - 1) * 8)-1]" {
+                      name = "__text_model__[t-186-1]"
+                    }
+                  case .sdxlBase, .sdxlRefiner, .ssd1b:
+                    if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-0]" {
+                      name = "__text_model__[t-258-0]"
+                    } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
+                      name = "__text_model__[t-258-1]"
+                    }
+                  case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+                    fatalError()
+                  }
+                  return loader.mergeLoRA(
+                    graph, name: name, store: store, shape: shape, prefix: textModelLoRAPrefix)
+                }
+              } else {
+                store.read("text_model", model: textModelToLoad, codec: [.jit, .externalData]) {
+                  name, _, _, shape in
+                  return loader.mergeLoRA(
+                    graph, name: name, store: store, shape: shape, prefix: textModelLoRAPrefix)
+                }
+              }
+            }
+          } else {
+            if clipSkip > 1 {
+              store.read("text_model", model: textModelToLoad, codec: [.jit, .externalData]) {
+                name, _, _, _ in
+                // Retrieve the right final layer norm parameters.
+                var name = name
+                switch modelVersion {
+                case .v1:
+                  if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
+                    name = "__text_model__[t-98-0]"
+                  } else if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-1]" {
+                    name = "__text_model__[t-98-1]"
+                  }
+                case .v2:
+                  if name == "__text_model__[t-\(186 - (min(clipSkip, 23) - 1) * 8)-0]" {
+                    name = "__text_model__[t-186-0]"
+                  } else if name == "__text_model__[t-\(186 - (min(clipSkip, 23) - 1) * 8)-1]" {
+                    name = "__text_model__[t-186-1]"
+                  }
+                case .sdxlBase, .sdxlRefiner, .ssd1b:
+                  if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-0]" {
+                    name = "__text_model__[t-258-0]"
+                  } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
+                    name = "__text_model__[t-258-1]"
+                  }
+                case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+                  fatalError()
+                }
+                return .continue(name)
+              }
+            } else {
+              store.read("text_model", model: textModelToLoad, codec: [.jit, .externalData])
+            }
+          }
+        }
+        textEncoderFilePaths = [textEncoderPath]
+        textEncoderVersion = modelVersion
+        textEncoderUsesFlashAttention = useMFA && DeviceCapability.isMFACausalAttentionMaskSupported
+        textEncoderInjectEmbeddings = false
+        textEncoderMaxLength = 77
+        textEncoderClipSkip = clipSkip
+        textEncoderLoRA = lora
+      }
+    }
+  }
+}
+
+extension ModelPreloader {
+  func didReceiveMemoryWarning() {
+    dispatchPrecondition(condition: .onQueue(queue))
+    removeAllCache()
+  }
+
+  func delayedPreloadIfPossible(activeSentinel: Int, countdown: Int) {
+    // Check if we are still in a state that can preload.
+    guard
+      self.activeSentinel == activeSentinel
+        && (mode == .preload || mode == .coreml || mode == .unet)
+    else {
+      return
+    }
+    if countdown == 0 {
+      preloadIfPossible()
+    } else {
+      self.preloadState = .countdown(countdown)
+      queue.asyncAfter(deadline: .now() + .seconds(1)) { [weak self] in
+        guard let self = self else { return }
+        // Make sure the preload sequence is not interrupted.
+        guard self.preloadState == .countdown(countdown) else { return }
+        self.delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: countdown - 1)
+      }
+    }
+  }
+
+  func startGenerating() {
+    dispatchPrecondition(condition: .onQueue(.main))
+    isGenerating = true
+  }
+
+  func stopGenerating() {
+    dispatchPrecondition(condition: .onQueue(.main))
+    isGenerating = false
+  }
+
+  public func offloadModels() {
+    dispatchPrecondition(condition: .onQueue(.main))
+    queue.async { [weak self] in
+      guard let self = self else { return }
+      self.removeAllCache()
+      // No more preloading.
+      self.preloadState = .preloadDone
+    }
+  }
+
+  func newConfiguration(_ newConfiguration: GenerationConfiguration) {
+    dispatchPrecondition(condition: .onQueue(queue))
+    guard mode == .preload || mode == .yes || mode == .coreml || mode == .unet else { return }
+    let newModelFile = newConfiguration.model ?? ModelZoo.defaultSpecification.file
+    let newImageScale = DeviceCapability.Scale(
+      widthScale: newConfiguration.startWidth, heightScale: newConfiguration.startHeight)
+    let newBatchSize = Int(newConfiguration.batchSize)
+    let newClipSkip = Int(newConfiguration.clipSkip)
+    let version = ModelZoo.versionForModel(newModelFile)
+    let newLora: [LoRAConfiguration] = newConfiguration.loras.compactMap {
+      guard let file = $0.file, LoRAZoo.isModelDownloaded(file),
+        LoRAZoo.versionForModel(file) == version
+      else { return nil }
+      return LoRAConfiguration(
+        file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: version,
+        isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
+    }
+    guard
+      modelFile != newModelFile || imageScale != newImageScale || batchSize != newBatchSize
+        || clipSkip != newClipSkip || lora != newLora
+    else { return }
+    removeAllCache()
+    modelFile = newModelFile
+    imageScale = newImageScale
+    batchSize = newBatchSize
+    clipSkip = newClipSkip
+    lora = newLora
+    // Only preload if we are in preload mode.
+    if mode == .preload || mode == .coreml || mode == .unet {
+      activeSentinel += 1
+      delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 5)
+    }
+  }
+
+  func updateKeepModelInMemory(_ value: Int?) {
+    dispatchPrecondition(condition: .onQueue(queue))
+    let value = value ?? (DeviceCapability.keepModelPreloaded ? 2 : 0)
+    let newMode = Mode.from(value)
+    guard mode != newMode else { return }
+    mode = newMode
+    if mode == .preload || mode == .coreml || mode == .unet {
+      activeSentinel += 1
+      delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 4)
+    } else if mode == .no {
+      removeAllCache()
+    }
+  }
+
+  func updateUseCoreML(_ value: Bool?) {
+    dispatchPrecondition(condition: .onQueue(queue))
+    let useCoreML = value ?? DeviceCapability.isCoreMLSupported
+    CoreMLModelManager.isCoreMLSupported.store(useCoreML, ordering: .releasing)
+    guard self.useCoreML != nil && self.useCoreML != useCoreML else {
+      self.useCoreML = useCoreML
+      return
+    }
+    removeAllCache()
+    self.useCoreML = useCoreML
+    if mode == .preload || mode == .coreml || mode == .unet {
+      // If need to preload, we do the countdown preload.
+      activeSentinel += 1
+      delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 4)
+    }
+  }
+
+  func updateCoreMLComputeUnit(_ value: Int?) {
+    dispatchPrecondition(condition: .onQueue(queue))
+    let coreMLComputeUnit = value ?? 0
+    CoreMLModelManager.computeUnits.store(coreMLComputeUnit, ordering: .releasing)
+    guard self.coreMLComputeUnit != nil && self.coreMLComputeUnit != coreMLComputeUnit else {
+      self.coreMLComputeUnit = coreMLComputeUnit
+      return
+    }
+    // Changed model, need to reload the model.
+    removeAllCache()
+    self.coreMLComputeUnit = coreMLComputeUnit
+    if mode == .preload || mode == .coreml || mode == .unet {
+      // If need to preload, we do the countdown preload.
+      activeSentinel += 1
+      delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 4)
+    }
+  }
+
+  func updateUseMFA(_ value: Bool?) {
+    dispatchPrecondition(condition: .onQueue(queue))
+    let useMFA = value ?? DeviceCapability.isMFASupported
+    DeviceCapability.isMFAEnabled.store(useMFA, ordering: .releasing)
+    guard self.useMFA != nil && self.useMFA != useMFA else {
+      self.useMFA = useMFA
+      return
+    }
+    removeAllCache()
+    self.useMFA = useMFA
+    if mode == .preload || mode == .coreml || mode == .unet {
+      // If need to preload, we do the countdown preload.
+      activeSentinel += 1
+      delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 4)
+    }
+  }
+
+  func updateMergeLoRA(_ value: Int?) {
+    dispatchPrecondition(condition: .onQueue(queue))
+    let mergeLoRA = value ?? 0
+    guard self.mergeLoRA != nil && self.mergeLoRA != mergeLoRA else {
+      self.mergeLoRA = mergeLoRA
+      return
+    }
+    removeAllCache()
+    self.mergeLoRA = mergeLoRA
+    if mode == .preload || mode == .coreml || mode == .unet {
+      // If need to preload, we do the countdown preload.
+      activeSentinel += 1
+      delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 4)
+    }
+  }
+
+  func updateLoRAUseCoreML(_ value: Bool?) {
+    dispatchPrecondition(condition: .onQueue(queue))
+    let loraUseCoreML = value ?? DeviceCapability.isLoRACoreMLSupported
+    CoreMLModelManager.isLoRASupported.store(loraUseCoreML, ordering: .releasing)
+    guard self.loraUseCoreML != nil && self.loraUseCoreML != loraUseCoreML else {
+      self.loraUseCoreML = loraUseCoreML
+      return
+    }
+    removeAllCache()
+    self.loraUseCoreML = loraUseCoreML
+    if mode == .preload || mode == .coreml || mode == .unet {
+      // If need to preload, we do the countdown preload.
+      activeSentinel += 1
+      delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 4)
+    }
+  }
+
+  func updateMaxCoreMLCacheSize(_ value: Int?) {
+    dispatchPrecondition(condition: .onQueue(queue))
+    let maxCoreMLCacheSize = value ?? 3
+    CoreMLModelManager.maxNumberOfConvertedModels.store(maxCoreMLCacheSize, ordering: .releasing)
+    // Also if the size is 0, remove it.
+    if maxCoreMLCacheSize == 0 {
+      CoreMLModelManager.removeAllConvertedModels()  // Also need to redo the CoreML model now.
+      removeAllCache()
+    }
+  }
+
+  func updateExternalStore(_ value: Bool?) {
+    dispatchPrecondition(condition: .onQueue(queue))
+    guard value != externalStore else { return }
+    externalStore = value
+    removeAllCache()
+    if mode == .preload || mode == .coreml || mode == .unet {
+      activeSentinel += 1
+      delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 4)
+    }
+  }
+
+  enum SupportVariant {
+    case unet
+    case autoencoder
+    case control
+    case diffusionMapping
+    case textEncoder
+  }
+
+  func externalOnDemand(
+    version: ModelVersion, scale: DeviceCapability.Scale, variant: SupportVariant,
+    injectedControls: Int, suffix: String? = nil, is8BitModel: Bool = false
+  ) -> Bool {
+    if let externalStore = externalStore {
+      return externalStore
+        ? DeviceCapability.externalOnDemand(
+          version: version, scale: scale, force: true, suffix: suffix,
+          is8BitModel: is8BitModel) : false
+    } else {
+      if DeviceCapability.isLowPerformance {
+        return DeviceCapability.externalOnDemand(
+          version: version, scale: scale, force: false, suffix: suffix,
+          is8BitModel: is8BitModel)
+      } else {
+        switch variant {
+        case .control:
+          if DeviceCapability.isMaxPerformance {
+            return DeviceCapability.externalOnDemand(
+              version: version, scale: scale, force: false, suffix: suffix,
+              is8BitModel: is8BitModel)
+          } else if DeviceCapability.isHighPerformance && version == .v1 && injectedControls <= 2 {
+            return DeviceCapability.externalOnDemand(
+              version: version, scale: scale, force: false, suffix: suffix,
+              is8BitModel: is8BitModel)
+          } else if DeviceCapability.isGoodPerformance && version == .v1 && injectedControls <= 1 {
+            return DeviceCapability.externalOnDemand(
+              version: version, scale: scale, force: false, suffix: suffix,
+              is8BitModel: is8BitModel)
+          } else if version == .v2 && scale.widthScale * scale.heightScale <= 64
+            && injectedControls <= 1
+          {
+            return DeviceCapability.externalOnDemand(
+              version: version, scale: scale, force: false, suffix: suffix,
+              is8BitModel: is8BitModel)
+          }
+          // For 3GiB / 4GiB devices, we use file backed control net regardless.
+          return DeviceCapability.externalOnDemand(
+            version: version, scale: scale, force: true, suffix: suffix,
+            is8BitModel: is8BitModel)
+        case .textEncoder:
+          switch version {
+          case .v1, .v2, .kandinsky21:
+            return false
+          case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageB, .wurstchenStageC, .svdI2v:
+            return DeviceCapability.isLowPerformance
+          }
+        case .unet:
+          return DeviceCapability.externalOnDemand(
+            version: version, scale: scale, force: false, suffix: suffix,
+            is8BitModel: is8BitModel)
+        case .diffusionMapping:
+          if DeviceCapability.isGoodPerformance {
+            return DeviceCapability.externalOnDemand(
+              version: version, scale: scale, force: false, suffix: suffix,
+              is8BitModel: is8BitModel)
+          }
+          // For 3GiB / 4GiB devices, we use file backed net regardless.
+          return DeviceCapability.externalOnDemand(
+            version: version, scale: scale, force: true, suffix: suffix,
+            is8BitModel: is8BitModel)
+        case .autoencoder:
+          // If it is autoencoder and not low performance, we don't need file backed.
+          return false
+        }
+      }
+    }
+  }
+}
+
+extension ModelPreloader {
+  var canRunLoRASeparately: Bool {
+    (mergeLoRA ?? 0) == 0
+  }
+}
+
+extension ModelPreloader {
+  func retrieveTextModels(textEncoder: TextEncoder<FloatType>) -> [Model?] {
+    guard (mode == .preload || mode == .yes) && isEnabled else {
+      textModel = nil
+      return [nil]
+    }
+    guard let textModel = textModel, textEncoderFilePaths == textEncoder.filePaths,
+      textEncoderVersion == textEncoder.version,
+      textEncoderUsesFlashAttention == textEncoder.usesFlashAttention,
+      textEncoderInjectEmbeddings == textEncoder.injectEmbeddings,
+      textEncoderMaxLength == textEncoder.maxLength,
+      textEncoderClipSkip == textEncoder.clipSkip,
+      textEncoderLoRA == textEncoder.lora
+    else {
+      textModel = nil
+      return [nil]
+    }
+    return [textModel]
+  }
+  func consumeTextModels(
+    _ x: ([DynamicGraph.Tensor<FloatType>], [Model]), textEncoder: TextEncoder<FloatType>
+  )
+    -> [DynamicGraph.Tensor<FloatType>]
+  {
+    if (mode == .preload || mode == .yes) && isEnabled {
+      textModel = x.1[0]
+      textEncoderFilePaths = textEncoder.filePaths
+      textEncoderVersion = textEncoder.version
+      textEncoderUsesFlashAttention = textEncoder.usesFlashAttention
+      textEncoderInjectEmbeddings = textEncoder.injectEmbeddings
+      textEncoderMaxLength = textEncoder.maxLength
+      textEncoderClipSkip = textEncoder.clipSkip
+      textEncoderLoRA = textEncoder.lora
+    }
+    return x.0
+  }
+  func retrieveFirstStageEncoder(firstStage: FirstStage<FloatType>, scale: DeviceCapability.Scale)
+    -> Model?
+  {
+    guard (mode == .preload || mode == .yes) && isEnabled else {
+      firstStageEncoder = nil
+      return nil
+    }
+    guard let firstStageEncoder = firstStageEncoder,
+      firstStageEncoderFilePath == firstStage.filePath,
+      firstStageEncoderExternalOnDemand == firstStage.externalOnDemand,
+      firstStageEncoderVersion == firstStage.version,
+      firstStageEncoderScale == scale,
+      firstStageDecoderHighPrecision == firstStage.highPrecision
+    else {
+      firstStageEncoder = nil
+      return nil
+    }
+    return firstStageEncoder
+  }
+  func consumeFirstStageSample(
+    _ x: (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>, Model),
+    firstStage: FirstStage<FloatType>, scale: DeviceCapability.Scale
+  ) -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>) {
+    if (mode == .preload || mode == .yes) && isEnabled {
+      firstStageEncoder = x.2
+      firstStageEncoderFilePath = firstStage.filePath
+      firstStageEncoderExternalOnDemand = firstStage.externalOnDemand
+      firstStageEncoderVersion = firstStage.version
+      firstStageEncoderScale = scale
+      firstStageDecoderHighPrecision = firstStage.highPrecision
+    }
+    return (x.0, x.1)
+  }
+  func consumeFirstStageEncode(
+    _ x: (DynamicGraph.Tensor<FloatType>, Model), firstStage: FirstStage<FloatType>,
+    scale: DeviceCapability.Scale
+  )
+    -> DynamicGraph.Tensor<FloatType>
+  {
+    if (mode == .preload || mode == .yes) && isEnabled {
+      firstStageEncoder = x.1
+      firstStageEncoderFilePath = firstStage.filePath
+      firstStageEncoderExternalOnDemand = firstStage.externalOnDemand
+      firstStageEncoderVersion = firstStage.version
+      firstStageEncoderScale = scale
+      firstStageDecoderHighPrecision = firstStage.highPrecision
+    }
+    return x.0
+  }
+  func retrieveFirstStageDecoder(firstStage: FirstStage<FloatType>, scale: DeviceCapability.Scale)
+    -> Model?
+  {
+    guard (mode == .preload || mode == .yes) && isEnabled else {
+      firstStageDecoder = nil
+      return nil
+    }
+    guard let firstStageDecoder = firstStageDecoder,
+      firstStageDecoderFilePath == firstStage.filePath,
+      firstStageDecoderExternalOnDemand == firstStage.externalOnDemand,
+      firstStageDecoderVersion == firstStage.version,
+      firstStageDecoderScale == scale,
+      firstStageDecoderHighPrecision == firstStage.highPrecision
+    else {
+      firstStageDecoder = nil
+      return nil
+    }
+    return firstStageDecoder
+  }
+  func consumeFirstStageDecode(
+    _ x: (DynamicGraph.Tensor<FloatType>, Model), firstStage: FirstStage<FloatType>,
+    scale: DeviceCapability.Scale
+  )
+    -> DynamicGraph.Tensor<FloatType>
+  {
+    if (mode == .preload || mode == .yes) && isEnabled {
+      firstStageDecoder = x.1
+      firstStageDecoderFilePath = firstStage.filePath
+      firstStageDecoderExternalOnDemand = firstStage.externalOnDemand
+      firstStageDecoderVersion = firstStage.version
+      firstStageDecoderScale = scale
+      firstStageDecoderHighPrecision = firstStage.highPrecision
+    }
+    return x.0
+  }
+  func retrieveUNet(
+    sampler: any Sampler<FloatType, UNetWrapper<FloatType>>, scale: DeviceCapability.Scale,
+    tokenLengthUncond: Int, tokenLengthCond: Int
+  ) -> [UNetWrapper<FloatType>?] {
+    guard (mode == .preload || mode == .yes || mode == .unet) && isEnabled else {
+      unet = UNetWrapper()
+      return [nil]
+    }
+    guard unet.isLoaded, unetFilePath == sampler.filePath, unetModifier == sampler.modifier,
+      unetVersion == sampler.version, unetUpcastAttention == sampler.upcastAttention,
+      unetUsesFlashAttention == sampler.usesFlashAttention,
+      unetExternalOnDemand == sampler.externalOnDemand, unetScale == scale,
+      unetInjectControls == sampler.injectControls,
+      unetInjectT2IAdapters == sampler.injectT2IAdapters,
+      unetInjectIPAdapterLengths == sampler.injectIPAdapterLengths,
+      unetLoRA == sampler.lora, unetTokenLengthUncond == tokenLengthUncond,
+      unetTokenLengthCond == tokenLengthCond
+    else {
+      unet = UNetWrapper()
+      return [nil]
+    }
+    return [unet]
+  }
+  func consumeUNet(
+    _ x: SamplerOutput<FloatType, UNetWrapper<FloatType>>,
+    sampler: any Sampler<FloatType, UNetWrapper<FloatType>>, scale: DeviceCapability.Scale,
+    tokenLengthUncond: Int, tokenLengthCond: Int
+  )
+    -> DynamicGraph.Tensor<FloatType>
+  {
+    if (mode == .preload || mode == .yes || mode == .unet) && isEnabled {
+      unet = x.unets[0] ?? UNetWrapper()
+      #if !targetEnvironment(macCatalyst)
+        // If it is not mac, we need to unload this resource.
+        unet.unloadResources()
+      #endif
+      unetFilePath = sampler.filePath
+      unetModifier = sampler.modifier
+      unetVersion = sampler.version
+      unetUpcastAttention = sampler.upcastAttention
+      unetUsesFlashAttention = sampler.usesFlashAttention
+      unetExternalOnDemand = sampler.externalOnDemand
+      unetInjectControls = sampler.injectControls
+      unetInjectT2IAdapters = sampler.injectT2IAdapters
+      unetInjectIPAdapterLengths = sampler.injectIPAdapterLengths
+      unetLoRA = sampler.lora
+      unetScale = scale
+      unetTokenLengthUncond = tokenLengthUncond
+      unetTokenLengthCond = tokenLengthCond
+    }
+    return x.x
+  }
+}
+
+#if canImport(UIKit)
+  import UIKit
+
+  extension ModelPreloader {
+    func isAppActive() -> Bool {
+      return UIApplication.shared.applicationState == .active
+    }
+
+    func addLifecycleObservers() {
+      let notificationCenter = NotificationCenter.default
+      notificationCenter.addObserver(
+        forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: nil
+      ) { [weak self] _ in
+        guard let self = self else { return }
+        guard !self.isGenerating else { return }  // Ignore memory warnings during generation.
+        queue.async { [weak self] in
+          guard let self = self else { return }
+          self.didReceiveMemoryWarning()
+        }
+      }
+      notificationCenter.addObserver(
+        forName: UIApplication.didBecomeActiveNotification, object: nil, queue: nil
+      ) { [weak self] _ in
+        guard let self = self else { return }
+        queue.async { [weak self] in
+          guard let self = self else { return }
+          self.didBecomeActive()
+        }
+      }
+      notificationCenter.addObserver(
+        forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil
+      ) { [weak self] _ in
+        guard let self = self else { return }
+        self.didEnterBackground()
+      }
+    }
+
+    private func didEnterBackground() {
+      dispatchPrecondition(condition: .onQueue(.main))
+      guard !isGenerating else { return }  // Don't hold background task during generating.
+      let backgroundTask = UIApplication.shared.beginBackgroundTask()
+      queue.async { [weak self] in
+        defer { UIApplication.shared.endBackgroundTask(backgroundTask) }
+        guard let self = self else {
+          return
+        }
+        self._didEnterBackground()
+      }
+    }
+
+    private func _didEnterBackground() {
+      dispatchPrecondition(condition: .onQueue(queue))
+      activeSentinel += 1
+      #if !targetEnvironment(macCatalyst)
+        removeAllCache()  // Only remove for iOS devices.
+      #endif
+    }
+
+    private func didBecomeActive() {
+      dispatchPrecondition(condition: .onQueue(queue))
+      activeSentinel += 1
+      if mode == .preload || mode == .coreml {
+        delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 4)
+      }
+    }
+  }
+
+#else
+  extension ModelPreloader {
+    func addLifecycleObservers() {
+      // No-op
+    }
+
+    func isAppActive() -> Bool {
+      return true
+    }
+
+    private func didBecomeActive() {
+      // Don't do any preloading if the app is in non-interactive mode
+    }
+  }
+
+#endif
+
+extension ModelPreloader {
+  public static func modifierForModel(_ file: String, LoRAs: [String]) -> SamplerModifier {
+    let modifier = ModelZoo.modifierForModel(file)
+    guard modifier == .none else {
+      return modifier
+    }
+    for name in LoRAs {
+      let modifier = LoRAZoo.modifierForModel(name)
+      if modifier != .none {
+        return modifier
+      }
+    }
+    return .none
+  }
+}
