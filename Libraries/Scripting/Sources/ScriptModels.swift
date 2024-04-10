@@ -83,6 +83,10 @@ public final class JSGenerationConfiguration: Codable {
   var decodingTileWidth: UInt32
   var decodingTileHeight: UInt32
   var decodingTileOverlap: UInt32
+  let tiledDiffusion: Bool
+  var diffusionTileWidth: UInt32
+  var diffusionTileHeight: UInt32
+  var diffusionTileOverlap: UInt32
   let upscaler: String?
   let imageGuidanceScale: Float32
   let seedMode: Int8
@@ -141,6 +145,10 @@ public final class JSGenerationConfiguration: Codable {
     decodingTileWidth = UInt32(configuration.decodingTileWidth) * 64
     decodingTileHeight = UInt32(configuration.decodingTileHeight) * 64
     decodingTileOverlap = UInt32(configuration.decodingTileOverlap) * 64
+    tiledDiffusion = configuration.tiledDiffusion
+    diffusionTileWidth = UInt32(configuration.diffusionTileWidth) * 64
+    diffusionTileHeight = UInt32(configuration.diffusionTileHeight) * 64
+    diffusionTileOverlap = UInt32(configuration.diffusionTileOverlap) * 64
     upscaler = configuration.upscaler
     imageGuidanceScale = configuration.imageGuidanceScale
     seedMode = configuration.seedMode.rawValue
@@ -212,7 +220,11 @@ public final class JSGenerationConfiguration: Codable {
       decodingTileHeight: UInt16(decodingTileHeight / 64),
       decodingTileOverlap: UInt16(decodingTileOverlap / 64),
       stochasticSamplingGamma: stochasticSamplingGamma,
-      preserveOriginalAfterInpaint: preserveOriginalAfterInpaint
+      preserveOriginalAfterInpaint: preserveOriginalAfterInpaint,
+      tiledDiffusion: tiledDiffusion,
+      diffusionTileWidth: UInt16(diffusionTileWidth / 64),
+      diffusionTileHeight: UInt16(diffusionTileHeight / 64),
+      diffusionTileOverlap: UInt16(diffusionTileOverlap / 64)
     )
   }
 }

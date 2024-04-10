@@ -119,6 +119,10 @@ table TensorHistoryNode {
   decoding_tile_overlap: ushort = 2;
   stochastic_sampling_gamma: float = 0.3;
   preserve_original_after_inpaint: bool = true;
+  tiled_diffusion: bool = false;
+  diffusion_tile_width: ushort = 16;
+  diffusion_tile_height: ushort = 16;
+  diffusion_tile_overlap: ushort = 4;
 }
 
 root_type TensorHistoryNode;

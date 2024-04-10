@@ -394,7 +394,11 @@ public final class ImageHistoryManager {
       decodingTileHeight: imageHistory.decodingTileHeight,
       decodingTileOverlap: imageHistory.decodingTileOverlap,
       stochasticSamplingGamma: imageHistory.stochasticSamplingGamma,
-      preserveOriginalAfterInpaint: imageHistory.preserveOriginalAfterInpaint
+      preserveOriginalAfterInpaint: imageHistory.preserveOriginalAfterInpaint,
+      tiledDiffusion: imageHistory.tiledDiffusion,
+      diffusionTileWidth: imageHistory.diffusionTileWidth,
+      diffusionTileHeight: imageHistory.diffusionTileHeight,
+      diffusionTileOverlap: imageHistory.diffusionTileOverlap
     )
     dataStored = imageData.sorted(by: { $0.index < $1.index }).map {
       let tensorId = $0.tensorId == 0 ? nil : $0.tensorId
@@ -618,7 +622,11 @@ public final class ImageHistoryManager {
       decodingTileHeight: configuration.decodingTileHeight,
       decodingTileOverlap: configuration.decodingTileOverlap,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
-      preserveOriginalAfterInpaint: configuration.preserveOriginalAfterInpaint
+      preserveOriginalAfterInpaint: configuration.preserveOriginalAfterInpaint,
+      tiledDiffusion: configuration.tiledDiffusion,
+      diffusionTileWidth: configuration.diffusionTileWidth,
+      diffusionTileHeight: configuration.diffusionTileHeight,
+      diffusionTileOverlap: configuration.diffusionTileOverlap
     )
     let imageVersion = uniqueVersion()
     nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)

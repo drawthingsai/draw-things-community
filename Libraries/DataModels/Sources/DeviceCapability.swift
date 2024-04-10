@@ -1,10 +1,11 @@
 import Atomics
 import Diffusion
 import Foundation
+import Utils
+
 #if canImport(Metal)
   import Metal
 #endif
-import Utils
 
 #if canImport(UIKit)
   extension UIDevice {
@@ -253,6 +254,22 @@ public struct DeviceCapability {
       scales.append(Scale(widthScale: 12, heightScale: 12))
     }
     if DeviceCapability.isMaxPerformance {
+      scales.append(Scale(widthScale: 16, heightScale: 16))
+    }
+    return scales
+  }
+
+  public static var availableDiffusionTileScales: [Scale] {
+    var scales = [Scale]()
+    scales.append(Scale(widthScale: 6, heightScale: 6))
+    scales.append(Scale(widthScale: 8, heightScale: 8))
+    if !DeviceCapability.isLowPerformance {
+      scales.append(Scale(widthScale: 10, heightScale: 10))
+    }
+    if DeviceCapability.isGoodPerformance {
+      scales.append(Scale(widthScale: 12, heightScale: 12))
+    }
+    if DeviceCapability.isHighPerformance {
       scales.append(Scale(widthScale: 16, heightScale: 16))
     }
     return scales
