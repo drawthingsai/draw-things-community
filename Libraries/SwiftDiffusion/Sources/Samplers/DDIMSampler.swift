@@ -19,13 +19,14 @@ where UNet.FloatType == FloatType {
   public let is8BitModel: Bool
   public let canRunLoRASeparately: Bool
   public let conditioning: Denoiser.Conditioning
+  public let tiledDiffusion: TiledDiffusionConfiguration
   private let discretization: Discretization
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool, conditioning: Denoiser.Conditioning,
-    discretization: Discretization
+    tiledDiffusion: TiledDiffusionConfiguration, discretization: Discretization
   ) {
     self.filePath = filePath
     self.modifier = modifier
@@ -40,6 +41,7 @@ where UNet.FloatType == FloatType {
     self.is8BitModel = is8BitModel
     self.canRunLoRASeparately = canRunLoRASeparately
     self.conditioning = conditioning
+    self.tiledDiffusion = tiledDiffusion
     self.discretization = discretization
   }
 }
@@ -239,7 +241,8 @@ extension DDIMSampler: Sampler {
         inputs: xIn, t, newC, tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
-        injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters)
+        injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
+        tiledDiffusion: tiledDiffusion)
     }
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     var noise: DynamicGraph.Tensor<FloatType>? = nil
@@ -342,7 +345,8 @@ extension DDIMSampler: Sampler {
             inputs: xIn, t, newC,
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection, injectedControls: injectedControls,
-            injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters)
+            injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
+            tiledDiffusion: tiledDiffusion)
           refinerKickIn = -1
           unets.append(unet)
         }
@@ -373,7 +377,7 @@ extension DDIMSampler: Sampler {
           var etCond = unet(
             timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
             injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-            injectedIPAdapters: injectedIPAdapters)
+            injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
           let alpha =
             0.001 * sharpness * (discretization.timesteps - timestep)
             / discretization.timesteps
@@ -383,7 +387,7 @@ extension DDIMSampler: Sampler {
             let etUncond = unet(
               timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
               injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-              injectedIPAdapters: injectedIPAdapters)
+              injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
             if let blur = blur {
               let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
               etCond = Functional.add(
@@ -417,7 +421,7 @@ extension DDIMSampler: Sampler {
           var etOut = unet(
             timestep: cNoise, inputs: xIn, t, c, extraProjection: extraProjection,
             injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-            injectedIPAdapters: injectedIPAdapters)
+            injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
           let alpha =
             0.001 * sharpness * (discretization.timesteps - timestep)
             / discretization.timesteps

@@ -73,7 +73,8 @@ extension UNetFromCoreML {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>]
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    tiledDiffusion: TiledDiffusionConfiguration
   ) -> Bool {
     #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
       // We cannot handle upcast attention, yet.
@@ -82,7 +83,7 @@ extension UNetFromCoreML {
       guard version != .kandinsky21, upcastAttention == false, injectControls == false,
         injectT2IAdapters == false, injectIPAdapterLengths.isEmpty,
         CoreMLModelManager.isCoreMLSupported.load(ordering: .acquiring),
-        tokenLengthUncond == tokenLengthCond
+        tokenLengthUncond == tokenLengthCond, !tiledDiffusion.isEnabled
       else { return false }
       let isLoRASupported = CoreMLModelManager.isLoRASupported.load(ordering: .acquiring)
       let tokenLength = c.shape[1]
@@ -343,7 +344,8 @@ extension UNetFromCoreML {
     _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>]
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    tiledDiffusion: TiledDiffusionConfiguration
   ) -> DynamicGraph.Tensor<FloatType> {
     return autoreleasepool {
       let c = c[0]

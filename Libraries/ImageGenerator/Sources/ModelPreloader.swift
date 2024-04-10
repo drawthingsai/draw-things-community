@@ -77,6 +77,7 @@ public final class ModelPreloader {
   private var unetInjectControls: Bool? = nil
   private var unetInjectT2IAdapters: Bool? = nil
   private var unetInjectIPAdapterLengths: [Int]? = nil
+  private var unetTiledDiffusion: TiledDiffusionConfiguration? = nil
   private var unetLoRA: [LoRAConfiguration]? = nil
   private var unetTokenLengthUncond: Int = 77
   private var unetTokenLengthCond: Int = 77
@@ -86,7 +87,7 @@ public final class ModelPreloader {
   private var firstStageDecoder: Model? = nil
   private var firstStageEncoder: Model? = nil
   private var textModel: Model? = nil
-  private var configuration: GenerationConfiguration?
+  private var tiledDiffusion: TiledDiffusionConfiguration? = nil
   // Subscription tokens.
   private var configurationSubscription: Workspace.Subscription? = nil
   private var keepModelInMemorySubscription: Workspace.Subscription? = nil
@@ -113,8 +114,7 @@ public final class ModelPreloader {
     dispatchPrecondition(condition: .onQueue(.main))
     self.queue = queue
     self.workspace = workspace
-    self.configuration = configurations.first
-    if let configuration = configuration {
+    if let configuration = configurations.first {
       modelFile = configuration.model ?? ModelZoo.defaultSpecification.file
       imageScale = DeviceCapability.Scale(
         widthScale: configuration.startWidth, heightScale: configuration.startHeight)
@@ -129,6 +129,12 @@ public final class ModelPreloader {
           file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: modelVersion,
           isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
       }
+      tiledDiffusion = TiledDiffusionConfiguration(
+        isEnabled: configuration.tiledDiffusion,
+        tileSize: .init(
+          width: Int(configuration.diffusionTileWidth),
+          height: Int(configuration.diffusionTileHeight)),
+        tileOverlap: Int(configuration.diffusionTileOverlap))
     }
     let mode =
       workspace.dictionary["keep_model_in_memory", Int.self]
@@ -379,6 +385,7 @@ extension ModelPreloader {
     unetInjectControls = nil
     unetInjectT2IAdapters = nil
     unetInjectIPAdapterLengths = nil
+    unetTiledDiffusion = nil
     unetLoRA = nil
     unetTokenLengthUncond = 77
     unetTokenLengthCond = 77
@@ -410,7 +417,8 @@ extension ModelPreloader {
   private func preloadIfPossible() {
     defer { preloadState = .preloadDone }
     guard let modelFile = modelFile, let imageScale = imageScale, let batchSize = batchSize,
-      let clipSkip = clipSkip, let lora = lora, let useMFA = useMFA, isEnabled
+      let clipSkip = clipSkip, let lora = lora, let tiledDiffusion = tiledDiffusion,
+      let useMFA = useMFA, isEnabled
     else {
       return
     }
@@ -528,12 +536,14 @@ extension ModelPreloader {
           is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately,
           inputs: x, t, cArr, tokenLengthUncond: 77, tokenLengthCond: 77, extraProjection: nil,
-          injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [])
+          injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
+          tiledDiffusion: tiledDiffusion)
         unetFilePath = modelPath
         unetExternalOnDemand = externalOnDemand
         unetInjectControls = false
         unetInjectT2IAdapters = false
         unetInjectIPAdapterLengths = []
+        unetTiledDiffusion = tiledDiffusion
         unetVersion = modelVersion
         unetUpcastAttention = upcastAttention
         unetUsesFlashAttention = useMFA
@@ -788,9 +798,15 @@ extension ModelPreloader {
         file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: version,
         isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
     }
+    let newTiledDiffusion = TiledDiffusionConfiguration(
+      isEnabled: newConfiguration.tiledDiffusion,
+      tileSize: .init(
+        width: Int(newConfiguration.diffusionTileWidth),
+        height: Int(newConfiguration.diffusionTileHeight)),
+      tileOverlap: Int(newConfiguration.diffusionTileOverlap))
     guard
       modelFile != newModelFile || imageScale != newImageScale || batchSize != newBatchSize
-        || clipSkip != newClipSkip || lora != newLora
+        || clipSkip != newClipSkip || lora != newLora || tiledDiffusion != newTiledDiffusion
     else { return }
     removeAllCache()
     modelFile = newModelFile
@@ -798,6 +814,7 @@ extension ModelPreloader {
     batchSize = newBatchSize
     clipSkip = newClipSkip
     lora = newLora
+    tiledDiffusion = newTiledDiffusion
     // Only preload if we are in preload mode.
     if mode == .preload || mode == .coreml || mode == .unet {
       activeSentinel += 1
@@ -1145,6 +1162,7 @@ extension ModelPreloader {
       unetInjectControls == sampler.injectControls,
       unetInjectT2IAdapters == sampler.injectT2IAdapters,
       unetInjectIPAdapterLengths == sampler.injectIPAdapterLengths,
+      unetTiledDiffusion == sampler.tiledDiffusion,
       unetLoRA == sampler.lora, unetTokenLengthUncond == tokenLengthUncond,
       unetTokenLengthCond == tokenLengthCond
     else {
@@ -1175,6 +1193,7 @@ extension ModelPreloader {
       unetInjectControls = sampler.injectControls
       unetInjectT2IAdapters = sampler.injectT2IAdapters
       unetInjectIPAdapterLengths = sampler.injectIPAdapterLengths
+      unetTiledDiffusion = sampler.tiledDiffusion
       unetLoRA = sampler.lora
       unetScale = scale
       unetTokenLengthUncond = tokenLengthUncond

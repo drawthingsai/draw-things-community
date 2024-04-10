@@ -18,7 +18,8 @@ public protocol UNetProtocol {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>]
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    tiledDiffusion: TiledDiffusionConfiguration
   ) -> Bool
   func callAsFunction(
     timestep: Float,
@@ -26,7 +27,8 @@ public protocol UNetProtocol {
     _: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>]
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    tiledDiffusion: TiledDiffusionConfiguration
   ) -> DynamicGraph.Tensor<FloatType>
   func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType>
 }
@@ -94,7 +96,8 @@ extension UNetFromNNC {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>]
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    tiledDiffusion: TiledDiffusionConfiguration
   ) -> Bool {
     guard unet == nil else { return true }
     let batchSize = xT.shape[0]
@@ -382,7 +385,8 @@ extension UNetFromNNC {
     _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>]
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    tiledDiffusion: TiledDiffusionConfiguration
   ) -> DynamicGraph.Tensor<FloatType> {
     if let extraProjection = extraProjection, let timeEmbed = timeEmbed {
       let batchSize = xT.shape[0]

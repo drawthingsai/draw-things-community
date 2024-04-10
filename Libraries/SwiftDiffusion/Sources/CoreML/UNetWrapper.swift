@@ -35,7 +35,8 @@ extension UNetWrapper {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>]
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    tiledDiffusion: TiledDiffusionConfiguration
   ) -> Bool {
     if unetFromCoreML.compileModel(
       filePath: filePath, externalOnDemand: externalOnDemand, version: version,
@@ -45,7 +46,8 @@ extension UNetWrapper {
       is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT, timestep, c,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       extraProjection: extraProjection, injectedControls: injectedControls,
-      injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters)
+      injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
+      tiledDiffusion: tiledDiffusion)
     {
       preferCoreML = true
       return true
@@ -58,7 +60,8 @@ extension UNetWrapper {
       is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT, timestep, c,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       extraProjection: extraProjection, injectedControls: injectedControls,
-      injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters)
+      injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
+      tiledDiffusion: tiledDiffusion)
     return true
   }
 
@@ -68,18 +71,19 @@ extension UNetWrapper {
     _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>]
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    tiledDiffusion: TiledDiffusionConfiguration
   ) -> DynamicGraph.Tensor<FloatType> {
     if preferCoreML {
       return unetFromCoreML(
         timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
         injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-        injectedIPAdapters: injectedIPAdapters)
+        injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
     }
     return unetFromNNC(
       timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
       injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-      injectedIPAdapters: injectedIPAdapters)
+      injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
   }
 
   public func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType> {

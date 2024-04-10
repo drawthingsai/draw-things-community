@@ -74,7 +74,8 @@ extension ImageGenerator {
     injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration], is8BitModel: Bool, canRunLoRASeparately: Bool,
     stochasticSamplingGamma: Float, conditioning: Denoiser.Conditioning,
-    parameterization: Denoiser.Parameterization, of: FloatType.Type
+    parameterization: Denoiser.Parameterization, tiledDiffusion: TiledDiffusionConfiguration,
+    of: FloatType.Type
   ) -> any Sampler<FloatType, UNetWrapper<FloatType>> {
     let manualSubsteps: (Int) -> [Int] = {
       switch $0 {
@@ -113,6 +114,7 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: false, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing))
       case .eulerASubstep, .eulerA:
@@ -126,6 +128,7 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: false, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.LinearManualDiscretization(
             parameterization, objective: objective, manual: manualSubsteps))
       case .dPMPPSDETrailing:
@@ -139,6 +142,7 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: false, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing))
       case .dPMPPSDESubstep, .dPMPPSDEKarras:
@@ -152,6 +156,7 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: false, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.LinearManualDiscretization(
             parameterization, objective: objective, manual: manualSubsteps))
       case .LCM, .DDIM, .PLMS, .uniPC, .dPMPP2MKarras:
@@ -162,7 +167,7 @@ extension ImageGenerator {
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning,
+          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
       case .TCD:
         return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
@@ -173,7 +178,7 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: stochasticSamplingGamma,
-          conditioning: conditioning,
+          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
       }
     }
@@ -187,7 +192,7 @@ extension ImageGenerator {
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning,
+          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .eulerA, .eulerASubstep, .eulerATrailing:
         return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -198,6 +203,7 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: true, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .DDIM:
         return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -207,7 +213,7 @@ extension ImageGenerator {
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning,
+          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .PLMS:
         return PLMSSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -217,7 +223,7 @@ extension ImageGenerator {
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning,
+          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .dPMPPSDEKarras, .dPMPPSDESubstep, .dPMPPSDETrailing:
         return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -228,6 +234,7 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: true, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .uniPC:
         return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -237,7 +244,7 @@ extension ImageGenerator {
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning,
+          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .LCM:
         return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -247,7 +254,7 @@ extension ImageGenerator {
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning,
+          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .TCD:
         return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -258,7 +265,7 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: stochasticSamplingGamma,
-          conditioning: conditioning,
+          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       }
     }
@@ -271,7 +278,7 @@ extension ImageGenerator {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        conditioning: conditioning,
+        conditioning: conditioning, tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective))
     case .eulerA:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
@@ -282,6 +289,7 @@ extension ImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: true, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .eulerATrailing:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
@@ -292,6 +300,7 @@ extension ImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: true, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing))
     case .DDIM:
@@ -302,7 +311,7 @@ extension ImageGenerator {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        conditioning: conditioning,
+        conditioning: conditioning, tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading))
     case .PLMS:
@@ -313,7 +322,7 @@ extension ImageGenerator {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        conditioning: conditioning,
+        conditioning: conditioning, tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading))
     case .dPMPPSDEKarras:
@@ -325,6 +334,7 @@ extension ImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: true, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective))
     case .dPMPPSDETrailing:
       return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
@@ -335,6 +345,7 @@ extension ImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: true, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing))
     case .uniPC:
@@ -345,7 +356,7 @@ extension ImageGenerator {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        conditioning: conditioning,
+        conditioning: conditioning, tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .LCM:
       return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
@@ -355,7 +366,7 @@ extension ImageGenerator {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        conditioning: conditioning,
+        conditioning: conditioning, tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .TCD:
       return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
@@ -366,7 +377,7 @@ extension ImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
         stochasticSamplingGamma: stochasticSamplingGamma,
-        conditioning: conditioning,
+        conditioning: conditioning, tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .eulerASubstep:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearManualDiscretization>(
@@ -377,6 +388,7 @@ extension ImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: false, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearManualDiscretization(
           parameterization, objective: objective, manual: manualSubsteps))
     case .dPMPPSDESubstep:
@@ -390,6 +402,7 @@ extension ImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: false, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearManualDiscretization(
           parameterization, objective: objective, manual: manualSubsteps))
     }
@@ -1925,6 +1938,11 @@ extension ImageGenerator {
       else { return nil }
       return ModelZoo.versionForModel($0)
     }
+    let tiledDiffusion = TiledDiffusionConfiguration(
+      isEnabled: configuration.tiledDiffusion,
+      tileSize: .init(
+        width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
+      ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
     let lora: [LoRAConfiguration] = configuration.loras.compactMap {
@@ -2067,6 +2085,7 @@ extension ImageGenerator {
       lora: lora, is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
+      tiledDiffusion: tiledDiffusion,
       of: FloatType.self)
     let initTimestep = sampler.timestep(for: hiresFixStrength, sampling: sampling)
     let hiresFixEnabled =
@@ -2554,7 +2573,8 @@ extension ImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
         stochasticSamplingGamma: configuration.stochasticSamplingGamma,
-        conditioning: conditioning, parameterization: denoiserParameterization, of: FloatType.self)
+        conditioning: conditioning, parameterization: denoiserParameterization,
+        tiledDiffusion: tiledDiffusion, of: FloatType.self)
       let startStep: (integral: Int, fractional: Float)
       let xEnc: DynamicGraph.Tensor<FloatType>
       let secondPassTextGuidance: Float
@@ -2752,6 +2772,11 @@ extension ImageGenerator {
       else { return nil }
       return ModelZoo.versionForModel($0)
     }
+    let tiledDiffusion = TiledDiffusionConfiguration(
+      isEnabled: configuration.tiledDiffusion,
+      tileSize: .init(
+        width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
+      ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
     let lora: [LoRAConfiguration] = configuration.loras.compactMap {
@@ -2879,7 +2904,8 @@ extension ImageGenerator {
       injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
       lora: lora, is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
-      conditioning: conditioning, parameterization: denoiserParameterization, of: FloatType.self)
+      conditioning: conditioning, parameterization: denoiserParameterization,
+      tiledDiffusion: tiledDiffusion, of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     guard initTimestep.startStep > 0 || modelVersion == .svdI2v else {
       return generateTextOnly(
@@ -3235,7 +3261,8 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
-          conditioning: conditioning, parameterization: denoiserParameterization, of: FloatType.self
+          conditioning: conditioning, parameterization: denoiserParameterization,
+          tiledDiffusion: tiledDiffusion, of: FloatType.self
         )
         let noise = randomLatentNoise(
           graph: graph, batchSize: batchSize, startHeight: startHeight,
@@ -3896,6 +3923,11 @@ extension ImageGenerator {
       else { return nil }
       return ModelZoo.versionForModel($0)
     }
+    let tiledDiffusion = TiledDiffusionConfiguration(
+      isEnabled: configuration.tiledDiffusion,
+      tileSize: .init(
+        width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
+      ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
     let lora: [LoRAConfiguration] = configuration.loras.compactMap {
@@ -4046,7 +4078,8 @@ extension ImageGenerator {
       injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
       lora: lora, is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
-      conditioning: conditioning, parameterization: denoiserParameterization, of: FloatType.self)
+      conditioning: conditioning, parameterization: denoiserParameterization,
+      tiledDiffusion: tiledDiffusion, of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     let graph = DynamicGraph()
     if externalOnDemand {
@@ -4363,7 +4396,8 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
-          conditioning: conditioning, parameterization: denoiserParameterization, of: FloatType.self
+          conditioning: conditioning, parameterization: denoiserParameterization,
+          tiledDiffusion: tiledDiffusion, of: FloatType.self
         )
         let noise = randomLatentNoise(
           graph: graph, batchSize: batchSize, startHeight: startHeight,
@@ -4556,6 +4590,11 @@ extension ImageGenerator {
       else { return nil }
       return ModelZoo.versionForModel($0)
     }
+    let tiledDiffusion = TiledDiffusionConfiguration(
+      isEnabled: configuration.tiledDiffusion,
+      tileSize: .init(
+        width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
+      ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
     let lora: [LoRAConfiguration] = configuration.loras.compactMap {
@@ -4706,7 +4745,8 @@ extension ImageGenerator {
       injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
       lora: lora, is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
-      conditioning: conditioning, parameterization: denoiserParameterization, of: FloatType.self)
+      conditioning: conditioning, parameterization: denoiserParameterization,
+      tiledDiffusion: tiledDiffusion, of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     let graph = DynamicGraph()
     if externalOnDemand {
@@ -5113,7 +5153,8 @@ extension ImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
-          conditioning: conditioning, parameterization: denoiserParameterization, of: FloatType.self
+          conditioning: conditioning, parameterization: denoiserParameterization,
+          tiledDiffusion: tiledDiffusion, of: FloatType.self
         )
         let noise = randomLatentNoise(
           graph: graph, batchSize: batchSize, startHeight: startHeight,

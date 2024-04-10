@@ -20,6 +20,7 @@ where UNet.FloatType == FloatType {
   public let canRunLoRASeparately: Bool
   public let stochasticSamplingGamma: Float
   public let conditioning: Denoiser.Conditioning
+  public let tiledDiffusion: TiledDiffusionConfiguration
   private let discretization: Discretization
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
@@ -27,7 +28,7 @@ where UNet.FloatType == FloatType {
     injectT2IAdapters: Bool, injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool,
     stochasticSamplingGamma: Float, conditioning: Denoiser.Conditioning,
-    discretization: Discretization
+    tiledDiffusion: TiledDiffusionConfiguration, discretization: Discretization
   ) {
     self.filePath = filePath
     self.modifier = modifier
@@ -43,6 +44,7 @@ where UNet.FloatType == FloatType {
     self.canRunLoRASeparately = canRunLoRASeparately
     self.stochasticSamplingGamma = stochasticSamplingGamma
     self.conditioning = conditioning
+    self.tiledDiffusion = tiledDiffusion
     self.discretization = discretization
   }
 }
@@ -198,7 +200,8 @@ extension TCDSampler: Sampler {
         inputs: xIn, t, newC, tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
-        injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters)
+        injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
+        tiledDiffusion: tiledDiffusion)
     }
     let alphasCumprod = discretization.alphasCumprod(
       steps: sampling.steps + 1, shift: sampling.shift)
@@ -308,7 +311,8 @@ extension TCDSampler: Sampler {
             inputs: xIn, t, newC,
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection, injectedControls: injectedControls,
-            injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters)
+            injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
+            tiledDiffusion: tiledDiffusion)
           refinerKickIn = -1
           unets.append(unet)
         }
@@ -337,7 +341,7 @@ extension TCDSampler: Sampler {
         var etOut = unet(
           timestep: cNoise, inputs: xIn, t, newC, extraProjection: extraProjection,
           injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-          injectedIPAdapters: injectedIPAdapters)
+          injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
         if let blur = blur {
           let alpha =
             0.001 * sharpness * (discretization.timesteps - Float(timestep))
