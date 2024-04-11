@@ -225,7 +225,11 @@ extension ControlModel {
         ? min(tiledDiffusion.tileSize.height * 64, startHeight) : startHeight
       let tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 64, startWidth) : startWidth
-      let tileOverlap = tiledDiffusion.tileOverlap * 64
+      let tileOverlap = min(
+        min(
+          tiledDiffusion.tileOverlap * 64,
+          Int((Double(tiledHeight / 3) / 64).rounded(.down)) * 64),
+        Int((Double(tiledWidth / 3) / 64).rounded(.down)) * 64)
       let tiledDiffusionIsEnabled = (startWidth > tiledWidth) || (startHeight > tiledHeight)
       // For ControlNet, we only compute hint.
       let outputChannels = 320
@@ -529,16 +533,89 @@ extension ControlModel {
       } else {
         adapter = Adapter(channels: [320, 640, 1280, 1280], numRepeat: 2)
       }
-      adapter.compile(inputs: inputs[0].hint)
+      // Hint is already in input size, not in image size.
+      let shape = inputs[0].hint.shape
+      let startHeight = shape[1]
+      let startWidth = shape[2]
+      let tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      let tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      let tiledDiffusionIsEnabled = (startWidth > tiledWidth) || (startHeight > tiledHeight)
+      if tiledDiffusionIsEnabled {
+        adapter.compile(
+          inputs: inputs[0].hint[0..<shape[0], 0..<tiledHeight, 0..<tiledWidth, 0..<shape[3]])
+      } else {
+        adapter.compile(inputs: inputs[0].hint)
+      }
       graph.openStore(
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) {
         $0.read("adapter", model: adapter, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
       }
-      // compute with weight on adapter right now, to avoid doing it every time during denoising iteration(like control net).
-      return inputs.map { input in
-        adapter(inputs: input.hint).map { input.weight * $0.as(of: FloatType.self) }
+      if tiledDiffusionIsEnabled {
+        let tileOverlap = min(
+          min(
+            tiledDiffusion.tileOverlap * 8,
+            Int((Double(tiledHeight / 3) / 8).rounded(.down)) * 8),
+          Int((Double(tiledWidth / 3) / 8).rounded(.down)) * 8)
+        let yTiles =
+          (startHeight - tileOverlap * 2 + (tiledHeight - tileOverlap * 2) - 1)
+          / (tiledHeight - tileOverlap * 2)
+        let xTiles =
+          (startWidth - tileOverlap * 2 + (tiledWidth - tileOverlap * 2) - 1)
+          / (tiledWidth - tileOverlap * 2)
+        return inputs.map { input in
+          var result = [DynamicGraph.Tensor<FloatType>]()
+          for y in 0..<yTiles {
+            let yOfs = y * (tiledHeight - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
+            let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
+              iOfs: yOfs, length: startHeight, tileSize: tiledHeight, tileOverlap: tileOverlap)
+            for x in 0..<xTiles {
+              let xOfs = x * (tiledWidth - tileOverlap * 2) + (x > 0 ? tileOverlap : 0)
+              let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
+                iOfs: xOfs, length: startWidth, tileSize: tiledWidth, tileOverlap: tileOverlap)
+              let tiles = adapter(
+                inputs: input.hint[
+                  0..<shape[0], inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
+                  0..<shape[3]
+                ].copied()
+              ).map { input.weight * $0.as(of: FloatType.self) }
+              if result.isEmpty {
+                for tile in tiles {
+                  var shape = tile.shape
+                  let batchSize = shape[0]
+                  shape[0] = shape[0] * (xTiles * yTiles)
+                  var z = graph.variable(
+                    tile.kind, format: tile.format, shape: shape, of: FloatType.self)
+                  let index = y * xTiles + x
+                  z[
+                    (index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2],
+                    0..<shape[3]] = tile
+                  result.append(z)
+                }
+              } else {
+                for (i, tile) in tiles.enumerated() {
+                  let shape = tile.shape
+                  var z = result[i]
+                  let index = y * xTiles + x
+                  z[
+                    (index * shape[0])..<((index + 1) * shape[0]), 0..<shape[1], 0..<shape[2],
+                    0..<shape[3]] = tile
+                  result[i] = z
+                }
+              }
+            }
+          }
+          return result
+        }
+      } else {
+        // compute with weight on adapter right now, to avoid doing it every time during denoising iteration(like control net).
+        return inputs.map { input in
+          adapter(inputs: input.hint).map { input.weight * $0.as(of: FloatType.self) }
+        }
       }
     }
   }
@@ -886,8 +963,8 @@ extension ControlModel {
     let tileOverlap = min(
       min(
         tiledDiffusion.tileOverlap * tileScaleFactor,
-        Int((Double(tiledHeight / 3) / 8).rounded(.down)) * 8),
-      Int((Double(tiledWidth / 3) / 8).rounded(.down)) * 8)
+        Int((Double(tiledHeight / 3) / tileScaleFactor).rounded(.down)) * tileScaleFactor),
+      Int((Double(tiledWidth / 3) / tileScaleFactor).rounded(.down)) * tileScaleFactor)
     let yTiles =
       (startHeight - tileOverlap * 2 + (tiledHeight - tileOverlap * 2) - 1)
       / (tiledHeight - tileOverlap * 2)
