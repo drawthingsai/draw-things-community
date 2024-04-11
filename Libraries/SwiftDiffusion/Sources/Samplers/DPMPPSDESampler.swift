@@ -228,7 +228,8 @@ extension DPMPPSDESampler: Sampler {
       let (injectedControls, injectedT2IAdapters, injectedIPAdapters) =
         ControlModel<FloatType>
         .emptyInjectedControlsAndAdapters(
-          injecteds: injectedControls, step: 0, version: version, inputs: xIn)
+          injecteds: injectedControls, step: 0, version: version, inputs: xIn,
+          tiledDiffusion: tiledDiffusion)
       let newC: [DynamicGraph.Tensor<FloatType>]
       if version == .svdI2v {
         newC = Array(c[0..<(1 + (c.count - 1) / 2)])
@@ -367,7 +368,8 @@ extension DPMPPSDESampler: Sampler {
           let (injectedControls, injectedT2IAdapters, injectedIPAdapters) =
             ControlModel<FloatType>
             .emptyInjectedControlsAndAdapters(
-              injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn)
+              injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn,
+              tiledDiffusion: tiledDiffusion)
           let newC: [DynamicGraph.Tensor<FloatType>]
           if version == .svdI2v {
             newC = Array(c[0..<(1 + (c.count - 1) / 2)])
@@ -411,7 +413,8 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              mainUNetAndWeightMapper: unet.modelAndWeightMapper, controlNets: &controlNets)
+              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+              controlNets: &controlNets)
           let cCond = Array(c[0..<(1 + (c.count - 1) / 2)])
           var etCond = unet(
             timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
@@ -456,7 +459,8 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injecteds, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              mainUNetAndWeightMapper: unet.modelAndWeightMapper, controlNets: &controlNets)
+              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+              controlNets: &controlNets)
           var etOut = unet(
             timestep: cNoise, inputs: xIn, t, c, extraProjection: extraProjection,
             injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
@@ -575,7 +579,8 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              mainUNetAndWeightMapper: unet.modelAndWeightMapper, controlNets: &controlNets)
+              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+              controlNets: &controlNets)
             let cCond = Array(c[0..<(1 + (c.count - 1) / 2)])
             var etCond = unet(
               timestep: timestep, inputs: xIn, t, cCond, extraProjection: extraProjection,
@@ -623,7 +628,8 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injecteds, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              mainUNetAndWeightMapper: unet.modelAndWeightMapper, controlNets: &controlNets)
+              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+              controlNets: &controlNets)
             var etOut = unet(
               timestep: timestep, inputs: xIn, t, c, extraProjection: extraProjection,
               injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,

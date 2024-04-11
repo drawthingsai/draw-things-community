@@ -190,7 +190,8 @@ extension LCMSampler: Sampler {
       let (injectedControls, injectedT2IAdapters, injectedIPAdapters) =
         ControlModel<FloatType>
         .emptyInjectedControlsAndAdapters(
-          injecteds: injectedControls, step: 0, version: version, inputs: xIn)
+          injecteds: injectedControls, step: 0, version: version, inputs: xIn,
+          tiledDiffusion: tiledDiffusion)
       let newC: [DynamicGraph.Tensor<FloatType>]
       if version == .svdI2v {
         newC = Array(c[0..<(1 + (c.count - 1) / 2)])
@@ -356,7 +357,8 @@ extension LCMSampler: Sampler {
           let (injectedControls, injectedT2IAdapters, injectedIPAdapters) =
             ControlModel<FloatType>
             .emptyInjectedControlsAndAdapters(
-              injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn)
+              injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn,
+              tiledDiffusion: tiledDiffusion)
           let newC: [DynamicGraph.Tensor<FloatType>]
           if version == .svdI2v {
             newC = Array(c[0..<(1 + (c.count - 1) / 2)])
@@ -394,7 +396,8 @@ extension LCMSampler: Sampler {
             injecteds: injectedControls, step: i, version: unet.version,
             usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            mainUNetAndWeightMapper: unet.modelAndWeightMapper, controlNets: &controlNets)
+            isCfgEnabled: false, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+            controlNets: &controlNets)
         let newC: [DynamicGraph.Tensor<FloatType>]
         if version == .svdI2v {
           newC = Array(c[0..<(1 + (c.count - 1) / 2)])

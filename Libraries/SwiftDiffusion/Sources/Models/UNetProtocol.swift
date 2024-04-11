@@ -370,9 +370,20 @@ extension UNetFromNNC {
     if injectT2IAdapters {
       inputs.append(contentsOf: injectedT2IAdapters)
     }
+    let tileOverlap = min(
+      min(
+        tiledDiffusion.tileOverlap * tileScaleFactor,
+        Int((Double(tiledHeight / 3) / 8).rounded(.down)) * 8),
+      Int((Double(tiledWidth / 3) / 8).rounded(.down)) * 8)
+    let yTiles =
+      (startHeight - tileOverlap * 2 + (tiledHeight - tileOverlap * 2) - 1)
+      / (tiledHeight - tileOverlap * 2)
+    let xTiles =
+      (startWidth - tileOverlap * 2 + (tiledWidth - tileOverlap * 2) - 1)
+      / (tiledWidth - tileOverlap * 2)
     if startWidth > tiledWidth || startHeight > tiledHeight {
       let inputs = sliceInputs(
-        inputs, originalShape: shape, xyTiles: 1, index: 0, inputStartYPad: 0,
+        inputs, originalShape: shape, xyTiles: xTiles * yTiles, index: 0, inputStartYPad: 0,
         inputEndYPad: tiledHeight, inputStartXPad: 0, inputEndXPad: tiledWidth)
       unet.compile(
         inputs: [xT[0..<shape[0], 0..<tiledHeight, 0..<tiledWidth, 0..<shape[3]]] + inputs)
@@ -442,17 +453,6 @@ extension UNetFromNNC {
     self.version = version
     self.unet = unet
     if startWidth > tiledWidth || startHeight > tiledHeight {
-      let tileOverlap = min(
-        min(
-          tiledDiffusion.tileOverlap * tileScaleFactor,
-          Int((Double(tiledHeight / 3) / 8).rounded(.down)) * 8),
-        Int((Double(tiledWidth / 3) / 8).rounded(.down)) * 8)
-      let yTiles =
-        (startHeight - tileOverlap * 2 + (tiledHeight - tileOverlap * 2) - 1)
-        / (tiledHeight - tileOverlap * 2)
-      let xTiles =
-        (startWidth - tileOverlap * 2 + (tiledWidth - tileOverlap * 2) - 1)
-        / (tiledWidth - tileOverlap * 2)
       (xTileWeightsAndIndexes, yTileWeightsAndIndexes) = xyTileWeightsAndIndexes(
         width: startWidth, height: startHeight, xTiles: xTiles, yTiles: yTiles,
         tileSize: (width: tiledWidth, height: tiledHeight), tileOverlap: tileOverlap)
@@ -479,6 +479,11 @@ extension UNetFromNNC {
             (inputStartXPad / scaleFactor)..<(inputEndXPad / scaleFactor), 0..<shape[3]
           ].copied()
         }
+      } else if originalShape[0] * xyTiles == shape[0] {
+        return $0[
+          (index * originalShape[0])..<((index + 1) * originalShape[0]), 0..<shape[1], 0..<shape[2],
+          0..<shape[3]
+        ].copied()
       }
       return $0
     }

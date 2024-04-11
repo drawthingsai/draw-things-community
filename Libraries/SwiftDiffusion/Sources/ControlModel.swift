@@ -75,7 +75,7 @@ extension ControlModel {
     step: Int, version: ModelVersion, usesFlashAttention: Bool,
     inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>, _ c: [[DynamicGraph.Tensor<FloatType>]],
-    tokenLengthUncond: Int, tokenLengthCond: Int,
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
     controlNets existingControlNets: inout [Model?]
   ) -> (
@@ -93,7 +93,8 @@ extension ControlModel {
           let newInjectedControls = injected.model(
             step: step, inputs: xT, hint, strength: strength, timestep, c[i],
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            mainUNetAndWeightMapper: mainUNetAndWeightMapper, controlNet: &existingControlNets[i])
+            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: mainUNetAndWeightMapper,
+            controlNet: &existingControlNets[i])
           if injectedControls.isEmpty {
             injectedControls = newInjectedControls
           } else {
@@ -106,7 +107,8 @@ extension ControlModel {
           let newInjectedIPAdapters = injected.model(
             step: step, inputs: xT, hint, strength: strength, timestep, c[i],
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            mainUNetAndWeightMapper: mainUNetAndWeightMapper, controlNet: &existingControlNets[i])
+            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: mainUNetAndWeightMapper,
+            controlNet: &existingControlNets[i])
           if instanceInjectedIPAdapters.isEmpty {
             instanceInjectedIPAdapters = newInjectedIPAdapters
           } else {
@@ -126,7 +128,8 @@ extension ControlModel {
           let newInjectedT2IAdapters = injected.model(
             step: step, inputs: xT, hint, strength: strength, timestep, c[i],
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            mainUNetAndWeightMapper: mainUNetAndWeightMapper, controlNet: &existingControlNets[i])
+            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: mainUNetAndWeightMapper,
+            controlNet: &existingControlNets[i])
           if injectedT2IAdapters.isEmpty {
             injectedT2IAdapters = newInjectedT2IAdapters
           } else {
@@ -142,7 +145,8 @@ extension ControlModel {
     injecteds: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )],
-    step: Int, version: ModelVersion, inputs xT: DynamicGraph.Tensor<FloatType>
+    step: Int, version: ModelVersion, inputs xT: DynamicGraph.Tensor<FloatType>,
+    tiledDiffusion: TiledDiffusionConfiguration
   ) -> (
     [DynamicGraph.Tensor<FloatType>], [DynamicGraph.Tensor<FloatType>],
     [DynamicGraph.Tensor<FloatType>]
@@ -154,13 +158,32 @@ extension ControlModel {
     let batchSize = xT.shape[0]
     let startHeight = xT.shape[1]
     let startWidth = xT.shape[2]
+    let tiledHeight: Int
+    let tiledWidth: Int
+    switch version {
+    case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .kandinsky21:
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+    case .wurstchenStageC:
+      tiledHeight = startHeight
+      tiledWidth = startWidth
+    case .wurstchenStageB:
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 16, startHeight) : startHeight
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 16, startWidth) : startWidth
+    }
     for injected in injecteds {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
       case .controlnet, .controlnetlora:
         if injectedControls.isEmpty {
           injectedControls = emptyControls(
-            graph: graph, batchSize: batchSize, startWidth: startWidth, startHeight: startHeight,
+            graph: graph, batchSize: batchSize, startWidth: tiledWidth, startHeight: tiledHeight,
             version: injected.model.version)
         }
       case .ipadapterplus:
@@ -176,7 +199,7 @@ extension ControlModel {
       case .t2iadapter:
         if injectedT2IAdapters.isEmpty {
           injectedT2IAdapters = emptyAdapters(
-            graph: graph, startWidth: startWidth, startHeight: startHeight)
+            graph: graph, startWidth: tiledWidth, startHeight: tiledHeight)
         }
       }
     }
@@ -194,16 +217,106 @@ extension ControlModel {
     let graph = inputs[0].hint.graph
     switch type {
     case .controlnet, .controlnetlora:
+      let shape = inputs[0].hint.shape
+      let startHeight = shape[1]
+      let startWidth = shape[2]
+      let tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 64, startHeight) : startHeight
+      let tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 64, startWidth) : startWidth
+      let tileOverlap = tiledDiffusion.tileOverlap * 64
+      let tiledDiffusionIsEnabled = (startWidth > tiledWidth) || (startHeight > tiledHeight)
       // For ControlNet, we only compute hint.
-      let hintNet = HintNet(channels: 320).0
-      hintNet.compile(inputs: inputs[0].hint)
+      let outputChannels = 320
+      let hintNet = HintNet(channels: outputChannels).0
+      if tiledDiffusionIsEnabled {
+        hintNet.compile(
+          inputs: inputs[0].hint[0..<shape[0], 0..<tiledHeight, 0..<tiledWidth, 0..<shape[3]])
+      } else {
+        hintNet.compile(inputs: inputs[0].hint)
+      }
       graph.openStore(
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) {
         $0.read("hintnet", model: hintNet, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
       }
-      return inputs.map { hintNet(inputs: $0.hint).map { $0.as(of: FloatType.self) } }
+      // Note that the Hint network for ControlNet is pretty lightweight, it has 7 convnet with 3x3 reception field. That means as long as we have 3 (scale 1) + 2 * 2 (scale 2) + 2 * 4 (scale 4) + 1 * 8 (scale 8) overlap (23 pixels), the result will exact match (also no group norm). Thus, when we do tile, we don't do the cross-fade but do direct copy.
+      if tiledDiffusionIsEnabled {
+        let yTiles =
+          (startHeight - tileOverlap * 2 + (tiledHeight - tileOverlap * 2) - 1)
+          / (tiledHeight - tileOverlap * 2)
+        let xTiles =
+          (startWidth - tileOverlap * 2 + (tiledWidth - tileOverlap * 2) - 1)
+          / (tiledWidth - tileOverlap * 2)
+        return inputs.map {
+          let hint = $0.hint
+          var result = graph.variable(
+            hint.kind, .NHWC(shape[0], startHeight / 8, startWidth / 8, outputChannels),
+            of: FloatType.self)
+          for y in 0..<yTiles {
+            let yOfs = y * (tiledHeight - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
+            let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
+              iOfs: yOfs, length: startHeight, tileSize: tiledHeight, tileOverlap: tileOverlap)
+            let srcYStart: Int
+            let srcYEnd: Int
+            let dstYStart: Int
+            let dstYEnd: Int
+            if y == 0 {
+              dstYStart = 0
+              dstYEnd = yTiles == 1 ? inputEndYPad / 8 : (inputEndYPad - tileOverlap) / 8
+              srcYStart = 0
+              srcYEnd = dstYEnd
+            } else if y == yTiles - 1 {
+              dstYStart = (inputStartYPad + tileOverlap) / 8
+              dstYEnd = inputEndYPad / 8
+              srcYStart = tileOverlap / 8
+              srcYEnd = tiledHeight / 8
+            } else {
+              dstYStart = (inputStartYPad + tileOverlap) / 8
+              dstYEnd = (inputEndYPad - tileOverlap) / 8
+              srcYStart = tileOverlap / 8
+              srcYEnd = (tiledHeight - tileOverlap) / 8
+            }
+            for x in 0..<xTiles {
+              let xOfs = x * (tiledWidth - tileOverlap * 2) + (x > 0 ? tileOverlap : 0)
+              let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
+                iOfs: xOfs, length: startWidth, tileSize: tiledWidth, tileOverlap: tileOverlap)
+              let srcXStart: Int
+              let srcXEnd: Int
+              let dstXStart: Int
+              let dstXEnd: Int
+              if x == 0 {
+                dstXStart = 0
+                dstXEnd = xTiles == 1 ? inputEndXPad / 8 : (inputEndXPad - tileOverlap) / 8
+                srcXStart = 0
+                srcXEnd = dstXEnd
+              } else if x == xTiles - 1 {
+                dstXStart = (inputStartXPad + tileOverlap) / 8
+                dstXEnd = inputEndXPad / 8
+                srcXStart = tileOverlap / 8
+                srcXEnd = tiledWidth / 8
+              } else {
+                dstXStart = (inputStartXPad + tileOverlap) / 8
+                dstXEnd = (inputEndXPad - tileOverlap) / 8
+                srcXStart = tileOverlap / 8
+                srcXEnd = (tiledWidth - tileOverlap) / 8
+              }
+              let tiled = hintNet(
+                inputs: hint[
+                  0..<shape[0], inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
+                  0..<shape[3]
+                ].copied())[0].as(of: FloatType.self)
+              result[0..<shape[0], dstYStart..<dstYEnd, dstXStart..<dstXEnd, 0..<outputChannels] =
+                tiled[0..<shape[0], srcYStart..<srcYEnd, srcXStart..<srcXEnd, 0..<outputChannels]
+            }
+          }
+          return [result]
+        }
+      } else {
+        return inputs.map { hintNet(inputs: $0.hint).map { $0.as(of: FloatType.self) } }
+      }
     case .ipadapterplus:
       let imageEncoder = ImageEncoder<FloatType>(filePath: filePaths[1])
       let zeroEmbeds = graph.variable(.GPU(0), .NHWC(1, 224, 224, 3), of: FloatType.self)
@@ -720,7 +833,7 @@ extension ControlModel {
     inputs xT: DynamicGraph.Tensor<FloatType>, _ hint: [DynamicGraph.Tensor<FloatType>],
     strength: Float,
     _ timestep: DynamicGraph.Tensor<FloatType>, _ c: [DynamicGraph.Tensor<FloatType>],
-    tokenLengthUncond: Int, tokenLengthCond: Int,
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
     controlNet existingControlNet: inout Model?
   ) -> [DynamicGraph.Tensor<FloatType>] {
@@ -747,6 +860,41 @@ extension ControlModel {
         return Self.emptyAdapters(graph: graph, startWidth: startWidth, startHeight: startHeight)
       }
     }
+    let tiledHeight: Int
+    let tiledWidth: Int
+    let tileScaleFactor: Int
+    switch version {
+    case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .kandinsky21:
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tileScaleFactor = 8
+    case .wurstchenStageC:
+      tiledHeight = startHeight
+      tiledWidth = startWidth
+      tileScaleFactor = 1
+    case .wurstchenStageB:
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 16, startHeight) : startHeight
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 16, startWidth) : startWidth
+      tileScaleFactor = 16
+    }
+    let tileOverlap = min(
+      min(
+        tiledDiffusion.tileOverlap * tileScaleFactor,
+        Int((Double(tiledHeight / 3) / 8).rounded(.down)) * 8),
+      Int((Double(tiledWidth / 3) / 8).rounded(.down)) * 8)
+    let yTiles =
+      (startHeight - tileOverlap * 2 + (tiledHeight - tileOverlap * 2) - 1)
+      / (tiledHeight - tileOverlap * 2)
+    let xTiles =
+      (startWidth - tileOverlap * 2 + (tiledWidth - tileOverlap * 2) - 1)
+      / (tiledWidth - tileOverlap * 2)
+    let tiledDiffusionIsEnabled = (startWidth > tiledWidth) || (startHeight > tiledHeight)
     guard type == .controlnet || type == .controlnetlora else {
       switch type {
       case .ipadapterplus, .ipadapterfull:
@@ -765,19 +913,26 @@ extension ControlModel {
             precondition(shape[0] == 2)
             var x = graph.variable(
               .GPU(0), .NHWC(batchSize, shape[1], shape[2], shape[3]), of: FloatType.self)
-            for i in 0..<(batchSize / 2) {
-              x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
-                $0[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-            }
-            for i in (batchSize / 2)..<batchSize {
-              x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
-                $0[1..<2, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+            if isCfgEnabled {
+              for i in 0..<(batchSize / 2) {
+                x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+                  $0[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+              }
+              for i in (batchSize / 2)..<batchSize {
+                x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+                  $0[1..<2, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+              }
+            } else {
+              for i in 0..<batchSize {
+                x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+                  $0[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+              }
             }
             return x
           }
         }
       case .t2iadapter:
-        guard controlMode == .control else { return hint }
+        guard controlMode == .control && isCfgEnabled else { return hint }
         return hint.map {
           let shape = $0.shape
           precondition(shape[0] == 1)
@@ -806,7 +961,7 @@ extension ControlModel {
         controlNet =
           ControlNet(
             batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            startWidth: startWidth, startHeight: startHeight,
+            startWidth: tiledWidth, startHeight: tiledHeight,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
           ).0
         controlNetWeightMapper = nil
@@ -814,7 +969,7 @@ extension ControlModel {
         controlNet =
           ControlNetv2(
             batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            startWidth: startWidth, startHeight: startHeight, upcastAttention: false,
+            startWidth: tiledWidth, startHeight: tiledHeight, upcastAttention: false,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
           ).0
         controlNetWeightMapper = nil
@@ -838,7 +993,7 @@ extension ControlModel {
           let configuration = LoRANetworkConfiguration(rank: rank, scale: 1, highPrecision: false)
           (controlNet, controlNetWeightMapper) =
             LoRAControlNetXL(
-              batchSize: batchSize, startWidth: startWidth, startHeight: startHeight,
+              batchSize: batchSize, startWidth: tiledWidth, startHeight: tiledHeight,
               channels: [320, 640, 1280], embeddingLength: (tokenLengthUncond, tokenLengthCond),
               inputAttentionRes: inputAttentionRes, middleAttentionBlocks: middleAttentionBlocks,
               usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
@@ -847,7 +1002,7 @@ extension ControlModel {
         } else {
           controlNet =
             ControlNetXL(
-              batchSize: batchSize, startWidth: startWidth, startHeight: startHeight,
+              batchSize: batchSize, startWidth: tiledWidth, startHeight: tiledHeight,
               channels: [320, 640, 1280], embeddingLength: (tokenLengthUncond, tokenLengthCond),
               inputAttentionRes: inputAttentionRes, middleAttentionBlocks: middleAttentionBlocks,
               usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
@@ -859,7 +1014,17 @@ extension ControlModel {
       }
     }
     if existingControlNet == nil {
-      controlNet.compile(inputs: [xIn, hint[0], timestep] + c)
+      if tiledDiffusionIsEnabled {
+        let xInShape = xIn.shape
+        let hintShape = hint[0].shape
+        controlNet.compile(
+          inputs: [
+            xIn[0..<xInShape[0], 0..<tiledHeight, 0..<tiledWidth, 0..<xInShape[3]],
+            hint[0][0..<hintShape[0], 0..<tiledHeight, 0..<tiledWidth, 0..<hintShape[3]], timestep,
+          ] + c)
+      } else {
+        controlNet.compile(inputs: [xIn, hint[0], timestep] + c)
+      }
       let externalData: DynamicGraph.Store.Codec =
         externalOnDemand ? .externalOnDemand : .externalData
       if let controlNetWeightMapper = controlNetWeightMapper,
@@ -905,16 +1070,80 @@ extension ControlModel {
       }
       existingControlNet = controlNet
     }
-    var result = controlNet(inputs: xIn, [hint[0], timestep] + c).map { $0.as(of: FloatType.self) }
-    if controlMode == .control {
-      for x in result {
-        let shape = x.shape
-        x[0..<(batchSize / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]].full(0)
+    var result: [DynamicGraph.Tensor<FloatType>]
+    if tiledDiffusionIsEnabled {
+      result = [DynamicGraph.Tensor<FloatType>]()
+      let xInShape = xIn.shape
+      let hintShape = hint[0].shape
+      for y in 0..<yTiles {
+        let yOfs = y * (tiledHeight - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
+        let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
+          iOfs: yOfs, length: startHeight, tileSize: tiledHeight, tileOverlap: tileOverlap)
+        for x in 0..<xTiles {
+          let xOfs = x * (tiledWidth - tileOverlap * 2) + (x > 0 ? tileOverlap : 0)
+          let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
+            iOfs: xOfs, length: startWidth, tileSize: tiledWidth, tileOverlap: tileOverlap)
+          var tiles = controlNet(
+            inputs: xIn[
+              0..<xInShape[0], inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
+              0..<xInShape[3]
+            ].copied(),
+            [
+              hint[0][
+                0..<hintShape[0], inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
+                0..<hintShape[3]
+              ].copied(), timestep,
+            ] + c
+          ).map { $0.as(of: FloatType.self) }
+          if controlMode == .control && isCfgEnabled {
+            for x in tiles {
+              let shape = x.shape
+              x[0..<(batchSize / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]].full(0)
+            }
+          }
+          if globalAveragePooling {
+            tiles = tiles.map {
+              $0.reduced(.mean, axis: [1, 2])
+            }
+          }
+          if result.isEmpty {
+            for tile in tiles {
+              var shape = tile.shape
+              let batchSize = shape[0]
+              shape[0] = shape[0] * (xTiles * yTiles)
+              var z = graph.variable(
+                tile.kind, format: tile.format, shape: shape, of: FloatType.self)
+              let index = y * xTiles + x
+              z[
+                (index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2],
+                0..<shape[3]] = tile
+              result.append(z)
+            }
+          } else {
+            for (i, tile) in tiles.enumerated() {
+              let shape = tile.shape
+              var z = result[i]
+              let index = y * xTiles + x
+              z[
+                (index * shape[0])..<((index + 1) * shape[0]), 0..<shape[1], 0..<shape[2],
+                0..<shape[3]] = tile
+              result[i] = z
+            }
+          }
+        }
       }
-    }
-    if globalAveragePooling {
-      result = result.map {
-        $0.reduced(.mean, axis: [1, 2])
+    } else {
+      result = controlNet(inputs: xIn, [hint[0], timestep] + c).map { $0.as(of: FloatType.self) }
+      if controlMode == .control && isCfgEnabled {
+        for x in result {
+          let shape = x.shape
+          x[0..<(batchSize / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]].full(0)
+        }
+      }
+      if globalAveragePooling {
+        result = result.map {
+          $0.reduced(.mean, axis: [1, 2])
+        }
       }
     }
     // In ControlNet implementation, we degrade influence as it approaches lower level.
