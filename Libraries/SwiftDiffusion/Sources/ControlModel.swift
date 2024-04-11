@@ -39,6 +39,7 @@ public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let modifier: ControlHintType
   public let externalOnDemand: Bool
   public let version: ModelVersion
+  public let tiledDiffusion: TiledDiffusionConfiguration
   public let usesFlashAttention: Bool
   public let startStep: Int
   public let endStep: Int
@@ -47,15 +48,16 @@ public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let transformerBlocks: [Int]
   public init(
     filePaths: [String], type: ControlType, modifier: ControlHintType,
-    externalOnDemand: Bool,
-    version: ModelVersion, usesFlashAttention: Bool, startStep: Int, endStep: Int,
-    controlMode: ControlMode, globalAveragePooling: Bool, transformerBlocks: [Int]
+    externalOnDemand: Bool, version: ModelVersion, tiledDiffusion: TiledDiffusionConfiguration,
+    usesFlashAttention: Bool, startStep: Int, endStep: Int, controlMode: ControlMode,
+    globalAveragePooling: Bool, transformerBlocks: [Int]
   ) {
     self.filePaths = filePaths
     self.type = type
     self.modifier = modifier
     self.externalOnDemand = externalOnDemand
     self.version = version
+    self.tiledDiffusion = tiledDiffusion
     self.usesFlashAttention = usesFlashAttention
     self.startStep = startStep
     self.endStep = endStep

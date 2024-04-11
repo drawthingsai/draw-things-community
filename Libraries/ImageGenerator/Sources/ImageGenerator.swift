@@ -1369,8 +1369,8 @@ extension ImageGenerator {
     graph: DynamicGraph, startHeight: Int, startWidth: Int, image: DynamicGraph.Tensor<FloatType>?,
     depth: DynamicGraph.Tensor<FloatType>?, hints: [ControlHintType: AnyTensor],
     custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], mask: Tensor<FloatType>?,
-    controls: [Control], version: ModelVersion, usesFlashAttention: Bool,
-    externalOnDemand: Bool, steps: Int
+    controls: [Control], version: ModelVersion, tiledDiffusion: TiledDiffusionConfiguration,
+    usesFlashAttention: Bool, externalOnDemand: Bool, steps: Int
   ) -> [(model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)])] {
     return controls.enumerated().compactMap {
       index, control -> (
@@ -1411,7 +1411,7 @@ extension ImageGenerator {
       let controlModel = ControlModel<FloatType>(
         filePaths: filePaths, type: type, modifier: modifier,
         externalOnDemand: externalOnDemand, version: version,
-        usesFlashAttention: usesFlashAttention,
+        tiledDiffusion: tiledDiffusion, usesFlashAttention: usesFlashAttention,
         startStep: startStep, endStep: endStep, controlMode: controlMode,
         globalAveragePooling: globalAveragePooling, transformerBlocks: transformerBlocks)
       let customRGB: (Bool) -> DynamicGraph.Tensor<FloatType>? = { convert in
@@ -2350,9 +2350,8 @@ extension ImageGenerator {
       let injectedControls = generateInjectedControls(
         graph: graph, startHeight: firstPassStartHeight, startWidth: firstPassStartWidth,
         image: firstPassImage, depth: firstPassDepthImage, hints: hints, custom: custom,
-        shuffles: shuffles,
-        mask: nil, controls: configuration.controls, version: modelVersion,
-        usesFlashAttention: isMFAEnabled,
+        shuffles: shuffles, mask: nil, controls: configuration.controls, version: modelVersion,
+        tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, steps: sampling.steps)
       guard
         let x =
@@ -2549,11 +2548,9 @@ extension ImageGenerator {
       let secondPassInjectedControls = generateInjectedControls(
         graph: graph, startHeight: startHeight, startWidth: startWidth,
         image: image ?? firstStageImage, depth: secondPassDepthImage, hints: hints, custom: custom,
-        shuffles: shuffles,
-        mask: nil, controls: configuration.controls, version: modelVersion,
-        usesFlashAttention: isMFAEnabled,
-        externalOnDemand: secondPassControlExternalOnDemand,
-        steps: sampling.steps)
+        shuffles: shuffles, mask: nil, controls: configuration.controls, version: modelVersion,
+        tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
+        externalOnDemand: secondPassControlExternalOnDemand, steps: sampling.steps)
       let secondPassModelVersion: ModelVersion
       let secondPassModelFilePath: String
       if modelVersion == .wurstchenStageC {
@@ -3181,8 +3178,9 @@ extension ImageGenerator {
       let injectedControls = generateInjectedControls(
         graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: nil,
-        controls: configuration.controls, version: modelVersion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand, steps: sampling.steps)
+        controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
+        usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
+        steps: sampling.steps)
       guard
         var x =
           try? modelPreloader.consumeUNet(
@@ -4279,8 +4277,9 @@ extension ImageGenerator {
       let injectedControls = generateInjectedControls(
         graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: imageNegMask2,
-        controls: configuration.controls, version: modelVersion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand, steps: sampling.steps)
+        controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
+        usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
+        steps: sampling.steps)
       var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modelVersion == .svdI2v {
         if modelVersion != .svdI2v {
@@ -4995,8 +4994,9 @@ extension ImageGenerator {
       var injectedControls = generateInjectedControls(
         graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: imageNegMask1,
-        controls: configuration.controls, version: modelVersion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand, steps: sampling.steps)
+        controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
+        usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
+        steps: sampling.steps)
       let redoInjectedControls = configuration.controls.contains {
         $0.file.map { ControlNetZoo.modifierForModel($0) == .inpaint } ?? false
       }
@@ -5089,8 +5089,9 @@ extension ImageGenerator {
         injectedControls = generateInjectedControls(
           graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
           depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: imageNegMask2,
-          controls: configuration.controls, version: modelVersion, usesFlashAttention: isMFAEnabled,
-          externalOnDemand: controlExternalOnDemand, steps: sampling.steps
+          controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
+          usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
+          steps: sampling.steps
         )
       }
       guard
