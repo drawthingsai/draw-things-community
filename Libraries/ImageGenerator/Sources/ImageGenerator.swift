@@ -1659,11 +1659,12 @@ extension ImageGenerator {
           ]).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .tile:
-          guard var input = image else {
-            guard let rgb = customRGB(true) else { return nil }
+          // Prefer custom for tile.
+          if let rgb = customRGB(true) {
             let hint = controlModel.hint(inputs: [(hint: rgb, weight: 1)])[0]
             return (model: controlModel, hints: [(hint, control.weight)])
           }
+          guard var input = image else { return nil }
           let inputHeight = input.shape[1]
           let inputWidth = input.shape[2]
           precondition(input.shape[3] == 3)
