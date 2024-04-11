@@ -373,8 +373,8 @@ extension UNetFromNNC {
     let tileOverlap = min(
       min(
         tiledDiffusion.tileOverlap * tileScaleFactor,
-        Int((Double(tiledHeight / 3) / tileScaleFactor).rounded(.down)) * tileScaleFactor),
-      Int((Double(tiledWidth / 3) / tileScaleFactor).rounded(.down)) * tileScaleFactor)
+        Int((Double(tiledHeight / 3) / Double(tileScaleFactor)).rounded(.down)) * tileScaleFactor),
+      Int((Double(tiledWidth / 3) / Double(tileScaleFactor)).rounded(.down)) * tileScaleFactor)
     let yTiles =
       (startHeight - tileOverlap * 2 + (tiledHeight - tileOverlap * 2) - 1)
       / (tiledHeight - tileOverlap * 2)
@@ -528,8 +528,8 @@ extension UNetFromNNC {
     let tileOverlap = min(
       min(
         tiledDiffusion.tileOverlap * tileScaleFactor,
-        Int((Double(tiledHeight / 3) / tileScaleFactor).rounded(.down)) * tileScaleFactor),
-      Int((Double(tiledWidth / 3) / tileScaleFactor).rounded(.down)) * tileScaleFactor)
+        Int((Double(tiledHeight / 3) / Double(tileScaleFactor)).rounded(.down)) * tileScaleFactor),
+      Int((Double(tiledWidth / 3) / Double(tileScaleFactor)).rounded(.down)) * tileScaleFactor)
     let yTiles =
       (startHeight - tileOverlap * 2 + (tiledHeight - tileOverlap * 2) - 1)
       / (tiledHeight - tileOverlap * 2)
