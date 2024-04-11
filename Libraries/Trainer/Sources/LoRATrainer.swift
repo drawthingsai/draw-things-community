@@ -115,6 +115,9 @@ public struct LoRATrainer {
       filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
       latentsScaling: latentsScaling, highPrecision: false, highPrecisionFallback: true,
       tiledDecoding: false, decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
+      tiledDiffusion: TiledDiffusionConfiguration(
+        isEnabled: false, tileSize: TiledDiffusionConfiguration.Size(width: 0, height: 0),
+        tileOverlap: 0),
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
       alternativeDecoderVersion: nil)
     let graph = DynamicGraph()
@@ -623,6 +626,9 @@ public struct LoRATrainer {
       filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
       latentsScaling: latentsScaling, highPrecision: false, highPrecisionFallback: true,
       tiledDecoding: false, decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
+      tiledDiffusion: TiledDiffusionConfiguration(
+        isEnabled: false, tileSize: TiledDiffusionConfiguration.Size(width: 0, height: 0),
+        tileOverlap: 0),
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
       alternativeDecoderVersion: nil)
     graph.maxConcurrency = .limit(1)

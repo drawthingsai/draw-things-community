@@ -2297,6 +2297,7 @@ extension ImageGenerator {
             width: Int(configuration.decodingTileWidth),
             height: Int(configuration.decodingTileHeight)
           ), decodingTileOverlap: Int(configuration.decodingTileOverlap),
+          tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion)
@@ -2396,6 +2397,7 @@ extension ImageGenerator {
         decodingTileSize: (
           width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)
         ), decodingTileOverlap: Int(configuration.decodingTileOverlap),
+        tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion)
@@ -3105,6 +3107,7 @@ extension ImageGenerator {
         decodingTileSize: (
           width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)
         ), decodingTileOverlap: Int(configuration.decodingTileOverlap),
+        tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion)
@@ -3224,6 +3227,7 @@ extension ImageGenerator {
           latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
           highPrecisionFallback: isHighPrecisionVAEFallbackEnabled, tiledDecoding: false,
           decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
+          tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion)
@@ -4239,6 +4243,7 @@ extension ImageGenerator {
         decodingTileSize: (
           width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)
         ), decodingTileOverlap: Int(configuration.decodingTileOverlap),
+        tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion)
@@ -4369,6 +4374,7 @@ extension ImageGenerator {
           latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
           highPrecisionFallback: isHighPrecisionVAEFallbackEnabled, tiledDecoding: false,
           decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
+          tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion)
@@ -4905,6 +4911,7 @@ extension ImageGenerator {
         decodingTileSize: (
           width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)
         ), decodingTileOverlap: Int(configuration.decodingTileOverlap),
+        tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion)
@@ -5126,6 +5133,7 @@ extension ImageGenerator {
           latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
           highPrecisionFallback: isHighPrecisionVAEFallbackEnabled, tiledDecoding: false,
           decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
+          tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion)
