@@ -1,4 +1,4 @@
-public struct TiledDiffusionConfiguration: Equatable {
+public struct TiledConfiguration: Equatable {
   public struct Size: Equatable {
     public var width: Int
     public var height: Int

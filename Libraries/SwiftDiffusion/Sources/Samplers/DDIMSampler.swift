@@ -19,14 +19,14 @@ where UNet.FloatType == FloatType {
   public let is8BitModel: Bool
   public let canRunLoRASeparately: Bool
   public let conditioning: Denoiser.Conditioning
-  public let tiledDiffusion: TiledDiffusionConfiguration
+  public let tiledDiffusion: TiledConfiguration
   private let discretization: Discretization
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool, conditioning: Denoiser.Conditioning,
-    tiledDiffusion: TiledDiffusionConfiguration, discretization: Discretization
+    tiledDiffusion: TiledConfiguration, discretization: Discretization
   ) {
     self.filePath = filePath
     self.modifier = modifier

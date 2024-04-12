@@ -19,7 +19,7 @@ public protocol UNetProtocol {
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration
+    tiledDiffusion: TiledConfiguration
   ) -> Bool
   func callAsFunction(
     timestep: Float,
@@ -33,7 +33,7 @@ public protocol UNetProtocol {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration,
+    tiledDiffusion: TiledConfiguration,
     controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType>
   func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType>
@@ -105,7 +105,7 @@ extension UNetFromNNC {
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration
+    tiledDiffusion: TiledConfiguration
   ) -> Bool {
     guard unet == nil else { return true }
     let shape = xT.shape
@@ -522,7 +522,7 @@ extension UNetFromNNC {
   }
 
   private func tiledDiffuse(
-    tiledDiffusion: TiledDiffusionConfiguration, xT: DynamicGraph.Tensor<FloatType>,
+    tiledDiffusion: TiledConfiguration, xT: DynamicGraph.Tensor<FloatType>,
     inputs: [DynamicGraph.Tensor<FloatType>],
     injectedControlsAndAdapters: (
       _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
@@ -626,7 +626,7 @@ extension UNetFromNNC {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration, controlNets: inout [Model?]
+    tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     if let extraProjection = extraProjection, let timeEmbed = timeEmbed {
       let batchSize = xT.shape[0]

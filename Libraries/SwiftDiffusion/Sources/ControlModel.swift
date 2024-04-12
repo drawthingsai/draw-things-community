@@ -39,7 +39,7 @@ public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let modifier: ControlHintType
   public let externalOnDemand: Bool
   public let version: ModelVersion
-  public let tiledDiffusion: TiledDiffusionConfiguration
+  public let tiledDiffusion: TiledConfiguration
   public let usesFlashAttention: Bool
   public let startStep: Int
   public let endStep: Int
@@ -48,7 +48,7 @@ public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let transformerBlocks: [Int]
   public init(
     filePaths: [String], type: ControlType, modifier: ControlHintType,
-    externalOnDemand: Bool, version: ModelVersion, tiledDiffusion: TiledDiffusionConfiguration,
+    externalOnDemand: Bool, version: ModelVersion, tiledDiffusion: TiledConfiguration,
     usesFlashAttention: Bool, startStep: Int, endStep: Int, controlMode: ControlMode,
     globalAveragePooling: Bool, transformerBlocks: [Int]
   ) {
@@ -189,7 +189,7 @@ extension ControlModel {
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )],
     step: Int, version: ModelVersion, inputs xT: DynamicGraph.Tensor<FloatType>,
-    tiledDiffusion: TiledDiffusionConfiguration
+    tiledDiffusion: TiledConfiguration
   ) -> (
     [DynamicGraph.Tensor<FloatType>], [DynamicGraph.Tensor<FloatType>],
     [DynamicGraph.Tensor<FloatType>]

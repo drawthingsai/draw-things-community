@@ -36,7 +36,7 @@ extension UNetWrapper {
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration
+    tiledDiffusion: TiledConfiguration
   ) -> Bool {
     if unetFromCoreML.compileModel(
       filePath: filePath, externalOnDemand: externalOnDemand, version: version,
@@ -77,7 +77,7 @@ extension UNetWrapper {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration,
+    tiledDiffusion: TiledConfiguration,
     controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     if preferCoreML {

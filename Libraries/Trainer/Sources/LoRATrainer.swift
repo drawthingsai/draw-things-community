@@ -114,9 +114,11 @@ public struct LoRATrainer {
     let firstStage = FirstStage<FloatType>(
       filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
       latentsScaling: latentsScaling, highPrecision: false, highPrecisionFallback: true,
-      tiledDecoding: false, decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
-      tiledDiffusion: TiledDiffusionConfiguration(
-        isEnabled: false, tileSize: TiledDiffusionConfiguration.Size(width: 0, height: 0),
+      tiledDecoding: TiledConfiguration(
+        isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
+        tileOverlap: 0),
+      tiledDiffusion: TiledConfiguration(
+        isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
       alternativeDecoderVersion: nil)
@@ -625,9 +627,11 @@ public struct LoRATrainer {
     let firstStage = FirstStage<FloatType>(
       filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
       latentsScaling: latentsScaling, highPrecision: false, highPrecisionFallback: true,
-      tiledDecoding: false, decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
-      tiledDiffusion: TiledDiffusionConfiguration(
-        isEnabled: false, tileSize: TiledDiffusionConfiguration.Size(width: 0, height: 0),
+      tiledDecoding: TiledConfiguration(
+        isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
+        tileOverlap: 0),
+      tiledDiffusion: TiledConfiguration(
+        isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
       alternativeDecoderVersion: nil)

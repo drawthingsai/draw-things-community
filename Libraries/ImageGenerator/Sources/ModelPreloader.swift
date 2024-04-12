@@ -53,12 +53,14 @@ public final class ModelPreloader {
   private var firstStageEncoderVersion: ModelVersion? = nil
   private var firstStageEncoderScale: DeviceCapability.Scale? = nil
   private var firstStageEncoderHighPrecision: Bool? = nil
+  private var firstStageEncoderTiledDiffusion: TiledConfiguration? = nil
 
   private var firstStageDecoderFilePath: String? = nil
   private var firstStageDecoderExternalOnDemand: Bool? = nil
   private var firstStageDecoderVersion: ModelVersion? = nil
   private var firstStageDecoderScale: DeviceCapability.Scale? = nil
   private var firstStageDecoderHighPrecision: Bool? = nil
+  private var firstStageDecoderTiledDecoding: TiledConfiguration? = nil
 
   private var textEncoderFilePaths: [String]? = nil
   private var textEncoderVersion: ModelVersion? = nil
@@ -77,7 +79,7 @@ public final class ModelPreloader {
   private var unetInjectControls: Bool? = nil
   private var unetInjectT2IAdapters: Bool? = nil
   private var unetInjectIPAdapterLengths: [Int]? = nil
-  private var unetTiledDiffusion: TiledDiffusionConfiguration? = nil
+  private var unetTiledDiffusion: TiledConfiguration? = nil
   private var unetLoRA: [LoRAConfiguration]? = nil
   private var unetTokenLengthUncond: Int = 77
   private var unetTokenLengthCond: Int = 77
@@ -87,7 +89,8 @@ public final class ModelPreloader {
   private var firstStageDecoder: Model? = nil
   private var firstStageEncoder: Model? = nil
   private var textModel: Model? = nil
-  private var tiledDiffusion: TiledDiffusionConfiguration? = nil
+  private var tiledDecoding: TiledConfiguration? = nil
+  private var tiledDiffusion: TiledConfiguration? = nil
   // Subscription tokens.
   private var configurationSubscription: Workspace.Subscription? = nil
   private var keepModelInMemorySubscription: Workspace.Subscription? = nil
@@ -129,7 +132,13 @@ public final class ModelPreloader {
           file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: modelVersion,
           isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
       }
-      tiledDiffusion = TiledDiffusionConfiguration(
+      tiledDecoding = TiledConfiguration(
+        isEnabled: configuration.tiledDecoding,
+        tileSize: .init(
+          width: Int(configuration.decodingTileWidth),
+          height: Int(configuration.decodingTileHeight)),
+        tileOverlap: Int(configuration.decodingTileOverlap))
+      tiledDiffusion = TiledConfiguration(
         isEnabled: configuration.tiledDiffusion,
         tileSize: .init(
           width: Int(configuration.diffusionTileWidth),
@@ -399,12 +408,14 @@ extension ModelPreloader {
     firstStageEncoderExternalOnDemand = nil
     firstStageEncoderVersion = nil
     firstStageEncoderHighPrecision = nil
+    firstStageEncoderTiledDiffusion = nil
     firstStageDecoder = nil
     firstStageDecoderFilePath = nil
     firstStageDecoderScale = nil
     firstStageDecoderExternalOnDemand = nil
     firstStageDecoderVersion = nil
     firstStageDecoderHighPrecision = nil
+    firstStageDecoderTiledDecoding = nil
     textModel = nil
     textEncoderVersion = nil
     textEncoderInjectEmbeddings = false
@@ -417,8 +428,8 @@ extension ModelPreloader {
   private func preloadIfPossible() {
     defer { preloadState = .preloadDone }
     guard let modelFile = modelFile, let imageScale = imageScale, let batchSize = batchSize,
-      let clipSkip = clipSkip, let lora = lora, let tiledDiffusion = tiledDiffusion,
-      let useMFA = useMFA, isEnabled
+      let clipSkip = clipSkip, let lora = lora, let tiledDecoding = tiledDecoding,
+      let tiledDiffusion = tiledDiffusion, let useMFA = useMFA, isEnabled
     else {
       return
     }
@@ -557,6 +568,16 @@ extension ModelPreloader {
         return
       }
       if firstStageDecoder == nil {
+        // Configuration only works for SDXL / SD v1.x / SSD-1B
+        let decodingTileSize = (
+          width: min(tiledDecoding.tileSize.width * 8, startWidth),
+          height: min(tiledDecoding.tileSize.height * 8, startHeight)
+        )
+        let tiledDecodingIsEnabled =
+          tiledDecoding.isEnabled
+          && (startWidth > decodingTileSize.width || startHeight > decodingTileSize.height)
+        let startWidth = tiledDecodingIsEnabled ? decodingTileSize.width : startWidth
+        let startHeight = tiledDecodingIsEnabled ? decodingTileSize.height : startHeight
         let externalOnDemand = externalOnDemand(
           version: modelVersion, scale: imageScale, variant: .autoencoder, injectedControls: 0)
         let z = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 4), of: FloatType.self)
@@ -577,8 +598,14 @@ extension ModelPreloader {
         firstStageDecoderExternalOnDemand = externalOnDemand
         firstStageDecoderVersion = modelVersion
         firstStageDecoderHighPrecision = highPrecisionForAutoencoder
+        firstStageDecoderTiledDecoding = tiledDecoding
       }
       if firstStageEncoder == nil {
+        let startHeight =
+          tiledDiffusion.isEnabled
+          ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+        let startWidth =
+          tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
         let externalOnDemand = externalOnDemand(
           version: modelVersion, scale: imageScale, variant: .autoencoder, injectedControls: 0)
         let x = graph.variable(
@@ -600,6 +627,7 @@ extension ModelPreloader {
         firstStageEncoderExternalOnDemand = externalOnDemand
         firstStageEncoderVersion = modelVersion
         firstStageEncoderHighPrecision = highPrecisionForAutoencoder
+        firstStageEncoderTiledDiffusion = tiledDiffusion
       }
       if textModel == nil {
         let textModelToLoad: Model
@@ -798,7 +826,13 @@ extension ModelPreloader {
         file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: version,
         isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
     }
-    let newTiledDiffusion = TiledDiffusionConfiguration(
+    let newTiledDecoding = TiledConfiguration(
+      isEnabled: newConfiguration.tiledDecoding,
+      tileSize: .init(
+        width: Int(newConfiguration.decodingTileWidth),
+        height: Int(newConfiguration.decodingTileHeight)),
+      tileOverlap: Int(newConfiguration.decodingTileOverlap))
+    let newTiledDiffusion = TiledConfiguration(
       isEnabled: newConfiguration.tiledDiffusion,
       tileSize: .init(
         width: Int(newConfiguration.diffusionTileWidth),
@@ -806,7 +840,8 @@ extension ModelPreloader {
       tileOverlap: Int(newConfiguration.diffusionTileOverlap))
     guard
       modelFile != newModelFile || imageScale != newImageScale || batchSize != newBatchSize
-        || clipSkip != newClipSkip || lora != newLora || tiledDiffusion != newTiledDiffusion
+        || clipSkip != newClipSkip || lora != newLora || tiledDecoding != newTiledDecoding
+        || tiledDiffusion != newTiledDiffusion
     else { return }
     removeAllCache()
     modelFile = newModelFile
@@ -814,6 +849,7 @@ extension ModelPreloader {
     batchSize = newBatchSize
     clipSkip = newClipSkip
     lora = newLora
+    tiledDecoding = newTiledDecoding
     tiledDiffusion = newTiledDiffusion
     // Only preload if we are in preload mode.
     if mode == .preload || mode == .coreml || mode == .unet {
@@ -1075,7 +1111,8 @@ extension ModelPreloader {
       firstStageEncoderExternalOnDemand == firstStage.externalOnDemand,
       firstStageEncoderVersion == firstStage.version,
       firstStageEncoderScale == scale,
-      firstStageDecoderHighPrecision == firstStage.highPrecision
+      firstStageEncoderHighPrecision == firstStage.highPrecision,
+      firstStageEncoderTiledDiffusion == firstStage.tiledDiffusion
     else {
       firstStageEncoder = nil
       return nil
@@ -1092,7 +1129,8 @@ extension ModelPreloader {
       firstStageEncoderExternalOnDemand = firstStage.externalOnDemand
       firstStageEncoderVersion = firstStage.version
       firstStageEncoderScale = scale
-      firstStageDecoderHighPrecision = firstStage.highPrecision
+      firstStageEncoderHighPrecision = firstStage.highPrecision
+      firstStageEncoderTiledDiffusion = firstStage.tiledDecoding
     }
     return (x.0, x.1)
   }
@@ -1108,7 +1146,8 @@ extension ModelPreloader {
       firstStageEncoderExternalOnDemand = firstStage.externalOnDemand
       firstStageEncoderVersion = firstStage.version
       firstStageEncoderScale = scale
-      firstStageDecoderHighPrecision = firstStage.highPrecision
+      firstStageEncoderHighPrecision = firstStage.highPrecision
+      firstStageEncoderTiledDiffusion = firstStage.tiledDecoding
     }
     return x.0
   }
@@ -1124,7 +1163,8 @@ extension ModelPreloader {
       firstStageDecoderExternalOnDemand == firstStage.externalOnDemand,
       firstStageDecoderVersion == firstStage.version,
       firstStageDecoderScale == scale,
-      firstStageDecoderHighPrecision == firstStage.highPrecision
+      firstStageDecoderHighPrecision == firstStage.highPrecision,
+      firstStageDecoderTiledDecoding == firstStage.tiledDecoding
     else {
       firstStageDecoder = nil
       return nil
@@ -1144,6 +1184,7 @@ extension ModelPreloader {
       firstStageDecoderVersion = firstStage.version
       firstStageDecoderScale = scale
       firstStageDecoderHighPrecision = firstStage.highPrecision
+      firstStageDecoderTiledDecoding = firstStage.tiledDecoding
     }
     return x.0
   }

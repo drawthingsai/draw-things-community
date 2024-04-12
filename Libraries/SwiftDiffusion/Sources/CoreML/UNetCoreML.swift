@@ -74,7 +74,7 @@ extension UNetFromCoreML {
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration
+    tiledDiffusion: TiledConfiguration
   ) -> Bool {
     #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
       // We cannot handle upcast attention, yet.
@@ -350,7 +350,7 @@ extension UNetFromCoreML {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration,
+    tiledDiffusion: TiledConfiguration,
     controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     return autoreleasepool {

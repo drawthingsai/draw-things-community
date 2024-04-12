@@ -175,7 +175,7 @@ public protocol Sampler<FloatType, UNet> {
   var injectT2IAdapters: Bool { get }
   var injectIPAdapterLengths: [Int] { get }
   var lora: [LoRAConfiguration] { get }
-  var tiledDiffusion: TiledDiffusionConfiguration { get }
+  var tiledDiffusion: TiledConfiguration { get }
 
   func sample(
     _ x_T: DynamicGraph.Tensor<FloatType>, unets: [UNet?], sample: DynamicGraph.Tensor<FloatType>?,

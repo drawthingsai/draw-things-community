@@ -20,7 +20,7 @@ where UNet.FloatType == FloatType {
   public let canRunLoRASeparately: Bool
   public let stochasticSamplingGamma: Float
   public let conditioning: Denoiser.Conditioning
-  public let tiledDiffusion: TiledDiffusionConfiguration
+  public let tiledDiffusion: TiledConfiguration
   private let discretization: Discretization
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
@@ -28,7 +28,7 @@ where UNet.FloatType == FloatType {
     injectT2IAdapters: Bool, injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool,
     stochasticSamplingGamma: Float, conditioning: Denoiser.Conditioning,
-    tiledDiffusion: TiledDiffusionConfiguration, discretization: Discretization
+    tiledDiffusion: TiledConfiguration, discretization: Discretization
   ) {
     self.filePath = filePath
     self.modifier = modifier

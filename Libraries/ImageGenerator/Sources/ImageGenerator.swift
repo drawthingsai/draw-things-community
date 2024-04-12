@@ -74,7 +74,7 @@ extension ImageGenerator {
     injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration], is8BitModel: Bool, canRunLoRASeparately: Bool,
     stochasticSamplingGamma: Float, conditioning: Denoiser.Conditioning,
-    parameterization: Denoiser.Parameterization, tiledDiffusion: TiledDiffusionConfiguration,
+    parameterization: Denoiser.Parameterization, tiledDiffusion: TiledConfiguration,
     of: FloatType.Type
   ) -> any Sampler<FloatType, UNetWrapper<FloatType>> {
     let manualSubsteps: (Int) -> [Int] = {
@@ -1369,7 +1369,7 @@ extension ImageGenerator {
     graph: DynamicGraph, startHeight: Int, startWidth: Int, image: DynamicGraph.Tensor<FloatType>?,
     depth: DynamicGraph.Tensor<FloatType>?, hints: [ControlHintType: AnyTensor],
     custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], mask: Tensor<FloatType>?,
-    controls: [Control], version: ModelVersion, tiledDiffusion: TiledDiffusionConfiguration,
+    controls: [Control], version: ModelVersion, tiledDiffusion: TiledConfiguration,
     usesFlashAttention: Bool, externalOnDemand: Bool, steps: Int
   ) -> [(model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)])] {
     return controls.enumerated().compactMap {
@@ -1939,7 +1939,12 @@ extension ImageGenerator {
       else { return nil }
       return ModelZoo.versionForModel($0)
     }
-    let tiledDiffusion = TiledDiffusionConfiguration(
+    let tiledDecoding = TiledConfiguration(
+      isEnabled: configuration.tiledDecoding,
+      tileSize: .init(
+        width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
+      tileOverlap: Int(configuration.decodingTileOverlap))
+    let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
         width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
@@ -2293,12 +2298,7 @@ extension ImageGenerator {
           filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: modelVersion,
           latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
           highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
-          tiledDecoding: configuration.tiledDecoding,
-          decodingTileSize: (
-            width: Int(configuration.decodingTileWidth),
-            height: Int(configuration.decodingTileHeight)
-          ), decodingTileOverlap: Int(configuration.decodingTileOverlap),
-          tiledDiffusion: tiledDiffusion,
+          tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion)
@@ -2393,11 +2393,7 @@ extension ImageGenerator {
         filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: modelVersion,
         latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
-        tiledDecoding: configuration.tiledDecoding,
-        decodingTileSize: (
-          width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)
-        ), decodingTileOverlap: Int(configuration.decodingTileOverlap),
-        tiledDiffusion: tiledDiffusion,
+        tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion)
@@ -2772,7 +2768,12 @@ extension ImageGenerator {
       else { return nil }
       return ModelZoo.versionForModel($0)
     }
-    let tiledDiffusion = TiledDiffusionConfiguration(
+    let tiledDecoding = TiledConfiguration(
+      isEnabled: configuration.tiledDecoding,
+      tileSize: .init(
+        width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
+      tileOverlap: Int(configuration.decodingTileOverlap))
+    let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
         width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
@@ -3101,11 +3102,7 @@ extension ImageGenerator {
         filePath: firstStageFilePath, version: modelVersion,
         latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
-        tiledDecoding: configuration.tiledDecoding,
-        decodingTileSize: (
-          width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)
-        ), decodingTileOverlap: Int(configuration.decodingTileOverlap),
-        tiledDiffusion: tiledDiffusion,
+        tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion)
@@ -3224,8 +3221,9 @@ extension ImageGenerator {
         firstStage = FirstStage<FloatType>(
           filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: .wurstchenStageB,
           latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
-          highPrecisionFallback: isHighPrecisionVAEFallbackEnabled, tiledDecoding: false,
-          decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
+          highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
+          tiledDecoding: TiledConfiguration(
+            isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
           tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
@@ -3926,7 +3924,12 @@ extension ImageGenerator {
       else { return nil }
       return ModelZoo.versionForModel($0)
     }
-    let tiledDiffusion = TiledDiffusionConfiguration(
+    let tiledDecoding = TiledConfiguration(
+      isEnabled: configuration.tiledDecoding,
+      tileSize: .init(
+        width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
+      tileOverlap: Int(configuration.decodingTileOverlap))
+    let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
         width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
@@ -4238,11 +4241,7 @@ extension ImageGenerator {
         filePath: firstStageFilePath, version: modelVersion,
         latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
-        tiledDecoding: configuration.tiledDecoding,
-        decodingTileSize: (
-          width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)
-        ), decodingTileOverlap: Int(configuration.decodingTileOverlap),
-        tiledDiffusion: tiledDiffusion,
+        tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion)
@@ -4372,8 +4371,10 @@ extension ImageGenerator {
         firstStage = FirstStage<FloatType>(
           filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: .wurstchenStageB,
           latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
-          highPrecisionFallback: isHighPrecisionVAEFallbackEnabled, tiledDecoding: false,
-          decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
+          highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
+          tiledDecoding: TiledConfiguration(
+            isEnabled: false,
+            tileSize: .init(width: 0, height: 0), tileOverlap: 0),
           tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
@@ -4596,7 +4597,12 @@ extension ImageGenerator {
       else { return nil }
       return ModelZoo.versionForModel($0)
     }
-    let tiledDiffusion = TiledDiffusionConfiguration(
+    let tiledDecoding = TiledConfiguration(
+      isEnabled: configuration.tiledDecoding,
+      tileSize: .init(
+        width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
+      tileOverlap: Int(configuration.decodingTileOverlap))
+    let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
         width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
@@ -4907,11 +4913,7 @@ extension ImageGenerator {
         filePath: firstStageFilePath, version: modelVersion,
         latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
-        tiledDecoding: configuration.tiledDecoding,
-        decodingTileSize: (
-          width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)
-        ), decodingTileOverlap: Int(configuration.decodingTileOverlap),
-        tiledDiffusion: tiledDiffusion,
+        tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion)
@@ -5133,8 +5135,10 @@ extension ImageGenerator {
         firstStage = FirstStage<FloatType>(
           filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: .wurstchenStageB,
           latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
-          highPrecisionFallback: isHighPrecisionVAEFallbackEnabled, tiledDecoding: false,
-          decodingTileSize: (width: 0, height: 0), decodingTileOverlap: 0,
+          highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
+          tiledDecoding: TiledConfiguration(
+            isEnabled: false,
+            tileSize: .init(width: 0, height: 0), tileOverlap: 0),
           tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,

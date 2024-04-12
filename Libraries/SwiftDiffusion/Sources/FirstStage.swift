@@ -5,23 +5,19 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let version: ModelVersion
   public let highPrecision: Bool
   public let externalOnDemand: Bool
+  public let tiledDecoding: TiledConfiguration
+  public let tiledDiffusion: TiledConfiguration
   private let alternativeUsesFlashAttention: Bool
   private let alternativeFilePath: String?
   private let alternativeDecoderVersion: AlternativeDecoderVersion?
   private let latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float)
   private let highPrecisionFallback: Bool
-  private let tiledDecoding: Bool
-  private let decodingTileSize: (width: Int, height: Int)
-  private let decodingTileOverlap: Int
-  private let tiledDiffusion: TiledDiffusionConfiguration
   public init(
     filePath: String, version: ModelVersion,
     latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float),
-    highPrecision: Bool, highPrecisionFallback: Bool, tiledDecoding: Bool,
-    decodingTileSize: (width: Int, height: Int), decodingTileOverlap: Int,
-    tiledDiffusion: TiledDiffusionConfiguration, externalOnDemand: Bool,
-    alternativeUsesFlashAttention: Bool, alternativeFilePath: String?,
-    alternativeDecoderVersion: AlternativeDecoderVersion?
+    highPrecision: Bool, highPrecisionFallback: Bool, tiledDecoding: TiledConfiguration,
+    tiledDiffusion: TiledConfiguration, externalOnDemand: Bool, alternativeUsesFlashAttention: Bool,
+    alternativeFilePath: String?, alternativeDecoderVersion: AlternativeDecoderVersion?
   ) {
     self.filePath = filePath
     self.version = version
@@ -30,8 +26,6 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.highPrecisionFallback = highPrecisionFallback
     self.externalOnDemand = externalOnDemand
     self.tiledDecoding = tiledDecoding
-    self.decodingTileSize = decodingTileSize
-    self.decodingTileOverlap = decodingTileOverlap
     self.tiledDiffusion = tiledDiffusion
     self.alternativeUsesFlashAttention = alternativeUsesFlashAttention
     self.alternativeFilePath = alternativeFilePath
@@ -83,12 +77,12 @@ extension FirstStage {
       zoomFactor = 4
     }
     let decodingTileSize = (
-      width: min(decodingTileSize.width * (64 / zoomFactor), startWidth),
-      height: min(decodingTileSize.height * (64 / zoomFactor), startHeight)
+      width: min(tiledDecoding.tileSize.width * (64 / zoomFactor), startWidth),
+      height: min(tiledDecoding.tileSize.height * (64 / zoomFactor), startHeight)
     )
-    let decodingTileOverlap = decodingTileOverlap * (64 / zoomFactor)
+    let decodingTileOverlap = tiledDecoding.tileOverlap * (64 / zoomFactor)
     let tiledDecoding =
-      tiledDecoding
+      tiledDecoding.isEnabled
       && (startWidth > decodingTileSize.width || startHeight > decodingTileSize.height)
     let externalData: DynamicGraph.Store.Codec =
       externalOnDemand ? .externalOnDemand : .externalData
