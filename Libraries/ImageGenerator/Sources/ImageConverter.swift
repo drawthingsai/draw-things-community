@@ -903,6 +903,17 @@ public enum ImageConverter {
           description +=
             ", Tiled Decoding Enabled: \(configuration.decodingTileWidth * 64)x\(configuration.decodingTileHeight * 64) [\(configuration.decodingTileOverlap * 64)]"
         }
+        if configuration.tiledDiffusion
+          && (configuration.startWidth > configuration.diffusionTileWidth
+            || configuration.startHeight > configuration.diffusionTileHeight)
+        {
+          json["tiled_diffusion"] = configuration.tiledDiffusion
+          json["diffusion_tile_width"] = configuration.diffusionTileWidth * 64
+          json["diffusion_tile_height"] = configuration.diffusionTileHeight * 64
+          json["diffusion_tile_overlap"] = configuration.diffusionTileOverlap * 64
+          description +=
+            ", Tiled Diffusion Enabled: \(configuration.diffusionTileWidth * 64)x\(configuration.diffusionTileHeight * 64) [\(configuration.diffusionTileOverlap * 64)]"
+        }
         if configuration.sampler == .TCD {
           json["stochastic_sampling_gamma"] = configuration.stochasticSamplingGamma
           description += ", Strategic Stochastic Sampling: \(configuration.stochasticSamplingGamma)"

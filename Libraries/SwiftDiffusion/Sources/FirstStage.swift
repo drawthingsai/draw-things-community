@@ -75,16 +75,21 @@ extension FirstStage {
         DynamicGraph.memoryEfficient = isMemoryEfficient
       }
     }
-    // Tiled decoding is only applicable for SD / SDXL VAE (Wurstchen's Stage A is too tiny to matter).
+    let zoomFactor: Int
+    switch version {
+    case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .kandinsky21:
+      zoomFactor = 8
+    case .wurstchenStageB, .wurstchenStageC:
+      zoomFactor = 4
+    }
     let decodingTileSize = (
-      width: min(decodingTileSize.width * 8, startWidth),
-      height: min(decodingTileSize.height * 8, startHeight)
+      width: min(decodingTileSize.width * (64 / zoomFactor), startWidth),
+      height: min(decodingTileSize.height * (64 / zoomFactor), startHeight)
     )
-    let decodingTileOverlap = decodingTileOverlap * 8
-    var tiledDecoding =
+    let decodingTileOverlap = decodingTileOverlap * (64 / zoomFactor)
+    let tiledDecoding =
       tiledDecoding
       && (startWidth > decodingTileSize.width || startHeight > decodingTileSize.height)
-    let zoomFactor: Int
     let externalData: DynamicGraph.Store.Codec =
       externalOnDemand ? .externalOnDemand : .externalData
     let outputChannels: Int
@@ -139,16 +144,22 @@ extension FirstStage {
       } else {
         outputChannels = 3
       }
-      zoomFactor = 8
     case .kandinsky21:
-      tiledDecoding = false
+      let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
+      let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       decoder =
         existingDecoder
         ?? MOVQDecoderKandinsky(
           zChannels: 4, channels: 128, channelMult: [1, 2, 2, 4], numResBlocks: 2,
           startHeight: startHeight, startWidth: startWidth, attnResolutions: Set([32]))
       if existingDecoder == nil {
-        decoder.compile(inputs: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        if highPrecision {
+          decoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]]))
+        } else {
+          decoder.compile(inputs: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        }
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
         ) {
@@ -156,14 +167,20 @@ extension FirstStage {
         }
       }
       outputChannels = 3
-      zoomFactor = 8
     case .wurstchenStageC, .wurstchenStageB:
-      tiledDecoding = false
+      let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
+      let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       decoder =
         existingDecoder
         ?? WurstchenStageADecoder(batchSize: 1, height: startHeight * 2, width: startWidth * 2)
       if existingDecoder == nil {
-        decoder.compile(inputs: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        if highPrecision {
+          decoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]]))
+        } else {
+          decoder.compile(inputs: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        }
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
         ) {
@@ -171,7 +188,6 @@ extension FirstStage {
         }
       }
       outputChannels = 3
-      zoomFactor = 4
     }
     guard batchSize > 1 else {
       if highPrecision {
@@ -180,7 +196,8 @@ extension FirstStage {
           result = tiledDecode(
             DynamicGraph.Tensor<Float>(from: z), decoder: decoder,
             transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
-            tileOverlap: decodingTileOverlap, outputChannels: outputChannels)
+            tileOverlap: decodingTileOverlap, outputChannels: outputChannels, zoomFactor: zoomFactor
+          )
         } else {
           result = internalDecode(
             DynamicGraph.Tensor<Float>(from: z), decoder: decoder,
@@ -197,7 +214,8 @@ extension FirstStage {
         if tiledDecoding {
           result = tiledDecode(
             z, decoder: decoder, transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
-            tileOverlap: decodingTileOverlap, outputChannels: outputChannels)
+            tileOverlap: decodingTileOverlap, outputChannels: outputChannels, zoomFactor: zoomFactor
+          )
         } else {
           result = internalDecode(z, decoder: decoder, transparentDecoder: transparentDecoder)
         }
@@ -218,7 +236,8 @@ extension FirstStage {
           partial = tiledDecode(
             DynamicGraph.Tensor<Float>(from: zEnc), decoder: decoder,
             transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
-            tileOverlap: decodingTileOverlap, outputChannels: outputChannels)
+            tileOverlap: decodingTileOverlap, outputChannels: outputChannels, zoomFactor: zoomFactor
+          )
         } else {
           partial = internalDecode(
             DynamicGraph.Tensor<Float>(from: zEnc), decoder: decoder,
@@ -236,7 +255,7 @@ extension FirstStage {
           partial = tiledDecode(
             zEnc, decoder: decoder, transparentDecoder: transparentDecoder,
             tileSize: decodingTileSize, tileOverlap: decodingTileOverlap,
-            outputChannels: outputChannels)
+            outputChannels: outputChannels, zoomFactor: zoomFactor)
         } else {
           partial = internalDecode(zEnc, decoder: decoder, transparentDecoder: transparentDecoder)
         }
@@ -541,7 +560,7 @@ extension FirstStage {
 
   private func tiledDecode<T: TensorNumeric & BinaryFloatingPoint>(
     _ z: DynamicGraph.Tensor<T>, decoder: Model, transparentDecoder: Model?,
-    tileSize: (width: Int, height: Int), tileOverlap: Int, outputChannels: Int
+    tileSize: (width: Int, height: Int), tileOverlap: Int, outputChannels: Int, zoomFactor: Int
   ) -> DynamicGraph.Tensor<T> {
     // Assuming batch is 1.
     let shape = z.shape
@@ -549,8 +568,12 @@ extension FirstStage {
     precondition(shape[0] == 1)
     // tile overlap shouldn't be bigger than 1/3 of either height or width (otherwise we cannot make much progress).
     let tileOverlap = min(
-      min(tileOverlap, Int((Double(tileSize.height / 3) / 8).rounded(.down)) * 8),
-      Int((Double(tileSize.width / 3) / 8).rounded(.down)) * 8)
+      min(
+        tileOverlap,
+        Int((Double(tileSize.height / 3) / Double(64 / zoomFactor)).rounded(.down))
+          * (64 / zoomFactor)),
+      Int((Double(tileSize.width / 3) / Double(64 / zoomFactor)).rounded(.down)) * (64 / zoomFactor)
+    )
     let yTiles =
       (shape[1] - tileOverlap * 2 + (tileSize.height - tileOverlap * 2) - 1)
       / (tileSize.height - tileOverlap * 2)
@@ -558,37 +581,35 @@ extension FirstStage {
       (shape[2] - tileOverlap * 2 + (tileSize.width - tileOverlap * 2) - 1)
       / (tileSize.width - tileOverlap * 2)
     let graph = z.graph
-    let streamContext = StreamContext(.GPU(0))
-    let decodedImages = graph.withStream(streamContext) {
-      var decodedImages = [DynamicGraph.Tensor<T>]()
-      for y in 0..<yTiles {
-        let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
-        let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
-          iOfs: yOfs, length: shape[1], tileSize: tileSize.height, tileOverlap: tileOverlap)
-        for x in 0..<xTiles {
-          let xOfs = x * (tileSize.width - tileOverlap * 2) + (x > 0 ? tileOverlap : 0)
-          let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
-            iOfs: xOfs, length: shape[2], tileSize: tileSize.width, tileOverlap: tileOverlap)
-          decodedImages.append(
-            internalDecode(
-              z[
-                0..<1, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad, 0..<channels
-              ].copied(), decoder: decoder, transparentDecoder: transparentDecoder))
-        }
+    var decodedRawValues = [Tensor<T>]()
+    for y in 0..<yTiles {
+      let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
+      let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
+        iOfs: yOfs, length: shape[1], tileSize: tileSize.height, tileOverlap: tileOverlap)
+      for x in 0..<xTiles {
+        let xOfs = x * (tileSize.width - tileOverlap * 2) + (x > 0 ? tileOverlap : 0)
+        let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
+          iOfs: xOfs, length: shape[2], tileSize: tileSize.width, tileOverlap: tileOverlap)
+        decodedRawValues.append(
+          internalDecode(
+            z[
+              0..<1, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad, 0..<channels
+            ].copied(), decoder: decoder, transparentDecoder: transparentDecoder
+          ).rawValue.toCPU())
       }
-      return decodedImages
     }
-    let decodedRawValues = decodedImages.map { $0.rawValue.toCPU() }
     let (xWeightsAndIndexes, yWeightsAndIndexes) = xyTileWeightsAndIndexes(
-      width: shape[2] * 8, height: shape[1] * 8, xTiles: xTiles, yTiles: yTiles,
-      tileSize: (width: tileSize.width * 8, height: tileSize.height * 8),
-      tileOverlap: tileOverlap * 8)
-    var result = Tensor<T>(.CPU, .NHWC(1, shape[1] * 8, shape[2] * 8, outputChannels))
+      width: shape[2] * zoomFactor, height: shape[1] * zoomFactor, xTiles: xTiles, yTiles: yTiles,
+      tileSize: (width: tileSize.width * zoomFactor, height: tileSize.height * zoomFactor),
+      tileOverlap: tileOverlap * zoomFactor)
+    var result = Tensor<T>(
+      .CPU, .NHWC(1, shape[1] * zoomFactor, shape[2] * zoomFactor, outputChannels))
+    let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
     result.withUnsafeMutableBytes {
       guard var fp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
-      for j in 0..<(shape[1] * 8) {
+      for j in 0..<(shape[1] * zoomFactor) {
         let yWeightAndIndex = yWeightsAndIndexes[j]
-        for i in 0..<(shape[2] * 8) {
+        for i in 0..<(shape[2] * zoomFactor) {
           let xWeightAndIndex = xWeightsAndIndexes[i]
           for k in 0..<outputChannels {
             fp[k] = 0
@@ -601,7 +622,9 @@ extension FirstStage {
               tensor.withUnsafeBytes {
                 guard var v = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
                 // Note that while result is outputChannels, this is padded to 4 i.e. channels.
-                v = v + x.offset * channels + y.offset * tileSize.width * 8 * channels
+                v =
+                  v + x.offset * inputChannels + y.offset * tileSize.width * zoomFactor
+                  * inputChannels
                 for k in 0..<outputChannels {
                   fp[k] += v[k] * weight
                 }
@@ -635,30 +658,25 @@ extension FirstStage {
       (startWidth - tileOverlap * 2 + (tileSize.width - tileOverlap * 2) - 1)
       / (tileSize.width - tileOverlap * 2)
     let graph = z.graph
-    let streamContext = StreamContext(.GPU(0))
-    let encodedImages = graph.withStream(streamContext) {
-      var encodedImages = [DynamicGraph.Tensor<T>]()
-      for y in 0..<yTiles {
-        let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
-        let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
-          iOfs: yOfs * scaleFactor, length: shape[1], tileSize: tileSize.height * scaleFactor,
+    var encodedRawValues = [Tensor<T>]()
+    for y in 0..<yTiles {
+      let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
+      let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
+        iOfs: yOfs * scaleFactor, length: shape[1], tileSize: tileSize.height * scaleFactor,
+        tileOverlap: tileOverlap * scaleFactor)
+      for x in 0..<xTiles {
+        let xOfs = x * (tileSize.width - tileOverlap * 2) + (x > 0 ? tileOverlap : 0)
+        let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
+          iOfs: xOfs * scaleFactor, length: shape[2], tileSize: tileSize.width * scaleFactor,
           tileOverlap: tileOverlap * scaleFactor)
-        for x in 0..<xTiles {
-          let xOfs = x * (tileSize.width - tileOverlap * 2) + (x > 0 ? tileOverlap : 0)
-          let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
-            iOfs: xOfs * scaleFactor, length: shape[2], tileSize: tileSize.width * scaleFactor,
-            tileOverlap: tileOverlap * scaleFactor)
-          encodedImages.append(
-            encoder(
-              inputs:
-                z[
-                  0..<1, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad, 0..<channels
-                ].copied())[0].as(of: T.self))
-        }
+        encodedRawValues.append(
+          encoder(
+            inputs:
+              z[
+                0..<1, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad, 0..<channels
+              ].copied())[0].as(of: T.self).rawValue.toCPU())
       }
-      return encodedImages
     }
-    let encodedRawValues = encodedImages.map { $0.rawValue.toCPU() }
     let (xWeightsAndIndexes, yWeightsAndIndexes) = xyTileWeightsAndIndexes(
       width: startWidth, height: startHeight, xTiles: xTiles, yTiles: yTiles,
       tileSize: (width: tileSize.width, height: tileSize.height), tileOverlap: tileOverlap)
