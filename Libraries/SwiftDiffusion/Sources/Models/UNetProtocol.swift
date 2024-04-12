@@ -25,10 +25,16 @@ public protocol UNetProtocol {
     timestep: Float,
     inputs: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>,
     _: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControls: [DynamicGraph.Tensor<FloatType>],
-    injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+    injectedControlsAndAdapters: (
+      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
+    ) -> (
+      injectedControls: [DynamicGraph.Tensor<FloatType>],
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+    ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration
+    tiledDiffusion: TiledDiffusionConfiguration,
+    controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType>
   func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType>
 }
@@ -491,7 +497,14 @@ extension UNetFromNNC {
 
   private func internalDiffuse(
     xyTiles: Int, index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int,
-    inputEndXPad: Int, xT: DynamicGraph.Tensor<FloatType>, inputs: [DynamicGraph.Tensor<FloatType>]
+    inputEndXPad: Int, xT: DynamicGraph.Tensor<FloatType>, inputs: [DynamicGraph.Tensor<FloatType>],
+    injectedControlsAndAdapters: (
+      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
+    ) -> (
+      injectedControls: [DynamicGraph.Tensor<FloatType>],
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+    ), controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     let shape = xT.shape
     let xT = xT[
@@ -499,15 +512,25 @@ extension UNetFromNNC {
     ].copied()
     // Need to rework the shape. For Wurstchen B, we need to slice them up.
     // For ControlNet, we already sliced them up into batch dimension, now need to extract them out.
+    let (injectedControls, injectedT2IAdapters) = injectedControlsAndAdapters(
+      xT, inputStartYPad, inputEndYPad, inputStartXPad, inputEndXPad, &controlNets)
     let inputs = sliceInputs(
-      inputs, originalShape: shape, xyTiles: xyTiles, index: index, inputStartYPad: inputStartYPad,
+      inputs + injectedControls + injectedT2IAdapters, originalShape: shape, xyTiles: xyTiles,
+      index: index, inputStartYPad: inputStartYPad,
       inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad)
     return unet!(inputs: xT, inputs)[0].as(of: FloatType.self)
   }
 
   private func tiledDiffuse(
     tiledDiffusion: TiledDiffusionConfiguration, xT: DynamicGraph.Tensor<FloatType>,
-    inputs: [DynamicGraph.Tensor<FloatType>]
+    inputs: [DynamicGraph.Tensor<FloatType>],
+    injectedControlsAndAdapters: (
+      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
+    ) -> (
+      injectedControls: [DynamicGraph.Tensor<FloatType>],
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+    ), controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     guard let xTileWeightsAndIndexes = xTileWeightsAndIndexes,
       let yTileWeightsAndIndexes = yTileWeightsAndIndexes
@@ -549,7 +572,8 @@ extension UNetFromNNC {
           internalDiffuse(
             xyTiles: xTiles * yTiles, index: y * xTiles + x, inputStartYPad: inputStartYPad,
             inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
-            xT: xT, inputs: inputs))
+            xT: xT, inputs: inputs, injectedControlsAndAdapters: injectedControlsAndAdapters,
+            controlNets: &controlNets))
       }
     }
     let etRawValues = et.map { $0.rawValue.toCPU() }
@@ -594,22 +618,29 @@ extension UNetFromNNC {
     timestep _: Float,
     inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>,
     _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControls: [DynamicGraph.Tensor<FloatType>],
-    injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+    injectedControlsAndAdapters: (
+      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
+    ) -> (
+      injectedControls: [DynamicGraph.Tensor<FloatType>],
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+    ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration
+    tiledDiffusion: TiledDiffusionConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     if let extraProjection = extraProjection, let timeEmbed = timeEmbed {
       let batchSize = xT.shape[0]
       var embGPU = timeEmbed(inputs: timestep)[0].as(of: FloatType.self)
       embGPU = embGPU + extraProjection.reshaped(.NC(batchSize, 384 * 4))
       if tiledDiffusion.isEnabled {
-        return tiledDiffuse(tiledDiffusion: tiledDiffusion, xT: xT, inputs: [embGPU, c[0]])
+        return tiledDiffuse(
+          tiledDiffusion: tiledDiffusion, xT: xT, inputs: [embGPU, c[0]],
+          injectedControlsAndAdapters: injectedControlsAndAdapters, controlNets: &controlNets)
       } else {
         return unet!(inputs: xT, embGPU, c[0])[0].as(of: FloatType.self)
       }
     }
-    if injectedControls.count > 0 || injectedT2IAdapters.count > 0 || injectedIPAdapters.count > 0 {
+    if injectedIPAdapters.count > 0 {
       // Interleaving injectedAdapters with c.
       var c = c
       if injectedIPAdapters.count > 0 {
@@ -642,20 +673,19 @@ extension UNetFromNNC {
           fatalError()
         }
       }
-      var inputs = [timestep] + c
-      inputs.append(contentsOf: injectedControls)
-      inputs.append(contentsOf: injectedT2IAdapters)
-      if tiledDiffusion.isEnabled {
-        return tiledDiffuse(tiledDiffusion: tiledDiffusion, xT: xT, inputs: inputs)
-      } else {
-        return unet!(inputs: xT, inputs)[0].as(of: FloatType.self)
-      }
+    }
+    if tiledDiffusion.isEnabled {
+      return tiledDiffuse(
+        tiledDiffusion: tiledDiffusion, xT: xT, inputs: [timestep] + c,
+        injectedControlsAndAdapters: injectedControlsAndAdapters, controlNets: &controlNets)
     } else {
-      if tiledDiffusion.isEnabled {
-        return tiledDiffuse(tiledDiffusion: tiledDiffusion, xT: xT, inputs: [timestep] + c)
-      } else {
-        return unet!(inputs: xT, [timestep] + c)[0].as(of: FloatType.self)
-      }
+      let shape = xT.shape
+      let startHeight = shape[1]
+      let startWidth = shape[2]
+      let (injectedControls, injectedT2IAdapters) = injectedControlsAndAdapters(
+        xT, 0, 0, 0, 0, &controlNets)
+      return unet!(inputs: xT, [timestep] + c + injectedControls + injectedT2IAdapters)[0].as(
+        of: FloatType.self)
     }
   }
 

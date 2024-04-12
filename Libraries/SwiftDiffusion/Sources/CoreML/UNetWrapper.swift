@@ -69,21 +69,29 @@ extension UNetWrapper {
     timestep t: Float,
     inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>,
     _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControls: [DynamicGraph.Tensor<FloatType>],
-    injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+    injectedControlsAndAdapters: (
+      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
+    ) -> (
+      injectedControls: [DynamicGraph.Tensor<FloatType>],
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+    ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration
+    tiledDiffusion: TiledDiffusionConfiguration,
+    controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     if preferCoreML {
       return unetFromCoreML(
         timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
-        injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-        injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
+        injectedControlsAndAdapters: injectedControlsAndAdapters,
+        injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+        controlNets: &controlNets)
     }
     return unetFromNNC(
       timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
-      injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-      injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
+      injectedControlsAndAdapters: injectedControlsAndAdapters,
+      injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+      controlNets: &controlNets)
   }
 
   public func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType> {

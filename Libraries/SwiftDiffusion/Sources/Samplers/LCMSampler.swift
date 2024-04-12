@@ -391,7 +391,14 @@ extension LCMSampler: Sampler {
         let t = unet.timeEmbed(
           graph: graph, batchSize: batchSize, timestep: cNoise, version: currentModelVersion)
         xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
-        let (injectedControls, injectedT2IAdapters, injectedIPAdapters) = ControlModel<FloatType>
+        let injectedIPAdapters = ControlModel<FloatType>
+          .injectedIPAdapters(
+            injecteds: injectedControls, step: i, version: unet.version,
+            usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
+            tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+            isCfgEnabled: false, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+            controlNets: &controlNets)
+        let injectedControlsAndAdapters = ControlModel<FloatType>
           .injectedControlsAndAdapters(
             injecteds: injectedControls, step: i, version: unet.version,
             usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
@@ -406,8 +413,9 @@ extension LCMSampler: Sampler {
         }
         var etOut = unet(
           timestep: cNoise, inputs: xIn, t + cfgCond, newC, extraProjection: extraProjection,
-          injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-          injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
+          injectedControlsAndAdapters: injectedControlsAndAdapters,
+          injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+          controlNets: &controlNets)
         if let blur = blur {
           let alpha =
             0.001 * sharpness * (discretization.timesteps - Float(timestep))

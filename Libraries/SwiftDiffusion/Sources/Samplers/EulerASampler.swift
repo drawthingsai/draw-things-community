@@ -400,7 +400,14 @@ extension EulerASampler: Sampler {
           xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = input
           xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)] =
             condAugFrames
-          let (injectedControls, injectedT2IAdapters, injectedIPAdapters) = ControlModel<FloatType>
+          let injectedIPAdapters = ControlModel<FloatType>
+            .injectedIPAdapters(
+              injecteds: injectedControls, step: i, version: unet.version,
+              usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
+              tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+              controlNets: &controlNets)
+          let injectedControlsAndAdapters = ControlModel<FloatType>
             .injectedControlsAndAdapters(
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
@@ -410,8 +417,9 @@ extension EulerASampler: Sampler {
           let cCond = Array(c[0..<(1 + (c.count - 1) / 2)])
           var etCond = unet(
             timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
-            injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-            injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
+            injectedControlsAndAdapters: injectedControlsAndAdapters,
+            injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+            controlNets: &controlNets)
           let alpha =
             0.001 * sharpness * (discretization.timesteps - timestep)
             / discretization.timesteps
@@ -420,8 +428,9 @@ extension EulerASampler: Sampler {
             let cUncond = Array([c[0]] + c[(1 + (c.count - 1) / 2)...])
             let etUncond = unet(
               timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
-              injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-              injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
+              injectedControlsAndAdapters: injectedControlsAndAdapters,
+              injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+              controlNets: &controlNets)
             if let blur = blur {
               let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
               etCond = Functional.add(
@@ -446,7 +455,14 @@ extension EulerASampler: Sampler {
                 input
             }
           }
-          let (injectedControls, injectedT2IAdapters, injectedIPAdapters) = ControlModel<FloatType>
+          let injectedIPAdapters = ControlModel<FloatType>
+            .injectedIPAdapters(
+              injecteds: injectedControls, step: i, version: unet.version,
+              usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
+              tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+              controlNets: &controlNets)
+          let injectedControlsAndAdapters = ControlModel<FloatType>
             .injectedControlsAndAdapters(
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
@@ -455,8 +471,9 @@ extension EulerASampler: Sampler {
               controlNets: &controlNets)
           var etOut = unet(
             timestep: cNoise, inputs: xIn, t, c, extraProjection: extraProjection,
-            injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-            injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion)
+            injectedControlsAndAdapters: injectedControlsAndAdapters,
+            injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+            controlNets: &controlNets)
           let alpha =
             0.001 * sharpness * (discretization.timesteps - timestep)
             / discretization.timesteps

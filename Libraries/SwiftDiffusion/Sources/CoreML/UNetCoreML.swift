@@ -342,10 +342,16 @@ extension UNetFromCoreML {
     timestep: Float,
     inputs xT: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>,
     _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControls: [DynamicGraph.Tensor<FloatType>],
-    injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+    injectedControlsAndAdapters: (
+      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
+    ) -> (
+      injectedControls: [DynamicGraph.Tensor<FloatType>],
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+    ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledDiffusionConfiguration
+    tiledDiffusion: TiledDiffusionConfiguration,
+    controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     return autoreleasepool {
       let c = c[0]
