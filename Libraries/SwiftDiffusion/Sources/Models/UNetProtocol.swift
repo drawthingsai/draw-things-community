@@ -559,7 +559,7 @@ extension UNetFromNNC {
     let xTiles =
       (startWidth - tileOverlap * 2 + (tiledWidth - tileOverlap * 2) - 1)
       / (tiledWidth - tileOverlap * 2)
-    var etRawValues = [Tensor<FloatType>]()
+    var et = [DynamicGraph.Tensor<FloatType>]()
     for y in 0..<yTiles {
       let yOfs = y * (tiledHeight - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
       let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
@@ -568,15 +568,15 @@ extension UNetFromNNC {
         let xOfs = x * (tiledWidth - tileOverlap * 2) + (x > 0 ? tileOverlap : 0)
         let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
           iOfs: xOfs, length: startWidth, tileSize: tiledWidth, tileOverlap: tileOverlap)
-        etRawValues.append(
+        et.append(
           internalDiffuse(
             xyTiles: xTiles * yTiles, index: y * xTiles + x, inputStartYPad: inputStartYPad,
             inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
             xT: xT, inputs: inputs, injectedControlsAndAdapters: injectedControlsAndAdapters,
-            controlNets: &controlNets
-          ).rawValue.toCPU())
+            controlNets: &controlNets))
       }
     }
+    let etRawValues = et.map { $0.rawValue.toCPU() }
     var etRaw = Tensor<FloatType>(.CPU, .NHWC(shape[0], startHeight, startWidth, shape[3]))
     etRaw.withUnsafeMutableBytes {
       guard var fp = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
