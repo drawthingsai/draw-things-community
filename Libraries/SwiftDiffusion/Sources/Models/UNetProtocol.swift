@@ -679,7 +679,6 @@ extension UNetFromNNC {
         tiledDiffusion: tiledDiffusion, xT: xT, inputs: [timestep] + c,
         injectedControlsAndAdapters: injectedControlsAndAdapters, controlNets: &controlNets)
     } else {
-      let shape = xT.shape
       let (injectedControls, injectedT2IAdapters) = injectedControlsAndAdapters(
         xT, 0, 0, 0, 0, &controlNets)
       return unet!(inputs: xT, [timestep] + c + injectedControls + injectedT2IAdapters)[0].as(
