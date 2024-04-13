@@ -680,8 +680,6 @@ extension UNetFromNNC {
         injectedControlsAndAdapters: injectedControlsAndAdapters, controlNets: &controlNets)
     } else {
       let shape = xT.shape
-      let startHeight = shape[1]
-      let startWidth = shape[2]
       let (injectedControls, injectedT2IAdapters) = injectedControlsAndAdapters(
         xT, 0, 0, 0, 0, &controlNets)
       return unet!(inputs: xT, [timestep] + c + injectedControls + injectedT2IAdapters)[0].as(
