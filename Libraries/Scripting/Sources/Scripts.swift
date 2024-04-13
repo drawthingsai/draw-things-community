@@ -26,9 +26,10 @@ public final class Scripts {
         userScriptNames[$1] = $0
         return script
       }
-    //  sort file list case-insensitive for user display
-      .sorted(by: {$0.name.localizedStandardCompare($1.name) == .orderedAscending
-    })
+    // Sort file list case-insensitive for user display.
+    scripts = scripts.sorted {
+      $0.name.localizedStandardCompare($1.name) == .orderedAscending
+    }
     for path in Bundle.main.paths(forResourcesOfType: ".sample.js", inDirectory: nil) {
       if let filename = path.split(separator: "/").last {
         let name = filename.replacingOccurrences(of: ".sample", with: "")
