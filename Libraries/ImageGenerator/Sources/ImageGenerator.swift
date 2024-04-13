@@ -3517,8 +3517,33 @@ extension ImageGenerator {
     }
   }
 
-  public static func isInpainting(for binaryMask: Tensor<UInt8>?) -> Bool {
+  public static func isInpainting(
+    for binaryMask: Tensor<UInt8>?, configuration: GenerationConfiguration
+  ) -> Bool {
     guard let binaryMask = binaryMask else { return false }
+    let modelVersion = ModelZoo.versionForModel(configuration.model ?? "")
+    let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
+      guard $0 != configuration.model, ModelZoo.isModelDownloaded($0) else { return nil }
+      let version = ModelZoo.versionForModel($0)
+      guard
+        version == modelVersion
+          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
+            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
+      else { return nil }
+      return ModelZoo.versionForModel($0)
+    }
+    var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
+    for lora in configuration.loras {
+      guard let file = lora.file else { continue }
+      let loraVersion = LoRAZoo.versionForModel(file)
+      guard LoRAZoo.isModelDownloaded(file),
+        modelVersion == loraVersion || refinerVersion == loraVersion
+          || (modelVersion == .kandinsky21 && loraVersion == .v1)
+      else { continue }
+      if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
+        alternativeDecoderVersion = alternativeDecoder.1
+      }
+    }
     let imageWidth = binaryMask.shape[1]
     let imageHeight = binaryMask.shape[0]
     // See detail explanation below.
@@ -3527,7 +3552,7 @@ extension ImageGenerator {
     for y in 0..<imageHeight {
       for x in 0..<imageWidth {
         let byteMask = (binaryMask[y, x] & 7)
-        if byteMask == 3 {
+        if byteMask == 3 && alternativeDecoderVersion != .transparent {
           return true
         } else if byteMask == 2 || byteMask == 4 {  // 4 is the same as 2.
           return true
