@@ -640,38 +640,36 @@ extension UNetFromNNC {
         return unet!(inputs: xT, embGPU, c[0])[0].as(of: FloatType.self)
       }
     }
+    // Interleaving injectedAdapters with c.
+    var c = c
     if injectedIPAdapters.count > 0 {
-      // Interleaving injectedAdapters with c.
-      var c = c
-      if injectedIPAdapters.count > 0 {
-        switch version {
-        case .v1:
-          let injectIPAdapters = injectedIPAdapters.count / 32
-          var newC = [c[0]]
-          for i in stride(from: 0, to: 32, by: 2) {
-            for j in 0..<injectIPAdapters {
-              newC.append(injectedIPAdapters[i + j * 32])  // ip_k
-              newC.append(injectedIPAdapters[i + 1 + j * 32])  // ip_v
-            }
+      switch version {
+      case .v1:
+        let injectIPAdapters = injectedIPAdapters.count / 32
+        var newC = [c[0]]
+        for i in stride(from: 0, to: 32, by: 2) {
+          for j in 0..<injectIPAdapters {
+            newC.append(injectedIPAdapters[i + j * 32])  // ip_k
+            newC.append(injectedIPAdapters[i + 1 + j * 32])  // ip_v
           }
-          c = newC
-        case .sdxlBase, .sdxlRefiner, .ssd1b:
-          precondition(injectedIPAdapters.count % (c.count - 1) == 0)
-          precondition((c.count - 1) % 2 == 0)
-          let injectIPAdapters = injectedIPAdapters.count / (c.count - 1)
-          var newC = [c[0]]
-          for i in stride(from: 0, to: c.count - 1, by: 2) {
-            newC.append(c[i + 1])  // k
-            newC.append(c[i + 2])  // v
-            for j in 0..<injectIPAdapters {
-              newC.append(injectedIPAdapters[i + j * (c.count - 1)])  // ip_k
-              newC.append(injectedIPAdapters[i + 1 + j * (c.count - 1)])  // ip_v
-            }
-          }
-          c = newC
-        case .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
-          fatalError()
         }
+        c = newC
+      case .sdxlBase, .sdxlRefiner, .ssd1b:
+        precondition(injectedIPAdapters.count % (c.count - 1) == 0)
+        precondition((c.count - 1) % 2 == 0)
+        let injectIPAdapters = injectedIPAdapters.count / (c.count - 1)
+        var newC = [c[0]]
+        for i in stride(from: 0, to: c.count - 1, by: 2) {
+          newC.append(c[i + 1])  // k
+          newC.append(c[i + 2])  // v
+          for j in 0..<injectIPAdapters {
+            newC.append(injectedIPAdapters[i + j * (c.count - 1)])  // ip_k
+            newC.append(injectedIPAdapters[i + 1 + j * (c.count - 1)])  // ip_v
+          }
+        }
+        c = newC
+      case .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        fatalError()
       }
     }
     if tiledDiffusion.isEnabled {
