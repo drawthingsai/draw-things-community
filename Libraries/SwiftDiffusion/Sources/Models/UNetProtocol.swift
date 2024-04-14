@@ -473,17 +473,19 @@ extension UNetFromNNC {
     return inputs.map {
       let shape = $0.shape
       guard shape.count == 4 else { return $0 }
-      // This is likely a one with xT same shape, from Wurstchen B model.
       if shape[0] == originalShape[0] {
-        if (originalShape[1] % shape[1]) == 0 && (originalShape[2] % shape[2]) == 0
-          && ((originalShape[1] / shape[1]) == (originalShape[2] / shape[2]))
-        {
-          // This may have issues with 3x3 convolution downsampling with strides, but luckily in UNet we deal with, these don't exist.
-          let scaleFactor = originalShape[1] / shape[1]
-          return $0[
-            0..<shape[0], (inputStartYPad / scaleFactor)..<(inputEndYPad / scaleFactor),
-            (inputStartXPad / scaleFactor)..<(inputEndXPad / scaleFactor), 0..<shape[3]
-          ].copied()
+        // This is likely a one with xT same shape, from Wurstchen B model.
+        if version == .wurstchenStageB || version == .wurstchenStageC {
+          if (originalShape[1] % shape[1]) == 0 && (originalShape[2] % shape[2]) == 0
+            && ((originalShape[1] / shape[1]) == (originalShape[2] / shape[2]))
+          {
+            // This may have issues with 3x3 convolution downsampling with strides, but luckily in UNet we deal with, these don't exist.
+            let scaleFactor = originalShape[1] / shape[1]
+            return $0[
+              0..<shape[0], (inputStartYPad / scaleFactor)..<(inputEndYPad / scaleFactor),
+              (inputStartXPad / scaleFactor)..<(inputEndXPad / scaleFactor), 0..<shape[3]
+            ].copied()
+          }
         }
       } else if originalShape[0] * xyTiles == shape[0] {
         return $0[
