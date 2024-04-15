@@ -3,17 +3,31 @@ import Utils
 
 public struct ScriptZoo {
 
-  public enum ScriptType {
+  public enum ScriptType: String, Codable, Equatable, Hashable {
     case user
     case sample
   }
 
-  public struct Script: Equatable, Hashable {
-    public let type: ScriptType
-    public let name: String
-    public let filename: String
-    public let path: String
-    public var isSampleDuplicate: Bool = false
+  public struct Script: Codable, Equatable, Hashable {
+    public var name: String
+    public var file: String
+    public var filePath: String?
+    public var isSampleDuplicate: Bool?
+    public var type: ScriptType?
+    public var description: String?
+    public var author: String?
+    public init(
+      name: String, file: String, filePath: String?, isSampleDuplicate: Bool? = nil,
+      type: ScriptType? = nil, description: String? = nil, author: String? = nil
+    ) {
+      self.name = name
+      self.file = file
+      self.filePath = filePath
+      self.isSampleDuplicate = isSampleDuplicate
+      self.type = type
+      self.description = description
+      self.author = author
+    }
   }
 
   public static let scriptsUrl: URL = {
@@ -25,7 +39,7 @@ public struct ScriptZoo {
     var scripts = ((try? FileManager.default.contentsOfDirectory(atPath: scriptsUrl.path)) ?? [])
       .enumerated().map {
         let script = Script(
-          type: .user, name: $1, filename: $1, path: scriptsUrl.appendingPathComponent($1).path)
+          name: $1, file: $1, filePath: scriptsUrl.appendingPathComponent($1).path, type: .user)
         userScriptNames[$1] = $0
         return script
       }
@@ -41,7 +55,7 @@ public struct ScriptZoo {
           continue
         }
         scripts.append(
-          Script(type: .sample, name: String(name), filename: String(filename), path: path)
+          Script(name: String(name), file: String(filename), filePath: path, type: .sample)
         )
       }
     }
@@ -70,8 +84,10 @@ public struct ScriptZoo {
       let insertionIndex = filename.index(filename.endIndex, offsetBy: -3)
       filename.insert(contentsOf: "-\(counter)", at: insertionIndex)
     }
-    try? FileManager.default.copyItem(
-      at: URL(fileURLWithPath: script.path), to: scriptsUrl.appendingPathComponent(filename))
+    if let filePath = script.filePath {
+      try? FileManager.default.copyItem(
+        at: URL(fileURLWithPath: filePath), to: scriptsUrl.appendingPathComponent(filename))
+    }
   }
 
   public static func save(_ content: String, to file: String) {

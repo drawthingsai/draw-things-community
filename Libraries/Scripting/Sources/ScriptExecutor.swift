@@ -115,7 +115,11 @@ public protocol ScriptExecutorDelegate: AnyObject {
   var context: JSContext?
 
   public init(script: ScriptZoo.Script, delegate: ScriptExecutorDelegate) {
-    self.script = ScriptZoo.contentOf(script.path)
+    if let filePath = script.filePath {
+      self.script = ScriptZoo.contentOf(filePath)
+    } else {
+      self.script = ""
+    }
     self.delegate = delegate
   }
 }
