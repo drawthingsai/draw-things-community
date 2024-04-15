@@ -1,27 +1,30 @@
 import Foundation
 import Utils
 
-public enum ScriptType {
-  case user
-  case sample
-}
-public struct AvailableScript: Equatable, Hashable {
-  public let type: ScriptType
-  public let name: String
-  public let filename: String
-  public let path: String
-  public var isSampleDuplicate: Bool = false
-}
-public final class Scripts {
+public struct ScriptZoo {
+
+  public enum ScriptType {
+    case user
+    case sample
+  }
+
+  public struct Script: Equatable, Hashable {
+    public let type: ScriptType
+    public let name: String
+    public let filename: String
+    public let path: String
+    public var isSampleDuplicate: Bool = false
+  }
+
   public static let scriptsUrl: URL = {
     let urls = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
     return urls.first!.appendingPathComponent("Scripts")
   }()
-  public static var availableScripts: [AvailableScript] {
+  public static var availableScripts: [Script] {
     var userScriptNames = [String: Int]()
     var scripts = ((try? FileManager.default.contentsOfDirectory(atPath: scriptsUrl.path)) ?? [])
       .enumerated().map {
-        let script = AvailableScript(
+        let script = Script(
           type: .user, name: $1, filename: $1, path: scriptsUrl.appendingPathComponent($1).path)
         userScriptNames[$1] = $0
         return script
@@ -38,7 +41,7 @@ public final class Scripts {
           continue
         }
         scripts.append(
-          AvailableScript(type: .sample, name: String(name), filename: String(filename), path: path)
+          Script(type: .sample, name: String(name), filename: String(filename), path: path)
         )
       }
     }
@@ -56,7 +59,7 @@ public final class Scripts {
     try? FileManager.default.removeItem(at: scriptsUrl.appendingPathComponent(name))
   }
 
-  public static func duplicateScript(_ script: AvailableScript) {
+  public static func duplicateScript(_ script: Script) {
     var counter = 1
     var filename = script.name
     let insertionIndex = filename.index(filename.endIndex, offsetBy: -3)
@@ -71,18 +74,18 @@ public final class Scripts {
       at: URL(fileURLWithPath: script.path), to: scriptsUrl.appendingPathComponent(filename))
   }
 
-  public static func saveScript(name: String, contents: String) {
+  public static func save(_ content: String, to file: String) {
     try? FileManager.default.createDirectory(at: scriptsUrl, withIntermediateDirectories: true)
     // TODO: is it best to crash here if writing fails?
-    var presetContent = contents
+    var presetContent = content
     if presetContent == "" {
       presetContent = jsHeaderDoc
     }
     try? presetContent.write(
-      to: scriptsUrl.appendingPathComponent(name), atomically: true, encoding: .utf8)
+      to: scriptsUrl.appendingPathComponent(file), atomically: true, encoding: .utf8)
   }
 
-  public static func scriptContents(atPath path: String) -> String? {
+  public static func contentOf(_ path: String) -> String? {
     guard let data = FileManager.default.contents(atPath: path) else { return nil }
     return String(data: data, encoding: .utf8)
   }

@@ -114,8 +114,8 @@ public protocol ScriptExecutorDelegate: AnyObject {
   let script: String?
   var context: JSContext?
 
-  public init(script: AvailableScript, delegate: ScriptExecutorDelegate) {
-    self.script = Scripts.scriptContents(atPath: script.path)
+  public init(script: ScriptZoo.Script, delegate: ScriptExecutorDelegate) {
+    self.script = ScriptZoo.contentOf(script.path)
     self.delegate = delegate
   }
 }
