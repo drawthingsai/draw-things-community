@@ -37,6 +37,9 @@ public struct ScriptZoo {
   public static var availableScripts: [Script] {
     var userScriptNames = [String: Int]()
     var scripts = ((try? FileManager.default.contentsOfDirectory(atPath: scriptsUrl.path)) ?? [])
+      .filter({
+        !$0.hasPrefix(".")  // Ignoring dot-files.
+      })
       .enumerated().map {
         let script = Script(
           name: $1, file: $1, filePath: scriptsUrl.appendingPathComponent($1).path, type: .user)

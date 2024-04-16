@@ -14,7 +14,7 @@ let SharedScript = """
   const MaskValueType = {
     PURE_NOISE: 1,
     MASK: 2,
-    RETAIN_OR_MASK: 0,
+    RETAIN_OR_MASK: 0
   }
 
   const SamplerType = {
@@ -27,6 +27,9 @@ let SharedScript = """
     LCM: 6,
     EULER_A_SUBSTEP: 7,
     DPMPP_SDE_SUBSTEP: 8,
+    TCD: 9,
+    EULER_A_TRAILING: 10,
+    DPMPP_SDE_TRAILING: 11
   }
 
   class Point {
@@ -234,6 +237,9 @@ let SharedScript = """
     },
     saveImage(file, visibleRegionOnly = false) {
       __dtHooks.saveImageFileFromCanvas(file, visibleRegionOnly);
+    },
+    saveImageSrc(visibleRegionOnly = false) {
+      return __dtHooks.saveImageSrcFromCanvas(visibleRegionOnly);
     },
     loadMaskFromPhotos() {
       __dtHooks.loadLayerFromPhotos("mask")

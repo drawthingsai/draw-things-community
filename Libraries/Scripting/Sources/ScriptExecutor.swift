@@ -66,6 +66,7 @@ public enum SupportedPrefix: String {
   func picturesPath() -> String?
   func loadImageFileToCanvas(_ file: String)
   func saveImageFileFromCanvas(_ file: String, _ visibleRegionOnly: Bool)
+  func saveImageSrcFromCanvas(_ visibleRegionOnly: Bool) -> String?
   func loadLayerFromPhotos(_ type: String)
   func loadLayerFromFiles(_ type: String)
   func loadLayerFromSrc(_ srcContent: String, _ type: String)
@@ -97,6 +98,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func clearCanvas()
   func loadImageFileToCanvas(_ file: String)
   func saveImageFileFromCanvas(_ file: String, _ visibleRegionOnly: Bool)
+  func saveImageDataFromCanvas(_ visibleRegionOnly: Bool) -> Data?
   func loadLayerFromPhotos(type: String) throws
   func loadLayerFromFiles(type: String) throws
   func loadLayerFromSrc(_ srcContent: String, type: String) throws
@@ -467,6 +469,14 @@ extension ScriptExecutor: JSInterop {
     forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
       delegate.saveImageFileFromCanvas(file, visibleRegionOnly)
+    }
+  }
+
+  func saveImageSrcFromCanvas(_ visibleRegionOnly: Bool) -> String? {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      guard let data = delegate.saveImageDataFromCanvas(visibleRegionOnly) else { return nil }
+      return SupportedPrefix.base64Png.rawValue + data.base64EncodedString()
     }
   }
 
