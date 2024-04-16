@@ -53,6 +53,8 @@ public enum SupportedPrefix: String {
   func moveCanvas(_ x: Double, _ y: Double)
   func updateCanvasSize(_ configurationDictionary: [String: Any])
   func createMask(_ width: Double, _ height: Double, _ value: UInt8) -> Int
+  func createForegroundMask() -> Int
+  func createBackgroundMask() -> Int
   func setCanvasZoom(_ zoomScale: Double)
   func canvasZoom() -> Double
   func existingConfiguration() -> [String: Any]
@@ -81,6 +83,8 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func createLoRA(_ name: String) throws -> LoRA
   func topLeftCorner() -> CGPoint
   func currentMask() -> Tensor<UInt8>?
+  func foregroundMask() -> Tensor<UInt8>?
+  func backgroundMask() -> Tensor<UInt8>?
   func generateImage(
     prompt: String?, negativePrompt: String?, configuration: GenerationConfiguration,
     mask: Tensor<UInt8>?
@@ -301,6 +305,26 @@ extension ScriptExecutor: JSInterop {
       maskManager.setMask(mask, forJSMask: jsMask)
       // Just return the handle and not the whole mask object, because in JS,
       // `new Mask(handle)` is different from `{"handle": handle}` (with the latter, `mask.func(...)` won't work)
+      return jsMask.handle
+    }
+  }
+
+  func createForegroundMask() -> Int {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      guard let foregroundMask = delegate.foregroundMask() else { return 0 }
+      let jsMask = maskManager.createNewMask()
+      maskManager.setMask(foregroundMask, forJSMask: jsMask)
+      return jsMask.handle
+    }
+  }
+
+  func createBackgroundMask() -> Int {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      guard let backgroundMask = delegate.backgroundMask() else { return 0 }
+      let jsMask = maskManager.createNewMask()
+      maskManager.setMask(backgroundMask, forJSMask: jsMask)
       return jsMask.handle
     }
   }

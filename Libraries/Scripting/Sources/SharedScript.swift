@@ -134,13 +134,17 @@ let SharedScript = """
     }
 
     // Perform xorshift like in Swift. The results won't necessarily be the same though, because of 32-bit signed handling
-    nextNumber() {
+    next() {
       var x = this.state == 0 ? 0xbad5eed : this.state;
       x ^= x << 13;
       x ^= x >> 17;
       x ^= x << 5;
       this.state = Math.abs(x);  // JS uses 32-bit signed ints, so convert it to unsigned for the app
       return this.state;
+    }
+
+    nextNumber() { // Backward compatibility.
+      return this.next();
     }
   }
 
@@ -197,6 +201,20 @@ let SharedScript = """
   const canvas = {
     get currentMask() {
       return __dtHooks.currentMask();
+    },
+    get foregroundMask() {
+      const handle = __dtHooks.createForegroundMask();
+      if (handle == 0) {
+        return null;
+      }
+      return new Mask(handle);
+    },
+    get backgroundMask() {
+      const handle = __dtHooks.createBackgroundMask();
+      if (handle == 0) {
+        return null;
+      }
+      return new Mask(handle);
     },
     get topLeftCorner() {
       return __dtHooks.topLeftCorner();
