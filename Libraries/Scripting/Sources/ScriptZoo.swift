@@ -36,14 +36,17 @@ public struct ScriptZoo {
   }()
   public static var availableScripts: [Script] {
     var userScriptNames = [String: Int]()
-    var scripts = ((try? FileManager.default.contentsOfDirectory(atPath: scriptsUrl.path)) ?? [])
-      .filter({
-        !$0.hasPrefix(".")  // Ignoring dot-files.
-      })
+    var scripts =
+      ((try? FileManager.default.contentsOfDirectory(
+        at: scriptsUrl,
+        includingPropertiesForKeys: [],
+        options: .skipsHiddenFiles)) ?? [])
       .enumerated().map {
+        let filePath = $1.path
+        let file = $1.lastPathComponent
         let script = Script(
-          name: $1, file: $1, filePath: scriptsUrl.appendingPathComponent($1).path, type: .user)
-        userScriptNames[$1] = $0
+          name: file, file: file, filePath: filePath, type: .user)
+        userScriptNames[file] = $0
         return script
       }
     // Sort file list case-insensitive for user display.
