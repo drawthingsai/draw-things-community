@@ -582,7 +582,7 @@ extension UNetFromNNC {
     var etRaw = Tensor<FloatType>(.CPU, .NHWC(shape[0], startHeight, startWidth, shape[3]))
     etRaw.withUnsafeMutableBytes {
       guard var fp = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
-      for _ in 0..<shape[0] {
+      for b in 0..<shape[0] {
         for j in 0..<startHeight {
           let yWeightAndIndex = yTileWeightsAndIndexes[j]
           for i in 0..<startWidth {
@@ -600,7 +600,9 @@ extension UNetFromNNC {
                     return
                   }
                   // Note that while result is outputChannels, this is padded to 4 i.e. channels.
-                  v = v + x.offset * channels + y.offset * tiledWidth * channels
+                  v =
+                    v + b * tiledHeight * tiledWidth * channels + x.offset * channels + y.offset
+                    * tiledWidth * channels
                   for k in 0..<channels {
                     fp[k] += v[k] * weight
                   }
