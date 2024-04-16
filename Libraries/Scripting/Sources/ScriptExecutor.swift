@@ -365,13 +365,10 @@ extension ScriptExecutor: JSInterop {
         self?.handleException(value: value)
       }
       self.context?.setObject(self, forKeyedSubscript: "__dtHooks" as NSCopying & NSObjectProtocol)
-      let sharedScriptPath = Bundle.main.path(forResource: "shared", ofType: "js")!
-      let sharedScriptData = FileManager.default.contents(atPath: sharedScriptPath)!
-      let sharedScript = String(data: sharedScriptData, encoding: .utf8)!
       // It's good to evaluate these as two separate scripts, rather than pasting them together into one script,
       // so that stack trace line numbers are accurate for the user for errors in their code
       self.delegate?.evaluateScriptBegan()
-      self.context?.evaluateScript(sharedScript)
+      self.context?.evaluateScript(SharedScript)
       self.context?.evaluateScript(script)
       self.context = nil  // In case this will help prevent a retain cycle
       self.delegate?.evaluateScriptEnded()
