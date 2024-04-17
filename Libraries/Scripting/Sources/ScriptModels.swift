@@ -88,6 +88,7 @@ public final class JSGenerationConfiguration: Codable {
   var diffusionTileHeight: UInt32
   var diffusionTileOverlap: UInt32
   let upscaler: String?
+  var upscalerScaleFactor: UInt8
   let imageGuidanceScale: Float32
   let seedMode: Int8
   let clipSkip: UInt32
@@ -150,6 +151,7 @@ public final class JSGenerationConfiguration: Codable {
     diffusionTileHeight = UInt32(configuration.diffusionTileHeight) * 64
     diffusionTileOverlap = UInt32(configuration.diffusionTileOverlap) * 64
     upscaler = configuration.upscaler
+    upscalerScaleFactor = configuration.upscalerScaleFactor
     imageGuidanceScale = configuration.imageGuidanceScale
     seedMode = configuration.seedMode.rawValue
     clipSkip = configuration.clipSkip
@@ -224,7 +226,8 @@ public final class JSGenerationConfiguration: Codable {
       tiledDiffusion: tiledDiffusion,
       diffusionTileWidth: UInt16(diffusionTileWidth / 64),
       diffusionTileHeight: UInt16(diffusionTileHeight / 64),
-      diffusionTileOverlap: UInt16(diffusionTileOverlap / 64)
+      diffusionTileOverlap: UInt16(diffusionTileOverlap / 64),
+      upscalerScaleFactor: upscalerScaleFactor
     )
   }
 }

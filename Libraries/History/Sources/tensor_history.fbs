@@ -123,6 +123,7 @@ table TensorHistoryNode {
   diffusion_tile_width: ushort = 16;
   diffusion_tile_height: ushort = 16;
   diffusion_tile_overlap: ushort = 2;
+  upscaler_scale_factor: ubyte = 0;
 }
 
 root_type TensorHistoryNode;

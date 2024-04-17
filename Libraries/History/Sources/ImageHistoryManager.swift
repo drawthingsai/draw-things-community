@@ -398,7 +398,8 @@ public final class ImageHistoryManager {
       tiledDiffusion: imageHistory.tiledDiffusion,
       diffusionTileWidth: imageHistory.diffusionTileWidth,
       diffusionTileHeight: imageHistory.diffusionTileHeight,
-      diffusionTileOverlap: imageHistory.diffusionTileOverlap
+      diffusionTileOverlap: imageHistory.diffusionTileOverlap,
+      upscalerScaleFactor: imageHistory.upscalerScaleFactor
     )
     dataStored = imageData.sorted(by: { $0.index < $1.index }).map {
       let tensorId = $0.tensorId == 0 ? nil : $0.tensorId
@@ -626,7 +627,8 @@ public final class ImageHistoryManager {
       tiledDiffusion: configuration.tiledDiffusion,
       diffusionTileWidth: configuration.diffusionTileWidth,
       diffusionTileHeight: configuration.diffusionTileHeight,
-      diffusionTileOverlap: configuration.diffusionTileOverlap
+      diffusionTileOverlap: configuration.diffusionTileOverlap,
+      upscalerScaleFactor: configuration.upscalerScaleFactor
     )
     let imageVersion = uniqueVersion()
     nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)
