@@ -64,7 +64,7 @@ public struct TextualInversionZoo: DownloadZoo {
       "4eedda1636bd07f4f5e4da1451fba82476420c944203122501f667c54ff6fe8e",
   ]
 
-  static let builtinSpecifications: [Specification] = [
+  public static let builtinSpecifications: [Specification] = [
     Specification(
       name: "Action Helper", file: "actionhelper_ti_f16.ckpt", keyword: "actionhelper", length: 6,
       version: .v2, deprecated: true),
