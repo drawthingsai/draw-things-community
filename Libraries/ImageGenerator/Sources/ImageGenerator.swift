@@ -870,10 +870,20 @@ extension ImageGenerator {
       return (image.rawValue.toCPU(), 1)
     }
     let upscalerFilePath = UpscalerZoo.filePathForModelDownloaded(upscaler)
-    let scaleFactor = UpscalerZoo.scaleFactorForModel(upscaler)
+    let nativeScaleFactor = UpscalerZoo.scaleFactorForModel(upscaler)
+    let forcedScaleFactor: UpscaleFactor
+    switch configuration.upscalerScaleFactor {
+    case 2:
+      forcedScaleFactor = .x2
+    case 4:
+      forcedScaleFactor = .x4
+    default:
+      forcedScaleFactor = nativeScaleFactor
+    }
     let numberOfBlocks = UpscalerZoo.numberOfBlocksForModel(upscaler)
     let realESRGANer = RealESRGANer<FloatType>(
-      filePath: upscalerFilePath, scaleFactor: scaleFactor, numberOfBlocks: numberOfBlocks)
+      filePath: upscalerFilePath, nativeScaleFactor: nativeScaleFactor,
+      forcedScaleFactor: forcedScaleFactor, numberOfBlocks: numberOfBlocks)
     let shape = image.shape
     if shape[3] > 3 {
       let graph = image.graph
@@ -893,11 +903,11 @@ extension ImageGenerator {
           .bilinear, widthScale: Float(upscaledShape[2]) / Float(shape[2]),
           heightScale: Float(upscaledShape[1]) / Float(shape[1]))(
           image[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<(shape[3] - 3)].copied())
-      return (original.rawValue.toCPU().copied(), scaleFactor.rawValue)
+      return (original.rawValue.toCPU().copied(), forcedScaleFactor.rawValue)
     } else {
       return (
         realESRGANer.upscale(image).0.rawValue.copied(),
-        scaleFactor.rawValue
+        forcedScaleFactor.rawValue
       )
     }
   }
@@ -929,12 +939,22 @@ extension ImageGenerator {
       return (images, 1)
     }
     let upscalerFilePath = UpscalerZoo.filePathForModelDownloaded(upscaler)
-    let scaleFactor = UpscalerZoo.scaleFactorForModel(upscaler)
+    let nativeScaleFactor = UpscalerZoo.scaleFactorForModel(upscaler)
+    let forcedScaleFactor: UpscaleFactor
+    switch configuration.upscalerScaleFactor {
+    case 2:
+      forcedScaleFactor = .x2
+    case 4:
+      forcedScaleFactor = .x4
+    default:
+      forcedScaleFactor = nativeScaleFactor
+    }
     let numberOfBlocks = UpscalerZoo.numberOfBlocksForModel(upscaler)
     let graph = DynamicGraph()
     return graph.withNoGrad {
       let realESRGANer = RealESRGANer<FloatType>(
-        filePath: upscalerFilePath, scaleFactor: scaleFactor, numberOfBlocks: numberOfBlocks)
+        filePath: upscalerFilePath, nativeScaleFactor: nativeScaleFactor,
+        forcedScaleFactor: forcedScaleFactor, numberOfBlocks: numberOfBlocks)
       var rrdbnet: Model? = nil
       var results = [Tensor<FloatType>]()
       for image in images {
@@ -966,7 +986,7 @@ extension ImageGenerator {
           results.append(result.rawValue.copied())
         }
       }
-      return (results, scaleFactor.rawValue)
+      return (results, forcedScaleFactor.rawValue)
     }
   }
 

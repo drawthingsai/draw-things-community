@@ -236,7 +236,9 @@ extension Denoiser {
       let minInvRho = pow(lowerBound, 1.0 / rho)
       let maxInvRho = pow(upperBound, 1.0 / rho)
       var sigma = pow(
-        maxInvRho + Double(timestep) / Double(timesteps) * (minInvRho - maxInvRho), rho)
+        maxInvRho + (Double(timesteps) - Double(timestep)) / Double(timesteps)
+          * (minInvRho - maxInvRho),
+        rho)
       if shift != 1 {
         sigma = shift * sigma
       }

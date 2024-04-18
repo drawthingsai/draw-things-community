@@ -436,14 +436,36 @@ extension TCDSampler: Sampler {
   public func timestep(for strength: Float, sampling: Sampling) -> (
     timestep: Float, startStep: Float, roundedDownStartStep: Int, roundedUpStartStep: Int
   ) {
-    let tEnc = Int(strength * discretization.timesteps)
+    let tEnc = strength * discretization.timesteps
     let initTimestep = tEnc
-    let startStep =
-      (discretization.timesteps - Float(tEnc)) * Float(sampling.steps) / discretization.timesteps
+    let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
+    var previousTimestep = discretization.timesteps
+    for (i, alphaCumprod) in alphasCumprod.enumerated() {
+      let timestep = discretization.timestep(for: alphaCumprod)
+      if initTimestep >= timestep {
+        guard i > 0 else {
+          return (
+            timestep: timestep, startStep: 0, roundedDownStartStep: 0, roundedUpStartStep: 0
+          )
+        }
+        guard initTimestep > timestep + 1e-3 else {
+          return (
+            timestep: initTimestep, startStep: Float(i), roundedDownStartStep: i,
+            roundedUpStartStep: i
+          )
+        }
+        return (
+          timestep: Float(initTimestep),
+          startStep: Float(i - 1) + Float(initTimestep - previousTimestep)
+            / Float(timestep - previousTimestep), roundedDownStartStep: i - 1, roundedUpStartStep: i
+        )
+      }
+      previousTimestep = timestep
+    }
     return (
-      timestep: min(Float(initTimestep), discretization.timesteps - 1), startStep: startStep,
-      roundedDownStartStep: Int(startStep.rounded(.down)),
-      roundedUpStartStep: Int(startStep.rounded(.up))
+      timestep: discretization.timestep(for: alphasCumprod[0]),
+      startStep: Float(alphasCumprod.count - 1),
+      roundedDownStartStep: alphasCumprod.count - 1, roundedUpStartStep: alphasCumprod.count - 1
     )
   }
 
