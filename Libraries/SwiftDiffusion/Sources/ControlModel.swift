@@ -1009,7 +1009,7 @@ extension ControlModel {
             } else {
               for i in 0..<batchSize {
                 x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
-                  $0[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+                  $0[(shape[0] - 1)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
               }
             }
             return x
