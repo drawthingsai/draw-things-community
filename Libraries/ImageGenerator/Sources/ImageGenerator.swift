@@ -3126,7 +3126,8 @@ extension ImageGenerator {
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion)
-      guard initTimestep.roundedDownStartStep < sampling.steps else {
+      // Check if strength is 0.
+      guard initTimestep.roundedDownStartStep < sampling.steps && configuration.strength > 0 else {
         let image = faceRestoreImage(image, configuration: configuration)
         // Otherwise, just run upscaler if needed.
         let (result, scaleFactor) = upscaleImageAndToCPU(image, configuration: configuration)
