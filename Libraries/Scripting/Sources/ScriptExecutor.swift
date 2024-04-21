@@ -76,6 +76,7 @@ public enum SupportedPrefix: String {
   func detectFaces() -> [[String: Any]]
   func detectHands() -> [[String: Any]]
   func downloadBuiltin(_ file: String)
+  func requestFromUser(_ title: String, _ confirm: String, _ config: [[String: Any]]) -> [Any]
 }
 
 public protocol ScriptExecutorDelegate: AnyObject {
@@ -110,6 +111,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func detectFaces() throws -> [CGRect]
   func detectHands() throws -> [CGRect]
   func downloadBuiltin(_ file: String) throws
+  func requestFromUser(title: String, confirm: String, _ config: [[String: Any]]) throws -> [Any]
 }
 
 @objc public final class ScriptExecutor: NSObject {
@@ -556,6 +558,7 @@ extension ScriptExecutor: JSInterop {
       return jsonObject["faces"] as! [[String: Any]]
     }
   }
+
   func detectHands() -> [[String: Any]] {
     return forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
@@ -563,6 +566,17 @@ extension ScriptExecutor: JSInterop {
       let data = try JSONEncoder().encode(["hands": rects])
       let jsonObject = try JSONSerialization.jsonObject(with: data) as! [String: Any]
       return jsonObject["hands"] as! [[String: Any]]
+    }
+  }
+
+  func requestFromUser(_ title: String, _ confirm: String, _ config: [[String: Any]]) -> [Any] {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      let result = try delegate.requestFromUser(title: title, confirm: confirm, config)
+      // Do a round-trip copy so it is "clean" JSON object to JS execution engine.
+      let data = try JSONSerialization.data(withJSONObject: result)
+      let jsonObject = try JSONSerialization.jsonObject(with: data) as! [Any]
+      return jsonObject
     }
   }
 }
