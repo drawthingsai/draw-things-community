@@ -111,7 +111,7 @@ public struct ControlNetZoo: DownloadZoo {
   public static let builtinSpecifications: [Specification] = [
     Specification(
       name: "Canny Edge Map (SD v1.x, ControlNet 1.0)", file: "controlnet_canny_1.x_f16.ckpt",
-      modifier: .canny, version: .v1, type: .controlnet),
+      modifier: .canny, version: .v1, type: .controlnet, deprecated: true),
     Specification(
       name: "Canny Edge Map (SD v1.x, ControlNet 1.1)", file: "controlnet_canny_1.x_v1.1_f16.ckpt",
       modifier: .canny, version: .v1, type: .controlnet),
@@ -127,7 +127,7 @@ public struct ControlNetZoo: DownloadZoo {
       modifier: .canny, version: .v1, type: .t2iadapter),
     Specification(
       name: "Depth Map (SD v1.x, ControlNet 1.0)", file: "controlnet_depth_1.x_f16.ckpt",
-      modifier: .depth, version: .v1, type: .controlnet),
+      modifier: .depth, version: .v1, type: .controlnet, deprecated: true),
     Specification(
       name: "Depth Map (SD v1.x, ControlNet 1.1)", file: "controlnet_depth_1.x_v1.1_f16.ckpt",
       modifier: .depth, version: .v1, type: .controlnet),
@@ -143,7 +143,8 @@ public struct ControlNetZoo: DownloadZoo {
       modifier: .depth, version: .v1, type: .t2iadapter),
     Specification(
       name: "Scribble (SD v1.x, ControlNet 1.0)", file: "controlnet_scribble_1.x_f16.ckpt",
-      modifier: .scribble, version: .v1, type: .controlnet, preprocessor: "hed_f16.ckpt"),
+      modifier: .scribble, version: .v1, type: .controlnet, preprocessor: "hed_f16.ckpt",
+      deprecated: true),
     Specification(
       name: "Scribble (SD v1.x, ControlNet 1.1)", file: "controlnet_scribble_1.x_v1.1_f16.ckpt",
       modifier: .scribble, version: .v1, type: .controlnet, preprocessor: "hed_f16.ckpt"),
@@ -155,8 +156,7 @@ public struct ControlNetZoo: DownloadZoo {
       modifier: .scribble, version: .v1, type: .t2iadapter),
     Specification(
       name: "Pose (SD v1.x, ControlNet 1.0)", file: "controlnet_openpose_1.x_f16.ckpt",
-      modifier: .pose,
-      version: .v1, type: .controlnet),
+      modifier: .pose, version: .v1, type: .controlnet, deprecated: true),
     Specification(
       name: "Pose (SD v1.x, ControlNet 1.1)", file: "controlnet_openpose_1.x_v1.1_f16.ckpt",
       modifier: .pose,
