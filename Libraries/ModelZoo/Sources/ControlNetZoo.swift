@@ -12,10 +12,11 @@ public struct ControlNetZoo: DownloadZoo {
     public var imageEncoder: String? = nil
     public var preprocessor: String? = nil
     public var transformerBlocks: [Int]? = nil
+    public var deprecated: Bool? = nil
     public init(
       name: String, file: String, modifier: ControlHintType, version: ModelVersion,
       type: ControlType, globalAveragePooling: Bool = false, imageEncoder: String? = nil,
-      preprocessor: String? = nil, transformerBlocks: [Int]? = nil
+      preprocessor: String? = nil, transformerBlocks: [Int]? = nil, deprecated: Bool? = nil
     ) {
       self.name = name
       self.file = file
@@ -26,6 +27,7 @@ public struct ControlNetZoo: DownloadZoo {
       self.imageEncoder = imageEncoder
       self.preprocessor = preprocessor
       self.transformerBlocks = transformerBlocks
+      self.deprecated = deprecated
     }
   }
 
@@ -354,6 +356,11 @@ public struct ControlNetZoo: DownloadZoo {
 
   public static func isBuiltinControl(_ name: String) -> Bool {
     return builtinModels.contains(name)
+  }
+
+  public static func isModelDeprecated(_ name: String) -> Bool {
+    guard let specification = specificationMapping[name] else { return false }
+    return specification.deprecated ?? false
   }
 
   public static func availableFiles(excluding file: String?) -> Set<String> {
