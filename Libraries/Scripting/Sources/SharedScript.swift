@@ -367,8 +367,8 @@ let SharedScript = """
         textField(value, placeholder) {
           return {"type": "textField", "value": value, "placeholder": placeholder};
         },
-        imageField() {
-          return {"type": "imageField"};
+        imageField(title) {
+          return {"type": "imageField", "title": title};
         },
         switch(isOn, title) {
           return {"type": "switch", "isOn": isOn, "title": title};
