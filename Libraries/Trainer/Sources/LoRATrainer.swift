@@ -7,8 +7,8 @@ import SFMT
 
 public struct LoRATrainer {
 
-  public enum MemorySaver {
-    case minimal
+  public enum MemorySaver: Int {
+    case minimal = 0
     case balanced
     case speed
     case turbo
