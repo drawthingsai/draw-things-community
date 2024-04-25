@@ -537,7 +537,10 @@ extension UNetFromNNC {
     guard let xTileWeightsAndIndexes = xTileWeightsAndIndexes,
       let yTileWeightsAndIndexes = yTileWeightsAndIndexes
     else {
-      return unet!(inputs: xT, inputs)[0].as(of: FloatType.self)
+      let (injectedControls, injectedT2IAdapters) = injectedControlsAndAdapters(
+        xT, 0, 0, 0, 0, &controlNets)
+      return unet!(inputs: xT, inputs + injectedControls + injectedT2IAdapters)[0].as(
+        of: FloatType.self)
     }
     let shape = xT.shape
     let startHeight = shape[1]
