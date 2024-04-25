@@ -99,6 +99,7 @@ extension DDIMSampler: Sampler {
         inChannels = channels
       }
     }
+    let zeroNegativePrompt = isCfgEnabled && zeroNegativePrompt
     var xIn = graph.variable(
       .GPU(0), .NHWC(cfgChannels * batchSize, startHeight, startWidth, inChannels),
       of: FloatType.self

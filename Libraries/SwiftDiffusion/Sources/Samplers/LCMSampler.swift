@@ -95,6 +95,7 @@ extension LCMSampler: Sampler {
         inChannels = channels
       }
     }
+    let zeroNegativePrompt = false
     var xIn = graph.variable(
       .GPU(0), .NHWC(batchSize, startHeight, startWidth, inChannels),
       of: FloatType.self
