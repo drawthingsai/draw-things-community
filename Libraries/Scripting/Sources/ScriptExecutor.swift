@@ -117,6 +117,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
 @objc public final class ScriptExecutor: NSObject {
   private static let queue = DispatchQueue(label: "com.draw-things.script", qos: .userInteractive)
   var hasExecuted = false
+  var hasCancelled = false
   let maskManager = MaskManager()
   weak var delegate: ScriptExecutorDelegate?
   let script: String?
@@ -133,9 +134,16 @@ public protocol ScriptExecutorDelegate: AnyObject {
 }
 
 extension ScriptExecutor: JSInterop {
+  public enum CancellationError: Error {
+    case cancelled
+  }
   func forwardExceptionsToJS<T: DefaultCreatable>(_ block: () throws -> T) -> T {
     do {
       return try block()
+    } catch CancellationError.cancelled {
+      context?.exception = JSValue(object: "cancelled", in: context)
+      hasCancelled = true
+      return T.defaultInstance()
     } catch let error {
       context?.exception = JSValue(object: "\(error)", in: context)
       return T.defaultInstance()
@@ -193,10 +201,10 @@ extension ScriptExecutor: JSInterop {
       let configuration = jsConfiguration.createGenerationConfiguration()
       let prompt = (args["prompt"] as? NSString) as? String
       let negativePrompt = (args["negativePrompt"] as? NSString) as? String
-      let success = delegate.generateImage(
+      let notAborted = delegate.generateImage(
         prompt: prompt, negativePrompt: negativePrompt, configuration: configuration, mask: mask)
-      if !success {
-        throw "Failed to generate image"
+      if !notAborted {
+        throw CancellationError.cancelled
       }
     }
   }
@@ -390,7 +398,10 @@ extension ScriptExecutor: JSInterop {
       self.hasExecuted = true
 
       self.context?.exceptionHandler = { [weak self] context, value in
-        self?.handleException(value: value)
+        guard let self = self else { return }
+        // If it is not cancellation error, we handle it.
+        guard !self.hasCancelled else { return }
+        self.handleException(value: value)
       }
       self.context?.setObject(self, forKeyedSubscript: "__dtHooks" as NSCopying & NSObjectProtocol)
       // It's good to evaluate these as two separate scripts, rather than pasting them together into one script,
