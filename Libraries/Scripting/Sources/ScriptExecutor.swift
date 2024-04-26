@@ -63,6 +63,7 @@ public enum SupportedPrefix: String {
   func topLeftCorner() -> [String: Any]
   func boundingBox() -> CGRect
   func clearCanvas()
+  func listFilesWithinDirectory(_ directory: String) -> [String]
   func listFilesUnderPicturesWithinDirectory(_ directory: String) -> [String]
   func listFilesUnderPictures() -> [String]
   func picturesPath() -> String?
@@ -440,6 +441,16 @@ extension ScriptExecutor: JSInterop {
       try? FileManager.default.createDirectory(
         at: systemPicturesUrl, withIntermediateDirectories: true)
     #endif
+  }
+
+  func listFilesWithinDirectory(_ directory: String) -> [String] {
+    return forwardExceptionsToJS { () -> [String] in
+      let fileManager = FileManager.default
+      let directoryUrl = URL(fileURLWithPath: directory)
+      let fileUrls = try fileManager.contentsOfDirectory(
+        at: directoryUrl, includingPropertiesForKeys: nil)
+      return fileUrls.map { $0.path }
+    }
   }
 
   func listFilesUnderPicturesWithinDirectory(_ directory: String) -> [String] {

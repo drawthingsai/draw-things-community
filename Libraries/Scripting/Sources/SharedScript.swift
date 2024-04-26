@@ -173,7 +173,7 @@ let SharedScript = """
         return __dtHooks.generateImage(args);
       },
       downloadBuiltin(filename) {
-        return __dtHooks.downloadBuiltin(filename)
+        return __dtHooks.downloadBuiltin(filename);
       },
       findControlByName(name) {
         return __dtHooks.createControl(name);
@@ -187,14 +187,17 @@ let SharedScript = """
       pictures: {
         readEntries(directory) {
           if (directory) {
-            return __dtHooks.listFilesUnderPicturesWithinDirectory(directory)
+            return __dtHooks.listFilesUnderPicturesWithinDirectory(directory);
           } else {
-            return __dtHooks.listFilesUnderPictures()
+            return __dtHooks.listFilesUnderPictures();
           }
         },
         get path() {
-          return __dtHooks.picturesPath()
+          return __dtHooks.picturesPath();
         }
+      },
+      readEntries(directory) {
+        return __dtHooks.listFilesWithinDirectory(directory);
       }
     };
 
@@ -260,70 +263,70 @@ let SharedScript = """
         return __dtHooks.saveImageSrcFromCanvas(visibleRegionOnly);
       },
       loadMaskFromPhotos() {
-        __dtHooks.loadLayerFromPhotos("mask")
+        __dtHooks.loadLayerFromPhotos("mask");
       },
       loadDepthMapFromPhotos() {
-        __dtHooks.loadLayerFromPhotos("depthMap")
+        __dtHooks.loadLayerFromPhotos("depthMap");
       },
       loadScribbleFromPhotos() {
-        __dtHooks.loadLayerFromPhotos("scribble")
+        __dtHooks.loadLayerFromPhotos("scribble");
       },
       loadPoseFromPhotos() {
-        __dtHooks.loadLayerFromPhotos("pose")
+        __dtHooks.loadLayerFromPhotos("pose");
       },
       loadColorFromPhotos() {
-        __dtHooks.loadLayerFromPhotos("color")
+        __dtHooks.loadLayerFromPhotos("color");
       },
       loadCustomLayerFromPhotos() {
-        __dtHooks.loadLayerFromPhotos("custom")
+        __dtHooks.loadLayerFromPhotos("custom");
       },
       loadMoodboardFromPhotos() {
-        __dtHooks.loadLayerFromPhotos("shuffle")
+        __dtHooks.loadLayerFromPhotos("shuffle");
       },
       loadMaskFromFiles() {
-        __dtHooks.loadLayerFromFiles("mask")
+        __dtHooks.loadLayerFromFiles("mask");
       },
       loadDepthMapFromFiles() {
-        __dtHooks.loadLayerFromFiles("depthMap")
+        __dtHooks.loadLayerFromFiles("depthMap");
       },
       loadScribbleFromFiles() {
-        __dtHooks.loadLayerFromFiles("scribble")
+        __dtHooks.loadLayerFromFiles("scribble");
       },
       loadPoseFromFiles() {
-        __dtHooks.loadLayerFromFiles("pose")
+        __dtHooks.loadLayerFromFiles("pose");
       },
       loadColorFromFiles() {
-        __dtHooks.loadLayerFromFiles("color")
+        __dtHooks.loadLayerFromFiles("color");
       },
       loadCustomLayerFromFiles() {
-        __dtHooks.loadLayerFromFiles("custom")
+        __dtHooks.loadLayerFromFiles("custom");
       },
       loadMoodboardFromFiles() {
-        __dtHooks.loadLayerFromFiles("shuffle")
+        __dtHooks.loadLayerFromFiles("shuffle");
       },
       loadMaskFromSrc(srcContent) {
-        __dtHooks.loadLayerFromSrc(srcContent, "mask")
+        __dtHooks.loadLayerFromSrc(srcContent, "mask");
       },
       loadDepthMapFromSrc(srcContent) {
-        __dtHooks.loadLayerFromSrc(srcContent, "depthMap")
+        __dtHooks.loadLayerFromSrc(srcContent, "depthMap");
       },
       loadScribbleFromSrc(srcContent) {
-        __dtHooks.loadLayerFromSrc(srcContent, "scribble")
+        __dtHooks.loadLayerFromSrc(srcContent, "scribble");
       },
       loadPoseFromSrc(srcContent) {
-        __dtHooks.loadLayerFromSrc(srcContent, "pose")
+        __dtHooks.loadLayerFromSrc(srcContent, "pose");
       },
       loadColorFromSrc(srcContent) {
-        __dtHooks.loadLayerFromSrc(srcContent, "color")
+        __dtHooks.loadLayerFromSrc(srcContent, "color");
       },
       loadCustomLayerFromSrc(srcContent) {
-        __dtHooks.loadLayerFromSrc(srcContent, "custom")
+        __dtHooks.loadLayerFromSrc(srcContent, "custom");
       },
       loadMoodboardFromSrc(srcContent) {
-        __dtHooks.loadLayerFromSrc(srcContent, "shuffle")
+        __dtHooks.loadLayerFromSrc(srcContent, "shuffle");
       },
       loadPoseFromJson(jsonString) {
-        __dtHooks.loadLayerFromJson(jsonString, "pose")
+        __dtHooks.loadLayerFromJson(jsonString, "pose");
       },
       detectFaces() {
         return __dtHooks.detectFaces();
@@ -386,9 +389,9 @@ let SharedScript = """
           return {"type": "plainText", "value": value};
         }
       }
-      widget.slider.percent = {"percent": true}
-      widget.slider.fractional = function(k) { return {"fractional": k} }
-      widget.slider.scale = {"scale": true}
+      widget.slider.percent = {"percent": true};
+      widget.slider.fractional = function(k) { return {"fractional": k} };
+      widget.slider.scale = {"scale": true};
       return __dtHooks.requestFromUser(title, confirm, construction.call(widget));
     }
 
