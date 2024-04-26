@@ -70,20 +70,32 @@ public struct EverythingZoo: DownloadZoo {
   }
 
   public static func modelsToDownload(_ name: String) -> [(
-    name: String, subtitle: String, file: String
+    name: String, subtitle: String, file: String, sha256: String?
   )] {
     guard let specification = specificationMapping[name] else {
-      return [(name: name, subtitle: "", file: name)]
+      return [(name: name, subtitle: "", file: name, sha256: Self.filePathForModelDownloaded(name))]
     }
-    var models = [(name: String, subtitle: String, file: String)]()
+    var models = [(name: String, subtitle: String, file: String, sha256: String?)]()
     if !isModelDownloaded(specification.file) {
-      models.append((name: specification.name, subtitle: "", file: specification.file))
+      models.append(
+        (
+          name: specification.name, subtitle: "", file: specification.file,
+          sha256: Self.filePathForModelDownloaded(specification.file)
+        ))
     }
     if let parsenet = specification.parsenet, !isModelDownloaded(parsenet) {
-      models.append((name: specification.name, subtitle: "", file: parsenet))
+      models.append(
+        (
+          name: specification.name, subtitle: "", file: parsenet,
+          sha256: Self.filePathForModelDownloaded(parsenet)
+        ))
     }
     if let backbone = specification.backbone, !isModelDownloaded(backbone) {
-      models.append((name: specification.name, subtitle: "", file: backbone))
+      models.append(
+        (
+          name: specification.name, subtitle: "", file: backbone,
+          sha256: Self.filePathForModelDownloaded(backbone)
+        ))
     }
     return models
   }

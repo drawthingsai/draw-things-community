@@ -172,14 +172,17 @@ let SharedScript = """
         }
         return __dtHooks.generateImage(args);
       },
-      downloadBuiltin(filename) {
-        return __dtHooks.downloadBuiltin(filename);
+      downloadBuiltins(filenames) {
+        return __dtHooks.downloadBuiltins(filenames);
       },
       findControlByName(name) {
         return __dtHooks.createControl(name);
       },
       findLoRAByName(name) {
         return __dtHooks.createLoRA(name);
+      },
+      downloadBuiltin(filename) { // Backward compatibility.
+        return __dtHooks.downloadBuiltins([filename]);
       }
     };
 

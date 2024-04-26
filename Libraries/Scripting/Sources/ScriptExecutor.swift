@@ -103,7 +103,7 @@ extension SupportedPrefix {
   func loadLayerFromJson(_ json: String, _ type: String)
   func detectFaces() -> [[String: Any]]
   func detectHands() -> [[String: Any]]
-  func downloadBuiltin(_ file: String)
+  func downloadBuiltins(_ files: [String])
   func requestFromUser(_ title: String, _ confirm: String, _ config: [[String: Any]]) -> [Any]
 }
 
@@ -138,7 +138,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func loadLayerFromJson(_ json: String, type: String) throws
   func detectFaces() throws -> [CGRect]
   func detectHands() throws -> [CGRect]
-  func downloadBuiltin(_ file: String) throws
+  func downloadBuiltins(_ files: [String]) throws
   func requestFromUser(title: String, confirm: String, _ config: [[String: Any]]) throws -> (
     lifetimeObjects: [AnyObject], result: [Any]
   )
@@ -595,10 +595,10 @@ extension ScriptExecutor: JSInterop {
     }
   }
 
-  func downloadBuiltin(_ file: String) {
+  func downloadBuiltins(_ files: [String]) {
     return forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
-      try delegate.downloadBuiltin(file)
+      try delegate.downloadBuiltins(files)
     }
   }
 
