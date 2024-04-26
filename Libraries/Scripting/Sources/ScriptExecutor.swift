@@ -111,13 +111,16 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func detectFaces() throws -> [CGRect]
   func detectHands() throws -> [CGRect]
   func downloadBuiltin(_ file: String) throws
-  func requestFromUser(title: String, confirm: String, _ config: [[String: Any]]) throws -> [Any]
+  func requestFromUser(title: String, confirm: String, _ config: [[String: Any]]) throws -> (
+    lifetimeObjects: [AnyObject], result: [Any]
+  )
 }
 
 @objc public final class ScriptExecutor: NSObject {
   private static let queue = DispatchQueue(label: "com.draw-things.script", qos: .userInteractive)
   var hasExecuted = false
   var hasCancelled = false
+  var lifetimeObjects = [AnyObject]()
   let maskManager = MaskManager()
   weak var delegate: ScriptExecutorDelegate?
   let script: String?
@@ -410,6 +413,7 @@ extension ScriptExecutor: JSInterop {
       self.context?.evaluateScript(SharedScript)
       self.context?.evaluateScript(script)
       self.context = nil  // In case this will help prevent a retain cycle
+      self.lifetimeObjects.removeAll()
       self.delegate?.evaluateScriptEnded()
       // TODO: prevent network and file access
     }
@@ -583,7 +587,9 @@ extension ScriptExecutor: JSInterop {
   func requestFromUser(_ title: String, _ confirm: String, _ config: [[String: Any]]) -> [Any] {
     return forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
-      let result = try delegate.requestFromUser(title: title, confirm: confirm, config)
+      let (lifetimeObjects, result) = try delegate.requestFromUser(
+        title: title, confirm: confirm, config)
+      self.lifetimeObjects.append(contentsOf: lifetimeObjects)
       // Do a round-trip copy so it is "clean" JSON object to JS execution engine.
       let data = try JSONSerialization.data(withJSONObject: result)
       let jsonObject = try JSONSerialization.jsonObject(with: data) as! [Any]
