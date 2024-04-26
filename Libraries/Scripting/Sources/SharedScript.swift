@@ -319,7 +319,7 @@ let SharedScript = """
       loadColorFromSrc(srcContent) {
         __dtHooks.loadLayerFromSrc(srcContent, "color");
       },
-      loadCustomLayerFromSrc(srcContent) {
+      loadCustomFromSrc(srcContent) {
         __dtHooks.loadLayerFromSrc(srcContent, "custom");
       },
       loadMoodboardFromSrc(srcContent) {
@@ -331,9 +331,10 @@ let SharedScript = """
       detectFaces() {
         return __dtHooks.detectFaces();
       },
-    //  detectHands() {
-    //    return __dtHooks.detectHands();
-    //  },
+      // Backward compatibility functions.
+      loadCustomLayerFromSrc(srcContent) {
+        __dtHooks.loadLayerFromSrc(srcContent, "custom");
+      }
     };
 
     class Mask {
@@ -387,6 +388,9 @@ let SharedScript = """
         },
         plainText(value) {
           return {"type": "plainText", "value": value};
+        },
+        image(src, height, selectable) {
+          return {"type": "image", "src": src, "selectable": selectable};
         }
       }
       widget.slider.percent = {"percent": true};

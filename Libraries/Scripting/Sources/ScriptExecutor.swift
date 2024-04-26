@@ -43,6 +43,33 @@ public enum SupportedPrefix: String {
   case notAvailable = "N/A"
 }
 
+extension SupportedPrefix {
+  public static func supportedPrefix(from srcContent: String) -> (SupportedPrefix, String) {
+    if srcContent.hasPrefix(SupportedPrefix.base64Png.rawValue) {
+      return (
+        .base64Png,
+        srcContent.replacingOccurrences(of: SupportedPrefix.base64Png.rawValue, with: "")
+      )
+    }
+    if srcContent.hasPrefix(SupportedPrefix.base64Jpg.rawValue) {
+      return (
+        .base64Jpg,
+        srcContent.replacingOccurrences(of: SupportedPrefix.base64Jpg.rawValue, with: "")
+      )
+    }
+    if srcContent.hasPrefix(SupportedPrefix.base64Webp.rawValue) {
+      return (
+        .base64Webp,
+        srcContent.replacingOccurrences(of: SupportedPrefix.base64Webp.rawValue, with: "")
+      )
+    }
+    if srcContent.hasPrefix(SupportedPrefix.file.rawValue) {
+      return (.file, srcContent.replacingOccurrences(of: SupportedPrefix.file.rawValue, with: ""))
+    }
+    return (.notAvailable, "")
+  }
+}
+
 @objc protocol JSInterop: JSExport {
   func log(_ message: String, _ type: Int)
   func generateImage(_ args: [String: Any])
