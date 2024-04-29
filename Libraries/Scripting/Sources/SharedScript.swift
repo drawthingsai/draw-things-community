@@ -1,14 +1,26 @@
 let SharedScript = """
     console.log = (...args) => {
-      __dtHooks.log(args[0]);
+      if (typeof args[0] == "object") {
+        __dtHooks.log(JSON.stringify(args[0], null, 2));
+      } else {
+        __dtHooks.log(args[0]);
+      }
     }
 
     console.warn = (...args) => {
-      __dtHooks.log(args[0], 1);
+      if (typeof args[0] == "object") {
+        __dtHooks.log(JSON.stringify(args[0], null, 2), 1);
+      } else {
+        __dtHooks.log(args[0], 1);
+      }
     }
 
     console.error = (...args) => {
-      __dtHooks.log(args[0], 2);
+      if (typeof args[0] == "object") {
+        __dtHooks.log(JSON.stringify(args[0], null, 2), 2);
+      } else {
+        __dtHooks.log(args[0], 2);
+      }
     }
 
     const MaskValueType = {
@@ -348,10 +360,6 @@ let SharedScript = """
       fillRectangle(x, y, width, height, value) {
         __dtHooks.fillMaskRectangle(this, new Rectangle(x, y, width, height), value);
       }
-    }
-
-    function __dtPrettyPrint(obj) {
-      return JSON.stringify(obj, null, 2);
     }
 
     function __dtSleep(seconds) {
