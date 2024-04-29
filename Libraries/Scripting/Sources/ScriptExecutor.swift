@@ -172,11 +172,11 @@ extension ScriptExecutor: JSInterop {
     do {
       return try block()
     } catch CancellationError.cancelled {
-      context?.exception = JSValue(object: "cancelled", in: context)
+      context?.exception = JSValue(newErrorFromMessage: "cancelled", in: context)
       hasCancelled = true
       return T.defaultInstance()
     } catch let error {
-      context?.exception = JSValue(object: "\(error)", in: context)
+      context?.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
       return T.defaultInstance()
     }
   }
