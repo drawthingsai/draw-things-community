@@ -125,7 +125,8 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func existingConfiguration() -> GenerationConfiguration
   func existingPrompts() -> (prompt: String, negativePrompt: String)
   func boundingBox() -> CGRect
-  func didLog(_ message: String, type: Int)
+  func log(_ message: String, type: Int)
+  func logException(_ message: String, line: Int, stack: String)
   func evaluateScriptBegan()
   func evaluateScriptEnded()
   func clearCanvas()
@@ -296,7 +297,7 @@ extension ScriptExecutor: JSInterop {
     print("JavaScriptCore: \(message)")
     return forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
-      delegate.didLog(message, type: type)
+      delegate.log(message, type: type)
     }
   }
 
@@ -397,24 +398,10 @@ extension ScriptExecutor: JSInterop {
   }
 
   func handleException(value: JSValue?) {
-    // Getting a line number for an exception thrown from Swift into JS, i.e. by setting .exception on the JSContext,
-    // is quite difficult. The problem is that the only way seemingly to get the stack and line number is by creating
-    // an Error object in JS. However, the stacks that are provided are just strings that don't seem to include line
-    // number, so the only line number we get is for the `line` property of the error. But this line is just of the
-    // line where the error was created, so if we wrap calls into Swift with a try-catch that gets (new Error()).line,
-    // it will just show the line number in the try-catch, and not where the error actually occurred. The only way
-    // around these issues seems like it would be to do rewriting of the script, e.g. between every single line of the script, update a variable that keeps track of the line number, and then fetch that variable in the exception
-    // handler. Note that WKWebView may or may not be able to have a simpler solution, e.g. it may allow us to set
-    // window.onerror, which is a global error handling function that reports the line number where it occurred.
-    let valueString: String
-    if let value = value {
-      valueString = "\(value)"
-    } else {
-      valueString = "nil"
-    }
-    let lineNumberString = value?.objectForKeyedSubscript("line")?.toString() ?? "(undefined)"
-    let stackString = value?.objectForKeyedSubscript("stack")?.toString() ?? "(undefined)"
-    log("Exception \(valueString)\nLine number: \(lineNumberString)\nStack:\n\(stackString)")
+    let message = value?.objectForKeyedSubscript("message")?.toString() ?? ""
+    let lineNumber = Int(value?.objectForKeyedSubscript("line")?.toInt32() ?? -1)
+    let stackString = value?.objectForKeyedSubscript("stack")?.toString() ?? ""
+    delegate?.logException(message, line: lineNumber, stack: stackString)
   }
 
   public func run() {
