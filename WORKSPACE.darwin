@@ -173,14 +173,6 @@ new_git_repository(
 )
 
 new_git_repository(
-    name = "Highlightr",
-    build_file = "swift-highlightr.BUILD",
-    remote = "https://github.com/raspu/Highlightr",
-    commit = "628094ff81cdebf31da6bf31be4b4ac758c127a4",
-    shallow_since = "1672268165 +0100",
-)
-
-new_git_repository(
     name = "SwiftGuaka",
     build_file = "swift-guaka.BUILD",
     remote = "https://github.com/nsomar/Guaka",
