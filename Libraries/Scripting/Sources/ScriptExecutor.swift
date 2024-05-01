@@ -220,8 +220,11 @@ extension ScriptExecutor: JSInterop {
       } else {
         mask = nil
       }
-      let jsConfiguration = try! object(
-        jsonObject: args["configuration"] as! [String: Any], type: JSGenerationConfiguration.self)
+      guard let argsConfiguration = args["configuration"] as? [String: Any] else {
+        throw "Missing configuration parameter"
+      }
+      let jsConfiguration = try object(
+        jsonObject: argsConfiguration, type: JSGenerationConfiguration.self)
 
       fixDimensionIfNecessary(&jsConfiguration.width)
       fixDimensionIfNecessary(&jsConfiguration.height)
