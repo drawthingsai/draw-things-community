@@ -292,7 +292,7 @@ let SharedScript = """
       loadColorFromPhotos() {
         __dtHooks.loadLayerFromPhotos("color");
       },
-      loadCustomLayerFromPhotos() {
+      loadCustomFromPhotos() {
         __dtHooks.loadLayerFromPhotos("custom");
       },
       loadMoodboardFromPhotos() {
@@ -313,7 +313,7 @@ let SharedScript = """
       loadColorFromFiles() {
         __dtHooks.loadLayerFromFiles("color");
       },
-      loadCustomLayerFromFiles() {
+      loadCustomFromFiles() {
         __dtHooks.loadLayerFromFiles("custom");
       },
       loadMoodboardFromFiles() {
@@ -343,12 +343,30 @@ let SharedScript = """
       loadPoseFromJson(jsonString) {
         __dtHooks.loadLayerFromJson(jsonString, "pose");
       },
+      saveDepthMapSrc() {
+        return __dtHooks.saveLayerSrc("depthMap");
+      },
+      saveScribbleSrc() {
+        return __dtHooks.saveLayerSrc("scribble");
+      },
+      saveCustomSrc() {
+        return __dtHooks.saveLayerSrc("custom");
+      },
+      extractDepthMap() {
+        __dtHooks.extractDepthMap();
+      },
       detectFaces() {
         return __dtHooks.detectFaces();
       },
       // Backward compatibility functions.
       loadCustomLayerFromSrc(srcContent) {
         __dtHooks.loadLayerFromSrc(srcContent, "custom");
+      },
+      loadCustomLayerFromFiles() {
+        __dtHooks.loadLayerFromFiles("custom");
+      },
+      loadCustomLayerFromPhotos() {
+        __dtHooks.loadLayerFromPhotos("custom");
       }
     };
 

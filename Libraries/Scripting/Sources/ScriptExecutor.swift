@@ -101,6 +101,8 @@ extension SupportedPrefix {
   func loadLayerFromFiles(_ type: String)
   func loadLayerFromSrc(_ srcContent: String, _ type: String)
   func loadLayerFromJson(_ json: String, _ type: String)
+  func saveLayerSrc(_ type: String) -> String?
+  func extractDepthMap()
   func detectFaces() -> [[String: Any]]
   func detectHands() -> [[String: Any]]
   func downloadBuiltins(_ files: [String])
@@ -137,6 +139,8 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func loadLayerFromFiles(type: String) throws
   func loadLayerFromSrc(_ srcContent: String, type: String) throws
   func loadLayerFromJson(_ json: String, type: String) throws
+  func saveLayerData(type: String) throws -> Data?
+  func extractDepthMap() throws
   func detectFaces() throws -> [CGRect]
   func detectHands() throws -> [CGRect]
   func downloadBuiltins(_ files: [String]) throws
@@ -582,6 +586,21 @@ extension ScriptExecutor: JSInterop {
     forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
       try delegate.loadLayerFromJson(json, type: type)
+    }
+  }
+
+  func saveLayerSrc(_ type: String) -> String? {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      guard let data = try delegate.saveLayerData(type: type) else { return nil }
+      return SupportedPrefix.base64Png.rawValue + data.base64EncodedString()
+    }
+  }
+
+  func extractDepthMap() {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      try delegate.extractDepthMap()
     }
   }
 
