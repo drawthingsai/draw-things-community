@@ -167,7 +167,8 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
         }
         return (
           (result * 2 - 1).permuted(0, 2, 3, 1)
-            .reshaped(.NHWC(1, height * 4, width * 4, 3)).copied().toCPU(), rrdbnet
+            .reshaped(.NHWC(1, height * upscaleFactor, width * upscaleFactor, 3)).copied().toCPU(),
+          rrdbnet
         )
       }
       var output = graph.variable(
@@ -181,9 +182,9 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
             .bilinear, widthScale: Float(upscaleFactor) / 4, heightScale: Float(upscaleFactor) / 4)(
               result)
         }
-        output[i..<(i + 1), 0..<(height * 4), 0..<(width * 4), 0..<3] =
+        output[i..<(i + 1), 0..<(height * upscaleFactor), 0..<(width * upscaleFactor), 0..<3] =
           (result * 2 - 1).permuted(0, 2, 3, 1)
-          .reshaped(.NHWC(1, height * 4, width * 4, 3)).copied().toCPU()
+          .reshaped(.NHWC(1, height * upscaleFactor, width * upscaleFactor, 3)).copied().toCPU()
       }
       return (output, rrdbnet)
     }
