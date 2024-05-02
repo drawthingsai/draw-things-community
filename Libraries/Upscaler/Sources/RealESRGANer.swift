@@ -313,6 +313,7 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
               .bilinear, widthScale: Float(upscaleFactor) / 4, heightScale: Float(upscaleFactor) / 4
             )(outputTile)
           }
+          outputTile = outputTile * 2 - 1
           output[i..<(i + 1), outputStartY..<outputEndY, 0..<(width * upscaleFactor), 0..<3] =
             outputTile[
               0..<1, 0..<3, outputStartYTile..<outputEndYTile, 0..<(width * upscaleFactor)
