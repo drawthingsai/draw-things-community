@@ -95,27 +95,42 @@ private func CrossAttentionFixed(
 private func BasicTransformerBlockFixed(
   prefix: String, k: Int, h: Int, b: Int, hw: Int, t: Int, intermediateSize: Int,
   usesFlashAttention: FlashAttentionLevel
-) -> Model {
-  let (_, _, attn2) = CrossAttentionFixed(
+) -> (ModelWeightMapper, Model) {
+  let (tokeys, tovalues, attn2) = CrossAttentionFixed(
     k: k, h: h, b: b, hw: hw, t: t, usesFlashAttention: usesFlashAttention)
-  return attn2
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    mapping["\(prefix).attn2.to_k.weight"] = [tokeys.weight.name]
+    mapping["\(prefix).attn2.to_v.weight"] = [tovalues.weight.name]
+    return mapping
+  }
+  return (mapper, attn2)
 }
 
 private func SpatialTransformerFixed(
   prefix: String,
   ch: Int, k: Int, h: Int, b: Int, height: Int, width: Int, depth: Int, t: Int,
   intermediateSize: Int, usesFlashAttention: FlashAttentionLevel
-) -> Model {
+) -> (ModelWeightMapper, Model) {
   let c = Input()
   var outs = [Model.IO]()
   let hw = height * width
+  var mappers = [ModelWeightMapper]()
   for i in 0..<depth {
-    let block = BasicTransformerBlockFixed(
+    let (mapper, block) = BasicTransformerBlockFixed(
       prefix: "\(prefix).transformer_blocks.\(i)", k: k, h: h, b: b, hw: hw, t: t,
       intermediateSize: intermediateSize, usesFlashAttention: usesFlashAttention)
     outs.append(block(c))
+    mappers.append(mapper)
   }
-  return Model([c], outs)
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    return mapping
+  }
+  return (mapper, Model([c], outs))
 }
 
 private func BlockLayerFixed(
@@ -123,32 +138,32 @@ private func BlockLayerFixed(
   layerStart: Int, skipConnection: Bool, attentionBlock: Int, channels: Int, numHeadChannels: Int,
   batchSize: Int, height: Int, width: Int, embeddingLength: Int, intermediateSize: Int,
   usesFlashAttention: FlashAttentionLevel
-) -> Model {
+) -> (ModelWeightMapper, Model) {
   precondition(channels % numHeadChannels == 0)
   let numHeads = channels / numHeadChannels
   let k = numHeadChannels
-  let transformer = SpatialTransformerFixed(
+  let (mapper, transformer) = SpatialTransformerFixed(
     prefix: "\(prefix).attentions.\(layerStart)",
     ch: channels, k: k, h: numHeads, b: batchSize, height: height, width: width,
     depth: attentionBlock, t: embeddingLength,
     intermediateSize: channels * 4, usesFlashAttention: usesFlashAttention)
-  return transformer
+  return (mapper, transformer)
 }
 
 private func MiddleBlockFixed(
   channels: Int, numHeadChannels: Int, batchSize: Int, height: Int, width: Int,
   embeddingLength: Int,
   attentionBlock: Int, usesFlashAttention: FlashAttentionLevel, c: Model.IO
-) -> Model.IO {
+) -> (ModelWeightMapper, Model.IO) {
   precondition(channels % numHeadChannels == 0)
   let numHeads = channels / numHeadChannels
   let k = numHeadChannels
-  let transformer = SpatialTransformerFixed(
+  let (mapper, transformer) = SpatialTransformerFixed(
     prefix: "mid_block.attentions.0", ch: channels, k: k, h: numHeads, b: batchSize, height: height,
     width: width, depth: attentionBlock, t: embeddingLength, intermediateSize: channels * 4,
     usesFlashAttention: usesFlashAttention)
   let out = transformer(c)
-  return out
+  return (mapper, out)
 }
 
 private func InputBlocksFixed(
@@ -156,18 +171,19 @@ private func InputBlocksFixed(
   startWidth: Int, embeddingLength: Int, attentionRes: [Int: Int],
   usesFlashAttention: FlashAttentionLevel,
   c: Model.IO
-) -> [Model.IO] {
+) -> (ModelWeightMapper, [Model.IO]) {
   var layerStart = 1
   var height = startHeight
   var width = startWidth
   var previousChannel = channels[0]
   var ds = 1
   var outs = [Model.IO]()
+  var mappers = [ModelWeightMapper]()
   for (i, channel) in channels.enumerated() {
     let attentionBlock = attentionRes[ds, default: 0]
     for j in 0..<numRepeat {
       if attentionBlock > 0 {
-        let inputLayer = BlockLayerFixed(
+        let (inputMapper, inputLayer) = BlockLayerFixed(
           prefix: "down_blocks.\(i)",
           layerStart: j, skipConnection: previousChannel != channel,
           attentionBlock: attentionBlock, channels: channel, numHeadChannels: numHeadChannels,
@@ -176,6 +192,7 @@ private func InputBlocksFixed(
           intermediateSize: channel * 4, usesFlashAttention: usesFlashAttention)
         previousChannel = channel
         outs.append(inputLayer(c))
+        mappers.append(inputMapper)
       }
       layerStart += 1
     }
@@ -186,7 +203,14 @@ private func InputBlocksFixed(
       ds *= 2
     }
   }
-  return outs
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    return mapping
+  }
+  return (mapper, outs)
 }
 
 private func OutputBlocksFixed(
@@ -194,7 +218,7 @@ private func OutputBlocksFixed(
   startWidth: Int, embeddingLength: Int, attentionRes: [Int: Int],
   usesFlashAttention: FlashAttentionLevel,
   c: Model.IO
-) -> [Model.IO] {
+) -> (ModelWeightMapper, [Model.IO]) {
   var layerStart = 0
   var height = startHeight
   var width = startWidth
@@ -202,6 +226,7 @@ private func OutputBlocksFixed(
   var heights = [height]
   var widths = [width]
   var dss = [ds]
+  var mappers = [ModelWeightMapper]()
   for _ in 0..<channels.count - 1 {
     height = height / 2
     width = width / 2
@@ -218,7 +243,7 @@ private func OutputBlocksFixed(
     let attentionBlock = attentionRes[ds, default: 0]
     for j in 0..<(numRepeat + 1) {
       if attentionBlock > 0 {
-        let outputLayer = BlockLayerFixed(
+        let (outputMapper, outputLayer) = BlockLayerFixed(
           prefix: "up_blocks.\(channels.count - 1 - i)",
           layerStart: j, skipConnection: true,
           attentionBlock: attentionBlock, channels: channel, numHeadChannels: numHeadChannels,
@@ -226,39 +251,54 @@ private func OutputBlocksFixed(
           height: height, width: width, embeddingLength: embeddingLength,
           intermediateSize: channel * 4, usesFlashAttention: usesFlashAttention)
         outs.append(outputLayer(c))
+        mappers.append(outputMapper)
       }
       layerStart += 1
     }
   }
-  return outs
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    return mapping
+  }
+  return (mapper, outs)
 }
 
 func UNetXLIPFixed(
   batchSize: Int, startHeight: Int, startWidth: Int, channels: [Int],
   embeddingLength: Int, attentionRes: KeyValuePairs<Int, Int>,
   usesFlashAttention: FlashAttentionLevel
-) -> Model {
+) -> (ModelWeightMapper, Model) {
   let c = Input()
   let middleBlockAttentionBlock = attentionRes.last!.value
   let attentionRes = [Int: Int](uniqueKeysWithValues: attentionRes.map { ($0.key, $0.value) })
-  let inputBlocks = InputBlocksFixed(
+  let (inputMapper, inputBlocks) = InputBlocksFixed(
     channels: channels, numRepeat: 2, numHeadChannels: 64, batchSize: batchSize,
     startHeight: startHeight, startWidth: startWidth, embeddingLength: embeddingLength,
     attentionRes: attentionRes,
     usesFlashAttention: usesFlashAttention, c: c)
   var out = inputBlocks
   let middleBlockSizeMult = 1 << (channels.count - 1)
-  let middleBlock = MiddleBlockFixed(
+  let (middleMapper, middleBlock) = MiddleBlockFixed(
     channels: channels.last!, numHeadChannels: 64, batchSize: batchSize,
     height: startHeight / middleBlockSizeMult, width: startWidth / middleBlockSizeMult,
     embeddingLength: embeddingLength, attentionBlock: middleBlockAttentionBlock,
     usesFlashAttention: usesFlashAttention, c: c)
   out.append(middleBlock)
-  let outputBlocks = OutputBlocksFixed(
+  let (outputMapper, outputBlocks) = OutputBlocksFixed(
     channels: channels, numRepeat: 2, numHeadChannels: 64, batchSize: batchSize,
     startHeight: startHeight, startWidth: startWidth, embeddingLength: embeddingLength,
     attentionRes: attentionRes,
     usesFlashAttention: usesFlashAttention, c: c)
   out.append(contentsOf: outputBlocks)
-  return Model([c], out)
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    mapping.merge(inputMapper(format)) { v, _ in v }
+    mapping.merge(middleMapper(format)) { v, _ in v }
+    mapping.merge(outputMapper(format)) { v, _ in v }
+    return mapping
+  }
+  return (mapper, Model([c], out))
 }

@@ -46,11 +46,12 @@ public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let controlMode: ControlMode
   public let globalAveragePooling: Bool
   public let transformerBlocks: [Int]
+  public let targetBlocks: [String]
   public init(
     filePaths: [String], type: ControlType, modifier: ControlHintType,
     externalOnDemand: Bool, version: ModelVersion, tiledDiffusion: TiledConfiguration,
     usesFlashAttention: Bool, startStep: Int, endStep: Int, controlMode: ControlMode,
-    globalAveragePooling: Bool, transformerBlocks: [Int]
+    globalAveragePooling: Bool, transformerBlocks: [Int], targetBlocks: [String]
   ) {
     self.filePaths = filePaths
     self.type = type
@@ -64,6 +65,7 @@ public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.controlMode = controlMode
     self.globalAveragePooling = globalAveragePooling
     self.transformerBlocks = transformerBlocks
+    self.targetBlocks = targetBlocks
   }
 }
 
@@ -251,6 +253,36 @@ extension ControlModel {
 }
 
 extension ControlModel {
+  private func zeroTensor(dataType: DataType, format: TensorFormat, shape: TensorShape) -> AnyTensor
+  {
+    switch dataType {
+    case .Float16:
+      #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+        var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
+        tensor.withUnsafeMutableBytes {
+          let size = shape.reduce(MemoryLayout<Float16>.size, *)
+          memset($0.baseAddress, 0, size)
+        }
+        return tensor
+      #else
+        var tensor = Tensor<UInt16>(.CPU, format: format, shape: shape)
+        tensor.withUnsafeMutableBytes {
+          let size = shape.reduce(MemoryLayout<Float16>.size, *)
+          memset($0.baseAddress, 0, size)
+        }
+        return tensor
+      #endif
+    case .Float32:
+      var tensor = Tensor<Float32>(.CPU, format: format, shape: shape)
+      tensor.withUnsafeMutableBytes {
+        let size = shape.reduce(MemoryLayout<Float32>.size, *)
+        memset($0.baseAddress, 0, size)
+      }
+      return tensor
+    case .Float64, .Int32, .Int64, .UInt8:
+      fatalError()
+    }
+  }
   public func hint(inputs: [(hint: DynamicGraph.Tensor<FloatType>, weight: Float)])
     -> [[DynamicGraph.Tensor<FloatType>]]
   {
@@ -409,14 +441,16 @@ extension ControlModel {
         }
       }
       // Redo imagePromptEmbeds to be batch of 2.
+      let unetIPFixedMapper: ModelWeightMapper
       let unetIPFixed: Model
       switch version {
       case .v1:
         unetIPFixed = UNetIPFixed(
           batchSize: 2, embeddingLength: (16, 16), startWidth: 64, startHeight: 64,
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+        unetIPFixedMapper = { _ in [:] }
       case .sdxlBase:
-        unetIPFixed = UNetXLIPFixed(
+        (unetIPFixedMapper, unetIPFixed) = UNetXLIPFixed(
           batchSize: 2, startHeight: 128, startWidth: 128, channels: [320, 640, 1280],
           embeddingLength: 16, attentionRes: [2: 2, 4: 10],
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
@@ -428,8 +462,30 @@ extension ControlModel {
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) {
-        $0.read(
-          "unet_ip_fixed", model: unetIPFixed, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+        if targetBlocks.isEmpty {
+          $0.read(
+            "unet_ip_fixed", model: unetIPFixed, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+        } else {
+          let mapping = unetIPFixedMapper(.diffusers)
+          var reverseMapping = [String: String]()
+          for (key, values) in mapping {
+            guard values.count == 1 else { continue }
+            reverseMapping["__unet_ip_fixed__[\(values[0])]"] = key
+          }
+          $0.read(
+            "unet_ip_fixed", model: unetIPFixed, codec: [.ezm7, .q6p, .q8p, .jit, .externalData]
+          ) { name, dataType, format, shape in
+            guard let diffusersName = reverseMapping[name] else { return .continue(name) }
+            guard diffusersName.hasSuffix("to_v.weight") else { return .continue(name) }
+            // Only retain the ones with this name.
+            for targetBlock in targetBlocks {
+              if diffusersName.contains(targetBlock) {
+                return .continue(name)
+              }
+            }
+            return .final(zeroTensor(dataType: dataType, format: format, shape: shape))
+          }
+        }
       }
       let kvs = batchedImagePromptEmbeds.map {
         unetIPFixed(inputs: $0).map { $0.as(of: FloatType.self) }
@@ -509,14 +565,16 @@ extension ControlModel {
         }
       }
       // Redo imagePromptEmbeds to be batch of 2.
+      let unetIPFixedMapper: ModelWeightMapper
       let unetIPFixed: Model
       switch version {
       case .v1:
         unetIPFixed = UNetIPFixed(
           batchSize: 2, embeddingLength: (257, 257), startWidth: 64, startHeight: 64,
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+        unetIPFixedMapper = { _ in [:] }
       case .sdxlBase:
-        unetIPFixed = UNetXLIPFixed(
+        (unetIPFixedMapper, unetIPFixed) = UNetXLIPFixed(
           batchSize: 2, startHeight: 128, startWidth: 128, channels: [320, 640, 1280],
           embeddingLength: 257, attentionRes: [2: 2, 4: 10],
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
@@ -528,8 +586,31 @@ extension ControlModel {
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) {
-        $0.read(
-          "unet_ip_fixed", model: unetIPFixed, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+        if targetBlocks.isEmpty {
+          $0.read(
+            "unet_ip_fixed", model: unetIPFixed, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+        } else {
+
+          let mapping = unetIPFixedMapper(.diffusers)
+          var reverseMapping = [String: String]()
+          for (key, values) in mapping {
+            guard values.count == 1 else { continue }
+            reverseMapping["__unet_ip_fixed__[\(values[0])]"] = key
+          }
+          $0.read(
+            "unet_ip_fixed", model: unetIPFixed, codec: [.ezm7, .q6p, .q8p, .jit, .externalData]
+          ) { name, dataType, format, shape in
+            guard let diffusersName = reverseMapping[name] else { return .continue(name) }
+            guard diffusersName.hasSuffix("to_v.weight") else { return .continue(name) }
+            // Only retain the ones with this name.
+            for targetBlock in targetBlocks {
+              if diffusersName.contains(targetBlock) {
+                return .continue(name)
+              }
+            }
+            return .final(zeroTensor(dataType: dataType, format: format, shape: shape))
+          }
+        }
       }
       let kvs = batchedImagePromptEmbeds.map {
         unetIPFixed(inputs: $0).map { $0.as(of: FloatType.self) }
