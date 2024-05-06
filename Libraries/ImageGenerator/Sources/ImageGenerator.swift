@@ -1434,7 +1434,7 @@ extension ImageGenerator {
         tiledDiffusion: tiledDiffusion, usesFlashAttention: usesFlashAttention,
         startStep: startStep, endStep: endStep, controlMode: controlMode,
         globalAveragePooling: globalAveragePooling, transformerBlocks: transformerBlocks,
-        targetBlocks: [])
+        targetBlocks: control.targetBlocks)
       let customRGB: (Bool) -> DynamicGraph.Tensor<FloatType>? = { convert in
         custom.map({
           let input = graph.variable(Tensor<FloatType>($0).toGPU(0))

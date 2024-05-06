@@ -24,6 +24,7 @@ public final class JSControl: Codable {
   let globalAveragePooling: Bool
   let downSamplingRate: Float32
   let controlImportance: String
+  let targetBlocks: [String]
 
   public init(control: DataModels.Control) {
     file = control.file
@@ -41,6 +42,7 @@ public final class JSControl: Codable {
     case .control:
       controlImportance = "control"
     }
+    targetBlocks = control.targetBlocks
   }
 
   public func createControl() -> DataModels.Control {
@@ -59,7 +61,7 @@ public final class JSControl: Codable {
     return Control(
       file: file, weight: weight, guidanceStart: guidanceStart, guidanceEnd: guidanceEnd,
       noPrompt: noPrompt, globalAveragePooling: globalAveragePooling,
-      downSamplingRate: downSamplingRate, controlMode: controlMode)
+      downSamplingRate: downSamplingRate, controlMode: controlMode, targetBlocks: targetBlocks)
   }
 }
 

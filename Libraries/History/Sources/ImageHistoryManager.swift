@@ -128,7 +128,8 @@ extension Control {
       file: control.file, weight: control.weight, guidanceStart: control.guidanceStart,
       guidanceEnd: control.guidanceEnd, noPrompt: control.noPrompt,
       globalAveragePooling: control.globalAveragePooling,
-      downSamplingRate: control.downSamplingRate, controlMode: .init(from: control.controlMode)
+      downSamplingRate: control.downSamplingRate, controlMode: .init(from: control.controlMode),
+      targetBlocks: control.targetBlocks
     )
   }
 }
@@ -139,7 +140,8 @@ extension DataModels.Control {
       file: control.file, weight: control.weight, guidanceStart: control.guidanceStart,
       guidanceEnd: control.guidanceEnd, noPrompt: control.noPrompt,
       globalAveragePooling: control.globalAveragePooling,
-      downSamplingRate: control.downSamplingRate, controlMode: .init(from: control.controlMode)
+      downSamplingRate: control.downSamplingRate, controlMode: .init(from: control.controlMode),
+      targetBlocks: control.targetBlocks
     )
   }
 }

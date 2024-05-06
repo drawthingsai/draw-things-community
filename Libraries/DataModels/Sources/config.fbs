@@ -35,6 +35,7 @@ table Control {
   global_average_pooling: bool = true;
   down_sampling_rate: float = 1;
   control_mode: ControlMode = Balanced;
+  target_blocks: [string];
 }
 
 table LoRA {
