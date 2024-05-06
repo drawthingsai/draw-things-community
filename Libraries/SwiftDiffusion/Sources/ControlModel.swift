@@ -267,7 +267,7 @@ extension ControlModel {
       #else
         var tensor = Tensor<UInt16>(.CPU, format: format, shape: shape)
         tensor.withUnsafeMutableBytes {
-          let size = shape.reduce(MemoryLayout<Float16>.size, *)
+          let size = shape.reduce(MemoryLayout<UInt16>.size, *)
           memset($0.baseAddress, 0, size)
         }
         return tensor
