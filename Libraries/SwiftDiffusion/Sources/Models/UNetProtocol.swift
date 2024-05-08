@@ -338,6 +338,8 @@ extension UNetFromNNC {
         batchSize: batchSize, cIn: 4, height: tiledHeight, width: tiledWidth,
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
     }
+    // Need to assign version now such that sliceInputs will have the correct version.
+    self.version = version
     var c = c
     if injectedIPAdapters.count > 0 {
       switch version {
@@ -456,7 +458,6 @@ extension UNetFromNNC {
         store.read("previewer", model: previewer, codec: [.q6p, .q8p, .ezm7, .externalData])
       }
     }
-    self.version = version
     self.unet = unet
     if startWidth > tiledWidth || startHeight > tiledHeight {
       (xTileWeightsAndIndexes, yTileWeightsAndIndexes) = xyTileWeightsAndIndexes(
