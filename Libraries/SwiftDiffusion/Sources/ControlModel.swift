@@ -445,10 +445,9 @@ extension ControlModel {
       let unetIPFixed: Model
       switch version {
       case .v1:
-        unetIPFixed = UNetIPFixed(
+        (unetIPFixedMapper, unetIPFixed) = UNetIPFixed(
           batchSize: 2, embeddingLength: (16, 16), startWidth: 64, startHeight: 64,
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
-        unetIPFixedMapper = { _ in [:] }
       case .sdxlBase:
         (unetIPFixedMapper, unetIPFixed) = UNetXLIPFixed(
           batchSize: 2, startHeight: 128, startWidth: 128, channels: [320, 640, 1280],
@@ -569,10 +568,9 @@ extension ControlModel {
       let unetIPFixed: Model
       switch version {
       case .v1:
-        unetIPFixed = UNetIPFixed(
+        (unetIPFixedMapper, unetIPFixed) = UNetIPFixed(
           batchSize: 2, embeddingLength: (257, 257), startWidth: 64, startHeight: 64,
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
-        unetIPFixedMapper = { _ in [:] }
       case .sdxlBase:
         (unetIPFixedMapper, unetIPFixed) = UNetXLIPFixed(
           batchSize: 2, startHeight: 128, startWidth: 128, channels: [320, 640, 1280],

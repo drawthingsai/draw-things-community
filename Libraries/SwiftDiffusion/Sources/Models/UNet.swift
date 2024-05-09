@@ -1675,65 +1675,67 @@ public func UNet(
   return (Model(modelInputs, [out], trainable: trainable), reader)
 }
 
-func BlockLayerFixed(
-  prefix: String,
-  layerStart: Int, skipConnection: Bool, attentionBlock: Bool, channels: Int, numHeads: Int,
+private func BlockLayerFixed(
+  prefix: (String, String),
+  repeatStart: Int, skipConnection: Bool, attentionBlock: Bool, channels: Int, numHeads: Int,
   batchSize: Int, height: Int, width: Int, embeddingLength: (Int, Int), intermediateSize: Int,
   usesFlashAttention: FlashAttentionLevel
-) -> Model {
+) -> (ModelWeightMapper, Model) {
   precondition(channels % numHeads == 0)
   let k = channels / numHeads
-  let (_, _, transformer) = SpatialTransformerFixed(
-    prefix: ("\(prefix).\(layerStart).1", "\(prefix).\(layerStart).1"),
+  let (_, mapper, transformer) = SpatialTransformerFixed(
+    prefix: ("\(prefix.0).1", "\(prefix.1).attentions.\(repeatStart)"),
     ch: channels, k: k, h: numHeads, b: batchSize,
     depth: 1, t: embeddingLength,
     intermediateSize: channels * 4, usesFlashAttention: usesFlashAttention,
     isTemporalMixEnabled: false)
-  return transformer
+  return (mapper, transformer)
 }
 
-func MiddleBlockFixed(
+private func MiddleBlockFixed(
   prefix: String,
   channels: Int, numHeads: Int, batchSize: Int, height: Int, width: Int,
   embeddingLength: (Int, Int),
   upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel,
   c: Model.IO
-) -> Model.IO {
+) -> (ModelWeightMapper, Model.IO) {
   precondition(channels % numHeads == 0)
   let k = channels / numHeads
-  let (_, _, transformer) = SpatialTransformerFixed(
+  let (_, mapper, transformer) = SpatialTransformerFixed(
     prefix: ("middle_block.1", "mid_block.attentions.0"),
     ch: channels, k: k, h: numHeads, b: batchSize, depth: 1,
     t: embeddingLength, intermediateSize: channels * 4, usesFlashAttention: usesFlashAttention,
     isTemporalMixEnabled: false)
   let out = transformer(c)
-  return out
+  return (mapper, out)
 }
 
 private func InputBlocksFixed(
   channels: [Int], numRepeat: Int, numHeads: Int, batchSize: Int, startHeight: Int, startWidth: Int,
   embeddingLength: (Int, Int), attentionRes: Set<Int>, upcastAttention: Bool,
   usesFlashAttention: FlashAttentionLevel, c: Model.IO
-) -> [Model.IO] {
+) -> (ModelWeightMapper, [Model.IO]) {
   var layerStart = 1
   var height = startHeight
   var width = startWidth
   var previousChannel = channels[0]
   var ds = 1
+  var mappers = [ModelWeightMapper]()
   var outs = [Model.IO]()
   for (i, channel) in channels.enumerated() {
     let attentionBlock = attentionRes.contains(ds)
-    for _ in 0..<numRepeat {
+    for j in 0..<numRepeat {
       if attentionBlock {
-        let inputLayer = BlockLayerFixed(
-          prefix: "model.diffusion_model.input_blocks",
-          layerStart: layerStart, skipConnection: previousChannel != channel,
+        let (inputMapper, inputLayer) = BlockLayerFixed(
+          prefix: ("input_blocks.\(layerStart)", "down_blocks.\(i)"),
+          repeatStart: j, skipConnection: previousChannel != channel,
           attentionBlock: attentionBlock, channels: channel, numHeads: numHeads,
           batchSize: batchSize,
           height: height, width: width, embeddingLength: embeddingLength,
           intermediateSize: channel * 4, usesFlashAttention: usesFlashAttention)
         previousChannel = channel
         outs.append(inputLayer(c))
+        mappers.append(inputMapper)
       }
       layerStart += 1
     }
@@ -1744,14 +1746,21 @@ private func InputBlocksFixed(
       ds *= 2
     }
   }
-  return outs
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    return mapping
+  }
+  return (mapper, outs)
 }
 
-func OutputBlocksFixed(
+private func OutputBlocksFixed(
   channels: [Int], numRepeat: Int, numHeads: Int, batchSize: Int, startHeight: Int, startWidth: Int,
   embeddingLength: (Int, Int), attentionRes: Set<Int>, upcastAttention: Bool,
   usesFlashAttention: FlashAttentionLevel, c: Model.IO
-) -> [Model.IO] {
+) -> (ModelWeightMapper, [Model.IO]) {
   var layerStart = 0
   var height = startHeight
   var width = startWidth
@@ -1767,51 +1776,67 @@ func OutputBlocksFixed(
     widths.append(width)
     dss.append(ds)
   }
+  var mappers = [ModelWeightMapper]()
   var outs = [Model.IO]()
   for (i, channel) in channels.enumerated().reversed() {
     let height = heights[i]
     let width = widths[i]
     let ds = dss[i]
     let attentionBlock = attentionRes.contains(ds)
-    for _ in 0..<(numRepeat + 1) {
+    for j in 0..<(numRepeat + 1) {
       if attentionBlock {
-        let outputLayer = BlockLayerFixed(
-          prefix: "model.diffusion_model.output_blocks",
-          layerStart: layerStart, skipConnection: true,
+        let (outputMapper, outputLayer) = BlockLayerFixed(
+          prefix: ("output_blocks.\(layerStart)", "up_blocks.\(channels.count - 1 - i)"),
+          repeatStart: j, skipConnection: true,
           attentionBlock: attentionBlock, channels: channel, numHeads: numHeads,
           batchSize: batchSize,
           height: height, width: width, embeddingLength: embeddingLength,
           intermediateSize: channel * 4, usesFlashAttention: usesFlashAttention)
         outs.append(outputLayer(c))
+        mappers.append(outputMapper)
       }
       layerStart += 1
     }
   }
-  return outs
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    return mapping
+  }
+  return (mapper, outs)
 }
 
 public func UNetIPFixed(
   batchSize: Int, embeddingLength: (Int, Int), startWidth: Int, startHeight: Int,
   usesFlashAttention: FlashAttentionLevel
-) -> Model {
+) -> (ModelWeightMapper, Model) {
   let c = Input()
   let attentionRes = Set([4, 2, 1])
-  var outs = InputBlocksFixed(
+  var (inputMapper, outs) = InputBlocksFixed(
     channels: [320, 640, 1280, 1280], numRepeat: 2, numHeads: 8, batchSize: batchSize,
     startHeight: startHeight,
     startWidth: startWidth, embeddingLength: embeddingLength, attentionRes: attentionRes,
     upcastAttention: false, usesFlashAttention: usesFlashAttention, c: c)
-  let middleBlock = MiddleBlockFixed(
+  let (middleMapper, middleBlock) = MiddleBlockFixed(
     prefix: "model.diffusion_model",
     channels: 1280, numHeads: 8, batchSize: batchSize, height: startHeight / 8,
     width: startWidth / 8, embeddingLength: embeddingLength, upcastAttention: false,
     usesFlashAttention: usesFlashAttention, c: c)
   outs.append(middleBlock)
-  let outputBlocks = OutputBlocksFixed(
+  let (outputMapper, outputBlocks) = OutputBlocksFixed(
     channels: [320, 640, 1280, 1280], numRepeat: 2, numHeads: 8, batchSize: batchSize,
     startHeight: startHeight,
     startWidth: startWidth, embeddingLength: embeddingLength, attentionRes: attentionRes,
     upcastAttention: false, usesFlashAttention: usesFlashAttention, c: c)
   outs.append(contentsOf: outputBlocks)
-  return Model([c], outs)
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    mapping.merge(inputMapper(format)) { v, _ in v }
+    mapping.merge(middleMapper(format)) { v, _ in v }
+    mapping.merge(outputMapper(format)) { v, _ in v }
+    return mapping
+  }
+  return (mapper, Model([c], outs))
 }
