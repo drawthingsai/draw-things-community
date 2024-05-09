@@ -133,7 +133,9 @@ public struct ScriptZoo {
     var saveMetadata = metadata
     saveMetadata.filePath = localCommunityScriptsURL.appendingPathComponent(metadata.file).path
     saveMetadata.type = .community
-    try? JSONEncoder().encode(metadata).write(
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .prettyPrinted
+    try? encoder.encode(metadata).write(
       to: localCommunityScriptsURL.appendingPathComponent("\(metadata.file).metadata.json"))
     try? FileManager.default.removeItem(at: localFile)
   }
