@@ -43,12 +43,21 @@ public struct ScriptZoo {
     ((try? FileManager.default.contentsOfDirectory(
       at: localCommunityScriptsURL,
       includingPropertiesForKeys: [],
-      options: .skipsHiddenFiles)) ?? [])
+      options: .skipsHiddenFiles)) ?? []).filter { $0.pathExtension == "js" }
       .enumerated().map {
         let filePath = $1.path
         let file = $1.lastPathComponent
-        let script = Script(
+        var script = Script(
           name: file, file: file, filePath: filePath, type: .community)
+        let metadataURL = localCommunityScriptsURL.appendingPathComponent("\(file).metadata.json")
+        if FileManager.default.fileExists(atPath: metadataURL.path) {
+          // load in the optional metadata information
+          if let data = try? Data(contentsOf: metadataURL),
+            let metadata = try? JSONDecoder().decode(Script.self, from: data)
+          {
+            script = metadata
+          }
+        }
         return script
       }
   }
@@ -117,9 +126,15 @@ public struct ScriptZoo {
   public static func saveCommunityScript(_ localFile: URL, metadata: Script) {
     try? FileManager.default.createDirectory(
       at: localCommunityScriptsURL, withIntermediateDirectories: true)
+    let scriptURL = localCommunityScriptsURL.appendingPathComponent(metadata.file)
     try? FileManager.default.moveItem(
       atPath: localFile.path,
-      toPath: localCommunityScriptsURL.appendingPathComponent(metadata.file).path)
+      toPath: scriptURL.path)
+    var saveMetadata = metadata
+    saveMetadata.filePath = localCommunityScriptsURL.appendingPathComponent(metadata.file).path
+    saveMetadata.type = .community
+    try? JSONEncoder().encode(metadata).write(
+      to: localCommunityScriptsURL.appendingPathComponent("\(metadata.file).metadata.json"))
     try? FileManager.default.removeItem(at: localFile)
   }
 
