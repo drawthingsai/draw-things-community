@@ -6,6 +6,7 @@ public struct ScriptZoo {
   public enum ScriptType: String, Codable, Equatable, Hashable {
     case user
     case sample
+    case community
   }
 
   public struct Script: Codable, Equatable, Hashable {
@@ -34,6 +35,23 @@ public struct ScriptZoo {
     let urls = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
     return urls.first!.appendingPathComponent("Scripts")
   }()
+  public static let localCommunityScriptsURL: URL = {
+    let urls = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+    return urls.first!.appendingPathComponent("Scripts").appendingPathComponent("Community")
+  }()
+  public static var availableCommunityScripts: [Script] {
+    ((try? FileManager.default.contentsOfDirectory(
+      at: localCommunityScriptsURL,
+      includingPropertiesForKeys: [],
+      options: .skipsHiddenFiles)) ?? [])
+      .enumerated().map {
+        let filePath = $1.path
+        let file = $1.lastPathComponent
+        let script = Script(
+          name: file, file: file, filePath: filePath, type: .community)
+        return script
+      }
+  }
   public static var availableScripts: [Script] {
     var userScriptNames = [String: Int]()
     var scripts =
@@ -96,6 +114,15 @@ public struct ScriptZoo {
     }
   }
 
+  public static func saveCommunityScript(_ localFile: URL, metadata: Script) {
+    try? FileManager.default.createDirectory(
+      at: localCommunityScriptsURL, withIntermediateDirectories: true)
+    try? FileManager.default.moveItem(
+      atPath: localFile.path,
+      toPath: localCommunityScriptsURL.appendingPathComponent(metadata.file).path)
+    try? FileManager.default.removeItem(at: localFile)
+  }
+
   public static func save(_ content: String, to file: String) {
     try? FileManager.default.createDirectory(at: scriptsUrl, withIntermediateDirectories: true)
     // TODO: is it best to crash here if writing fails?
@@ -111,4 +138,47 @@ public struct ScriptZoo {
     guard let data = FileManager.default.contents(atPath: path) else { return nil }
     return String(data: data, encoding: .utf8)
   }
+}
+
+// remote scripts stuff
+extension ScriptZoo {
+  public static func fetch(completion: @escaping ([Script]) -> Void) {
+    guard let url = URL(string: "https://scripts.drawthings.ai/scripts.json") else { return }
+    URLSession.shared.dataTask(with: url) { data, response, error in
+      guard let data, error == nil else {
+        print("Error downloading data: \(error?.localizedDescription ?? "Unknown error")")
+        return
+      }
+      let group = DispatchGroup()
+      // Parse the JSON data
+      do {
+        let remoteScripts = try JSONDecoder().decode([Script].self, from: data).filter {
+          wizRemoteList.contains($0.file)
+        }
+        remoteScripts.forEach { metadata in
+          group.enter()
+          URLSession.shared.downloadTask(
+            with: URL(string: "https://scripts.drawthings.ai/scripts/\(metadata.file)")!,
+            completionHandler: { localUrl, response, error in
+              guard let localUrl else {
+                return group.leave()
+              }
+              saveCommunityScript(localUrl, metadata: metadata)
+              group.leave()
+            }
+          ).resume()
+        }
+        group.notify(queue: .main) {
+          completion(availableCommunityScripts)
+        }
+      } catch {
+        group.leave()
+        print("Failed to parse JSON: \(error)")
+      }
+    }.resume()
+  }
+
+  static var wizRemoteList: Set<String> = [
+    "creative-upscale.js"
+  ]
 }
