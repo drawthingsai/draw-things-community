@@ -421,6 +421,75 @@ extension Denoiser {
 }
 
 extension Denoiser {
+  public struct AYSLogLinearInterpolatedKarrasDiscretization: Discretization {
+    private let karrasDiscretization: KarrasDiscretization
+    private let samplingSigmas: [Double]
+    public var timesteps: Float { karrasDiscretization.timesteps }
+    public var objective: Objective { karrasDiscretization.objective }
+    public init(
+      _ parameterization: Parameterization, objective: Objective,
+      samplingSigmas: [Double]
+    ) {
+      karrasDiscretization = KarrasDiscretization(
+        parameterization, objective: objective)
+      self.samplingSigmas = samplingSigmas
+    }
+    public func timestep(for alphaCumprod: Double) -> Float {
+      return karrasDiscretization.timestep(for: alphaCumprod)
+    }
+    public func alphaCumprod(timestep: Float, shift: Double) -> Double {
+      return karrasDiscretization.alphaCumprod(timestep: timestep, shift: shift)
+    }
+    private static func logLinearInterpolation(sigmas: [Double], steps: Int) -> [Double] {
+      guard steps + 1 != sigmas.count else {
+        return sigmas
+      }
+      var ys = [Double]()
+      for i in 0..<(sigmas.count - 1) {
+        ys.append(log(Double(sigmas[sigmas.count - 2 - i])))
+      }
+      var scaledReverseSigmas = [Double]()
+      for i in 0..<steps {
+        let y = Double(i) / Double(steps - 1) * Double(ys.count - 1)
+        let y0 = max(Int(y.rounded(.down)), 0)
+        let y1 = min(Int(y.rounded(.up)), ys.count - 1)
+        let a = y - Double(y0)
+        let scaledYs = (1 - a) * ys[y0] + a * ys[y1]
+        scaledReverseSigmas.append(exp(scaledYs))
+      }
+      return scaledReverseSigmas.reversed() + [0]
+    }
+    public func alphasCumprod(steps: Int, shift: Double) -> [Double] {
+      guard !samplingSigmas.isEmpty else {
+        return karrasDiscretization.alphasCumprod(steps: steps, shift: shift)
+      }
+      let scaledSigmas = Self.logLinearInterpolation(sigmas: samplingSigmas, steps: steps)
+
+      guard scaledSigmas.count == steps + 1, steps > 0 else {
+        return karrasDiscretization.alphasCumprod(steps: steps, shift: shift)
+      }
+      var alphasCumprod = [Double]()
+      for i in 0..<steps {
+        var sigma = scaledSigmas[i]
+        if shift != 1 {
+          // Simplify Sigmoid[Log[x / (1 - x)] + 2 * Log[1 / shift]]
+          // var v: Double = 1.0 / (sigma * sigma + 1)
+          // v = 1.0 / (1.0 + shift * shift * (1.0 - v) / v)
+          // ((1 - v) / v).squareRoot()
+          // (1 / v - 1).squareRoot()
+          // (1.0 + shift * shift * (1.0 - v) / v - 1).squareRoot()
+          // (shift * shift * sigma).squareRoot()
+          sigma = shift * sigma
+        }
+        alphasCumprod.append(1 / (sigma * sigma + 1))
+      }
+      alphasCumprod.append(1.0)
+      return alphasCumprod
+    }
+  }
+}
+
+extension Denoiser {
   public struct AYSLogLinearInterpolatedTimestepDiscretization: Discretization {
     private let linearDiscretization: LinearDiscretization
     private let samplingTimesteps: [Int]
