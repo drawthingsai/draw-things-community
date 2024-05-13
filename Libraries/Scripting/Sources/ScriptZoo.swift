@@ -17,9 +17,11 @@ public struct ScriptZoo {
     public var type: ScriptType?
     public var description: String?
     public var author: String?
+    public var tags: [String]?
     public init(
       name: String, file: String, filePath: String?, isSampleDuplicate: Bool? = nil,
-      type: ScriptType? = nil, description: String? = nil, author: String? = nil
+      type: ScriptType? = nil, description: String? = nil, author: String? = nil,
+      tags: [String]? = nil
     ) {
       self.name = name
       self.file = file
@@ -28,6 +30,7 @@ public struct ScriptZoo {
       self.type = type
       self.description = description
       self.author = author
+      self.tags = tags
     }
   }
 
@@ -35,32 +38,7 @@ public struct ScriptZoo {
     let urls = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
     return urls.first!.appendingPathComponent("Scripts")
   }()
-  public static let localCommunityScriptsURL: URL = {
-    let urls = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
-    return urls.first!.appendingPathComponent("Scripts").appendingPathComponent("Community")
-  }()
-  public static var availableCommunityScripts: [Script] {
-    ((try? FileManager.default.contentsOfDirectory(
-      at: localCommunityScriptsURL,
-      includingPropertiesForKeys: [],
-      options: .skipsHiddenFiles)) ?? []).filter { $0.pathExtension == "js" }
-      .enumerated().map {
-        let filePath = $1.path
-        let file = $1.lastPathComponent
-        var script = Script(
-          name: file, file: file, filePath: filePath, type: .community)
-        let metadataURL = localCommunityScriptsURL.appendingPathComponent("\(file).metadata.json")
-        if FileManager.default.fileExists(atPath: metadataURL.path) {
-          // load in the optional metadata information
-          if let data = try? Data(contentsOf: metadataURL),
-            let metadata = try? JSONDecoder().decode(Script.self, from: data)
-          {
-            script = metadata
-          }
-        }
-        return script
-      }
-  }
+
   public static var availableScripts: [Script] {
     var userScriptNames = [String: Int]()
     var scripts =
@@ -123,23 +101,6 @@ public struct ScriptZoo {
     }
   }
 
-  public static func saveCommunityScript(_ localFile: URL, metadata: Script) {
-    try? FileManager.default.createDirectory(
-      at: localCommunityScriptsURL, withIntermediateDirectories: true)
-    let scriptURL = localCommunityScriptsURL.appendingPathComponent(metadata.file)
-    try? FileManager.default.moveItem(
-      atPath: localFile.path,
-      toPath: scriptURL.path)
-    var saveMetadata = metadata
-    saveMetadata.filePath = localCommunityScriptsURL.appendingPathComponent(metadata.file).path
-    saveMetadata.type = .community
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = .prettyPrinted
-    try? encoder.encode(metadata).write(
-      to: localCommunityScriptsURL.appendingPathComponent("\(metadata.file).metadata.json"))
-    try? FileManager.default.removeItem(at: localFile)
-  }
-
   public static func save(_ content: String, to file: String) {
     try? FileManager.default.createDirectory(at: scriptsUrl, withIntermediateDirectories: true)
     // TODO: is it best to crash here if writing fails?
@@ -155,47 +116,4 @@ public struct ScriptZoo {
     guard let data = FileManager.default.contents(atPath: path) else { return nil }
     return String(data: data, encoding: .utf8)
   }
-}
-
-// remote scripts stuff
-extension ScriptZoo {
-  public static func fetch(completion: @escaping ([Script]) -> Void) {
-    guard let url = URL(string: "https://scripts.drawthings.ai/scripts.json") else { return }
-    URLSession.shared.dataTask(with: url) { data, response, error in
-      guard let data, error == nil else {
-        print("Error downloading data: \(error?.localizedDescription ?? "Unknown error")")
-        return
-      }
-      let group = DispatchGroup()
-      // Parse the JSON data
-      do {
-        let remoteScripts = try JSONDecoder().decode([Script].self, from: data).filter {
-          wizRemoteList.contains($0.file)
-        }
-        remoteScripts.forEach { metadata in
-          group.enter()
-          URLSession.shared.downloadTask(
-            with: URL(string: "https://scripts.drawthings.ai/scripts/\(metadata.file)")!,
-            completionHandler: { localUrl, response, error in
-              guard let localUrl else {
-                return group.leave()
-              }
-              saveCommunityScript(localUrl, metadata: metadata)
-              group.leave()
-            }
-          ).resume()
-        }
-        group.notify(queue: .main) {
-          completion(availableCommunityScripts)
-        }
-      } catch {
-        group.leave()
-        print("Failed to parse JSON: \(error)")
-      }
-    }.resume()
-  }
-
-  static var wizRemoteList: Set<String> = [
-    "creative-upscale.js"
-  ]
 }
