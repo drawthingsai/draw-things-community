@@ -10,7 +10,10 @@ enum SamplerType: byte {
   DPMPPSDESubstep,
   TCD,
   EulerATrailing,
-  DPMPPSDETrailing
+  DPMPPSDETrailing,
+  DPMPP2MAYS,
+  EulerAAYS,
+  DPMPPSDEAYS
 }
 
 enum SeedMode: byte {

@@ -744,7 +744,8 @@ public enum ImageConverter {
         let sampler: String
         if isConsistencyModel {
           switch configuration.sampler {
-          case .dPMPPSDESubstep, .eulerASubstep, .LCM, .TCD, .eulerATrailing, .dPMPPSDETrailing:
+          case .dPMPPSDESubstep, .eulerASubstep, .LCM, .TCD, .eulerATrailing, .dPMPPSDETrailing,
+            .DPMPP2MAYS, .eulerAAYS, .DPMPPSDEAYS:
             sampler = configuration.sampler.description
           case .dPMPPSDEKarras:
             sampler = SamplerType.dPMPPSDESubstep.description

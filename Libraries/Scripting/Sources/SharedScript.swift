@@ -41,7 +41,10 @@ let SharedScript = """
       DPMPP_SDE_SUBSTEP: 8,
       TCD: 9,
       EULER_A_TRAILING: 10,
-      DPMPP_SDE_TRAILING: 11
+      DPMPP_SDE_TRAILING: 11,
+      DPMPP_2M_AYS: 12,
+      EULER_A_AYS: 13,
+      DPMPP_SDE_AYS: 14
     }
 
     class Point {
