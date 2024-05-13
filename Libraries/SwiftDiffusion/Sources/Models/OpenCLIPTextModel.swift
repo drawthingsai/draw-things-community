@@ -170,13 +170,13 @@ public func OpenCLIPTextModel<T: TensorNumeric>(
         try toqueriess[i].parameters(for: .bias).copy(from: q_proj_bias, zip: archive, of: T.self)
         guard
           let k_proj_weight = stateDict[
-            "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.v_proj.weight"]
+            "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.k_proj.weight"]
         else {
           throw UnpickleError.tensorNotFound
         }
         guard
           let k_proj_bias = stateDict[
-            "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.v_proj.bias"]
+            "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.k_proj.bias"]
         else {
           throw UnpickleError.tensorNotFound
         }
