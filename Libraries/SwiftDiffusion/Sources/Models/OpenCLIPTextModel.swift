@@ -235,7 +235,7 @@ public func OpenCLIPTextModel<T: TensorNumeric>(
           stateDict[
             "cond_stage_model.model.transformer.resblocks.\(i).ln_2.bias"]
           ?? stateDict[
-            "cond_stage_model.transformer.text_model.encoder.layers.\(i).layer_norm2.weight"]
+            "cond_stage_model.transformer.text_model.encoder.layers.\(i).layer_norm2.bias"]
       else {
         throw UnpickleError.tensorNotFound
       }
