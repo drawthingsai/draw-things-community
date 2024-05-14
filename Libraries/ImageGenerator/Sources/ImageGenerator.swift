@@ -119,149 +119,7 @@ extension ImageGenerator {
       samplingTimesteps = []
       samplingSigmas = []
     }
-    guard !isConsistencyModel else {
-      switch type {
-      case .eulerATrailing:
-        return EulerASampler<
-          FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
-        >(
-          filePath: filePath, modifier: modifier, version: version,
-          usesFlashAttention: usesFlashAttention,
-          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
-          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: false, is8BitModel: is8BitModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion,
-          discretization: Denoiser.LinearDiscretization(
-            parameterization, objective: objective, timestepSpacing: .trailing))
-      case .eulerAAYS:
-        if samplingTimesteps.isEmpty {
-          return EulerASampler<
-            FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
-          >(
-            filePath: filePath, modifier: modifier, version: version,
-            usesFlashAttention: usesFlashAttention,
-            upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
-            injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-            injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-            classifierFreeGuidance: false, is8BitModel: is8BitModel,
-            canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
-            tiledDiffusion: tiledDiffusion,
-            discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
-              parameterization, objective: objective, samplingSigmas: samplingSigmas))
-        } else {
-          return EulerASampler<
-            FloatType, UNetWrapper<FloatType>,
-            Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
-          >(
-            filePath: filePath, modifier: modifier, version: version,
-            usesFlashAttention: usesFlashAttention,
-            upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
-            injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-            injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-            classifierFreeGuidance: false, is8BitModel: is8BitModel,
-            canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
-            tiledDiffusion: tiledDiffusion,
-            discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
-              parameterization, objective: objective, samplingTimesteps: samplingTimesteps))
-        }
-      case .eulerASubstep, .eulerA:
-        return EulerASampler<
-          FloatType, UNetWrapper<FloatType>, Denoiser.LinearManualDiscretization
-        >(
-          filePath: filePath, modifier: modifier, version: version,
-          usesFlashAttention: usesFlashAttention,
-          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
-          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: false, is8BitModel: is8BitModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion,
-          discretization: Denoiser.LinearManualDiscretization(
-            parameterization, objective: objective, manual: manualSubsteps))
-      case .dPMPPSDETrailing:
-        return DPMPPSDESampler<
-          FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
-        >(
-          filePath: filePath, modifier: modifier, version: version,
-          usesFlashAttention: usesFlashAttention,
-          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
-          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: false, is8BitModel: is8BitModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion,
-          discretization: Denoiser.LinearDiscretization(
-            parameterization, objective: objective, timestepSpacing: .trailing))
-      case .DPMPPSDEAYS:
-        if samplingTimesteps.isEmpty {
-          return DPMPPSDESampler<
-            FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
-          >(
-            filePath: filePath, modifier: modifier, version: version,
-            usesFlashAttention: usesFlashAttention,
-            upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
-            injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-            injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-            classifierFreeGuidance: false, is8BitModel: is8BitModel,
-            canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
-            tiledDiffusion: tiledDiffusion,
-            discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
-              parameterization, objective: objective, samplingSigmas: samplingSigmas))
-        } else {
-          return DPMPPSDESampler<
-            FloatType, UNetWrapper<FloatType>,
-            Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
-          >(
-            filePath: filePath, modifier: modifier, version: version,
-            usesFlashAttention: usesFlashAttention,
-            upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
-            injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-            injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-            classifierFreeGuidance: false, is8BitModel: is8BitModel,
-            canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
-            tiledDiffusion: tiledDiffusion,
-            discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
-              parameterization, objective: objective, samplingTimesteps: samplingTimesteps))
-        }
-      case .dPMPPSDESubstep, .dPMPPSDEKarras:
-        return DPMPPSDESampler<
-          FloatType, UNetWrapper<FloatType>, Denoiser.LinearManualDiscretization
-        >(
-          filePath: filePath, modifier: modifier, version: version,
-          usesFlashAttention: usesFlashAttention,
-          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
-          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: false, is8BitModel: is8BitModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion,
-          discretization: Denoiser.LinearManualDiscretization(
-            parameterization, objective: objective, manual: manualSubsteps))
-      case .LCM, .DDIM, .PLMS, .uniPC, .dPMPP2MKarras, .DPMPP2MAYS:
-        return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-          filePath: filePath, modifier: modifier, version: version,
-          usesFlashAttention: usesFlashAttention,
-          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
-          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
-          discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
-      case .TCD:
-        return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-          filePath: filePath, modifier: modifier, version: version,
-          usesFlashAttention: usesFlashAttention,
-          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
-          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          stochasticSamplingGamma: stochasticSamplingGamma,
-          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
-          discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
-      }
-    }
+    let isCfgEnabled = !isConsistencyModel
     guard version != .wurstchenStageC && version != .wurstchenStageB else {
       switch type {
       case .dPMPP2MKarras, .DPMPP2MAYS:
@@ -271,8 +129,9 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .eulerA, .eulerASubstep, .eulerATrailing, .eulerAAYS:
         return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -281,7 +140,7 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: true, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
@@ -292,8 +151,9 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .PLMS:
         return PLMSSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -302,8 +162,9 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .dPMPPSDEKarras, .dPMPPSDESubstep, .dPMPPSDETrailing, .DPMPPSDEAYS:
         return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -312,7 +173,7 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: true, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
@@ -323,8 +184,9 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          conditioning: conditioning, tiledDiffusion: tiledDiffusion,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .LCM:
         return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
@@ -357,8 +219,9 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        conditioning: conditioning, tiledDiffusion: tiledDiffusion,
+        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective))
     case .DPMPP2MAYS:
       if samplingTimesteps.isEmpty {
@@ -370,7 +233,7 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
@@ -384,7 +247,7 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
@@ -397,7 +260,7 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: true, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
@@ -408,7 +271,7 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: true, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
@@ -423,7 +286,7 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: true, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
@@ -437,7 +300,7 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: true, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
@@ -450,8 +313,9 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        conditioning: conditioning, tiledDiffusion: tiledDiffusion,
+        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading))
     case .PLMS:
@@ -461,8 +325,9 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        conditioning: conditioning, tiledDiffusion: tiledDiffusion,
+        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading))
     case .dPMPPSDEKarras:
@@ -472,7 +337,7 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: true, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective))
@@ -483,7 +348,7 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: true, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
@@ -498,7 +363,7 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: true, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
@@ -512,7 +377,7 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: true, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
@@ -525,8 +390,9 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        conditioning: conditioning, tiledDiffusion: tiledDiffusion,
+        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .LCM:
       return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(

@@ -16,6 +16,7 @@ where UNet.FloatType == FloatType {
   public let injectT2IAdapters: Bool
   public let injectIPAdapterLengths: [Int]
   public let lora: [LoRAConfiguration]
+  public let classifierFreeGuidance: Bool
   public let is8BitModel: Bool
   public let canRunLoRASeparately: Bool
   public let conditioning: Denoiser.Conditioning
@@ -25,8 +26,9 @@ where UNet.FloatType == FloatType {
     filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
-    is8BitModel: Bool, canRunLoRASeparately: Bool, conditioning: Denoiser.Conditioning,
-    tiledDiffusion: TiledConfiguration, discretization: Discretization
+    classifierFreeGuidance: Bool, is8BitModel: Bool, canRunLoRASeparately: Bool,
+    conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
+    discretization: Discretization
   ) {
     self.filePath = filePath
     self.modifier = modifier
@@ -38,6 +40,7 @@ where UNet.FloatType == FloatType {
     self.injectT2IAdapters = injectT2IAdapters
     self.injectIPAdapterLengths = injectIPAdapterLengths
     self.lora = lora
+    self.classifierFreeGuidance = classifierFreeGuidance
     self.is8BitModel = is8BitModel
     self.canRunLoRASeparately = canRunLoRASeparately
     self.conditioning = conditioning
@@ -162,8 +165,10 @@ extension UniPCSampler: Sampler {
     let startWidth = x.shape[2]
     let channels = x.shape[3]
     let graph = x.graph
-    var isCfgEnabled = isCfgEnabled(
-      textGuidanceScale: textGuidanceScale, startFrameCfg: startFrameCfg, version: version)
+    var isCfgEnabled =
+      classifierFreeGuidance
+      && isCfgEnabled(
+        textGuidanceScale: textGuidanceScale, startFrameCfg: startFrameCfg, version: version)
     let cfgChannels: Int
     let inChannels: Int
     if version == .svdI2v {

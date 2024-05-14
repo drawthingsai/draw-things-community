@@ -736,27 +736,7 @@ public enum ImageConverter {
         case .nvidiaGpuCompatible:
           seedMode = "NVIDIA GPU Compatible"
         }
-        let isConsistencyModel =
-          (configuration.model.map { ModelZoo.isConsistencyModelForModel($0) } ?? false)
-          || configuration.loras.contains {
-            $0.file.map { LoRAZoo.isConsistencyModelForModel($0) } ?? false
-          }
-        let sampler: String
-        if isConsistencyModel {
-          switch configuration.sampler {
-          case .dPMPPSDESubstep, .eulerASubstep, .LCM, .TCD, .eulerATrailing, .dPMPPSDETrailing,
-            .DPMPP2MAYS, .eulerAAYS, .DPMPPSDEAYS:
-            sampler = configuration.sampler.description
-          case .dPMPPSDEKarras:
-            sampler = SamplerType.dPMPPSDESubstep.description
-          case .eulerA:
-            sampler = SamplerType.eulerASubstep.description
-          case .PLMS, .DDIM, .dPMPP2MKarras, .uniPC:
-            sampler = SamplerType.LCM.description
-          }
-        } else {
-          sampler = configuration.sampler.description
-        }
+        let sampler = configuration.sampler.description
         description +=
           "Steps: \(configuration.steps), Sampler: \(sampler), Guidance Scale: \(configuration.guidanceScale), Seed: \(configuration.seed), Size: \(configuration.startWidth * 64)x\(configuration.startHeight * 64), Model: \(model), Strength: \(configuration.strength), Seed Mode: \(seedMode)"
         var json = [String: Any]()
