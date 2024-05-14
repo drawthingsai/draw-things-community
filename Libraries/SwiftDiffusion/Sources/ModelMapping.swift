@@ -41,12 +41,21 @@ public enum DiffusersMapping {
     ("output_blocks.10.1.", "up_blocks.3.attentions.1."),
     ("output_blocks.11.0.", "up_blocks.3.resnets.2."),
     ("output_blocks.11.1.", "up_blocks.3.attentions.2."),
-    ("middle_block.1.", "mid_block.attentions.0."), ("middle_block.0.", "mid_block.resnets.0."),
+    ("middle_block.1.", "mid_block.attentions.0."),
+    ("middle_block.0.", "mid_block.resnets.0."),
     ("middle_block.2.", "mid_block.resnets.1."),
+    ("time_embed.0.", "time_embedding.linear_1."),
+    ("time_embed.2.", "time_embedding.linear_2."),
+    ("input_blocks.0.0.", "conv_in."),
+    ("out.0.", "conv_norm_out."),
+    ("out.2.", "conv_out."),
   ]
+
   public static let ResNetsPartials: [(String, String)] = [
+    ("in_layers.0", "norm1"),
     ("in_layers.2", "conv1"),
     ("emb_layers.1", "time_emb_proj"),
+    ("out_layers.0", "norm2"),
     ("out_layers.3", "conv2"),
     ("skip_connection", "conv_shortcut"),
   ]

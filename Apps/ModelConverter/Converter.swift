@@ -36,7 +36,7 @@ struct Converter: ParsableCommand {
     let importer = ModelImporter(
       filePath: file, modelName: fileName,
       isTextEncoderCustomized: textEncoders,
-      autoencoderFilePath: autoencoderFile)
+      autoencoderFilePath: autoencoderFile, textEncoderFilePath: nil, textEncoder2FilePath: nil)
     let (filePaths, modelVersion, modifier) = try importer.import { _ in
     } progress: { _ in
     }

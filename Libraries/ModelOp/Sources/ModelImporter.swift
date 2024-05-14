@@ -17,16 +17,22 @@ public final class ModelImporter {
   private let modelName: String
   private let isTextEncoderCustomized: Bool
   private let autoencoderFilePath: String?
+  private let textEncoderFilePath: String?
+  private let textEncoder2FilePath: String?
   private var access: Int = 0
   private var expectedTotalAccess: Int = 0
   private var progress: ((Float) -> Void)? = nil
   public init(
-    filePath: String, modelName: String, isTextEncoderCustomized: Bool, autoencoderFilePath: String?
+    filePath: String, modelName: String, isTextEncoderCustomized: Bool,
+    autoencoderFilePath: String?, textEncoderFilePath: String?,
+    textEncoder2FilePath: String?
   ) {
     self.filePath = filePath
     self.modelName = modelName
     self.isTextEncoderCustomized = isTextEncoderCustomized
     self.autoencoderFilePath = autoencoderFilePath
+    self.textEncoderFilePath = textEncoderFilePath
+    self.textEncoder2FilePath = textEncoder2FilePath
   }
 
   public func `import`(
@@ -167,8 +173,33 @@ public final class ModelImporter {
           let causalAttentionMask = graph.variable(.CPU, .NHWC(1, 1, 77, 77), of: FloatType.self)
           var textModel: Model
           var textModelReader: PythonReader
+          var textEncoderArchive = archive
           var filePath: String
-          var textStateDict = stateDict
+          var textEncoderStateDict = stateDict
+          if let textEncoderFilePath = textEncoderFilePath {
+            if let safeTensors = SafeTensors(url: URL(fileURLWithPath: textEncoderFilePath)) {
+              textEncoderArchive = safeTensors
+              textEncoderStateDict = safeTensors.states
+              for (key, value) in textEncoderStateDict {
+                textEncoderStateDict["cond_stage_model.transformer.\(key)"] = value
+              }
+            } else if let zipArchive = Archive(
+              url: URL(fileURLWithPath: textEncoderFilePath), accessMode: .read)
+            {
+              textEncoderArchive = zipArchive
+              let rootObject = try Interpreter.unpickle(zip: zipArchive)
+              let originalStateDict =
+                rootObject["state_dict"] as? Interpreter.Dictionary ?? rootObject
+              textEncoderStateDict = [String: TensorDescriptor]()
+              originalStateDict.forEach { key, value in
+                guard let value = value as? TensorDescriptor else { return }
+                textEncoderStateDict["cond_stage_model.transformer.\(key)"] = value
+                textEncoderStateDict[key] = value
+              }
+            } else {
+              throw UnpickleError.dataNotFound
+            }
+          }
           switch modelVersion {
           case .v1, .sdxlBase, .ssd1b:
             (textModel, textModelReader) = CLIPTextModel(
@@ -197,20 +228,21 @@ public final class ModelImporter {
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
-            for (key, value) in stateDict {
+            for (key, value) in textEncoderStateDict {
               if key.hasPrefix("conditioner.embedders.0.") {
-                textStateDict["cond_stage_model." + key.dropFirst(24)] = value
+                textEncoderStateDict["cond_stage_model." + key.dropFirst(24)] = value
               }
             }
           }
           textModel.compile(inputs: tokensTensor, positionTensor, causalAttentionMask)
-          try textModelReader(textStateDict, archive)
+          try textModelReader(textEncoderStateDict, textEncoderArchive)
+
           try graph.openStore(filePath) { store in
             store.removeAll()
-            if let text_projection = textStateDict["cond_stage_model.model.text_projection"]
-              ?? textStateDict["cond_stage_model.text_projection"]
+            if let text_projection = textEncoderStateDict["cond_stage_model.model.text_projection"]
+              ?? textEncoderStateDict["cond_stage_model.text_projection"]
             {
-              try archive.with(text_projection) {
+              try textEncoderArchive.with(text_projection) {
                 store.write("text_projection", tensor: $0)
               }
             }
@@ -244,21 +276,73 @@ public final class ModelImporter {
               intermediateSize: 5120, usesFlashAttention: false, outputPenultimate: true)
             filePath = ModelZoo.filePathForModelDownloaded(
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
-            textStateDict = stateDict
-            for (key, value) in stateDict {
+            var textEncoder2StateDict = stateDict
+            var textEncoder2Archive: TensorArchive = archive
+            var textEncoder2TextProjectionTransposed = false
+            if let textEncoder2FilePath = textEncoder2FilePath {
+              if let safeTensors = SafeTensors(url: URL(fileURLWithPath: textEncoder2FilePath)) {
+                textEncoder2Archive = safeTensors
+                textEncoder2StateDict = safeTensors.states
+                for (key, value) in textEncoder2StateDict {
+                  if key.hasPrefix("text_projection") {
+                    textEncoder2StateDict["cond_stage_model.model.text_projection"] = value
+                    if key.hasSuffix(".weight") {
+                      textEncoder2TextProjectionTransposed = true
+                    }
+                  } else {
+                    textEncoder2StateDict["cond_stage_model.transformer.\(key)"] = value
+                  }
+                }
+              } else if let zipArchive = Archive(
+                url: URL(fileURLWithPath: textEncoder2FilePath), accessMode: .read)
+              {
+                textEncoder2Archive = zipArchive
+                let rootObject = try Interpreter.unpickle(zip: zipArchive)
+                textEncoder2StateDict = [String: TensorDescriptor]()
+                let originalStateDict =
+                  rootObject["state_dict"] as? Interpreter.Dictionary ?? rootObject
+                originalStateDict.forEach { key, value in
+                  guard let value = value as? TensorDescriptor else { return }
+                  if key.hasPrefix("text_projection") {
+                    textEncoder2StateDict["cond_stage_model.model.text_projection"] = value
+                    if key.hasSuffix(".weight") {
+                      textEncoder2TextProjectionTransposed = true
+                    }
+                  } else {
+                    textEncoder2StateDict["cond_stage_model.transformer.\(key)"] = value
+                  }
+                  textEncoder2StateDict[key] = value
+                }
+              } else {
+                throw UnpickleError.dataNotFound
+              }
+            }
+            for (key, value) in textEncoder2StateDict {
               if key.hasPrefix("conditioner.embedders.1.") {
-                textStateDict["cond_stage_model." + key.dropFirst(24)] = value
+                textEncoder2StateDict["cond_stage_model." + key.dropFirst(24)] = value
               }
             }
             textModel.compile(inputs: tokensTensor, positionTensor, causalAttentionMask)
-            try textModelReader(textStateDict, archive)
+            try textModelReader(textEncoder2StateDict, textEncoder2Archive)
             try graph.openStore(filePath) { store in
               store.removeAll()
-              if let text_projection = textStateDict["cond_stage_model.model.text_projection"]
-                ?? textStateDict["cond_stage_model.text_projection"]
+              if let text_projection = textEncoder2StateDict[
+                "cond_stage_model.model.text_projection"]
+                ?? textEncoder2StateDict["cond_stage_model.text_projection"]
               {
-                try archive.with(text_projection) {
-                  store.write("text_projection", tensor: $0)
+                if textEncoder2TextProjectionTransposed {
+                  try textEncoder2Archive.with(text_projection) { tensor in
+                    let textProjection = graph.variable(
+                      Tensor<FloatType>(
+                        from: tensor)
+                    ).toGPU(0)
+                    store.write(
+                      "text_projection", tensor: textProjection.transposed(0, 1).toCPU().rawValue)
+                  }
+                } else {
+                  try textEncoder2Archive.with(text_projection) {
+                    store.write("text_projection", tensor: $0)
+                  }
                 }
               }
               store.write("text_model", model: textModel)
@@ -452,6 +536,30 @@ public final class ModelImporter {
         graph.openStore(filePath) {
           $0.removeAll()
           $0.write("unet_fixed", model: unetFixed)
+        }
+      }
+      if modelVersion == .v1 || modelVersion == .v2 {
+        for (key, value) in stateDict {
+          if !key.hasPrefix("model.diffusion_model.") {
+            stateDict["model.diffusion_model.\(key)"] = value
+          }
+        }
+        for (key, value) in stateDict {
+          for name in DiffusersMapping.UNetPartials {
+            if key.contains(name.1) {
+              var newKey = key.replacingOccurrences(of: name.1, with: name.0)
+              if key.contains(".resnets.") {
+                for name in DiffusersMapping.ResNetsPartials {
+                  if newKey.contains(name.1) {
+                    newKey = newKey.replacingOccurrences(of: name.1, with: name.0)
+                    break
+                  }
+                }
+              }
+              stateDict[newKey] = value
+              break
+            }
+          }
         }
       }
       // In case it is not on high performance device and it is SDXL model, read the parameters directly from the mapping.
