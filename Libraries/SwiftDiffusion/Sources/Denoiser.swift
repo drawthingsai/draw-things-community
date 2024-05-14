@@ -510,13 +510,16 @@ extension Denoiser {
     public func alphaCumprod(timestep: Float, shift: Double) -> Double {
       return linearDiscretization.alphaCumprod(timestep: timestep, shift: shift)
     }
-    private static func logLinearInterpolation(timesteps: [Int], steps: Int) -> [Int] {
+    private func logLinearInterpolation(timesteps: [Int], steps: Int) -> [Int] {
       guard steps + 1 != timesteps.count else {
         return timesteps
       }
       var ys = [Double]()
       for i in 0..<(timesteps.count - 1) {
-        ys.append(log(Double(timesteps[timesteps.count - 2 - i])))
+        let alphaCumprod = linearDiscretization.alphaCumprod(
+          timestep: Float(timesteps[timesteps.count - 2 - i]), shift: 1)
+        let sigma = ((1.0 - alphaCumprod) / alphaCumprod).squareRoot()
+        ys.append(log(sigma))
       }
       var scaledReverseTimesteps = [Int]()
       for i in 0..<steps {
@@ -525,7 +528,10 @@ extension Denoiser {
         let y1 = min(Int(y.rounded(.up)), ys.count - 1)
         let a = y - Double(y0)
         let scaledYs = (1 - a) * ys[y0] + a * ys[y1]
-        scaledReverseTimesteps.append(Int(exp(scaledYs).rounded()))
+        let sigma = exp(scaledYs)
+        let alphaCumprod = 1.0 / (sigma * sigma + 1)
+        let timestep = linearDiscretization.timestep(for: alphaCumprod)
+        scaledReverseTimesteps.append(Int(timestep.rounded()))
       }
       return scaledReverseTimesteps.reversed() + [0]
     }
@@ -534,7 +540,7 @@ extension Denoiser {
       guard !alphasCumprod.isEmpty && !samplingTimesteps.isEmpty else {
         return linearDiscretization.alphasCumprod(steps: steps, shift: shift)
       }
-      let scaledTimesteps = Self.logLinearInterpolation(timesteps: samplingTimesteps, steps: steps)
+      let scaledTimesteps = logLinearInterpolation(timesteps: samplingTimesteps, steps: steps)
       guard scaledTimesteps.count == steps + 1, steps > 0 else {
         return linearDiscretization.alphasCumprod(steps: steps, shift: shift)
       }
