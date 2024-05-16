@@ -422,7 +422,7 @@ let SharedScript = """
           return {"type": "plainText", "value": value};
         },
         image(src, height, selectable) {
-          return {"type": "image", "src": src, "selectable": selectable};
+          return {"type": "image", "src": src, "selectable": selectable, "height": height};
         }
       }
       widget.slider.percent = {"percent": true};
