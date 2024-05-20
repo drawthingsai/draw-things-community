@@ -18,6 +18,7 @@ public struct ScriptZoo {
     public var description: String?
     public var author: String?
     public var tags: [String]?
+
     public init(
       name: String, file: String, filePath: String?, isSampleDuplicate: Bool? = nil,
       type: ScriptType? = nil, description: String? = nil, author: String? = nil,
@@ -115,5 +116,11 @@ public struct ScriptZoo {
   public static func contentOf(_ path: String) -> String? {
     guard let data = FileManager.default.contents(atPath: path) else { return nil }
     return String(data: data, encoding: .utf8)
+  }
+}
+
+extension ScriptZoo.Script {
+  public var isImageToImage: Bool {
+    tags?.first(where: { $0 == "image-to-image" }) != nil
   }
 }
