@@ -102,6 +102,7 @@ extension SupportedPrefix {
   func loadLayerFromSrc(_ srcContent: String, _ type: String)
   func loadLayerFromJson(_ json: String, _ type: String)
   func saveLayerSrc(_ type: String) -> String?
+  func clearMoodboard()
   func extractDepthMap()
   func detectFaces() -> [[String: Any]]
   func detectHands() -> [[String: Any]]
@@ -140,6 +141,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func loadLayerFromSrc(_ srcContent: String, type: String) throws
   func loadLayerFromJson(_ json: String, type: String) throws
   func saveLayerData(type: String) throws -> Data?
+  func clearMoodboard() throws
   func extractDepthMap() throws
   func detectFaces() throws -> [CGRect]
   func detectHands() throws -> [CGRect]
@@ -601,6 +603,13 @@ extension ScriptExecutor: JSInterop {
     return forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
       try delegate.extractDepthMap()
+    }
+  }
+
+  func clearMoodboard() {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      try delegate.clearMoodboard()
     }
   }
 

@@ -298,7 +298,7 @@ let SharedScript = """
       loadCustomFromPhotos() {
         __dtHooks.loadLayerFromPhotos("custom");
       },
-      loadMoodboardFromPhotos() {
+      addToMoodboardFromPhotos() {
         __dtHooks.loadLayerFromPhotos("shuffle");
       },
       loadMaskFromFiles() {
@@ -319,7 +319,7 @@ let SharedScript = """
       loadCustomFromFiles() {
         __dtHooks.loadLayerFromFiles("custom");
       },
-      loadMoodboardFromFiles() {
+      addToMoodboardFromFiles() {
         __dtHooks.loadLayerFromFiles("shuffle");
       },
       loadMaskFromSrc(srcContent) {
@@ -340,11 +340,14 @@ let SharedScript = """
       loadCustomFromSrc(srcContent) {
         __dtHooks.loadLayerFromSrc(srcContent, "custom");
       },
-      loadMoodboardFromSrc(srcContent) {
+      addToMoodboardFromSrc(srcContent) {
         __dtHooks.loadLayerFromSrc(srcContent, "shuffle");
       },
       loadPoseFromJson(jsonString) {
         __dtHooks.loadLayerFromJson(jsonString, "pose");
+      },
+      clearMoodboard() {
+        __dtHooks.clearMoodboard();
       },
       saveDepthMapSrc() {
         return __dtHooks.saveLayerSrc("depthMap");
@@ -370,6 +373,15 @@ let SharedScript = """
       },
       loadCustomLayerFromPhotos() {
         __dtHooks.loadLayerFromPhotos("custom");
+      },
+      loadMoodboardFromPhotos() {
+        __dtHooks.loadLayerFromPhotos("shuffle");
+      },
+      loadMoodboardFromFiles() {
+        __dtHooks.loadLayerFromFiles("shuffle");
+      },
+      loadMoodboardFromSrc(srcContent) {
+        __dtHooks.loadLayerFromSrc(srcContent, "shuffle");
       }
     };
 
