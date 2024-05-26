@@ -349,6 +349,9 @@ let SharedScript = """
       clearMoodboard() {
         __dtHooks.clearMoodboard();
       },
+      removeFromMoodboardAt(index) {
+        __dtHooks.removeFromMoodboardAt(index);
+      },
       saveDepthMapSrc() {
         return __dtHooks.saveLayerSrc("depthMap");
       },

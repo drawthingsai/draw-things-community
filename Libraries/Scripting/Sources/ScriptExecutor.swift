@@ -104,6 +104,7 @@ extension SupportedPrefix {
   func saveLayerSrc(_ type: String) -> String?
   func clearMoodboard()
   func extractDepthMap()
+  func removeFromMoodboardAt(_ index: Int)
   func detectFaces() -> [[String: Any]]
   func detectHands() -> [[String: Any]]
   func downloadBuiltins(_ files: [String])
@@ -143,6 +144,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func saveLayerData(type: String) throws -> Data?
   func clearMoodboard() throws
   func extractDepthMap() throws
+  func removeFromMoodboardAt(_ index: Int) throws
   func detectFaces() throws -> [CGRect]
   func detectHands() throws -> [CGRect]
   func downloadBuiltins(_ files: [String]) throws
@@ -175,6 +177,7 @@ extension ScriptExecutor: JSInterop {
   public enum CancellationError: Error {
     case cancelled
   }
+
   func forwardExceptionsToJS<T: DefaultCreatable>(_ block: () throws -> T) -> T {
     do {
       return try block()
@@ -610,6 +613,13 @@ extension ScriptExecutor: JSInterop {
     return forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
       try delegate.clearMoodboard()
+    }
+  }
+
+  func removeFromMoodboardAt(_ index: Int) {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      try delegate.removeFromMoodboardAt(index)
     }
   }
 
