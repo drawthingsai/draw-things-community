@@ -225,67 +225,54 @@ public enum StableDiffusionMapping {
   }()
   public static let OpenCLIPTextModelG: [String: [String]] = {
     var textModel = [String: [String]]()
-    textModel["cond_stage_model.transformer.text_model.embeddings.position_embedding.weight"] = [
+    textModel["cond_stage_model.model.positional_embedding"] = [
       "t-0-0"
     ]
-    textModel["cond_stage_model.transformer.text_model.embeddings.token_embedding.weight"] = [
+    textModel["cond_stage_model.model.token_embedding.weight"] = [
       "t-1-0"
     ]
     for i in 0..<32 {
-      textModel["cond_stage_model.transformer.text_model.encoder.layers.\(i).layer_norm1.weight"] =
+      textModel["cond_stage_model.model.transformer.resblocks.\(i).ln_1.weight"] =
         ["t-\(i * 8 + 2)-0"]
-      textModel["cond_stage_model.transformer.text_model.encoder.layers.\(i).layer_norm1.bias"] = [
+      textModel["cond_stage_model.model.transformer.resblocks.\(i).ln_1.bias"] = [
         "t-\(i * 8 + 2)-1"
       ]
       textModel[
-        "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.q_proj.weight"] = [
-          "t-\(i * 8 + 3)-0"
+        "cond_stage_model.model.transformer.resblocks.\(i).attn.in_proj_weight"] = [
+          "t-\(i * 8 + 3)-0", "t-\(i * 8 + 4)-0", "t-\(i * 8 + 5)-0",
         ]
       textModel[
-        "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.q_proj.bias"] =
-        ["t-\(i * 8 + 3)-1"]
-      textModel[
-        "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.k_proj.weight"] = [
-          "t-\(i * 8 + 4)-0"
+        "cond_stage_model.model.transformer.resblocks.\(i).attn.in_proj_bias"] = [
+          "t-\(i * 8 + 3)-1", "t-\(i * 8 + 4)-1", "t-\(i * 8 + 5)-1",
         ]
       textModel[
-        "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.k_proj.bias"] =
-        ["t-\(i * 8 + 4)-1"]
-      textModel[
-        "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.v_proj.weight"] = [
-          "t-\(i * 8 + 5)-0"
-        ]
-      textModel[
-        "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.v_proj.bias"] =
-        ["t-\(i * 8 + 5)-1"]
-      textModel[
-        "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.out_proj.weight"] = [
+        "cond_stage_model.model.transformer.resblocks.\(i).attn.out_proj.weight"] = [
           "t-\(i * 8 + 6)-0"
         ]
       textModel[
-        "cond_stage_model.transformer.text_model.encoder.layers.\(i).self_attn.out_proj.bias"] = [
+        "cond_stage_model.model.transformer.resblocks.\(i).attn.out_proj.bias"] = [
           "t-\(i * 8 + 6)-1"
         ]
-      textModel["cond_stage_model.transformer.text_model.encoder.layers.\(i).layer_norm2.weight"] =
+      textModel["cond_stage_model.model.transformer.resblocks.\(i).ln_2.weight"] =
         ["t-\(i * 8 + 7)-0"]
-      textModel["cond_stage_model.transformer.text_model.encoder.layers.\(i).layer_norm2.bias"] = [
+      textModel["cond_stage_model.model.transformer.resblocks.\(i).ln_2.bias"] = [
         "t-\(i * 8 + 7)-1"
       ]
-      textModel["cond_stage_model.transformer.text_model.encoder.layers.\(i).mlp.fc1.weight"] = [
+      textModel["cond_stage_model.model.transformer.resblocks.\(i).mlp.c_fc.weight"] = [
         "t-\(i * 8 + 8)-0"
       ]
-      textModel["cond_stage_model.transformer.text_model.encoder.layers.\(i).mlp.fc1.bias"] = [
+      textModel["cond_stage_model.model.transformer.resblocks.\(i).mlp.c_fc.bias"] = [
         "t-\(i * 8 + 8)-1"
       ]
-      textModel["cond_stage_model.transformer.text_model.encoder.layers.\(i).mlp.fc2.weight"] = [
+      textModel["cond_stage_model.model.transformer.resblocks.\(i).mlp.c_proj.weight"] = [
         "t-\(i * 8 + 9)-0"
       ]
-      textModel["cond_stage_model.transformer.text_model.encoder.layers.\(i).mlp.fc2.bias"] = [
+      textModel["cond_stage_model.model.transformer.resblocks.\(i).mlp.c_proj.bias"] = [
         "t-\(i * 8 + 9)-1"
       ]
     }
-    textModel["cond_stage_model.transformer.text_model.final_layer_norm.weight"] = ["t-258-0"]
-    textModel["cond_stage_model.transformer.text_model.final_layer_norm.bias"] = ["t-258-1"]
+    textModel["cond_stage_model.model.ln_final.weight"] = ["t-258-0"]
+    textModel["cond_stage_model.model.ln_final.bias"] = ["t-258-1"]
     return textModel
   }()
   public static let UNet: [String: [String]] = [
