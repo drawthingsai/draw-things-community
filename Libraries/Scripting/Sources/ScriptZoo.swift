@@ -9,6 +9,23 @@ public struct ScriptZoo {
     case community
   }
 
+  public enum ThumbnailImage: Codable, Equatable, Hashable {
+    case comparableImage(Image, Image)
+    case plainImage(Image)
+  }
+
+  public struct Image: Codable, Equatable, Hashable {
+    public var url: String
+    public var tags: [String]
+
+    public init(
+      url: String, tags: [String]
+    ) {
+      self.url = url
+      self.tags = tags
+    }
+  }
+
   public struct Script: Codable, Equatable, Hashable {
     public var name: String
     public var file: String
@@ -18,11 +35,11 @@ public struct ScriptZoo {
     public var description: String?
     public var author: String?
     public var tags: [String]?
-
+    public var images: [ThumbnailImage]?
     public init(
       name: String, file: String, filePath: String?, isSampleDuplicate: Bool? = nil,
       type: ScriptType? = nil, description: String? = nil, author: String? = nil,
-      tags: [String]? = nil
+      tags: [String]? = nil, images: [ThumbnailImage]? = nil
     ) {
       self.name = name
       self.file = file
@@ -32,6 +49,7 @@ public struct ScriptZoo {
       self.description = description
       self.author = author
       self.tags = tags
+      self.images = images
     }
   }
 
