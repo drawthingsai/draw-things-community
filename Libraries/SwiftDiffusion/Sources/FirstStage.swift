@@ -166,7 +166,7 @@ extension FirstStage {
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       decoder =
         existingDecoder
-        ?? WurstchenStageADecoder(batchSize: 1, height: startHeight * 2, width: startWidth * 2)
+        ?? WurstchenStageADecoder(batchSize: 1, height: startHeight * 2, width: startWidth * 2).0
       if existingDecoder == nil {
         if highPrecision {
           decoder.compile(
@@ -450,7 +450,7 @@ extension FirstStage {
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 16, startWidth) : startWidth
       tileOverlap = tiledDiffusion.tileOverlap * 16
-      encoder = existingEncoder ?? WurstchenStageAEncoder(batchSize: 1)
+      encoder = existingEncoder ?? WurstchenStageAEncoder(batchSize: 1).0
       if existingEncoder == nil {
         encoder.compile(inputs: x[0..<1, 0..<(tiledHeight * 4), 0..<(tiledWidth * 4), 0..<shape[3]])
         graph.openStore(

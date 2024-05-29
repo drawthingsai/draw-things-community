@@ -322,7 +322,7 @@ extension UNetFromNNC {
       tiledWidth = startWidth
       tiledHeight = startHeight
       tileScaleFactor = 1
-      unet = WurstchenStageC(
+      (unet, _) = WurstchenStageC(
         batchSize: batchSize, height: startHeight, width: startWidth,
         t: (tokenLengthUncond + 8, tokenLengthCond + 8),
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
@@ -334,7 +334,7 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 16, startHeight) : startHeight
       tileScaleFactor = 16
-      unet = WurstchenStageB(
+      (unet, _) = WurstchenStageB(
         batchSize: batchSize, cIn: 4, height: tiledHeight, width: tiledWidth,
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
     }

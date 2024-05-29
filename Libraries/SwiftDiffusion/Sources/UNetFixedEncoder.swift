@@ -277,7 +277,7 @@ extension UNetFixedEncoder {
       let batchSize = textEncoding[0].shape[0]
       let emptyImage = graph.variable(.GPU(0), .HWC(batchSize, 1, 1280), of: FloatType.self)
       emptyImage.full(0)
-      let stageCFixed = WurstchenStageCFixed(
+      let (stageCFixed, _) = WurstchenStageCFixed(
         batchSize: batchSize, t: (tokenLengthUncond + 8, tokenLengthCond + 8),
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
       stageCFixed.compile(
@@ -317,7 +317,7 @@ extension UNetFixedEncoder {
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
       let effnetHeight = textEncoding[textEncoding.count - 1].shape[1]
       let effnetWidth = textEncoding[textEncoding.count - 1].shape[2]
-      let stageBFixed = WurstchenStageBFixed(
+      let (stageBFixed, _) = WurstchenStageBFixed(
         batchSize: cfgChannelsAndBatchSize, height: startHeight, width: startWidth,
         effnetHeight: effnetHeight, effnetWidth: effnetWidth,
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
