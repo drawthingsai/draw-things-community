@@ -94,7 +94,7 @@ public final class ModelImporter {
       modelVersion = .wurstchenStageC
       modifier = .none
       inputDim = 16
-      expectedTotalAccess = 1924
+      expectedTotalAccess = 1550
     } else {
       guard
         let tokey = stateDict[
@@ -679,6 +679,7 @@ public final class ModelImporter {
                         "__\(modelPrefix)__[\(name)]",
                         tensor: tensor[(i * count)..<((i + 1) * count)].copied())
                     }
+                    let _ = interrupt()
                   }
                 } else if let name = value.first {
                   if name.contains("time_mixer") {
@@ -691,6 +692,7 @@ public final class ModelImporter {
                     let tensor = Tensor<FloatType>(from: tensor)
                     store.write("__\(modelPrefix)__[\(name)]", tensor: tensor)
                   }
+                  let _ = interrupt()
                 }
               }
             }
@@ -713,9 +715,11 @@ public final class ModelImporter {
                         "__\(modelPrefix)_fixed__[\(name)]",
                         tensor: tensor[(i * count)..<((i + 1) * count)].copied())
                     }
+                    let _ = interrupt()
                   }
                 } else if let name = value.first {
                   store.write("__\(modelPrefix)_fixed__[\(name)]", tensor: tensor)
+                  let _ = interrupt()
                 }
               }
             }
@@ -745,7 +749,8 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .wurstchenStageC:
-          if $0.keys.count != 1550 {
+          // The first number is the number of tensors in stage c file, the second is the ones with effnet and previewer.
+          if $0.keys.count != 1550 && $0.keys.count != 1550 + 374 {
             throw Error.tensorWritesFailed
           }
         case .kandinsky21, .wurstchenStageB:
@@ -856,5 +861,24 @@ public final class ModelImporter {
       }
     }
     return (filePaths, modelVersion, modifier)
+  }
+}
+
+extension ModelImporter {
+  public static func merge(efficientNetAndPreviewer: String, into file: String) {
+    let graph = DynamicGraph()
+    graph.openStore(efficientNetAndPreviewer, flags: .readOnly) { fromStore in
+      let keys = fromStore.keys.filter {
+        $0.hasPrefix("__effnet__[") || $0.hasPrefix("__previewer__[")
+      }
+      graph.openStore(file, flags: .truncateWhenClose) { toStore in
+        for key in keys {
+          guard let tensor = fromStore.read(key, codec: [.q6p, .q8p, .ezm7, .externalData]) else {
+            continue
+          }
+          toStore.write(key, tensor: tensor)
+        }
+      }
+    }
   }
 }

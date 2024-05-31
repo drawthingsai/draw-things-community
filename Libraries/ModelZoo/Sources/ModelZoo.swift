@@ -20,7 +20,7 @@ public struct ModelZoo: DownloadZoo {
     case .svdI2v:
       return "Stable Video Diffusion"
     case .wurstchenStageC, .wurstchenStageB:
-      return "Stable Cascade (Wurstchen v3.0)"
+      return "Stable Cascade (Würstchen v3.0)"
     }
   }
 
@@ -283,6 +283,8 @@ public struct ModelZoo: DownloadZoo {
       "18ddd151c7ae188b6a0036c72bf8b7cd395479472400a3ed4d1eb8e5e65b36e3",
     "open_clip_vit_h14_visual_proj_f16.ckpt":
       "ef03b8ac7805d5a862db048c452c4dbbd295bd95fed0bf5dae50a6e98815d30f",
+    "wurstchen_3.0_stage_c_effnet_previewer_f32_f16.ckpt":
+      "fd1c698895afc14e68a0d7690c787400796114d2bfac0df254598d8207f93f0f",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]

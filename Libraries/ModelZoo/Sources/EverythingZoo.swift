@@ -26,7 +26,6 @@ public struct EverythingZoo: DownloadZoo {
     "dino_v2_f16.ckpt": "0307862ca24f4021e585f2a6f849a8ec97fbede35d08568344e860ba7f0bdd9d",
     "is_net_v1.1_fp16.ckpt": "979e667a1ab7f9600b875dedc528c855ec6f12af1f8e8bfed477a785abd694a5",
     "film_1.0_f16.ckpt": "6716ef2f07e1479b5b2d6d5d3756ca221da6674f2c2a632c421d0fa41676f9c3",
-
   ]
 
   static let builtinSpecifications: [Specification] = [
