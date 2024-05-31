@@ -292,6 +292,12 @@ extension UNetFixedEncoder {
               "stage_c_fixed", model: stageCFixed, codec: [.q6p, .q8p, .ezm7, .jit, .externalData]
             ) {
               name, _, _, shape in
+              var name = name
+              if name.hasPrefix("__stage_c_fixed__")
+                && (name.contains(".keys") || name.contains(".values"))
+              {
+                name = "__stage_c__" + name.dropFirst(17)
+              }
               return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
             }
           }

@@ -86,61 +86,70 @@ public final class ModelImporter {
       throw UnpickleError.dataNotFound
     }
     let isSvdI2v = stateDict.keys.contains { $0.contains("time_mixer") }
-    guard
-      let tokey = stateDict[
-        "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight"]
-        ?? stateDict["down_blocks.1.attentions.0.transformer_blocks.0.attn2.to_k.weight"],
-      let inputConv2d = stateDict["model.diffusion_model.input_blocks.0.0.weight"]
-        ?? stateDict["conv_in.weight"]
-    else {
-      throw UnpickleError.tensorNotFound
-    }
-    let inputDim = inputConv2d.shape.count >= 2 ? inputConv2d.shape[1] : 4
+    let isWurstchenStageC = stateDict.keys.contains { $0.contains("clip_txt_mapper.") }
     let modifier: SamplerModifier
-    switch inputDim {
-    case 9:
-      modifier = .inpainting
-    case 8:
-      if isSvdI2v {
-        // For Stable Video Diffusion.
-        modifier = .none
-      } else {
-        modifier = .editing
-      }
-    case 5:
-      modifier = .depth
-    default:
-      modifier = .none
-    }
     let modelVersion: ModelVersion
-    switch tokey.shape.last {
-    case 2048:
-      if !stateDict.keys.contains(where: {
-        $0.contains("mid_block.attentions.0.transformer_blocks.")
-          || $0.contains("middle_block.1.transformer_blocks.")
-      }) {
-        modelVersion = .ssd1b
-        expectedTotalAccess = 944
-      } else {
-        modelVersion = .sdxlBase
-        expectedTotalAccess = 1680
+    let inputDim: Int
+    if isWurstchenStageC {
+      modelVersion = .wurstchenStageC
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 1924
+    } else {
+      guard
+        let tokey = stateDict[
+          "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight"]
+          ?? stateDict["down_blocks.1.attentions.0.transformer_blocks.0.attn2.to_k.weight"],
+        let inputConv2d = stateDict["model.diffusion_model.input_blocks.0.0.weight"]
+          ?? stateDict["conv_in.weight"]
+      else {
+        throw UnpickleError.tensorNotFound
       }
-    case 1280:
-      modelVersion = .sdxlRefiner
-      expectedTotalAccess = 1220
-    case 1024:
-      if isSvdI2v {
-        modelVersion = .svdI2v
-        expectedTotalAccess = 686
-      } else {
-        modelVersion = .v2
-        expectedTotalAccess = 686
+      inputDim = inputConv2d.shape.count >= 2 ? inputConv2d.shape[1] : 4
+      switch inputDim {
+      case 9:
+        modifier = .inpainting
+      case 8:
+        if isSvdI2v {
+          // For Stable Video Diffusion.
+          modifier = .none
+        } else {
+          modifier = .editing
+        }
+      case 5:
+        modifier = .depth
+      default:
+        modifier = .none
       }
-    case 768:
-      modelVersion = .v1
-      expectedTotalAccess = 686
-    default:
-      throw UnpickleError.tensorNotFound
+      switch tokey.shape.last {
+      case 2048:
+        if !stateDict.keys.contains(where: {
+          $0.contains("mid_block.attentions.0.transformer_blocks.")
+            || $0.contains("middle_block.1.transformer_blocks.")
+        }) {
+          modelVersion = .ssd1b
+          expectedTotalAccess = 944
+        } else {
+          modelVersion = .sdxlBase
+          expectedTotalAccess = 1680
+        }
+      case 1280:
+        modelVersion = .sdxlRefiner
+        expectedTotalAccess = 1220
+      case 1024:
+        if isSvdI2v {
+          modelVersion = .svdI2v
+          expectedTotalAccess = 686
+        } else {
+          modelVersion = .v2
+          expectedTotalAccess = 686
+        }
+      case 768:
+        modelVersion = .v1
+        expectedTotalAccess = 686
+      default:
+        throw UnpickleError.tensorNotFound
+      }
     }
     if isTextEncoderCustomized {
       switch modelVersion {
@@ -154,7 +163,9 @@ public final class ModelImporter {
         expectedTotalAccess += 388
       case .svdI2v:
         throw Error.noTextEncoder
-      case .kandinsky21, .wurstchenStageC, .wurstchenStageB:
+      case .wurstchenStageC, .wurstchenStageB:
+        throw Error.noTextEncoder
+      case .kandinsky21:
         fatalError()
       }
     }
@@ -374,7 +385,10 @@ public final class ModelImporter {
     case .sdxlBase, .sdxlRefiner, .ssd1b:
       conditionalLength = 1280
       batchSize = 2
-    case .kandinsky21, .wurstchenStageC, .wurstchenStageB:
+    case .wurstchenStageC:
+      conditionalLength = 1280
+      batchSize = 2
+    case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
     try graph.withNoGrad {
@@ -389,11 +403,12 @@ public final class ModelImporter {
       let cTensor = graph.variable(.CPU, .HWC(batchSize, 77, conditionalLength), of: FloatType.self)
       var cArr = [cTensor]
       let unet: Model
-      let unetReader: PythonReader
+      var unetReader: PythonReader?
       let unetMapper: ModelWeightMapper?
       let filePath = ModelZoo.filePathForModelDownloaded("\(self.modelName)_f16.ckpt")
       if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
-        || modelVersion == .svdI2v
+        || modelVersion == .svdI2v || modelVersion == .wurstchenStageB
+        || modelVersion == .wurstchenStageC
       {
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false)
@@ -405,20 +420,22 @@ public final class ModelImporter {
         for c in cArr {
           c.full(0)
         }
-        let vector: DynamicGraph.Tensor<FloatType>
+        let vectors: [DynamicGraph.Tensor<FloatType>]
         switch modelVersion {
         case .sdxlBase, .ssd1b:
-          vector = graph.variable(.CPU, .WC(batchSize, 2816), of: FloatType.self)
+          vectors = [graph.variable(.CPU, .WC(batchSize, 2816), of: FloatType.self)]
         case .sdxlRefiner:
-          vector = graph.variable(.CPU, .WC(batchSize, 2560), of: FloatType.self)
+          vectors = [graph.variable(.CPU, .WC(batchSize, 2560), of: FloatType.self)]
         case .svdI2v:
-          vector = graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)
-        case .kandinsky21, .v1, .v2, .wurstchenStageC, .wurstchenStageB:
+          vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
+        case .wurstchenStageC, .wurstchenStageB:
+          vectors = []
+        case .kandinsky21, .v1, .v2:
           fatalError()
         }
         // These values doesn't matter, it won't affect the model shape, just the input vector.
         cArr =
-          [vector]
+          vectors
           + fixedEncoder.encode(
             textEncoding: cArr.map({ $0.toGPU(0) }), batchSize: batchSize, startHeight: 64,
             startWidth: 64,
@@ -504,7 +521,17 @@ public final class ModelImporter {
           inputAttentionRes: [1: [1, 1], 2: [1, 1], 4: [1, 1]], middleAttentionBlocks: 1,
           outputAttentionRes: [1: [1, 1, 1], 2: [1, 1, 1], 4: [1, 1, 1]], usesFlashAttention: .none,
           isTemporalMixEnabled: true)
-      case .kandinsky21, .wurstchenStageC, .wurstchenStageB:
+      case .wurstchenStageC:
+        (unet, unetMapper) = WurstchenStageC(
+          batchSize: batchSize, height: 24, width: 24,
+          t: (77 + 8, 77 + 8),
+          usesFlashAttention: .none)
+        unetReader = nil
+        (unetFixed, unetFixedMapper) = WurstchenStageCFixed(
+          batchSize: batchSize, t: (77 + 8, 77 + 8),
+          usesFlashAttention: .none)
+        unetFixedReader = nil
+      case .kandinsky21, .wurstchenStageB:
         fatalError()
       }
       let crossattn: [DynamicGraph.Tensor<FloatType>]
@@ -526,7 +553,13 @@ public final class ModelImporter {
         }
         crossattn =
           [graph.variable(.CPU, .HWC(batchSize, 1, 1024), of: FloatType.self)] + numFramesEmb
-      case .v1, .v2, .kandinsky21, .wurstchenStageC, .wurstchenStageB:
+      case .wurstchenStageC:
+        crossattn = [
+          graph.variable(.CPU, .HWC(batchSize, 77, 1280), of: FloatType.self),
+          graph.variable(.CPU, .HWC(batchSize, 1, 1280), of: FloatType.self),
+          graph.variable(.CPU, .HWC(batchSize, 1, 1280), of: FloatType.self),
+        ]
+      case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
       }
       let isDiffusersFormat = stateDict.keys.contains { $0.hasPrefix("mid_block.") }
@@ -563,15 +596,25 @@ public final class ModelImporter {
         }
       }
       // In case it is not on high performance device and it is SDXL model, read the parameters directly from the mapping.
-      if (modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
-        || modelVersion == .svdI2v)
-        && (!DeviceCapability.isHighPerformance || isDiffusersFormat),
-        let unetMapper = unetMapper, let unetFixedMapper = unetFixedMapper,
+      if unetMapper != nil && (!DeviceCapability.isHighPerformance || isDiffusersFormat) {
+        unetReader = nil
+      }
+      if let unetReader = unetReader {
+        unet.compile(inputs: [xTensor, tEmb] + cArr)
+        try! unetReader(stateDict, archive)
+        graph.openStore(filePath) {
+          if unetFixed == nil && unetFixedReader == nil {
+            $0.removeAll()
+          }
+          $0.write("unet", model: unet)
+        }
+      } else if let unetMapper = unetMapper, let unetFixedMapper = unetFixedMapper,
         let unetFixed = unetFixed
       {
         try graph.openStore(filePath) { store in
           let UNetMapping: [String: [String]]
           let UNetMappingFixed: [String: [String]]
+          let modelPrefix: String
           switch modelVersion {
           case .sdxlBase:
             if isDiffusersFormat {
@@ -583,6 +626,7 @@ public final class ModelImporter {
               UNetMapping = StableDiffusionMapping.UNetXLBase
               UNetMappingFixed = StableDiffusionMapping.UNetXLBaseFixed
             }
+            modelPrefix = "unet"
           case .sdxlRefiner:
             if isDiffusersFormat {
               unet.compile(inputs: [xTensor, tEmb] + cArr)
@@ -593,17 +637,26 @@ public final class ModelImporter {
               UNetMapping = StableDiffusionMapping.UNetXLRefiner
               UNetMappingFixed = StableDiffusionMapping.UNetXLRefinerFixed
             }
+            modelPrefix = "unet"
           case .ssd1b:
             unet.compile(inputs: [xTensor, tEmb] + cArr)
             unetFixed.compile(inputs: crossattn)
             UNetMapping = unetMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
+            modelPrefix = "unet"
           case .svdI2v:
             unet.compile(inputs: [xTensor, tEmb] + cArr)
             unetFixed.compile(inputs: crossattn)
             UNetMapping = unetMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
-          case .v1, .v2, .kandinsky21, .wurstchenStageC, .wurstchenStageB:
+            modelPrefix = "unet"
+          case .wurstchenStageC:
+            unet.compile(inputs: [xTensor, tEmb] + cArr)
+            unetFixed.compile(inputs: crossattn)
+            UNetMapping = unetMapper(.generativeModels)
+            UNetMappingFixed = unetFixedMapper(.generativeModels)
+            modelPrefix = "stage_c"
+          case .v1, .v2, .kandinsky21, .wurstchenStageB:
             fatalError()
           }
           try store.withTransaction {
@@ -618,12 +671,12 @@ public final class ModelImporter {
                   for (i, name) in value.enumerated() {
                     if tensor.shape.count > 1 {
                       store.write(
-                        "__unet__[\(name)]",
+                        "__\(modelPrefix)__[\(name)]",
                         tensor: tensor[(i * count)..<((i + 1) * count), 0..<tensor.shape[1]]
                           .copied())
                     } else {
                       store.write(
-                        "__unet__[\(name)]",
+                        "__\(modelPrefix)__[\(name)]",
                         tensor: tensor[(i * count)..<((i + 1) * count)].copied())
                     }
                   }
@@ -632,10 +685,11 @@ public final class ModelImporter {
                     var f32Tensor = Tensor<Float>(from: tensor)
                     // Apply sigmoid transformation.
                     f32Tensor[0] = 1.0 / (1.0 + expf(-f32Tensor[0]))
-                    store.write("__unet__[\(name)]", tensor: Tensor<FloatType>(from: f32Tensor))
+                    store.write(
+                      "__\(modelPrefix)__[\(name)]", tensor: Tensor<FloatType>(from: f32Tensor))
                   } else {
                     let tensor = Tensor<FloatType>(from: tensor)
-                    store.write("__unet__[\(name)]", tensor: tensor)
+                    store.write("__\(modelPrefix)__[\(name)]", tensor: tensor)
                   }
                 }
               }
@@ -651,30 +705,21 @@ public final class ModelImporter {
                   for (i, name) in value.enumerated() {
                     if tensor.shape.count > 1 {
                       store.write(
-                        "__unet_fixed__[\(name)]",
+                        "__\(modelPrefix)_fixed__[\(name)]",
                         tensor: tensor[(i * count)..<((i + 1) * count), 0..<tensor.shape[1]]
                           .copied())
                     } else {
                       store.write(
-                        "__unet_fixed__[\(name)]",
+                        "__\(modelPrefix)_fixed__[\(name)]",
                         tensor: tensor[(i * count)..<((i + 1) * count)].copied())
                     }
                   }
                 } else if let name = value.first {
-                  store.write("__unet_fixed__[\(name)]", tensor: tensor)
+                  store.write("__\(modelPrefix)_fixed__[\(name)]", tensor: tensor)
                 }
               }
             }
           }
-        }
-      } else {
-        unet.compile(inputs: [xTensor, tEmb] + cArr)
-        try! unetReader(stateDict, archive)
-        graph.openStore(filePath) {
-          if unetFixed == nil && unetFixedReader == nil {
-            $0.removeAll()
-          }
-          $0.write("unet", model: unet)
         }
       }
       try graph.openStore(filePath) {
@@ -699,7 +744,11 @@ public final class ModelImporter {
           if $0.keys.count != 1396 {
             throw Error.tensorWritesFailed
           }
-        case .kandinsky21, .wurstchenStageC, .wurstchenStageB:
+        case .wurstchenStageC:
+          if $0.keys.count != 1550 {
+            throw Error.tensorWritesFailed
+          }
+        case .kandinsky21, .wurstchenStageB:
           fatalError()
         }
       }

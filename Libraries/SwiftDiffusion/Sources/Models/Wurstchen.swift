@@ -324,10 +324,13 @@ func AttnBlockFixed(
     var mapping = [String: [String]]()
     mapping["\(prefix).kv_mapper.1.weight"] = [kvMapper.weight.name]
     mapping["\(prefix).kv_mapper.1.bias"] = [kvMapper.bias.name]
+    // These will be fill in from the main model.
+    /*
     mapping["\(prefix).attention.attn.in_proj_weight"] = [
       "", tokeys.weight.name, tovalues.weight.name,
     ]
     mapping["\(prefix).attention.attn.in_proj_bias"] = ["", tokeys.bias.name, tovalues.bias.name]
+     */
     return mapping
   }
   if t.0 == t.1 {
@@ -348,7 +351,9 @@ func AttnBlockFixed(
   }
 }
 
-func WurstchenStageCFixed(batchSize: Int, t: (Int, Int), usesFlashAttention: FlashAttentionLevel)
+public func WurstchenStageCFixed(
+  batchSize: Int, t: (Int, Int), usesFlashAttention: FlashAttentionLevel
+)
   -> (Model, ModelWeightMapper)
 {
   let clipText = Input()
@@ -391,12 +396,18 @@ func WurstchenStageCFixed(batchSize: Int, t: (Int, Int), usesFlashAttention: Fla
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
+    mapping["clip_txt_mapper.weight"] = [clipTextMapper.weight.name]
+    mapping["clip_txt_mapper.bias"] = [clipTextMapper.bias.name]
+    mapping["clip_txt_pooled_mapper.weight"] = [clipTextPooledMapper.weight.name]
+    mapping["clip_txt_pooled_mapper.bias"] = [clipTextPooledMapper.bias.name]
+    mapping["clip_img_mapper.weight"] = [clipImgMapper.weight.name]
+    mapping["clip_img_mapper.bias"] = [clipImgMapper.bias.name]
     return mapping
   }
   return (Model([clipText, clipTextPooled, clipImg], outs), mapper)
 }
 
-func WurstchenStageC(
+public func WurstchenStageC(
   batchSize: Int, height: Int, width: Int, t: (Int, Int), usesFlashAttention: FlashAttentionLevel
 ) -> (Model, ModelWeightMapper) {
   let x = Input()
