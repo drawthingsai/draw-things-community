@@ -265,7 +265,11 @@ public final class ControlNetImporter {
             try archive.with(tensorDescriptor) { tensor in
               let tensor = Tensor<FloatType>(from: tensor)
               if value.count > 1 {
-                if key.hasSuffix(".up") {
+                if key.hasSuffix(".down") {
+                  for name in value {
+                    store.write("__controlnet__[\(name)]", tensor: tensor)
+                  }
+                } else {
                   let count = tensor.shape[0] / value.count
                   for (i, name) in value.enumerated() {
                     if tensor.shape.count > 1 {
@@ -278,10 +282,6 @@ public final class ControlNetImporter {
                         "__controlnet__[\(name)]",
                         tensor: tensor[(i * count)..<((i + 1) * count)].copied())
                     }
-                  }
-                } else {
-                  for name in value {
-                    store.write("__controlnet__[\(name)]", tensor: tensor)
                   }
                 }
               } else if let name = value.first {
@@ -298,7 +298,11 @@ public final class ControlNetImporter {
             try archive.with(tensorDescriptor) { tensor in
               let tensor = Tensor<FloatType>(from: tensor)
               if value.count > 1 {
-                if key.hasSuffix(".up") {
+                if key.hasSuffix(".down") {
+                  for name in value {
+                    store.write("__controlnet_fixed__[\(name)]", tensor: tensor)
+                  }
+                } else {
                   let count = tensor.shape[0] / value.count
                   for (i, name) in value.enumerated() {
                     if tensor.shape.count > 1 {
@@ -311,10 +315,6 @@ public final class ControlNetImporter {
                         "__controlnet_fixed__[\(name)]",
                         tensor: tensor[(i * count)..<((i + 1) * count)].copied())
                     }
-                  }
-                } else {
-                  for name in value {
-                    store.write("__controlnet_fixed__[\(name)]", tensor: tensor)
                   }
                 }
               } else if let name = value.first {
