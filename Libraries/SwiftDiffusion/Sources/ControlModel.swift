@@ -261,14 +261,14 @@ extension ControlModel {
         var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
         tensor.withUnsafeMutableBytes {
           let size = shape.reduce(MemoryLayout<Float16>.size, *)
-          memset($0.baseAddress, 0, size)
+          memset($0.baseAddress!, 0, size)
         }
         return tensor
       #else
         var tensor = Tensor<UInt16>(.CPU, format: format, shape: shape)
         tensor.withUnsafeMutableBytes {
           let size = shape.reduce(MemoryLayout<UInt16>.size, *)
-          memset($0.baseAddress, 0, size)
+          memset($0.baseAddress!, 0, size)
         }
         return tensor
       #endif
@@ -276,7 +276,7 @@ extension ControlModel {
       var tensor = Tensor<Float32>(.CPU, format: format, shape: shape)
       tensor.withUnsafeMutableBytes {
         let size = shape.reduce(MemoryLayout<Float32>.size, *)
-        memset($0.baseAddress, 0, size)
+        memset($0.baseAddress!, 0, size)
       }
       return tensor
     case .Float64, .Int32, .Int64, .UInt8:
