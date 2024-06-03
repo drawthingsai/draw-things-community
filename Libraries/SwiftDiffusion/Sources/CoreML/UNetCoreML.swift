@@ -373,16 +373,36 @@ extension UNetFromCoreML {
       }
       let channels = xT.shape[3]
       let insideBatch = channels == 8 ? 3 : 2
-      let batchSize = channels == 8 ? xT.shape[0] / 3 : xT.shape[0] / 2
+      // batchSize should round up.
+      let batchSize = channels == 8 ? (xT.shape[0] + 2) / 3 : (xT.shape[0] + 1) / 2
       let batch: MLArrayBatchProvider
       let conditionalLength = c.shape[2]
       let startHeight = xT.shape[1]
       let startWidth = xT.shape[2]
       if batchSize == 1 {
+        var xTSlice = xT.permuted(0, 3, 1, 2).rawValue.copied().toCPU()
+        var hiddenStates = c.transposed(1, 2).reshaped(.NHWC(c.shape[0], conditionalLength, 1, 77))
+          .rawValue.toCPU()
+        if xT.shape[0] != insideBatch {
+          let oldXTSlice = xTSlice
+          xTSlice = Tensor<FloatType>(.CPU, .NCHW(insideBatch, channels, startHeight, startWidth))
+          for i in 0..<insideBatch {
+            xTSlice[i..<(i + 1), 0..<channels, 0..<startHeight, 0..<startWidth] =
+              oldXTSlice[0..<1, 0..<channels, 0..<startHeight, 0..<startWidth]
+          }
+        }
+        if c.shape[0] != insideBatch {
+          let oldHiddenStates = hiddenStates
+          hiddenStates = Tensor<FloatType>(.CPU, .NHWC(insideBatch, conditionalLength, 1, 77))
+          for i in 0..<insideBatch {
+            hiddenStates[i..<(i + 1), 0..<conditionalLength, 0..<1, 0..<77] =
+              oldHiddenStates[0..<1, 0..<conditionalLength, 0..<1, 0..<77]
+          }
+        }
         let inputs = try! MLDictionaryFeatureProvider(dictionary: [
           "sample": MLMultiArray(
             MLShapedArray<Float>(
-              Tensor<Float>(from: xT.permuted(0, 3, 1, 2).rawValue.copied().toCPU()))
+              Tensor<Float>(from: xTSlice))
           ),
           "timestep": MLMultiArray(
             MLShapedArray<Float>(
@@ -390,16 +410,14 @@ extension UNetFromCoreML {
           "encoder_hidden_states": MLMultiArray(
             MLShapedArray<Float>(
               Tensor<Float>(
-                from: c.transposed(1, 2).reshaped(.NHWC(insideBatch, conditionalLength, 1, 77))
-                  .rawValue
-                  .toCPU()))
+                from: hiddenStates))
           ),
         ])
         batch = MLArrayBatchProvider(array: [inputs])
       } else {
         let xTtensor = xT.permuted(0, 3, 1, 2).rawValue.copied().toCPU()
         let cTensor = c.transposed(1, 2).reshaped(
-          .NHWC(batchSize * insideBatch, conditionalLength, 1, 77)
+          .NHWC(c.shape[0], conditionalLength, 1, 77)
         )
         .rawValue.toCPU()
         var inputs = [MLDictionaryFeatureProvider]()
@@ -407,13 +425,16 @@ extension UNetFromCoreML {
           var slice = Tensor<FloatType>(.CPU, .NCHW(insideBatch, channels, startHeight, startWidth))  // Fixed, for now.
           var hiddenStates = Tensor<FloatType>(.CPU, .NHWC(insideBatch, conditionalLength, 1, 77))  // Fixeed, for now.
           for j in 0..<insideBatch {
+            let sliceStart = i + batchSize * j
+            let xTSliceStart = min(sliceStart, xTtensor.shape[0] - 1)
+            let cSliceStart = min(sliceStart, cTensor.shape[0] - 1)
             slice[j..<(j + 1), 0..<channels, 0..<startHeight, 0..<startWidth] =
               xTtensor[
-                (i + batchSize * j)..<(i + batchSize * j + 1), 0..<channels, 0..<startHeight,
+                xTSliceStart..<(xTSliceStart + 1), 0..<channels, 0..<startHeight,
                 0..<startWidth]
             hiddenStates[j..<(j + 1), 0..<conditionalLength, 0..<1, 0..<77] =
               cTensor[
-                (i + batchSize * j)..<(i + batchSize * j + 1), 0..<conditionalLength, 0..<1, 0..<77]
+                cSliceStart..<(cSliceStart + 1), 0..<conditionalLength, 0..<1, 0..<77]
           }
           inputs.append(
             try! MLDictionaryFeatureProvider(dictionary: [
@@ -450,10 +471,10 @@ extension UNetFromCoreML {
         et = Tensor<FloatType>(from: Tensor(noisePred.shapedArrayValue(of: Float.self)!))
           .permuted(
             0, 2, 3, 1
-          ).copied().toGPU()
+          ).copied().reshaped(format: xT.format, shape: xT.shape).toGPU()
       } else {
         var etc = Tensor<FloatType>(
-          .CPU, .NHWC(batchSize * insideBatch, startHeight, startWidth, 4))
+          .CPU, .NHWC(xT.shape[0], startHeight, startWidth, 4))
         for i in 0..<batchSize {
           let noisePred = resultBatch[i]["noise_pred"]!
           let slice = Tensor<FloatType>(from: Tensor(noisePred.shapedArrayValue(of: Float.self)!))
@@ -461,8 +482,10 @@ extension UNetFromCoreML {
               0, 2, 3, 1
             ).copied()
           for j in 0..<insideBatch {
+            let sliceStart = i + batchSize * j
+            guard sliceStart < etc.shape[0] else { break }
             etc[
-              (i + batchSize * j)..<(i + batchSize * j + 1), 0..<startHeight, 0..<startWidth, 0..<4] =
+              sliceStart..<(sliceStart + 1), 0..<startHeight, 0..<startWidth, 0..<4] =
               slice[j..<(j + 1), 0..<startHeight, 0..<startWidth, 0..<4]
           }
         }
