@@ -1443,7 +1443,8 @@ extension ImageGenerator {
       let modifier = ControlNetZoo.modifierForModel(file)
       let type = ControlNetZoo.typeForModel(file)
       let isPreprocessorDownloaded =
-        ControlNetZoo.preprocessorForModel(file).map { ControlNetZoo.isModelDownloaded($0) } ?? true
+        ControlNetZoo.preprocessorForModel(file).map { ControlNetZoo.isModelDownloaded($0) }
+        ?? false
       let controlMode: Diffusion.ControlMode =
         (type == .controlnet || type == .controlnetlora) && modifier == .shuffle
         ? .control
