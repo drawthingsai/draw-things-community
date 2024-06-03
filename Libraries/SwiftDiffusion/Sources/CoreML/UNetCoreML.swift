@@ -101,7 +101,10 @@ extension UNetFromCoreML {
       let components: [String] =
         ([(filePath as NSString).lastPathComponent]
           + lora.flatMap {
-            [$0.file, ($0.weight * 100).formatted(.number.precision(.fractionLength(0)))]
+            [
+              ($0.file as NSString).lastPathComponent,
+              ($0.weight * 100).formatted(.number.precision(.fractionLength(0))),
+            ]
           })
       let file = String(components.joined(by: "_"))
       let fileManager = FileManager.default
