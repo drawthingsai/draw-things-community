@@ -674,11 +674,11 @@ public struct LoRATrainer {
       switch memorySaver {
       case .minimal, .balanced:
         LoRAConfiguration = LoRANetworkConfiguration(
-          rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true,
+          rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
           gradientCheckpointingFeedForward: true)
       case .speed, .turbo:
         LoRAConfiguration = LoRANetworkConfiguration(
-          rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true)
+          rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false)
       }
       let textModel: [Model]
       let textLoRAMapping: [[Int: Int]]

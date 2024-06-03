@@ -4,13 +4,16 @@ public struct LoRANetworkConfiguration {
   public var rank: Int
   public var scale: Float
   public var highPrecision: Bool
+  public var testing: Bool
   public var gradientCheckpointingFeedForward: Bool
   public init(
-    rank: Int, scale: Float, highPrecision: Bool, gradientCheckpointingFeedForward: Bool = false
+    rank: Int, scale: Float, highPrecision: Bool, testing: Bool = true,
+    gradientCheckpointingFeedForward: Bool = false
   ) {
     self.rank = rank
     self.scale = scale
     self.highPrecision = highPrecision
+    self.testing = testing
     self.gradientCheckpointingFeedForward = gradientCheckpointingFeedForward
   }
 }
@@ -385,7 +388,7 @@ func LoRASelfAttention(
     let unifyheads = LoRADense(count: k * h, configuration: LoRAConfiguration)
     out = unifyheads(out.reshaped([b, hw, h * k]))
     return (tokeys, toqueries, tovalues, unifyheads, Model([x], [out]))
-  } else if b == 1 {
+  } else if !LoRAConfiguration.testing {  // For training, we don't break it down by b * h.
     let keys = tokeys(x).reshaped([b, hw, h, k]).transposed(1, 2)
     let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
       .transposed(1, 2)
