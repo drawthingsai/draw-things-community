@@ -615,8 +615,16 @@ extension ImageGenerator {
     if unconditionalTokensCount > unconditionalTokens.count {
       // Check if we have enough padding tokens to remove.
       let paddingToken = paddingToken ?? tokenizer.endToken
+      let oldUnconditionalTokensCount = unconditionalTokensCount
       for token in unconditionalTokens.reversed() {
         if token != paddingToken {
+          if oldUnconditionalTokensCount > unconditionalTokensCount
+            && paddingToken == tokenizer.endToken
+          {
+            // If paddingToken is endToken, we might removed the endToken in this process,
+            // This is to recognize that situation and add back the endToken.
+            unconditionalTokensCount += 1
+          }
           break
         }
         unconditionalTokensCount -= 1
@@ -638,8 +646,14 @@ extension ImageGenerator {
     if tokensCount > tokens.count {
       // Check if we have enough padding tokens to remove.
       let paddingToken = paddingToken ?? tokenizer.endToken
+      let oldTokensCount = tokensCount
       for token in tokens.reversed() {
         if token != paddingToken {
+          if oldTokensCount > tokensCount && paddingToken == tokenizer.endToken {
+            // If paddingToken is endToken, we might removed the endToken in this process,
+            // This is to recognize that situation and add back the endToken.
+            tokensCount += 1
+          }
           break
         }
         tokensCount -= 1
