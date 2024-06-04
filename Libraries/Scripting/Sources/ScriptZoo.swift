@@ -31,10 +31,13 @@ public struct ScriptZoo {
     public var author: String?
     public var tags: [String]?
     public var images: [Image]?
+    public var baseColor: String?
+    public var favicon: String?
     public init(
       name: String, file: String, filePath: String?, isSampleDuplicate: Bool? = nil,
       type: ScriptType? = nil, description: String? = nil, author: String? = nil,
-      tags: [String]? = nil, images: [Image]? = nil
+      tags: [String]? = nil, images: [Image]? = nil, baseColor: String? = nil,
+      favicon: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -45,6 +48,8 @@ public struct ScriptZoo {
       self.author = author
       self.tags = tags
       self.images = images
+      self.baseColor = baseColor
+      self.favicon = favicon
     }
   }
 
