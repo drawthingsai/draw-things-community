@@ -144,6 +144,24 @@ private func MultiHeadAttention(
         mapping["\(prefix).attention.attn.in_proj_bias"] = [
           toqueries.bias.name, tokeys.bias.name, tovalues.bias.name,
         ]
+        mapping["\(prefix).attention.attn.to_q.weight"] = [
+          toqueries.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_q.bias"] = [
+          toqueries.bias.name
+        ]
+        mapping["\(prefix).attention.attn.to_k.weight"] = [
+          tokeys.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_k.bias"] = [
+          tokeys.bias.name
+        ]
+        mapping["\(prefix).attention.attn.to_v.weight"] = [
+          tovalues.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_v.bias"] = [
+          tovalues.bias.name
+        ]
         mapping["\(prefix).attention.attn.out_proj.weight"] = [
           scaledDotProductAttention.weight.name
         ]
@@ -189,6 +207,24 @@ private func MultiHeadAttention(
         mapping["\(prefix).attention.attn.in_proj_bias"] = [
           toqueries.bias.name, tokeys.bias.name, tovalues.bias.name,
         ]
+        mapping["\(prefix).attention.attn.to_q.weight"] = [
+          toqueries.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_q.bias"] = [
+          toqueries.bias.name
+        ]
+        mapping["\(prefix).attention.attn.to_k.weight"] = [
+          tokeys.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_k.bias"] = [
+          tokeys.bias.name
+        ]
+        mapping["\(prefix).attention.attn.to_v.weight"] = [
+          tovalues.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_v.bias"] = [
+          tovalues.bias.name
+        ]
         mapping["\(prefix).attention.attn.out_proj.weight"] = [unifyheads.weight.name]
         mapping["\(prefix).attention.attn.out_proj.bias"] = [unifyheads.bias.name]
         return mapping
@@ -218,6 +254,24 @@ private func MultiHeadAttention(
         ]
         mapping["\(prefix).attention.attn.in_proj_bias"] = [
           toqueries.bias.name, tokeys.bias.name, tovalues.bias.name,
+        ]
+        mapping["\(prefix).attention.attn.to_q.weight"] = [
+          toqueries.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_q.bias"] = [
+          toqueries.bias.name
+        ]
+        mapping["\(prefix).attention.attn.to_k.weight"] = [
+          tokeys.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_k.bias"] = [
+          tokeys.bias.name
+        ]
+        mapping["\(prefix).attention.attn.to_v.weight"] = [
+          tovalues.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_v.bias"] = [
+          tovalues.bias.name
         ]
         mapping["\(prefix).attention.attn.out_proj.weight"] = [unifyheads.weight.name]
         mapping["\(prefix).attention.attn.out_proj.bias"] = [unifyheads.bias.name]
@@ -273,6 +327,24 @@ private func MultiHeadAttention(
         ]
         mapping["\(prefix).attention.attn.in_proj_bias"] = [
           toqueries.bias.name, tokeys.bias.name, tovalues.bias.name,
+        ]
+        mapping["\(prefix).attention.attn.to_q.weight"] = [
+          toqueries.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_q.bias"] = [
+          toqueries.bias.name
+        ]
+        mapping["\(prefix).attention.attn.to_k.weight"] = [
+          tokeys.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_k.bias"] = [
+          tokeys.bias.name
+        ]
+        mapping["\(prefix).attention.attn.to_v.weight"] = [
+          tovalues.weight.name
+        ]
+        mapping["\(prefix).attention.attn.to_v.bias"] = [
+          tovalues.bias.name
         ]
         mapping["\(prefix).attention.attn.out_proj.weight"] = [unifyheads.weight.name]
         mapping["\(prefix).attention.attn.out_proj.bias"] = [unifyheads.bias.name]

@@ -594,6 +594,13 @@ public final class ModelImporter {
             }
           }
         }
+      } else if modelVersion == .wurstchenStageC {
+        // Remove the model.diffusion_model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          }
+        }
       }
       // In case it is not on high performance device and it is SDXL model, read the parameters directly from the mapping.
       if unetMapper != nil && (!DeviceCapability.isHighPerformance || isDiffusersFormat) {
