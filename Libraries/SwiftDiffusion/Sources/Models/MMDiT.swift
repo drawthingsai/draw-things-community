@@ -210,8 +210,8 @@ func MMDiT(b: Int, t: Int, h: Int, w: Int, layers: Int, usesFlashAttention: Flas
   let linear = Dense(count: 2 * 2 * 16, name: "linear")
   out = linear(out)
   // Unpatchify
-  out = out.reshaped([b, h, w, 2, 2, 16]).permuted(0, 5, 1, 3, 2, 4).contiguous().reshaped([
-    b, 16, h * 2, w * 2,
+  out = out.reshaped([b, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous().reshaped([
+    b, h * 2, w * 2, 16,
   ])
   let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
