@@ -167,32 +167,38 @@ private func JointTransformerBlock(
   }
 }
 
-func MMDiT(b: Int, t: Int, h: Int, w: Int, layers: Int, usesFlashAttention: FlashAttentionLevel)
+func MMDiT(
+  batchSize: Int, t: Int, height: Int, width: Int, channels: Int, layers: Int,
+  usesFlashAttention: FlashAttentionLevel
+)
   -> (ModelWeightMapper, Model)
 {
   let x = Input()
   let timestep = Input()
   let y = Input()
   let contextIn = Input()
+  let h = height / 2
+  let w = width / 2
   let xEmbedder = Convolution(
-    groups: 1, filters: 1536, filterSize: [2, 2],
+    groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var out = xEmbedder(x).reshaped([b, 1536, h * w]).transposed(1, 2)
-  let posEmbed = Parameter<FloatType>(.GPU(0), .NHWC(1, 192, 192, 1536), name: "pos_embed")
+  var out = xEmbedder(x).reshaped([batchSize, channels, h * w]).transposed(1, 2)
+  let posEmbed = Parameter<FloatType>(.GPU(0), .NHWC(1, 192, 192, channels), name: "pos_embed")
   let spatialPosEmbed = posEmbed.reshaped(
-    [1, h, w, 1536], offset: [0, (192 - h) / 2, (192 - w) / 2, 0],
-    strides: [192 * 192 * 1536, 192 * 1536, 1536, 1]
-  ).contiguous().reshaped([1, h * w, 1536])
+    [1, h, w, channels], offset: [0, (192 - h) / 2, (192 - w) / 2, 0],
+    strides: [192 * 192 * channels, 192 * channels, channels, 1]
+  ).contiguous().reshaped([1, h * w, channels])
   out = spatialPosEmbed + out
-  let (tMlp0, tMlp2, tEmbedder) = TimeEmbedder(channels: 1536)
-  let (yMlp0, yMlp2, yEmbedder) = VectorEmbedder(channels: 1536)
-  let c = (tEmbedder(timestep) + yEmbedder(y)).reshaped([b, 1, 1536]).swish()
-  let contextEmbedder = Dense(count: 1536, name: "context_embedder")
+  let (tMlp0, tMlp2, tEmbedder) = TimeEmbedder(channels: channels)
+  let (yMlp0, yMlp2, yEmbedder) = VectorEmbedder(channels: channels)
+  let c = (tEmbedder(timestep) + yEmbedder(y)).reshaped([batchSize, 1, channels]).swish()
+  let contextEmbedder = Dense(count: channels, name: "context_embedder")
   var context = contextEmbedder(contextIn)
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers {
     let (mapper, block) = JointTransformerBlock(
-      prefix: "diffusion_model.joint_blocks.\(i)", k: 64, h: 24, b: b, t: t, hw: h * w,
+      prefix: "diffusion_model.joint_blocks.\(i)", k: 64, h: channels / 64, b: batchSize, t: t,
+      hw: h * w,
       contextBlockPreOnly: i == layers - 1, usesFlashAtttention: usesFlashAttention)
     let blockOut = block(context, out, c)
     if i == layers - 1 {
@@ -204,14 +210,14 @@ func MMDiT(b: Int, t: Int, h: Int, w: Int, layers: Int, usesFlashAttention: Flas
     mappers.append(mapper)
   }
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  let shift = Dense(count: 1536, name: "ada_ln_0")
-  let scale = Dense(count: 1536, name: "ada_ln_1")
+  let shift = Dense(count: channels, name: "ada_ln_0")
+  let scale = Dense(count: channels, name: "ada_ln_1")
   out = (1 + scale(c)) .* normFinal(out) + shift(c)
   let linear = Dense(count: 2 * 2 * 16, name: "linear")
   out = linear(out)
   // Unpatchify
-  out = out.reshaped([b, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous().reshaped([
-    b, h * 2, w * 2, 16,
+  out = out.reshaped([batchSize, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous().reshaped([
+    batchSize, h * 2, w * 2, 16,
   ])
   let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
