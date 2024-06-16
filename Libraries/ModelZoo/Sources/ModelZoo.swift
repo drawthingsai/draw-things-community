@@ -351,6 +351,15 @@ public struct ModelZoo: DownloadZoo {
       stageModels: ["wurstchen_3.0_stage_b_q6p_q8p.ckpt"]
     ),
     Specification(
+      name: "SD3 Medium",
+      file: "sd3_medium_f16.ckpt",
+      prefix: "",
+      version: .sd3, upcastAttention: false, defaultScale: 16,
+      textEncoder: "open_clip_vit_bigg14_f16.ckpt",
+      autoencoder: "sd3_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      T5Encoder: "t5_xxl_encoder_q6p.ckpt"
+    ),
+    Specification(
       name: "SD3 Medium (8-bit)",
       file: "sd3_medium_q8p.ckpt",
       prefix: "",
@@ -805,6 +814,9 @@ public struct ModelZoo: DownloadZoo {
     if let clipEncoder = specification.clipEncoder {
       result = result && isModelDownloaded(clipEncoder)
     }
+    if let T5Encoder = specification.T5Encoder {
+      result = result && isModelDownloaded(T5Encoder)
+    }
     if let diffusionMapping = specification.diffusionMapping {
       result = result && isModelDownloaded(diffusionMapping)
     }
@@ -866,6 +878,11 @@ public struct ModelZoo: DownloadZoo {
   public static func CLIPEncoderForModel(_ name: String) -> String? {
     guard let specification = specificationMapping[name] else { return nil }
     return specification.clipEncoder
+  }
+
+  public static func T5EncoderForModel(_ name: String) -> String? {
+    guard let specification = specificationMapping[name] else { return nil }
+    return specification.T5Encoder
   }
 
   public static func diffusionMappingForModel(_ name: String) -> String? {
@@ -1121,6 +1138,9 @@ extension ModelZoo {
       }
       if let clipEncoder = specification.clipEncoder {
         files.insert(clipEncoder)
+      }
+      if let T5Encoder = specification.T5Encoder {
+        files.insert(T5Encoder)
       }
       if let diffusionMapping = specification.diffusionMapping {
         files.insert(diffusionMapping)
