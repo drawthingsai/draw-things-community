@@ -115,7 +115,7 @@ extension ImageGenerator {
       samplingSigmas = [
         700.00, 54.5, 15.886, 7.977, 4.248, 1.789, 0.981, 0.403, 0.173, 0.034, 0.002,
       ]
-    case .kandinsky21, .wurstchenStageB, .wurstchenStageC:
+    case .sd3, .kandinsky21, .wurstchenStageB, .wurstchenStageC:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -510,6 +510,8 @@ extension ImageGenerator {
       denoiserParameterization = .edm(edm)
     case .ddpm(let ddpm):
       denoiserParameterization = .ddpm(ddpm)
+    case .rf:
+      denoiserParameterization = .rf
     }
     let sampling = Sampling(steps: Int(configuration.steps), shift: Double(configuration.shift))
     guard let image = image else {
@@ -883,6 +885,8 @@ extension ImageGenerator {
       return tokenize(
         graph: graph, tokenizer: tokenizerV2, text: text, negativeText: negativeText,
         paddingToken: 0, conditionalLength: 1024, modifier: .clipL, potentials: potentials)
+    case .sd3:
+      fatalError()
     case .kandinsky21:
       let (tokenTensors, positionTensors, lengthsOfUncond, lengthsOfCond) = kandinskyTokenize(
         graph: graph, text: text, negativeText: negativeText,

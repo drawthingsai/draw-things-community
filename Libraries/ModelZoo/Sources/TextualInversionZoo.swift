@@ -286,7 +286,7 @@ public struct TextualInversionZoo: DownloadZoo {
       count = 768
     case .v2:
       count = 1024
-    case .sdxlBase, .sdxlRefiner, .ssd1b:
+    case .sd3, .sdxlBase, .sdxlRefiner, .ssd1b:
       switch modifier {
       case .clipG:
         count = 1280
@@ -302,7 +302,7 @@ public struct TextualInversionZoo: DownloadZoo {
       switch version {
       case .v1, .v2:
         tensorName = "string_to_param"
-      case .sdxlBase, .sdxlRefiner, .ssd1b:
+      case .sd3, .sdxlBase, .sdxlRefiner, .ssd1b:
         switch modifier {
         case .clipG:
           tensorName = "string_to_param_clip_g"

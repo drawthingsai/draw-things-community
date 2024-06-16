@@ -370,6 +370,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (SD v1.x)"
     case .v2:
       return " (SD v2.x)"
+    case .sd3:
+      return " (SD3)"
     case .sdxlBase:
       return " (SDXL Base)"
     case .sdxlRefiner:

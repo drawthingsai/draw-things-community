@@ -439,7 +439,7 @@ public struct DeviceCapability {
     -> Bool
   {
     switch version {
-    case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+    case .sdxlBase, .sd3, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       guard (!isHighPerformance && !(isGoodPerformance && is8BitModel)) || force else {
         return false
       }

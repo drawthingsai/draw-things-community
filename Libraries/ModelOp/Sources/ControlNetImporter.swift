@@ -119,7 +119,7 @@ public final class ControlNetImporter {
       dim = 1024
     case .sdxlBase, .ssd1b:
       dim = 2048
-    case .kandinsky21, .svdI2v, .sdxlRefiner, .wurstchenStageC, .wurstchenStageB:
+    case .sd3, .kandinsky21, .svdI2v, .sdxlRefiner, .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
     let c = graph.variable(.CPU, .HWC(2, 77, dim), of: FloatType.self)
@@ -211,7 +211,7 @@ public final class ControlNetImporter {
         }
       }
       controlNetReader = nil
-    case .kandinsky21, .ssd1b, .svdI2v, .sdxlRefiner, .wurstchenStageC, .wurstchenStageB:
+    case .sd3, .kandinsky21, .ssd1b, .svdI2v, .sdxlRefiner, .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
 
@@ -250,7 +250,7 @@ public final class ControlNetImporter {
             }
             hintMapping = mapper(.generativeModels)
           }
-        case .sdxlRefiner, .ssd1b, .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC,
+        case .sd3, .sdxlRefiner, .ssd1b, .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC,
           .wurstchenStageB:
           fatalError()
         }

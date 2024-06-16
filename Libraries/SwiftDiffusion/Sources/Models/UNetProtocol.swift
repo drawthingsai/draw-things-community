@@ -53,6 +53,8 @@ extension UNetProtocol {
             embeddingSize: timeEmbeddingSize,
             maxPeriod: 10_000)
         ).toGPU(0))
+    case .sd3:
+      fatalError()
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
         timesteps: timestep, batchSize: batchSize, embeddingSize: 64, maxPeriod: 10_000)
@@ -337,6 +339,8 @@ extension UNetFromNNC {
       (unet, _) = WurstchenStageB(
         batchSize: batchSize, cIn: 4, height: tiledHeight, width: tiledWidth,
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+    case .sd3:
+      fatalError()
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -367,7 +371,7 @@ extension UNetFromNNC {
           }
         }
         c = newC
-      case .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .v2, .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
     }
@@ -409,6 +413,8 @@ extension UNetFromNNC {
       modelKey = "stage_b"
     case .wurstchenStageC:
       modelKey = "stage_c"
+    case .sd3:
+      modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
       externalOnDemand ? .externalOnDemand : .externalData
@@ -427,7 +433,7 @@ extension UNetFromNNC {
               return LoRAMapping.SDUNetXLSSD1B
             case .v1, .v2:
               return LoRAMapping.SDUNet
-            case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+            case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
           }()
@@ -676,7 +682,7 @@ extension UNetFromNNC {
           }
         }
         c = newC
-      case .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .v2, .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
     }
@@ -699,7 +705,7 @@ extension UNetFromNNC {
         return previewer(inputs: x)[0].as(of: FloatType.self)
       }
       return x
-    case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .kandinsky21, .wurstchenStageB:
+    case .v1, .v2, .sd3, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .kandinsky21, .wurstchenStageB:
       return x
     }
   }

@@ -14,6 +14,7 @@ public enum Denoiser {
   }
 
   public enum Parameterization {
+    case rf
     case edm(EDM)
     case ddpm(DDPM)
     public struct EDM: Codable {
@@ -133,6 +134,8 @@ extension Denoiser {
         self.init(
           objective: objective, timesteps: Float(ddpm.timesteps), s: s,
           range: alphasCumprod[alphasCumprod.count - 1]...alphasCumprod[0], sigmas: sigmas)
+      case .rf:
+        fatalError()
       }
     }
     public func timestep(for alphaCumprod: Double) -> Float {
@@ -210,6 +213,8 @@ extension Denoiser {
         self.init(
           objective: objective, timesteps: Float(ddpm.timesteps), sigmaMin: sigmaMin,
           sigmaMax: sigmaMax, rho: rho, sigmas: sigmas)
+      case .rf:
+        fatalError()
       }
     }
     public func timestep(for alphaCumprod: Double) -> Float {
@@ -320,6 +325,8 @@ extension Denoiser {
         self.init(EDMDiscretization: KarrasDiscretization(parameterization, objective: objective))
       case .ddpm(let ddpm):
         self.init(objective: objective, timestepSpacing: timestepSpacing, ddpm: ddpm)
+      case .rf:
+        fatalError()
       }
     }
     public func timestep(for alphaCumprod: Double) -> Float {

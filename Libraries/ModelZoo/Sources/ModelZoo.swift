@@ -21,12 +21,15 @@ public struct ModelZoo: DownloadZoo {
       return "Stable Video Diffusion"
     case .wurstchenStageC, .wurstchenStageB:
       return "Stable Cascade (Würstchen v3.0)"
+    case .sd3:
+      return "Stable Diffusion 3"
     }
   }
 
   public enum NoiseDiscretization: Codable {
     case edm(Denoiser.Parameterization.EDM)
     case ddpm(Denoiser.Parameterization.DDPM)
+    case rf
   }
 
   public struct Specification: Codable {
@@ -42,6 +45,7 @@ public struct ModelZoo: DownloadZoo {
     public var deprecated: Bool?
     public var imageEncoder: String?
     public var clipEncoder: String?
+    public var T5Encoder: String?
     public var diffusionMapping: String?
     public var highPrecisionAutoencoder: Bool?
     public var defaultRefiner: String?
@@ -57,7 +61,8 @@ public struct ModelZoo: DownloadZoo {
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
       autoencoder: String? = nil, modifier: SamplerModifier? = nil, deprecated: Bool? = nil,
-      imageEncoder: String? = nil, clipEncoder: String? = nil, diffusionMapping: String? = nil,
+      imageEncoder: String? = nil, clipEncoder: String? = nil, T5Encoder: String? = nil,
+      diffusionMapping: String? = nil,
       highPrecisionAutoencoder: Bool? = nil, defaultRefiner: String? = nil,
       isConsistencyModel: Bool? = nil, conditioning: Denoiser.Conditioning? = nil,
       objective: Denoiser.Objective? = nil,
@@ -76,6 +81,7 @@ public struct ModelZoo: DownloadZoo {
       self.deprecated = deprecated
       self.imageEncoder = imageEncoder
       self.clipEncoder = clipEncoder
+      self.T5Encoder = T5Encoder
       self.diffusionMapping = diffusionMapping
       self.highPrecisionAutoencoder = highPrecisionAutoencoder
       self.defaultRefiner = defaultRefiner
@@ -285,6 +291,14 @@ public struct ModelZoo: DownloadZoo {
       "ef03b8ac7805d5a862db048c452c4dbbd295bd95fed0bf5dae50a6e98815d30f",
     "wurstchen_3.0_stage_c_effnet_previewer_f32_f16.ckpt":
       "fd1c698895afc14e68a0d7690c787400796114d2bfac0df254598d8207f93f0f",
+    "t5_xxl_encoder_q6p.ckpt":
+      "8f8fa0acc618df6f225122b3d03b6f60034490d9f9fd3b8799e7faa3e08943b7",
+    "sd3_vae_f16.ckpt":
+      "51d42d4745456396f0cbb034f4eb9d6495cc2a552ca4af7ba80d64fdba5f9678",
+    "sd3_medium_q8p.ckpt":
+      "a313371538d8018ee6f3f3b6aa3e08bff64bfa3a56c1f777b90973f71138b3a2",
+    "sd3_medium_f16.ckpt":
+      "9ee38fee52867678c21afffd7c176443a61e30eed728c1a28e2ff4982fe89bee",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -335,6 +349,15 @@ public struct ModelZoo: DownloadZoo {
       textEncoder: "open_clip_vit_bigg14_f16.ckpt",
       autoencoder: "wurstchen_3.0_stage_a_hq_f16.ckpt",
       stageModels: ["wurstchen_3.0_stage_b_q6p_q8p.ckpt"]
+    ),
+    Specification(
+      name: "SD3 Medium (8-bit)",
+      file: "sd3_medium_q8p.ckpt",
+      prefix: "",
+      version: .sd3, upcastAttention: false, defaultScale: 16,
+      textEncoder: "open_clip_vit_bigg14_f16.ckpt",
+      autoencoder: "sd3_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      T5Encoder: "t5_xxl_encoder_q6p.ckpt"
     ),
     Specification(
       name: "LCM SDXL Base (v1.0)", file: "lcm_sd_xl_base_1.0_f16.ckpt", prefix: "",
@@ -877,7 +900,7 @@ public struct ModelZoo: DownloadZoo {
     }
     switch specification.version {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB:
+      .wurstchenStageB, .sd3:
       return .timestep
     case .svdI2v:
       return .noise
@@ -903,6 +926,8 @@ public struct ModelZoo: DownloadZoo {
       return .edm(.init(sigmaMax: 700.0))
     case .wurstchenStageC, .wurstchenStageB:
       return .edm(.init(sigmaMin: 0.01, sigmaMax: 99.995))
+    case .sd3:
+      return .rf
     }
   }
 
@@ -927,6 +952,8 @@ public struct ModelZoo: DownloadZoo {
       return (nil, nil, 1)
     case .wurstchenStageC, .wurstchenStageB:
       return (nil, nil, 2.32558139535)
+    case .sd3:
+      return (nil, nil, 1.5305)
     }
   }
 
@@ -1002,6 +1029,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 4 * 1_024 * 1_024 * 1_024
       case .wurstchenStageB:
         return fileSize < 2 * 1_024 * 1_024 * 1_024
+      case .sd3:
+        return fileSize < 3 * 1_024 * 1_024 * 1_024
       }
     }
     return false

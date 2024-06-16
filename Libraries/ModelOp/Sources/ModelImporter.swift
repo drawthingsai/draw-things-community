@@ -161,6 +161,8 @@ public final class ModelImporter {
         expectedTotalAccess += 388 + 196
       case .sdxlRefiner:
         expectedTotalAccess += 388
+      case .sd3:
+        throw Error.noTextEncoder
       case .svdI2v:
         throw Error.noTextEncoder
       case .wurstchenStageC, .wurstchenStageB:
@@ -235,7 +237,7 @@ public final class ModelImporter {
               intermediateSize: 5120, usesFlashAttention: false, outputPenultimate: true)
             filePath = ModelZoo.filePathForModelDownloaded(
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
-          case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+          case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -273,7 +275,7 @@ public final class ModelImporter {
               if $0.keys.count < 517 {
                 throw Error.tensorWritesFailed
               }
-            case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+            case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
           }
@@ -388,7 +390,7 @@ public final class ModelImporter {
     case .wurstchenStageC:
       conditionalLength = 1280
       batchSize = 2
-    case .kandinsky21, .wurstchenStageB:
+    case .sd3, .kandinsky21, .wurstchenStageB:
       fatalError()
     }
     try graph.withNoGrad {
@@ -430,7 +432,7 @@ public final class ModelImporter {
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB:
           vectors = []
-        case .kandinsky21, .v1, .v2:
+        case .kandinsky21, .v1, .v2, .sd3:
           fatalError()
         }
         // These values doesn't matter, it won't affect the model shape, just the input vector.
@@ -531,7 +533,7 @@ public final class ModelImporter {
           batchSize: batchSize, t: (77 + 8, 77 + 8),
           usesFlashAttention: .none)
         unetFixedReader = nil
-      case .kandinsky21, .wurstchenStageB:
+      case .sd3, .kandinsky21, .wurstchenStageB:
         fatalError()
       }
       let crossattn: [DynamicGraph.Tensor<FloatType>]
@@ -559,7 +561,7 @@ public final class ModelImporter {
           graph.variable(.CPU, .HWC(batchSize, 1, 1280), of: FloatType.self),
           graph.variable(.CPU, .HWC(batchSize, 1, 1280), of: FloatType.self),
         ]
-      case .v1, .v2, .kandinsky21, .wurstchenStageB:
+      case .sd3, .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
       }
       let isDiffusersFormat = stateDict.keys.contains { $0.hasPrefix("mid_block.") }
@@ -663,7 +665,7 @@ public final class ModelImporter {
             UNetMapping = unetMapper(.generativeModels)
             UNetMappingFixed = unetFixedMapper(.generativeModels)
             modelPrefix = "stage_c"
-          case .v1, .v2, .kandinsky21, .wurstchenStageB:
+          case .v1, .v2, .sd3, .kandinsky21, .wurstchenStageB:
             fatalError()
           }
           try store.withTransaction {
@@ -760,7 +762,7 @@ public final class ModelImporter {
           if $0.keys.count != 1550 && $0.keys.count != 1550 + 374 {
             throw Error.tensorWritesFailed
           }
-        case .kandinsky21, .wurstchenStageB:
+        case .sd3, .kandinsky21, .wurstchenStageB:
           fatalError()
         }
       }
