@@ -325,7 +325,7 @@ extension TextEncoder {
         OpenCLIPTextModel(
           FloatType.self, injectEmbeddings: injectEmbeddings,
           vocabularySize: 49408, maxLength: 77, maxTokenLength: maxLength, embeddingSize: 1280,
-          numLayers: 32 - min(max(clipSkip - 1, 0), 30), numHeads: 20, batchSize: 2,
+          numLayers: 32 - min(max(clipSkip - 2, 0), 30), numHeads: 20, batchSize: 2,
           intermediateSize: 5120, usesFlashAttention: usesFlashAttention, outputPenultimate: true
         ).0
     }
@@ -349,9 +349,10 @@ extension TextEncoder {
           ) { name, _, _, shape in
             // Retrieve the right final layer norm parameters.
             var name = name
-            if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-0]" {
+            if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-0]" {
               name = "__text_model__[t-258-0]"
-            } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
+            } else if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-1]"
+            {
               name = "__text_model__[t-258-1]"
             }
             return loader.mergeLoRA(graph, name: name, store: store, shape: shape, prefix: "__te2")
@@ -362,9 +363,9 @@ extension TextEncoder {
           name, _, _, _ in
           // Retrieve the right final layer norm parameters.
           var name = name
-          if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-0]" {
+          if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-0]" {
             name = "__text_model__[t-258-0]"
-          } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
+          } else if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-1]" {
             name = "__text_model__[t-258-1]"
           }
           return .continue(name)
