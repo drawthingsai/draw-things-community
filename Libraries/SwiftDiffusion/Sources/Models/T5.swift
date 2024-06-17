@@ -1,6 +1,8 @@
 import NNC
 
-private func T5TextEmbedding(vocabularySize: Int, embeddingSize: Int, name: String) -> Model {
+private func T5TextEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  vocabularySize: Int, embeddingSize: Int, name: String, of: FloatType.Type = FloatType.self
+) -> Model {
   let tokenEmbed = Embedding(
     FloatType.self, vocabularySize: vocabularySize, embeddingSize: embeddingSize, name: name)
   return tokenEmbed
@@ -73,10 +75,13 @@ private func T5Block(
   return (mapper, Model([x, positionBias], [out]))
 }
 
-func T5ForConditionalGeneration(b: Int, t: Int) -> (ModelWeightMapper, Model) {
+func T5ForConditionalGeneration<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  b: Int, t: Int, of: FloatType.Type = FloatType.self
+) -> (ModelWeightMapper, Model) {
   let x = Input()
   let relativePositionBuckets = Input()
-  let textEmbed = T5TextEmbedding(vocabularySize: 32_128, embeddingSize: 4_096, name: "shared")
+  let textEmbed = T5TextEmbedding(
+    vocabularySize: 32_128, embeddingSize: 4_096, name: "shared", of: FloatType.self)
   var out = textEmbed(x).to(.Float32)
   let relativePositionEmbedding = Embedding(
     FloatType.self, vocabularySize: 32, embeddingSize: 64, name: "relative_position_embedding")

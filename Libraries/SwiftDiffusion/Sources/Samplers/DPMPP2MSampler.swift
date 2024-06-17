@@ -293,7 +293,7 @@ extension DPMPP2MSampler: Sampler {
     var currentModelVersion = version
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       // Now do DPM++ 2M Karras sampling.
-      if startStep.fractional == 0 {
+      if startStep.fractional == 0 && discretization.objective != .const {
         x = Float(sigmas[0]) * x
       }
       var oldDenoised: DynamicGraph.Tensor<FloatType>? = nil
@@ -317,6 +317,8 @@ extension DPMPP2MSampler: Sampler {
         let sqrtAlphaCumprod = alphaCumprod.squareRoot()
         let input: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
+        case .const:
+          input = x
         case .v, .epsilon:
           input = Float(sqrtAlphaCumprod) * x
         case .edm(let sigmaData):
@@ -519,6 +521,8 @@ extension DPMPP2MSampler: Sampler {
         }
         var denoised: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
+        case .const:
+          denoised = Functional.add(left: x, right: et, leftScalar: 1, rightScalar: Float(-sigma))
         case .v:
           denoised = Functional.add(
             left: x, right: et, leftScalar: Float(1.0 / (sigma * sigma + 1)),
@@ -536,19 +540,31 @@ extension DPMPP2MSampler: Sampler {
         }
         let h = log(sigma) - log(sigmas[i + 1])
         if let oldDenoised = oldDenoised, i < sampling.steps - 1 {
-          let hLast = log(sigmas[i - 1]) - log(sigma)
-          let r = h / hLast / 2
-          let denoisedD = Functional.add(
-            left: denoised, right: oldDenoised, leftScalar: Float(1 + r), rightScalar: Float(-r))
-          let w = sigmas[i + 1] / sigma
-          x = Functional.add(
-            left: x, right: denoisedD, leftScalar: Float(w), rightScalar: Float(1 - w))
+          if discretization.objective == .const {
+            // Need to figure out h / r.
+            x = Functional.add(
+              left: x, right: et, leftScalar: 1, rightScalar: Float(sigmas[i + 1] - sigmas[i]))
+          } else {
+            let hLast = log(sigmas[i - 1]) - log(sigma)
+            let r = h / hLast / 2
+            let denoisedD = Functional.add(
+              left: denoised, right: oldDenoised, leftScalar: Float(1 + r), rightScalar: Float(-r))
+            let w = sigmas[i + 1] / sigma
+            x = Functional.add(
+              left: x, right: denoisedD, leftScalar: Float(w), rightScalar: Float(1 - w))
+          }
         } else if i == sampling.steps - 1 {
           x = denoised
         } else {
-          let w = sigmas[i + 1] / sigma
-          x = Functional.add(
-            left: x, right: denoised, leftScalar: Float(w), rightScalar: Float(1 - w))
+          if discretization.objective == .const {
+            // Need to figure out h / r.
+            x = Functional.add(
+              left: x, right: et, leftScalar: 1, rightScalar: Float(sigmas[i + 1] - sigmas[i]))
+          } else {
+            let w = sigmas[i + 1] / sigma
+            x = Functional.add(
+              left: x, right: denoised, leftScalar: Float(w), rightScalar: Float(1 - w))
+          }
         }
         oldDenoised = denoised
         if i < endStep.integral - 1, let noise = noise, let sample = sample, let mask = mask,

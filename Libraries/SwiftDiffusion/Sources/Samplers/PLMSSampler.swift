@@ -501,6 +501,8 @@ extension PLMSSampler: Sampler {
         let alpha = alphasCumprod[i]
         let alphaPrev = alphasCumprod[i + 1]
         switch discretization.objective {
+        case .const:
+          fatalError()
         case .v:
           et = Float(alpha.squareRoot()) * et + Float((1 - alpha).squareRoot()) * x
         case .epsilon:
@@ -644,6 +646,8 @@ extension PLMSSampler: Sampler {
             }
           }
           switch discretization.objective {
+          case .const:
+            fatalError()
           case .v:
             etNext =
               Float(alphaPrev.squareRoot()) * etNext + Float((1 - alphaPrev).squareRoot()) * xPrev

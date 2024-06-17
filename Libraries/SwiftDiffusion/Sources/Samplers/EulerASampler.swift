@@ -313,6 +313,8 @@ extension EulerASampler: Sampler {
         let sqrtAlphaCumprod = alphaCumprod.squareRoot()
         let input: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
+        case .const:
+          fatalError()
         case .v, .epsilon:
           input = Float(sqrtAlphaCumprod) * x
         case .edm(let sigmaData):
@@ -521,6 +523,8 @@ extension EulerASampler: Sampler {
         let sigmaDown = (sigmas[i + 1] * sigmas[i + 1] - sigmaUp * sigmaUp).squareRoot()
         let dt = sigmaDown - sigma  // Notice this is already a negative.
         switch discretization.objective {
+        case .const:
+          fatalError()
         case .v:
           // denoised = Float(1.0 / (sigma * sigma + 1)) * x - (sigma * sqrtAlphaCumprod) * et
           // d = (x - denoised) / sigma // (x - Float(1.0 / (sigma * sigma + 1)) * x + (sigma * sqrtAlphaCumprod) * et) / sigma = (sigma / (sigma * sigma + 1)) * x + sqrtAlphaCumprod * et

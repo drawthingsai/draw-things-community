@@ -54,7 +54,11 @@ extension UNetProtocol {
             maxPeriod: 10_000)
         ).toGPU(0))
     case .sd3:
-      fatalError()
+      return graph.variable(
+        Tensor<FloatType>(
+          from: timeEmbedding(
+            timestep: timestep, batchSize: batchSize, embeddingSize: 256, maxPeriod: 10_000)
+        ).toGPU(0))
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
         timesteps: timestep, batchSize: batchSize, embeddingSize: 64, maxPeriod: 10_000)
@@ -340,7 +344,17 @@ extension UNetFromNNC {
         batchSize: batchSize, cIn: 4, height: tiledHeight, width: tiledWidth,
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
     case .sd3:
-      fatalError()
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      (_, unet) =
+        MMDiT(
+          batchSize: batchSize, t: max(tokenLengthUncond, tokenLengthCond), height: tiledHeight,
+          width: tiledWidth, channels: 1536, layers: 24,
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version

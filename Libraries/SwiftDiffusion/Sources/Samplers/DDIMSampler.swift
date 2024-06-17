@@ -490,6 +490,8 @@ extension DDIMSampler: Sampler {
         let alpha = alphasCumprod[i]
         let alphaPrev = alphasCumprod[i + 1]
         switch discretization.objective {
+        case .const:
+          fatalError()
         case .v:
           let predX0 = Float(alpha.squareRoot()) * x - Float((1 - alpha).squareRoot()) * et
           let eps = Float(alpha.squareRoot()) * et + Float((1 - alpha).squareRoot()) * x

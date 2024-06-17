@@ -357,7 +357,7 @@ public struct ModelZoo: DownloadZoo {
       version: .sd3, upcastAttention: false, defaultScale: 16,
       textEncoder: "open_clip_vit_bigg14_f16.ckpt",
       autoencoder: "sd3_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
-      T5Encoder: "t5_xxl_encoder_q6p.ckpt"
+      T5Encoder: "t5_xxl_encoder_q6p.ckpt", objective: .const
     ),
     Specification(
       name: "SD3 Medium (8-bit)",
@@ -366,7 +366,7 @@ public struct ModelZoo: DownloadZoo {
       version: .sd3, upcastAttention: false, defaultScale: 16,
       textEncoder: "open_clip_vit_bigg14_f16.ckpt",
       autoencoder: "sd3_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
-      T5Encoder: "t5_xxl_encoder_q6p.ckpt"
+      T5Encoder: "t5_xxl_encoder_q6p.ckpt", objective: .const
     ),
     Specification(
       name: "LCM SDXL Base (v1.0)", file: "lcm_sd_xl_base_1.0_f16.ckpt", prefix: "",
@@ -949,28 +949,28 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public static func latentsScalingForModel(_ name: String) -> (
-    mean: [Float]?, std: [Float]?, scalingFactor: Float
+    mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?
   ) {
-    guard let specification = specificationMapping[name] else { return (nil, nil, 1) }
+    guard let specification = specificationMapping[name] else { return (nil, nil, 1, nil) }
     if let mean = specification.latentsMean, let std = specification.latentsStd,
       let scalingFactor = specification.latentsScalingFactor
     {
-      return (mean, std, scalingFactor)
+      return (mean, std, scalingFactor, nil)
     }
     if let scalingFactor = specification.latentsScalingFactor {
-      return (nil, nil, scalingFactor)
+      return (nil, nil, scalingFactor, nil)
     }
     switch specification.version {
     case .v1, .v2, .svdI2v:
-      return (nil, nil, 0.18215)
+      return (nil, nil, 0.18215, nil)
     case .ssd1b, .sdxlBase, .sdxlRefiner:
-      return (nil, nil, 0.13025)
+      return (nil, nil, 0.13025, nil)
     case .kandinsky21:
-      return (nil, nil, 1)
+      return (nil, nil, 1, nil)
     case .wurstchenStageC, .wurstchenStageB:
-      return (nil, nil, 2.32558139535)
+      return (nil, nil, 2.32558139535, nil)
     case .sd3:
-      return (nil, nil, 1.5305)
+      return (nil, nil, 1.5305, 0.0609)
     }
   }
 

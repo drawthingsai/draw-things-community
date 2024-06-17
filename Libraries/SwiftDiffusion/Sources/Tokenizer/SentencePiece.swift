@@ -1,12 +1,15 @@
 import SentencePiece
 
 public struct SentencePieceTokenizer: Tokenizer {
-  public var endToken: Int32 { 2 }
+  public var startToken: Int32?
+  public var endToken: Int32
   public var unknownToken: Int32 { 0 }
   private let sentencePiece: SentencePiece
-  public init(file: String) {
+  public init(file: String, startToken: Int32?, endToken: Int32) {
     vocabulary = [:]
     sentencePiece = SentencePiece(file: file)
+    self.startToken = startToken
+    self.endToken = endToken
   }
 
   public func tokenize(text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?) -> (
@@ -16,9 +19,11 @@ public struct SentencePieceTokenizer: Tokenizer {
     var strs = [String]()
     var ids = [Int32]()
     var canonicals = [String?]()
-    strs.append("")
-    ids.append(0)
-    canonicals.append("<|startoftext|>")
+    if let startToken = startToken {
+      strs.append("")
+      ids.append(startToken)
+      canonicals.append("<|startoftext|>")
+    }
     if truncation {
       for (i, spt) in result.enumerated() {
         guard i < maxLength + 2 else { break }

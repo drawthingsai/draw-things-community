@@ -10,11 +10,12 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let alternativeUsesFlashAttention: Bool
   private let alternativeFilePath: String?
   private let alternativeDecoderVersion: AlternativeDecoderVersion?
-  private let latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float)
+  private let latentsScaling:
+    (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?)
   private let highPrecisionFallback: Bool
   public init(
     filePath: String, version: ModelVersion,
-    latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float),
+    latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?),
     highPrecision: Bool, highPrecisionFallback: Bool, tiledDecoding: TiledConfiguration,
     tiledDiffusion: TiledConfiguration, externalOnDemand: Bool, alternativeUsesFlashAttention: Bool,
     alternativeFilePath: String?, alternativeDecoderVersion: AlternativeDecoderVersion?
@@ -55,6 +56,8 @@ extension FirstStage {
         Tensor<FloatType>(
           latentsStd.map { FloatType($0 / scalingFactor) }, .GPU(0), .NHWC(1, 1, 1, 4)))
       z = std .* x + mean
+    } else if let shiftFactor = latentsScaling.shiftFactor {
+      z = x / scalingFactor + shiftFactor
     } else {
       z = x / scalingFactor
     }
@@ -139,7 +142,30 @@ extension FirstStage {
         outputChannels = 3
       }
     case .sd3:
-      fatalError()
+      let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
+      let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
+      decoder =
+        existingDecoder
+        ?? Decoder(
+          channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
+          startHeight: startHeight, usesFlashAttention: false, paddingFinalConvLayer: true,
+          quantLayer: false
+        ).0
+      if existingDecoder == nil {
+        if highPrecision {
+          decoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]]))
+        } else {
+          decoder.compile(inputs: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("decoder", model: decoder, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 3
     case .kandinsky21:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
@@ -330,6 +356,8 @@ extension FirstStage {
         Tensor<FloatType>(
           latentsStd.map { FloatType(scalingFactor / $0) }, .GPU(0), .NHWC(1, 1, 1, 4)))
       return invStd .* (x - mean)
+    } else if let shiftFactor = latentsScaling.shiftFactor {
+      return (x - shiftFactor) * scalingFactor
     } else {
       return x * scalingFactor
     }
@@ -388,7 +416,37 @@ extension FirstStage {
       }
       outputChannels = 8
     case .sd3:
-      fatalError()
+      startHeight = shape[1] / 8
+      startWidth = shape[2] / 8
+      scaleFactor = 8
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tileOverlap = tiledDiffusion.tileOverlap * 8
+      encoder =
+        existingEncoder
+        ?? Encoder(
+          channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: tiledWidth,
+          startHeight: tiledHeight, usesFlashAttention: false, quantLayer: false, outputChannels: 16
+        ).0
+      if existingEncoder == nil {
+        if highPrecision {
+          encoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: x[0..<1, 0..<(tiledHeight * 8), 0..<(tiledWidth * 8), 0..<shape[3]]))
+        } else {
+          encoder.compile(
+            inputs: x[0..<1, 0..<(tiledHeight * 8), 0..<(tiledWidth * 8), 0..<shape[3]])
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("encoder", model: encoder, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 32
     case .kandinsky21:
       startHeight = shape[1] / 8
       startWidth = shape[2] / 8

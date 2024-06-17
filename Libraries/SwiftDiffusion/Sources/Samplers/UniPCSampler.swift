@@ -581,6 +581,8 @@ extension UniPCSampler: Sampler {
         }
         var predX0: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
+        case .const:
+          fatalError()
         case .v:
           predX0 = Functional.add(
             left: x, right: et, leftScalar: Float(alphas[i]),

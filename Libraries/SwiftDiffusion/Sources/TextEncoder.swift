@@ -709,7 +709,7 @@ extension TextEncoder {
       CLIPTextModel(
         FloatType.self, injectEmbeddings: injectEmbeddings,
         vocabularySize: 49408, maxLength: 77, maxTokenLength: maxLength, embeddingSize: 768,
-        numLayers: 13 - min(max(clipSkip, 1), 12), numHeads: 12, batchSize: 2,
+        numLayers: 13 - min(max(clipSkip - 1, 1), 12), numHeads: 12, batchSize: 2,
         intermediateSize: 3072, usesFlashAttention: usesFlashAttention, noFinalLayerNorm: true
       ).0
     if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -719,7 +719,7 @@ extension TextEncoder {
     } else {
       textModel.compile(inputs: tokens0TensorGPU, positionTensorGPU, causalAttentionMaskGPU)
     }
-    let c0: DynamicGraph.Tensor<FloatType>
+    let c0Out: [DynamicGraph.Tensor<FloatType>]
     if filePaths.count > 1 {
       graph.openStore(
         filePaths[1], flags: .readOnly,
@@ -731,9 +731,11 @@ extension TextEncoder {
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
             ) { name, _, _, shape in
               var name = name
-              if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
+              if name == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-0]" {
                 name = "__text_model__[t-98-0]"
-              } else if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-1]" {
+              } else if name
+                == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-1]"
+              {
                 name = "__text_model__[t-98-1]"
               }
               return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
@@ -746,9 +748,11 @@ extension TextEncoder {
             ) { name, _, _, _ in
               // Retrieve the right final layer norm parameters.
               var name = name
-              if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
+              if name == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-0]" {
                 name = "__text_model__[t-98-0]"
-              } else if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-1]" {
+              } else if name
+                == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-1]"
+              {
                 name = "__text_model__[t-98-1]"
               }
               return .continue(name)
@@ -760,21 +764,33 @@ extension TextEncoder {
         }
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
-        c0 = textModel(
+        c0Out = textModel(
           inputs: tokens0TensorGPU, positionTensorGPU, causalAttentionMaskGPU, maskGPU,
-          injectedEmbeddingsGPU)[0].as(
+          injectedEmbeddingsGPU
+        ).map {
+          $0.as(
             of: FloatType.self
-          ).reshaped(.HWC(2, maxLength, 768))
+          )
+        }
       } else {
-        c0 = textModel(
-          inputs: tokens0TensorGPU, positionTensorGPU, causalAttentionMaskGPU)[0].as(
+        c0Out = textModel(
+          inputs: tokens0TensorGPU, positionTensorGPU, causalAttentionMaskGPU
+        ).map {
+          $0.as(
             of: FloatType.self
-          ).reshaped(.HWC(2, maxLength, 768))
+          )
+        }
       }
     } else {
-      c0 = graph.variable(.GPU(0), .HWC(2, maxLength, 768))
-      c0.full(0)
+      c0Out = [
+        graph.variable(.GPU(0), .HWC(2, maxLength, 768)),
+        graph.variable(.GPU(0), .WC(2 * maxLength, 768)),
+      ]
+      for c in c0Out {
+        c.full(0)
+      }
     }
+    let c0 = c0Out[0].reshaped(.HWC(2, maxLength, 768))
     let tokens1TensorGPU = tokens[1].toGPU(0)
     if let existingTextModel = existingTextModels[0] {
       textModel = existingTextModel
@@ -807,9 +823,10 @@ extension TextEncoder {
           ) { name, _, _, shape in
             // Retrieve the right final layer norm parameters.
             var name = name
-            if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-0]" {
+            if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-0]" {
               name = "__text_model__[t-258-0]"
-            } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
+            } else if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-1]"
+            {
               name = "__text_model__[t-258-1]"
             }
             return loader.mergeLoRA(graph, name: name, store: store, shape: shape, prefix: "__te2")
@@ -820,9 +837,9 @@ extension TextEncoder {
           name, _, _, _ in
           // Retrieve the right final layer norm parameters.
           var name = name
-          if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-0]" {
+          if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-0]" {
             name = "__text_model__[t-258-0]"
-          } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
+          } else if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-1]" {
             name = "__text_model__[t-258-1]"
           }
           return .continue(name)
@@ -845,7 +862,7 @@ extension TextEncoder {
       ).map { $0.as(of: FloatType.self) }
     }
     let c1 = c1Out[0].reshaped(.HWC(2, maxLength, 1280))
-    var pooled = graph.variable(.GPU(0), .WC(2, 1280), of: FloatType.self)
+    var pooled = graph.variable(.GPU(0), .WC(2, 2048), of: FloatType.self)
     var unconditionalTokenEnd: Int? = nil
     var tokenEnd: Int? = nil
     if mask.count > 1 {
@@ -868,12 +885,20 @@ extension TextEncoder {
       }
     }
     if let unconditionalTokenEnd = unconditionalTokenEnd, let tokenEnd = tokenEnd {
-      pooled[0..<1, 0..<1280] =
+      pooled[0..<1, 0..<768] =
+        c0Out[1][unconditionalTokenEnd..<(unconditionalTokenEnd + 1), 0..<768]
+      pooled[1..<2, 0..<768] =
+        c0Out[1][(maxLength + tokenEnd)..<(maxLength + tokenEnd + 1), 0..<768]
+      pooled[0..<1, 768..<2048] =
         c1Out[1][unconditionalTokenEnd..<(unconditionalTokenEnd + 1), 0..<1280] * textProjection
-      pooled[1..<2, 0..<1280] =
+      pooled[1..<2, 768..<2048] =
         c1Out[1][(maxLength + tokenEnd)..<(maxLength + tokenEnd + 1), 0..<1280] * textProjection
     }
-    return ([c0, c1, pooled], [textModel])
+    var c = graph.variable(.GPU(0), .HWC(2, maxLength, 4096), of: FloatType.self)
+    c.full(0)
+    c[0..<2, 0..<maxLength, 0..<768] = c0
+    c[0..<2, 0..<maxLength, 768..<2048] = c1
+    return ([c, pooled], [textModel])
   }
 
   public func encode(

@@ -607,7 +607,7 @@ extension ImageGenerator {
     )
   }
   private func tokenize(
-    graph: DynamicGraph, tokenizer: TextualInversionAttentionCLIPTokenizer,
+    graph: DynamicGraph, tokenizer: Tokenizer & TextualInversionPoweredTokenizer,
     text: String, negativeText: String, paddingToken: Int32?, conditionalLength: Int,
     modifier: TextualInversionZoo.Modifier, potentials: [String]
   ) -> (
@@ -941,7 +941,7 @@ extension ImageGenerator {
       result.2 = embedMask + result.2
       result.3 = injectedEmbeddings + result.3
       let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
-        graph: graph, tokenizer: tokenizerV1, text: text, negativeText: negativeText,
+        graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
         paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials)
       result.0 = result.0 + t5Tokens
       result.2 = result.2 + t5EmbedMask
@@ -2221,7 +2221,11 @@ extension ImageGenerator {
       firstPassStartHeight =
         (hiresFixEnabled ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
         * 8
-      firstPassChannels = 4
+      if modelVersion == .sd3 {
+        firstPassChannels = 16
+      } else {
+        firstPassChannels = 4
+      }
     }
     let firstPassScale = DeviceCapability.Scale(
       widthScale: hiresFixEnabled ? configuration.hiresFixStartWidth : configuration.startWidth,
@@ -2698,8 +2702,14 @@ extension ImageGenerator {
         startStep = (
           integral: initTimestep.roundedDownStartStep, fractional: initTimestep.startStep
         )
+        let channels: Int
+        if modelVersion == .sd3 {
+          channels = 16
+        } else {
+          channels = 4
+        }
         let noise = graph.variable(
-          .GPU(0), .NHWC(batchSize, startHeight, startWidth, 4), of: FloatType.self)
+          .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
         noise.randn(std: 1, mean: 0)
         let sampleScaleFactor = secondPassSampler.sampleScaleFactor(
           at: initTimestep.startStep, sampling: sampling)
@@ -3041,7 +3051,11 @@ extension ImageGenerator {
     } else {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
-      channels = 4
+      if modelVersion == .sd3 {
+        channels = 16
+      } else {
+        channels = 4
+      }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
     }
     let imageScale = DeviceCapability.Scale(
@@ -4161,7 +4175,11 @@ extension ImageGenerator {
     } else {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
-      channels = 4
+      if modelVersion == .sd3 {
+        channels = 16
+      } else {
+        channels = 4
+      }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
     }
     let imageScale = DeviceCapability.Scale(
@@ -4834,7 +4852,11 @@ extension ImageGenerator {
     } else {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
-      channels = 4
+      if modelVersion == .sd3 {
+        channels = 16
+      } else {
+        channels = 4
+      }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
     }
     let imageScale = DeviceCapability.Scale(

@@ -369,6 +369,8 @@ extension TCDSampler: Sampler {
         let timestepS = (1 - stochasticSamplingGamma) * timestepPrev
         let alphaCumprodS = discretization.alphaCumprod(timestep: timestepS, shift: sampling.shift)
         switch discretization.objective {
+        case .const:
+          fatalError()
         case .v:
           let sqrtAlphaCumprod = 1.0 / (sigma * sigma + 1).squareRoot()
           predictOriginalSample = Functional.add(

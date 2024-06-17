@@ -10,7 +10,7 @@ public enum Denoiser {
     case edm(sigmaData: Double)  // EDM objective carries sigmaData, which is required for c_skip, c_out, c_in, c_noise computation.
     case v
     case epsilon
-    // potentially with v+edm
+    case const
   }
 
   public enum Parameterization {
@@ -94,6 +94,8 @@ extension DenoiserDiscretization {
       return Float(0.25 * log(sigma))
     case .epsilon:
       return Float(sigma)
+    case .const:
+      return Float(1000 * sigma)
     }
   }
 }

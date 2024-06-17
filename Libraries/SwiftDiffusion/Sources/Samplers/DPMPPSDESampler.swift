@@ -321,6 +321,8 @@ extension DPMPPSDESampler: Sampler {
         let sqrtAlphaCumprod = alphaCumprod.squareRoot()
         let input: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
+        case .const:
+          fatalError()
         case .v, .epsilon:
           input = Float(sqrtAlphaCumprod) * x
         case .edm(let sigmaData):
@@ -524,6 +526,8 @@ extension DPMPPSDESampler: Sampler {
         if i < sampling.steps - 1 {
           var denoised: DynamicGraph.Tensor<FloatType>
           switch discretization.objective {
+          case .const:
+            fatalError()
           case .v:
             denoised = Functional.add(
               left: x, right: et, leftScalar: Float(1.0 / (sigma * sigma + 1)),
@@ -568,6 +572,8 @@ extension DPMPPSDESampler: Sampler {
           let sqrtAlphaSCumprod = alphaSCumprod.squareRoot()
           let input: DynamicGraph.Tensor<FloatType>
           switch discretization.objective {
+          case .const:
+            fatalError()
           case .v, .epsilon:
             input = Float(sqrtAlphaSCumprod) * x2
           case .edm(let sigmaData):
@@ -708,6 +714,8 @@ extension DPMPPSDESampler: Sampler {
           }
           var denoised2: DynamicGraph.Tensor<FloatType>
           switch discretization.objective {
+          case .const:
+            fatalError()
           case .v:
             denoised2 = Functional.add(
               left: x2, right: et, leftScalar: Float(1.0 / (sigmaS * sigmaS + 1)),
@@ -749,6 +757,8 @@ extension DPMPPSDESampler: Sampler {
         } else {
           let dt = sigmas[i + 1] - sigma
           switch discretization.objective {
+          case .const:
+            fatalError()
           case .v:
             // denoised = Float(1.0 / (sigma * sigma + 1)) * x - (sigma * sqrtAlphaCumprod) * et
             // d = (x - denoised) / sigma // (x - Float(1.0 / (sigma * sigma + 1)) * x + (sigma * sqrtAlphaCumprod) * et) / sigma = (sigma / (sigma * sigma + 1)) * x + sqrtAlphaCumprod * et

@@ -142,7 +142,9 @@ extension UNetFixedEncoder {
     case .wurstchenStageC, .wurstchenStageB:
       // We don't need other vectors for sampling.
       return []
-    case .v1, .v2, .sd3, .kandinsky21:
+    case .sd3:
+      return []
+    case .v1, .v2, .kandinsky21:
       fatalError()
     }
   }

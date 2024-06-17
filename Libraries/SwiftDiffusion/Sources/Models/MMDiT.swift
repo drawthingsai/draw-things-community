@@ -167,9 +167,9 @@ private func JointTransformerBlock(
   }
 }
 
-func MMDiT(
+func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
   batchSize: Int, t: Int, height: Int, width: Int, channels: Int, layers: Int,
-  usesFlashAttention: FlashAttentionLevel
+  usesFlashAttention: FlashAttentionLevel, of: FloatType.Type = FloatType.self
 )
   -> (ModelWeightMapper, Model)
 {
@@ -182,7 +182,7 @@ func MMDiT(
   let xEmbedder = Convolution(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var out = xEmbedder(x).reshaped([batchSize, channels, h * w]).transposed(1, 2)
+  var out = xEmbedder(x).reshaped([batchSize, h * w, channels])
   let posEmbed = Parameter<FloatType>(.GPU(0), .NHWC(1, 192, 192, channels), name: "pos_embed")
   let spatialPosEmbed = posEmbed.reshaped(
     [1, h, w, channels], offset: [0, (192 - h) / 2, (192 - w) / 2, 0],

@@ -232,7 +232,7 @@ func AttnBlock(
 
 public func Encoder(
   channels: [Int], numRepeat: Int, batchSize: Int, startWidth: Int, startHeight: Int,
-  usesFlashAttention: Bool
+  usesFlashAttention: Bool, quantLayer: Bool = true, outputChannels: Int = 4
 )
   -> (Model, PythonReader, ModelWeightMapper)
 {
@@ -330,12 +330,19 @@ public func Encoder(
   out = normOut(out)
   out = out.swish()
   let convOut = Convolution(
-    groups: 1, filters: 8, filterSize: [3, 3],
+    groups: 1, filters: outputChannels * 2, filterSize: [3, 3],
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
   out = convOut(out)
-  let quantConv2d = Convolution(
-    groups: 1, filters: 8, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
-  out = quantConv2d(out)
+  let quantConv2d: Model?
+  if quantLayer {
+    let quantConv = Convolution(
+      groups: 1, filters: outputChannels * 2, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
+      format: .OIHW)
+    out = quantConv(out)
+    quantConv2d = quantConv
+  } else {
+    quantConv2d = nil
+  }
   let reader: PythonReader = { stateDict, archive in
     guard let conv_in_weight = stateDict["first_stage_model.encoder.conv_in.weight"] else {
       throw UnpickleError.tensorNotFound
@@ -369,16 +376,18 @@ public func Encoder(
     try convOut.parameters(for: .weight).copy(
       from: conv_out_weight, zip: archive, of: FloatType.self)
     try convOut.parameters(for: .bias).copy(from: conv_out_bias, zip: archive, of: FloatType.self)
-    guard let quant_conv_weight = stateDict["first_stage_model.quant_conv.weight"] else {
-      throw UnpickleError.tensorNotFound
+    if let quantConv2d = quantConv2d {
+      guard let quant_conv_weight = stateDict["first_stage_model.quant_conv.weight"] else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard let quant_conv_bias = stateDict["first_stage_model.quant_conv.bias"] else {
+        throw UnpickleError.tensorNotFound
+      }
+      try quantConv2d.parameters(for: .weight).copy(
+        from: quant_conv_weight, zip: archive, of: FloatType.self)
+      try quantConv2d.parameters(for: .bias).copy(
+        from: quant_conv_bias, zip: archive, of: FloatType.self)
     }
-    guard let quant_conv_bias = stateDict["first_stage_model.quant_conv.bias"] else {
-      throw UnpickleError.tensorNotFound
-    }
-    try quantConv2d.parameters(for: .weight).copy(
-      from: quant_conv_weight, zip: archive, of: FloatType.self)
-    try quantConv2d.parameters(for: .bias).copy(
-      from: quant_conv_bias, zip: archive, of: FloatType.self)
   }
   let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
@@ -396,8 +405,10 @@ public func Encoder(
       mapping["first_stage_model.encoder.norm_out.bias"] = [normOut.bias.name]
       mapping["first_stage_model.encoder.conv_out.weight"] = [convOut.weight.name]
       mapping["first_stage_model.encoder.conv_out.bias"] = [convOut.bias.name]
-      mapping["first_stage_model.quant_conv.weight"] = [quantConv2d.weight.name]
-      mapping["first_stage_model.quant_conv.bias"] = [quantConv2d.bias.name]
+      if let quantConv2d = quantConv2d {
+        mapping["first_stage_model.quant_conv.weight"] = [quantConv2d.weight.name]
+        mapping["first_stage_model.quant_conv.bias"] = [quantConv2d.bias.name]
+      }
     case .diffusers:
       mapping["encoder.conv_in.weight"] = [convIn.weight.name]
       mapping["encoder.conv_in.bias"] = [convIn.bias.name]
@@ -405,8 +416,10 @@ public func Encoder(
       mapping["encoder.conv_norm_out.bias"] = [normOut.bias.name]
       mapping["encoder.conv_out.weight"] = [convOut.weight.name]
       mapping["encoder.conv_out.bias"] = [convOut.bias.name]
-      mapping["quant_conv.weight"] = [quantConv2d.weight.name]
-      mapping["quant_conv.bias"] = [quantConv2d.bias.name]
+      if let quantConv2d = quantConv2d {
+        mapping["quant_conv.weight"] = [quantConv2d.weight.name]
+        mapping["quant_conv.bias"] = [quantConv2d.bias.name]
+      }
     }
     return mapping
 
@@ -416,14 +429,22 @@ public func Encoder(
 
 public func Decoder(
   channels: [Int], numRepeat: Int, batchSize: Int, startWidth: Int, startHeight: Int,
-  usesFlashAttention: Bool, paddingFinalConvLayer: Bool
+  usesFlashAttention: Bool, paddingFinalConvLayer: Bool, quantLayer: Bool = true
 )
   -> (Model, PythonReader, ModelWeightMapper)
 {
   let x = Input()
-  let postQuantConv2d = Convolution(
-    groups: 1, filters: 4, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
-  var out = postQuantConv2d(x)
+  var out: Model.IO
+  let postQuantConv2d: Model?
+  if quantLayer {
+    let postQuantConv = Convolution(
+      groups: 1, filters: 4, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
+    out = postQuantConv(x)
+    postQuantConv2d = postQuantConv
+  } else {
+    out = x
+    postQuantConv2d = nil
+  }
   var previousChannel = channels[channels.count - 1]
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3],
@@ -509,16 +530,19 @@ public func Decoder(
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
   out = convOut(out)
   let reader: PythonReader = { stateDict, archive in
-    guard let post_quant_conv_weight = stateDict["first_stage_model.post_quant_conv.weight"] else {
-      throw UnpickleError.tensorNotFound
+    if let postQuantConv2d = postQuantConv2d {
+      guard let post_quant_conv_weight = stateDict["first_stage_model.post_quant_conv.weight"]
+      else {
+        throw UnpickleError.tensorNotFound
+      }
+      guard let post_quant_conv_bias = stateDict["first_stage_model.post_quant_conv.bias"] else {
+        throw UnpickleError.tensorNotFound
+      }
+      try postQuantConv2d.parameters(for: .weight).copy(
+        from: post_quant_conv_weight, zip: archive, of: FloatType.self)
+      try postQuantConv2d.parameters(for: .bias).copy(
+        from: post_quant_conv_bias, zip: archive, of: FloatType.self)
     }
-    guard let post_quant_conv_bias = stateDict["first_stage_model.post_quant_conv.bias"] else {
-      throw UnpickleError.tensorNotFound
-    }
-    try postQuantConv2d.parameters(for: .weight).copy(
-      from: post_quant_conv_weight, zip: archive, of: FloatType.self)
-    try postQuantConv2d.parameters(for: .bias).copy(
-      from: post_quant_conv_bias, zip: archive, of: FloatType.self)
     guard let conv_in_weight = stateDict["first_stage_model.decoder.conv_in.weight"] else {
       throw UnpickleError.tensorNotFound
     }
@@ -562,8 +586,10 @@ public func Decoder(
     mapping.merge(midBlockMapper2(format)) { v, _ in v }
     switch format {
     case .generativeModels:
-      mapping["first_stage_model.post_quant_conv.weight"] = [postQuantConv2d.weight.name]
-      mapping["first_stage_model.post_quant_conv.bias"] = [postQuantConv2d.bias.name]
+      if let postQuantConv2d = postQuantConv2d {
+        mapping["first_stage_model.post_quant_conv.weight"] = [postQuantConv2d.weight.name]
+        mapping["first_stage_model.post_quant_conv.bias"] = [postQuantConv2d.bias.name]
+      }
       mapping["first_stage_model.decoder.conv_in.weight"] = [convIn.weight.name]
       mapping["first_stage_model.decoder.conv_in.bias"] = [convIn.bias.name]
       mapping["first_stage_model.decoder.norm_out.weight"] = [normOut.weight.name]
@@ -571,8 +597,10 @@ public func Decoder(
       mapping["first_stage_model.decoder.conv_out.weight"] = [convOut.weight.name]
       mapping["first_stage_model.decoder.conv_out.bias"] = [convOut.bias.name]
     case .diffusers:
-      mapping["post_quant_conv.weight"] = [postQuantConv2d.weight.name]
-      mapping["post_quant_conv.bias"] = [postQuantConv2d.bias.name]
+      if let postQuantConv2d = postQuantConv2d {
+        mapping["post_quant_conv.weight"] = [postQuantConv2d.weight.name]
+        mapping["post_quant_conv.bias"] = [postQuantConv2d.bias.name]
+      }
       mapping["decoder.conv_in.weight"] = [convIn.weight.name]
       mapping["decoder.conv_in.bias"] = [convIn.bias.name]
       mapping["decoder.conv_norm_out.weight"] = [normOut.weight.name]

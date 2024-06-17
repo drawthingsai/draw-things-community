@@ -113,7 +113,7 @@ public func CLIPTextModel<T: TensorNumeric>(
   _ dataType: T.Type, injectEmbeddings: Bool,
   vocabularySize: Int, maxLength: Int, maxTokenLength: Int, embeddingSize: Int, numLayers: Int,
   numHeads: Int, batchSize: Int, intermediateSize: Int, usesFlashAttention: Bool,
-  noFinalLayerNorm: Bool = false, trainable: Bool? = nil
+  outputPenultimate: Bool = false, noFinalLayerNorm: Bool = false, trainable: Bool? = nil
 ) -> (Model, PythonReader) {
   let tokens = Input()
   let positions = Input()
@@ -145,7 +145,11 @@ public func CLIPTextModel<T: TensorNumeric>(
   var fc1s = [Model]()
   var fc2s = [Model]()
   let k = embeddingSize / numHeads
-  for _ in 0..<numLayers {
+  var penultimate: Model.IO? = nil
+  for i in 0..<numLayers {
+    if i == numLayers - 1 {
+      penultimate = out
+    }
     let (layerNorm1, tokeys, toqueries, tovalues, unifyheads, layerNorm2, fc1, fc2, encoderLayer) =
       CLIPEncoderLayer(
         k: k, h: numHeads, b: batchSize, t: maxTokenLength, intermediateSize: intermediateSize,
@@ -366,10 +370,13 @@ public func CLIPTextModel<T: TensorNumeric>(
   let model: Model
   if injectEmbeddings, let embedMask = embedMask, let injectedEmbeddings = injectedEmbeddings {
     model = Model(
-      [tokens, positions, causalAttentionMask, embedMask, injectedEmbeddings], [out],
+      [tokens, positions, causalAttentionMask, embedMask, injectedEmbeddings],
+      (penultimate.map { [$0] } ?? []) + [out],
       trainable: trainable)
   } else {
-    model = Model([tokens, positions, causalAttentionMask], [out], trainable: trainable)
+    model = Model(
+      [tokens, positions, causalAttentionMask], (penultimate.map { [$0] } ?? []) + [out],
+      trainable: trainable)
   }
   return (model, reader)
 }

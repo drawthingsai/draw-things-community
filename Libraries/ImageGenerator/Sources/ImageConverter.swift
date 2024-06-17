@@ -612,7 +612,7 @@ public enum ImageConverter {
       let imageHeight = tensor.shape[1]
       let imageWidth = tensor.shape[2]
       let channels = tensor.shape[3]
-      guard channels == 4 || channels == 3 else { return nil }
+      guard channels == 4 || channels == 3 || channels == 16 else { return nil }
       let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: imageWidth * imageHeight * 4)
       tensor.withUnsafeBytes {
         guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
@@ -630,7 +630,31 @@ public enum ImageConverter {
             bytes[i * 4 + 3] = 255
           }
         case .sd3:
-          fatalError()
+          for i in 0..<imageHeight * imageWidth {
+            let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
+              fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3], fp16[i * 16 + 4],
+              fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
+              fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
+              fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
+            )
+            // TBD.
+            let r: Float16 =
+              (-0.0645 * v0 + 0.0028 * v1 + 0.1848 * v2 + 0.0944 * v3 + 0.0897 * v4 - 0.0020 * v5
+                + 0.0855 * v6 - 0.0539 * v7 - 0.0057 * v8 - 0.0412 * v9 + 0.1106 * v10 - 0.0248
+                * v11 + 0.0815 * v12 - 0.0120 * v13 - 0.0749 * v14 - 0.1418 * v15) * 127.5 + 127.5
+            let g: Float16 =
+              (0.0177 * v0 + 0.0312 * v1 + 0.0762 * v2 + 0.0360 * v3 + 0.0506 * v4 + 0.1203 * v5
+                + 0.0118 * v6 + 0.0658 * v7 + 0.0116 * v8 + 0.0281 * v9 + 0.1171 * v10 + 0.0682
+                * v11 + 0.0846 * v12 - 0.0055 * v13 - 0.0634 * v14 - 0.1457 * v15) * 127.5 + 127.5
+            let b: Float16 =
+              (0.1052 * v0 + 0.0650 * v1 + 0.0360 * v2 + 0.0889 * v3 - 0.0364 * v4 + 0.0284 * v5
+                + 0.0283 * v6 + 0.1047 * v7 + 0.0700 * v8 - 0.0039 * v9 + 0.1220 * v10 - 0.0481
+                * v11 + 0.1207 * v12 - 0.0867 * v13 - 0.0456 * v14 - 0.1259 * v15) * 127.5 + 127.5
+            bytes[i * 4] = UInt8(min(max(Int(r.isNaN ? 0 : r), 0), 255))
+            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isNaN ? 0 : g), 0), 255))
+            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isNaN ? 0 : b), 0), 255))
+            bytes[i * 4 + 3] = 255
+          }
         case .sdxlBase, .sdxlRefiner, .ssd1b:
           for i in 0..<imageHeight * imageWidth {
             // We need to do some computations from the latent values.

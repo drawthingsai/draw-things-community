@@ -428,6 +428,8 @@ extension LCMSampler: Sampler {
         let alpha = alphasCumprod[timestep]
         let predictOriginalSample: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
+        case .const:
+          fatalError()
         case .v:
           let sqrtAlphaCumprod = 1.0 / (sigma * sigma + 1).squareRoot()
           predictOriginalSample = Functional.add(
