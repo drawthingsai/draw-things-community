@@ -37,6 +37,8 @@ extension SamplerType {
       self = .eulerAAYS
     case .DPMPPSDEAYS:
       self = .DPMPPSDEAYS
+    case .dPMPP2MTrailing:
+      self = .dPMPP2MTrailing
     }
   }
 }
@@ -74,6 +76,8 @@ extension DataModels.SamplerType {
       self = .eulerAAYS
     case .DPMPPSDEAYS:
       self = .DPMPPSDEAYS
+    case .dPMPP2MTrailing:
+      self = .dPMPP2MTrailing
     }
   }
 }

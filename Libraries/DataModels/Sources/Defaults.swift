@@ -58,6 +58,8 @@ extension SamplerType: CustomStringConvertible {
       return "Euler A AYS"
     case .DPMPPSDEAYS:
       return "DPM++ SDE AYS"
+    case .dPMPP2MTrailing:
+      return "DPM++ 2M Trailing"
     }
   }
 

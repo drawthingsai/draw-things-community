@@ -30,6 +30,7 @@ public struct ImageGenerator {
   public var tokenizerV2: TextualInversionAttentionCLIPTokenizer
   public var tokenizerXL: TextualInversionAttentionCLIPTokenizer
   public var tokenizerKandinsky: SentencePieceTokenizer
+  public var tokenizerT5: SentencePieceTokenizer
   let poseDrawer: PoseDrawer
   private let queue: DispatchQueue
   public init(
@@ -38,6 +39,7 @@ public struct ImageGenerator {
     tokenizerV2: TextualInversionAttentionCLIPTokenizer,
     tokenizerXL: TextualInversionAttentionCLIPTokenizer,
     tokenizerKandinsky: SentencePieceTokenizer,
+    tokenizerT5: SentencePieceTokenizer,
     poseDrawer: PoseDrawer
   ) {
     self.queue = queue
@@ -45,6 +47,7 @@ public struct ImageGenerator {
     self.tokenizerV2 = tokenizerV2
     self.tokenizerXL = tokenizerXL
     self.tokenizerKandinsky = tokenizerKandinsky
+    self.tokenizerT5 = tokenizerT5
     self.poseDrawer = poseDrawer
     modelPreloader = ModelPreloader(
       queue: queue, configurations: configurations, workspace: workspace)
@@ -122,7 +125,7 @@ extension ImageGenerator {
     let isCfgEnabled = !isConsistencyModel
     guard version != .wurstchenStageC && version != .wurstchenStageB else {
       switch type {
-      case .dPMPP2MKarras, .DPMPP2MAYS:
+      case .dPMPP2MKarras, .DPMPP2MAYS, .dPMPP2MTrailing:
         return DPMPP2MSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
           filePath: filePath, modifier: modifier, version: version,
           usesFlashAttention: usesFlashAttention,
@@ -253,6 +256,18 @@ extension ImageGenerator {
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps))
       }
+    case .dPMPP2MTrailing:
+      return DPMPP2MSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
+        filePath: filePath, modifier: modifier, version: version,
+        usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
+        injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
+        discretization: Denoiser.LinearDiscretization(
+          parameterization, objective: objective, timestepSpacing: .trailing))
     case .eulerA:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version,
@@ -885,8 +900,6 @@ extension ImageGenerator {
       return tokenize(
         graph: graph, tokenizer: tokenizerV2, text: text, negativeText: negativeText,
         paddingToken: 0, conditionalLength: 1024, modifier: .clipL, potentials: potentials)
-    case .sd3:
-      fatalError()
     case .kandinsky21:
       let (tokenTensors, positionTensors, lengthsOfUncond, lengthsOfCond) = kandinskyTokenize(
         graph: graph, text: text, negativeText: negativeText,
@@ -913,6 +926,26 @@ extension ImageGenerator {
       result.0 = tokens + result.0
       result.2 = embedMask + result.2
       result.3 = injectedEmbeddings + result.3
+      return result
+    case .sd3:
+      let tokenizerV2 = tokenizerXL
+      var tokenizerV1 = tokenizerV1
+      tokenizerV1.textualInversions = tokenizerV2.textualInversions
+      var result = tokenize(
+        graph: graph, tokenizer: tokenizerV2, text: text, negativeText: negativeText,
+        paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
+      let (tokens, _, embedMask, injectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
+        graph: graph, tokenizer: tokenizerV1, text: text, negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials)
+      result.0 = tokens + result.0
+      result.2 = embedMask + result.2
+      result.3 = injectedEmbeddings + result.3
+      let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
+        graph: graph, tokenizer: tokenizerV1, text: text, negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials)
+      result.0 = result.0 + t5Tokens
+      result.2 = result.2 + t5EmbedMask
+      result.3 = result.3 + t5InjectedEmbeddings
       return result
     }
   }

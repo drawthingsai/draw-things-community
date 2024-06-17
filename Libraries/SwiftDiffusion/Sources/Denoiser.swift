@@ -135,7 +135,7 @@ extension Denoiser {
           objective: objective, timesteps: Float(ddpm.timesteps), s: s,
           range: alphasCumprod[alphasCumprod.count - 1]...alphasCumprod[0], sigmas: sigmas)
       case .rf:
-        fatalError()
+        self.init(objective: objective, timesteps: 1, s: s, range: 0.5...1)
       }
     }
     public func timestep(for alphaCumprod: Double) -> Float {
@@ -214,7 +214,7 @@ extension Denoiser {
           objective: objective, timesteps: Float(ddpm.timesteps), sigmaMin: sigmaMin,
           sigmaMax: sigmaMax, rho: rho, sigmas: sigmas)
       case .rf:
-        fatalError()
+        self.init(objective: objective, timesteps: 1, sigmaMin: 0, sigmaMax: 1, rho: rho)
       }
     }
     public func timestep(for alphaCumprod: Double) -> Float {
@@ -316,6 +316,14 @@ extension Denoiser {
       internalObjective = .edm(sigmaData: 0)
       timestepSpacing = .linspace
     }
+    init(objective: Objective, timestepSpacing: TimestepSpacing, rf: Float) {
+      self.internalObjective = objective
+      self.timestepSpacing = timestepSpacing
+      internalTimesteps = 1000
+      alphasCumprod = []
+      sigmas = (0...1000).map { Double($0) / 1000 }
+      EDMDiscretization = nil
+    }
     public init(
       _ parameterization: Parameterization, objective: Objective,
       timestepSpacing: TimestepSpacing = .linspace
@@ -326,7 +334,7 @@ extension Denoiser {
       case .ddpm(let ddpm):
         self.init(objective: objective, timestepSpacing: timestepSpacing, ddpm: ddpm)
       case .rf:
-        fatalError()
+        self.init(objective: objective, timestepSpacing: timestepSpacing, rf: 1)
       }
     }
     public func timestep(for alphaCumprod: Double) -> Float {

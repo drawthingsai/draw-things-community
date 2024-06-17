@@ -34,7 +34,7 @@ public struct SentencePieceTokenizer: Tokenizer {
       }
     }
     strs.append("")
-    ids.append(2)
+    ids.append(endToken)
     canonicals.append("<|endoftext|>")
     let paddingToken = paddingToken ?? 1
     if ids.count < maxLength {
