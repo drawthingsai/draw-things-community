@@ -427,7 +427,7 @@ let SharedScript = """
         switch(isOn, title) {
           return {"type": "switch", "isOn": isOn, "title": title};
         },
-        textButton(selectedOption, options) {
+        customTextButton(selectedOption, options) {
           return {"type": "textButton", "value": selectedOption, "options": options};
         },
         multiselectButton(selectedOption, options) {
