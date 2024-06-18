@@ -427,6 +427,12 @@ let SharedScript = """
         switch(isOn, title) {
           return {"type": "switch", "isOn": isOn, "title": title};
         },
+        textButton(selectedOption, options) {
+          return {"type": "textButton", "value": selectedOption, "options": options};
+        },
+        multiselectButton(selectedOption, options) {
+          return {"type": "multiselectButton", "value": selectedOption, "options": options};
+        },
         segmented(index, options) {
           return {"type": "segmented", "index": index, "options": options};
         },
