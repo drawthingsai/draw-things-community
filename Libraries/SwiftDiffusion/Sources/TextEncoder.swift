@@ -905,8 +905,13 @@ extension TextEncoder {
     let tokens2TensorGPU = tokens[2].toGPU(0)
     let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
     t5.compile(inputs: tokens2TensorGPU, relativePositionBucketsGPU)
-    graph.openStore(filePaths[2]) {
-      $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit])
+    // Move T5 to on-demand.
+    TensorData.makeExternalData(for: filePaths[2], graph: graph)
+    graph.openStore(
+      filePaths[2], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[2])
+    ) {
+      $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
     }
     let c2 = t5(inputs: tokens2TensorGPU, relativePositionBucketsGPU)[0].as(
       of: FloatType.self
