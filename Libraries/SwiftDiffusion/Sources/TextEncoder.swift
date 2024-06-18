@@ -894,11 +894,24 @@ extension TextEncoder {
       pooled[1..<2, 768..<2048] =
         c1Out[1][(maxLength + tokenEnd)..<(maxLength + tokenEnd + 1), 0..<1280] * textProjection
     }
-    var c = graph.variable(.GPU(0), .HWC(2, maxLength, 4096), of: FloatType.self)
-    c.full(0)
-    c[0..<2, 0..<maxLength, 0..<768] = c0
-    c[0..<2, 0..<maxLength, 768..<2048] = c1
-    return ([c, pooled], [textModel])
+    guard filePaths.count >= 3 && tokens.count >= 3 else {
+      return ([c0, c1, pooled], [textModel])
+    }
+    // Now load T5 encoder.
+    let tokenLength = tokens[2].shape[0] / 2
+    let (_, t5) = T5ForConditionalGeneration(b: 2, t: tokenLength, of: FloatType.self)
+    let relativePositionBuckets = relativePositionBuckets(
+      sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
+    let tokens2TensorGPU = tokens[2].toGPU(0)
+    let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
+    t5.compile(inputs: tokens2TensorGPU, relativePositionBucketsGPU)
+    graph.openStore(filePaths[2]) {
+      $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit])
+    }
+    let c2 = t5(inputs: tokens2TensorGPU, relativePositionBucketsGPU)[0].as(
+      of: FloatType.self
+    ).reshaped(.HWC(2, tokenLength, 4096))
+    return ([c0, c1, c2, pooled], [textModel])
   }
 
   public func encode(

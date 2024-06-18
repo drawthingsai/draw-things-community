@@ -1,3 +1,4 @@
+import Foundation
 import NNC
 
 private func T5TextEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
@@ -110,4 +111,34 @@ func T5ForConditionalGeneration<FloatType: TensorNumeric & BinaryFloatingPoint>(
     return mapping
   }
   return (mapper, Model([x, relativePositionBuckets], [out]))
+}
+
+func relativePositionBuckets(sequenceLength: Int, numBuckets: Int, maxDistance: Int) -> Tensor<
+  Int32
+> {
+  // isBidirectional = true.
+  let numBuckets = numBuckets / 2
+  let maxExact = numBuckets / 2
+  var relativePositionBuckets = Tensor<Int32>(.CPU, .C(sequenceLength * sequenceLength))
+  for i in 0..<sequenceLength {
+    for j in 0..<sequenceLength {
+      var relativePositionBucket = j > i ? numBuckets : 0
+      let relativePosition = abs(i - j)
+      let isSmall = relativePosition < maxExact
+      if isSmall {
+        relativePositionBucket += relativePosition
+      } else {
+        let relativePositionIfLarge = min(
+          numBuckets - 1,
+          maxExact
+            + Int(
+              (log(Double(relativePosition) / Double(maxExact))
+                / log(Double(maxDistance) / Double(maxExact)) * Double(numBuckets - maxExact))
+                .rounded(.down)))
+        relativePositionBucket += relativePositionIfLarge
+      }
+      relativePositionBuckets[i * sequenceLength + j] = Int32(relativePositionBucket)
+    }
+  }
+  return relativePositionBuckets
 }

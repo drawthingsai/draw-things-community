@@ -273,8 +273,52 @@ extension UNetFixedEncoder {
       kvs.append(
         contentsOf: unetFixed(inputs: zeroProj, numFramesEmb).map { $0.as(of: FloatType.self) })
       return (kvs, unetFixedWeightMapper)
-    case .v1, .v2, .sd3, .kandinsky21:
+    case .v1, .v2, .kandinsky21:
       return (textEncoding, nil)
+    case .sd3:
+      if textEncoding.count >= 4 {
+        let c0 = textEncoding[0]
+        let c1 = textEncoding[1]
+        let c2 = textEncoding[2]
+        var pooled = textEncoding[3]
+        let maxLength = c0.shape[1]
+        let t5Length = c2.shape[1]
+        var c = graph.variable(.GPU(0), .HWC(2, maxLength + t5Length, 4096), of: FloatType.self)
+        c.full(0)
+        if zeroNegativePrompt {
+          let oldPooled = pooled
+          pooled = graph.variable(like: oldPooled)
+          pooled.full(0)
+          pooled[1..<2, 0..<2048] = oldPooled[1..<2, 0..<2048]
+          c[1..<2, 0..<maxLength, 0..<768] = c0[1..<2, 0..<maxLength, 0..<768]
+          c[1..<2, 0..<maxLength, 768..<2048] = c1[1..<2, 0..<maxLength, 0..<1280]
+          c[1..<2, maxLength..<(maxLength + t5Length), 0..<4096] = c2[1..<2, 0..<t5Length, 0..<4096]
+        } else {
+          c[0..<2, 0..<maxLength, 0..<768] = c0
+          c[0..<2, 0..<maxLength, 768..<2048] = c1
+          c[0..<2, maxLength..<(maxLength + t5Length), 0..<4096] = c2
+        }
+        return ([c, pooled], nil)
+      } else {
+        let c0 = textEncoding[0]
+        let c1 = textEncoding[1]
+        var pooled = textEncoding[2]
+        let maxLength = c0.shape[1]
+        var c = graph.variable(.GPU(0), .HWC(2, maxLength, 4096), of: FloatType.self)
+        c.full(0)
+        if zeroNegativePrompt {
+          let oldPooled = pooled
+          pooled = graph.variable(like: oldPooled)
+          pooled.full(0)
+          pooled[1..<2, 0..<2048] = oldPooled[1..<2, 0..<2048]
+          c[1..<2, 0..<maxLength, 0..<768] = c0[1..<2, 0..<maxLength, 0..<768]
+          c[1..<2, 0..<maxLength, 768..<2048] = c1[1..<2, 0..<maxLength, 0..<1280]
+        } else {
+          c[0..<2, 0..<maxLength, 0..<768] = c0
+          c[0..<2, 0..<maxLength, 768..<2048] = c1
+        }
+        return ([c, pooled], nil)
+      }
     case .wurstchenStageC:
       let batchSize = textEncoding[0].shape[0]
       let emptyImage = graph.variable(.GPU(0), .HWC(batchSize, 1, 1280), of: FloatType.self)

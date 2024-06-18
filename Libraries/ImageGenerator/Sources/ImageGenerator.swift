@@ -2015,7 +2015,7 @@ extension ImageGenerator {
     }
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
-    let textEncoderFiles =
+    var textEncoderFiles: [String] =
       [
         ModelZoo.textEncoderForModel(file).flatMap {
           ModelZoo.isModelDownloaded($0) ? $0 : nil
@@ -2023,6 +2023,9 @@ extension ImageGenerator {
       ]
       + ((ModelZoo.CLIPEncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil })
         .map { [$0] } ?? [])
+    textEncoderFiles +=
+      ((ModelZoo.T5EncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }).map
+      { [$0] } ?? [])
     let diffusionMappingFile = ModelZoo.diffusionMappingForModel(file).flatMap {
       ModelZoo.isModelDownloaded($0) ? $0 : nil
     }
@@ -2854,7 +2857,7 @@ extension ImageGenerator {
     let modelVersion = ModelZoo.versionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
-    let textEncoderFiles =
+    var textEncoderFiles: [String] =
       [
         ModelZoo.textEncoderForModel(file).flatMap {
           ModelZoo.isModelDownloaded($0) ? $0 : nil
@@ -2862,6 +2865,9 @@ extension ImageGenerator {
       ]
       + ((ModelZoo.CLIPEncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil })
         .map { [$0] } ?? [])
+    textEncoderFiles +=
+      ((ModelZoo.T5EncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }).map
+      { [$0] } ?? [])
     let diffusionMappingFile = ModelZoo.diffusionMappingForModel(file).flatMap {
       ModelZoo.isModelDownloaded($0) ? $0 : nil
     }
@@ -4040,7 +4046,7 @@ extension ImageGenerator {
     let modelVersion = ModelZoo.versionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
-    let textEncoderFiles =
+    var textEncoderFiles: [String] =
       [
         ModelZoo.textEncoderForModel(file).flatMap {
           ModelZoo.isModelDownloaded($0) ? $0 : nil
@@ -4048,6 +4054,9 @@ extension ImageGenerator {
       ]
       + ((ModelZoo.CLIPEncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil })
         .map { [$0] } ?? [])
+    textEncoderFiles +=
+      ((ModelZoo.T5EncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }).map
+      { [$0] } ?? [])
     let diffusionMappingFile = ModelZoo.diffusionMappingForModel(file).flatMap {
       ModelZoo.isModelDownloaded($0) ? $0 : nil
     }
@@ -4717,7 +4726,7 @@ extension ImageGenerator {
     let modelVersion = ModelZoo.versionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
-    let textEncoderFiles =
+    var textEncoderFiles: [String] =
       [
         ModelZoo.textEncoderForModel(file).flatMap {
           ModelZoo.isModelDownloaded($0) ? $0 : nil
@@ -4725,6 +4734,9 @@ extension ImageGenerator {
       ]
       + ((ModelZoo.CLIPEncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil })
         .map { [$0] } ?? [])
+    textEncoderFiles +=
+      ((ModelZoo.T5EncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }).map
+      { [$0] } ?? [])
     let diffusionMappingFile = ModelZoo.diffusionMappingForModel(file).flatMap {
       ModelZoo.isModelDownloaded($0) ? $0 : nil
     }

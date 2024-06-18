@@ -352,7 +352,7 @@ extension UNetFromNNC {
       tileScaleFactor = 8
       (_, unet) =
         MMDiT(
-          batchSize: batchSize, t: max(tokenLengthUncond, tokenLengthCond), height: tiledHeight,
+          batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
           width: tiledWidth, channels: 1536, layers: 24,
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
     }
