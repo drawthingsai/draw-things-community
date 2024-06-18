@@ -313,8 +313,11 @@ extension FirstStage {
     let startHeight = parameters.shape[1]
     let startWidth = parameters.shape[2]
     let graph = parameters.graph
-    let mean = parameters[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<4]
-    let logvar = parameters[0..<batchSize, 0..<startHeight, 0..<startWidth, 4..<8].copied().clamped(
+    let channels = parameters.shape[3] / 2
+    let mean = parameters[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels]
+    let logvar = parameters[
+      0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)
+    ].copied().clamped(
       -30...20)
     let std = Functional.exp(0.5 * logvar)
     let n: DynamicGraph.Tensor<FloatType>
@@ -322,7 +325,7 @@ extension FirstStage {
       n = noise
     } else {
       n = graph.variable(
-        .GPU(0), .NHWC(batchSize, startHeight, startWidth, 4), of: FloatType.self)
+        .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
       n.randn(std: 1, mean: 0)
     }
     return (scale(mean + std .* n), mean)

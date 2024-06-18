@@ -575,7 +575,14 @@ extension DPMPP2MSampler: Sampler {
           // Then, we should compute qSample as alphaPrev.squareRoot() * sample + (1 - alphaPrev).squareRoot() * noise
           // However, because we will multiple back 1 / alphaPrev.squareRoot() again, this effectively become the following.
           noise.randn(std: 1, mean: 0)
-          let qSample = sample + Float(sigmas[i + 1]) * noise
+          let qSample: DynamicGraph.Tensor<FloatType>
+          if discretization.objective == .const {
+            qSample = Functional.add(
+              left: sample, right: noise, leftScalar: Float(1 - sigmas[i + 1]),
+              rightScalar: Float(sigmas[i + 1]))
+          } else {
+            qSample = sample + Float(sigmas[i + 1]) * noise
+          }
           x = qSample .* negMask + x .* mask
         }
         if i == endStep.integral - 1 {
@@ -627,7 +634,11 @@ extension DPMPP2MSampler: Sampler {
   }
 
   public func sampleScaleFactor(at step: Float, sampling: Sampling) -> Float {
-    return 1
+    if discretization.objective == .const {
+      return 1 - noiseScaleFactor(at: step, sampling: sampling)
+    } else {
+      return 1
+    }
   }
 
   public func noiseScaleFactor(at step: Float, sampling: Sampling) -> Float {

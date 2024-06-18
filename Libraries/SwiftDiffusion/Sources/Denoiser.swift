@@ -322,8 +322,8 @@ extension Denoiser {
       self.internalObjective = objective
       self.timestepSpacing = timestepSpacing
       internalTimesteps = 1000
-      alphasCumprod = []
-      sigmas = (0...1000).map { Double($0) / 1000 }
+      sigmas = (1...1000).map { Double($0) / 1000 }
+      alphasCumprod = sigmas.map { 1.0 / ($0 * $0 + 1) }
       EDMDiscretization = nil
     }
     public init(
