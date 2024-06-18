@@ -551,8 +551,16 @@ extension DPMPPSDESampler: Sampler {
               / (sigma * sigma)).squareRoot())
           let sigmaDown1 = (sigmaS * sigmaS - sigmaUp1 * sigmaUp1).squareRoot()
           let w1 = sigmaDown1 / sigma
-          var x2 = Functional.add(
-            left: x, right: denoised, leftScalar: Float(w1), rightScalar: Float(1 - w1))
+          var x2: DynamicGraph.Tensor<FloatType>
+          if case .u(_) = discretization.objective {
+            // Need to add denoised * (sigmaDown1 - sigmaS) for later compute x2.
+            x2 = Functional.add(
+              left: x, right: denoised, leftScalar: Float(w1),
+              rightScalar: Float(1 - w1 + sigmaDown1 - sigmaS))
+          } else {
+            x2 = Functional.add(
+              left: x, right: denoised, leftScalar: Float(w1), rightScalar: Float(1 - w1))
+          }
           // Now do brownian sampling to sigma -> sigmaS (right), needs to compute sigmaS -> 0 (left).
           // Formulation borrowed from: https://github.com/google-research/torchsde/blob/master/torchsde/_brownian/brownian_interval.py#L181
           // Because we do brownian sampling, meaning there is a dependency between this observation and the next one.
@@ -740,8 +748,14 @@ extension DPMPPSDESampler: Sampler {
           let sigmaDown2 = (sigmas[i + 1] * sigmas[i + 1] - sigmaUp2 * sigmaUp2).squareRoot()
           let denoisedD = denoised2
           let w2 = sigmaDown2 / sigma
-          x = Functional.add(
-            left: x, right: denoisedD, leftScalar: Float(w2), rightScalar: Float(1 - w2))
+          if case .u(_) = discretization.objective {
+            x = Functional.add(
+              left: x, right: denoisedD, leftScalar: Float(w2),
+              rightScalar: Float(1 - w2 + sigmaDown2 - sigmas[i + 1]))
+          } else {
+            x = Functional.add(
+              left: x, right: denoisedD, leftScalar: Float(w2), rightScalar: Float(1 - w2))
+          }
           let leftDiffOverH2 = sigmas[i + 1] / sigmaS
           let rightDiff2 = sigmaS - sigmas[i + 1]
           noise.randn(std: 1, mean: 0)
