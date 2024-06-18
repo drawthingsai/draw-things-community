@@ -395,6 +395,10 @@ let SharedScript = """
       constructor(handle) {
         this.handle = handle;
       }
+      
+      get src() {
+        return __dtHooks.maskSrc({"handle": this.handle})
+      }
 
       fillRectangle(x, y, width, height, value) {
         __dtHooks.fillMaskRectangle(this, new Rectangle(x, y, width, height), value);

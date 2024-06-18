@@ -102,6 +102,7 @@ extension SupportedPrefix {
   func loadLayerFromSrc(_ srcContent: String, _ type: String)
   func loadLayerFromJson(_ json: String, _ type: String)
   func saveLayerSrc(_ type: String) -> String?
+  func maskSrc(_ maskJson: [String: Any]) -> String?
   func clearMoodboard()
   func extractDepthMap()
   func removeFromMoodboardAt(_ index: Int)
@@ -119,6 +120,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func currentMask() -> Tensor<UInt8>?
   func foregroundMask() -> Tensor<UInt8>?
   func backgroundMask() -> Tensor<UInt8>?
+  func maskImageData(_ mask: Tensor<UInt8>) -> Data?
   func generateImage(
     prompt: String?, negativePrompt: String?, configuration: GenerationConfiguration,
     mask: Tensor<UInt8>?
@@ -382,6 +384,19 @@ extension ScriptExecutor: JSInterop {
       let jsMask = maskManager.createNewMask()
       maskManager.setMask(backgroundMask, forJSMask: jsMask)
       return jsMask.handle
+    }
+  }
+
+  func maskSrc(_ maskJson: [String: Any]) -> String? {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      let jsMask = try swiftObject(jsonObject: maskJson, type: JSMask.self)
+      guard let storedMask = self.maskManager.mask(forJSMask: jsMask) else {
+        throw "Unrecognized handle: \(jsMask.handle)"
+      }
+
+      guard let data = delegate.maskImageData(storedMask) else { return nil }
+      return SupportedPrefix.base64Png.rawValue + data.base64EncodedString()
     }
   }
 
