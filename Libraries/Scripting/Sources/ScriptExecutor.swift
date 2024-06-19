@@ -1,3 +1,4 @@
+import Combine
 import DataModels
 import Diffusion
 import Foundation
@@ -11,9 +12,15 @@ public func jsonObject(from object: Encodable) throws -> Any {
   return try JSONSerialization.jsonObject(with: data)
 }
 
-public func object<T: Decodable>(jsonObject: Any, type: T.Type) throws -> T {
+public func swiftObject<T: Decodable>(jsonObject: Any, type: T.Type) throws -> T {
   let data = try JSONSerialization.data(withJSONObject: jsonObject)
   return try JSONDecoder().decode(type, from: data)
+}
+
+public enum ScriptExecutionState {
+  case running
+  case cancelled
+  case ended
 }
 
 public enum OpenPurpose: String {
@@ -71,6 +78,7 @@ extension SupportedPrefix {
 }
 
 @objc protocol JSInterop: JSExport {
+  func repl()
   func log(_ message: String, _ type: Int)
   func generateImage(_ args: [String: Any])
   func createControl(_ name: String) -> [String: Any]?
@@ -95,6 +103,7 @@ extension SupportedPrefix {
   func listFilesUnderPictures() -> [String]
   func picturesPath() -> String?
   func loadImageFileToCanvas(_ file: String)
+  func loadImageSrcToCanvas(_ srcContent: String)
   func saveImageFileFromCanvas(_ file: String, _ visibleRegionOnly: Bool)
   func saveImageSrcFromCanvas(_ visibleRegionOnly: Bool) -> String?
   func loadLayerFromPhotos(_ type: String)
@@ -134,10 +143,15 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func boundingBox() -> CGRect
   func log(_ message: String, type: Int)
   func logException(_ message: String, line: Int, stack: String)
-  func evaluateScriptBegan()
+  func logJavascript(title: String, script: String, index: Int)
+  func logMask(_ mask: Tensor<UInt8>)
+  func openREPLConsole()
+  func evaluateScriptBegan(sessionId: UInt64)
+  func evaluateScriptBeforeREPL()
   func evaluateScriptEnded()
   func clearCanvas()
   func loadImageFileToCanvas(_ file: String)
+  func loadImageSrcToCanvas(_ srcContent: String) throws
   func saveImageFileFromCanvas(_ file: String, _ visibleRegionOnly: Bool)
   func saveImageDataFromCanvas(_ visibleRegionOnly: Bool) -> Data?
   func loadLayerFromPhotos(type: String) throws
@@ -158,22 +172,41 @@ public protocol ScriptExecutorDelegate: AnyObject {
 }
 
 @objc public final class ScriptExecutor: NSObject {
+  enum REPLCommand {
+    case exit
+    case javascript(file: String, script: String, completionHandler: (Bool) -> Void)
+  }
+  private static var systemRandomNumberGenerator = SystemRandomNumberGenerator()
   private static let queue = DispatchQueue(label: "com.draw-things.script", qos: .userInteractive)
   var hasExecuted = false
   var hasCancelled = false
+  var hasException = false
   var lifetimeObjects = [AnyObject]()
   let maskManager = MaskManager()
   weak var delegate: ScriptExecutorDelegate?
-  let script: String?
+  public let scripts: [(file: String, script: String)]
+  public private(set) var currentScriptName: String?
+  public private(set) var currentGenerationGroup: UInt32?
   var context: JSContext?
+  public let isREPL: Bool
+  private let replLock: DispatchQueue
+  private let replSignal: DispatchSemaphore
+  private var replCommand: [REPLCommand]
+  private let subject: PassthroughSubject<ScriptExecutionState, Never> =
+    PassthroughSubject<ScriptExecutionState, Never>()
+  public var executionStatePublisher: AnyPublisher<ScriptExecutionState, Never> {
+    return subject.eraseToAnyPublisher()
+  }
 
-  public init(script: ScriptZoo.Script, delegate: ScriptExecutorDelegate) {
-    if let filePath = script.filePath {
-      self.script = ScriptZoo.contentOf(filePath)
-    } else {
-      self.script = ""
-    }
+  public init(
+    scripts: [(file: String, script: String)], delegate: ScriptExecutorDelegate, isREPL: Bool
+  ) {
+    self.scripts = scripts
     self.delegate = delegate
+    self.isREPL = isREPL
+    replLock = DispatchQueue(label: "com.draw-things.repl")
+    replSignal = DispatchSemaphore(value: 0)
+    replCommand = []
   }
 }
 
@@ -204,7 +237,7 @@ extension ScriptExecutor: JSInterop {
 
   func updateCanvasSize(_ configurationDictionary: [String: Any]) {
     forwardExceptionsToJS {
-      let configuration = try object(
+      let configuration = try swiftObject(
         jsonObject: configurationDictionary, type: JSGenerationConfiguration.self
       ).createGenerationConfiguration()
       delegate?.updateCanvasSize(configuration)
@@ -225,7 +258,7 @@ extension ScriptExecutor: JSInterop {
       guard let delegate = delegate else { throw "No delegate" }
       let mask: Tensor<UInt8>?
       if let maskDictionary = args["mask"] as? [String: Any] {
-        let jsMask = try object(jsonObject: maskDictionary, type: JSMask.self)
+        let jsMask = try swiftObject(jsonObject: maskDictionary, type: JSMask.self)
         guard let storedMask = maskManager.mask(forJSMask: jsMask) else {
           throw "Unrecognized handle: \(jsMask.handle)"
         }
@@ -236,7 +269,7 @@ extension ScriptExecutor: JSInterop {
       guard let argsConfiguration = args["configuration"] as? [String: Any] else {
         throw "Missing configuration parameter"
       }
-      let jsConfiguration = try object(
+      let jsConfiguration = try swiftObject(
         jsonObject: argsConfiguration, type: JSGenerationConfiguration.self)
 
       fixDimensionIfNecessary(&jsConfiguration.width)
@@ -279,7 +312,7 @@ extension ScriptExecutor: JSInterop {
     _ maskDictionary: [String: Any], _ rect: CGRect, _ value: UInt8
   ) {
     forwardExceptionsToJS {
-      let jsMask = try object(jsonObject: maskDictionary, type: JSMask.self)
+      let jsMask = try swiftObject(jsonObject: maskDictionary, type: JSMask.self)
       guard var mask = maskManager.mask(forJSMask: jsMask) else {
         throw "Unrecognized handle: \(jsMask.handle)"
       }
@@ -431,6 +464,7 @@ extension ScriptExecutor: JSInterop {
     let lineNumber = Int(value?.objectForKeyedSubscript("line")?.toInt32() ?? -1)
     let stackString = value?.objectForKeyedSubscript("stack")?.toString() ?? ""
     delegate?.logException(message, line: lineNumber, stack: stackString)
+    hasException = true
   }
 
   public func run() {
@@ -440,27 +474,127 @@ extension ScriptExecutor: JSInterop {
         fatalError(
           "This object is one-shot, create another instance if you need to run execute() again")
       }
-      guard let script = self.script else { return }
       self.context = JSContext()
       self.hasExecuted = true
-
+      self.subject.send(.running)
       self.context?.exceptionHandler = { [weak self] context, value in
         guard let self = self else { return }
         // If it is not cancellation error, we handle it.
-        guard !self.hasCancelled else { return }
+        guard !self.hasCancelled else {
+          self.subject.send(.cancelled)
+          return
+        }
         self.handleException(value: value)
+        self.subject.send(.ended)
       }
       self.context?.setObject(self, forKeyedSubscript: "__dtHooks" as NSCopying & NSObjectProtocol)
+      // higher 44-bit is random, lower 20-bit is seconds since 1970.
+      // Usually it is already good with random number because SystemRNG
+      // uses high quality source. 20-bit is enough for a year wrap-around.
+      // So we have unique session id every second for a year, and if it happens
+      // in a second, we have enough entropy from rng to differentiate them.
+      let sessionId =
+        (Self.systemRandomNumberGenerator.next() & 0xffff_ffff_fff0_0000)
+        | (UInt64(Date().timeIntervalSince1970) & 0xf_ffff)
+      self.delegate?.evaluateScriptBegan(sessionId: sessionId)
       // It's good to evaluate these as two separate scripts, rather than pasting them together into one script,
       // so that stack trace line numbers are accurate for the user for errors in their code
-      self.delegate?.evaluateScriptBegan()
-      self.context?.evaluateScript(SharedScript)
-      self.context?.evaluateScript(script)
+      for (i, script) in self.scripts.enumerated() {
+        self.delegate?.logJavascript(
+          title: (script.file as NSString).lastPathComponent, script: script.script, index: i)
+        self.currentScriptName = script.file
+        self.currentGenerationGroup = UInt32.random(in: UInt32.min...UInt32.max)
+        self.context?.evaluateScript(script.script)
+        if self.hasCancelled || self.hasException {
+          break
+        }
+      }
+      self.hasException = false
+      self.hasCancelled = false
+      if self.isREPL {
+        self.delegate?.evaluateScriptBeforeREPL()
+        self.replLoop()
+      }
       self.context = nil  // In case this will help prevent a retain cycle
       self.lifetimeObjects.removeAll()
       self.delegate?.evaluateScriptEnded()
+      self.subject.send(.ended)
       // TODO: prevent network and file access
     }
+  }
+
+  private func replLoop() {
+    dispatchPrecondition(condition: .onQueue(Self.queue))
+    // Now wait for signal.
+    guard let context = context else { return }
+    while true {
+      replSignal.wait()
+      let command = replLock.sync {
+        replCommand.removeFirst()
+      }
+      switch command {
+      case .exit:  // Cleanup all remaining executions.
+        replLock.sync {
+          let remainingCount = replCommand.count
+          replCommand = []
+          // Balance out the semaphore.
+          for _ in 0..<remainingCount {
+            replSignal.wait()
+          }
+        }
+        return
+      case .javascript(_, let script, let completionHandler):
+        if let result = context.evaluateScript(script) {
+          if result.isObject || result.isArray, let object = result.toObject() {
+            // Inspect whether it is some types we know of:
+
+            if let maskDictionary = object as? [String: Any],
+              let jsMask = try? swiftObject(jsonObject: maskDictionary, type: JSMask.self),
+              let storedMask = maskManager.mask(forJSMask: jsMask)
+            {
+              delegate?.logMask(storedMask)
+            } else if let data = try? JSONSerialization.data(
+              withJSONObject: object, options: .prettyPrinted),
+              let result = String(data: data, encoding: .utf8)
+            {
+              delegate?.log(result, type: 0)
+            } else {
+              delegate?.log(result.toString(), type: 0)
+            }
+          } else if !result.isUndefined {
+            delegate?.log(result.toString(), type: 0)
+          }
+        }
+        completionHandler(!hasException)
+        hasException = false
+        hasCancelled = false
+      }
+    }
+  }
+
+  public func abort() {
+    replLock.sync {
+      replCommand.append(.exit)
+      replSignal.signal()
+    }
+  }
+
+  public func append(file: String, script: String, completionHandler: @escaping (Bool) -> Void) {
+    replLock.sync {
+      replCommand.append(
+        .javascript(file: file, script: script, completionHandler: completionHandler))
+      replSignal.signal()
+    }
+  }
+
+  func repl() {
+    // If already is in REPL mode, no need to trigger the loop.
+    guard !isREPL else { return }
+    forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      delegate.openREPLConsole()
+    }
+    replLoop()
   }
 
   // TODO: should we add "Copy" to the end of this method so people know that mutating it won't change the existing one?
@@ -557,6 +691,13 @@ extension ScriptExecutor: JSInterop {
     forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
       delegate.loadImageFileToCanvas(file)
+    }
+  }
+
+  func loadImageSrcToCanvas(_ srcContent: String) {
+    forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      try delegate.loadImageSrcToCanvas(srcContent)
     }
   }
 

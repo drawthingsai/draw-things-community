@@ -1,4 +1,5 @@
-let SharedScript = """
+extension ScriptExecutor {
+  public static let SharedScript = """
     console.log = (...args) => {
       if (typeof args[0] == "object") {
         __dtHooks.log(JSON.stringify(args[0], null, 2));
@@ -23,6 +24,10 @@ let SharedScript = """
       }
     }
 
+    console.repl = () => {
+      __dtHooks.repl();
+    }
+
     const MaskValueType = {
       PURE_NOISE: 1,
       MASK: 2,
@@ -44,7 +49,9 @@ let SharedScript = """
       DPMPP_SDE_TRAILING: 11,
       DPMPP_2M_AYS: 12,
       EULER_A_AYS: 13,
-      DPMPP_SDE_AYS: 14
+      DPMPP_SDE_AYS: 14,
+      DPMPP_2M_TRAILING: 15,
+      DDIM_TRAILING: 16
     }
 
     class Point {
@@ -277,6 +284,9 @@ let SharedScript = """
       saveImage(file, visibleRegionOnly = false) {
         __dtHooks.saveImageFileFromCanvas(file, visibleRegionOnly);
       },
+      loadImageSrc(srcContent) {
+        __dtHooks.loadImageSrcToCanvas(srcContent);
+      },
       saveImageSrc(visibleRegionOnly = false) {
         return __dtHooks.saveImageSrcFromCanvas(visibleRegionOnly);
       },
@@ -422,11 +432,14 @@ let SharedScript = """
         slider(value, valueType, minValue, maxValue, title) {
           return {"type": "slider", "title": title, "valueType": valueType, "value": value, "minValue": minValue, "maxValue": maxValue};
         },
-        textField(value, placeholder) {
-          return {"type": "textField", "value": value, "placeholder": placeholder};
+        textField(value, placeholder, multiline, height) {
+          return {"type": "textField", "value": value, "placeholder": placeholder, "height": height, "multiline": multiline};
         },
-        imageField(title) {
-          return {"type": "imageField", "title": title};
+        imageField(title, multiSelect) {
+          return {"type": "imageField", "title": title, "multiSelect": multiSelect};
+        },
+        directory() {
+          return {"type": "directory"};
         },
         switch(isOn, title) {
           return {"type": "switch", "isOn": isOn, "title": title};
@@ -459,4 +472,5 @@ let SharedScript = """
       return __dtHooks.requestFromUser(title, confirm, construction.call(widget));
     }
 
-  """
+    """
+}
