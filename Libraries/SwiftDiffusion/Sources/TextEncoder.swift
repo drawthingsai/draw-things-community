@@ -710,7 +710,7 @@ extension TextEncoder {
         FloatType.self, injectEmbeddings: injectEmbeddings,
         vocabularySize: 49408, maxLength: 77, maxTokenLength: maxLength, embeddingSize: 768,
         numLayers: 13 - min(max(clipSkip - 1, 1), 12), numHeads: 12, batchSize: 2,
-        intermediateSize: 3072, usesFlashAttention: usesFlashAttention, noFinalLayerNorm: true
+        intermediateSize: 3072, usesFlashAttention: usesFlashAttention, outputPenultimate: true
       ).0
     if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
       textModel.compile(
