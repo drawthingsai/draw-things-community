@@ -281,41 +281,53 @@ extension UNetFixedEncoder {
         let c1 = textEncoding[1]
         let c2 = textEncoding[2]
         var pooled = textEncoding[3]
+        let isCfgEnabled = c0.shape[0] > batchSize
+        let cBatchSize = c0.shape[0]
         let maxLength = c0.shape[1]
         let t5Length = c2.shape[1]
-        var c = graph.variable(.GPU(0), .HWC(2, maxLength + t5Length, 4096), of: FloatType.self)
+        var c = graph.variable(
+          .GPU(0), .HWC(cBatchSize, maxLength + t5Length, 4096), of: FloatType.self)
         c.full(0)
-        if zeroNegativePrompt {
+        if zeroNegativePrompt && isCfgEnabled {
           let oldPooled = pooled
           pooled = graph.variable(like: oldPooled)
           pooled.full(0)
-          pooled[1..<2, 0..<2048] = oldPooled[1..<2, 0..<2048]
-          c[1..<2, 0..<maxLength, 0..<768] = c0[1..<2, 0..<maxLength, 0..<768]
-          c[1..<2, 0..<maxLength, 768..<2048] = c1[1..<2, 0..<maxLength, 0..<1280]
-          c[1..<2, maxLength..<(maxLength + t5Length), 0..<4096] = c2[1..<2, 0..<t5Length, 0..<4096]
+          pooled[batchSize..<(batchSize * 2), 0..<2048] =
+            oldPooled[batchSize..<(batchSize * 2), 0..<2048]
+          c[batchSize..<(batchSize * 2), 0..<maxLength, 0..<768] =
+            c0[batchSize..<(batchSize * 2), 0..<maxLength, 0..<768]
+          c[batchSize..<(batchSize * 2), 0..<maxLength, 768..<2048] =
+            c1[batchSize..<(batchSize * 2), 0..<maxLength, 0..<1280]
+          c[batchSize..<(batchSize * 2), maxLength..<(maxLength + t5Length), 0..<4096] =
+            c2[batchSize..<(batchSize * 2), 0..<t5Length, 0..<4096]
         } else {
-          c[0..<2, 0..<maxLength, 0..<768] = c0
-          c[0..<2, 0..<maxLength, 768..<2048] = c1
-          c[0..<2, maxLength..<(maxLength + t5Length), 0..<4096] = c2
+          c[0..<cBatchSize, 0..<maxLength, 0..<768] = c0
+          c[0..<cBatchSize, 0..<maxLength, 768..<2048] = c1
+          c[0..<cBatchSize, maxLength..<(maxLength + t5Length), 0..<4096] = c2
         }
         return ([c, pooled], nil)
       } else {
         let c0 = textEncoding[0]
         let c1 = textEncoding[1]
         var pooled = textEncoding[2]
+        let isCfgEnabled = c0.shape[0] > batchSize
+        let cBatchSize = c0.shape[0]
         let maxLength = c0.shape[1]
-        var c = graph.variable(.GPU(0), .HWC(2, maxLength, 4096), of: FloatType.self)
+        var c = graph.variable(.GPU(0), .HWC(cBatchSize, maxLength, 4096), of: FloatType.self)
         c.full(0)
-        if zeroNegativePrompt {
+        if zeroNegativePrompt && isCfgEnabled {
           let oldPooled = pooled
           pooled = graph.variable(like: oldPooled)
           pooled.full(0)
-          pooled[1..<2, 0..<2048] = oldPooled[1..<2, 0..<2048]
-          c[1..<2, 0..<maxLength, 0..<768] = c0[1..<2, 0..<maxLength, 0..<768]
-          c[1..<2, 0..<maxLength, 768..<2048] = c1[1..<2, 0..<maxLength, 0..<1280]
+          pooled[batchSize..<(batchSize * 2), 0..<2048] =
+            oldPooled[batchSize..<(batchSize * 2), 0..<2048]
+          c[batchSize..<(batchSize * 2), 0..<maxLength, 0..<768] =
+            c0[batchSize..<(batchSize * 2), 0..<maxLength, 0..<768]
+          c[batchSize..<(batchSize * 2), 0..<maxLength, 768..<2048] =
+            c1[batchSize..<(batchSize * 2), 0..<maxLength, 0..<1280]
         } else {
-          c[0..<2, 0..<maxLength, 0..<768] = c0
-          c[0..<2, 0..<maxLength, 768..<2048] = c1
+          c[0..<cBatchSize, 0..<maxLength, 0..<768] = c0
+          c[0..<cBatchSize, 0..<maxLength, 768..<2048] = c1
         }
         return ([c, pooled], nil)
       }
