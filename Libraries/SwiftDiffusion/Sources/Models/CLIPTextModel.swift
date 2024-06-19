@@ -147,7 +147,7 @@ public func CLIPTextModel<T: TensorNumeric>(
   let k = embeddingSize / numHeads
   var penultimate: Model.IO? = nil
   for i in 0..<numLayers {
-    if i == numLayers - 1 {
+    if i == numLayers - 1 && outputPenultimate {
       penultimate = out
     }
     let (layerNorm1, tokeys, toqueries, tovalues, unifyheads, layerNorm2, fc1, fc2, encoderLayer) =
