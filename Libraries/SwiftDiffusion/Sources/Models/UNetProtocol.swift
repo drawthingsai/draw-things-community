@@ -708,13 +708,13 @@ extension UNetFromNNC {
     }
     if tiledDiffusion.isEnabled {
       return tiledDiffuse(
-        tiledDiffusion: tiledDiffusion, xT: xT, inputs: timestep.flatMap { [$0] } ?? [] + c,
+        tiledDiffusion: tiledDiffusion, xT: xT, inputs: (timestep.map { [$0] } ?? []) + c,
         injectedControlsAndAdapters: injectedControlsAndAdapters, controlNets: &controlNets)
     } else {
       let (injectedControls, injectedT2IAdapters) = injectedControlsAndAdapters(
         xT, 0, 0, 0, 0, &controlNets)
       return unet!(
-        inputs: xT, timestep.flatMap { [$0] } ?? [] + c + injectedControls + injectedT2IAdapters)[0]
+        inputs: xT, (timestep.map { [$0] } ?? []) + c + injectedControls + injectedT2IAdapters)[0]
         .as(
           of: FloatType.self)
     }
