@@ -536,7 +536,7 @@ extension ModelPreloader {
           cArr =
             vector
             + fixedEncoder.encode(
-              textEncoding: cArr, batchSize: batchSize, startHeight: startHeight,
+              textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: []
             ).0  // No need to pass lora, one off use.
         }

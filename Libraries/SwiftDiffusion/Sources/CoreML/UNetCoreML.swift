@@ -68,7 +68,7 @@ extension UNetFromCoreML {
     usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
-    _ timestep: DynamicGraph.Tensor<FloatType>,
+    _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
@@ -343,7 +343,7 @@ extension UNetFromCoreML {
 
   public func callAsFunction(
     timestep: Float,
-    inputs xT: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>,
+    inputs xT: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
       _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,

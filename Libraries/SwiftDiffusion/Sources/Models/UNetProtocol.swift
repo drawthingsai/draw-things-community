@@ -13,7 +13,7 @@ public protocol UNetProtocol {
     usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
-    _ timestep: DynamicGraph.Tensor<FloatType>,
+    _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
@@ -23,7 +23,7 @@ public protocol UNetProtocol {
   ) -> Bool
   func callAsFunction(
     timestep: Float,
-    inputs: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>,
+    inputs: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>?,
     _: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
       _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
@@ -105,7 +105,7 @@ extension UNetFromNNC {
     usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
-    _ timestep: DynamicGraph.Tensor<FloatType>,
+    _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControls: [DynamicGraph.Tensor<FloatType>],
@@ -389,7 +389,13 @@ extension UNetFromNNC {
         fatalError()
       }
     }
-    var inputs = [extraProjection?.reshaped(.WC(batchSize, 384 * 4)) ?? timestep] + c
+    var inputs = [DynamicGraph.Tensor<FloatType>]()
+    if let extraProjection = extraProjection {
+      inputs.append(extraProjection.reshaped(.WC(batchSize, 384 * 4)))
+    } else if let timestep = timestep {
+      inputs.append(timestep)
+    }
+    inputs.append(contentsOf: c)
     if injectControls {
       inputs.append(contentsOf: injectedControls)
     }
@@ -416,7 +422,7 @@ extension UNetFromNNC {
     } else {
       unet.compile(inputs: [xT] + inputs)
     }
-    if let timeEmbed = timeEmbed {
+    if let timeEmbed = timeEmbed, let timestep = timestep {
       timeEmbed.compile(inputs: timestep)
     }
     let modelKey: String
@@ -644,7 +650,7 @@ extension UNetFromNNC {
 
   public func callAsFunction(
     timestep _: Float,
-    inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>,
+    inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
       _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
@@ -656,7 +662,7 @@ extension UNetFromNNC {
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
-    if let extraProjection = extraProjection, let timeEmbed = timeEmbed {
+    if let extraProjection = extraProjection, let timeEmbed = timeEmbed, let timestep = timestep {
       let batchSize = xT.shape[0]
       var embGPU = timeEmbed(inputs: timestep)[0].as(of: FloatType.self)
       embGPU = embGPU + extraProjection.reshaped(.NC(batchSize, 384 * 4))
@@ -702,13 +708,15 @@ extension UNetFromNNC {
     }
     if tiledDiffusion.isEnabled {
       return tiledDiffuse(
-        tiledDiffusion: tiledDiffusion, xT: xT, inputs: [timestep] + c,
+        tiledDiffusion: tiledDiffusion, xT: xT, inputs: timestep.flatMap { [$0] } ?? [] + c,
         injectedControlsAndAdapters: injectedControlsAndAdapters, controlNets: &controlNets)
     } else {
       let (injectedControls, injectedT2IAdapters) = injectedControlsAndAdapters(
         xT, 0, 0, 0, 0, &controlNets)
-      return unet!(inputs: xT, [timestep] + c + injectedControls + injectedT2IAdapters)[0].as(
-        of: FloatType.self)
+      return unet!(
+        inputs: xT, timestep.flatMap { [$0] } ?? [] + c + injectedControls + injectedT2IAdapters)[0]
+        .as(
+          of: FloatType.self)
     }
   }
 

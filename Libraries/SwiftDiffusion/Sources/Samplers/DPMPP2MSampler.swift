@@ -201,7 +201,8 @@ extension DPMPP2MSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        textEncoding: c, batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+        textEncoding: c, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+        startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora)
       c = vector + encodings
       injectedControlsC = injectedControls.map {
@@ -352,7 +353,7 @@ extension DPMPP2MSampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
-                textEncoding: oldC, batchSize: batchSize, startHeight: startHeight,
+                textEncoding: oldC, timesteps: [], batchSize: batchSize, startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora
               ).0

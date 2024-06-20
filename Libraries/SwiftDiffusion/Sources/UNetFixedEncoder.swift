@@ -149,8 +149,9 @@ extension UNetFixedEncoder {
     }
   }
   public func encode(
-    textEncoding: [DynamicGraph.Tensor<FloatType>], batchSize: Int, startHeight: Int,
-    startWidth: Int, tokenLengthUncond: Int, tokenLengthCond: Int, lora: [LoRAConfiguration]
+    textEncoding: [DynamicGraph.Tensor<FloatType>], timesteps: [Float], batchSize: Int,
+    startHeight: Int, startWidth: Int, tokenLengthUncond: Int, tokenLengthCond: Int,
+    lora: [LoRAConfiguration]
   ) -> ([DynamicGraph.Tensor<FloatType>], ModelWeightMapper?) {
     let graph = textEncoding[0].graph
     let lora = lora.filter { $0.version == version }
