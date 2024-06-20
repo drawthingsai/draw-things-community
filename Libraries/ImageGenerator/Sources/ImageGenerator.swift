@@ -2083,6 +2083,7 @@ extension ImageGenerator {
     }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
+      || modelVersion == .sd3
     {
       DynamicGraph.flags = .disableMixedMPSGEMM
     }
@@ -2724,6 +2725,7 @@ extension ImageGenerator {
       }
       if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
         || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
+        || modelVersion == .sd3
       {
         DynamicGraph.flags = .disableMixedMPSGEMM
       }
@@ -2925,6 +2927,7 @@ extension ImageGenerator {
     }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
+      || modelVersion == .sd3
     {
       DynamicGraph.flags = .disableMixedMPSGEMM
     }
@@ -4114,6 +4117,7 @@ extension ImageGenerator {
     }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
+      || modelVersion == .sd3
     {
       DynamicGraph.flags = .disableMixedMPSGEMM
     }
@@ -4794,6 +4798,7 @@ extension ImageGenerator {
     }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
+      || modelVersion == .sd3
     {
       DynamicGraph.flags = .disableMixedMPSGEMM
     }

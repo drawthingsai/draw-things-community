@@ -249,3 +249,76 @@ func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
   }
   return (mapper, Model([x, timestep, contextIn, y], [out]))
 }
+
+private func JointTransformerBlockFixed(
+  prefix: String, k: Int, h: Int, b: Int, contextBlockPreOnly: Bool
+) -> (ModelWeightMapper, Model) {
+  let c = Input()
+  let contextAdaLNs = (0..<(contextBlockPreOnly ? 2 : 6)).map {
+    Dense(count: k * h, name: "context_ada_ln_\($0)")
+  }
+  let contextChunks = contextAdaLNs.map { $0(c) }
+  let xAdaLNs = (0..<6).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
+  let xChunks = xAdaLNs.map { $0(c) }
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = [String: [String]]()
+    mapping[
+      "\(prefix).context_block.adaLN_modulation.1.weight"
+    ] = (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].weight.name }
+    mapping[
+      "\(prefix).context_block.adaLN_modulation.1.bias"
+    ] = (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].bias.name }
+    mapping["\(prefix).x_block.adaLN_modulation.1.weight"] = (0..<6).map { xAdaLNs[$0].weight.name }
+    mapping["\(prefix).x_block.adaLN_modulation.1.bias"] = (0..<6).map { xAdaLNs[$0].weight.name }
+    return mapping
+  }
+  return (mapper, Model([c], contextChunks + xChunks))
+}
+
+func MMDiTFixed(batchSize: Int, t: Int, channels: Int, layers: Int) -> (ModelWeightMapper, Model) {
+  let timestep = Input()
+  let y = Input()
+  let contextIn = Input()
+  let (tMlp0, tMlp2, tEmbedder) = TimeEmbedder(channels: channels)
+  let (yMlp0, yMlp2, yEmbedder) = VectorEmbedder(channels: channels)
+  let c = (tEmbedder(timestep) + yEmbedder(y)).reshaped([batchSize, 1, channels]).swish()
+  let contextEmbedder = Dense(count: channels, name: "context_embedder")
+  var context = contextEmbedder(contextIn)
+  var mappers = [ModelWeightMapper]()
+  var outs = [Model.IO]()
+  for i in 0..<layers {
+    let (mapper, block) = JointTransformerBlockFixed(
+      prefix: "diffusion_model.joint_blocks.\(i)", k: 64, h: channels / 64, b: batchSize,
+      contextBlockPreOnly: i == layers - 1)
+    let blockOut = block(c)
+    mappers.append(mapper)
+    outs.append(blockOut)
+  }
+  let shift = Dense(count: channels, name: "ada_ln_0")
+  let scale = Dense(count: channels, name: "ada_ln_1")
+  outs.append(contentsOf: [shift(c), scale(c)])
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    mapping["diffusion_model.t_embedder.mlp.0.weight"] = [tMlp0.weight.name]
+    mapping["diffusion_model.t_embedder.mlp.0.bias"] = [tMlp0.bias.name]
+    mapping["diffusion_model.t_embedder.mlp.2.weight"] = [tMlp2.weight.name]
+    mapping["diffusion_model.t_embedder.mlp.2.bias"] = [tMlp2.bias.name]
+    mapping["diffusion_model.y_embedder.mlp.0.weight"] = [yMlp0.weight.name]
+    mapping["diffusion_model.y_embedder.mlp.0.bias"] = [yMlp0.bias.name]
+    mapping["diffusion_model.y_embedder.mlp.2.weight"] = [yMlp2.weight.name]
+    mapping["diffusion_model.y_embedder.mlp.2.bias"] = [yMlp2.bias.name]
+    mapping["diffusion_model.context_embedder.weight"] = [contextEmbedder.weight.name]
+    mapping["diffusion_model.context_embedder.bias"] = [contextEmbedder.bias.name]
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    mapping[
+      "diffusion_model.final_layer.adaLN_modulation.1.weight"
+    ] = [shift.weight.name, scale.weight.name]
+    mapping[
+      "diffusion_model.final_layer.adaLN_modulation.1.bias"
+    ] = [shift.bias.name, scale.bias.name]
+    return mapping
+  }
+  return (mapper, Model([timestep, contextIn, y], outs))
+}

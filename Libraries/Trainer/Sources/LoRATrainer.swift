@@ -641,7 +641,7 @@ public struct LoRATrainer {
     var dataFrame = dataFrame
     let cotrainUNet = unetLearningRate > 0
     let cotrainTextModel = cotrainTextModel && textModelLearningRate > 0
-    if version == .v2 || version == .sdxlBase || version == .sdxlRefiner {
+    if version == .v2 || version == .sdxlBase || version == .sdxlRefiner || version == .sd3 {
       DynamicGraph.flags = .disableMixedMPSGEMM
     }
     if !DeviceCapability.isMemoryMapBufferSupported {
