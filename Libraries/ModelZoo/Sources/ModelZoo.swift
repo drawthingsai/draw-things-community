@@ -53,7 +53,7 @@ public struct ModelZoo: DownloadZoo {
     public var deprecated: Bool?
     public var imageEncoder: String?
     public var clipEncoder: String?
-    public var T5Encoder: String?
+    public var t5Encoder: String?
     public var diffusionMapping: String?
     public var highPrecisionAutoencoder: Bool?
     public var defaultRefiner: String?
@@ -69,7 +69,7 @@ public struct ModelZoo: DownloadZoo {
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
       autoencoder: String? = nil, modifier: SamplerModifier? = nil, deprecated: Bool? = nil,
-      imageEncoder: String? = nil, clipEncoder: String? = nil, T5Encoder: String? = nil,
+      imageEncoder: String? = nil, clipEncoder: String? = nil, t5Encoder: String? = nil,
       diffusionMapping: String? = nil,
       highPrecisionAutoencoder: Bool? = nil, defaultRefiner: String? = nil,
       isConsistencyModel: Bool? = nil, conditioning: Denoiser.Conditioning? = nil,
@@ -89,7 +89,7 @@ public struct ModelZoo: DownloadZoo {
       self.deprecated = deprecated
       self.imageEncoder = imageEncoder
       self.clipEncoder = clipEncoder
-      self.T5Encoder = T5Encoder
+      self.t5Encoder = t5Encoder
       self.diffusionMapping = diffusionMapping
       self.highPrecisionAutoencoder = highPrecisionAutoencoder
       self.defaultRefiner = defaultRefiner
@@ -811,8 +811,8 @@ public struct ModelZoo: DownloadZoo {
     if let clipEncoder = specification.clipEncoder {
       result = result && isModelDownloaded(clipEncoder)
     }
-    if let T5Encoder = specification.T5Encoder {
-      result = result && isModelDownloaded(T5Encoder)
+    if let t5Encoder = specification.t5Encoder {
+      result = result && isModelDownloaded(t5Encoder)
     }
     if let diffusionMapping = specification.diffusionMapping {
       result = result && isModelDownloaded(diffusionMapping)
@@ -879,7 +879,7 @@ public struct ModelZoo: DownloadZoo {
 
   public static func T5EncoderForModel(_ name: String) -> String? {
     guard let specification = specificationMapping[name] else { return nil }
-    return specification.T5Encoder
+    return specification.t5Encoder
   }
 
   public static func diffusionMappingForModel(_ name: String) -> String? {
@@ -1136,8 +1136,8 @@ extension ModelZoo {
       if let clipEncoder = specification.clipEncoder {
         files.insert(clipEncoder)
       }
-      if let T5Encoder = specification.T5Encoder {
-        files.insert(T5Encoder)
+      if let t5Encoder = specification.t5Encoder {
+        files.insert(t5Encoder)
       }
       if let diffusionMapping = specification.diffusionMapping {
         files.insert(diffusionMapping)
