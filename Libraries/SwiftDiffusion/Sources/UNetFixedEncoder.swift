@@ -277,16 +277,18 @@ extension UNetFixedEncoder {
     case .v1, .v2, .kandinsky21:
       return (textEncoding, nil)
     case .sd3:
+      var c: DynamicGraph.Tensor<FloatType>
+      var pooled: DynamicGraph.Tensor<FloatType>
       if textEncoding.count >= 4 {
         let c0 = textEncoding[0]
         let c1 = textEncoding[1]
         let c2 = textEncoding[2]
-        var pooled = textEncoding[3]
+        pooled = textEncoding[3]
         let isCfgEnabled = c0.shape[0] > batchSize
         let cBatchSize = c0.shape[0]
         let maxLength = c0.shape[1]
         let t5Length = c2.shape[1]
-        var c = graph.variable(
+        c = graph.variable(
           .GPU(0), .HWC(cBatchSize, maxLength + t5Length, 4096), of: FloatType.self)
         c.full(0)
         if zeroNegativePrompt && isCfgEnabled {
@@ -306,15 +308,14 @@ extension UNetFixedEncoder {
           c[0..<cBatchSize, 0..<maxLength, 768..<2048] = c1
           c[0..<cBatchSize, maxLength..<(maxLength + t5Length), 0..<4096] = c2
         }
-        return ([c, pooled], nil)
       } else {
         let c0 = textEncoding[0]
         let c1 = textEncoding[1]
-        var pooled = textEncoding[2]
+        pooled = textEncoding[2]
         let isCfgEnabled = c0.shape[0] > batchSize
         let cBatchSize = c0.shape[0]
         let maxLength = c0.shape[1]
-        var c = graph.variable(.GPU(0), .HWC(cBatchSize, maxLength, 4096), of: FloatType.self)
+        c = graph.variable(.GPU(0), .HWC(cBatchSize, maxLength, 4096), of: FloatType.self)
         c.full(0)
         if zeroNegativePrompt && isCfgEnabled {
           let oldPooled = pooled
@@ -330,8 +331,31 @@ extension UNetFixedEncoder {
           c[0..<cBatchSize, 0..<maxLength, 0..<768] = c0
           c[0..<cBatchSize, 0..<maxLength, 768..<2048] = c1
         }
-        return ([c, pooled], nil)
       }
+      // Load the unetFixed.
+      let cBatchSize = c.shape[0]
+      let (_, unetFixed) = MMDiTFixed(
+        batchSize: cBatchSize * timesteps.count, channels: 1536, layers: 24)
+      var timeEmbeds = graph.variable(
+        .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
+      var pooleds = graph.variable(
+        .GPU(0), .WC(cBatchSize * timesteps.count, 2048), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: cBatchSize, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = timeEmbed
+        pooleds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<2048] = pooled
+      }
+      unetFixed.compile(inputs: c, timeEmbeds, pooleds)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) {
+        $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+      }
+      return (unetFixed(inputs: c, timeEmbeds, pooleds).map { $0.as(of: FloatType.self) }, nil)
     case .wurstchenStageC:
       let batchSize = textEncoding[0].shape[0]
       let emptyImage = graph.variable(.GPU(0), .HWC(batchSize, 1, 1280), of: FloatType.self)

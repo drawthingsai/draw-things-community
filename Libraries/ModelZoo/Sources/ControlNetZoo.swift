@@ -242,7 +242,10 @@ public struct ControlNetZoo: DownloadZoo {
     }
     let jsonDecoder = JSONDecoder()
     jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-    guard let jsonSpecification = try? jsonDecoder.decode([Specification].self, from: jsonData)
+    guard
+      let jsonSpecification = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value })
     else {
       return specifications
     }
@@ -266,7 +269,9 @@ public struct ControlNetZoo: DownloadZoo {
     if let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) {
       let jsonDecoder = JSONDecoder()
       jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-      if let jsonSpecification = try? jsonDecoder.decode([Specification].self, from: jsonData) {
+      if let jsonSpecification = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value }) {
         customSpecifications.append(contentsOf: jsonSpecification)
       }
     }

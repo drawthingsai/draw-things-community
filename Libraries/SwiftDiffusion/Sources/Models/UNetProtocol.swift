@@ -41,7 +41,7 @@ public protocol UNetProtocol {
 
 extension UNetProtocol {
   public func timeEmbed(graph: DynamicGraph, batchSize: Int, timestep: Float, version: ModelVersion)
-    -> DynamicGraph.Tensor<FloatType>
+    -> DynamicGraph.Tensor<FloatType>?
   {
     switch version {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v:
@@ -54,11 +54,7 @@ extension UNetProtocol {
             maxPeriod: 10_000)
         ).toGPU(0))
     case .sd3:
-      return graph.variable(
-        Tensor<FloatType>(
-          from: timeEmbedding(
-            timestep: timestep, batchSize: batchSize, embeddingSize: 256, maxPeriod: 10_000)
-        ).toGPU(0))
+      return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
         timesteps: timestep, batchSize: batchSize, embeddingSize: 64, maxPeriod: 10_000)
@@ -79,6 +75,23 @@ extension UNetProtocol {
       rEmbed[0..<batchSize, 64..<128] = rZeros
       return graph.variable(Tensor<FloatType>(from: rEmbed).toGPU(0))
     }
+  }
+}
+
+extension UNetProtocol {
+  public func extractConditions(
+    graph: DynamicGraph, index: Int, batchSize: Int, conditions: [DynamicGraph.Tensor<FloatType>],
+    version: ModelVersion
+  )
+    -> [DynamicGraph.Tensor<FloatType>]
+  {
+    guard version == .sd3 else { return conditions }
+    return [conditions[0]]
+      + conditions[1..<conditions.count].map {
+        let shape = $0.shape
+        return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
+          .copied()
+      }
   }
 }
 

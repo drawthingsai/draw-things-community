@@ -10,13 +10,23 @@ public enum Denoiser {
     case edm(sigmaData: Double)  // EDM objective carries sigmaData, which is required for c_skip, c_out, c_in, c_noise computation.
     case v
     case epsilon
-    case const
+    case u(conditionScale: Double)  // Flow-Matching objective.
   }
 
   public enum Parameterization {
-    case rf
+    case rf(RF)  // Rectified Flow.
     case edm(EDM)
     case ddpm(DDPM)
+    public struct RF: Codable {
+      public var sigmaMin: Double
+      public var sigmaMax: Double
+      public var conditionScale: Double
+      public init(sigmaMin: Double = 0, sigmaMax: Double = 1, conditionScale: Double = 1000) {
+        self.sigmaMin = sigmaMin
+        self.sigmaMax = sigmaMax
+        self.conditionScale = conditionScale
+      }
+    }
     public struct EDM: Codable {
       public var sigmaMin: Double
       public var sigmaMax: Double
@@ -77,6 +87,8 @@ public protocol DenoiserDiscretization {
   var objective: Denoiser.Objective { get }
   // For continuous space, this is 1, for DDPM, this is number of steps during training.
   var timesteps: Float { get }
+  func sigma(from alphaCumprod: Double) -> Double
+  func alphaCumprod(from sigma: Double) -> Double
 }
 
 extension DenoiserDiscretization {
@@ -94,8 +106,8 @@ extension DenoiserDiscretization {
       return Float(0.25 * log(sigma))
     case .epsilon:
       return Float(sigma)
-    case .const:
-      return Float(1000 * sigma)
+    case .u(let conditionScale):
+      return Float(conditionScale * alphaCumprod)
     }
   }
 }
@@ -110,11 +122,13 @@ extension Denoiser {
     private let range: ClosedRange<Double>
     private let minVar: Double
     private let sigmas: [Double]?
+    private let rf: Bool
     public let objective: Objective
     public let timesteps: Float
     init(
       objective: Objective, timesteps: Float, s: Double = 0.008,
-      range: ClosedRange<Double> = 0.0001...0.9999, sigmas: [Double]? = nil
+      range: ClosedRange<Double> = 0.0001...0.9999, sigmas: [Double]? = nil,
+      rf: Bool = false
     ) {
       self.objective = objective
       self.timesteps = timesteps
@@ -123,6 +137,7 @@ extension Denoiser {
       self.sigmas = sigmas
       let minStd = cos(s / (1 + s) * Double.pi * 0.5)
       self.minVar = minStd * minStd
+      self.rf = rf
     }
     public init(_ parameterization: Parameterization, objective: Objective, s: Double = 0.008) {
       switch parameterization {
@@ -136,8 +151,10 @@ extension Denoiser {
         self.init(
           objective: objective, timesteps: Float(ddpm.timesteps), s: s,
           range: alphasCumprod[alphasCumprod.count - 1]...alphasCumprod[0], sigmas: sigmas)
-      case .rf:
-        self.init(objective: objective, timesteps: 1, s: s, range: 0.5...1)
+      case .rf(let rf):
+        self.init(
+          objective: objective, timesteps: Float(rf.conditionScale), s: s,
+          range: rf.sigmaMin...rf.sigmaMax, rf: true)
       }
     }
     public func timestep(for alphaCumprod: Double) -> Float {
@@ -179,6 +196,20 @@ extension Denoiser {
       alphasCumprod.append(1.0)
       return alphasCumprod
     }
+    public func sigma(from alphaCumprod: Double) -> Double {
+      if rf {
+        return 1 - alphaCumprod
+      } else {
+        return ((1 - alphaCumprod) / alphaCumprod).squareRoot()
+      }
+    }
+    public func alphaCumprod(from sigma: Double) -> Double {
+      if rf {
+        return 1 - sigma
+      } else {
+        return 1.0 / (sigma * sigma + 1)
+      }
+    }
   }
 }
 
@@ -188,11 +219,12 @@ extension Denoiser {
     private let sigmaMin: Double
     private let sigmaMax: Double
     private let sigmas: [Double]?
+    private let rf: Bool
     public let timesteps: Float
     public let objective: Objective
     init(
       objective: Objective, timesteps: Float, sigmaMin: Double, sigmaMax: Double, rho: Double = 7.0,
-      sigmas: [Double]? = nil
+      sigmas: [Double]? = nil, rf: Bool = false
     ) {
       self.objective = objective
       self.timesteps = timesteps
@@ -200,6 +232,7 @@ extension Denoiser {
       self.sigmaMax = sigmaMax
       self.rho = rho
       self.sigmas = sigmas
+      self.rf = rf
     }
     public init(_ parameterization: Parameterization, objective: Objective, rho: Double = 7.0) {
       switch parameterization {
@@ -215,8 +248,10 @@ extension Denoiser {
         self.init(
           objective: objective, timesteps: Float(ddpm.timesteps), sigmaMin: sigmaMin,
           sigmaMax: sigmaMax, rho: rho, sigmas: sigmas)
-      case .rf:
-        self.init(objective: objective, timesteps: 1, sigmaMin: 0, sigmaMax: 1, rho: rho)
+      case .rf(let rf):
+        self.init(
+          objective: objective, timesteps: Float(rf.conditionScale), sigmaMin: rf.sigmaMin,
+          sigmaMax: rf.sigmaMax, rho: rho, rf: true)
       }
     }
     public func timestep(for alphaCumprod: Double) -> Float {
@@ -224,7 +259,12 @@ extension Denoiser {
         // This is for Legacy discrete DDPM. The timestep is scaled already.
         return timestep(for: alphaCumprod, in: sigmas)
       }
-      let sigma = ((1 - alphaCumprod) / alphaCumprod).squareRoot()
+      let sigma: Double
+      if rf {
+        sigma = 1 - alphaCumprod
+      } else {
+        sigma = ((1 - alphaCumprod) / alphaCumprod).squareRoot()
+      }
       let lowerBound = sigmaMin
       let upperBound = sigmaMax
       let minInvRho = pow(lowerBound, 1.0 / rho)
@@ -246,10 +286,17 @@ extension Denoiser {
         maxInvRho + (Double(timesteps) - Double(timestep)) / Double(timesteps)
           * (minInvRho - maxInvRho),
         rho)
-      if shift != 1 {
-        sigma = shift * sigma
+      if rf {
+        if shift != 1 {
+          sigma = shift * sigma / (1 + (shift - 1) * sigma)
+        }
+        return 1 - sigma
+      } else {
+        if shift != 1 {
+          sigma = shift * sigma
+        }
+        return (1 / (sigma * sigma + 1))
       }
-      return (1 / (sigma * sigma + 1))
     }
     public func alphasCumprod(steps: Int, shift: Double) -> [Double] {
       var alphasCumprod = [Double]()
@@ -258,21 +305,43 @@ extension Denoiser {
       let minInvRho = pow(lowerBound, 1.0 / rho)
       let maxInvRho = pow(upperBound, 1.0 / rho)
       for i in 0..<steps {
-        var sigma = pow(maxInvRho + Double(i) * (minInvRho - maxInvRho) / Double(steps - 1), rho)
-        if shift != 1 {
-          // Simplify Sigmoid[Log[x / (1 - x)] + 2 * Log[1 / shift]]
-          // var v: Double = 1.0 / (sigma * sigma + 1)
-          // v = 1.0 / (1.0 + shift * shift * (1.0 - v) / v)
-          // ((1 - v) / v).squareRoot()
-          // (1 / v - 1).squareRoot()
-          // (1.0 + shift * shift * (1.0 - v) / v - 1).squareRoot()
-          // (shift * shift * sigma).squareRoot()
-          sigma = shift * sigma
+        if rf {
+          var sigma = pow(maxInvRho + Double(i) * (minInvRho - maxInvRho) / Double(steps), rho)
+          if shift != 1 {
+            sigma = shift * sigma / (1 + (shift - 1) * sigma)
+          }
+          alphasCumprod.append(1 - sigma)
+        } else {
+          var sigma = pow(maxInvRho + Double(i) * (minInvRho - maxInvRho) / Double(steps - 1), rho)
+          if shift != 1 {
+            // Simplify Sigmoid[Log[x / (1 - x)] + 2 * Log[1 / shift]]
+            // var v: Double = 1.0 / (sigma * sigma + 1)
+            // v = 1.0 / (1.0 + shift * shift * (1.0 - v) / v)
+            // ((1 - v) / v).squareRoot()
+            // (1 / v - 1).squareRoot()
+            // (1.0 + shift * shift * (1.0 - v) / v - 1).squareRoot()
+            // (shift * shift * sigma).squareRoot()
+            sigma = shift * sigma
+          }
+          alphasCumprod.append(1 / (sigma * sigma + 1))
         }
-        alphasCumprod.append(1 / (sigma * sigma + 1))
       }
       alphasCumprod.append(1.0)
       return alphasCumprod
+    }
+    public func sigma(from alphaCumprod: Double) -> Double {
+      if rf {
+        return 1 - alphaCumprod
+      } else {
+        return ((1 - alphaCumprod) / alphaCumprod).squareRoot()
+      }
+    }
+    public func alphaCumprod(from sigma: Double) -> Double {
+      if rf {
+        return 1 - sigma
+      } else {
+        return 1.0 / (sigma * sigma + 1)
+      }
     }
   }
 }
@@ -289,6 +358,7 @@ extension Denoiser {
     private let sigmas: [Double]
     private let timestepSpacing: TimestepSpacing
     private let EDMDiscretization: KarrasDiscretization?
+    private let RFParameterization: Parameterization.RF?
     public let alphasCumprod: [Double]
     public var objective: Objective {
       if let EDMDiscretization = EDMDiscretization {
@@ -309,6 +379,7 @@ extension Denoiser {
       alphasCumprod = ddpm.alphasCumprod
       sigmas = alphasCumprod.map { ((1 - $0) / $0).squareRoot() }
       EDMDiscretization = nil
+      RFParameterization = nil
     }
     init(EDMDiscretization: KarrasDiscretization) {
       self.EDMDiscretization = EDMDiscretization
@@ -317,14 +388,16 @@ extension Denoiser {
       sigmas = []
       internalObjective = .edm(sigmaData: 0)
       timestepSpacing = .linspace
+      RFParameterization = nil
     }
-    init(objective: Objective, timestepSpacing: TimestepSpacing, rf: Float) {
+    init(objective: Objective, timestepSpacing: TimestepSpacing, rf: Denoiser.Parameterization.RF) {
       self.internalObjective = objective
       self.timestepSpacing = timestepSpacing
-      internalTimesteps = 1000
-      sigmas = (1...1000).map { Double($0) / 1000 }
-      alphasCumprod = sigmas.map { 1.0 / ($0 * $0 + 1) }
+      internalTimesteps = Int(rf.conditionScale.rounded())
+      sigmas = []
+      alphasCumprod = []
       EDMDiscretization = nil
+      RFParameterization = rf
     }
     public init(
       _ parameterization: Parameterization, objective: Objective,
@@ -335,19 +408,28 @@ extension Denoiser {
         self.init(EDMDiscretization: KarrasDiscretization(parameterization, objective: objective))
       case .ddpm(let ddpm):
         self.init(objective: objective, timestepSpacing: timestepSpacing, ddpm: ddpm)
-      case .rf:
-        self.init(objective: objective, timestepSpacing: timestepSpacing, rf: 1)
+      case .rf(let rf):
+        self.init(objective: objective, timestepSpacing: timestepSpacing, rf: rf)
       }
     }
     public func timestep(for alphaCumprod: Double) -> Float {
       if let EDMDiscretization = EDMDiscretization {
         return EDMDiscretization.timestep(for: alphaCumprod)
+      } else if let RFParameterization = RFParameterization {
+        // Don't distinguish alphaCumprod and sigma any more.
+        return Float((1 - alphaCumprod) * RFParameterization.conditionScale)
       }
       return timestep(for: alphaCumprod, in: sigmas)
     }
     public func alphaCumprod(timestep: Float, shift: Double) -> Double {
       if let EDMDiscretization = EDMDiscretization {
         return EDMDiscretization.alphaCumprod(timestep: timestep, shift: shift)
+      } else if let RFParameterization = RFParameterization {
+        var sigma = Double(timestep) / RFParameterization.conditionScale
+        if shift != 1 {
+          sigma = shift * sigma / (1 + (shift - 1) * sigma)
+        }
+        return 1 - sigma
       }
       let alphaCumprod = alphasCumprod[
         max(min(Int((timestep).rounded()), alphasCumprod.count - 1), 0)]
@@ -361,6 +443,30 @@ extension Denoiser {
     public func alphasCumprod(steps: Int, shift: Double) -> [Double] {
       if let EDMDiscretization = EDMDiscretization {
         return EDMDiscretization.alphasCumprod(steps: steps, shift: shift)
+      } else if let RFParameterization = RFParameterization {
+        var fixedStepAlphasCumprod = [Double]()
+        for i in 0..<steps {
+          let timestep: Double
+          switch timestepSpacing {
+          case .linspace:
+            // This schedule is the same for Euler A.
+            timestep =
+              Double(steps - 1 - i) / Double(steps - 1) * RFParameterization.conditionScale
+          case .leading:
+            // This is for DDIM the same as original stable diffusion paper.
+            timestep = Double(steps - 1 - i) / Double(steps) * RFParameterization.conditionScale + 1
+          case .trailing:
+            // This is otherwise called "SGM Uniform".
+            timestep = Double(steps - i) / Double(steps) * RFParameterization.conditionScale
+          }
+          var sigma = timestep / RFParameterization.conditionScale
+          if shift != 1 {
+            sigma = shift * sigma / (1 + (shift - 1) * sigma)
+          }
+          fixedStepAlphasCumprod.append(1.0 - sigma)
+        }
+        fixedStepAlphasCumprod.append(1.0)
+        return fixedStepAlphasCumprod
       }
       var fixedStepAlphasCumprod = [Double]()
       for i in 0..<steps {
@@ -388,6 +494,20 @@ extension Denoiser {
       fixedStepAlphasCumprod.append(1.0)
       return fixedStepAlphasCumprod
     }
+    public func sigma(from alphaCumprod: Double) -> Double {
+      if let _ = RFParameterization {
+        return 1 - alphaCumprod
+      } else {
+        return ((1 - alphaCumprod) / alphaCumprod).squareRoot()
+      }
+    }
+    public func alphaCumprod(from sigma: Double) -> Double {
+      if let _ = RFParameterization {
+        return 1 - sigma
+      } else {
+        return 1.0 / (sigma * sigma + 1)
+      }
+    }
   }
 }
 
@@ -411,6 +531,12 @@ extension Denoiser {
     }
     public func alphaCumprod(timestep: Float, shift: Double) -> Double {
       return linearDiscretization.alphaCumprod(timestep: timestep, shift: shift)
+    }
+    public func alphaCumprod(from sigma: Double) -> Double {
+      return linearDiscretization.alphaCumprod(from: sigma)
+    }
+    public func sigma(from alphaCumprod: Double) -> Double {
+      return linearDiscretization.sigma(from: alphaCumprod)
     }
     public func alphasCumprod(steps: Int, shift: Double) -> [Double] {
       let alphasCumprod = linearDiscretization.alphasCumprod
@@ -456,6 +582,12 @@ extension Denoiser {
     }
     public func alphaCumprod(timestep: Float, shift: Double) -> Double {
       return karrasDiscretization.alphaCumprod(timestep: timestep, shift: shift)
+    }
+    public func alphaCumprod(from sigma: Double) -> Double {
+      return karrasDiscretization.alphaCumprod(from: sigma)
+    }
+    public func sigma(from alphaCumprod: Double) -> Double {
+      return karrasDiscretization.sigma(from: alphaCumprod)
     }
     private static func logLinearInterpolation(sigmas: [Double], steps: Int) -> [Double] {
       guard steps + 1 != sigmas.count else {
@@ -526,6 +658,12 @@ extension Denoiser {
     }
     public func alphaCumprod(timestep: Float, shift: Double) -> Double {
       return linearDiscretization.alphaCumprod(timestep: timestep, shift: shift)
+    }
+    public func alphaCumprod(from sigma: Double) -> Double {
+      return linearDiscretization.alphaCumprod(from: sigma)
+    }
+    public func sigma(from alphaCumprod: Double) -> Double {
+      return linearDiscretization.sigma(from: alphaCumprod)
     }
     private func logLinearInterpolation(timesteps: [Int], steps: Int) -> [Int] {
       guard steps + 1 != timesteps.count else {

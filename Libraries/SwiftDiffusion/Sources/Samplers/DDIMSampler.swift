@@ -194,6 +194,16 @@ extension DDIMSampler: Sampler {
       filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
+    let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
+    let timesteps = (startStep..<endStep).map {
+      let alphaCumprod = alphasCumprod[$0]
+      switch conditioning {
+      case .noise:
+        return discretization.noise(for: alphaCumprod)
+      case .timestep:
+        return discretization.timestep(for: alphaCumprod)
+      }
+    }
     if c.count >= 2 || version == .svdI2v {
       let vector = fixedEncoder.vector(
         textEmbedding: c[c.count - 1], originalSize: originalSize,
@@ -202,7 +212,7 @@ extension DDIMSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        textEncoding: c, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+        textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora)
       c = vector + encodings
@@ -246,13 +256,15 @@ extension DDIMSampler: Sampler {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        inputs: xIn, t, newC, tokenLengthUncond: tokenLengthUncond,
+        inputs: xIn, t,
+        unet.extractConditions(
+          graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
+          version: version), tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
         injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
         tiledDiffusion: tiledDiffusion)
     }
-    let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     var noise: DynamicGraph.Tensor<FloatType>? = nil
     if mask != nil || version == .kandinsky21 {
       noise = graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
@@ -292,6 +304,7 @@ extension DDIMSampler: Sampler {
     var refinerKickIn = refiner.map { (1 - $0.start) * discretization.timesteps } ?? -1
     var unets: [UNet?] = [unet]
     var currentModelVersion = version
+    var indexOffset = startStep
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       var oldDenoised: DynamicGraph.Tensor<FloatType>? = nil
       for i in startStep..<endStep {
@@ -306,6 +319,15 @@ extension DDIMSampler: Sampler {
         guard feedback(i - startStep, rawValue) else { return .failure(SamplerError.cancelled) }
         let timestep = discretization.timestep(for: alphasCumprod[i])
         if timestep < refinerKickIn, let refiner = refiner {
+          let timesteps = (i..<endStep).map {
+            let alphaCumprod = alphasCumprod[$0 + i]
+            switch conditioning {
+            case .noise:
+              return discretization.noise(for: alphaCumprod)
+            case .timestep:
+              return discretization.timestep(for: alphaCumprod)
+            }
+          }
           unets = [nil]
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
@@ -321,10 +343,12 @@ extension DDIMSampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
-                textEncoding: oldC, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+                textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
+                startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora
               ).0
+            indexOffset = i
           }
           unet = UNet()
           currentModelVersion = refiner.version
@@ -351,7 +375,10 @@ extension DDIMSampler: Sampler {
             injectT2IAdapters: injectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
             lora: lora, is8BitModel: refiner.is8BitModel,
             canRunLoRASeparately: canRunLoRASeparately,
-            inputs: xIn, t, newC,
+            inputs: xIn, t,
+            unet.extractConditions(
+              graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
+              version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection, injectedControls: injectedControls,
             injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
@@ -368,6 +395,9 @@ extension DDIMSampler: Sampler {
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
+          version: currentModelVersion)
+        let c = unet.extractConditions(
+          graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize, conditions: c,
           version: currentModelVersion)
         var et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
@@ -491,8 +521,12 @@ extension DDIMSampler: Sampler {
         let alpha = alphasCumprod[i]
         let alphaPrev = alphasCumprod[i + 1]
         switch discretization.objective {
-        case .const:
-          fatalError()
+        case .u(_):
+          let denoised = Functional.add(
+            left: x, right: et, leftScalar: 1, rightScalar: Float(alpha - 1))
+          oldDenoised = denoised
+          x = Functional.add(
+            left: x, right: et, leftScalar: 1, rightScalar: Float(alpha - alphaPrev))
         case .v:
           let predX0 = Float(alpha.squareRoot()) * x - Float((1 - alpha).squareRoot()) * et
           let eps = Float(alpha.squareRoot()) * et + Float((1 - alpha).squareRoot()) * x
@@ -551,8 +585,15 @@ extension DDIMSampler: Sampler {
           let negMask = negMask
         {
           noise.randn(std: 1, mean: 0)
-          let qSample =
-            Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
+          let qSample: DynamicGraph.Tensor<FloatType>
+          if case .u(_) = discretization.objective {
+            qSample = Functional.add(
+              left: sample, right: noise, leftScalar: Float(alphaPrev),
+              rightScalar: Float(1 - alphaPrev))
+          } else {
+            qSample =
+              Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
+          }
           x = qSample .* negMask + x .* mask
         }
         if i == endStep - 1 {
@@ -585,13 +626,21 @@ extension DDIMSampler: Sampler {
     let step = Int(step.rounded())
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     let alphaCumprod = alphasCumprod[max(0, min(alphasCumprod.count - 1, step))]
-    return Float(alphaCumprod.squareRoot())
+    if case .u(_) = discretization.objective {
+      return Float(alphaCumprod)
+    } else {
+      return Float(alphaCumprod.squareRoot())
+    }
   }
 
   public func noiseScaleFactor(at step: Float, sampling: Sampling) -> Float {
     let step = Int(step.rounded())
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     let alphaCumprod = alphasCumprod[max(0, min(alphasCumprod.count - 1, step))]
-    return Float((1 - alphaCumprod).squareRoot())
+    if case .u(_) = discretization.objective {
+      return Float(1 - alphaCumprod)
+    } else {
+      return Float((1 - alphaCumprod).squareRoot())
+    }
   }
 }

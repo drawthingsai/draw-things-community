@@ -60,6 +60,8 @@ extension SamplerType: CustomStringConvertible {
       return "DPM++ SDE AYS"
     case .dPMPP2MTrailing:
       return "DPM++ 2M Trailing"
+    case .dDIMTrailing:
+      return "DDIM Trailing"
     }
   }
 
@@ -71,16 +73,27 @@ extension SamplerType: CustomStringConvertible {
           self = SamplerType.dPMPPSDESubstep
         } else if sampler.contains("trailing") {
           self = SamplerType.dPMPPSDETrailing
+        } else if sampler.contains("ays") {
+          self = SamplerType.DPMPPSDEAYS
         } else {
           self = SamplerType.dPMPPSDEKarras
         }
+      } else {
+        if sampler.contains("ays") {
+          self = SamplerType.DPMPP2MAYS
+        } else if sampler.contains("trailing") {
+          self = SamplerType.dPMPP2MTrailing
+        } else {
+          self = SamplerType.dPMPP2MKarras
+        }
       }
-      self = SamplerType.dPMPP2MKarras
     } else if sampler.contains("euler") {
       if sampler.contains("substep") {
         self = SamplerType.eulerASubstep
       } else if sampler.contains("trailing") {
         self = SamplerType.eulerATrailing
+      } else if sampler.contains("ays") {
+        self = SamplerType.eulerAAYS
       } else {
         self = SamplerType.eulerA
       }
@@ -88,12 +101,18 @@ extension SamplerType: CustomStringConvertible {
       self = SamplerType.uniPC
     } else if sampler.contains("plms") {
       self = SamplerType.PLMS
+    } else if sampler.contains("ddim") {
+      if sampler.contains("trailing") {
+        self = SamplerType.dDIMTrailing
+      } else {
+        self = SamplerType.DDIM
+      }
     } else if sampler.contains("lcm") {
       self = SamplerType.LCM
     } else if sampler.contains("tcd") {
       self = SamplerType.TCD
     } else {
-      self = SamplerType.DDIM
+      self = SamplerType.dPMPP2MKarras
     }
   }
 }

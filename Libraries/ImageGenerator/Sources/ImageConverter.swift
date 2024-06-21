@@ -274,6 +274,41 @@ public enum ImageConverter {
     return scribble
   }
   #if canImport(UIKit)
+    public static func grayscaleImage(binaryMask: Tensor<UInt8>) -> UIImage {
+      let imageHeight = binaryMask.shape[0]
+      let imageWidth = binaryMask.shape[1]
+      let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: imageWidth * imageHeight * 4)
+      binaryMask.withUnsafeBytes {
+        guard let u8 = $0.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+        for i in 0..<imageHeight * imageWidth {
+          let byteMask = u8[i]
+          if (byteMask & 7) != 0 && (byteMask & 7) != 3 {
+            let alpha = 0xff - (byteMask & 0xf8)
+            bytes[i * 4] = alpha
+            bytes[i * 4 + 1] = alpha
+            bytes[i * 4 + 2] = alpha
+            bytes[i * 4 + 3] = 255
+          } else {
+            bytes[i * 4] = 0
+            bytes[i * 4 + 1] = 0
+            bytes[i * 4 + 2] = 0
+            bytes[i * 4 + 3] = 255
+          }
+        }
+      }
+      return UIImage(
+        cgImage: CGImage(
+          width: imageWidth, height: imageHeight, bitsPerComponent: 8, bitsPerPixel: 32,
+          bytesPerRow: 4 * imageWidth, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGBitmapInfo(
+            rawValue: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.noneSkipLast.rawValue),
+          provider: CGDataProvider(
+            dataInfo: nil, data: bytes, size: imageWidth * imageHeight * 4,
+            releaseData: { _, p, _ in
+              p.deallocate()
+            })!, decode: nil, shouldInterpolate: false,
+          intent: CGColorRenderingIntent.defaultIntent)!)
+    }
     public static func grayscaleImage(from tensor: Tensor<UInt8>) -> UIImage {
       let imageHeight = tensor.shape[0]
       let imageWidth = tensor.shape[1]

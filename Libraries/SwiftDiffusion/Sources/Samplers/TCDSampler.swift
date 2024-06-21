@@ -148,6 +148,31 @@ extension TCDSampler: Sampler {
       filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
+    let alphasCumprod = discretization.alphasCumprod(
+      steps: sampling.steps + 1, shift: sampling.shift)
+    let sigmas = alphasCumprod.map { discretization.sigma(from: $0) }
+    let timesteps = (startStep.integral..<endStep.integral).map {
+      let alphaCumprod: Double
+      if $0 == startStep.integral && Float(startStep.integral) != startStep.fractional {
+        let lowTimestep = discretization.timestep(
+          for: alphasCumprod[max(0, min(Int(startStep.integral), alphasCumprod.count - 1))])
+        let highTimestep = discretization.timestep(
+          for: alphasCumprod[
+            max(0, min(Int(startStep.fractional.rounded(.up)), alphasCumprod.count - 1))])
+        let timestep =
+          lowTimestep
+          + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
+        alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
+      } else {
+        alphaCumprod = discretization.alphaCumprod(from: sigmas[$0])
+      }
+      switch conditioning {
+      case .noise:
+        return discretization.noise(for: alphaCumprod)
+      case .timestep:
+        return discretization.timestep(for: alphaCumprod)
+      }
+    }
     if c.count >= 2 || version == .svdI2v {
       let vector = fixedEncoder.vector(
         textEmbedding: c[c.count - 1], originalSize: originalSize,
@@ -156,7 +181,7 @@ extension TCDSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        textEncoding: c, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+        textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora)
       c = vector + encodings
@@ -200,15 +225,15 @@ extension TCDSampler: Sampler {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        inputs: xIn, t, newC, tokenLengthUncond: tokenLengthUncond,
+        inputs: xIn, t,
+        unet.extractConditions(
+          graph: graph, index: 0, batchSize: batchSize, conditions: newC, version: version),
+        tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
         injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
         tiledDiffusion: tiledDiffusion)
     }
-    let alphasCumprod = discretization.alphasCumprod(
-      steps: sampling.steps + 1, shift: sampling.shift)
-    let sigmas = alphasCumprod.map { ((1 - $0) / $0).squareRoot() }
     let noise: DynamicGraph.Tensor<FloatType> = graph.variable(
       .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
     let streamContext = StreamContext(.GPU(0))
@@ -221,6 +246,7 @@ extension TCDSampler: Sampler {
       blur = nil
     }
     var currentModelVersion = version
+    var indexOffset = startStep.integral
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       if version == .svdI2v {
         let maskedImage = maskedImage!
@@ -248,12 +274,12 @@ extension TCDSampler: Sampler {
           let timestep =
             lowTimestep
             + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
-          let alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: sampling.shift)
-          sigma = ((1.0 - alphaCumprod) / alphaCumprod).squareRoot()
+          let alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
+          sigma = discretization.sigma(from: alphaCumprod)
         } else {
           sigma = sigmas[i]
         }
-        let alphaCumprod = 1.0 / (sigma * sigma + 1)
+        let alphaCumprod = discretization.alphaCumprod(from: sigma)
         let rawValue: Tensor<FloatType>? =
           (i > max(startStep.integral, sampling.steps / 2) || i % 5 == 4)
           ? (oldDenoised.map { unet.decode($0) })?.rawValue.toCPU() : nil
@@ -267,6 +293,16 @@ extension TCDSampler: Sampler {
         }
         let timestep = discretization.timestep(for: alphaCumprod)
         if Float(timestep) < refinerKickIn, let refiner = refiner {
+          let timesteps = (i..<endStep.integral).map {
+            let alphaCumprod =
+              $0 == i ? alphaCumprod : discretization.alphaCumprod(from: sigmas[$0])
+            switch conditioning {
+            case .noise:
+              return discretization.noise(for: alphaCumprod)
+            case .timestep:
+              return discretization.timestep(for: alphaCumprod)
+            }
+          }
           unets = [nil]
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
@@ -282,10 +318,12 @@ extension TCDSampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
-                textEncoding: oldC, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+                textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
+                startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora
               ).0
+            indexOffset = i
           }
           unet = UNet()
           currentModelVersion = refiner.version
@@ -312,7 +350,10 @@ extension TCDSampler: Sampler {
             injectT2IAdapters: injectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
             lora: lora, is8BitModel: refiner.is8BitModel,
             canRunLoRASeparately: canRunLoRASeparately,
-            inputs: xIn, t, newC,
+            inputs: xIn, t,
+            unet.extractConditions(
+              graph: graph, index: 0, batchSize: batchSize, conditions: newC,
+              version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection, injectedControls: injectedControls,
             injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
@@ -329,6 +370,9 @@ extension TCDSampler: Sampler {
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: batchSize, timestep: cNoise, version: currentModelVersion)
+        let c = unet.extractConditions(
+          graph: graph, index: i - indexOffset, batchSize: batchSize, conditions: c,
+          version: currentModelVersion)
         xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
         let injectedIPAdapters = ControlModel<FloatType>
           .injectedIPAdapters(
@@ -370,8 +414,14 @@ extension TCDSampler: Sampler {
         let timestepS = (1 - stochasticSamplingGamma) * timestepPrev
         let alphaCumprodS = discretization.alphaCumprod(timestep: timestepS, shift: sampling.shift)
         switch discretization.objective {
-        case .const:
-          fatalError()
+        case .u(_):
+          let sigmaS = discretization.sigma(from: alphaCumprodS)
+          predictOriginalSample = Functional.add(
+            left: x, right: etOut, leftScalar: 1, rightScalar: Float(-sigma))
+          predictNoisedSample = Functional.add(
+            left: x, right: predictOriginalSample,
+            leftScalar: Float(sigmaS / sigma),
+            rightScalar: Float(1 - sigmaS / sigma))
         case .v:
           let sqrtAlphaCumprod = 1.0 / (sigma * sigma + 1).squareRoot()
           predictOriginalSample = Functional.add(
@@ -407,10 +457,21 @@ extension TCDSampler: Sampler {
         if i < sampling.steps - 1 {
           if stochasticSamplingGamma > 0 {
             noise.randn(std: 1, mean: 0)
-            x = Functional.add(
-              left: predictNoisedSample, right: noise,
-              leftScalar: Float((alphaPrev / alphaCumprodS).squareRoot()),
-              rightScalar: Float((1 - alphaPrev / alphaCumprodS).squareRoot()))
+            if case .u(_) = discretization.objective {
+              x = Functional.add(
+                left: predictNoisedSample, right: predictOriginalSample, leftScalar: 1,
+                rightScalar: Float(alphaCumprodS - alphaPrev))
+              let sigmaPrev = 1 - alphaPrev
+              let sigmaS = 1 - alphaCumprodS
+              x = Functional.add(
+                left: x, right: noise, leftScalar: 1,
+                rightScalar: Float((sigmaPrev * sigmaPrev - sigmaS * sigmaS).squareRoot()))
+            } else {
+              x = Functional.add(
+                left: predictNoisedSample, right: noise,
+                leftScalar: Float((alphaPrev / alphaCumprodS).squareRoot()),
+                rightScalar: Float((1 - alphaPrev / alphaCumprodS).squareRoot()))
+            }
           } else {
             x = predictNoisedSample
           }
@@ -421,8 +482,15 @@ extension TCDSampler: Sampler {
           let negMask = negMask
         {
           noise.randn(std: 1, mean: 0)
-          let qSample =
-            Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
+          let qSample: DynamicGraph.Tensor<FloatType>
+          if case .u(_) = discretization.objective {
+            qSample = Functional.add(
+              left: sample, right: noise, leftScalar: Float(alphaPrev),
+              rightScalar: Float(1 - alphaPrev))
+          } else {
+            qSample =
+              Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
+          }
           x = qSample .* negMask + x .* mask
         }
         if i == endStep.integral - 1 {
@@ -477,13 +545,21 @@ extension TCDSampler: Sampler {
     let step = Int(step.rounded())
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     let alphaCumprod = alphasCumprod[max(0, min(alphasCumprod.count - 1, step))]
-    return Float(alphaCumprod.squareRoot())
+    if case .u(_) = discretization.objective {
+      return Float(alphaCumprod)
+    } else {
+      return Float(alphaCumprod.squareRoot())
+    }
   }
 
   public func noiseScaleFactor(at step: Float, sampling: Sampling) -> Float {
     let step = Int(step.rounded())
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     let alphaCumprod = alphasCumprod[max(0, min(alphasCumprod.count - 1, step))]
-    return Float((1 - alphaCumprod).squareRoot())
+    if case .u(_) = discretization.objective {
+      return Float(1 - alphaCumprod)
+    } else {
+      return Float((1 - alphaCumprod).squareRoot())
+    }
   }
 }

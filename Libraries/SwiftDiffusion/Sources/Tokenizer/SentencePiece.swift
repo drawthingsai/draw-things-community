@@ -5,11 +5,13 @@ public struct SentencePieceTokenizer: Tokenizer {
   public var endToken: Int32
   public var unknownToken: Int32 { 0 }
   private let sentencePiece: SentencePiece
-  public init(file: String, startToken: Int32?, endToken: Int32) {
+  private let tokenShift: Int32
+  public init(file: String, startToken: Int32?, endToken: Int32, tokenShift: Int32) {
     vocabulary = [:]
     sentencePiece = SentencePiece(file: file)
     self.startToken = startToken
     self.endToken = endToken
+    self.tokenShift = tokenShift
   }
 
   public func tokenize(text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?) -> (
@@ -28,20 +30,20 @@ public struct SentencePieceTokenizer: Tokenizer {
       for (i, spt) in result.enumerated() {
         guard i < maxLength + 2 else { break }
         strs.append(spt.surface)
-        ids.append(spt.id + 1)
+        ids.append(spt.id + tokenShift)
         canonicals.append(spt.piece)
       }
     } else {
       for spt in result {
         strs.append(spt.surface)
-        ids.append(spt.id + 1)
+        ids.append(spt.id + tokenShift)
         canonicals.append(spt.piece)
       }
     }
     strs.append("")
     ids.append(endToken)
     canonicals.append("<|endoftext|>")
-    let paddingToken = paddingToken ?? 1
+    let paddingToken = paddingToken ?? tokenShift
     if ids.count < maxLength {
       for _ in ids.count..<maxLength {
         strs.append("")

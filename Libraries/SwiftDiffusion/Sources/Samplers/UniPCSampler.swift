@@ -281,6 +281,16 @@ extension UniPCSampler: Sampler {
       filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
+    let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
+    let timesteps = (startStep..<endStep).map {
+      let alphaCumprod = alphasCumprod[$0]
+      switch conditioning {
+      case .noise:
+        return discretization.noise(for: alphaCumprod)
+      case .timestep:
+        return discretization.timestep(for: alphaCumprod)
+      }
+    }
     if c.count >= 2 || version == .svdI2v {
       let vector = fixedEncoder.vector(
         textEmbedding: c[c.count - 1], originalSize: originalSize,
@@ -289,7 +299,7 @@ extension UniPCSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        textEncoding: c, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+        textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora)
       c = vector + encodings
@@ -333,13 +343,15 @@ extension UniPCSampler: Sampler {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        inputs: xIn, t, newC,
+        inputs: xIn, t,
+        unet.extractConditions(
+          graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
+          version: version),
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
         injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
         tiledDiffusion: tiledDiffusion)
     }
-    let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     var noise: DynamicGraph.Tensor<FloatType>? = nil
     if mask != nil {
       noise = graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
@@ -382,6 +394,7 @@ extension UniPCSampler: Sampler {
     var refinerKickIn = refiner.map { (1 - $0.start) * discretization.timesteps } ?? -1
     var unets: [UNet?] = [unet]
     var currentModelVersion = version
+    var indexOffset = startStep
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       var timestepList = [Int]()
       var outputList = [DynamicGraph.Tensor<FloatType>]()
@@ -398,6 +411,15 @@ extension UniPCSampler: Sampler {
         guard feedback(i - startStep, rawValue) else { return .failure(SamplerError.cancelled) }
         let timestep = discretization.timestep(for: alphasCumprod[i])
         if timestep < refinerKickIn, let refiner = refiner {
+          let timesteps = (i..<endStep).map {
+            let alphaCumprod = alphasCumprod[$0 + i]
+            switch conditioning {
+            case .noise:
+              return discretization.noise(for: alphaCumprod)
+            case .timestep:
+              return discretization.timestep(for: alphaCumprod)
+            }
+          }
           unets = [nil]
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
@@ -413,10 +435,12 @@ extension UniPCSampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
-                textEncoding: oldC, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+                textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
+                startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora
               ).0
+            indexOffset = i
           }
           unet = UNet()
           currentModelVersion = refiner.version
@@ -443,7 +467,10 @@ extension UniPCSampler: Sampler {
             injectT2IAdapters: injectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
             lora: lora, is8BitModel: refiner.is8BitModel,
             canRunLoRASeparately: canRunLoRASeparately,
-            inputs: xIn, t, newC,
+            inputs: xIn, t,
+            unet.extractConditions(
+              graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
+              version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection, injectedControls: injectedControls,
             injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
@@ -460,6 +487,9 @@ extension UniPCSampler: Sampler {
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
+          version: currentModelVersion)
+        let c = unet.extractConditions(
+          graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize, conditions: c,
           version: currentModelVersion)
         let et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
@@ -582,8 +612,11 @@ extension UniPCSampler: Sampler {
         }
         var predX0: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
-        case .const:
-          fatalError()
+        case .u(_):
+          // TODO: This is wrong.
+          predX0 = Functional.add(
+            left: x, right: et, leftScalar: Float(1.0 / alphas[i]),
+            rightScalar: Float(-sigmas[i] / alphas[i]))
         case .v:
           predX0 = Functional.add(
             left: x, right: et, leftScalar: Float(alphas[i]),

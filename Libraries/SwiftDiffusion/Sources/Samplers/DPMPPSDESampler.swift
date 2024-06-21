@@ -192,6 +192,30 @@ extension DPMPPSDESampler: Sampler {
       filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
+    let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
+    let sigmas = alphasCumprod.map { discretization.sigma(from: $0) }
+    let timesteps = (startStep.integral..<endStep.integral).map {
+      let alphaCumprod: Double
+      if $0 == startStep.integral && Float(startStep.integral) != startStep.fractional {
+        let lowTimestep = discretization.timestep(
+          for: alphasCumprod[max(0, min(Int(startStep.integral), alphasCumprod.count - 1))])
+        let highTimestep = discretization.timestep(
+          for: alphasCumprod[
+            max(0, min(Int(startStep.fractional.rounded(.up)), alphasCumprod.count - 1))])
+        let timestep =
+          lowTimestep
+          + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
+        alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
+      } else {
+        alphaCumprod = discretization.alphaCumprod(from: sigmas[$0])
+      }
+      switch conditioning {
+      case .noise:
+        return discretization.noise(for: alphaCumprod)
+      case .timestep:
+        return discretization.timestep(for: alphaCumprod)
+      }
+    }
     if c.count >= 2 || version == .svdI2v {
       let vector = fixedEncoder.vector(
         textEmbedding: c[c.count - 1], originalSize: originalSize,
@@ -200,9 +224,9 @@ extension DPMPPSDESampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        textEncoding: c, timesteps: [], batchSize: batchSize, startHeight: startHeight,
-        startWidth: startWidth,
-        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora)
+        textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
+        startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
+        tokenLengthCond: tokenLengthCond, lora: lora)
       c = vector + encodings
       injectedControlsC = injectedControls.map {
         $0.model.encode(
@@ -244,14 +268,15 @@ extension DPMPPSDESampler: Sampler {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        inputs: xIn, t, newC,
+        inputs: xIn, t,
+        unet.extractConditions(
+          graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
+          version: version),
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
         injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
         tiledDiffusion: tiledDiffusion)
     }
-    let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
-    let sigmas = alphasCumprod.map { ((1.0 - $0) / $0).squareRoot() }
     let noise = graph.variable(
       .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
     var brownianNoise = graph.variable(
@@ -293,9 +318,10 @@ extension DPMPPSDESampler: Sampler {
     var refinerKickIn = refiner.map { (1 - $0.start) * discretization.timesteps } ?? -1
     var unets: [UNet?] = [unet]
     var currentModelVersion = version
+    var indexOffset = startStep.integral
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       // Now do DPM++ SDE Karras sampling.
-      if startStep.fractional == 0 {
+      if startStep.fractional == 0 && sigmas[0] != 1 {
         x = Float(sigmas[0]) * x
       }
       var oldDenoised: DynamicGraph.Tensor<FloatType>? = nil
@@ -310,20 +336,20 @@ extension DPMPPSDESampler: Sampler {
           let timestep =
             lowTimestep
             + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
-          let alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: sampling.shift)
-          sigma = ((1.0 - alphaCumprod) / alphaCumprod).squareRoot()
+          let alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
+          sigma = discretization.sigma(from: alphaCumprod)
         } else {
           sigma = sigmas[i]
         }
         if i == startStep.integral {
           brownianNoise = Float(sigma.squareRoot()) * brownianNoise
         }
-        let alphaCumprod = 1.0 / (sigma * sigma + 1)
+        let alphaCumprod = discretization.alphaCumprod(from: sigma)
         let sqrtAlphaCumprod = alphaCumprod.squareRoot()
         let input: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
-        case .const:
-          fatalError()
+        case .u(_):
+          input = x
         case .v, .epsilon:
           input = Float(sqrtAlphaCumprod) * x
         case .edm(let sigmaData):
@@ -342,6 +368,16 @@ extension DPMPPSDESampler: Sampler {
         }
         let timestep = discretization.timestep(for: alphaCumprod)
         if timestep < refinerKickIn, let refiner = refiner {
+          let timesteps = (i..<endStep.integral).map {
+            let alphaCumprod =
+              $0 == i ? alphaCumprod : discretization.alphaCumprod(from: sigmas[$0])
+            switch conditioning {
+            case .noise:
+              return discretization.noise(for: alphaCumprod)
+            case .timestep:
+              return discretization.timestep(for: alphaCumprod)
+            }
+          }
           unets = [nil]
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
@@ -357,10 +393,12 @@ extension DPMPPSDESampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
-                textEncoding: oldC, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+                textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
+                startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora
               ).0
+            indexOffset = i
           }
           unet = UNet()
           currentModelVersion = refiner.version
@@ -387,7 +425,10 @@ extension DPMPPSDESampler: Sampler {
             injectT2IAdapters: injectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
             lora: lora, is8BitModel: refiner.is8BitModel,
             canRunLoRASeparately: canRunLoRASeparately,
-            inputs: xIn, t, newC,
+            inputs: xIn, t,
+            unet.extractConditions(
+              graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
+              version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection, injectedControls: injectedControls,
             injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
@@ -404,6 +445,9 @@ extension DPMPPSDESampler: Sampler {
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
+          version: currentModelVersion)
+        let c = unet.extractConditions(
+          graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize, conditions: c,
           version: currentModelVersion)
         let et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
@@ -527,8 +571,8 @@ extension DPMPPSDESampler: Sampler {
         if i < sampling.steps - 1 {
           var denoised: DynamicGraph.Tensor<FloatType>
           switch discretization.objective {
-          case .const:
-            fatalError()
+          case .u(_):
+            denoised = Functional.add(left: x, right: et, leftScalar: 1, rightScalar: Float(-sigma))
           case .v:
             denoised = Functional.add(
               left: x, right: et, leftScalar: Float(1.0 / (sigma * sigma + 1)),
@@ -577,12 +621,12 @@ extension DPMPPSDESampler: Sampler {
             left: x2, right: rightW, leftScalar: 1,
             rightScalar: Float(sigmaUp1 / (sigma - sigmaS).squareRoot()))
           // Now run the model again.
-          let alphaSCumprod = 1.0 / (sigmaS * sigmaS + 1)
+          let alphaSCumprod = discretization.alphaCumprod(from: sigmaS)
           let sqrtAlphaSCumprod = alphaSCumprod.squareRoot()
           let input: DynamicGraph.Tensor<FloatType>
           switch discretization.objective {
-          case .const:
-            fatalError()
+          case .u(_):
+            input = x2
           case .v, .epsilon:
             input = Float(sqrtAlphaSCumprod) * x2
           case .edm(let sigmaData):
@@ -723,8 +767,9 @@ extension DPMPPSDESampler: Sampler {
           }
           var denoised2: DynamicGraph.Tensor<FloatType>
           switch discretization.objective {
-          case .const:
-            fatalError()
+          case .u(_):
+            denoised2 = Functional.add(
+              left: x2, right: et, leftScalar: 1, rightScalar: Float(-sigmaS))
           case .v:
             denoised2 = Functional.add(
               left: x2, right: et, leftScalar: Float(1.0 / (sigmaS * sigmaS + 1)),
@@ -772,8 +817,8 @@ extension DPMPPSDESampler: Sampler {
         } else {
           let dt = sigmas[i + 1] - sigma
           switch discretization.objective {
-          case .const:
-            fatalError()
+          case .u(_):
+            x = Functional.add(left: x, right: et, leftScalar: 1, rightScalar: Float(dt))
           case .v:
             // denoised = Float(1.0 / (sigma * sigma + 1)) * x - (sigma * sqrtAlphaCumprod) * et
             // d = (x - denoised) / sigma // (x - Float(1.0 / (sigma * sigma + 1)) * x + (sigma * sqrtAlphaCumprod) * et) / sigma = (sigma / (sigma * sigma + 1)) * x + sqrtAlphaCumprod * et
@@ -801,7 +846,14 @@ extension DPMPPSDESampler: Sampler {
           // Then, we should compute qSample as alphaPrev.squareRoot() * sample + (1 - alphaPrev).squareRoot() * noise
           // However, because we will multiple back 1 / alphaPrev.squareRoot() again, this effectively become the following.
           noise.randn(std: 1, mean: 0)
-          let qSample = sample + Float(sigmas[i + 1]) * noise
+          let qSample: DynamicGraph.Tensor<FloatType>
+          if case .u(_) = discretization.objective {
+            qSample = Functional.add(
+              left: sample, right: noise, leftScalar: Float(1 - sigmas[i + 1]),
+              rightScalar: Float(sigmas[i + 1]))
+          } else {
+            qSample = sample + Float(sigmas[i + 1]) * noise
+          }
           x = qSample .* negMask + x .* mask
         }
         if i == endStep.integral - 1 {
@@ -853,7 +905,11 @@ extension DPMPPSDESampler: Sampler {
   }
 
   public func sampleScaleFactor(at step: Float, sampling: Sampling) -> Float {
-    return 1
+    if case .u(_) = discretization.objective {
+      return 1 - noiseScaleFactor(at: step, sampling: sampling)
+    } else {
+      return 1
+    }
   }
 
   public func noiseScaleFactor(at step: Float, sampling: Sampling) -> Float {
@@ -863,8 +919,8 @@ extension DPMPPSDESampler: Sampler {
     let highTimestep = discretization.timestep(
       for: alphasCumprod[max(0, min(Int(step.rounded(.up)), alphasCumprod.count - 1))])
     let timestep = lowTimestep + (highTimestep - lowTimestep) * (step - Float(step.rounded(.down)))
-    let alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: sampling.shift)
-    let sigma = ((1 - alphaCumprod) / alphaCumprod).squareRoot()
+    let alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
+    let sigma = discretization.sigma(from: alphaCumprod)
     return Float(sigma)
   }
 }

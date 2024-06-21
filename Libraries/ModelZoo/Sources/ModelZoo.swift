@@ -2,6 +2,14 @@ import DataModels
 import Diffusion
 import Foundation
 
+public struct FailableDecodable<T: Decodable>: Decodable {
+  public let value: T?
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    value = try? container.decode(T.self)
+  }
+}
+
 public struct ModelZoo: DownloadZoo {
   public static func humanReadableNameForVersion(_ version: ModelVersion) -> String {
     switch version {
@@ -29,7 +37,7 @@ public struct ModelZoo: DownloadZoo {
   public enum NoiseDiscretization: Codable {
     case edm(Denoiser.Parameterization.EDM)
     case ddpm(Denoiser.Parameterization.DDPM)
-    case rf
+    case rf(Denoiser.Parameterization.RF)
   }
 
   public struct Specification: Codable {
@@ -325,20 +333,20 @@ public struct ModelZoo: DownloadZoo {
       name: "SDXL Turbo", file: "sd_xl_turbo_f16.ckpt", prefix: "",
       version: .sdxlBase,
       defaultScale: 8, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
       isConsistencyModel: true),
     Specification(
       name: "SDXL Turbo (8-bit)", file: "sd_xl_turbo_q6p_q8p.ckpt", prefix: "",
       version: .sdxlBase,
       defaultScale: 8, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
       isConsistencyModel: true),
     Specification(
       name: "Stable Cascade (Würstchen v3.0)", file: "wurstchen_3.0_stage_c_f32_f16.ckpt",
       prefix: "",
       version: .wurstchenStageC, upcastAttention: false, defaultScale: 16,
       textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "wurstchen_3.0_stage_a_hq_f16.ckpt",
+      autoencoder: "wurstchen_3.0_stage_a_hq_f16.ckpt", deprecated: true,
       stageModels: ["wurstchen_3.0_stage_b_f16.ckpt"]
     ),
     Specification(
@@ -347,26 +355,8 @@ public struct ModelZoo: DownloadZoo {
       prefix: "",
       version: .wurstchenStageC, upcastAttention: false, defaultScale: 16,
       textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "wurstchen_3.0_stage_a_hq_f16.ckpt",
+      autoencoder: "wurstchen_3.0_stage_a_hq_f16.ckpt", deprecated: true,
       stageModels: ["wurstchen_3.0_stage_b_q6p_q8p.ckpt"]
-    ),
-    Specification(
-      name: "SD3 Medium",
-      file: "sd3_medium_f16.ckpt",
-      prefix: "",
-      version: .sd3, upcastAttention: false, defaultScale: 16,
-      textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sd3_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
-      T5Encoder: "t5_xxl_encoder_q6p.ckpt", objective: .const
-    ),
-    Specification(
-      name: "SD3 Medium (8-bit)",
-      file: "sd3_medium_q8p.ckpt",
-      prefix: "",
-      version: .sd3, upcastAttention: false, defaultScale: 16,
-      textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sd3_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
-      T5Encoder: "t5_xxl_encoder_q6p.ckpt", objective: .const
     ),
     Specification(
       name: "LCM SDXL Base (v1.0)", file: "lcm_sd_xl_base_1.0_f16.ckpt", prefix: "",
@@ -639,7 +629,10 @@ public struct ModelZoo: DownloadZoo {
     }
     let jsonDecoder = JSONDecoder()
     jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-    guard let jsonSpecifications = try? jsonDecoder.decode([Specification].self, from: jsonData)
+    guard
+      let jsonSpecifications = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value })
     else {
       return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
     }
@@ -679,7 +672,9 @@ public struct ModelZoo: DownloadZoo {
     if let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) {
       let jsonDecoder = JSONDecoder()
       jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-      if let jsonSpecification = try? jsonDecoder.decode([Specification].self, from: jsonData) {
+      if let jsonSpecification = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value }) {
         customSpecifications.append(contentsOf: jsonSpecification)
       }
     }
@@ -712,7 +707,9 @@ public struct ModelZoo: DownloadZoo {
     if let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) {
       let jsonDecoder = JSONDecoder()
       jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-      if let jsonSpecification = try? jsonDecoder.decode([Specification].self, from: jsonData) {
+      if let jsonSpecification = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value }) {
         customSpecifications.append(contentsOf: jsonSpecification)
       }
     }
@@ -944,7 +941,7 @@ public struct ModelZoo: DownloadZoo {
     case .wurstchenStageC, .wurstchenStageB:
       return .edm(.init(sigmaMin: 0.01, sigmaMax: 99.995))
     case .sd3:
-      return .rf
+      return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
 

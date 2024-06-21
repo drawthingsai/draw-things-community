@@ -153,6 +153,27 @@ extension LCMSampler: Sampler {
       filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
+    let alphasCumprod = Array(
+      discretization.alphasCumprod(steps: 1000, shift: sampling.shift).reversed())
+    let sigmas = alphasCumprod.map { discretization.sigma(from: $0) }
+    var timesteps = (0..<sampling.steps).map {
+      min(
+        Int(
+          (Double(1000 - 1 - 20) * Double(sampling.steps - $0)
+            / Double(sampling.steps)).rounded()) + 20, 1000 - 1)
+    }
+    if (Float(startStep.integral) - startStep.fractional).magnitude >= 1e-4 {
+      timesteps[startStep.integral] = min(
+        Int(
+          1000 - startStep.fractional * 1000 / Float(sampling.steps)), 1000 - 1)
+    }
+    if (Float(endStep.integral) - endStep.fractional).magnitude >= 1e-4
+      && endStep.integral < sampling.steps
+    {
+      timesteps[endStep.integral] = min(
+        Int(
+          1000 - endStep.fractional * 1000 / Float(sampling.steps)), 1000 - 1)
+    }
     if c.count >= 2 || version == .svdI2v {
       let vector = fixedEncoder.vector(
         textEmbedding: c[c.count - 1], originalSize: originalSize,
@@ -161,7 +182,9 @@ extension LCMSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        textEncoding: c, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+        textEncoding: c,
+        timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
+        batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora)
       c = vector + encodings
@@ -206,15 +229,15 @@ extension LCMSampler: Sampler {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        inputs: xIn, t, newC, tokenLengthUncond: tokenLengthUncond,
+        inputs: xIn, t,
+        unet.extractConditions(
+          graph: graph, index: 0, batchSize: batchSize, conditions: newC, version: version),
+        tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
         injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
         tiledDiffusion: tiledDiffusion)
     }
-    let alphasCumprod = Array(
-      discretization.alphasCumprod(steps: 1000, shift: sampling.shift).reversed())
-    let sigmas = alphasCumprod.map { ((1 - $0) / $0).squareRoot() }
     var noise: DynamicGraph.Tensor<FloatType>? = nil
     if mask != nil || version == .kandinsky21 {
       noise = graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
@@ -222,24 +245,6 @@ extension LCMSampler: Sampler {
     let streamContext = StreamContext(.GPU(0))
     var refinerKickIn = refiner.map { (1 - $0.start) * discretization.timesteps } ?? -1
     var unets: [UNet?] = [unet]
-    var timesteps = (0..<sampling.steps).map {
-      min(
-        Int(
-          (Double(1000 - 1 - 20) * Double(sampling.steps - $0)
-            / Double(sampling.steps)).rounded()) + 20, 1000 - 1)
-    }
-    if (Float(startStep.integral) - startStep.fractional).magnitude >= 1e-4 {
-      timesteps[startStep.integral] = min(
-        Int(
-          1000 - startStep.fractional * 1000 / Float(sampling.steps)), 1000 - 1)
-    }
-    if (Float(endStep.integral) - endStep.fractional).magnitude >= 1e-4
-      && endStep.integral < sampling.steps
-    {
-      timesteps[endStep.integral] = min(
-        Int(
-          1000 - endStep.fractional * 1000 / Float(sampling.steps)), 1000 - 1)
-    }
     let blur: Model?
     if sharpness > 0 {
       blur = Blur(filters: channels, sigma: 3.0, size: 13, input: x)
@@ -247,6 +252,7 @@ extension LCMSampler: Sampler {
       blur = nil
     }
     var currentModelVersion = version
+    var indexOffset = startStep.integral
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       let condProj = Dense(count: 320, noBias: true)
       let cfg = graph.variable(
@@ -339,10 +345,12 @@ extension LCMSampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
-                textEncoding: oldC, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+                textEncoding: oldC, timesteps: timesteps[i..<endStep.integral].map { Float($0) },
+                batchSize: batchSize, startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora
               ).0
+            indexOffset = i
           }
           unet = UNet()
           currentModelVersion = refiner.version
@@ -352,7 +360,7 @@ extension LCMSampler: Sampler {
           let t = unet.timeEmbed(
             graph: graph, batchSize: batchSize, timestep: Float(firstTimestep),
             version: currentModelVersion)
-          if timeEmbeddingSize != cfgCond.shape[1] || !refiner.isConsistencyModel {
+          if let t = t, timeEmbeddingSize != cfgCond.shape[1] || !refiner.isConsistencyModel {
             cfgCond = graph.variable(like: t)
             cfgCond.full(0)
           }
@@ -374,7 +382,10 @@ extension LCMSampler: Sampler {
             injectT2IAdapters: injectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
             lora: lora, is8BitModel: refiner.is8BitModel,
             canRunLoRASeparately: canRunLoRASeparately,
-            inputs: xIn, t, newC,
+            inputs: xIn, t,
+            unet.extractConditions(
+              graph: graph, index: 0, batchSize: batchSize, conditions: newC,
+              version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection, injectedControls: injectedControls,
             injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
@@ -392,6 +403,9 @@ extension LCMSampler: Sampler {
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: batchSize, timestep: cNoise, version: currentModelVersion)
+        let c = unet.extractConditions(
+          graph: graph, index: i - indexOffset, batchSize: batchSize, conditions: c,
+          version: currentModelVersion)
         xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
         let injectedIPAdapters = ControlModel<FloatType>
           .injectedIPAdapters(
@@ -414,7 +428,8 @@ extension LCMSampler: Sampler {
           newC = c
         }
         var etOut = unet(
-          timestep: cNoise, inputs: xIn, t + cfgCond, newC, extraProjection: extraProjection,
+          timestep: cNoise, inputs: xIn, t.map { $0 + cfgCond }, newC,
+          extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
           injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
           controlNets: &controlNets)
@@ -429,8 +444,10 @@ extension LCMSampler: Sampler {
         let alpha = alphasCumprod[timestep]
         let predictOriginalSample: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
-        case .const:
-          fatalError()
+        case .u(_):
+          predictOriginalSample = Functional.add(
+            left: x, right: etOut, leftScalar: 1,
+            rightScalar: Float(-sigma))
         case .v:
           let sqrtAlphaCumprod = 1.0 / (sigma * sigma + 1).squareRoot()
           predictOriginalSample = Functional.add(
@@ -455,9 +472,15 @@ extension LCMSampler: Sampler {
         if i < sampling.steps - 1 {
           let noise = graph.variable(like: x)
           noise.randn(std: 1, mean: 0)
-          x = Functional.add(
-            left: denoised, right: noise, leftScalar: Float(alphaPrev.squareRoot()),
-            rightScalar: Float((1 - alphaPrev).squareRoot()))
+          if case .u(_) = discretization.objective {
+            x = Functional.add(
+              left: denoised, right: noise, leftScalar: Float(alphaPrev),
+              rightScalar: Float(1 - alphaPrev))
+          } else {
+            x = Functional.add(
+              left: denoised, right: noise, leftScalar: Float(alphaPrev.squareRoot()),
+              rightScalar: Float((1 - alphaPrev).squareRoot()))
+          }
         } else {
           x = denoised
         }
@@ -465,8 +488,15 @@ extension LCMSampler: Sampler {
           let negMask = negMask
         {
           noise.randn(std: 1, mean: 0)
-          let qSample =
-            Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
+          let qSample: DynamicGraph.Tensor<FloatType>
+          if case .u(_) = discretization.objective {
+            qSample = Functional.add(
+              left: sample, right: noise, leftScalar: Float(alphaPrev),
+              rightScalar: Float(1 - alphaPrev))
+          } else {
+            qSample =
+              Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
+          }
           x = qSample .* negMask + x .* mask
         }
         if i == endStep.integral - 1 {
@@ -521,13 +551,21 @@ extension LCMSampler: Sampler {
     let step = Int(step.rounded())
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     let alphaCumprod = alphasCumprod[max(0, min(alphasCumprod.count - 1, step))]
-    return Float(alphaCumprod.squareRoot())
+    if case .u(_) = discretization.objective {
+      return Float(alphaCumprod)
+    } else {
+      return Float(alphaCumprod.squareRoot())
+    }
   }
 
   public func noiseScaleFactor(at step: Float, sampling: Sampling) -> Float {
     let step = Int(step.rounded())
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     let alphaCumprod = alphasCumprod[max(0, min(alphasCumprod.count - 1, step))]
-    return Float((1 - alphaCumprod).squareRoot())
+    if case .u(_) = discretization.objective {
+      return Float(1 - alphaCumprod)
+    } else {
+      return Float((1 - alphaCumprod).squareRoot())
+    }
   }
 }

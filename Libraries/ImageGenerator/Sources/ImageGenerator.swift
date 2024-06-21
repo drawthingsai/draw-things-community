@@ -147,7 +147,7 @@ extension ImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
-      case .DDIM:
+      case .DDIM, .dDIMTrailing:
         return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
           filePath: filePath, modifier: modifier, version: version,
           usesFlashAttention: usesFlashAttention,
@@ -333,6 +333,18 @@ extension ImageGenerator {
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading))
+    case .dDIMTrailing:
+      return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
+        filePath: filePath, modifier: modifier, version: version,
+        usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
+        injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion,
+        discretization: Denoiser.LinearDiscretization(
+          parameterization, objective: objective, timestepSpacing: .trailing))
     case .PLMS:
       return PLMSSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version,
@@ -525,8 +537,8 @@ extension ImageGenerator {
       denoiserParameterization = .edm(edm)
     case .ddpm(let ddpm):
       denoiserParameterization = .ddpm(ddpm)
-    case .rf:
-      denoiserParameterization = .rf
+    case .rf(let rf):
+      denoiserParameterization = .rf(rf)
     }
     let sampling = Sampling(steps: Int(configuration.steps), shift: Double(configuration.shift))
     guard let image = image else {
@@ -609,16 +621,16 @@ extension ImageGenerator {
   private func tokenize(
     graph: DynamicGraph, tokenizer: Tokenizer & TextualInversionPoweredTokenizer,
     text: String, negativeText: String, paddingToken: Int32?, conditionalLength: Int,
-    modifier: TextualInversionZoo.Modifier, potentials: [String]
+    modifier: TextualInversionZoo.Modifier, potentials: [String], maxLength: Int = 77
   ) -> (
     [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<FloatType>],
     [DynamicGraph.Tensor<FloatType>], [Float], [Float], Bool, Int, Int, [Int], [Int]
   ) {
     var (_, unconditionalTokens, unconditionalAttentionWeights, _, lengthsOfUncond) =
       tokenizer.tokenize(
-        text: negativeText, truncation: false, maxLength: 77, paddingToken: paddingToken)
+        text: negativeText, truncation: false, maxLength: maxLength, paddingToken: paddingToken)
     var (_, tokens, attentionWeights, _, lengthsOfCond) = tokenizer.tokenize(
-      text: text, truncation: false, maxLength: 77, paddingToken: paddingToken)
+      text: text, truncation: false, maxLength: maxLength, paddingToken: paddingToken)
     var unconditionalTokensCount = unconditionalTokens.count
     // If textual inversion is multivector, add the count.
     for token in unconditionalTokens {
@@ -683,7 +695,7 @@ extension ImageGenerator {
       (attentionWeights.contains { $0 != 1 })
       || (unconditionalAttentionWeights.contains { $0 != 1 })
     let tokenLength = max(unconditionalTokensCount, tokensCount)
-    if tokenLength > 77 {
+    if tokenLength > maxLength {
       (_, unconditionalTokens, unconditionalAttentionWeights, _, lengthsOfUncond) =
         tokenizer.tokenize(
           text: negativeText, truncation: true, maxLength: tokenLength, paddingToken: paddingToken)
@@ -886,7 +898,7 @@ extension ImageGenerator {
 
   private func tokenize(
     graph: DynamicGraph, modelVersion: ModelVersion, text: String, negativeText: String,
-    negativePromptForImagePrior: Bool, potentials: [String]
+    negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool
   ) -> (
     [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<FloatType>],
     [DynamicGraph.Tensor<FloatType>], [Float], [Float], Bool, Int, Int, [Int], [Int]
@@ -940,12 +952,14 @@ extension ImageGenerator {
       result.0 = tokens + result.0
       result.2 = embedMask + result.2
       result.3 = injectedEmbeddings + result.3
-      let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
-        graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials)
-      result.0 = result.0 + t5Tokens
-      result.2 = result.2 + t5EmbedMask
-      result.3 = result.3 + t5InjectedEmbeddings
+      if T5TextEncoder {
+        let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
+          graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
+          paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials)
+        result.0 = result.0 + t5Tokens
+        result.2 = result.2 + t5EmbedMask
+        result.3 = result.3 + t5InjectedEmbeddings
+      }
       return result
     }
   }
@@ -2284,7 +2298,9 @@ extension ImageGenerator {
       lengthsOfCond
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
-      negativePromptForImagePrior: configuration.negativePromptForImagePrior, potentials: potentials
+      negativePromptForImagePrior: configuration.negativePromptForImagePrior,
+      potentials: potentials,
+      T5TextEncoder: configuration.t5TextEncoder
     )
     let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     return graph.withNoGrad {
@@ -3103,7 +3119,9 @@ extension ImageGenerator {
       lengthsOfCond
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
-      negativePromptForImagePrior: configuration.negativePromptForImagePrior, potentials: potentials
+      negativePromptForImagePrior: configuration.negativePromptForImagePrior,
+      potentials: potentials,
+      T5TextEncoder: configuration.t5TextEncoder
     )
     let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     var signposts = Set<Signpost>([
@@ -4285,7 +4303,9 @@ extension ImageGenerator {
       lengthsOfCond
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
-      negativePromptForImagePrior: configuration.negativePromptForImagePrior, potentials: potentials
+      negativePromptForImagePrior: configuration.negativePromptForImagePrior,
+      potentials: potentials,
+      T5TextEncoder: configuration.t5TextEncoder
     )
     let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     signposts.formUnion([
@@ -4966,7 +4986,9 @@ extension ImageGenerator {
       lengthsOfCond
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
-      negativePromptForImagePrior: configuration.negativePromptForImagePrior, potentials: potentials
+      negativePromptForImagePrior: configuration.negativePromptForImagePrior,
+      potentials: potentials,
+      T5TextEncoder: configuration.t5TextEncoder
     )
     let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     signposts.formUnion([

@@ -133,7 +133,10 @@ public struct TextualInversionZoo: DownloadZoo {
 
     let jsonDecoder = JSONDecoder()
     jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-    guard let jsonSpecifications = try? jsonDecoder.decode([Specification].self, from: jsonData)
+    guard
+      let jsonSpecifications = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value })
     else {
       return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
     }
@@ -197,7 +200,9 @@ public struct TextualInversionZoo: DownloadZoo {
     if let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) {
       let jsonDecoder = JSONDecoder()
       jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-      if let jsonSpecification = try? jsonDecoder.decode([Specification].self, from: jsonData) {
+      if let jsonSpecification = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value }) {
         customSpecifications.append(contentsOf: jsonSpecification)
       }
     }

@@ -39,6 +39,8 @@ extension SamplerType {
       self = .DPMPPSDEAYS
     case .dPMPP2MTrailing:
       self = .dPMPP2MTrailing
+    case .dDIMTrailing:
+      self = .dDIMTrailing
     }
   }
 }
@@ -78,6 +80,8 @@ extension DataModels.SamplerType {
       self = .DPMPPSDEAYS
     case .dPMPP2MTrailing:
       self = .dPMPP2MTrailing
+    case .dDIMTrailing:
+      self = .dDIMTrailing
     }
   }
 }
@@ -417,7 +421,8 @@ public final class ImageHistoryManager {
       diffusionTileWidth: imageHistory.diffusionTileWidth,
       diffusionTileHeight: imageHistory.diffusionTileHeight,
       diffusionTileOverlap: imageHistory.diffusionTileOverlap,
-      upscalerScaleFactor: imageHistory.upscalerScaleFactor
+      upscalerScaleFactor: imageHistory.upscalerScaleFactor,
+      t5TextEncoder: imageHistory.t5TextEncoder
     )
     dataStored = imageData.sorted(by: { $0.index < $1.index }).map {
       let tensorId = $0.tensorId == 0 ? nil : $0.tensorId
@@ -447,7 +452,8 @@ public final class ImageHistoryManager {
   public func pushHistory(
     imageData: [ImageData], preview: UIImage?, textEdits: Int?,
     textLineage: Int64?, configuration: GenerationConfiguration, isGenerated: Bool,
-    contentOffset: (x: Int32, y: Int32), scaleFactorBy120: Int32, shuffleData: [ShuffleData]? = nil
+    contentOffset: (x: Int32, y: Int32), scaleFactorBy120: Int32, scriptSessionId: UInt64?,
+    shuffleData: [ShuffleData]? = nil
   ) {
     dispatchPrecondition(condition: .onQueue(.main))
     // We need to fork this history.
@@ -646,7 +652,9 @@ public final class ImageHistoryManager {
       diffusionTileWidth: configuration.diffusionTileWidth,
       diffusionTileHeight: configuration.diffusionTileHeight,
       diffusionTileOverlap: configuration.diffusionTileOverlap,
-      upscalerScaleFactor: configuration.upscalerScaleFactor
+      upscalerScaleFactor: configuration.upscalerScaleFactor,
+      scriptSessionId: scriptSessionId,
+      t5TextEncoder: configuration.t5TextEncoder
     )
     let imageVersion = uniqueVersion()
     nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)

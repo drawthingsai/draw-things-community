@@ -76,7 +76,7 @@ extension ControlModel {
     )],
     step: Int, version: ModelVersion, usesFlashAttention: Bool,
     inputs xT: DynamicGraph.Tensor<FloatType>,
-    _ timestep: DynamicGraph.Tensor<FloatType>, _ c: [[DynamicGraph.Tensor<FloatType>]],
+    _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [[DynamicGraph.Tensor<FloatType>]],
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
     controlNets existingControlNets: inout [Model?]
@@ -123,7 +123,7 @@ extension ControlModel {
     )],
     step: Int, version: ModelVersion, usesFlashAttention: Bool,
     inputs xT: DynamicGraph.Tensor<FloatType>,
-    _ timestep: DynamicGraph.Tensor<FloatType>, _ c: [[DynamicGraph.Tensor<FloatType>]],
+    _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [[DynamicGraph.Tensor<FloatType>]],
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
     controlNets existingControlNets: inout [Model?]
@@ -1036,7 +1036,7 @@ extension ControlModel {
   public func callAsFunction(
     inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int,
     step: Int, inputs xT: DynamicGraph.Tensor<FloatType>, _ hint: [DynamicGraph.Tensor<FloatType>],
-    strength: Float, _ timestep: DynamicGraph.Tensor<FloatType>,
+    strength: Float, _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     isCfgEnabled: Bool, mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
     controlNet existingControlNet: inout Model?
@@ -1191,10 +1191,10 @@ extension ControlModel {
             xIn,
             hint[0][
               0..<shape[0], inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
-              0..<shape[3]], timestep,
-          ] + c)
+              0..<shape[3]],
+          ] + (timestep.map { [$0] } ?? []) + c)
       } else {
-        controlNet.compile(inputs: [xIn, hint[0], timestep] + c)
+        controlNet.compile(inputs: [xIn, hint[0]] + (timestep.map { [$0] } ?? []) + c)
       }
       let externalData: DynamicGraph.Store.Codec =
         externalOnDemand ? .externalOnDemand : .externalData
@@ -1249,11 +1249,13 @@ extension ControlModel {
         [
           hint[0][
             0..<shape[0], inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad, 0..<shape[3]
-          ].copied(), timestep,
-        ] + c
+          ].copied()
+        ] + (timestep.map { [$0] } ?? []) + c
       ).map { $0.as(of: FloatType.self) }
     } else {
-      result = controlNet(inputs: xIn, [hint[0], timestep] + c).map { $0.as(of: FloatType.self) }
+      result = controlNet(inputs: xIn, [hint[0]] + (timestep.map { [$0] } ?? []) + c).map {
+        $0.as(of: FloatType.self)
+      }
     }
     if controlMode == .control && isCfgEnabled {
       for x in result {

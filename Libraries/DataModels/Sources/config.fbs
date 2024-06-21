@@ -15,6 +15,7 @@ enum SamplerType: byte {
   EulerAAYS,
   DPMPPSDEAYS,
   DPMPP2MTrailing,
+  DDIMTrailing,
 }
 
 enum SeedMode: byte {
@@ -112,6 +113,7 @@ table GenerationConfiguration {
   diffusion_tile_height: ushort = 16;
   diffusion_tile_overlap: ushort = 2;
   upscaler_scale_factor: ubyte = 0;
+  t5_text_encoder: bool = true;
 }
 
 root_type GenerationConfiguration;

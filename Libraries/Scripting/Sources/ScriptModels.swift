@@ -129,6 +129,7 @@ public final class JSGenerationConfiguration: Codable {
   let stage2Shift: Float32
   let stochasticSamplingGamma: Float32
   let preserveOriginalAfterInpaint: Bool
+  let t5TextEncoder: Bool
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -192,6 +193,7 @@ public final class JSGenerationConfiguration: Codable {
     stage2Steps = configuration.stage2Steps
     stochasticSamplingGamma = configuration.stochasticSamplingGamma
     preserveOriginalAfterInpaint = configuration.preserveOriginalAfterInpaint
+    t5TextEncoder = configuration.t5TextEncoder
   }
 
   public func createGenerationConfiguration() -> GenerationConfiguration {
@@ -229,7 +231,8 @@ public final class JSGenerationConfiguration: Codable {
       diffusionTileWidth: UInt16(diffusionTileWidth / 64),
       diffusionTileHeight: UInt16(diffusionTileHeight / 64),
       diffusionTileOverlap: UInt16(diffusionTileOverlap / 64),
-      upscalerScaleFactor: upscalerScaleFactor
+      upscalerScaleFactor: upscalerScaleFactor,
+      t5TextEncoder: t5TextEncoder
     )
   }
 }

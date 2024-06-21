@@ -14,7 +14,8 @@ enum SamplerType: byte {
   DPMPP2MAYS,
   EulerAAYS,
   DPMPPSDEAYS,
-  DPMPP2MTrailing
+  DPMPP2MTrailing,
+  DDIMTrailing,
 }
 
 enum SeedMode: byte {
@@ -129,7 +130,8 @@ table TensorHistoryNode {
   diffusion_tile_height: ushort = 16;
   diffusion_tile_overlap: ushort = 2;
   upscaler_scale_factor: ubyte = 0;
-  generation_group_of: uint;
+  script_session_id: ulong;
+  t5_text_encoder: bool = true;
 }
 
 root_type TensorHistoryNode;

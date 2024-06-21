@@ -204,6 +204,16 @@ extension PLMSSampler: Sampler {
       filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
+    let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
+    let timesteps = (startStep..<endStep).map {
+      let alphaCumprod = alphasCumprod[$0]
+      switch conditioning {
+      case .noise:
+        return discretization.noise(for: alphaCumprod)
+      case .timestep:
+        return discretization.timestep(for: alphaCumprod)
+      }
+    }
     if c.count >= 2 || version == .svdI2v {
       let vector = fixedEncoder.vector(
         textEmbedding: c[c.count - 1], originalSize: originalSize,
@@ -212,7 +222,7 @@ extension PLMSSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        textEncoding: c, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+        textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora)
       c = vector + encodings
@@ -256,13 +266,15 @@ extension PLMSSampler: Sampler {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-        inputs: xIn, t, newC,
+        inputs: xIn, t,
+        unet.extractConditions(
+          graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
+          version: version),
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
         injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
         tiledDiffusion: tiledDiffusion)
     }
-    let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     var noise: DynamicGraph.Tensor<FloatType>? = nil
     if mask != nil {
       noise = graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
@@ -303,6 +315,7 @@ extension PLMSSampler: Sampler {
     var refinerKickIn = refiner.map { (1 - $0.start) * discretization.timesteps } ?? -1
     var unets: [UNet?] = [unet]
     var currentModelVersion = version
+    var indexOffset = startStep
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       var oldEps = [DynamicGraph.Tensor<FloatType>]()
       // Now do PLMS sampling.
@@ -317,6 +330,15 @@ extension PLMSSampler: Sampler {
         guard feedback(i - startStep, rawValue) else { return .failure(SamplerError.cancelled) }
         let timestep = discretization.timestep(for: alphasCumprod[i])
         if timestep < refinerKickIn, let refiner = refiner {
+          let timesteps = (i..<endStep).map {
+            let alphaCumprod = alphasCumprod[$0 + i]
+            switch conditioning {
+            case .noise:
+              return discretization.noise(for: alphaCumprod)
+            case .timestep:
+              return discretization.timestep(for: alphaCumprod)
+            }
+          }
           unets = [nil]
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
@@ -332,10 +354,12 @@ extension PLMSSampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
-                textEncoding: oldC, timesteps: [], batchSize: batchSize, startHeight: startHeight,
+                textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
+                startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora
               ).0
+            indexOffset = i
           }
           unet = UNet()
           currentModelVersion = refiner.version
@@ -362,7 +386,10 @@ extension PLMSSampler: Sampler {
             injectT2IAdapters: injectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
             lora: lora, is8BitModel: refiner.is8BitModel,
             canRunLoRASeparately: canRunLoRASeparately,
-            inputs: xIn, t, newC,
+            inputs: xIn, t,
+            unet.extractConditions(
+              graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
+              version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection, injectedControls: injectedControls,
             injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
@@ -379,6 +406,9 @@ extension PLMSSampler: Sampler {
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
+          version: currentModelVersion)
+        let c = unet.extractConditions(
+          graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize, conditions: c,
           version: currentModelVersion)
         var et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
@@ -502,8 +532,8 @@ extension PLMSSampler: Sampler {
         let alpha = alphasCumprod[i]
         let alphaPrev = alphasCumprod[i + 1]
         switch discretization.objective {
-        case .const:
-          fatalError()
+        case .u(_):
+          break
         case .v:
           et = Float(alpha.squareRoot()) * et + Float((1 - alpha).squareRoot()) * x
         case .epsilon:
@@ -647,8 +677,8 @@ extension PLMSSampler: Sampler {
             }
           }
           switch discretization.objective {
-          case .const:
-            fatalError()
+          case .u(_):
+            break
           case .v:
             etNext =
               Float(alphaPrev.squareRoot()) * etNext + Float((1 - alphaPrev).squareRoot()) * xPrev
