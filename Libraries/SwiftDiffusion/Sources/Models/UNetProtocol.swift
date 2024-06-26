@@ -55,6 +55,8 @@ extension UNetProtocol {
         ).toGPU(0))
     case .sd3:
       return nil
+    case .pixart:
+      return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
         timesteps: timestep, batchSize: batchSize, embeddingSize: 64, maxPeriod: 10_000)
@@ -368,6 +370,14 @@ extension UNetFromNNC {
           batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
           width: tiledWidth, channels: 1536, layers: 24,
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
+    case .pixart:
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      (_, unet) = PixArt(b: batchSize, h: tiledHeight, w: tiledWidth)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -398,7 +408,7 @@ extension UNetFromNNC {
           }
         }
         c = newC
-      case .v2, .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .v2, .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
     }
@@ -446,7 +456,7 @@ extension UNetFromNNC {
       modelKey = "stage_b"
     case .wurstchenStageC:
       modelKey = "stage_c"
-    case .sd3:
+    case .sd3, .pixart:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -466,7 +476,7 @@ extension UNetFromNNC {
               return LoRAMapping.SDUNetXLSSD1B
             case .v1, .v2:
               return LoRAMapping.SDUNet
-            case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+            case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
           }()
@@ -715,7 +725,7 @@ extension UNetFromNNC {
           }
         }
         c = newC
-      case .v2, .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .v2, .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
     }
@@ -740,7 +750,8 @@ extension UNetFromNNC {
         return previewer(inputs: x)[0].as(of: FloatType.self)
       }
       return x
-    case .v1, .v2, .sd3, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .kandinsky21, .wurstchenStageB:
+    case .v1, .v2, .sd3, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .kandinsky21,
+      .wurstchenStageB:
       return x
     }
   }

@@ -144,6 +144,8 @@ extension UNetFixedEncoder {
       return []
     case .sd3:
       return []
+    case .pixart:
+      return []
     case .v1, .v2, .kandinsky21:
       fatalError()
     }
@@ -274,7 +276,7 @@ extension UNetFixedEncoder {
       kvs.append(
         contentsOf: unetFixed(inputs: zeroProj, numFramesEmb).map { $0.as(of: FloatType.self) })
       return (kvs, unetFixedWeightMapper)
-    case .v1, .v2, .kandinsky21:
+    case .v1, .v2, .kandinsky21, .pixart:
       return (textEncoding, nil)
     case .sd3:
       var c: DynamicGraph.Tensor<FloatType>

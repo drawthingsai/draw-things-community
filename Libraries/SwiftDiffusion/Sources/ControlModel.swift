@@ -206,7 +206,7 @@ extension ControlModel {
     let tiledHeight: Int
     let tiledWidth: Int
     switch version {
-    case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .kandinsky21, .sd3:
+    case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .kandinsky21, .sd3, .pixart:
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
@@ -411,7 +411,7 @@ extension ControlModel {
         resampler = Resampler(
           FloatType.self, width: 1280, outputDim: 2048, heads: 20, grid: 16, queries: 16, layers: 4,
           batchSize: 1)
-      case .v2, .sd3, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
+      case .v2, .sd3, .pixart, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       }
@@ -437,7 +437,7 @@ extension ControlModel {
           imagePromptEmbed[0..<1, 0..<16, 0..<2048] = imagePromptEmbeds[inputs.count]  // The zero prompt embed.
           imagePromptEmbed[1..<2, 0..<16, 0..<2048] = imagePromptEmbeds[i]
           return imagePromptEmbed
-        case .v2, .sd3, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
+        case .v2, .sd3, .pixart, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
           .wurstchenStageB:
           fatalError()
         }
@@ -455,7 +455,7 @@ extension ControlModel {
           batchSize: 2, startHeight: 128, startWidth: 128, channels: [320, 640, 1280],
           embeddingLength: 16, attentionRes: [2: 2, 4: 10],
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
-      case .v2, .sd3, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
+      case .v2, .sd3, .pixart, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       }
@@ -504,7 +504,7 @@ extension ControlModel {
               weight = input.weight * Float($0.element.shape[3]) / 160
             case .sdxlBase:
               weight = input.weight * Float($0.element.shape[usesFlashAttention ? 2 : 1]) / 20
-            case .v2, .sd3, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
+            case .v2, .sd3, .pixart, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
               .wurstchenStageB:
               fatalError()
             }
@@ -537,7 +537,7 @@ extension ControlModel {
         projModel = MLPProjModel(width: 1280, outputDim: 768)
       case .sdxlBase:
         projModel = MLPProjModel(width: 1280, outputDim: 2048)
-      case .v2, .sd3, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
+      case .v2, .sd3, .pixart, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       }
@@ -563,7 +563,7 @@ extension ControlModel {
           imagePromptEmbed[0..<1, 0..<257, 0..<2048] = imagePromptEmbeds[inputs.count]  // The zero prompt embed.
           imagePromptEmbed[1..<2, 0..<257, 0..<2048] = imagePromptEmbeds[i]
           return imagePromptEmbed
-        case .v2, .sd3, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
+        case .v2, .sd3, .pixart, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
           .wurstchenStageB:
           fatalError()
         }
@@ -581,7 +581,7 @@ extension ControlModel {
           batchSize: 2, startHeight: 128, startWidth: 128, channels: [320, 640, 1280],
           embeddingLength: 257, attentionRes: [2: 2, 4: 10],
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
-      case .v2, .sd3, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
+      case .v2, .sd3, .pixart, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       }
@@ -631,7 +631,7 @@ extension ControlModel {
               weight = input.weight * Float($0.element.shape[3]) / 160
             case .sdxlBase:
               weight = input.weight * Float($0.element.shape[usesFlashAttention ? 2 : 1]) / 20
-            case .v2, .sd3, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
+            case .v2, .sd3, .pixart, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
               .wurstchenStageB:
               fatalError()
             }
@@ -788,7 +788,8 @@ extension ControlModel {
         graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
         graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
       ]
-    case .sd3, .kandinsky21, .svdI2v, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
+    case .sd3, .pixart, .kandinsky21, .svdI2v, .sdxlRefiner, .ssd1b, .wurstchenStageC,
+      .wurstchenStageB:
       fatalError()
     }
     for emptyControl in emptyControls {
@@ -886,7 +887,8 @@ extension ControlModel {
             graph.variable(.GPU(0), .NHWC(batchSize, 10, numTokens * length, 64)))
         }
       }
-    case .v2, .sd3, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+    case .v2, .sd3, .pixart, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v, .wurstchenStageC,
+      .wurstchenStageB:
       fatalError()
     }
     for emptyAdapter in emptyAdapters {
@@ -1178,7 +1180,8 @@ extension ControlModel {
             ).0
           controlNetWeightMapper = nil
         }
-      case .sd3, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .sd3, .pixart, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+        .wurstchenStageB:
         fatalError()
       }
     }

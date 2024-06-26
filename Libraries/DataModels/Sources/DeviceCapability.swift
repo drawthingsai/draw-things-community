@@ -443,7 +443,7 @@ public struct DeviceCapability {
       guard (!isHighPerformance && !(isGoodPerformance && is8BitModel)) || force else {
         return false
       }
-    case .v1, .v2, .kandinsky21:
+    case .v1, .v2, .pixart, .kandinsky21:
       guard (!isGoodPerformance && !is8BitModel) || force else {
         return false
       }

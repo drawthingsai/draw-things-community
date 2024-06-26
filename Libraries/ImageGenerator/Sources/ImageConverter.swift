@@ -690,7 +690,7 @@ public enum ImageConverter {
             bytes[i * 4 + 2] = UInt8(min(max(Int(b.isNaN ? 0 : b), 0), 255))
             bytes[i * 4 + 3] = 255
           }
-        case .sdxlBase, .sdxlRefiner, .ssd1b:
+        case .sdxlBase, .sdxlRefiner, .ssd1b, .pixart:
           for i in 0..<imageHeight * imageWidth {
             // We need to do some computations from the latent values.
             let (v0, v1, v2, v3) = (fp16[i * 4], fp16[i * 4 + 1], fp16[i * 4 + 2], fp16[i * 4 + 3])

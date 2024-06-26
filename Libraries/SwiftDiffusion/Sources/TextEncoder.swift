@@ -938,6 +938,8 @@ extension TextEncoder {
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         textModels: existingTextModels)
+    case .pixart:
+      fatalError()
     case .kandinsky21:
       return encodeKandinsky(tokens: tokens, positions: positions)
     case .sdxlBase, .sdxlRefiner, .ssd1b:
@@ -1021,7 +1023,7 @@ extension TextEncoder {
             numLayers: 24 - min(max(clipSkip, 1), 23), numHeads: 16, batchSize: 2,
             intermediateSize: 4096, usesFlashAttention: usesFlashAttention
           ).0
-      case .sd3, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+      case .sd3, .pixart, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       }
@@ -1057,7 +1059,8 @@ extension TextEncoder {
                   } else if name == "__text_model__[t-\(186 - (min(clipSkip, 23) - 1) * 8)-1]" {
                     name = "__text_model__[t-186-1]"
                   }
-                case .sd3, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+                case .sd3, .pixart, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v,
+                  .wurstchenStageC,
                   .wurstchenStageB:
                   fatalError()
                 }
@@ -1091,7 +1094,8 @@ extension TextEncoder {
                 } else if name == "__text_model__[t-\(186 - (min(clipSkip, 23) - 1) * 8)-1]" {
                   name = "__text_model__[t-186-1]"
                 }
-              case .sd3, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+              case .sd3, .pixart, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v,
+                .wurstchenStageC,
                 .wurstchenStageB:
                 fatalError()
               }

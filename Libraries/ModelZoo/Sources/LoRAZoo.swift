@@ -391,6 +391,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (Kandinsky v2.1)"
     case .wurstchenStageC, .wurstchenStageB:
       return " (Stable Cascade, Wurstchen v3.0)"
+    case .pixart:
+      return " (PixArt Sigma)"
     }
   }
 

@@ -69,7 +69,7 @@ public struct LoRATrainer {
         switch version {
         case .v1, .v2, .svdI2v:
           return "vae_ft_mse_840000_f16.ckpt"
-        case .sdxlBase, .sdxlRefiner, .ssd1b:
+        case .sdxlBase, .sdxlRefiner, .ssd1b, .pixart:
           return "sdxl_vae_v1.0_f16.ckpt"
         case .kandinsky21:
           return "kandinsky_movq_f16.ckpt"
@@ -91,6 +91,8 @@ public struct LoRATrainer {
           fatalError()
         case .kandinsky21:
           return "xlm_roberta_f16.ckpt"
+        case .pixart:
+          return "t5_xxl_encoder_q6p.ckpt"
         case .sd3, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           return "open_clip_vit_bigg14_f16.ckpt"
         }
@@ -233,7 +235,7 @@ public struct LoRATrainer {
                 intermediateSize: 5120, usesFlashAttention: false, outputPenultimate: true
               ).0
             ]
-          case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+          case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
             fatalError()
           }
           let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
@@ -290,7 +292,7 @@ public struct LoRATrainer {
                 } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
                   name = "__text_model__[t-258-1]"
                 }
-              case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+              case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
                 fatalError()
               }
               return .continue(name)
@@ -389,7 +391,7 @@ public struct LoRATrainer {
     graph.openStore(session) {
       if !embeddings.isEmpty {
         switch version {
-        case .v1, .v2, .kandinsky21, .svdI2v:
+        case .v1, .v2, .kandinsky21, .svdI2v, .pixart:
           $0.write("string_to_param", variable: embeddings[0])
         case .sd3, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           $0.write("string_to_param_clip_g", variable: embeddings[0])
@@ -438,7 +440,7 @@ public struct LoRATrainer {
       store.removeAll()
       if !embeddings.isEmpty {
         switch version {
-        case .v1, .v2, .kandinsky21, .svdI2v:
+        case .v1, .v2, .kandinsky21, .svdI2v, .pixart:
           store.write("string_to_param", variable: embeddings[0])
         case .sd3, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           store.write("string_to_param_clip_g", variable: embeddings[0])
@@ -454,7 +456,7 @@ public struct LoRATrainer {
           textModelMapping = LoRAMapping.CLIPTextModel
         case .v2:
           textModelMapping = LoRAMapping.OpenCLIPTextModel
-        case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         case .sdxlBase, .ssd1b, .sdxlRefiner:
           textModelMapping = LoRAMapping.OpenCLIPTextModelG
@@ -522,7 +524,7 @@ public struct LoRATrainer {
       switch version {
       case .v1, .v2:
         UNetMapping = LoRAMapping.SDUNet
-      case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       case .ssd1b:
         UNetMapping = LoRAMapping.SDUNetXLSSD1B
@@ -948,7 +950,7 @@ public struct LoRATrainer {
             LoRAConfiguration: configuration
           ).0
         unetLoRAMapping = LoRAMapping.SDUNetXLSSD1B
-      case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
       var textProjection: DynamicGraph.Tensor<FloatType>? = nil
@@ -1022,7 +1024,7 @@ public struct LoRATrainer {
               } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
                 name = "__text_model__[t-258-1]"
               }
-            case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+            case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
             if name.contains("lora_up") {
@@ -1172,7 +1174,7 @@ public struct LoRATrainer {
         c = graph.variable(.GPU(0), .WC(1, 2816), of: FloatType.self)
       case .sdxlRefiner:
         c = graph.variable(.GPU(0), .WC(1, 2560), of: FloatType.self)
-      case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
       c.full(0)
@@ -1314,7 +1316,7 @@ public struct LoRATrainer {
         let embeddingName: (String, String)
         let firstStd: Float
         switch version {
-        case .v1, .v2, .kandinsky21, .svdI2v:
+        case .v1, .v2, .kandinsky21, .svdI2v, .pixart:
           embeddingName = ("string_to_param", "string_to_param")
           firstStd = 0.02
         case .sd3, .sdxlBase, .ssd1b:
@@ -1561,7 +1563,7 @@ public struct LoRATrainer {
                 }
                 injectedEmbeddings.append(injectedEmbedding0)
                 injectedEmbeddings.append(injectedEmbedding1)
-              case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+              case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
                 fatalError()
               }
               if !hasTrainableEmbeddings {
@@ -1679,7 +1681,7 @@ public struct LoRATrainer {
               } else {
                 kvs = []
               }
-            case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+            case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
             condTokensTensorGPU = tokensTensorGPU
@@ -1731,7 +1733,7 @@ public struct LoRATrainer {
               } else {
                 kvs = []
               }
-            case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+            case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
             condTokensTensorGPU = nil

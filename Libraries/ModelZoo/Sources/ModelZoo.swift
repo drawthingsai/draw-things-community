@@ -31,6 +31,8 @@ public struct ModelZoo: DownloadZoo {
       return "Stable Cascade (Würstchen v3.0)"
     case .sd3:
       return "Stable Diffusion 3"
+    case .pixart:
+      return "PixArt Sigma"
     }
   }
 
@@ -914,7 +916,7 @@ public struct ModelZoo: DownloadZoo {
     }
     switch specification.version {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3:
+      .wurstchenStageB, .sd3, .pixart:
       return .timestep
     case .svdI2v:
       return .noise
@@ -933,6 +935,9 @@ public struct ModelZoo: DownloadZoo {
     case .kandinsky21:
       return .ddpm(
         .init(linearStart: 0.00085, linearEnd: 0.012, timesteps: 1_000, linspace: .linearWrtBeta))
+    case .pixart:
+      return .ddpm(
+        .init(linearStart: 0.0001, linearEnd: 0.02, timesteps: 1_000, linspace: .linearWrtBeta))
     case .sdxlBase, .sdxlRefiner, .ssd1b, .v1, .v2:
       return .ddpm(
         .init(linearStart: 0.00085, linearEnd: 0.012, timesteps: 1_000, linspace: .linearWrtSigma))
@@ -960,7 +965,7 @@ public struct ModelZoo: DownloadZoo {
     switch specification.version {
     case .v1, .v2, .svdI2v:
       return (nil, nil, 0.18215, nil)
-    case .ssd1b, .sdxlBase, .sdxlRefiner:
+    case .ssd1b, .sdxlBase, .sdxlRefiner, .pixart:
       return (nil, nil, 0.13025, nil)
     case .kandinsky21:
       return (nil, nil, 1, nil)
@@ -1033,7 +1038,7 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 3 * 1_024 * 1_024 * 1_024
       case .ssd1b:
         return fileSize < 2 * 1_024 * 1_024 * 1_024
-      case .v1, .v2:
+      case .v1, .v2, .pixart:
         return fileSize < 1_024 * 1_024 * 1_024
       case .kandinsky21:
         return fileSize < 2 * 1_024 * 1_024 * 1_024

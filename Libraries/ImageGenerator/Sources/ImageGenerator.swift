@@ -118,7 +118,7 @@ extension ImageGenerator {
       samplingSigmas = [
         700.00, 54.5, 15.886, 7.977, 4.248, 1.789, 0.981, 0.403, 0.173, 0.034, 0.002,
       ]
-    case .sd3, .kandinsky21, .wurstchenStageB, .wurstchenStageC:
+    case .sd3, .pixart, .kandinsky21, .wurstchenStageB, .wurstchenStageC:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -939,6 +939,8 @@ extension ImageGenerator {
       result.2 = embedMask + result.2
       result.3 = injectedEmbeddings + result.3
       return result
+    case .pixart:
+      fatalError()
     case .sd3:
       let tokenizerV2 = tokenizerXL
       var tokenizerV1 = tokenizerV1

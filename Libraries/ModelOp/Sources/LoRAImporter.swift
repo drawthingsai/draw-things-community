@@ -208,7 +208,7 @@ public enum LoRAImporter {
     case .sdxlRefiner:
       textModelMapping1 = StableDiffusionMapping.OpenCLIPTextModelG
       textModelMapping2 = [:]
-    case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+    case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
     var swapTE2 = false
@@ -306,7 +306,7 @@ public enum LoRAImporter {
           embeddingLength: (77, 77), inputAttentionRes: [2: [4, 4], 4: [4, 4]],
           middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
           usesFlashAttention: .none, isTemporalMixEnabled: false)
-      case .v1, .v2, .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .v1, .v2, .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       case .ssd1b:
         (unet, _, unetMapper) = UNetXL(
@@ -332,7 +332,7 @@ public enum LoRAImporter {
           conditionalLength = 1024
         case .sdxlBase, .sdxlRefiner, .ssd1b:
           conditionalLength = 1280
-        case .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
         let crossattn: DynamicGraph.Tensor<FloatType>
@@ -341,7 +341,7 @@ public enum LoRAImporter {
           crossattn = graph.variable(.CPU, .HWC(2, 77, 2048), of: FloatType.self)
         case .sdxlRefiner:
           crossattn = graph.variable(.CPU, .HWC(2, 77, 1280), of: FloatType.self)
-        case .v1, .v2, .sd3, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        case .v1, .v2, .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
         unetFixed.compile(inputs: crossattn)
@@ -427,7 +427,7 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .sd3:
+      case .sd3, .pixart:
         fatalError()
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
         if let tensorDescClipG = stateDict["clip_g"] {

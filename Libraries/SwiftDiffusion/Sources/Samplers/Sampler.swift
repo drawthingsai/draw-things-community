@@ -12,6 +12,7 @@ public enum ModelVersion: String, Codable {
   case wurstchenStageC = "wurstchen_v3.0_stage_c"
   case wurstchenStageB = "wurstchen_v3.0_stage_b"
   case sd3 = "sd3"
+  case pixart = "pixart"
 }
 
 public enum AlternativeDecoderVersion: String, Codable {
