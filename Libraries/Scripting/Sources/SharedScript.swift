@@ -401,6 +401,21 @@ extension ScriptExecutor {
       }
     };
 
+    class ImageMetadata {
+      constructor(src) {
+        const imageSize = __dtHooks.imageSizeFromSrc(src);
+        this.size = new Size(imageSize.width, imageSize.height)
+      }
+      
+      get width() {
+        return this.size.width
+      }
+
+        get height() {
+          return this.size.height
+        }
+    }
+
     class Mask {
       constructor(handle) {
         this.handle = handle;
@@ -422,7 +437,6 @@ extension ScriptExecutor {
         ;
       }
     }
-
 
     function requestFromUser(title, confirm, construction) {
       const widget = {

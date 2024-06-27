@@ -104,6 +104,7 @@ extension SupportedPrefix {
   func picturesPath() -> String?
   func loadImageFileToCanvas(_ file: String)
   func loadImageSrcToCanvas(_ srcContent: String)
+  func imageSizeFromSrc(_ srcContent: String) -> CGSize
   func saveImageFileFromCanvas(_ file: String, _ visibleRegionOnly: Bool)
   func saveImageSrcFromCanvas(_ visibleRegionOnly: Bool) -> String?
   func loadLayerFromPhotos(_ type: String)
@@ -152,6 +153,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func clearCanvas()
   func loadImageFileToCanvas(_ file: String)
   func loadImageSrcToCanvas(_ srcContent: String) throws
+  func imageSizeFromSrc(_ srcContent: String) -> CGSize
   func saveImageFileFromCanvas(_ file: String, _ visibleRegionOnly: Bool)
   func saveImageDataFromCanvas(_ visibleRegionOnly: Bool) -> Data?
   func loadLayerFromPhotos(type: String) throws
@@ -750,6 +752,11 @@ extension ScriptExecutor: JSInterop {
       guard let delegate = delegate else { throw "No delegate" }
       try delegate.loadLayerFromJson(json, type: type)
     }
+  }
+
+  func imageSizeFromSrc(_ srcContent: String) -> CGSize {
+    guard let delegate = delegate else { return .zero }
+    return delegate.imageSizeFromSrc(srcContent)
   }
 
   func saveLayerSrc(_ type: String) -> String? {
