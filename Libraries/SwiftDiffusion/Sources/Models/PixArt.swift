@@ -9,9 +9,9 @@ func sinCos2DPositionEmbedding(height: Int, width: Int, embeddingSize: Int) -> T
     pow(Double(1.0 / 10000), Double($0) / Double(halfOfHalf))
   }
   for i in 0..<height {
-    let y = Double(i) / 2
+    let y = Double(i) / (Double(height) / 64) / 2
     for j in 0..<width {
-      let x = Double(j) / 2
+      let x = Double(j) / (Double(width) / 64) / 2
       for k in 0..<halfOfHalf {
         let xFreq = x * omega[k]
         embedding[i, j, k] = Float(sin(xFreq))
