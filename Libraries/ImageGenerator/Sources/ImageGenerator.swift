@@ -940,7 +940,9 @@ extension ImageGenerator {
       result.3 = injectedEmbeddings + result.3
       return result
     case .pixart:
-      fatalError()
+      return tokenize(
+        graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials)
     case .sd3:
       let tokenizerV2 = tokenizerXL
       var tokenizerV1 = tokenizerV1

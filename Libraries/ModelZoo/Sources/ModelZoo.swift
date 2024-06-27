@@ -309,6 +309,8 @@ public struct ModelZoo: DownloadZoo {
       "a313371538d8018ee6f3f3b6aa3e08bff64bfa3a56c1f777b90973f71138b3a2",
     "sd3_medium_f16.ckpt":
       "9ee38fee52867678c21afffd7c176443a61e30eed728c1a28e2ff4982fe89bee",
+    "pixart_sigma_xl_2_1024_ms_f16.ckpt":
+      "b78f0f8d4988b6edf38eeff8c1d33d2b4ffca1fa79c4b45f51b8647aa3b625a0",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -360,6 +362,10 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "wurstchen_3.0_stage_a_hq_f16.ckpt", deprecated: true,
       stageModels: ["wurstchen_3.0_stage_b_q6p_q8p.ckpt"]
     ),
+    Specification(
+      name: "PixArt Sigma XL", file: "pixart_sigma_xl_2_1024_ms_f16.ckpt", prefix: "",
+      version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
     Specification(
       name: "LCM SDXL Base (v1.0)", file: "lcm_sd_xl_base_1.0_f16.ckpt", prefix: "",
       version: .sdxlBase,

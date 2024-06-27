@@ -919,6 +919,36 @@ extension TextEncoder {
     return ([c0, c1, c2, pooled], [textModel])
   }
 
+  private func encodePixArt(
+    tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
+    mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
+    lengthsOfUncond: [Int], lengthsOfCond: [Int], textModels existingTextModels: [Model?]
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let graph = tokens[0].graph
+    let tokenLength = tokens[0].shape[0] / 2
+    let (_, textModel) = T5ForConditionalGeneration(b: 2, t: tokenLength, of: FloatType.self)
+    let relativePositionBuckets = relativePositionBuckets(
+      sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
+    let tokensTensorGPU = tokens[0].toGPU(0)
+    let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
+    textModel.compile(inputs: tokensTensorGPU, relativePositionBucketsGPU)
+    // Move T5 to on-demand.
+    TensorData.makeExternalData(for: filePaths[0], graph: graph)
+    graph.openStore(
+      filePaths[0], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[0])
+    ) {
+      $0.read(
+        "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    }
+    let c = textModel(inputs: tokensTensorGPU, relativePositionBucketsGPU)[0].as(
+      of: FloatType.self
+    ).reshaped(.HWC(2, tokenLength, 4096))
+    return ([c], [textModel])
+  }
+
   public func encode(
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
@@ -939,7 +969,10 @@ extension TextEncoder {
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         textModels: existingTextModels)
     case .pixart:
-      fatalError()
+      return encodePixArt(
+        tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
+        lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
+        textModels: existingTextModels)
     case .kandinsky21:
       return encodeKandinsky(tokens: tokens, positions: positions)
     case .sdxlBase, .sdxlRefiner, .ssd1b:

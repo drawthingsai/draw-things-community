@@ -17,6 +17,16 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
 }
 
 extension UNetFixedEncoder {
+  static func isFixedEncoderRequired(version: ModelVersion) -> Bool {
+    switch version {
+    case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .pixart, .wurstchenStageC,
+      .wurstchenStageB:
+      return true
+    case .v1, .v2, .kandinsky21:
+      return false
+    }
+  }
+
   public func vector(
     textEmbedding: DynamicGraph.Tensor<FloatType>, originalSize: (width: Int, height: Int),
     cropTopLeft: (top: Int, left: Int), targetSize: (width: Int, height: Int),
@@ -276,8 +286,15 @@ extension UNetFixedEncoder {
       kvs.append(
         contentsOf: unetFixed(inputs: zeroProj, numFramesEmb).map { $0.as(of: FloatType.self) })
       return (kvs, unetFixedWeightMapper)
-    case .v1, .v2, .kandinsky21, .pixart:
+    case .v1, .v2, .kandinsky21:
       return (textEncoding, nil)
+    case .pixart:
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let posEmbed = graph.variable(
+        Tensor<FloatType>(from: sinCos2DPositionEmbedding(height: h, width: w, embeddingSize: 1152))
+          .reshaped(.HWC(1, h * w, 1152)).toGPU(0))
+      return ([posEmbed] + textEncoding, nil)
     case .sd3:
       var c: DynamicGraph.Tensor<FloatType>
       var pooled: DynamicGraph.Tensor<FloatType>

@@ -56,7 +56,12 @@ extension UNetProtocol {
     case .sd3:
       return nil
     case .pixart:
-      return nil
+      return graph.variable(
+        Tensor<FloatType>(
+          from: timeEmbedding(
+            timestep: timestep, batchSize: batchSize,
+            embeddingSize: 256, maxPeriod: 10_000)
+        ).toGPU(0))
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
         timesteps: timestep, batchSize: batchSize, embeddingSize: 64, maxPeriod: 10_000)
@@ -377,7 +382,9 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      (_, unet) = PixArt(b: batchSize, h: tiledHeight, w: tiledWidth)
+      (_, unet) = PixArt(
+        batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152, layers: 28,
+        tokenLength: 77, usesFlashAttention: usesFlashAttention, of: FloatType.self)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version

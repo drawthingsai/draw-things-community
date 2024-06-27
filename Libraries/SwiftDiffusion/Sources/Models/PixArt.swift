@@ -43,30 +43,41 @@ private func MLP(hiddenSize: Int, intermediateSize: Int, name: String) -> (Model
   return (fc1, fc2, Model([x], [out]))
 }
 
-private func SelfAttention(k: Int, h: Int, b: Int, t: Int) -> (
+private func SelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttention: Bool) -> (
   Model, Model, Model, Model, Model
 ) {
   let x = Input()
   let tokeys = Dense(count: k * h, name: "k")
   let toqueries = Dense(count: k * h, name: "q")
   let tovalues = Dense(count: k * h, name: "v")
-  let keys = tokeys(x).reshaped([b, t, h, k]).transposed(1, 2)
-  // No scaling the queries.
-  let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, t, h, k])
-    .transposed(1, 2)
-  let values = tovalues(x).reshaped([b, t, h, k]).transposed(1, 2)
-  var dot = Matmul(transposeB: (2, 3))(queries, keys)
-  dot = dot.reshaped([b * h * t, t])
-  dot = dot.softmax()
-  dot = dot.reshaped([b, h, t, t])
-  var out = dot * values
-  out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b, t, h * k])
-  let unifyheads = Dense(count: k * h, name: "o")
-  out = unifyheads(out)
-  return (tokeys, toqueries, tovalues, unifyheads, Model([x], [out]))
+  if usesFlashAttention {
+    let keys = tokeys(x).reshaped([b, t, h, k])
+    let queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, t, h, k])
+    let values = tovalues(x).reshaped([b, t, h, k])
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1, upcast: false,
+      multiHeadOutputProjectionFused: true, name: "o")
+    let out = scaledDotProductAttention(queries, keys, values).reshaped([b, t, k * h])
+    return (tokeys, toqueries, tovalues, scaledDotProductAttention, Model([x], [out]))
+  } else {
+    let keys = tokeys(x).reshaped([b, t, h, k]).transposed(1, 2)
+    // No scaling the queries.
+    let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, t, h, k])
+      .transposed(1, 2)
+    let values = tovalues(x).reshaped([b, t, h, k]).transposed(1, 2)
+    var dot = Matmul(transposeB: (2, 3))(queries, keys)
+    dot = dot.reshaped([b * h * t, t])
+    dot = dot.softmax()
+    dot = dot.reshaped([b, h, t, t])
+    var out = dot * values
+    out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b, t, h * k])
+    let unifyheads = Dense(count: k * h, name: "o")
+    out = unifyheads(out)
+    return (tokeys, toqueries, tovalues, unifyheads, Model([x], [out]))
+  }
 }
 
-private func CrossAttention(k: Int, h: Int, b: Int, hw: Int, t: Int) -> (
+private func CrossAttention(k: Int, h: Int, b: Int, hw: Int, t: Int, usesFlashAttention: Bool) -> (
   Model, Model, Model, Model, Model
 ) {
   let x = Input()
@@ -74,22 +85,36 @@ private func CrossAttention(k: Int, h: Int, b: Int, hw: Int, t: Int) -> (
   let tokeys = Dense(count: k * h, name: "c_k")
   let toqueries = Dense(count: k * h, name: "c_q")
   let tovalues = Dense(count: k * h, name: "c_v")
-  let keys = tokeys(context).reshaped([b, t, h, k]).transposed(1, 2)
-  let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
-    .transposed(1, 2)
-  let values = tovalues(context).reshaped([b, t, h, k]).transposed(1, 2)
-  var dot = Matmul(transposeB: (2, 3))(queries, keys)
-  dot = dot.reshaped([b * h * hw, t])
-  dot = dot.softmax()
-  dot = dot.reshaped([b, h, hw, t])
-  var out = dot * values
-  out = out.reshaped([b, h, hw, k]).transposed(1, 2).reshaped([b, hw, h * k])
-  let unifyheads = Dense(count: k * h, name: "c_o")
-  out = unifyheads(out)
-  return (tokeys, toqueries, tovalues, unifyheads, Model([x, context], [out]))
+  if usesFlashAttention {
+    let keys = tokeys(context).reshaped([b, t, h, k])
+    let queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, hw, h, k])
+    let values = tovalues(context).reshaped([b, t, h, k])
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1, upcast: false,
+      multiHeadOutputProjectionFused: true, name: "c_o")
+    let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+    return (tokeys, toqueries, tovalues, scaledDotProductAttention, Model([x, context], [out]))
+  } else {
+    let keys = tokeys(context).reshaped([b, t, h, k]).transposed(1, 2)
+    let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+      .transposed(1, 2)
+    let values = tovalues(context).reshaped([b, t, h, k]).transposed(1, 2)
+    var dot = Matmul(transposeB: (2, 3))(queries, keys)
+    dot = dot.reshaped([b * h * hw, t])
+    dot = dot.softmax()
+    dot = dot.reshaped([b, h, hw, t])
+    var out = dot * values
+    out = out.reshaped([b, h, hw, k]).transposed(1, 2).reshaped([b, hw, h * k])
+    let unifyheads = Dense(count: k * h, name: "c_o")
+    out = unifyheads(out)
+    return (tokeys, toqueries, tovalues, unifyheads, Model([x, context], [out]))
+  }
 }
 
-func PixArtMSBlock(prefix: String, k: Int, h: Int, b: Int, hw: Int, t: Int) -> (
+func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  prefix: String, k: Int, h: Int, b: Int, hw: Int, t: Int, usesFlashAttention: Bool,
+  of: FloatType.Type = FloatType.self
+) -> (
   ModelWeightMapper, Model
 ) {
   let x = Input()
@@ -101,21 +126,22 @@ func PixArtMSBlock(prefix: String, k: Int, h: Int, b: Int, hw: Int, t: Int) -> (
   let scaleMlp = Input()
   let gateMlp = Input()
   let norm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  let (tokeys1, toqueries1, tovalues1, unifyheads1, attn) = SelfAttention(k: k, h: h, b: b, t: hw)
-  let shiftMsaShift = Parameter<Float>(.GPU(0), .CHW(1, 1, k * h), name: "scale_shift_table_0")
-  let scaleMsaShift = Parameter<Float>(.GPU(0), .CHW(1, 1, k * h), name: "scale_shift_table_1")
-  let gateMsaShift = Parameter<Float>(.GPU(0), .HWC(1, 1, k * h), name: "scale_shift_table_2")
+  let (tokeys1, toqueries1, tovalues1, unifyheads1, attn) = SelfAttention(
+    k: k, h: h, b: b, t: hw, usesFlashAttention: usesFlashAttention)
+  let shiftMsaShift = Parameter<FloatType>(.GPU(0), .HWC(1, 1, k * h), name: "scale_shift_table_0")
+  let scaleMsaShift = Parameter<FloatType>(.GPU(0), .HWC(1, 1, k * h), name: "scale_shift_table_1")
+  let gateMsaShift = Parameter<FloatType>(.GPU(0), .HWC(1, 1, k * h), name: "scale_shift_table_2")
   var out =
     x + (gateMsa + gateMsaShift)
     .* attn(norm1(x) .* (scaleMsa + scaleMsaShift) + (shiftMsa + shiftMsaShift))
   let (tokeys2, toqueries2, tovalues2, unifyheads2, crossAttn) = CrossAttention(
-    k: k, h: h, b: b, hw: hw, t: t)
+    k: k, h: h, b: b, hw: hw, t: t, usesFlashAttention: usesFlashAttention)
   out = out + crossAttn(out, context)
   let (fc1, fc2, mlp) = MLP(hiddenSize: k * h, intermediateSize: k * h * 4, name: "mlp")
   let norm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  let shiftMlpShift = Parameter<Float>(.GPU(0), .CHW(1, 1, k * h), name: "scale_shift_table_3")
-  let scaleMlpShift = Parameter<Float>(.GPU(0), .CHW(1, 1, k * h), name: "scale_shift_table_4")
-  let gateMlpShift = Parameter<Float>(.GPU(0), .CHW(1, 1, k * h), name: "scale_shift_table_5")
+  let shiftMlpShift = Parameter<FloatType>(.GPU(0), .HWC(1, 1, k * h), name: "scale_shift_table_3")
+  let scaleMlpShift = Parameter<FloatType>(.GPU(0), .HWC(1, 1, k * h), name: "scale_shift_table_4")
+  let gateMlpShift = Parameter<FloatType>(.GPU(0), .HWC(1, 1, k * h), name: "scale_shift_table_5")
   out = out + (gateMlp + gateMlpShift)
     .* mlp(norm2(out) .* (scaleMlp + scaleMlpShift) + (shiftMlp + shiftMlpShift))
   let mapper: ModelWeightMapper = { _ in
@@ -149,41 +175,50 @@ func PixArtMSBlock(prefix: String, k: Int, h: Int, b: Int, hw: Int, t: Int) -> (
   )
 }
 
-func PixArt(b: Int, h: Int, w: Int) -> (ModelWeightMapper, Model) {
+func PixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  batchSize: Int, height: Int, width: Int, channels: Int, layers: Int, tokenLength: Int,
+  usesFlashAttention: Bool, of: FloatType.Type = FloatType.self
+) -> (ModelWeightMapper, Model) {
   let x = Input()
   let posEmbed = Input()
   let t = Input()
   let y = Input()
+  let h = height / 2
+  let w = width / 2
   let xEmbedder = Convolution(
-    groups: 1, filters: 1152, filterSize: [2, 2],
-    hint: Hint(stride: [2, 2]), name: "x_embedder")
-  var out = xEmbedder(x).reshaped([b, 1152, h * w]).transposed(1, 2) + posEmbed
-  let (tMlp0, tMlp2, tEmbedder) = TimeEmbedder(channels: 1152)
+    groups: 1, filters: channels, filterSize: [2, 2],
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]) + posEmbed
+  let (tMlp0, tMlp2, tEmbedder) = TimeEmbedder(channels: channels)
   let t0 = tEmbedder(t)
-  let t1 = t0.swish().reshaped([b, 1, 1152])
-  let tBlock = (0..<6).map { Dense(count: 1152, name: "t_block_\($0)") }
+  let t1 = t0.swish().reshaped([batchSize, 1, channels])
+  let tBlock = (0..<6).map { Dense(count: channels, name: "t_block_\($0)") }
   var adaln = tBlock.map { $0(t1) }
   adaln[1] = 1 + adaln[1]
   adaln[4] = 1 + adaln[4]
-  let (fc1, fc2, yEmbedder) = MLP(hiddenSize: 1152, intermediateSize: 1152, name: "y_embedder")
+  let (fc1, fc2, yEmbedder) = MLP(
+    hiddenSize: channels, intermediateSize: channels, name: "y_embedder")
   let y0 = yEmbedder(y)
   var mappers = [ModelWeightMapper]()
-  for i in 0..<28 {
+  for i in 0..<layers {
     let (mapper, block) = PixArtMSBlock(
-      prefix: "blocks.\(i)", k: 72, h: 16, b: 2, hw: h * w, t: 300)
+      prefix: "blocks.\(i)", k: channels / 16, h: 16, b: 2, hw: h * w, t: tokenLength,
+      usesFlashAttention: usesFlashAttention, of: FloatType.self)
     out = block(out, y0, adaln[0], adaln[1], adaln[2], adaln[3], adaln[4], adaln[5])
     mappers.append(mapper)
   }
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  let shiftShift = Parameter<Float>(.GPU(0), .CHW(1, 1, 1152), name: "final_scale_shift_table_0")
-  let scaleShift = Parameter<Float>(.GPU(0), .CHW(1, 1, 1152), name: "final_scale_shift_table_1")
-  let tt = t0.reshaped([1, 1, 1152])  // PixArt uses chunk, but that always assumes t0 is the same, which is true.
+  let shiftShift = Parameter<FloatType>(
+    .GPU(0), .HWC(1, 1, channels), name: "final_scale_shift_table_0")
+  let scaleShift = Parameter<FloatType>(
+    .GPU(0), .HWC(1, 1, channels), name: "final_scale_shift_table_1")
+  let tt = t0.reshaped([1, 1, channels])  // PixArt uses chunk, but that always assumes t0 is the same, which is true.
   out = (scaleShift + 1 + tt) .* normFinal(out) + (shiftShift + tt)
   let linear = Dense(count: 2 * 2 * 8, name: "linear")
   out = linear(out)
   // Unpatchify
-  out = out.reshaped([b, h, w, 2, 2, 8]).permuted(0, 5, 1, 3, 2, 4).contiguous().reshaped([
-    b, 8, h * 2, w * 2,
+  out = out.reshaped([batchSize, h, w, 2, 2, 8]).permuted(0, 1, 3, 2, 4, 5).contiguous().reshaped([
+    batchSize, h * 2, w * 2, 8,
   ])
   let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
@@ -207,5 +242,5 @@ func PixArt(b: Int, h: Int, w: Int) -> (ModelWeightMapper, Model) {
     mapping["final_layer.linear.bias"] = [linear.bias.name]
     return mapping
   }
-  return (mapper, Model([x, posEmbed, t, y], [out]))
+  return (mapper, Model([x, t, posEmbed, y], [out]))
 }

@@ -173,7 +173,7 @@ extension TCDSampler: Sampler {
         return discretization.timestep(for: alphaCumprod)
       }
     }
-    if c.count >= 2 || version == .svdI2v {
+    if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: version) {
       let vector = fixedEncoder.vector(
         textEmbedding: c[c.count - 1], originalSize: originalSize,
         cropTopLeft: cropTopLeft,
@@ -307,7 +307,7 @@ extension TCDSampler: Sampler {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt)
-          if oldC.count >= 2 || refiner.version == .svdI2v {
+          if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
             let vector = fixedEncoder.vector(
               textEmbedding: oldC[oldC.count - 1], originalSize: originalSize,
               cropTopLeft: cropTopLeft,
