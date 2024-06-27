@@ -320,14 +320,14 @@ extension UNetFixedEncoder {
         batchSize: cBatchSize, channels: 1152, layers: 28,
         tokenLength: max(tokenLengthCond, tokenLengthUncond),
         usesFlashAttention: usesFlashAttention, of: FloatType.self)
-      unetFixed.compile(inputs: [timeEmbeds] + textEncoding)
+      unetFixed.compile(inputs: timeEmbeds, c)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) {
         $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
       }
       return (
-        [posEmbed] + unetFixed(inputs: timeEmbeds, textEncoding).map { $0.as(of: FloatType.self) },
+        [posEmbed] + unetFixed(inputs: timeEmbeds, c).map { $0.as(of: FloatType.self) },
         nil
       )
     case .sd3:
