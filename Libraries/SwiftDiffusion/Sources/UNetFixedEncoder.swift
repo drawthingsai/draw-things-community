@@ -307,7 +307,8 @@ extension UNetFixedEncoder {
       timeEmbeds = timeEmbeds.reshaped(.HWC(timesteps.count, 1, 256))
       let cBatchSize = textEncoding[0].shape[0]
       let (_, unetFixed) = PixArtFixed(
-        batchSize: cBatchSize, channels: 1152, layers: 28, tokenLength: 77,
+        batchSize: cBatchSize, channels: 1152, layers: 28,
+        tokenLength: max(tokenLengthCond, tokenLengthUncond),
         usesFlashAttention: usesFlashAttention, of: FloatType.self)
       unetFixed.compile(inputs: [timeEmbeds] + textEncoding)
       graph.openStore(

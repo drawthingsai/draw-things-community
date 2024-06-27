@@ -404,7 +404,8 @@ extension UNetFromNNC {
       tileScaleFactor = 8
       (_, unet) = PixArt(
         batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152, layers: 28,
-        tokenLength: 77, usesFlashAttention: usesFlashAttention, of: FloatType.self)
+        tokenLength: (tokenLengthUncond, tokenLengthCond), usesFlashAttention: usesFlashAttention,
+        of: FloatType.self)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version

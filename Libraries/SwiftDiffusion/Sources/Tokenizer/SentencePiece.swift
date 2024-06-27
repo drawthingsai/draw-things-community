@@ -26,9 +26,10 @@ public struct SentencePieceTokenizer: Tokenizer {
       ids.append(startToken)
       canonicals.append("<|startoftext|>")
     }
+    let addedTokens = startToken != nil ? 2 : 1
     if truncation {
       for (i, spt) in result.enumerated() {
-        guard i < maxLength + 2 else { break }
+        guard i < maxLength + addedTokens else { break }
         strs.append(spt.surface)
         ids.append(spt.id + tokenShift)
         canonicals.append(spt.piece)
@@ -43,6 +44,7 @@ public struct SentencePieceTokenizer: Tokenizer {
     strs.append("")
     ids.append(endToken)
     canonicals.append("<|endoftext|>")
+    let lengthOfTokens = ids.count - addedTokens
     let paddingToken = paddingToken ?? tokenShift
     if ids.count < maxLength {
       for _ in ids.count..<maxLength {
@@ -51,7 +53,7 @@ public struct SentencePieceTokenizer: Tokenizer {
         canonicals.append("")
       }
     }
-    return (strs, ids, [Float](repeating: 1, count: ids.count), canonicals, [ids.count - 2])
+    return (strs, ids, [Float](repeating: 1, count: ids.count), canonicals, [lengthOfTokens])
   }
 
   public var vocabulary: [String: Int32]

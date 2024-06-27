@@ -621,7 +621,8 @@ extension ImageGenerator {
   private func tokenize(
     graph: DynamicGraph, tokenizer: Tokenizer & TextualInversionPoweredTokenizer,
     text: String, negativeText: String, paddingToken: Int32?, conditionalLength: Int,
-    modifier: TextualInversionZoo.Modifier, potentials: [String], maxLength: Int = 77
+    modifier: TextualInversionZoo.Modifier, potentials: [String], startLength: Int = 1,
+    maxLength: Int = 77
   ) -> (
     [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<FloatType>],
     [DynamicGraph.Tensor<FloatType>], [Float], [Float], Bool, Int, Int, [Int], [Int]
@@ -740,8 +741,9 @@ extension ImageGenerator {
         newUnconditionalWeights.count - unconditionalAttentionWeights.count)
     }
     let totalLengthOfUncond = lengthsOfUncond.reduce(0, +)
-    if totalLengthOfUncond + 2 > tokenLength {
-      lengthsOfUncond[lengthsOfUncond.count - 1] -= totalLengthOfUncond + 2 - tokenLength
+    if totalLengthOfUncond + 1 + startLength > tokenLength {
+      lengthsOfUncond[lengthsOfUncond.count - 1] -=
+        totalLengthOfUncond + 1 + startLength - tokenLength
     }
     unconditionalTokens = newUnconditionalTokens
     unconditionalAttentionWeights = newUnconditionalWeights
@@ -780,8 +782,8 @@ extension ImageGenerator {
       newUnconditionalWeights.removeLast(newWeights.count - attentionWeights.count)
     }
     let totalLengthOfCond = lengthsOfCond.reduce(0, +)
-    if totalLengthOfCond + 2 > tokenLength {
-      lengthsOfCond[lengthsOfCond.count - 1] -= totalLengthOfCond + 2 - tokenLength
+    if totalLengthOfCond + 1 + startLength > tokenLength {
+      lengthsOfCond[lengthsOfCond.count - 1] -= totalLengthOfCond + 1 + startLength - tokenLength
     }
     tokens = newTokens
     attentionWeights = newWeights
@@ -800,7 +802,7 @@ extension ImageGenerator {
     // For everything else, we will go through lengths of each, and assigning accordingly.
     j = 1
     var maxPosition = 0
-    prefixLength = 1
+    prefixLength = startLength
     for length in lengthsOfUncond {
       for i in 0..<length {
         var position =
@@ -813,23 +815,23 @@ extension ImageGenerator {
       prefixLength += length
     }
     var tokenLengthUncond = tokenLength
-    // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than 77.
+    // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than maxLength.
     if prefixLength < tokenLength - 1 {
-      if maxPosition + 2 > 77 {  // If it is 77, we can go to later to find i
+      if maxPosition + 1 + startLength > maxLength {  // If it is maxLength, we can go to later to find i
         tokenLengthUncond = prefixLength + 1
       }
       var position = maxPosition + 1
       for i in prefixLength..<(tokenLength - 1) {
-        positionTensor[i] = Int32(min(position, 76))
+        positionTensor[i] = Int32(min(position, maxLength - 1))
         position += 1
-        if position == 77 {
+        if position == maxLength {
           tokenLengthUncond = i + 1
         }
       }
     }
     j = tokenLength + 1
     maxPosition = 0
-    prefixLength = 1
+    prefixLength = startLength
     for length in lengthsOfCond {
       for i in 0..<length {
         var position =
@@ -844,14 +846,14 @@ extension ImageGenerator {
     var tokenLengthCond = tokenLength
     // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than 77.
     if prefixLength < tokenLength - 1 {
-      if maxPosition + 2 > 77 {  // If it is 77, we can go to later to find i
+      if maxPosition + 1 + startLength > maxLength {  // If it is 77, we can go to later to find i
         tokenLengthCond = prefixLength + 1
       }
       var position = maxPosition + 1
       for i in prefixLength..<(tokenLength - 1) {
-        positionTensor[tokenLength + i] = Int32(min(position, 76))
+        positionTensor[tokenLength + i] = Int32(min(position, maxLength - 1))
         position += 1
-        if position == 77 {
+        if position == maxLength {
           tokenLengthCond = i + 1
         }
       }
@@ -942,7 +944,8 @@ extension ImageGenerator {
     case .pixart:
       return tokenize(
         graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials)
+        paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
+        startLength: 0, maxLength: 0)
     case .sd3:
       let tokenizerV2 = tokenizerXL
       var tokenizerV1 = tokenizerV1

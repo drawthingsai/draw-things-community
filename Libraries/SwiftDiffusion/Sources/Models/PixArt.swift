@@ -78,7 +78,7 @@ private func SelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttention: B
 }
 
 private func CrossAttentionKeysAndValues(
-  k: Int, h: Int, b: Int, hw: Int, t: Int, usesFlashAttention: Bool
+  k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), usesFlashAttention: Bool
 ) -> (
   Model, Model, Model
 ) {
@@ -86,22 +86,125 @@ private func CrossAttentionKeysAndValues(
   let keys = Input()
   let values = Input()
   let toqueries = Dense(count: k * h, name: "c_q")
-  if usesFlashAttention {
-    let queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, hw, h, k])
-    let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1, upcast: false,
-      multiHeadOutputProjectionFused: true, name: "c_o")
-    let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
-    return (toqueries, scaledDotProductAttention, Model([x, keys, values], [out]))
+  let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+  if t.0 == t.1 {
+    let t = t.0
+    if usesFlashAttention {
+      let scaledDotProductAttention = ScaledDotProductAttention(
+        scale: 1, multiHeadOutputProjectionFused: true, name: "c_o")
+      let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+      return (toqueries, scaledDotProductAttention, Model([x, keys, values], [out]))
+    } else {
+      let queries = queries.transposed(1, 2)
+      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      dot = dot.reshaped([b * h * hw, t])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, hw, t])
+      var out = dot * values
+      out = out.reshaped([b, h, hw, k]).transposed(1, 2).reshaped([b, hw, h * k])
+      let unifyheads = Dense(count: k * h, name: "c_o")
+      out = unifyheads(out)
+      return (toqueries, unifyheads, Model([x, keys, values], [out]))
+    }
   } else {
-    let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
-      .transposed(1, 2)
-    var dot = Matmul(transposeB: (2, 3))(queries, keys)
-    dot = dot.reshaped([b * h * hw, t])
-    dot = dot.softmax()
-    dot = dot.reshaped([b, h, hw, t])
-    var out = dot * values
-    out = out.reshaped([b, h, hw, k]).transposed(1, 2).reshaped([b, hw, h * k])
+    let b0 = b / 2
+    var out: Model.IO
+    if usesFlashAttention {
+      let out0: Model.IO
+      if b0 == 1 || t.0 >= t.1 {
+        let keys0 = keys.reshaped(
+          [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+        )
+        let queries0 = queries.reshaped([b0, hw, h, k])
+        let values0 = values.reshaped(
+          [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+        )
+        out0 = ScaledDotProductAttention(scale: 1)(
+          queries0, keys0, values0
+        ).reshaped([b0, hw, h * k])
+      } else {
+        var outs = [Model.IO]()
+        for i in 0..<b0 {
+          let keys0 = keys.reshaped(
+            [1, t.0, h, k], offset: [i, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+          )
+          let queries0 = queries.reshaped(
+            [1, hw, h, k], offset: [i, 0, 0, 0], strides: [h * hw * k, h * k, k, 1])
+          let values0 = values.reshaped(
+            [1, t.0, h, k], offset: [i, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+          )
+          outs.append(
+            ScaledDotProductAttention(scale: 1)(
+              queries0, keys0, values0
+            ).reshaped([1, hw, h * k]))
+        }
+        out0 = Concat(axis: 0)(outs)
+      }
+      let out1: Model.IO
+      if b0 == 1 || t.1 >= t.0 {
+        let keys1 = keys.reshaped(
+          [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+        )
+        let queries1 = queries.reshaped(
+          [b0, hw, h, k], offset: [b0, 0, 0, 0], strides: [h * hw * k, h * k, k, 1])
+        let values1 = values.reshaped(
+          [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+        )
+        out1 = ScaledDotProductAttention(scale: 1)(
+          queries1, keys1, values1
+        ).reshaped([b0, hw, h * k])
+      } else {
+        var outs = [Model.IO]()
+        for i in 0..<b0 {
+          let keys1 = keys.reshaped(
+            [1, t.1, h, k], offset: [b0 + i, 0, 0, 0],
+            strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+          )
+          let queries1 = queries.reshaped(
+            [1, hw, h, k], offset: [b0 + i, 0, 0, 0], strides: [h * hw * k, h * k, k, 1])
+          let values1 = values.reshaped(
+            [1, t.1, h, k], offset: [b0 + i, 0, 0, 0],
+            strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+          )
+          outs.append(
+            ScaledDotProductAttention(scale: 1)(
+              queries1, keys1, values1
+            ).reshaped([1, hw, h * k]))
+        }
+        out1 = Concat(axis: 0)(outs)
+      }
+      out = Functional.concat(axis: 0, out0, out1)
+    } else {
+      let keys0 = keys.reshaped(
+        [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+      ).transposed(1, 2)
+      let queries0 = queries.reshaped([b0, h, hw, k])
+      let values0 = values.reshaped(
+        [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+      ).transposed(1, 2)
+      var dot0 = Matmul(transposeB: (2, 3))(queries0, keys0)
+      dot0 = dot0.reshaped([b0 * h * hw, t.0])
+      dot0 = dot0.softmax()
+      dot0 = dot0.reshaped([b0, h, hw, t.0])
+      var out0 = dot0 * values0
+      out0 = out0.reshaped([b0, h, hw, k]).transposed(1, 2).reshaped([b0, hw, h * k])
+      let keys1 = keys.reshaped(
+        [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+      ).transposed(1, 2)
+      let queries1 = queries.reshaped(
+        [b0, h, hw, k], offset: [b0, 0, 0, 0], strides: [h * hw * k, hw * k, k, 1])
+      let values1 = values.reshaped(
+        [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+      ).transposed(1, 2)
+      var dot1 = Matmul(transposeB: (2, 3))(queries1, keys1)
+      dot1.add(dependencies: [out0])
+      dot1 = dot1.reshaped([b0 * h * hw, t.1])
+      dot1 = dot1.softmax()
+      dot1 = dot1.reshaped([b0, h, hw, t.1])
+      var out1 = dot1 * values1
+      out1 = out1.reshaped([b0, h, hw, k]).transposed(1, 2).reshaped([b0, hw, h * k])
+      out = Functional.concat(axis: 0, out0, out1)
+    }
     let unifyheads = Dense(count: k * h, name: "c_o")
     out = unifyheads(out)
     return (toqueries, unifyheads, Model([x, keys, values], [out]))
@@ -109,7 +212,7 @@ private func CrossAttentionKeysAndValues(
 }
 
 func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  prefix: String, k: Int, h: Int, b: Int, hw: Int, t: Int, usesFlashAttention: Bool,
+  prefix: String, k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), usesFlashAttention: Bool,
   of: FloatType.Type = FloatType.self
 ) -> (
   ModelWeightMapper, Model
@@ -163,7 +266,7 @@ func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
 }
 
 func PixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  batchSize: Int, height: Int, width: Int, channels: Int, layers: Int, tokenLength: Int,
+  batchSize: Int, height: Int, width: Int, channels: Int, layers: Int, tokenLength: (Int, Int),
   usesFlashAttention: Bool, of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
