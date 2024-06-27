@@ -53,15 +53,8 @@ extension UNetProtocol {
             embeddingSize: timeEmbeddingSize,
             maxPeriod: 10_000)
         ).toGPU(0))
-    case .sd3:
+    case .sd3, .pixart:
       return nil
-    case .pixart:
-      return graph.variable(
-        Tensor<FloatType>(
-          from: timeEmbedding(
-            timestep: timestep, batchSize: batchSize,
-            embeddingSize: 256, maxPeriod: 10_000)
-        ).toGPU(0))
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
         timesteps: timestep, batchSize: batchSize, embeddingSize: 64, maxPeriod: 10_000)
@@ -92,13 +85,40 @@ extension UNetProtocol {
   )
     -> [DynamicGraph.Tensor<FloatType>]
   {
-    guard version == .sd3 else { return conditions }
-    return [conditions[0]]
-      + conditions[1..<conditions.count].map {
-        let shape = $0.shape
-        return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
-          .copied()
+    switch version {
+    case .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
+      .wurstchenStageC:
+      return conditions
+    case .sd3:
+      return [conditions[0]]
+        + conditions[1..<conditions.count].map {
+          let shape = $0.shape
+          return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
+            .copied()
+        }
+    case .pixart:
+      var extractedConditions = [conditions[0]]
+      let layers = (conditions.count - 3) / 8
+      for i in 0..<layers {
+        let shape = conditions[1 + i * 8].shape
+        extractedConditions.append(contentsOf: [
+          conditions[1 + i * 8][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+          conditions[1 + i * 8 + 1][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+          conditions[1 + i * 8 + 2][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+          conditions[1 + i * 8 + 3],
+          conditions[1 + i * 8 + 4],
+          conditions[1 + i * 8 + 5][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+          conditions[1 + i * 8 + 6][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+          conditions[1 + i * 8 + 7][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+        ])
       }
+      let shape = conditions[conditions.count - 2].shape
+      extractedConditions.append(contentsOf: [
+        conditions[conditions.count - 2][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+        conditions[conditions.count - 1][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+      ])
+      return extractedConditions
+    }
   }
 }
 

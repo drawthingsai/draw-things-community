@@ -294,7 +294,31 @@ extension UNetFixedEncoder {
       let posEmbed = graph.variable(
         Tensor<FloatType>(from: sinCos2DPositionEmbedding(height: h, width: w, embeddingSize: 1152))
           .reshaped(.HWC(1, h * w, 1152)).toGPU(0))
-      return ([posEmbed] + textEncoding, nil)
+      var timeEmbeds = graph.variable(
+        .GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
+      }
+      timeEmbeds = timeEmbeds.reshaped(.HWC(timesteps.count, 1, 256))
+      let cBatchSize = textEncoding[0].shape[0]
+      let (_, unetFixed) = PixArtFixed(
+        batchSize: cBatchSize, channels: 1152, layers: 28, tokenLength: 77,
+        usesFlashAttention: usesFlashAttention, of: FloatType.self)
+      unetFixed.compile(inputs: [timeEmbeds] + textEncoding)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) {
+        $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+      }
+      return (
+        [posEmbed] + unetFixed(inputs: timeEmbeds, textEncoding).map { $0.as(of: FloatType.self) },
+        nil
+      )
     case .sd3:
       var c: DynamicGraph.Tensor<FloatType>
       var pooled: DynamicGraph.Tensor<FloatType>

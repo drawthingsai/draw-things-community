@@ -2101,7 +2101,7 @@ extension ImageGenerator {
     }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
-      || modelVersion == .sd3
+      || modelVersion == .sd3 || modelVersion == .pixart
     {
       DynamicGraph.flags = .disableMixedMPSGEMM
     }
@@ -2745,7 +2745,7 @@ extension ImageGenerator {
       }
       if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
         || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
-        || modelVersion == .sd3
+        || modelVersion == .sd3 || modelVersion == .pixart
       {
         DynamicGraph.flags = .disableMixedMPSGEMM
       }
@@ -2947,7 +2947,7 @@ extension ImageGenerator {
     }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
-      || modelVersion == .sd3
+      || modelVersion == .sd3 || modelVersion == .pixart
     {
       DynamicGraph.flags = .disableMixedMPSGEMM
     }
@@ -4139,7 +4139,7 @@ extension ImageGenerator {
     }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
-      || modelVersion == .sd3
+      || modelVersion == .sd3 || modelVersion == .pixart
     {
       DynamicGraph.flags = .disableMixedMPSGEMM
     }
@@ -4822,7 +4822,7 @@ extension ImageGenerator {
     }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
-      || modelVersion == .sd3
+      || modelVersion == .sd3 || modelVersion == .pixart
     {
       DynamicGraph.flags = .disableMixedMPSGEMM
     }
