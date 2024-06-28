@@ -232,7 +232,8 @@ private func CrossAttentionKeysAndValues(
 }
 
 func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  prefix: String, k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), usesFlashAttention: Bool,
+  prefix: (String, String), k: Int, h: Int, b: Int, hw: Int, t: (Int, Int),
+  usesFlashAttention: Bool,
   of: FloatType.Type = FloatType.self
 ) -> (
   ModelWeightMapper, Model
@@ -259,24 +260,44 @@ func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let norm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = out + gateMlp
     .* mlp(norm2(out) .* scaleMlp + shiftMlp)
-  let mapper: ModelWeightMapper = { _ in
+  let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
-    mapping["\(prefix).attn.qkv.weight"] = [
-      toqueries1.weight.name, tokeys1.weight.name, tovalues1.weight.name,
-    ]
-    mapping["\(prefix).attn.qkv.bias"] = [
-      toqueries1.bias.name, tokeys1.bias.name, tovalues1.bias.name,
-    ]
-    mapping["\(prefix).attn.proj.weight"] = [unifyheads1.weight.name]
-    mapping["\(prefix).attn.proj.bias"] = [unifyheads1.bias.name]
-    mapping["\(prefix).cross_attn.q_linear.weight"] = [toqueries2.weight.name]
-    mapping["\(prefix).cross_attn.q_linear.bias"] = [toqueries2.bias.name]
-    mapping["\(prefix).cross_attn.proj.weight"] = [unifyheads2.weight.name]
-    mapping["\(prefix).cross_attn.proj.bias"] = [unifyheads2.bias.name]
-    mapping["\(prefix).mlp.fc1.weight"] = [fc1.weight.name]
-    mapping["\(prefix).mlp.fc1.bias"] = [fc1.bias.name]
-    mapping["\(prefix).mlp.fc2.weight"] = [fc2.weight.name]
-    mapping["\(prefix).mlp.fc2.bias"] = [fc2.bias.name]
+    switch format {
+    case .generativeModels:
+      mapping["\(prefix.0).attn.qkv.weight"] = [
+        toqueries1.weight.name, tokeys1.weight.name, tovalues1.weight.name,
+      ]
+      mapping["\(prefix.0).attn.qkv.bias"] = [
+        toqueries1.bias.name, tokeys1.bias.name, tovalues1.bias.name,
+      ]
+      mapping["\(prefix.0).attn.proj.weight"] = [unifyheads1.weight.name]
+      mapping["\(prefix.0).attn.proj.bias"] = [unifyheads1.bias.name]
+      mapping["\(prefix.0).cross_attn.q_linear.weight"] = [toqueries2.weight.name]
+      mapping["\(prefix.0).cross_attn.q_linear.bias"] = [toqueries2.bias.name]
+      mapping["\(prefix.0).cross_attn.proj.weight"] = [unifyheads2.weight.name]
+      mapping["\(prefix.0).cross_attn.proj.bias"] = [unifyheads2.bias.name]
+      mapping["\(prefix.0).mlp.fc1.weight"] = [fc1.weight.name]
+      mapping["\(prefix.0).mlp.fc1.bias"] = [fc1.bias.name]
+      mapping["\(prefix.0).mlp.fc2.weight"] = [fc2.weight.name]
+      mapping["\(prefix.0).mlp.fc2.bias"] = [fc2.bias.name]
+    case .diffusers:
+      mapping["\(prefix.1).attn1.to_q.weight"] = [toqueries1.weight.name]
+      mapping["\(prefix.1).attn1.to_q.bias"] = [toqueries1.bias.name]
+      mapping["\(prefix.1).attn1.to_k.weight"] = [tokeys1.weight.name]
+      mapping["\(prefix.1).attn1.to_k.bias"] = [tokeys1.bias.name]
+      mapping["\(prefix.1).attn1.to_v.weight"] = [tovalues1.weight.name]
+      mapping["\(prefix.1).attn1.to_v.bias"] = [tovalues1.bias.name]
+      mapping["\(prefix.1).attn1.to_out.0.weight"] = [unifyheads1.weight.name]
+      mapping["\(prefix.1).attn1.to_out.0.bias"] = [unifyheads1.bias.name]
+      mapping["\(prefix.1).attn2.to_q.weight"] = [toqueries2.weight.name]
+      mapping["\(prefix.1).attn2.to_q.bias"] = [toqueries2.bias.name]
+      mapping["\(prefix.1).attn2.to_out.0.weight"] = [unifyheads2.weight.name]
+      mapping["\(prefix.1).attn2.to_out.0.bias"] = [unifyheads2.bias.name]
+      mapping["\(prefix.1).ff.net.0.proj.weight"] = [fc1.weight.name]
+      mapping["\(prefix.1).ff.net.0.proj.bias"] = [fc1.bias.name]
+      mapping["\(prefix.1).ff.net.2.weight"] = [fc2.weight.name]
+      mapping["\(prefix.1).ff.net.2.bias"] = [fc2.bias.name]
+    }
     return mapping
   }
   return (
@@ -309,7 +330,8 @@ public func PixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
     let scaleMlp = Input()
     let gateMlp = Input()
     let (mapper, block) = PixArtMSBlock(
-      prefix: "blocks.\(i)", k: channels / 16, h: 16, b: batchSize, hw: h * w, t: tokenLength,
+      prefix: ("blocks.\(i)", "transformer_blocks.\(i)"), k: channels / 16, h: 16, b: batchSize,
+      hw: h * w, t: tokenLength,
       usesFlashAttention: usesFlashAttention, of: FloatType.self)
     out = block(out, shiftMsa, scaleMsa, gateMsa, keys, values, shiftMlp, scaleMlp, gateMlp)
     mappers.append(mapper)
@@ -330,13 +352,21 @@ public func PixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
   ])
   let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
-    mapping["x_embedder.proj.weight"] = [xEmbedder.weight.name]
-    mapping["x_embedder.proj.bias"] = [xEmbedder.bias.name]
+    switch format {
+    case .diffusers:
+      mapping["pos_embed.proj.weight"] = [xEmbedder.weight.name]
+      mapping["pos_embed.proj.bias"] = [xEmbedder.bias.name]
+      mapping["proj_out.weight"] = [linear.weight.name]
+      mapping["proj_out.bias"] = [linear.bias.name]
+    case .generativeModels:
+      mapping["x_embedder.proj.weight"] = [xEmbedder.weight.name]
+      mapping["x_embedder.proj.bias"] = [xEmbedder.bias.name]
+      mapping["final_layer.linear.weight"] = [linear.weight.name]
+      mapping["final_layer.linear.bias"] = [linear.bias.name]
+    }
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["final_layer.linear.weight"] = [linear.weight.name]
-    mapping["final_layer.linear.bias"] = [linear.bias.name]
     return mapping
   }
   return (mapper, Model([x, posEmbed] + inputs, [out]))
@@ -367,7 +397,7 @@ private func CrossAttentionFixed(k: Int, h: Int, b: Int, t: (Int, Int), usesFlas
 }
 
 func PixArtMSBlockFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), usesFlashAttention: Bool,
+  prefix: (String, String), k: Int, h: Int, b: Int, t: (Int, Int), usesFlashAttention: Bool,
   of: FloatType.Type = FloatType.self
 ) -> (
   ModelWeightMapper, Model
@@ -395,14 +425,33 @@ func PixArtMSBlockFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   outs.append(shiftMlp + shiftMlpShift)
   outs.append(scaleMlp + scaleMlpShift)
   outs.append(gateMlp + gateMlpShift)
-  let mapper: ModelWeightMapper = { _ in
+  let mapper: ModelWeightMapper = { format in
+    let formatPrefix: String
+    switch format {
+    case .generativeModels:
+      formatPrefix = prefix.0
+    case .diffusers:
+      formatPrefix = prefix.1
+    }
     var mapping = [String: [String]]()
-    mapping["\(prefix).scale_shift_table"] = [
+    mapping["\(formatPrefix).scale_shift_table"] = [
       shiftMsaShift.weight.name, scaleMsaShift.weight.name, gateMsaShift.weight.name,
       shiftMlpShift.weight.name, scaleMlpShift.weight.name, gateMlpShift.weight.name,
     ]
-    mapping["\(prefix).cross_attn.kv_linear.weight"] = [tokeys2.weight.name, tovalues2.weight.name]
-    mapping["\(prefix).cross_attn.kv_linear.bias"] = [tokeys2.bias.name, tovalues2.bias.name]
+    switch format {
+    case .generativeModels:
+      mapping["\(formatPrefix).cross_attn.kv_linear.weight"] = [
+        tokeys2.weight.name, tovalues2.weight.name,
+      ]
+      mapping["\(formatPrefix).cross_attn.kv_linear.bias"] = [
+        tokeys2.bias.name, tovalues2.bias.name,
+      ]
+    case .diffusers:
+      mapping["\(formatPrefix).attn2.to_k.weight"] = [tokeys2.weight.name]
+      mapping["\(formatPrefix).attn2.to_k.bias"] = [tokeys2.bias.name]
+      mapping["\(formatPrefix).attn2.to_v.weight"] = [tovalues2.weight.name]
+      mapping["\(formatPrefix).attn2.to_v.bias"] = [tovalues2.bias.name]
+    }
     return mapping
   }
   return (
@@ -430,7 +479,8 @@ public func PixArtFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   var outs = [Model.IO]()
   for i in 0..<layers {
     let (mapper, block) = PixArtMSBlockFixed(
-      prefix: "blocks.\(i)", k: channels / 16, h: 16, b: batchSize, t: tokenLength,
+      prefix: ("blocks.\(i)", "transformer_blocks.\(i)"), k: channels / 16, h: 16, b: batchSize,
+      t: tokenLength,
       usesFlashAttention: usesFlashAttention, of: FloatType.self)
     let out = block(y0, adaln[0], adaln[1], adaln[2], adaln[3], adaln[4], adaln[5])
     mappers.append(mapper)
@@ -444,20 +494,35 @@ public func PixArtFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   outs.append(scaleShift + 1 + t0)
   let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
-    mapping["t_embedder.mlp.0.weight"] = [tMlp0.weight.name]
-    mapping["t_embedder.mlp.0.bias"] = [tMlp0.bias.name]
-    mapping["t_embedder.mlp.2.weight"] = [tMlp2.weight.name]
-    mapping["t_embedder.mlp.2.bias"] = [tMlp2.bias.name]
-    mapping["t_block.1.weight"] = tBlock.map { $0.weight.name }
-    mapping["t_block.1.bias"] = tBlock.map { $0.bias.name }
-    mapping["y_embedder.y_proj.fc1.weight"] = [fc1.weight.name]
-    mapping["y_embedder.y_proj.fc1.bias"] = [fc1.bias.name]
-    mapping["y_embedder.y_proj.fc2.weight"] = [fc2.weight.name]
-    mapping["y_embedder.y_proj.fc2.bias"] = [fc2.bias.name]
+    switch format {
+    case .diffusers:
+      mapping["adaln_single.emb.timestep_embedder.linear_1.weight"] = [tMlp0.weight.name]
+      mapping["adaln_single.emb.timestep_embedder.linear_1.bias"] = [tMlp0.bias.name]
+      mapping["adaln_single.emb.timestep_embedder.linear_2.weight"] = [tMlp2.weight.name]
+      mapping["adaln_single.emb.timestep_embedder.linear_2.bias"] = [tMlp2.bias.name]
+      mapping["adaln_single.linear.weight"] = tBlock.map { $0.weight.name }
+      mapping["adaln_single.linear.bias"] = tBlock.map { $0.bias.name }
+      mapping["caption_projection.linear_1.weight"] = [fc1.weight.name]
+      mapping["caption_projection.linear_1.bias"] = [fc1.bias.name]
+      mapping["caption_projection.linear_2.weight"] = [fc2.weight.name]
+      mapping["caption_projection.linear_2.bias"] = [fc2.bias.name]
+      mapping["scale_shift_table"] = [shiftShift.weight.name, scaleShift.weight.name]
+    case .generativeModels:
+      mapping["t_embedder.mlp.0.weight"] = [tMlp0.weight.name]
+      mapping["t_embedder.mlp.0.bias"] = [tMlp0.bias.name]
+      mapping["t_embedder.mlp.2.weight"] = [tMlp2.weight.name]
+      mapping["t_embedder.mlp.2.bias"] = [tMlp2.bias.name]
+      mapping["t_block.1.weight"] = tBlock.map { $0.weight.name }
+      mapping["t_block.1.bias"] = tBlock.map { $0.bias.name }
+      mapping["y_embedder.y_proj.fc1.weight"] = [fc1.weight.name]
+      mapping["y_embedder.y_proj.fc1.bias"] = [fc1.bias.name]
+      mapping["y_embedder.y_proj.fc2.weight"] = [fc2.weight.name]
+      mapping["y_embedder.y_proj.fc2.bias"] = [fc2.bias.name]
+      mapping["final_layer.scale_shift_table"] = [shiftShift.weight.name, scaleShift.weight.name]
+    }
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["final_layer.scale_shift_table"] = [shiftShift.weight.name, scaleShift.weight.name]
     return mapping
   }
   return (mapper, Model([t, y], outs))

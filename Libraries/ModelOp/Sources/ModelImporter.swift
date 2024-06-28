@@ -93,16 +93,19 @@ public final class ModelImporter {
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
     let inputDim: Int
+    let isDiffusersFormat: Bool
     if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
       inputDim = 16
       expectedTotalAccess = 1550
+      isDiffusersFormat = false
     } else if isPixArtSigmaXL {
       modelVersion = .pixart
       modifier = .none
       inputDim = 4
       expectedTotalAccess = 754
+      isDiffusersFormat = stateDict.keys.contains { $0.contains("transformer_blocks.27.") }
     } else {
       guard
         let tokey = stateDict[
@@ -158,6 +161,7 @@ public final class ModelImporter {
       default:
         throw UnpickleError.tensorNotFound
       }
+      isDiffusersFormat = stateDict.keys.contains { $0.hasPrefix("mid_block.") }
     }
     if isTextEncoderCustomized {
       switch modelVersion {
@@ -595,7 +599,6 @@ public final class ModelImporter {
       case .sd3, .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
       }
-      let isDiffusersFormat = stateDict.keys.contains { $0.hasPrefix("mid_block.") }
       if !isDiffusersFormat, let unetFixed = unetFixed, let unetFixedReader = unetFixedReader {
         unetFixed.compile(inputs: crossattn)
         try unetFixedReader(stateDict, archive)
