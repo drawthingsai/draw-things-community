@@ -52,9 +52,29 @@ public final class ModelImporter {
     return false
   }
 
-  private func internalImport(versionCheck: @escaping (ModelVersion) -> Void) throws -> (
-    [String], ModelVersion, SamplerModifier
-  ) {
+  public struct InspectionResult {
+    public var version: ModelVersion
+    public var archive: TensorArchive
+    public var stateDict: [String: TensorDescriptor]
+    public var modifier: SamplerModifier
+    public var inputChannels: Int
+    public var isDiffusersFormat: Bool
+    public var numberOfTensors: Int
+    public init(
+      version: ModelVersion, archive: TensorArchive, stateDict: [String: TensorDescriptor],
+      modifier: SamplerModifier, inputChannels: Int, isDiffusersFormat: Bool, numberOfTensors: Int
+    ) {
+      self.version = version
+      self.archive = archive
+      self.stateDict = stateDict
+      self.modifier = modifier
+      self.inputChannels = inputChannels
+      self.isDiffusersFormat = isDiffusersFormat
+      self.numberOfTensors = numberOfTensors
+    }
+  }
+
+  public func inspect() throws -> InspectionResult {
     var archive: TensorArchive
     var stateDict: [String: TensorDescriptor]
     if let safeTensors = SafeTensors(url: URL(fileURLWithPath: filePath)) {
@@ -98,6 +118,7 @@ public final class ModelImporter {
     let modelVersion: ModelVersion
     let inputDim: Int
     let isDiffusersFormat: Bool
+    let expectedTotalAccess: Int
     if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -175,6 +196,25 @@ public final class ModelImporter {
       }
       isDiffusersFormat = stateDict.keys.contains { $0.hasPrefix("mid_block.") }
     }
+    return InspectionResult(
+      version: modelVersion, archive: archive, stateDict: stateDict, modifier: modifier,
+      inputChannels: inputDim, isDiffusersFormat: isDiffusersFormat,
+      numberOfTensors: expectedTotalAccess)
+  }
+
+  private func internalImport(versionCheck: @escaping (ModelVersion) -> Void) throws -> (
+    [String], ModelVersion, SamplerModifier
+  ) {
+    let inspectionResult = try inspect()
+    var archive = inspectionResult.archive
+    var stateDict = inspectionResult.stateDict
+    let modifier = inspectionResult.modifier
+    let modelVersion = inspectionResult.version
+    let inputDim = inspectionResult.inputChannels
+    let isDiffusersFormat = inspectionResult.isDiffusersFormat
+    expectedTotalAccess = inspectionResult.numberOfTensors
+    versionCheck(modelVersion)
+    progress?(0.05)
     if isTextEncoderCustomized {
       switch modelVersion {
       case .v1:
@@ -198,8 +238,6 @@ public final class ModelImporter {
     if autoencoderFilePath != nil {
       expectedTotalAccess += 248
     }
-    versionCheck(modelVersion)
-    progress?(0.05)
     let graph = DynamicGraph()
     var filePaths = [String]()
     if isTextEncoderCustomized {
