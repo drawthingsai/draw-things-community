@@ -68,8 +68,8 @@ private func SelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttention: B
     if b * h <= 256 {
       var outs = [Model.IO]()
       for i in 0..<(b * h) {
-        var key = keys.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
-        var query = queries.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
+        let key = keys.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
+        let query = queries.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
         let value = values.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
         var dot = Matmul(transposeB: (1, 2))(query, key)
         if let last = outs.last {
