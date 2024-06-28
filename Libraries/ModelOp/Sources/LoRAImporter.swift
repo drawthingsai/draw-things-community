@@ -205,8 +205,10 @@ public enum LoRAImporter {
     case .sdxlBase, .ssd1b:
       textModelMapping1 = StableDiffusionMapping.CLIPTextModel
       textModelMapping2 = StableDiffusionMapping.OpenCLIPTextModelG
+      textModelMapping2.merge(StableDiffusionMapping.OpenCLIPTextModelGTransformers) { v, _ in v }
     case .sdxlRefiner:
       textModelMapping1 = StableDiffusionMapping.OpenCLIPTextModelG
+      textModelMapping1.merge(StableDiffusionMapping.OpenCLIPTextModelGTransformers) { v, _ in v }
       textModelMapping2 = [:]
     case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
