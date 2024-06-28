@@ -28,7 +28,7 @@ private func MLP(hiddenSize: Int, intermediateSize: Int, name: String) -> (Model
 }
 
 private func JointTransformerBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
+  prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
   usesFlashAtttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
@@ -138,36 +138,68 @@ private func JointTransformerBlock(
   let (xFc1, xFc2, xMlp) = MLP(hiddenSize: k * h, intermediateSize: k * h * 4, name: "x")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   xOut = xOut + xChunks[5] .* xMlp(xNorm2(xOut) .* xChunks[4] + xChunks[3])
-  let mapper: ModelWeightMapper = { _ in
+  let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
-    mapping["\(prefix).context_block.attn.qkv.weight"] = [
-      contextToQueries.weight.name, contextToKeys.weight.name, contextToValues.weight.name,
-    ]
-    mapping["\(prefix).context_block.attn.qkv.bias"] = [
-      contextToQueries.bias.name, contextToKeys.bias.name, contextToValues.bias.name,
-    ]
-    mapping["\(prefix).x_block.attn.qkv.weight"] = [
-      xToQueries.weight.name, xToKeys.weight.name, xToValues.weight.name,
-    ]
-    mapping["\(prefix).x_block.attn.qkv.bias"] = [
-      xToQueries.bias.name, xToKeys.bias.name, xToValues.bias.name,
-    ]
-    if let contextUnifyheads = contextUnifyheads {
-      mapping["\(prefix).context_block.attn.proj.weight"] = [contextUnifyheads.weight.name]
-      mapping["\(prefix).context_block.attn.proj.bias"] = [contextUnifyheads.bias.name]
+    switch format {
+    case .generativeModels:
+      mapping["\(prefix.0).context_block.attn.qkv.weight"] = [
+        contextToQueries.weight.name, contextToKeys.weight.name, contextToValues.weight.name,
+      ]
+      mapping["\(prefix.0).context_block.attn.qkv.bias"] = [
+        contextToQueries.bias.name, contextToKeys.bias.name, contextToValues.bias.name,
+      ]
+      mapping["\(prefix.0).x_block.attn.qkv.weight"] = [
+        xToQueries.weight.name, xToKeys.weight.name, xToValues.weight.name,
+      ]
+      mapping["\(prefix.0).x_block.attn.qkv.bias"] = [
+        xToQueries.bias.name, xToKeys.bias.name, xToValues.bias.name,
+      ]
+      if let contextUnifyheads = contextUnifyheads {
+        mapping["\(prefix.0).context_block.attn.proj.weight"] = [contextUnifyheads.weight.name]
+        mapping["\(prefix.0).context_block.attn.proj.bias"] = [contextUnifyheads.bias.name]
+      }
+      mapping["\(prefix.0).x_block.attn.proj.weight"] = [xUnifyheads.weight.name]
+      mapping["\(prefix.0).x_block.attn.proj.bias"] = [xUnifyheads.bias.name]
+      if let contextFc1 = contextFc1, let contextFc2 = contextFc2 {
+        mapping["\(prefix.0).context_block.mlp.fc1.weight"] = [contextFc1.weight.name]
+        mapping["\(prefix.0).context_block.mlp.fc1.bias"] = [contextFc1.bias.name]
+        mapping["\(prefix.0).context_block.mlp.fc2.weight"] = [contextFc2.weight.name]
+        mapping["\(prefix.0).context_block.mlp.fc2.bias"] = [contextFc2.bias.name]
+      }
+      mapping["\(prefix.0).x_block.mlp.fc1.weight"] = [xFc1.weight.name]
+      mapping["\(prefix.0).x_block.mlp.fc1.bias"] = [xFc1.bias.name]
+      mapping["\(prefix.0).x_block.mlp.fc2.weight"] = [xFc2.weight.name]
+      mapping["\(prefix.0).x_block.mlp.fc2.bias"] = [xFc2.bias.name]
+    case .diffusers:
+      mapping["\(prefix.1).attn.add_q_proj.weight"] = [contextToQueries.weight.name]
+      mapping["\(prefix.1).attn.add_q_proj.bias"] = [contextToQueries.bias.name]
+      mapping["\(prefix.1).attn.add_k_proj.weight"] = [contextToKeys.weight.name]
+      mapping["\(prefix.1).attn.add_k_proj.bias"] = [contextToKeys.bias.name]
+      mapping["\(prefix.1).attn.add_v_proj.weight"] = [contextToValues.weight.name]
+      mapping["\(prefix.1).attn.add_v_proj.bias"] = [contextToValues.bias.name]
+      mapping["\(prefix.1).attn.to_q.weight"] = [xToQueries.weight.name]
+      mapping["\(prefix.1).attn.to_q.bias"] = [xToQueries.bias.name]
+      mapping["\(prefix.1).attn.to_k.weight"] = [xToKeys.weight.name]
+      mapping["\(prefix.1).attn.to_k.bias"] = [xToKeys.bias.name]
+      mapping["\(prefix.1).attn.to_v.weight"] = [xToValues.weight.name]
+      mapping["\(prefix.1).attn.to_v.bias"] = [xToValues.bias.name]
+      if let contextUnifyheads = contextUnifyheads {
+        mapping["\(prefix.1).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
+        mapping["\(prefix.1).attn.to_add_out.bias"] = [contextUnifyheads.bias.name]
+      }
+      mapping["\(prefix.1).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
+      mapping["\(prefix.1).attn.to_out.0.bias"] = [xUnifyheads.bias.name]
+      if let contextFc1 = contextFc1, let contextFc2 = contextFc2 {
+        mapping["\(prefix.1).ff_context.net.0.proj.weight"] = [contextFc1.weight.name]
+        mapping["\(prefix.1).ff_context.net.0.proj.bias"] = [contextFc1.bias.name]
+        mapping["\(prefix.1).ff_context.net.2.weight"] = [contextFc2.weight.name]
+        mapping["\(prefix.1).ff_context.net.2.bias"] = [contextFc2.bias.name]
+      }
+      mapping["\(prefix.1).ff.net.0.proj.weight"] = [xFc1.weight.name]
+      mapping["\(prefix.1).ff.net.0.proj.bias"] = [xFc1.bias.name]
+      mapping["\(prefix.1).ff.net.2.weight"] = [xFc2.weight.name]
+      mapping["\(prefix.1).ff.net.2.bias"] = [xFc2.bias.name]
     }
-    mapping["\(prefix).x_block.attn.proj.weight"] = [xUnifyheads.weight.name]
-    mapping["\(prefix).x_block.attn.proj.bias"] = [xUnifyheads.bias.name]
-    if let contextFc1 = contextFc1, let contextFc2 = contextFc2 {
-      mapping["\(prefix).context_block.mlp.fc1.weight"] = [contextFc1.weight.name]
-      mapping["\(prefix).context_block.mlp.fc1.bias"] = [contextFc1.bias.name]
-      mapping["\(prefix).context_block.mlp.fc2.weight"] = [contextFc2.weight.name]
-      mapping["\(prefix).context_block.mlp.fc2.bias"] = [contextFc2.bias.name]
-    }
-    mapping["\(prefix).x_block.mlp.fc1.weight"] = [xFc1.weight.name]
-    mapping["\(prefix).x_block.mlp.fc1.bias"] = [xFc1.bias.name]
-    mapping["\(prefix).x_block.mlp.fc2.weight"] = [xFc2.weight.name]
-    mapping["\(prefix).x_block.mlp.fc2.bias"] = [xFc2.bias.name]
     return mapping
   }
   if !contextBlockPreOnly {
@@ -205,7 +237,8 @@ public func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = JointTransformerBlock(
-      prefix: "diffusion_model.joint_blocks.\(i)", k: 64, h: channels / 64, b: batchSize, t: t,
+      prefix: ("diffusion_model.joint_blocks.\(i)", "transformer_blocks.\(i)"), k: 64,
+      h: channels / 64, b: batchSize, t: t,
       hw: h * w,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAtttention: usesFlashAttention)
     let blockOut = block([context, out] + contextChunks + xChunks)
@@ -231,21 +264,30 @@ public func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
   ])
   let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
-    mapping["diffusion_model.x_embedder.proj.weight"] = [xEmbedder.weight.name]
-    mapping["diffusion_model.x_embedder.proj.bias"] = [xEmbedder.bias.name]
-    mapping["diffusion_model.pos_embed"] = [posEmbed.weight.name]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["diffusion_model.final_layer.linear.weight"] = [linear.weight.name]
-    mapping["diffusion_model.final_layer.linear.bias"] = [linear.bias.name]
+    switch format {
+    case .generativeModels:
+      mapping["diffusion_model.x_embedder.proj.weight"] = [xEmbedder.weight.name]
+      mapping["diffusion_model.x_embedder.proj.bias"] = [xEmbedder.bias.name]
+      mapping["diffusion_model.pos_embed"] = [posEmbed.weight.name]
+      mapping["diffusion_model.final_layer.linear.weight"] = [linear.weight.name]
+      mapping["diffusion_model.final_layer.linear.bias"] = [linear.bias.name]
+    case .diffusers:
+      mapping["pos_embed.proj.weight"] = [xEmbedder.weight.name]
+      mapping["pos_embed.proj.bias"] = [xEmbedder.bias.name]
+      mapping["pos_embed.pos_embed"] = [posEmbed.weight.name]
+      mapping["proj_out.weight"] = [linear.weight.name]
+      mapping["proj_out.bias"] = [linear.bias.name]
+    }
     return mapping
   }
   return (mapper, Model([x, contextIn] + adaLNChunks, [out]))
 }
 
 private func JointTransformerBlockFixed(
-  prefix: String, k: Int, h: Int, b: Int, contextBlockPreOnly: Bool
+  prefix: (String, String), k: Int, h: Int, b: Int, contextBlockPreOnly: Bool
 ) -> (ModelWeightMapper, Model) {
   let c = Input()
   let contextAdaLNs = (0..<(contextBlockPreOnly ? 2 : 6)).map {
@@ -260,16 +302,39 @@ private func JointTransformerBlockFixed(
     contextChunks[4] = 1 + contextChunks[4]
   }
   xChunks[4] = 1 + xChunks[4]
-  let mapper: ModelWeightMapper = { _ in
+  let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
-    mapping[
-      "\(prefix).context_block.adaLN_modulation.1.weight"
-    ] = (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].weight.name }
-    mapping[
-      "\(prefix).context_block.adaLN_modulation.1.bias"
-    ] = (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].bias.name }
-    mapping["\(prefix).x_block.adaLN_modulation.1.weight"] = (0..<6).map { xAdaLNs[$0].weight.name }
-    mapping["\(prefix).x_block.adaLN_modulation.1.bias"] = (0..<6).map { xAdaLNs[$0].bias.name }
+    switch format {
+    case .generativeModels:
+      mapping[
+        "\(prefix.0).context_block.adaLN_modulation.1.weight"
+      ] = (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].weight.name }
+      mapping[
+        "\(prefix.0).context_block.adaLN_modulation.1.bias"
+      ] = (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].bias.name }
+      mapping["\(prefix.0).x_block.adaLN_modulation.1.weight"] = (0..<6).map {
+        xAdaLNs[$0].weight.name
+      }
+      mapping["\(prefix.0).x_block.adaLN_modulation.1.bias"] = (0..<6).map { xAdaLNs[$0].bias.name }
+    case .diffusers:
+      if contextBlockPreOnly {
+        mapping["\(prefix.1).norm1_context.linear.weight"] = [
+          contextAdaLNs[1].weight.name, contextAdaLNs[0].weight.name,
+        ]
+        mapping["\(prefix.1).norm1_context.linear.bias"] = [
+          contextAdaLNs[1].bias.name, contextAdaLNs[0].bias.name,
+        ]
+      } else {
+        mapping[
+          "\(prefix.1).norm1_context.linear.weight"
+        ] = (0..<6).map { contextAdaLNs[$0].weight.name }
+        mapping[
+          "\(prefix.1).norm1_context.linear.bias"
+        ] = (0..<6).map { contextAdaLNs[$0].bias.name }
+      }
+      mapping["\(prefix.1).norm1.linear.weight"] = (0..<6).map { xAdaLNs[$0].weight.name }
+      mapping["\(prefix.1).norm1.linear.bias"] = (0..<6).map { xAdaLNs[$0].bias.name }
+    }
     return mapping
   }
   return (mapper, Model([c], contextChunks + xChunks))
@@ -289,7 +354,8 @@ public func MMDiTFixed(batchSize: Int, channels: Int, layers: Int) -> (ModelWeig
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers {
     let (mapper, block) = JointTransformerBlockFixed(
-      prefix: "diffusion_model.joint_blocks.\(i)", k: 64, h: channels / 64, b: batchSize,
+      prefix: ("diffusion_model.joint_blocks.\(i)", "transformer_blocks.\(i)"), k: 64,
+      h: channels / 64, b: batchSize,
       contextBlockPreOnly: i == layers - 1)
     let blockOut = block(c)
     mappers.append(mapper)
@@ -300,25 +366,45 @@ public func MMDiTFixed(batchSize: Int, channels: Int, layers: Int) -> (ModelWeig
   outs.append(contentsOf: [shift(c), 1 + scale(c)])
   let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
-    mapping["diffusion_model.t_embedder.mlp.0.weight"] = [tMlp0.weight.name]
-    mapping["diffusion_model.t_embedder.mlp.0.bias"] = [tMlp0.bias.name]
-    mapping["diffusion_model.t_embedder.mlp.2.weight"] = [tMlp2.weight.name]
-    mapping["diffusion_model.t_embedder.mlp.2.bias"] = [tMlp2.bias.name]
-    mapping["diffusion_model.y_embedder.mlp.0.weight"] = [yMlp0.weight.name]
-    mapping["diffusion_model.y_embedder.mlp.0.bias"] = [yMlp0.bias.name]
-    mapping["diffusion_model.y_embedder.mlp.2.weight"] = [yMlp2.weight.name]
-    mapping["diffusion_model.y_embedder.mlp.2.bias"] = [yMlp2.bias.name]
-    mapping["diffusion_model.context_embedder.weight"] = [contextEmbedder.weight.name]
-    mapping["diffusion_model.context_embedder.bias"] = [contextEmbedder.bias.name]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping[
-      "diffusion_model.final_layer.adaLN_modulation.1.weight"
-    ] = [shift.weight.name, scale.weight.name]
-    mapping[
-      "diffusion_model.final_layer.adaLN_modulation.1.bias"
-    ] = [shift.bias.name, scale.bias.name]
+    switch format {
+    case .generativeModels:
+      mapping["diffusion_model.t_embedder.mlp.0.weight"] = [tMlp0.weight.name]
+      mapping["diffusion_model.t_embedder.mlp.0.bias"] = [tMlp0.bias.name]
+      mapping["diffusion_model.t_embedder.mlp.2.weight"] = [tMlp2.weight.name]
+      mapping["diffusion_model.t_embedder.mlp.2.bias"] = [tMlp2.bias.name]
+      mapping["diffusion_model.y_embedder.mlp.0.weight"] = [yMlp0.weight.name]
+      mapping["diffusion_model.y_embedder.mlp.0.bias"] = [yMlp0.bias.name]
+      mapping["diffusion_model.y_embedder.mlp.2.weight"] = [yMlp2.weight.name]
+      mapping["diffusion_model.y_embedder.mlp.2.bias"] = [yMlp2.bias.name]
+      mapping["diffusion_model.context_embedder.weight"] = [contextEmbedder.weight.name]
+      mapping["diffusion_model.context_embedder.bias"] = [contextEmbedder.bias.name]
+      mapping[
+        "diffusion_model.final_layer.adaLN_modulation.1.weight"
+      ] = [shift.weight.name, scale.weight.name]
+      mapping[
+        "diffusion_model.final_layer.adaLN_modulation.1.bias"
+      ] = [shift.bias.name, scale.bias.name]
+    case .diffusers:
+      mapping["time_text_embed.timestep_embedder.linear_1.weight"] = [tMlp0.weight.name]
+      mapping["time_text_embed.timestep_embedder.linear_1.bias"] = [tMlp0.bias.name]
+      mapping["time_text_embed.timestep_embedder.linear_2.weight"] = [tMlp2.weight.name]
+      mapping["time_text_embed.timestep_embedder.linear_2.bias"] = [tMlp2.bias.name]
+      mapping["time_text_embed.text_embedder.linear_1.weight"] = [yMlp0.weight.name]
+      mapping["time_text_embed.text_embedder.linear_1.bias"] = [yMlp0.bias.name]
+      mapping["time_text_embed.text_embedder.linear_2.weight"] = [yMlp2.weight.name]
+      mapping["time_text_embed.text_embedder.linear_2.bias"] = [yMlp2.bias.name]
+      mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
+      mapping["context_embedder.bias"] = [contextEmbedder.bias.name]
+      mapping[
+        "norm_out.linear.weight"
+      ] = [scale.weight.name, shift.weight.name]
+      mapping[
+        "norm_out.linear.bias"
+      ] = [scale.bias.name, shift.bias.name]
+    }
     return mapping
   }
   return (mapper, Model([contextIn, timestep, y], outs))
