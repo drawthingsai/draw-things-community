@@ -285,7 +285,7 @@ func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   )
 }
 
-func PixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
+public func PixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
   batchSize: Int, height: Int, width: Int, channels: Int, layers: Int, tokenLength: (Int, Int),
   usesFlashAttention: Bool, of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
@@ -410,7 +410,7 @@ func PixArtMSBlockFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   )
 }
 
-func PixArtFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
+public func PixArtFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   batchSize: Int, channels: Int, layers: Int, tokenLength: (Int, Int),
   usesFlashAttention: Bool, of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
