@@ -177,7 +177,7 @@ private func JointTransformerBlock(
   }
 }
 
-func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
+public func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
   batchSize: Int, t: Int, height: Int, width: Int, channels: Int, layers: Int,
   usesFlashAttention: FlashAttentionLevel, of: FloatType.Type = FloatType.self
 )
@@ -269,13 +269,13 @@ private func JointTransformerBlockFixed(
       "\(prefix).context_block.adaLN_modulation.1.bias"
     ] = (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].bias.name }
     mapping["\(prefix).x_block.adaLN_modulation.1.weight"] = (0..<6).map { xAdaLNs[$0].weight.name }
-    mapping["\(prefix).x_block.adaLN_modulation.1.bias"] = (0..<6).map { xAdaLNs[$0].weight.name }
+    mapping["\(prefix).x_block.adaLN_modulation.1.bias"] = (0..<6).map { xAdaLNs[$0].bias.name }
     return mapping
   }
   return (mapper, Model([c], contextChunks + xChunks))
 }
 
-func MMDiTFixed(batchSize: Int, channels: Int, layers: Int) -> (ModelWeightMapper, Model) {
+public func MMDiTFixed(batchSize: Int, channels: Int, layers: Int) -> (ModelWeightMapper, Model) {
   let timestep = Input()
   let y = Input()
   let contextIn = Input()

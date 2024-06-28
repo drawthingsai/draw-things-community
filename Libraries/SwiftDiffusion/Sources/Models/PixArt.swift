@@ -231,7 +231,7 @@ private func CrossAttentionKeysAndValues(
   }
 }
 
-func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
+private func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   prefix: (String, String), k: Int, h: Int, b: Int, hw: Int, t: (Int, Int),
   usesFlashAttention: Bool,
   of: FloatType.Type = FloatType.self
@@ -396,7 +396,7 @@ private func CrossAttentionFixed(k: Int, h: Int, b: Int, t: (Int, Int), usesFlas
   }
 }
 
-func PixArtMSBlockFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
+private func PixArtMSBlockFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   prefix: (String, String), k: Int, h: Int, b: Int, t: (Int, Int), usesFlashAttention: Bool,
   of: FloatType.Type = FloatType.self
 ) -> (

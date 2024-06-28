@@ -90,6 +90,10 @@ public final class ModelImporter {
     let isPixArtSigmaXL = stateDict.keys.contains {
       $0.contains("blocks.27.") || $0.contains("transformer_blocks.27.")
     }
+    let isSD3 = stateDict.keys.contains {
+      $0.contains("joint_blocks.23.context_block.")
+        || $0.contains("transformer_blocks.22.ff_context.")
+    }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
     let inputDim: Int
@@ -106,6 +110,14 @@ public final class ModelImporter {
       inputDim = 4
       expectedTotalAccess = 754
       isDiffusersFormat = stateDict.keys.contains { $0.contains("transformer_blocks.27.") }
+    } else if isSD3 {
+      modelVersion = .sd3
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 1157
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("transformer_blocks.22.ff_context.")
+      }
     } else {
       guard
         let tokey = stateDict[
@@ -405,7 +417,10 @@ public final class ModelImporter {
     case .pixart:
       conditionalLength = 4096
       batchSize = 2
-    case .sd3, .kandinsky21, .wurstchenStageB:
+    case .sd3:
+      conditionalLength = 4096
+      batchSize = 2
+    case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
     try graph.withNoGrad {
@@ -558,7 +573,14 @@ public final class ModelImporter {
           batchSize: batchSize, channels: 1152, layers: 28, tokenLength: (77, 77),
           usesFlashAttention: false, of: FloatType.self)
         unetFixedReader = nil
-      case .sd3, .kandinsky21, .wurstchenStageB:
+      case .sd3:
+        (unetMapper, unet) = MMDiT(
+          batchSize: batchSize, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
+          usesFlashAttention: .none, of: FloatType.self)
+        unetReader = nil
+        (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 1536, layers: 24)
+        unetFixedReader = nil
+      case .kandinsky21, .wurstchenStageB:
         fatalError()
       }
       let crossattn: [DynamicGraph.Tensor<FloatType>]
@@ -596,7 +618,18 @@ public final class ModelImporter {
           ), graph.variable(.CPU, .HWC(batchSize, 77, 4096), of: FloatType.self),
         ]
         tEmb = nil
-      case .sd3, .v1, .v2, .kandinsky21, .wurstchenStageB:
+      case .sd3:
+        crossattn = [
+          graph.variable(.CPU, .WC(batchSize, 2048), of: FloatType.self),
+          graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: 1000, batchSize: batchSize, embeddingSize: 256, maxPeriod: 10_000)
+            ).reshaped(.WC(batchSize, 256))
+          ), graph.variable(.CPU, .HWC(batchSize, 154, 4096), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
       }
       if !isDiffusersFormat, let unetFixed = unetFixed, let unetFixedReader = unetFixedReader {
@@ -635,6 +668,13 @@ public final class ModelImporter {
         for (key, value) in stateDict {
           if key.hasPrefix("model.diffusion_model.") {
             stateDict[String(key.dropFirst(22))] = value
+          }
+        }
+      } else if modelVersion == .sd3 {
+        // Remove the model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
           }
         }
       }
@@ -725,7 +765,16 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .v1, .v2, .sd3, .kandinsky21, .wurstchenStageB:
+          case .sd3:
+            let inputs: [DynamicGraph.Tensor<FloatType>] =
+              [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
+            unet.compile(inputs: inputs)
+            unetFixed.compile(inputs: crossattn)
+            UNetMapping = unetMapper(isDiffusersFormat ? .diffusers : .generativeModels)
+            UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
+            modelPrefix = "dit"
+            modelPrefixFixed = "dit"
+          case .v1, .v2, .kandinsky21, .wurstchenStageB:
             fatalError()
           }
           try store.withTransaction {
@@ -826,7 +875,11 @@ public final class ModelImporter {
           if $0.keys.count != 754 {
             throw Error.tensorWritesFailed
           }
-        case .sd3, .kandinsky21, .wurstchenStageB:
+        case .sd3:
+          if $0.keys.count != 1157 {
+            throw Error.tensorWritesFailed
+          }
+        case .kandinsky21, .wurstchenStageB:
           fatalError()
         }
       }
