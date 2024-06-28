@@ -60,16 +60,37 @@ private func JointTransformerBlock(
   var out: Model.IO
   switch usesFlashAtttention {
   case .none:
-    keys = keys.reshaped([b, t + hw, h, k]).permuted(0, 2, 1, 3)
+    keys = keys.reshaped([b, t + hw, h, k]).transposed(1, 2)
     queries = ((1.0 / Float(k).squareRoot()) * queries).reshaped([b, t + hw, h, k])
-      .permuted(0, 2, 1, 3)
-    values = values.reshaped([b, t + hw, h, k]).permuted(0, 2, 1, 3)
-    var dot = Matmul(transposeB: (2, 3))(queries, keys)
-    dot = dot.reshaped([b * h * (t + hw), t + hw])
-    dot = dot.softmax()
-    dot = dot.reshaped([b, h, (t + hw), t + hw])
-    out = dot * values
-    out = out.reshaped([b, h, (t + hw), k]).transposed(1, 2).reshaped([b, (t + hw), h * k])
+      .transposed(1, 2)
+    values = values.reshaped([b, t + hw, h, k]).transposed(1, 2)
+    if b * h <= 256 {
+      var outs = [Model.IO]()
+      for i in 0..<(b * h) {
+        let key = keys.reshaped([1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let query = queries.reshaped(
+          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let value = values.reshaped(
+          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        var dot = Matmul(transposeB: (1, 2))(query, key)
+        if let last = outs.last {
+          dot.add(dependencies: [last])
+        }
+        dot = dot.reshaped([t + hw, t + hw])
+        dot = dot.softmax()
+        dot = dot.reshaped([1, t + hw, t + hw])
+        outs.append(dot * value)
+      }
+      out = Concat(axis: 0)(outs)
+      out = out.reshaped([b, h, t + hw, k]).transposed(1, 2).reshaped([b, t + hw, h * k])
+    } else {
+      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      dot = dot.reshaped([b * h * (t + hw), t + hw])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, t + hw, t + hw])
+      out = dot * values
+      out = out.reshaped([b, h, t + hw, k]).transposed(1, 2).reshaped([b, t + hw, h * k])
+    }
   case .scale1:
     keys = keys.reshaped([b, t + hw, h, k])
     queries = ((1.0 / Float(k).squareRoot()) * queries).reshaped([b, t + hw, h, k])

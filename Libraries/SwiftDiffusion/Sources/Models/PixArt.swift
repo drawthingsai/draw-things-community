@@ -55,8 +55,7 @@ private func SelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttention: B
     let queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, t, h, k])
     let values = tovalues(x).reshaped([b, t, h, k])
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1, upcast: false,
-      multiHeadOutputProjectionFused: true, name: "o")
+      scale: 1, multiHeadOutputProjectionFused: true, name: "o")
     let out = scaledDotProductAttention(queries, keys, values).reshaped([b, t, k * h])
     return (tokeys, toqueries, tovalues, scaledDotProductAttention, Model([x], [out]))
   } else {
@@ -65,12 +64,32 @@ private func SelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttention: B
     let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, t, h, k])
       .transposed(1, 2)
     let values = tovalues(x).reshaped([b, t, h, k]).transposed(1, 2)
-    var dot = Matmul(transposeB: (2, 3))(queries, keys)
-    dot = dot.reshaped([b * h * t, t])
-    dot = dot.softmax()
-    dot = dot.reshaped([b, h, t, t])
-    var out = dot * values
-    out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b, t, h * k])
+    var out: Model.IO
+    if b * h <= 256 {
+      var outs = [Model.IO]()
+      for i in 0..<(b * h) {
+        var key = keys.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
+        var query = queries.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
+        let value = values.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
+        var dot = Matmul(transposeB: (1, 2))(query, key)
+        if let last = outs.last {
+          dot.add(dependencies: [last])
+        }
+        dot = dot.reshaped([t, t])
+        dot = dot.softmax()
+        dot = dot.reshaped([1, t, t])
+        outs.append(dot * value)
+      }
+      out = Concat(axis: 0)(outs)
+      out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b, t, h * k])
+    } else {
+      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      dot = dot.reshaped([b * h * t, t])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, t, t])
+      out = dot * values
+      out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b, t, h * k])
+    }
     let unifyheads = Dense(count: k * h, name: "o")
     out = unifyheads(out)
     return (tokeys, toqueries, tovalues, unifyheads, Model([x], [out]))
@@ -175,6 +194,7 @@ private func CrossAttentionKeysAndValues(
       }
       out = Functional.concat(axis: 0, out0, out1)
     } else {
+      let queries = queries.transposed(1, 2)
       let keys0 = keys.reshaped(
         [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
       ).transposed(1, 2)
@@ -322,25 +342,32 @@ func PixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
   return (mapper, Model([x, posEmbed] + inputs, [out]))
 }
 
-private func CrossAttentionFixed(k: Int, h: Int, b: Int, t: Int, usesFlashAttention: Bool) -> (
-  Model, Model, Model
-) {
+private func CrossAttentionFixed(k: Int, h: Int, b: Int, t: (Int, Int), usesFlashAttention: Bool)
+  -> (
+    Model, Model, Model
+  )
+{
   let context = Input()
   let tokeys = Dense(count: k * h, name: "c_k")
   let tovalues = Dense(count: k * h, name: "c_v")
-  if usesFlashAttention {
-    let keys = tokeys(context).reshaped([b, t, h, k])
-    let values = tovalues(context).reshaped([b, t, h, k])
+  // We shouldn't transpose if we are going to do that within the UNet.
+  if t.0 == t.1 {
+    var keys = tokeys(context).reshaped([b, t.0, h, k])
+    var values = tovalues(context).reshaped([b, t.0, h, k])
+    if !usesFlashAttention {
+      keys = keys.transposed(1, 2)
+      values = values.transposed(1, 2)
+    }
     return (tokeys, tovalues, Model([context], [keys, values]))
   } else {
-    let keys = tokeys(context).reshaped([b, t, h, k]).transposed(1, 2)
-    let values = tovalues(context).reshaped([b, t, h, k]).transposed(1, 2)
+    let keys = tokeys(context)
+    let values = tovalues(context)
     return (tokeys, tovalues, Model([context], [keys, values]))
   }
 }
 
 func PixArtMSBlockFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, usesFlashAttention: Bool,
+  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), usesFlashAttention: Bool,
   of: FloatType.Type = FloatType.self
 ) -> (
   ModelWeightMapper, Model
@@ -384,7 +411,7 @@ func PixArtMSBlockFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
 }
 
 func PixArtFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  batchSize: Int, channels: Int, layers: Int, tokenLength: Int,
+  batchSize: Int, channels: Int, layers: Int, tokenLength: (Int, Int),
   usesFlashAttention: Bool, of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let t = Input()

@@ -318,7 +318,7 @@ extension UNetFixedEncoder {
       }
       let (_, unetFixed) = PixArtFixed(
         batchSize: cBatchSize, channels: 1152, layers: 28,
-        tokenLength: max(tokenLengthCond, tokenLengthUncond),
+        tokenLength: (tokenLengthUncond, tokenLengthCond),
         usesFlashAttention: usesFlashAttention, of: FloatType.self)
       unetFixed.compile(inputs: timeEmbeds, c)
       graph.openStore(
