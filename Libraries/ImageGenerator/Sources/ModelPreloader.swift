@@ -537,7 +537,8 @@ extension ModelPreloader {
             vector
             + fixedEncoder.encode(
               textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
-              startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: []
+              startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
+              tiledDiffusion: tiledDiffusion
             ).0  // No need to pass lora, one off use.
         }
         let _ = unet.compileModel(

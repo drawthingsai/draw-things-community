@@ -372,7 +372,9 @@ public enum LoRAImporter {
           + fixedEncoder.encode(
             textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0], batchSize: 2, startHeight: 64,
             startWidth: 64,
-            tokenLengthUncond: 77, tokenLengthCond: 77, lora: []
+            tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
+            tiledDiffusion: TiledConfiguration(
+              isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0)
           ).0.map({ $0.toCPU() })
         unet.compile(inputs: [xTensor, tEmb] + cArr)
         if modelVersion == .ssd1b {

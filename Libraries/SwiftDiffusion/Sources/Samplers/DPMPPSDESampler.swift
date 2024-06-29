@@ -226,7 +226,7 @@ extension DPMPPSDESampler: Sampler {
       let (encodings, weightMapper) = fixedEncoder.encode(
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
-        tokenLengthCond: tokenLengthCond, lora: lora)
+        tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion)
       c = vector + encodings
       injectedControlsC = injectedControls.map {
         $0.model.encode(
@@ -396,7 +396,7 @@ extension DPMPPSDESampler: Sampler {
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
-                tokenLengthCond: tokenLengthCond, lora: lora
+                tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion
               ).0
             indexOffset = i
           }

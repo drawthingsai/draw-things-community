@@ -623,7 +623,6 @@ extension UNetFromNNC {
     let shape = xT.shape
     let startHeight = shape[1]
     let startWidth = shape[2]
-    let channels = shape[3]
     let tileScaleFactor = version == .wurstchenStageB ? 16 : 8
     let tiledWidth =
       tiledDiffusion.isEnabled
@@ -660,7 +659,8 @@ extension UNetFromNNC {
       }
     }
     let etRawValues = et.map { $0.rawValue.toCPU() }
-    var etRaw = Tensor<FloatType>(.CPU, .NHWC(shape[0], startHeight, startWidth, shape[3]))
+    let channels = etRawValues[0].shape[3]
+    var etRaw = Tensor<FloatType>(.CPU, .NHWC(shape[0], startHeight, startWidth, channels))
     etRaw.withUnsafeMutableBytes {
       guard var fp = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
       for b in 0..<shape[0] {
@@ -668,7 +668,7 @@ extension UNetFromNNC {
           let yWeightAndIndex = yTileWeightsAndIndexes[j]
           for i in 0..<startWidth {
             let xWeightAndIndex = xTileWeightsAndIndexes[i]
-            for k in 0..<shape[3] {
+            for k in 0..<channels {
               fp[k] = 0
             }
             for y in yWeightAndIndex {

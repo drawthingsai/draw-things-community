@@ -2823,7 +2823,8 @@ extension ImageGenerator {
         return (nil, 1)
       }
       if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
-        || modelVersion == .ssd1b || modelVersion == .wurstchenStageC
+        || modelVersion == .ssd1b || modelVersion == .wurstchenStageC || modelVersion == .sd3
+        || modelVersion == .pixart
       {
         DynamicGraph.flags = []
       }

@@ -163,7 +163,7 @@ extension UNetFixedEncoder {
   public func encode(
     textEncoding: [DynamicGraph.Tensor<FloatType>], timesteps: [Float], batchSize: Int,
     startHeight: Int, startWidth: Int, tokenLengthUncond: Int, tokenLengthCond: Int,
-    lora: [LoRAConfiguration]
+    lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration
   ) -> ([DynamicGraph.Tensor<FloatType>], ModelWeightMapper?) {
     let graph = textEncoding[0].graph
     let lora = lora.filter { $0.version == version }
@@ -289,8 +289,13 @@ extension UNetFixedEncoder {
     case .v1, .v2, .kandinsky21:
       return (textEncoding, nil)
     case .pixart:
-      let h = startHeight / 2
-      let w = startWidth / 2
+      let tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      let tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      let h = tiledHeight / 2
+      let w = tiledWidth / 2
       let posEmbed = graph.variable(
         Tensor<FloatType>(from: sinCos2DPositionEmbedding(height: h, width: w, embeddingSize: 1152))
           .reshaped(.HWC(1, h * w, 1152)).toGPU(0))
