@@ -55,7 +55,7 @@ struct Converter: ParsableCommand {
       textEncoder = fileNames.first {
         $0.hasSuffix("_open_clip_vit_h14_f16.ckpt")
       }
-    case .sdxlBase, .ssd1b, .sd3:
+    case .sdxlBase, .ssd1b, .sd3, .pixart:
       clipEncoder = fileNames.first {
         $0.hasSuffix("_clip_vit_l14_f16.ckpt")
       }
