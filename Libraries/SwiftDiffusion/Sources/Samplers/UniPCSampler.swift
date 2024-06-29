@@ -603,6 +603,9 @@ extension UniPCSampler: Sampler {
               et = etUncond + textGuidanceScale * (etCond - etUncond)
             }
           } else {
+            if channels < etOut.shape[3] {
+              etOut = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+            }
             if let blur = blur {
               let etOutDegraded = blur(inputs: etOut)[0].as(of: FloatType.self)
               etOut = Functional.add(

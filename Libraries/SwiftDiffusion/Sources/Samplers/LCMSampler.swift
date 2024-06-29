@@ -434,6 +434,9 @@ extension LCMSampler: Sampler {
           injectedControlsAndAdapters: injectedControlsAndAdapters,
           injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
           controlNets: &controlNets)
+        if channels < etOut.shape[3] {
+          etOut = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+        }
         if let blur = blur {
           let alpha =
             0.001 * sharpness * (discretization.timesteps - Float(timestep))
