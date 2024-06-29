@@ -622,16 +622,17 @@ extension ImageGenerator {
     graph: DynamicGraph, tokenizer: Tokenizer & TextualInversionPoweredTokenizer,
     text: String, negativeText: String, paddingToken: Int32?, conditionalLength: Int,
     modifier: TextualInversionZoo.Modifier, potentials: [String], startLength: Int = 1,
-    maxLength: Int = 77
+    maxLength: Int = 77, paddingLength: Int = 77
   ) -> (
     [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<FloatType>],
     [DynamicGraph.Tensor<FloatType>], [Float], [Float], Bool, Int, Int, [Int], [Int]
   ) {
+    let paddingLength = max(maxLength, paddingLength)
     var (_, unconditionalTokens, unconditionalAttentionWeights, _, lengthsOfUncond) =
       tokenizer.tokenize(
-        text: negativeText, truncation: false, maxLength: maxLength, paddingToken: paddingToken)
+        text: negativeText, truncation: false, maxLength: paddingLength, paddingToken: paddingToken)
     var (_, tokens, attentionWeights, _, lengthsOfCond) = tokenizer.tokenize(
-      text: text, truncation: false, maxLength: maxLength, paddingToken: paddingToken)
+      text: text, truncation: false, maxLength: paddingLength, paddingToken: paddingToken)
     var unconditionalTokensCount = unconditionalTokens.count
     // If textual inversion is multivector, add the count.
     for token in unconditionalTokens {
@@ -696,7 +697,7 @@ extension ImageGenerator {
       (attentionWeights.contains { $0 != 1 })
       || (unconditionalAttentionWeights.contains { $0 != 1 })
     let tokenLength = max(unconditionalTokensCount, tokensCount)
-    if tokenLength > maxLength {
+    if tokenLength > paddingLength {
       (_, unconditionalTokens, unconditionalAttentionWeights, _, lengthsOfUncond) =
         tokenizer.tokenize(
           text: negativeText, truncation: true, maxLength: tokenLength, paddingToken: paddingToken)
@@ -815,16 +816,16 @@ extension ImageGenerator {
       prefixLength += length
     }
     var tokenLengthUncond = tokenLength
-    // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than maxLength.
+    // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than paddingLength.
     if prefixLength < tokenLength - 1 {
-      if maxPosition + 1 + startLength > maxLength {  // If it is maxLength, we can go to later to find i
+      if maxPosition + 1 + startLength > paddingLength {  // If it is paddingLength, we can go to later to find i
         tokenLengthUncond = prefixLength + 1
       }
       var position = maxPosition + 1
       for i in prefixLength..<(tokenLength - 1) {
         positionTensor[i] = Int32(min(position, maxLength - 1))
         position += 1
-        if position == maxLength {
+        if position == paddingLength {
           tokenLengthUncond = i + 1
         }
       }
@@ -844,16 +845,16 @@ extension ImageGenerator {
       prefixLength += length
     }
     var tokenLengthCond = tokenLength
-    // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than 77.
+    // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than paddingLength.
     if prefixLength < tokenLength - 1 {
-      if maxPosition + 1 + startLength > maxLength {  // If it is 77, we can go to later to find i
+      if maxPosition + 1 + startLength > paddingLength {  // If it is paddingLength, we can go to later to find i
         tokenLengthCond = prefixLength + 1
       }
       var position = maxPosition + 1
       for i in prefixLength..<(tokenLength - 1) {
         positionTensor[tokenLength + i] = Int32(min(position, maxLength - 1))
         position += 1
-        if position == maxLength {
+        if position == paddingLength {
           tokenLengthCond = i + 1
         }
       }
@@ -900,7 +901,8 @@ extension ImageGenerator {
 
   private func tokenize(
     graph: DynamicGraph, modelVersion: ModelVersion, text: String, negativeText: String,
-    negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool
+    negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool, clipL: String?,
+    openClipG: String?
   ) -> (
     [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<FloatType>],
     [DynamicGraph.Tensor<FloatType>], [Float], [Float], Bool, Int, Int, [Int], [Int]
@@ -945,20 +947,36 @@ extension ImageGenerator {
       return tokenize(
         graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
         paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
-        startLength: 0, maxLength: 0)
+        startLength: 0, maxLength: 0, paddingLength: 0)
     case .sd3:
       let tokenizerV2 = tokenizerXL
       var tokenizerV1 = tokenizerV1
       tokenizerV1.textualInversions = tokenizerV2.textualInversions
       var result = tokenize(
-        graph: graph, tokenizer: tokenizerV2, text: text, negativeText: negativeText,
+        graph: graph, tokenizer: tokenizerV2, text: openClipG ?? text, negativeText: negativeText,
         paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
-      let (tokens, _, embedMask, injectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
-        graph: graph, tokenizer: tokenizerV1, text: text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials)
+      assert(result.7 >= 77 && result.8 >= 77)
+      let (
+        tokens, _, embedMask, injectedEmbeddings, _, _, _, tokenLengthUncond, tokenLengthCond, _, _
+      ) = tokenize(
+        graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials,
+        paddingLength: max(result.7, result.8))
       result.0 = tokens + result.0
       result.2 = embedMask + result.2
       result.3 = injectedEmbeddings + result.3
+      if max(result.7, result.8) < max(tokenLengthUncond, tokenLengthCond) {
+        // We need to redo this for initial result from OpenCLIP G to make sure they are aligned.
+        result = tokenize(
+          graph: graph, tokenizer: tokenizerV2, text: openClipG ?? text, negativeText: negativeText,
+          paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials,
+          paddingLength: max(tokenLengthUncond, tokenLengthCond))
+        result.0 = tokens + result.0
+        result.2 = embedMask + result.2
+        result.3 = injectedEmbeddings + result.3
+      }
+      result.7 = tokenLengthUncond
+      result.8 = tokenLengthCond
       if T5TextEncoder {
         let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
           graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
@@ -966,6 +984,7 @@ extension ImageGenerator {
         result.0 = result.0 + t5Tokens
         result.2 = result.2 + t5EmbedMask
         result.3 = result.3 + t5InjectedEmbeddings
+        // tokenLengthUncond / tokenLengthCond are used by causalAttentionMask, hence used by CLIP, not by T5. No need to update.
       }
       return result
     }
@@ -2306,8 +2325,9 @@ extension ImageGenerator {
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
-      potentials: potentials,
-      T5TextEncoder: configuration.t5TextEncoder
+      potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
+      clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
+      openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil
     )
     let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     return graph.withNoGrad {
@@ -3127,8 +3147,9 @@ extension ImageGenerator {
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
-      potentials: potentials,
-      T5TextEncoder: configuration.t5TextEncoder
+      potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
+      clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
+      openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil
     )
     let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     var signposts = Set<Signpost>([
@@ -4311,8 +4332,9 @@ extension ImageGenerator {
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
-      potentials: potentials,
-      T5TextEncoder: configuration.t5TextEncoder
+      potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
+      clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
+      openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil
     )
     let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     signposts.formUnion([
@@ -4994,8 +5016,9 @@ extension ImageGenerator {
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
-      potentials: potentials,
-      T5TextEncoder: configuration.t5TextEncoder
+      potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
+      clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
+      openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil
     )
     let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     signposts.formUnion([
