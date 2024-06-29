@@ -449,13 +449,14 @@ public struct ModelZoo: DownloadZoo {
       name: "Stable Video Diffusion I2V v1.0", file: "svd_i2v_1.0_f16.ckpt", prefix: "",
       version: .svdI2v,
       defaultScale: 8, textEncoder: "open_clip_vit_h14_vision_model_f16.ckpt",
-      clipEncoder: "svd_i2v_1.0_f16.ckpt", conditioning: .noise, objective: .v,
+      deprecated: true, clipEncoder: "svd_i2v_1.0_f16.ckpt", conditioning: .noise, objective: .v,
       noiseDiscretization: .edm(.init(sigmaMax: 700.0))),
     Specification(
       name: "Stable Video Diffusion I2V 1.0 (8-bit)", file: "svd_i2v_1.0_q6p_q8p.ckpt", prefix: "",
       version: .svdI2v,
       defaultScale: 8, textEncoder: "open_clip_vit_h14_vision_model_f16.ckpt",
-      clipEncoder: "svd_i2v_1.0_q6p_q8p.ckpt", conditioning: .noise, objective: .v,
+      deprecated: true, clipEncoder: "svd_i2v_1.0_q6p_q8p.ckpt", conditioning: .noise,
+      objective: .v,
       noiseDiscretization: .edm(.init(sigmaMax: 700.0))),
     Specification(
       name: "Stable Video Diffusion I2V XT v1.0", file: "svd_i2v_xt_1.0_f16.ckpt", prefix: "",
@@ -474,13 +475,14 @@ public struct ModelZoo: DownloadZoo {
       name: "Stable Video Diffusion I2V XT v1.1", file: "svd_i2v_xt_1.1_f16.ckpt", prefix: "",
       version: .svdI2v,
       defaultScale: 8, textEncoder: "open_clip_vit_h14_vision_model_f16.ckpt",
-      clipEncoder: "svd_i2v_xt_1.1_f16.ckpt", conditioning: .noise, objective: .v,
+      deprecated: true, clipEncoder: "svd_i2v_xt_1.1_f16.ckpt", conditioning: .noise, objective: .v,
       noiseDiscretization: .edm(.init(sigmaMax: 700.0))),
     Specification(
       name: "Stable Video Diffusion I2V XT 1.1 (8-bit)", file: "svd_i2v_xt_1.1_q6p_q8p.ckpt",
       prefix: "", version: .svdI2v,
       defaultScale: 8, textEncoder: "open_clip_vit_h14_vision_model_f16.ckpt",
-      clipEncoder: "svd_i2v_xt_1.1_q6p_q8p.ckpt", conditioning: .noise, objective: .v,
+      deprecated: true, clipEncoder: "svd_i2v_xt_1.1_q6p_q8p.ckpt", conditioning: .noise,
+      objective: .v,
       noiseDiscretization: .edm(.init(sigmaMax: 700.0))),
     Specification(
       name: "Playground v2.5", file: "playground_v2.5_f16.ckpt", prefix: "",
