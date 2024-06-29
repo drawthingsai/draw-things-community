@@ -365,12 +365,20 @@ public struct ModelZoo: DownloadZoo {
       stageModels: ["wurstchen_3.0_stage_b_q6p_q8p.ckpt"]
     ),
     Specification(
-      name: "PixArt Sigma XL", file: "pixart_sigma_xl_2_1024_ms_f16.ckpt", prefix: "",
+      name: "PixArt Sigma XL 1K", file: "pixart_sigma_xl_2_1024_ms_f16.ckpt", prefix: "",
       version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
     Specification(
-      name: "PixArt Sigma XL (8-bit)", file: "pixart_sigma_xl_2_1024_ms_q8p.ckpt", prefix: "",
+      name: "PixArt Sigma XL 1K (8-bit)", file: "pixart_sigma_xl_2_1024_ms_q8p.ckpt", prefix: "",
       version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
+    Specification(
+      name: "PixArt Sigma XL 512", file: "pixart_sigma_xl_2_512_ms_f16.ckpt", prefix: "",
+      version: .pixart, defaultScale: 8, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
+    Specification(
+      name: "PixArt Sigma XL 512 (8-bit)", file: "pixart_sigma_xl_2_512_ms_q8p.ckpt", prefix: "",
+      version: .pixart, defaultScale: 8, textEncoder: "t5_xxl_encoder_q6p.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
     Specification(
       name: "LCM SDXL Base (v1.0)", file: "lcm_sd_xl_base_1.0_f16.ckpt", prefix: "",
