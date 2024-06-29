@@ -132,6 +132,10 @@ table TensorHistoryNode {
   upscaler_scale_factor: ubyte = 0;
   script_session_id: ulong;
   t5_text_encoder: bool = true;
+  separate_clip_l: bool = false;
+  clip_l_text: string;
+  separate_open_clip_g: bool = false;
+  open_clip_g_text: string;
 }
 
 root_type TensorHistoryNode;

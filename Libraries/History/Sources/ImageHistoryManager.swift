@@ -422,7 +422,11 @@ public final class ImageHistoryManager {
       diffusionTileHeight: imageHistory.diffusionTileHeight,
       diffusionTileOverlap: imageHistory.diffusionTileOverlap,
       upscalerScaleFactor: imageHistory.upscalerScaleFactor,
-      t5TextEncoder: imageHistory.t5TextEncoder
+      t5TextEncoder: imageHistory.t5TextEncoder,
+      separateClipL: imageHistory.separateClipL,
+      clipLText: imageHistory.clipLText,
+      separateOpenClipG: imageHistory.separateOpenClipG,
+      openClipGText: imageHistory.openClipGText
     )
     dataStored = imageData.sorted(by: { $0.index < $1.index }).map {
       let tensorId = $0.tensorId == 0 ? nil : $0.tensorId
@@ -654,7 +658,11 @@ public final class ImageHistoryManager {
       diffusionTileOverlap: configuration.diffusionTileOverlap,
       upscalerScaleFactor: configuration.upscalerScaleFactor,
       scriptSessionId: scriptSessionId,
-      t5TextEncoder: configuration.t5TextEncoder
+      t5TextEncoder: configuration.t5TextEncoder,
+      separateClipL: configuration.separateClipL,
+      clipLText: configuration.clipLText,
+      separateOpenClipG: configuration.separateOpenClipG,
+      openClipGText: configuration.openClipGText
     )
     let imageVersion = uniqueVersion()
     nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)

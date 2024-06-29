@@ -114,6 +114,10 @@ table GenerationConfiguration {
   diffusion_tile_overlap: ushort = 2;
   upscaler_scale_factor: ubyte = 0;
   t5_text_encoder: bool = true;
+  separate_clip_l: bool = false;
+  clip_l_text: string;
+  separate_open_clip_g: bool = false;
+  open_clip_g_text: string;
 }
 
 root_type GenerationConfiguration;

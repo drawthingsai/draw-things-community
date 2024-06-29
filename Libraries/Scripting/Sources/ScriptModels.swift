@@ -130,6 +130,10 @@ public final class JSGenerationConfiguration: Codable {
   let stochasticSamplingGamma: Float32
   let preserveOriginalAfterInpaint: Bool
   let t5TextEncoder: Bool
+  let separateClipL: Bool
+  let clipLText: String?
+  let separateOpenClipG: Bool
+  let openClipGText: String?
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -194,6 +198,10 @@ public final class JSGenerationConfiguration: Codable {
     stochasticSamplingGamma = configuration.stochasticSamplingGamma
     preserveOriginalAfterInpaint = configuration.preserveOriginalAfterInpaint
     t5TextEncoder = configuration.t5TextEncoder
+    separateClipL = configuration.separateClipL
+    clipLText = configuration.clipLText
+    separateOpenClipG = configuration.separateOpenClipG
+    openClipGText = configuration.openClipGText
   }
 
   public func createGenerationConfiguration() -> GenerationConfiguration {
@@ -232,7 +240,11 @@ public final class JSGenerationConfiguration: Codable {
       diffusionTileHeight: UInt16(diffusionTileHeight / 64),
       diffusionTileOverlap: UInt16(diffusionTileOverlap / 64),
       upscalerScaleFactor: upscalerScaleFactor,
-      t5TextEncoder: t5TextEncoder
+      t5TextEncoder: t5TextEncoder,
+      separateClipL: separateClipL,
+      clipLText: clipLText,
+      separateOpenClipG: separateOpenClipG,
+      openClipGText: openClipGText
     )
   }
 }
