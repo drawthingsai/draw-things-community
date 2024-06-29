@@ -604,11 +604,6 @@ extension PLMSSampler: Sampler {
               }
               etNext = etNextUncond + textGuidanceVector .* (etNextCond - etNextUncond)
             } else {
-              if channels < etNextCond.shape[3] {
-                etNextCond = etNextCond[
-                  0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels
-                ].copied()
-              }
               if let blur = blur {
                 let etNextCondDegraded = blur(inputs: etNextCond)[0].as(of: FloatType.self)
                 etNextCond = Functional.add(
@@ -676,6 +671,11 @@ extension PLMSSampler: Sampler {
                 etNext = etNextUncond + textGuidanceScale * (etNextCond - etNextUncond)
               }
             } else {
+              if channels < etNextOut.shape[3] {
+                etNextOut = etNextOut[
+                  0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels
+                ].copied()
+              }
               if let blur = blur {
                 let etNextOutDegraded = blur(inputs: etNextOut)[0].as(of: FloatType.self)
                 etNextOut = Functional.add(
