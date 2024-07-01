@@ -390,11 +390,22 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      (_, unet) =
-        MMDiT(
-          batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-          width: tiledWidth, channels: 1536, layers: 24,
-          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        (_, unet) =
+          LoRAMMDiT(
+            batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
+            width: tiledWidth, channels: 1536, layers: 24,
+            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+            LoRAConfiguration: configuration, of: FloatType.self)
+      } else {
+        (_, unet) =
+          MMDiT(
+            batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
+            width: tiledWidth, channels: 1536, layers: 24,
+            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
+      }
     case .pixart:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -504,7 +515,12 @@ extension UNetFromNNC {
               return LoRAMapping.SDUNetXLSSD1B
             case .v1, .v2:
               return LoRAMapping.SDUNet
-            case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+            case .sd3:
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<24).map {
+                  return ($0, $0)
+                })
+            case .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
           }()

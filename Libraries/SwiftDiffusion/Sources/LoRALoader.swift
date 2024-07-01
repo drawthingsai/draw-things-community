@@ -90,13 +90,24 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     guard components.count >= 3, let index = Int(components[2]),
       let originalIndex = LoRAMapping[index]
     else { return .final(tensor) }
+    var infix = components[1].replacingOccurrences(of: "lora_up", with: "").replacingOccurrences(
+      of: "lora_down", with: "")
+    // In case infix has _, remove them.
+    if infix.hasSuffix("_") {
+      infix = String(infix.prefix(upTo: infix.index(before: infix.endIndex)))
+    }
+    let originalPrefix: String
+    if infix.isEmpty {
+      originalPrefix = "\(components[0])-\(originalIndex)-0]"
+    } else {
+      originalPrefix = "\(components[0])-\(infix)-\(originalIndex)-0]"
+    }
     let isUp = name.contains("lora_up")
     var rank = 0
     let tensorShape = tensor.shape
     for (store, weight) in zip(stores, weights) {
       guard !filesRequireMerge.contains(store.file) else { continue }
       let store = store.1
-      let originalPrefix = "\(components[0])-\(originalIndex)-0]"
       guard
         let loadedTensor = store.read(
           originalPrefix + (isUp ? "__up__" : "__down__"),

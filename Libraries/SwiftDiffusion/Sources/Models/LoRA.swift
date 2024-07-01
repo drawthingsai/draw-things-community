@@ -31,10 +31,10 @@ public func LoRAConvolution(
   }
   let conv2dDown = Convolution(
     groups: groups, filters: configuration.rank, filterSize: filterSize, noBias: true, hint: hint,
-    format: format, trainable: true, name: "lora_down")
+    format: format, trainable: true, name: name.isEmpty ? "lora_down" : "\(name)_lora_down")
   let conv2dUp = Convolution(
     groups: groups, filters: filters, filterSize: [1, 1], noBias: true, hint: Hint(stride: [1, 1]),
-    format: format, trainable: true, name: "lora_up")
+    format: format, trainable: true, name: name.isEmpty ? "lora_up" : "\(name)_lora_up")
   var out = conv2d(x)
   if configuration.scale != 1 {
     out =
@@ -59,8 +59,11 @@ public func LoRADense(
   guard configuration.rank > 0 else {
     return dense
   }
-  let denseDown = Dense(count: configuration.rank, noBias: true, trainable: true, name: "lora_down")
-  let denseUp = Dense(count: count, noBias: true, trainable: true, name: "lora_up")
+  let denseDown = Dense(
+    count: configuration.rank, noBias: true, trainable: true,
+    name: name.isEmpty ? "lora_down" : "\(name)_lora_down")
+  let denseUp = Dense(
+    count: count, noBias: true, trainable: true, name: name.isEmpty ? "lora_up" : "\(name)_lora_up")
   var out = dense(x)
   if configuration.scale != 1 {
     out =
