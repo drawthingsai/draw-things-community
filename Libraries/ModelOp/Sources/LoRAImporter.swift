@@ -48,6 +48,16 @@ public enum LoRAImporter {
     return isDiagonal
   }
 
+  static private func findKeysAndValues(_ dictionary: [String: [String]], keys: [String]) -> (
+    String, [String]
+  )? {
+    for key in keys {
+      guard let value = dictionary[key] else { continue }
+      return (key, value)
+    }
+    return nil
+  }
+
   public static func `import`(
     downloadedFile: String, name: String, filename: String, forceVersion: ModelVersion?,
     progress: (Float) -> Void
@@ -112,8 +122,30 @@ public enum LoRAImporter {
       if components[1] == "base_model" {
         components.remove(at: 1)
       }
+      if components[0] == "base_model" {
+        components.remove(at: 0)
+      }
       let newKey = components[0..<(components.count - 2)].joined(separator: "_")
       let isUp = key.hasSuffix(".lora_B.weight")
+      if isUp {
+        stateDict[newKey + ".lora_up.weight"] = stateDict[key]
+      } else {
+        stateDict[newKey + ".lora_down.weight"] = stateDict[key]
+      }
+    }
+    // Fix the LoRA formulation for diffusers.
+    for key in keys {
+      guard key.hasSuffix(".lora.up.weight") || key.hasSuffix(".lora.down.weight") else { continue }
+      var components = key.components(separatedBy: ".")
+      guard components.count > 4 else { continue }
+      if components[1] == "base_model" {
+        components.remove(at: 1)
+      }
+      if components[0] == "base_model" {
+        components.remove(at: 0)
+      }
+      let newKey = components[0..<(components.count - 3)].joined(separator: "_")
+      let isUp = key.hasSuffix(".lora.up.weight")
       if isUp {
         stateDict[newKey + ".lora_up.weight"] = stateDict[key]
       } else {
@@ -144,49 +176,55 @@ public enum LoRAImporter {
       stateDict[newKey.dropLast(9) + ".diff"] = stateDict[key]
     }
     let modelVersion: ModelVersion = try {
-      guard
-        let tokey = stateDict.first(where: {
-          $0.key.hasSuffix(
-            "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
-            || $0.key.hasSuffix(
-              "up_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
-            || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.lora_down.weight")
-            || $0.key.hasSuffix(
-              "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.hada_w1_b")
-            || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w1_b")
-        })?.value
-          ?? stateDict.first(where: {
-            $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.lora_down.weight")
-              || $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.hada_w1_b")
-          })?.value
-      else {
-        if let forceVersion = forceVersion {
-          return forceVersion
-        }
-        throw UnpickleError.tensorNotFound
+      let isSD3 = stateDict.keys.contains {
+        $0.contains("joint_blocks_23_context_block_")
+          || $0.contains("transformer_blocks_22_ff_context_")
       }
-      switch tokey.shape.last {
-      case 2048:
-        if !stateDict.keys.contains(where: {
-          $0.contains("mid_block_attentions_0_transformer_blocks_")
-            || $0.contains("middle_block_1_transformer_blocks_")
-        }) {
-          return .ssd1b
-        } else {
-          return .sdxlBase
+      if let tokey = stateDict.first(where: {
+        $0.key.hasSuffix(
+          "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
+          || $0.key.hasSuffix(
+            "up_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
+          || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.lora_down.weight")
+          || $0.key.hasSuffix(
+            "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.hada_w1_b")
+          || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w1_b")
+      })?.value
+        ?? stateDict.first(where: {
+          $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.lora_down.weight")
+            || $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.hada_w1_b")
+        })?.value
+      {
+        switch tokey.shape.last {
+        case 2048:
+          if !stateDict.keys.contains(where: {
+            $0.contains("mid_block_attentions_0_transformer_blocks_")
+              || $0.contains("middle_block_1_transformer_blocks_")
+          }) {
+            return .ssd1b
+          } else {
+            return .sdxlBase
+          }
+        case 1280:
+          return .sdxlRefiner
+        case 1024:
+          return .v2
+        case 768:
+          // Check if it has lora_te2, if it does, this might be text-encoder only SDXL Base.
+          if stateDict.contains(where: { $0.key.hasPrefix("lora_te2_") }) {
+            return .sdxlBase
+          } else {
+            return .v1
+          }
+        default:
+          if let forceVersion = forceVersion {
+            return forceVersion
+          }
+          throw UnpickleError.tensorNotFound
         }
-      case 1280:
-        return .sdxlRefiner
-      case 1024:
-        return .v2
-      case 768:
-        // Check if it has lora_te2, if it does, this might be text-encoder only SDXL Base.
-        if stateDict.contains(where: { $0.key.hasPrefix("lora_te2_") }) {
-          return .sdxlBase
-        } else {
-          return .v1
-        }
-      default:
+      } else if isSD3 {
+        return .sd3
+      } else {
         if let forceVersion = forceVersion {
           return forceVersion
         }
@@ -210,7 +248,11 @@ public enum LoRAImporter {
       textModelMapping1 = StableDiffusionMapping.OpenCLIPTextModelG
       textModelMapping1.merge(StableDiffusionMapping.OpenCLIPTextModelGTransformers) { v, _ in v }
       textModelMapping2 = [:]
-    case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+    case .sd3:
+      // We don't support LoRA on text encoder for SD3 yet.
+      textModelMapping1 = [:]
+      textModelMapping2 = [:]
+    case .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
     var swapTE2 = false
@@ -270,7 +312,9 @@ public enum LoRAImporter {
         parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] = value
     }
     var UNetMappingFixed = [String: [String]]()
-    if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
+    if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
+      || modelVersion == .sd3
+    {
       let unet: Model
       let unetFixed: Model
       let unetMapper: ModelWeightMapper
@@ -308,7 +352,12 @@ public enum LoRAImporter {
           embeddingLength: (77, 77), inputAttentionRes: [2: [4, 4], 4: [4, 4]],
           middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
           usesFlashAttention: .none, isTemporalMixEnabled: false)
-      case .v1, .v2, .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .sd3:
+        (unetMapper, unet) = MMDiT(
+          batchSize: 2, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
+          usesFlashAttention: .none, of: FloatType.self)
+        (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: 2, channels: 1536, layers: 24)
+      case .v1, .v2, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       case .ssd1b:
         (unet, _, unetMapper) = UNetXL(
@@ -326,34 +375,59 @@ public enum LoRAImporter {
       }
       let graph = DynamicGraph()
       graph.withNoGrad {
+        let inputDim: Int
         let conditionalLength: Int
         switch modelVersion {
         case .v1:
+          inputDim = 4
           conditionalLength = 768
         case .v2:
+          inputDim = 4
           conditionalLength = 1024
         case .sdxlBase, .sdxlRefiner, .ssd1b:
+          inputDim = 4
           conditionalLength = 1280
-        case .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        case .sd3:
+          inputDim = 16
+          conditionalLength = 4096
+        case .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
-        let crossattn: DynamicGraph.Tensor<FloatType>
+        let crossattn: [DynamicGraph.Tensor<FloatType>]
+        let tEmb: DynamicGraph.Tensor<FloatType>?
         switch modelVersion {
         case .sdxlBase, .ssd1b:
-          crossattn = graph.variable(.CPU, .HWC(2, 77, 2048), of: FloatType.self)
+          crossattn = [graph.variable(.CPU, .HWC(2, 77, 2048), of: FloatType.self)]
+          tEmb = graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: 981, batchSize: 2, embeddingSize: 320,
+                maxPeriod: 10_000)
+            ))
         case .sdxlRefiner:
-          crossattn = graph.variable(.CPU, .HWC(2, 77, 1280), of: FloatType.self)
-        case .v1, .v2, .sd3, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+          crossattn = [graph.variable(.CPU, .HWC(2, 77, 1280), of: FloatType.self)]
+          tEmb = graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: 981, batchSize: 2, embeddingSize: 384,
+                maxPeriod: 10_000)
+            ))
+        case .sd3:
+          crossattn = [
+            graph.variable(.CPU, .WC(2, 2048), of: FloatType.self),
+            graph.variable(
+              Tensor<FloatType>(
+                from: timeEmbedding(
+                  timestep: 1000, batchSize: 2, embeddingSize: 256, maxPeriod: 10_000)
+              ).reshaped(.WC(2, 256))
+            ), graph.variable(.CPU, .HWC(2, 154, 4096), of: FloatType.self),
+          ]
+          tEmb = nil
+        case .v1, .v2, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
         unetFixed.compile(inputs: crossattn)
-        let tEmb = graph.variable(
-          Tensor<FloatType>(
-            from: timeEmbedding(
-              timestep: 981, batchSize: 2, embeddingSize: modelVersion == .sdxlRefiner ? 384 : 320,
-              maxPeriod: 10_000)
-          ))
-        let xTensor = graph.variable(.CPU, .NHWC(2, 64, 64, 4), of: FloatType.self)
+        let xTensor = graph.variable(.CPU, .NHWC(2, 64, 64, inputDim), of: FloatType.self)
         let cTensor = graph.variable(.CPU, .HWC(2, 77, conditionalLength), of: FloatType.self)
         var cArr = [cTensor]
         let fixedEncoder = UNetFixedEncoder<FloatType>(
@@ -367,8 +441,22 @@ public enum LoRAImporter {
           c.full(0)
         }
         // These values doesn't matter, it won't affect the model shape, just the input vector.
+        let vectors: [DynamicGraph.Tensor<FloatType>]
+        switch modelVersion {
+        case .sdxlBase, .ssd1b:
+          vectors = [graph.variable(.CPU, .WC(2, 2816), of: FloatType.self)]
+        case .sdxlRefiner:
+          vectors = [graph.variable(.CPU, .WC(2, 2560), of: FloatType.self)]
+        case .svdI2v:
+          vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
+        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3:
+          vectors = []
+        case .kandinsky21, .v1, .v2:
+          fatalError()
+        }
+        // These values doesn't matter, it won't affect the model shape, just the input vector.
         cArr =
-          [crossattn]
+          vectors
           + fixedEncoder.encode(
             textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0], batchSize: 2, startHeight: 64,
             startWidth: 64,
@@ -376,8 +464,9 @@ public enum LoRAImporter {
             tiledDiffusion: TiledConfiguration(
               isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0)
           ).0.map({ $0.toCPU() })
-        unet.compile(inputs: [xTensor, tEmb] + cArr)
-        if modelVersion == .ssd1b {
+        let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
+        unet.compile(inputs: inputs)
+        if modelVersion == .ssd1b || modelVersion == .sd3 {
           UNetMappingFixed = unetFixedMapper(.generativeModels)
           UNetMapping = unetMapper(.generativeModels)
         }
@@ -394,6 +483,10 @@ public enum LoRAImporter {
           UNetMapping[
             parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
             value
+        } else if parts[0] == "diffusion_model" {
+          UNetMapping[
+            parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+            value
         } else {
           UNetMapping[
             parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
@@ -407,6 +500,10 @@ public enum LoRAImporter {
         if parts[0] == "model" {
           UNetMappingFixed[
             parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+            value
+        } else if parts[0] == "diffusion_model" {
+          UNetMappingFixed[
+            parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
             value
         } else {
           UNetMappingFixed[
@@ -431,7 +528,42 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .sd3, .pixart:
+      case .sd3:
+        if let tensorDescClipG = stateDict["clip_g"] {
+          try archive.with(tensorDescClipG) {
+            let tensor = Tensor<FloatType>(from: $0)
+            store.write("string_to_param_clip_g", tensor: tensor)
+            textEmbeddingLength = tensorDescClipG.shape.count > 1 ? tensorDescClipG.shape[0] : 1
+            didImportTIEmbedding = true
+          }
+        }
+        if let tensorDescClipL = stateDict["clip_l"] {
+          try archive.with(tensorDescClipL) {
+            let tensor = Tensor<FloatType>(from: $0)
+            store.write("string_to_param_clip_l", tensor: tensor)
+            let textEmbeddingLengthClipL =
+              tensorDescClipL.shape.count > 1 ? tensorDescClipL.shape[0] : 1
+            guard textEmbeddingLengthClipL == textEmbeddingLength else {
+              textEmbeddingLength = 0
+              return
+            }
+            didImportTIEmbedding = true
+          }
+        }
+        if let tensorDescT5XXL = stateDict["t5_xxl"] {
+          try archive.with(tensorDescT5XXL) {
+            let tensor = Tensor<FloatType>(from: $0)
+            store.write("string_to_param_t5_xxl", tensor: tensor)
+            let textEmbeddingLengthT5XXL =
+              tensorDescT5XXL.shape.count > 1 ? tensorDescT5XXL.shape[0] : 1
+            guard textEmbeddingLengthT5XXL == textEmbeddingLength else {
+              textEmbeddingLength = 0
+              return
+            }
+            didImportTIEmbedding = true
+          }
+        }
+      case .pixart:
         fatalError()
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
         if let tensorDescClipG = stateDict["clip_g"] {
@@ -463,13 +595,16 @@ public enum LoRAImporter {
           let parts = key.components(separatedBy: "_")
           guard parts.count > 2 else { continue }
           let te2 = parts[1] == "te2"
-          let newParts = String(parts[2..<parts.count].joined(separator: "_")).components(
-            separatedBy: ".")  // Remove the first two.
-          guard newParts.count > 1 else { continue }
-          let newKey =
-            newParts[0..<(newParts.count > 2 ? newParts.count - 2 : newParts.count - 1)].joined(
-              separator: ".") + ".weight"
-          if let unetParams = UNetMapping[newKey] {
+          // Try to remove the prefixes.
+          let newKeys: [String] = (0..<2).compactMap {
+            let newParts = String(parts[$0..<parts.count].joined(separator: "_")).components(
+              separatedBy: ".")  // Remove the first two.
+            guard newParts.count > 1 else { return nil }
+            return newParts[0..<(newParts.count > 2 ? newParts.count - 2 : newParts.count - 1)]
+              .joined(
+                separator: ".") + ".weight"
+          }
+          if let (newKey, unetParams) = Self.findKeysAndValues(UNetMapping, keys: newKeys) {
             if key.hasSuffix("up.weight") {
               let scalar = try stateDict[
                 String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -14))) + "alpha"
@@ -557,7 +692,7 @@ public enum LoRAImporter {
               }
               isLoHa = true
             }
-          } else if let unetParams = UNetMappingFixed[newKey] {
+          } else if let (_, unetParams) = Self.findKeysAndValues(UNetMappingFixed, keys: newKeys) {
             if key.hasSuffix("up.weight") {
               let scalar = try stateDict[
                 String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -14))) + "alpha"
@@ -630,7 +765,9 @@ public enum LoRAImporter {
             } else {
               textModelMapping = textModelMapping1
             }
-            if let textParams = textModelMapping[newKey], let name = textParams.first {
+            if let (_, textParams) = Self.findKeysAndValues(textModelMapping, keys: newKeys),
+              let name = textParams.first
+            {
               if key.hasSuffix("up.weight") {
                 let scalar = try stateDict[
                   String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -14))) + "alpha"
@@ -687,18 +824,22 @@ public enum LoRAImporter {
           let parts = key.components(separatedBy: "_")
           guard parts.count > 2 else { continue }
           let te2 = parts[1] == "te2"
-          let newParts = String(parts[2..<parts.count].joined(separator: "_")).components(
-            separatedBy: ".")  // Remove the first two.
-          guard newParts.count > 1 else { continue }
-          var newKey =
-            newParts[0..<(newParts.count > 2 ? newParts.count - 2 : newParts.count - 1)].joined(
-              separator: ".")
-          if newParts[newParts.count - 1] == "diff" && newParts.count > 2 {
-            newKey = newKey + "." + newParts[newParts.count - 2]
-          } else {
-            newKey = newKey + ".weight"
+          // Try to remove the prefixes.
+          let newKeys: [String] = (0..<2).compactMap {
+            let newParts = String(parts[$0..<parts.count].joined(separator: "_")).components(
+              separatedBy: ".")  // Remove the first two.
+            guard newParts.count > 1 else { return nil }
+            var newKey =
+              newParts[0..<(newParts.count > 2 ? newParts.count - 2 : newParts.count - 1)].joined(
+                separator: ".")
+            if newParts[newParts.count - 1] == "diff" && newParts.count > 2 {
+              newKey = newKey + "." + newParts[newParts.count - 2]
+            } else {
+              newKey = newKey + ".weight"
+            }
+            return newKey
           }
-          if let unetParams = UNetMapping[newKey] {
+          if let (newKey, unetParams) = Self.findKeysAndValues(UNetMapping, keys: newKeys) {
             if key.hasSuffix("down.weight") {
               try archive.with(descriptor) {
                 let tensor = Tensor<FloatType>(from: $0)
@@ -768,7 +909,7 @@ public enum LoRAImporter {
                 }
               }
             }
-          } else if let unetParams = UNetMappingFixed[newKey] {
+          } else if let (_, unetParams) = Self.findKeysAndValues(UNetMappingFixed, keys: newKeys) {
             if key.hasSuffix("down.weight") {
               try archive.with(descriptor) {
                 let tensor = Tensor<FloatType>(from: $0)
@@ -807,7 +948,9 @@ public enum LoRAImporter {
             } else {
               textModelMapping = textModelMapping1
             }
-            if let textParams = textModelMapping[newKey], let name = textParams.first {
+            if let (_, textParams) = Self.findKeysAndValues(textModelMapping, keys: newKeys),
+              let name = textParams.first
+            {
               if key.hasSuffix("down.weight") {
                 try archive.with(descriptor) {
                   let tensor = Tensor<FloatType>(from: $0)
