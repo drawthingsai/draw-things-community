@@ -119,36 +119,14 @@ public final class ModelImporter {
     let inputDim: Int
     let isDiffusersFormat: Bool
     let expectedTotalAccess: Int
-    if isWurstchenStageC {
-      modelVersion = .wurstchenStageC
-      modifier = .none
-      inputDim = 16
-      expectedTotalAccess = 1550
-      isDiffusersFormat = false
-    } else if isPixArtSigmaXL {
-      modelVersion = .pixart
-      modifier = .none
-      inputDim = 4
-      expectedTotalAccess = 754
-      isDiffusersFormat = stateDict.keys.contains { $0.contains("transformer_blocks.27.") }
-    } else if isSD3 {
-      modelVersion = .sd3
-      modifier = .none
-      inputDim = 16
-      expectedTotalAccess = 1157
-      isDiffusersFormat = stateDict.keys.contains {
-        $0.contains("transformer_blocks.22.ff_context.")
-      }
-    } else {
-      guard
-        let tokey = stateDict[
-          "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight"]
-          ?? stateDict["down_blocks.1.attentions.0.transformer_blocks.0.attn2.to_k.weight"],
-        let inputConv2d = stateDict["model.diffusion_model.input_blocks.0.0.weight"]
-          ?? stateDict["conv_in.weight"]
-      else {
-        throw UnpickleError.tensorNotFound
-      }
+    // This is for SD v1, v2 and SDXL.
+    if let tokey = stateDict[
+      "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight"]
+      ?? stateDict["down_blocks.1.attentions.0.transformer_blocks.0.attn2.to_k.weight"],
+      let inputConv2d = stateDict["model.diffusion_model.input_blocks.0.0.weight"]
+        ?? stateDict["conv_in.weight"]
+    {
+
       inputDim = inputConv2d.shape.count >= 2 ? inputConv2d.shape[1] : 4
       switch inputDim {
       case 9:
@@ -195,6 +173,28 @@ public final class ModelImporter {
         throw UnpickleError.tensorNotFound
       }
       isDiffusersFormat = stateDict.keys.contains { $0.hasPrefix("mid_block.") }
+    } else if isWurstchenStageC {
+      modelVersion = .wurstchenStageC
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 1550
+      isDiffusersFormat = false
+    } else if isPixArtSigmaXL {
+      modelVersion = .pixart
+      modifier = .none
+      inputDim = 4
+      expectedTotalAccess = 754
+      isDiffusersFormat = stateDict.keys.contains { $0.contains("transformer_blocks.27.") }
+    } else if isSD3 {
+      modelVersion = .sd3
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 1157
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("transformer_blocks.22.ff_context.")
+      }
+    } else {
+      throw UnpickleError.tensorNotFound
     }
     return InspectionResult(
       version: modelVersion, archive: archive, stateDict: stateDict, modifier: modifier,
