@@ -180,6 +180,9 @@ public enum LoRAImporter {
         $0.contains("joint_blocks_23_context_block_")
           || $0.contains("transformer_blocks_22_ff_context_")
       }
+      let isPixArtSigmaXL = stateDict.keys.contains {
+        $0.contains("blocks_27_") || $0.contains("transformer_blocks_27_")
+      }
       if let tokey = stateDict.first(where: {
         $0.key.hasSuffix(
           "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -224,6 +227,8 @@ public enum LoRAImporter {
         }
       } else if isSD3 {
         return .sd3
+      } else if isPixArtSigmaXL {
+        return .pixart
       } else {
         if let forceVersion = forceVersion {
           return forceVersion

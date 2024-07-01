@@ -17,6 +17,8 @@ struct Converter: ParsableCommand {
   var name: String
   @Option(help: "The model version for this LoRA.")
   var version: ModelVersion?
+  @Option(help: "The model network scale factor for this LoRA.")
+  var scaleFactor: Double?
   @Option(name: .shortAndLong, help: "The directory to write the output files to.")
   var outputDirectory: String
 
@@ -32,8 +34,10 @@ struct Converter: ParsableCommand {
   mutating func run() throws {
     ModelZoo.externalUrl = URL(fileURLWithPath: outputDirectory)
     let fileName = Importer.cleanup(filename: name) + "_lora_f16.ckpt"
+    let scaleFactor = scaleFactor ?? 1.0
     let (modelVersion, didImportTIEmbedding, textEmbeddingLength, isLoHa) = try LoRAImporter.import(
-      downloadedFile: file, name: name, filename: fileName, forceVersion: version
+      downloadedFile: file, name: name, filename: fileName, scaleFactor: scaleFactor,
+      forceVersion: version
     ) { _ in
     }
     let specification = Specification(
