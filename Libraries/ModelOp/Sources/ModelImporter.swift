@@ -106,11 +106,11 @@ public final class ModelImporter {
       throw UnpickleError.dataNotFound
     }
     let isSvdI2v = stateDict.keys.contains { $0.contains("time_mixer") }
-    let isWurstchenStageC = stateDict.keys.contains { $0.contains("clip_txt_mapper.") }
-    let isPixArtSigmaXL = stateDict.keys.contains {
+    var isWurstchenStageC = stateDict.keys.contains { $0.contains("clip_txt_mapper.") }
+    var isPixArtSigmaXL = stateDict.keys.contains {
       $0.contains("blocks.27.") || $0.contains("transformer_blocks.27.")
     }
-    let isSD3 = stateDict.keys.contains {
+    var isSD3 = stateDict.keys.contains {
       $0.contains("joint_blocks.23.context_block.")
         || $0.contains("transformer_blocks.22.ff_context.")
     }
@@ -173,6 +173,9 @@ public final class ModelImporter {
         throw UnpickleError.tensorNotFound
       }
       isDiffusersFormat = stateDict.keys.contains { $0.hasPrefix("mid_block.") }
+      isWurstchenStageC = false
+      isPixArtSigmaXL = false
+      isSD3 = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
