@@ -413,10 +413,19 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      (_, unet) = PixArt(
-        batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152, layers: 28,
-        tokenLength: (tokenLengthUncond, tokenLengthCond), usesFlashAttention: usesFlashAttention,
-        of: FloatType.self)
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        (_, unet) = LoRAPixArt(
+          batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152, layers: 28,
+          tokenLength: (tokenLengthUncond, tokenLengthCond), usesFlashAttention: usesFlashAttention,
+          LoRAConfiguration: configuration, of: FloatType.self)
+      } else {
+        (_, unet) = PixArt(
+          batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152, layers: 28,
+          tokenLength: (tokenLengthUncond, tokenLengthCond), usesFlashAttention: usesFlashAttention,
+          of: FloatType.self)
+      }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -520,7 +529,12 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<24).map {
                   return ($0, $0)
                 })
-            case .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+            case .pixart:
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<28).map {
+                  return ($0, $0)
+                })
+            case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
           }()

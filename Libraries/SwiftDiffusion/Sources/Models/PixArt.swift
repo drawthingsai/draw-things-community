@@ -372,6 +372,356 @@ public func PixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
   return (mapper, Model([x, posEmbed] + inputs, [out]))
 }
 
+private func LoRAMLP(
+  hiddenSize: Int, intermediateSize: Int, configuration: LoRANetworkConfiguration, name: String
+) -> (Model, Model, Model) {
+  let x = Input()
+  let fc1 = LoRADense(count: intermediateSize, configuration: configuration, name: "\(name)_fc1")
+  var out = GELU(approximate: .tanh)(fc1(x))
+  let fc2 = LoRADense(count: hiddenSize, configuration: configuration, name: "\(name)_fc2")
+  out = fc2(out)
+  return (fc1, fc2, Model([x], [out]))
+}
+
+private func LoRASelfAttention(
+  k: Int, h: Int, b: Int, t: Int, configuration: LoRANetworkConfiguration, usesFlashAttention: Bool
+) -> (
+  Model, Model, Model, Model, Model
+) {
+  let x = Input()
+  let tokeys = LoRADense(count: k * h, configuration: configuration, name: "k")
+  let toqueries = LoRADense(count: k * h, configuration: configuration, name: "q")
+  let tovalues = LoRADense(count: k * h, configuration: configuration, name: "v")
+  if usesFlashAttention {
+    let keys = tokeys(x).reshaped([b, t, h, k])
+    let queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, t, h, k])
+    let values = tovalues(x).reshaped([b, t, h, k])
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1)
+    var out = scaledDotProductAttention(queries, keys, values).reshaped([b, t, k * h])
+    let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "o")
+    out = unifyheads(out)
+    return (tokeys, toqueries, tovalues, unifyheads, Model([x], [out]))
+  } else {
+    let keys = tokeys(x).reshaped([b, t, h, k]).transposed(1, 2)
+    // No scaling the queries.
+    let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, t, h, k])
+      .transposed(1, 2)
+    let values = tovalues(x).reshaped([b, t, h, k]).transposed(1, 2)
+    var out: Model.IO
+    if b * h <= 256 && configuration.testing {
+      var outs = [Model.IO]()
+      for i in 0..<(b * h) {
+        let key = keys.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
+        let query = queries.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
+        let value = values.reshaped([1, t, k], offset: [i, 0, 0], strides: [t * k, k, 1])
+        var dot = Matmul(transposeB: (1, 2))(query, key)
+        if let last = outs.last {
+          dot.add(dependencies: [last])
+        }
+        dot = dot.reshaped([t, t])
+        dot = dot.softmax()
+        dot = dot.reshaped([1, t, t])
+        outs.append(dot * value)
+      }
+      out = Concat(axis: 0)(outs)
+      out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b, t, h * k])
+    } else {
+      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      dot = dot.reshaped([b * h * t, t])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, t, t])
+      out = dot * values
+      out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b, t, h * k])
+    }
+    let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "o")
+    out = unifyheads(out)
+    return (tokeys, toqueries, tovalues, unifyheads, Model([x], [out]))
+  }
+}
+
+private func LoRACrossAttentionKeysAndValues(
+  k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), configuration: LoRANetworkConfiguration,
+  usesFlashAttention: Bool
+) -> (
+  Model, Model, Model
+) {
+  let x = Input()
+  let keys = Input()
+  let values = Input()
+  let toqueries = LoRADense(count: k * h, configuration: configuration, name: "c_q")
+  let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+  if t.0 == t.1 {
+    let t = t.0
+    if usesFlashAttention {
+      let scaledDotProductAttention = ScaledDotProductAttention(
+        scale: 1)
+      var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+      let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "c_o")
+      out = unifyheads(out)
+      return (toqueries, unifyheads, Model([x, keys, values], [out]))
+    } else {
+      let queries = queries.transposed(1, 2)
+      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      dot = dot.reshaped([b * h * hw, t])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, hw, t])
+      var out = dot * values
+      out = out.reshaped([b, h, hw, k]).transposed(1, 2).reshaped([b, hw, h * k])
+      let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "c_o")
+      out = unifyheads(out)
+      return (toqueries, unifyheads, Model([x, keys, values], [out]))
+    }
+  } else {
+    let b0 = b / 2
+    var out: Model.IO
+    if usesFlashAttention {
+      let out0: Model.IO
+      if b0 == 1 || t.0 >= t.1 {
+        let keys0 = keys.reshaped(
+          [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+        )
+        let queries0 = queries.reshaped([b0, hw, h, k])
+        let values0 = values.reshaped(
+          [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+        )
+        out0 = ScaledDotProductAttention(scale: 1)(
+          queries0, keys0, values0
+        ).reshaped([b0, hw, h * k])
+      } else {
+        var outs = [Model.IO]()
+        for i in 0..<b0 {
+          let keys0 = keys.reshaped(
+            [1, t.0, h, k], offset: [i, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+          )
+          let queries0 = queries.reshaped(
+            [1, hw, h, k], offset: [i, 0, 0, 0], strides: [h * hw * k, h * k, k, 1])
+          let values0 = values.reshaped(
+            [1, t.0, h, k], offset: [i, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+          )
+          outs.append(
+            ScaledDotProductAttention(scale: 1)(
+              queries0, keys0, values0
+            ).reshaped([1, hw, h * k]))
+        }
+        out0 = Concat(axis: 0)(outs)
+      }
+      let out1: Model.IO
+      if b0 == 1 || t.1 >= t.0 {
+        let keys1 = keys.reshaped(
+          [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+        )
+        let queries1 = queries.reshaped(
+          [b0, hw, h, k], offset: [b0, 0, 0, 0], strides: [h * hw * k, h * k, k, 1])
+        let values1 = values.reshaped(
+          [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+        )
+        out1 = ScaledDotProductAttention(scale: 1)(
+          queries1, keys1, values1
+        ).reshaped([b0, hw, h * k])
+      } else {
+        var outs = [Model.IO]()
+        for i in 0..<b0 {
+          let keys1 = keys.reshaped(
+            [1, t.1, h, k], offset: [b0 + i, 0, 0, 0],
+            strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+          )
+          let queries1 = queries.reshaped(
+            [1, hw, h, k], offset: [b0 + i, 0, 0, 0], strides: [h * hw * k, h * k, k, 1])
+          let values1 = values.reshaped(
+            [1, t.1, h, k], offset: [b0 + i, 0, 0, 0],
+            strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+          )
+          outs.append(
+            ScaledDotProductAttention(scale: 1)(
+              queries1, keys1, values1
+            ).reshaped([1, hw, h * k]))
+        }
+        out1 = Concat(axis: 0)(outs)
+      }
+      out = Functional.concat(axis: 0, out0, out1)
+    } else {
+      let queries = queries.transposed(1, 2)
+      let keys0 = keys.reshaped(
+        [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+      ).transposed(1, 2)
+      let queries0 = queries.reshaped([b0, h, hw, k])
+      let values0 = values.reshaped(
+        [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+      ).transposed(1, 2)
+      var dot0 = Matmul(transposeB: (2, 3))(queries0, keys0)
+      dot0 = dot0.reshaped([b0 * h * hw, t.0])
+      dot0 = dot0.softmax()
+      dot0 = dot0.reshaped([b0, h, hw, t.0])
+      var out0 = dot0 * values0
+      out0 = out0.reshaped([b0, h, hw, k]).transposed(1, 2).reshaped([b0, hw, h * k])
+      let keys1 = keys.reshaped(
+        [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+      ).transposed(1, 2)
+      let queries1 = queries.reshaped(
+        [b0, h, hw, k], offset: [b0, 0, 0, 0], strides: [h * hw * k, hw * k, k, 1])
+      let values1 = values.reshaped(
+        [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
+      ).transposed(1, 2)
+      var dot1 = Matmul(transposeB: (2, 3))(queries1, keys1)
+      dot1.add(dependencies: [out0])
+      dot1 = dot1.reshaped([b0 * h * hw, t.1])
+      dot1 = dot1.softmax()
+      dot1 = dot1.reshaped([b0, h, hw, t.1])
+      var out1 = dot1 * values1
+      out1 = out1.reshaped([b0, h, hw, k]).transposed(1, 2).reshaped([b0, hw, h * k])
+      out = Functional.concat(axis: 0, out0, out1)
+    }
+    let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "c_o")
+    out = unifyheads(out)
+    return (toqueries, unifyheads, Model([x, keys, values], [out]))
+  }
+}
+
+private func LoRAPixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  prefix: (String, String), k: Int, h: Int, b: Int, hw: Int, t: (Int, Int),
+  configuration: LoRANetworkConfiguration,
+  usesFlashAttention: Bool, of: FloatType.Type = FloatType.self
+) -> (
+  ModelWeightMapper, Model
+) {
+  let x = Input()
+  let shiftMsa = Input()
+  let scaleMsa = Input()
+  let gateMsa = Input()
+  let keys = Input()
+  let values = Input()
+  let shiftMlp = Input()
+  let scaleMlp = Input()
+  let gateMlp = Input()
+  let norm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  let (tokeys1, toqueries1, tovalues1, unifyheads1, attn) = LoRASelfAttention(
+    k: k, h: h, b: b, t: hw, configuration: configuration, usesFlashAttention: usesFlashAttention)
+  var out =
+    x + gateMsa
+    .* attn(norm1(x) .* scaleMsa + shiftMsa)
+  let (toqueries2, unifyheads2, crossAttn) = LoRACrossAttentionKeysAndValues(
+    k: k, h: h, b: b, hw: hw, t: t, configuration: configuration,
+    usesFlashAttention: usesFlashAttention)
+  out = out + crossAttn(out, keys, values)
+  let (fc1, fc2, mlp) = LoRAMLP(
+    hiddenSize: k * h, intermediateSize: k * h * 4, configuration: configuration, name: "mlp")
+  let norm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  out = out + gateMlp
+    .* mlp(norm2(out) .* scaleMlp + shiftMlp)
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    switch format {
+    case .generativeModels:
+      mapping["\(prefix.0).attn.qkv.weight"] = [
+        toqueries1.weight.name, tokeys1.weight.name, tovalues1.weight.name,
+      ]
+      mapping["\(prefix.0).attn.qkv.bias"] = [
+        toqueries1.bias.name, tokeys1.bias.name, tovalues1.bias.name,
+      ]
+      mapping["\(prefix.0).attn.proj.weight"] = [unifyheads1.weight.name]
+      mapping["\(prefix.0).attn.proj.bias"] = [unifyheads1.bias.name]
+      mapping["\(prefix.0).cross_attn.q_linear.weight"] = [toqueries2.weight.name]
+      mapping["\(prefix.0).cross_attn.q_linear.bias"] = [toqueries2.bias.name]
+      mapping["\(prefix.0).cross_attn.proj.weight"] = [unifyheads2.weight.name]
+      mapping["\(prefix.0).cross_attn.proj.bias"] = [unifyheads2.bias.name]
+      mapping["\(prefix.0).mlp.fc1.weight"] = [fc1.weight.name]
+      mapping["\(prefix.0).mlp.fc1.bias"] = [fc1.bias.name]
+      mapping["\(prefix.0).mlp.fc2.weight"] = [fc2.weight.name]
+      mapping["\(prefix.0).mlp.fc2.bias"] = [fc2.bias.name]
+    case .diffusers:
+      mapping["\(prefix.1).attn1.to_q.weight"] = [toqueries1.weight.name]
+      mapping["\(prefix.1).attn1.to_q.bias"] = [toqueries1.bias.name]
+      mapping["\(prefix.1).attn1.to_k.weight"] = [tokeys1.weight.name]
+      mapping["\(prefix.1).attn1.to_k.bias"] = [tokeys1.bias.name]
+      mapping["\(prefix.1).attn1.to_v.weight"] = [tovalues1.weight.name]
+      mapping["\(prefix.1).attn1.to_v.bias"] = [tovalues1.bias.name]
+      mapping["\(prefix.1).attn1.to_out.0.weight"] = [unifyheads1.weight.name]
+      mapping["\(prefix.1).attn1.to_out.0.bias"] = [unifyheads1.bias.name]
+      mapping["\(prefix.1).attn2.to_q.weight"] = [toqueries2.weight.name]
+      mapping["\(prefix.1).attn2.to_q.bias"] = [toqueries2.bias.name]
+      mapping["\(prefix.1).attn2.to_out.0.weight"] = [unifyheads2.weight.name]
+      mapping["\(prefix.1).attn2.to_out.0.bias"] = [unifyheads2.bias.name]
+      mapping["\(prefix.1).ff.net.0.proj.weight"] = [fc1.weight.name]
+      mapping["\(prefix.1).ff.net.0.proj.bias"] = [fc1.bias.name]
+      mapping["\(prefix.1).ff.net.2.weight"] = [fc2.weight.name]
+      mapping["\(prefix.1).ff.net.2.bias"] = [fc2.bias.name]
+    }
+    return mapping
+  }
+  return (
+    mapper,
+    Model([x, shiftMsa, scaleMsa, gateMsa, keys, values, shiftMlp, scaleMlp, gateMlp], [out])
+  )
+}
+
+public func LoRAPixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  batchSize: Int, height: Int, width: Int, channels: Int, layers: Int, tokenLength: (Int, Int),
+  usesFlashAttention: Bool, LoRAConfiguration: LoRANetworkConfiguration,
+  of: FloatType.Type = FloatType.self
+) -> (ModelWeightMapper, Model) {
+  let x = Input()
+  let posEmbed = Input()
+  let h = height / 2
+  let w = width / 2
+  let xEmbedder = LoRAConvolution(
+    groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]) + posEmbed
+  var mappers = [ModelWeightMapper]()
+  var inputs = [Input]()
+  for i in 0..<layers {
+    let shiftMsa = Input()
+    let scaleMsa = Input()
+    let gateMsa = Input()
+    let keys = Input()
+    let values = Input()
+    let shiftMlp = Input()
+    let scaleMlp = Input()
+    let gateMlp = Input()
+    let (mapper, block) = LoRAPixArtMSBlock(
+      prefix: ("blocks.\(i)", "transformer_blocks.\(i)"), k: channels / 16, h: 16, b: batchSize,
+      hw: h * w, t: tokenLength, configuration: LoRAConfiguration,
+      usesFlashAttention: usesFlashAttention, of: FloatType.self)
+    out = block(out, shiftMsa, scaleMsa, gateMsa, keys, values, shiftMlp, scaleMlp, gateMlp)
+    mappers.append(mapper)
+    inputs.append(contentsOf: [
+      shiftMsa, scaleMsa, gateMsa, keys, values, shiftMlp, scaleMlp, gateMlp,
+    ])
+  }
+  let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  let shift = Input()
+  let scale = Input()
+  inputs.append(contentsOf: [shift, scale])
+  out = scale .* normFinal(out) + shift
+  let linear = LoRADense(count: 2 * 2 * 8, configuration: LoRAConfiguration, name: "linear")
+  out = linear(out)
+  // Unpatchify
+  out = out.reshaped([batchSize, h, w, 2, 2, 8]).permuted(0, 1, 3, 2, 4, 5).contiguous().reshaped([
+    batchSize, h * 2, w * 2, 8,
+  ])
+  let mapper: ModelWeightMapper = { format in
+    var mapping = [String: [String]]()
+    switch format {
+    case .diffusers:
+      mapping["pos_embed.proj.weight"] = [xEmbedder.weight.name]
+      mapping["pos_embed.proj.bias"] = [xEmbedder.bias.name]
+      mapping["proj_out.weight"] = [linear.weight.name]
+      mapping["proj_out.bias"] = [linear.bias.name]
+    case .generativeModels:
+      mapping["x_embedder.proj.weight"] = [xEmbedder.weight.name]
+      mapping["x_embedder.proj.bias"] = [xEmbedder.bias.name]
+      mapping["final_layer.linear.weight"] = [linear.weight.name]
+      mapping["final_layer.linear.bias"] = [linear.bias.name]
+    }
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    return mapping
+  }
+  return (mapper, Model([x, posEmbed] + inputs, [out]))
+}
+
 private func CrossAttentionFixed(k: Int, h: Int, b: Int, t: (Int, Int), usesFlashAttention: Bool)
   -> (
     Model, Model, Model

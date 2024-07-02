@@ -335,7 +335,7 @@ private func LoRAJointTransformerBlock(
       .transposed(1, 2)
     values = values.reshaped([b, t + hw, h, k]).transposed(1, 2)
     // During training, we don't optimize this.
-    if b * h <= 256 || configuration.testing {
+    if b * h <= 256 && configuration.testing {
       var outs = [Model.IO]()
       for i in 0..<(b * h) {
         let key = keys.reshaped([1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
