@@ -2135,7 +2135,8 @@ extension ImageGenerator {
       DynamicGraph.flags.insert(.disableMetalFlashAttention)
     } else {
       DynamicGraph.flags.remove(.disableMetalFlashAttention)
-      if !DeviceCapability.isMFAGEMMFaster {
+      // Temporary fix. For SD3 / PixArt models, the MFA GEMM is not getting good result than MPS ones.
+      if !DeviceCapability.isMFAGEMMFaster || modelVersion == .sd3 || modelVersion == .pixart {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
@@ -2572,7 +2573,7 @@ extension ImageGenerator {
         DynamicGraph.flags.insert(.disableMetalFlashAttention)
       } else {
         DynamicGraph.flags.remove(.disableMetalFlashAttention)
-        if !DeviceCapability.isMFAGEMMFaster {
+        if !DeviceCapability.isMFAGEMMFaster || modelVersion == .sd3 || modelVersion == .pixart {
           DynamicGraph.flags.insert(.disableMFAGEMM)
         }
       }
@@ -2779,7 +2780,7 @@ extension ImageGenerator {
         DynamicGraph.flags.insert(.disableMetalFlashAttention)
       } else {
         DynamicGraph.flags.remove(.disableMetalFlashAttention)
-        if !DeviceCapability.isMFAGEMMFaster {
+        if !DeviceCapability.isMFAGEMMFaster || modelVersion == .sd3 || modelVersion == .pixart {
           DynamicGraph.flags.insert(.disableMFAGEMM)
         }
       }
@@ -2835,7 +2836,7 @@ extension ImageGenerator {
         DynamicGraph.flags.insert(.disableMetalFlashAttention)
       } else {
         DynamicGraph.flags.remove(.disableMetalFlashAttention)
-        if !DeviceCapability.isMFAGEMMFaster {
+        if !DeviceCapability.isMFAGEMMFaster || modelVersion == .sd3 || modelVersion == .pixart {
           DynamicGraph.flags.insert(.disableMFAGEMM)
         }
       }
@@ -2983,7 +2984,7 @@ extension ImageGenerator {
       DynamicGraph.flags.insert(.disableMetalFlashAttention)
     } else {
       DynamicGraph.flags.remove(.disableMetalFlashAttention)
-      if !DeviceCapability.isMFAGEMMFaster {
+      if !DeviceCapability.isMFAGEMMFaster || modelVersion == .sd3 || modelVersion == .pixart {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
@@ -3524,7 +3525,7 @@ extension ImageGenerator {
         DynamicGraph.flags.insert(.disableMetalFlashAttention)
       } else {
         DynamicGraph.flags.remove(.disableMetalFlashAttention)
-        if !DeviceCapability.isMFAGEMMFaster {
+        if !DeviceCapability.isMFAGEMMFaster || modelVersion == .sd3 || modelVersion == .pixart {
           DynamicGraph.flags.insert(.disableMFAGEMM)
         }
       }
@@ -4176,7 +4177,7 @@ extension ImageGenerator {
       DynamicGraph.flags.insert(.disableMetalFlashAttention)
     } else {
       DynamicGraph.flags.remove(.disableMetalFlashAttention)
-      if !DeviceCapability.isMFAGEMMFaster {
+      if !DeviceCapability.isMFAGEMMFaster || modelVersion == .sd3 || modelVersion == .pixart {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
@@ -4711,7 +4712,7 @@ extension ImageGenerator {
         DynamicGraph.flags.insert(.disableMetalFlashAttention)
       } else {
         DynamicGraph.flags.remove(.disableMetalFlashAttention)
-        if !DeviceCapability.isMFAGEMMFaster {
+        if !DeviceCapability.isMFAGEMMFaster || modelVersion == .sd3 || modelVersion == .pixart {
           DynamicGraph.flags.insert(.disableMFAGEMM)
         }
       }
@@ -4860,7 +4861,7 @@ extension ImageGenerator {
       DynamicGraph.flags.insert(.disableMetalFlashAttention)
     } else {
       DynamicGraph.flags.remove(.disableMetalFlashAttention)
-      if !DeviceCapability.isMFAGEMMFaster {
+      if !DeviceCapability.isMFAGEMMFaster || modelVersion == .sd3 || modelVersion == .pixart {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
@@ -5543,7 +5544,7 @@ extension ImageGenerator {
         DynamicGraph.flags.insert(.disableMetalFlashAttention)
       } else {
         DynamicGraph.flags.remove(.disableMetalFlashAttention)
-        if !DeviceCapability.isMFAGEMMFaster {
+        if !DeviceCapability.isMFAGEMMFaster || modelVersion == .sd3 || modelVersion == .pixart {
           DynamicGraph.flags.insert(.disableMFAGEMM)
         }
       }
