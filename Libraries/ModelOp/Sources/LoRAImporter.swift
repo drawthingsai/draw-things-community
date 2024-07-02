@@ -257,7 +257,10 @@ public enum LoRAImporter {
       // We don't support LoRA on text encoder for SD3 yet.
       textModelMapping1 = [:]
       textModelMapping2 = [:]
-    case .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+    case .pixart:
+      textModelMapping1 = [:]
+      textModelMapping2 = [:]
+    case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
     var swapTE2 = false
@@ -318,7 +321,7 @@ public enum LoRAImporter {
     }
     var UNetMappingFixed = [String: [String]]()
     if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
-      || modelVersion == .sd3
+      || modelVersion == .sd3 || modelVersion == .pixart
     {
       let unet: Model
       let unetFixed: Model
@@ -362,7 +365,14 @@ public enum LoRAImporter {
           batchSize: 2, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
           usesFlashAttention: .none, of: FloatType.self)
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: 2, channels: 1536, layers: 24)
-      case .v1, .v2, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .pixart:
+        (unetMapper, unet) = PixArt(
+          batchSize: 2, height: 64, width: 64, channels: 1152, layers: 28,
+          tokenLength: (77, 77), usesFlashAttention: false, of: FloatType.self)
+        (unetFixedMapper, unetFixed) = PixArtFixed(
+          batchSize: 2, channels: 1152, layers: 28, tokenLength: (77, 77),
+          usesFlashAttention: false, of: FloatType.self)
+      case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       case .ssd1b:
         (unet, _, unetMapper) = UNetXL(
@@ -395,7 +405,10 @@ public enum LoRAImporter {
         case .sd3:
           inputDim = 16
           conditionalLength = 4096
-        case .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        case .pixart:
+          inputDim = 4
+          conditionalLength = 4096
+        case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
         let crossattn: [DynamicGraph.Tensor<FloatType>]
@@ -417,6 +430,16 @@ public enum LoRAImporter {
                 timestep: 981, batchSize: 2, embeddingSize: 384,
                 maxPeriod: 10_000)
             ))
+        case .pixart:
+          crossattn = [
+            graph.variable(
+              Tensor<FloatType>(
+                from: timeEmbedding(
+                  timestep: 1000, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+              ).reshaped(.HWC(1, 1, 256))
+            ), graph.variable(.CPU, .HWC(2, 77, 4096), of: FloatType.self),
+          ]
+          tEmb = nil
         case .sd3:
           crossattn = [
             graph.variable(.CPU, .WC(2, 2048), of: FloatType.self),
@@ -428,7 +451,7 @@ public enum LoRAImporter {
             ), graph.variable(.CPU, .HWC(2, 154, 4096), of: FloatType.self),
           ]
           tEmb = nil
-        case .v1, .v2, .pixart, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
         unetFixed.compile(inputs: crossattn)
@@ -471,7 +494,7 @@ public enum LoRAImporter {
           ).0.map({ $0.toCPU() })
         let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
         unet.compile(inputs: inputs)
-        if modelVersion == .ssd1b || modelVersion == .sd3 {
+        if modelVersion == .ssd1b || modelVersion == .sd3 || modelVersion == .pixart {
           UNetMappingFixed = unetFixedMapper(.generativeModels)
           UNetMapping = unetMapper(.generativeModels)
         }
@@ -569,7 +592,19 @@ public enum LoRAImporter {
           }
         }
       case .pixart:
-        fatalError()
+        if let tensorDescT5XXL = stateDict["t5_xxl"] {
+          try archive.with(tensorDescT5XXL) {
+            let tensor = Tensor<FloatType>(from: $0)
+            store.write("string_to_param_t5_xxl", tensor: tensor)
+            let textEmbeddingLengthT5XXL =
+              tensorDescT5XXL.shape.count > 1 ? tensorDescT5XXL.shape[0] : 1
+            guard textEmbeddingLengthT5XXL == textEmbeddingLength else {
+              textEmbeddingLength = 0
+              return
+            }
+            didImportTIEmbedding = true
+          }
+        }
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
         if let tensorDescClipG = stateDict["clip_g"] {
           try archive.with(tensorDescClipG) {
@@ -601,7 +636,7 @@ public enum LoRAImporter {
           guard parts.count > 2 else { continue }
           let te2 = parts[1] == "te2"
           // Try to remove the prefixes.
-          let newKeys: [String] = (0..<2).compactMap {
+          let newKeys: [String] = (0...2).compactMap {
             let newParts = String(parts[$0..<parts.count].joined(separator: "_")).components(
               separatedBy: ".")  // Remove the first two.
             guard newParts.count > 1 else { return nil }
@@ -830,7 +865,7 @@ public enum LoRAImporter {
           guard parts.count > 2 else { continue }
           let te2 = parts[1] == "te2"
           // Try to remove the prefixes.
-          let newKeys: [String] = (0..<2).compactMap {
+          let newKeys: [String] = (0...2).compactMap {
             let newParts = String(parts[$0..<parts.count].joined(separator: "_")).components(
               separatedBy: ".")  // Remove the first two.
             guard newParts.count > 1 else { return nil }
