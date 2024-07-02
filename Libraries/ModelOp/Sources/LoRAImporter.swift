@@ -236,6 +236,7 @@ public enum LoRAImporter {
         throw UnpickleError.tensorNotFound
       }
     }()
+    let graph = DynamicGraph()
     var textModelMapping1: [String: [String]]
     var textModelMapping2: [String: [String]]
     switch modelVersion {
@@ -258,7 +259,15 @@ public enum LoRAImporter {
       textModelMapping1 = [:]
       textModelMapping2 = [:]
     case .pixart:
-      textModelMapping1 = [:]
+      textModelMapping1 = graph.withNoGrad {
+        let (t5Mapper, t5) = T5ForConditionalGeneration(b: 1, t: 2, of: FloatType.self)
+        let relativePositionBuckets = relativePositionBuckets(
+          sequenceLength: 2, numBuckets: 32, maxDistance: 128
+        ).toGPU(0)
+        let tokens = Tensor<Int32>([0, 0], .GPU(0), .C(2))
+        t5.compile(inputs: graph.variable(tokens), graph.variable(relativePositionBuckets))
+        return t5Mapper(.generativeModels)
+      }
       textModelMapping2 = [:]
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
@@ -309,15 +318,23 @@ public enum LoRAImporter {
     for key in textModelMapping1Keys {
       let value = textModelMapping1[key]
       let parts = key.components(separatedBy: ".")
-      textModelMapping1[
-        parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] = value
+      for i in 0...2 {
+        guard parts.count - 1 > i else { break }
+        textModelMapping1[
+          parts[i..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+          value
+      }
     }
     let textModelMapping2Keys = textModelMapping2.keys
     for key in textModelMapping2Keys {
       let value = textModelMapping2[key]
       let parts = key.components(separatedBy: ".")
-      textModelMapping2[
-        parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] = value
+      for i in 0...2 {
+        guard parts.count - 1 > i else { break }
+        textModelMapping2[
+          parts[i..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+          value
+      }
     }
     var UNetMappingFixed = [String: [String]]()
     if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
@@ -388,7 +405,6 @@ public enum LoRAImporter {
           middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
           usesFlashAttention: .none, isTemporalMixEnabled: false)
       }
-      let graph = DynamicGraph()
       graph.withNoGrad {
         let inputDim: Int
         let conditionalLength: Int
@@ -540,7 +556,6 @@ public enum LoRAImporter {
         }
       }
     }
-    let graph = DynamicGraph()
     var didImportTIEmbedding = false
     var textEmbeddingLength = 0
     var isLoHa = false

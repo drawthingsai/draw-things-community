@@ -1,3 +1,4 @@
+import Collections
 import NNC
 
 public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
@@ -928,7 +929,28 @@ extension TextEncoder {
   {
     let graph = tokens[0].graph
     let tokenLength = tokens[0].shape[0] / 2
-    let (_, textModel) = T5ForConditionalGeneration(b: 2, t: tokenLength, of: FloatType.self)
+    let lora = Array(
+      (OrderedDictionary<String, LoRAConfiguration>(
+        lora.filter({ $0.version == version }).map {
+          ($0.file, $0)
+        }
+      ) {
+        LoRAConfiguration(
+          file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
+          modifier: $0.modifier)
+      })
+      .values
+    ).filter { $0.weight != 0 }
+    let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+      graph, of: lora.map { $0.file }, prefix: "__text_model__")
+    let configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+    let textModel: Model
+    if !lora.isEmpty && rankOfLoRA > 0 {
+      (_, textModel) = LoRAT5ForConditionalGeneration(
+        b: 2, t: tokenLength, LoRAConfiguration: configuration, of: FloatType.self)
+    } else {
+      (_, textModel) = T5ForConditionalGeneration(b: 2, t: tokenLength, of: FloatType.self)
+    }
     let relativePositionBuckets = relativePositionBuckets(
       sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
     let tokensTensorGPU = tokens[0].toGPU(0)
@@ -939,9 +961,26 @@ extension TextEncoder {
     graph.openStore(
       filePaths[0], flags: .readOnly,
       externalStore: TensorData.externalStore(filePath: filePaths[0])
-    ) {
-      $0.read(
-        "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    ) { store in
+      if !lora.isEmpty && rankOfLoRA > 0 {
+        let mapping = [Int: Int](
+          uniqueKeysWithValues: (0..<24).map {
+            return ($0, $0)
+          })
+        LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          store.read(
+            "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, .externalOnDemand]
+          ) {
+            name, dataType, format, shape in
+            return loader.concatenateLoRA(
+              graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+              store: store, dataType: dataType, format: format, shape: shape)
+          }
+        }
+      } else {
+        store.read(
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+      }
     }
     let c = textModel(inputs: tokensTensorGPU, relativePositionBucketsGPU)[0].as(
       of: FloatType.self
