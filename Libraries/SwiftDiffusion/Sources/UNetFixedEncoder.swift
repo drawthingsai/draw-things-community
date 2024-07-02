@@ -422,8 +422,19 @@ extension UNetFixedEncoder {
       unetFixed.compile(inputs: c, timeEmbeds, pooleds)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-      ) {
-        $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+      ) { store in
+        if lora.count > 0 {
+          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            store.read(
+              "dit", model: unetFixed, codec: [.q6p, .q8p, .ezm7, .jit, .externalData]
+            ) {
+              name, _, _, shape in
+              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+            }
+          }
+        } else {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+        }
       }
       return (unetFixed(inputs: c, timeEmbeds, pooleds).map { $0.as(of: FloatType.self) }, nil)
     case .wurstchenStageC:
