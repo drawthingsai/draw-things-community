@@ -28,6 +28,7 @@ struct Converter: ParsableCommand {
     var textEncoder: String?
     var autoencoder: String?
     var clipEncoder: String?
+    var t5Encoder: String?
   }
 
   mutating func run() throws {
@@ -46,6 +47,7 @@ struct Converter: ParsableCommand {
     }
     var clipEncoder: String? = nil
     let textEncoder: String?
+    var t5Encoder: String? = nil
     switch modelVersion {
     case .v1:
       textEncoder = fileNames.first {
@@ -55,7 +57,7 @@ struct Converter: ParsableCommand {
       textEncoder = fileNames.first {
         $0.hasSuffix("_open_clip_vit_h14_f16.ckpt")
       }
-    case .sdxlBase, .ssd1b, .sd3, .pixart:
+    case .sdxlBase, .ssd1b:
       clipEncoder = fileNames.first {
         $0.hasSuffix("_clip_vit_l14_f16.ckpt")
       }
@@ -65,10 +67,31 @@ struct Converter: ParsableCommand {
       if autoencoder == nil {
         autoencoder = "sdxl_vae_v1.0_f16.ckpt"
       }
-    case .sdxlRefiner:
+    case .sd3:
+      clipEncoder = fileNames.first {
+        $0.hasSuffix("_clip_vit_l14_f16.ckpt")
+      }
       textEncoder = fileNames.first {
         $0.hasSuffix("_open_clip_vit_bigg14_f16.ckpt")
       }
+      t5Encoder = fileNames.first {
+        $0.hasSuffix("_t5_xxl_encoder_f16.ckpt")
+      }
+      if autoencoder == nil {
+        autoencoder = "sd3_vae_f16.ckpt"
+      }
+    case .pixart:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_t5_xxl_encoder_f16.ckpt")
+      }
+      if autoencoder == nil {
+        autoencoder = "sdxl_vae_v1.0_f16.ckpt"
+      }
+    case .sdxlRefiner:
+      textEncoder =
+        fileNames.first {
+          $0.hasSuffix("_open_clip_vit_bigg14_f16.ckpt")
+        } ?? "open_clip_vit_bigg14_f16.ckpt"
       if autoencoder == nil {
         autoencoder = "sdxl_vae_v1.0_f16.ckpt"
       }
@@ -85,7 +108,8 @@ struct Converter: ParsableCommand {
     }
     let specification = Specification(
       name: name, file: "\(fileName)_f16.ckpt", version: modelVersion, modifier: modifier,
-      textEncoder: textEncoder, autoencoder: autoencoder, clipEncoder: clipEncoder)
+      textEncoder: textEncoder, autoencoder: autoencoder, clipEncoder: clipEncoder,
+      t5Encoder: t5Encoder)
     let jsonEncoder = JSONEncoder()
     jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
     jsonEncoder.outputFormatting = .prettyPrinted
