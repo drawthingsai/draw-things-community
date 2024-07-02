@@ -52,10 +52,11 @@ public func LoRAConvolution(
 }
 
 public func LoRADense(
-  count: Int, configuration: LoRANetworkConfiguration, noBias: Bool = false, name: String = ""
+  count: Int, configuration: LoRANetworkConfiguration, noBias: Bool = false,
+  flags: DynamicGraph.EnableBits = [], name: String = ""
 ) -> Model {
   let x = Input()
-  let dense = Dense(count: count, noBias: noBias, name: name)
+  let dense = Dense(count: count, noBias: noBias, flags: flags, name: name)
   guard configuration.rank > 0 else {
     return dense
   }

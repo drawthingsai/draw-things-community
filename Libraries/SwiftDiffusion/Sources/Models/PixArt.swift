@@ -38,7 +38,7 @@ private func MLP(hiddenSize: Int, intermediateSize: Int, name: String) -> (Model
   let x = Input()
   let fc1 = Dense(count: intermediateSize, name: "\(name)_fc1")
   var out = GELU(approximate: .tanh)(fc1(x))
-  let fc2 = Dense(count: hiddenSize, name: "\(name)_fc2")
+  let fc2 = Dense(count: hiddenSize, flags: .disableMFAGEMM, name: "\(name)_fc2")
   out = fc2(out)
   return (fc1, fc2, Model([x], [out]))
 }
@@ -378,7 +378,8 @@ private func LoRAMLP(
   let x = Input()
   let fc1 = LoRADense(count: intermediateSize, configuration: configuration, name: "\(name)_fc1")
   var out = GELU(approximate: .tanh)(fc1(x))
-  let fc2 = LoRADense(count: hiddenSize, configuration: configuration, name: "\(name)_fc2")
+  let fc2 = LoRADense(
+    count: hiddenSize, configuration: configuration, flags: .disableMFAGEMM, name: "\(name)_fc2")
   out = fc2(out)
   return (fc1, fc2, Model([x], [out]))
 }
