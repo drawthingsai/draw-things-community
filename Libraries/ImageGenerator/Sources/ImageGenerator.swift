@@ -624,6 +624,9 @@ extension ImageGenerator {
     modifier: TextualInversionZoo.Modifier, potentials: [String], startLength: Int = 1,
     maxLength: Int = 77, paddingLength: Int = 77
   ) -> (
+    //    tokensTensors, positionTensors, embedMask, injectedEmbeddings, unconditionalAttentionWeights,
+    //    attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
+    //    lengthsOfCond
     [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<FloatType>],
     [DynamicGraph.Tensor<FloatType>], [Float], [Float], Bool, Int, Int, [Int], [Int]
   ) {
@@ -899,11 +902,15 @@ extension ImageGenerator {
     )
   }
 
-  private func tokenize(
+  public func tokenize(
     graph: DynamicGraph, modelVersion: ModelVersion, text: String, negativeText: String,
     negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool, clipL: String?,
     openClipG: String?
   ) -> (
+    //  return:
+    //  tokensTensors, positionTensors, embedMask, injectedEmbeddings, unconditionalAttentionWeights,
+    //  attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
+    //  lengthsOfCond
     [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<Int32>], [DynamicGraph.Tensor<FloatType>],
     [DynamicGraph.Tensor<FloatType>], [Float], [Float], Bool, Int, Int, [Int], [Int]
   ) {

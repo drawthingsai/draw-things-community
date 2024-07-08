@@ -8,6 +8,7 @@ public protocol Tokenizer {
 
 extension Tokenizer {
   public func tokenize(text: String, truncation: Bool, maxLength: Int) -> (
+    //  return: (strs, tokens, weights, canonicals, lengthsOfEach)
     [String], [Int32], [Float], [String?], [Int]
   ) {
     tokenize(text: text, truncation: truncation, maxLength: maxLength, paddingToken: nil)

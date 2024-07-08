@@ -83,6 +83,7 @@ extension SupportedPrefix {
   func generateImage(_ args: [String: Any])
   func createControl(_ name: String) -> [String: Any]?
   func createLoRA(_ name: String) -> [String: Any]?
+  func CLIP(_ texts: [String]) -> [Float]
   func fillMaskRectangle(
     _ maskDictionary: [String: Any], _ rect: CGRect, _ value: UInt8)
   func moveCanvas(_ x: Double, _ y: Double)
@@ -151,6 +152,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func evaluateScriptBeforeREPL()
   func evaluateScriptEnded()
   func clearCanvas()
+  func CLIP(_ texts: [String]) throws -> [Float]
   func loadImageFileToCanvas(_ file: String)
   func loadImageSrcToCanvas(_ srcContent: String) throws
   func imageSizeFromSrc(_ srcContent: String) -> CGSize
@@ -370,6 +372,13 @@ extension ScriptExecutor: JSInterop {
     return forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
       delegate.clearCanvas()
+    }
+  }
+
+  func CLIP(_ texts: [String]) -> [Float] {
+    return forwardExceptionsToJS {
+      guard let delegate else { throw "No delegate" }
+      return try delegate.CLIP(texts)
     }
   }
 
