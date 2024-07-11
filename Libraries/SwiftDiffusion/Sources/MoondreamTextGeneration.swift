@@ -6,12 +6,15 @@ public struct MoondreamTextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
   let tokenizer: GPT2Tokenizer
   let usesFlashAttention: Bool
   let question: String
+  let version: MoondreamEncode<T>.Version
   public init(
-    filePath: String, vocabulary: String, merges: String, usesFlashAttention: Bool, question: String
+    filePath: String, vocabulary: String, merges: String, usesFlashAttention: Bool,
+    question: String, version: MoondreamEncode<T>.Version
   ) {
     self.filePath = filePath
     self.usesFlashAttention = usesFlashAttention
     self.question = question
+    self.version = version
     tokenizer = GPT2Tokenizer(vocabulary: vocabulary, merges: merges)
   }
 }
@@ -42,9 +45,19 @@ extension MoondreamTextGeneration {
             cachedTokenLength: tokenLengths.cachedTokenLength, layers: 24, MLP: 2048 * 4,
             rotaryDim: 32, heads: 32, batchSize: 1, usesFlashAttention: usesFlashAttention)
         }
-      let eos = "<END>"
-      let before = tokenizer.tokenize(text: "<image>", addSpecialTokens: true)
-      let after = tokenizer.tokenize(text: "</image>\n\nQuestion: \(question)\n\nAnswer:")
+      let eos: String
+      let before: [Int32]
+      let after: [Int32]
+      switch version {
+      case .moondream1, .moondream2_240306:
+        eos = "<END>"
+        before = tokenizer.tokenize(text: "<image>", addSpecialTokens: true)
+        after = tokenizer.tokenize(text: "</image>\n\nQuestion: \(question)\n\nAnswer:")
+      case .moondream2_240520:
+        eos = "<|endoftext|>"
+        before = tokenizer.tokenize(text: "", addSpecialTokens: true)
+        after = tokenizer.tokenize(text: "\n\nQuestion: \(question)\n\nAnswer:")
+      }
       guard
         let textEmbedding = existingTextEmbedding
           ?? {

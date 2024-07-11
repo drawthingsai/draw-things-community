@@ -35,7 +35,8 @@ private func SigLIPSelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttent
 }
 
 private func SigLIPResidualAttentionBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, MLP: Int, usesFlashAttention: Bool
+  prefix: String, k: Int, h: Int, b: Int, t: Int, MLP: Int, usesFlashAttention: Bool,
+  approximate: GELU.Approximate
 ) -> Model {
   let x = Input()
   let ln1 = LayerNorm(epsilon: 1e-6, axis: [2])
@@ -44,7 +45,7 @@ private func SigLIPResidualAttentionBlock(
   var out = x.reshaped([b * t, h * k]) + attention(ln1(x))
   let ln2 = LayerNorm(epsilon: 1e-6, axis: [1])
   let fc = Dense(count: MLP)
-  let gelu = GELU()
+  let gelu = GELU(approximate: approximate)
   let proj = Dense(count: k * h)
   out = out + proj(gelu(fc(ln2(out))))
   return Model([x], [out])
@@ -53,7 +54,7 @@ private func SigLIPResidualAttentionBlock(
 func SigLIPVisionTransformer<T: TensorNumeric & BinaryFloatingPoint>(
   _ dataType: T.Type,
   gridX: Int, gridY: Int, width: Int, layers: Int, heads: Int, MLP: Int, batchSize: Int,
-  usesFlashAttention: Bool
+  usesFlashAttention: Bool, approximate: GELU.Approximate
 ) -> Model {
   let x = Input()
   let posEmbed = Parameter<T>(
@@ -65,7 +66,7 @@ func SigLIPVisionTransformer<T: TensorNumeric & BinaryFloatingPoint>(
   for i in 0..<layers {
     let block = SigLIPResidualAttentionBlock(
       prefix: "model.encoder.model.visual.blocks.\(i)", k: width / heads, h: heads, b: batchSize,
-      t: gridX * gridY, MLP: MLP, usesFlashAttention: usesFlashAttention)
+      t: gridX * gridY, MLP: MLP, usesFlashAttention: usesFlashAttention, approximate: approximate)
     out = block(out.reshaped([batchSize, gridX * gridY, width]))
   }
   let lnPost = LayerNorm(epsilon: 1e-6, axis: [1])
@@ -73,10 +74,10 @@ func SigLIPVisionTransformer<T: TensorNumeric & BinaryFloatingPoint>(
   return Model([x], [out])
 }
 
-func MoondreamVisionProjection(layers: Int) -> Model {
+func MoondreamVisionProjection(layers: Int, approximate: GELU.Approximate) -> Model {
   let x = Input()
   let mlp1fc = Dense(count: 2048 * 4)
-  let mlp1gelu = GELU()
+  let mlp1gelu = GELU(approximate: approximate)
   let mlp1proj = Dense(count: 2048)
   var out = mlp1proj(mlp1gelu(mlp1fc(x)))
   if layers > 1 {

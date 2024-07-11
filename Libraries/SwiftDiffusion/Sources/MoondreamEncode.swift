@@ -4,6 +4,7 @@ public struct MoondreamEncode<T: TensorNumeric & BinaryFloatingPoint> {
   public enum Version {
     case moondream1
     case moondream2_240306
+    case moondream2_240520
   }
   let filePaths: [String]
   let usesFlashAttention: Bool
@@ -25,11 +26,23 @@ extension MoondreamEncode {
     precondition(x.shape[2] == 378)
     let graph = x.graph
     return graph.withNoGrad {
-      let vit =
-        existingVit
-        ?? SigLIPVisionTransformer(
-          T.self, gridX: 27, gridY: 27, width: 1152, layers: 27, heads: 16, MLP: 4304, batchSize: 1,
-          usesFlashAttention: usesFlashAttention)
+      let vit: Model
+      switch version {
+      case .moondream1, .moondream2_240306:
+        vit =
+          existingVit
+          ?? SigLIPVisionTransformer(
+            T.self, gridX: 27, gridY: 27, width: 1152, layers: 27, heads: 16, MLP: 4304,
+            batchSize: 1,
+            usesFlashAttention: usesFlashAttention, approximate: .none)
+      case .moondream2_240520:
+        vit =
+          existingVit
+          ?? SigLIPVisionTransformer(
+            T.self, gridX: 27, gridY: 27, width: 1152, layers: 27, heads: 16, MLP: 4304,
+            batchSize: 1,
+            usesFlashAttention: usesFlashAttention, approximate: .tanh)
+      }
       if existingVit == nil {
         vit.compile(inputs: x)
         graph.openStore(
@@ -40,9 +53,22 @@ extension MoondreamEncode {
         }
       }
       var out = vit(inputs: x)[0].as(of: T.self)
-      let visionProj =
-        existingVisionProj
-        ?? MoondreamVisionProjection(layers: version == .moondream2_240306 ? 1 : 2)
+      let visionProj: Model
+      switch version {
+      case .moondream1:
+        visionProj =
+          existingVisionProj
+          ?? MoondreamVisionProjection(layers: 2, approximate: .none)
+      case .moondream2_240306:
+        visionProj =
+          existingVisionProj
+          ?? MoondreamVisionProjection(layers: 1, approximate: .none)
+      case .moondream2_240520:
+        visionProj =
+          existingVisionProj
+          ?? MoondreamVisionProjection(layers: 1, approximate: .tanh)
+        out = Functional.concat(axis: 1, out, out)
+      }
       if existingVisionProj == nil {
         visionProj.compile(inputs: out)
         graph.openStore(
