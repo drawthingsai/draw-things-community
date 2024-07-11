@@ -278,6 +278,9 @@ extension ScriptExecutor {
       clear() {
         __dtHooks.clearCanvas();
       },
+      CLIP(listOfText) {
+        return __dtHooks.CLIP(listOfText);
+      },
       loadImage(file) {
         __dtHooks.loadImageFileToCanvas(file);
       },
