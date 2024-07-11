@@ -118,11 +118,11 @@ extension CLIPModelWithProjection {
       }
       var imageOut = vit(inputs: imageTensorsGPU)[0].as(of: FloatType.self)
       imageOut = imageOut * visualProj
+      imageOut = imageOut .* (1 / imageOut.reduced(.norm2, axis: [1]))
 
       return textEmbeds.map { textEmbed in
         var textOut = textEmbed * textProj
         textOut = textOut .* (1 / textOut.reduced(.norm2, axis: [2]))
-        imageOut = imageOut .* (1 / imageOut.reduced(.norm2, axis: [1]))
         let result = Functional.matmul(left: textOut, right: imageOut, rightTranspose: (0, 1))
         return Float(result.toCPU()[0, 0, 0])
       }
