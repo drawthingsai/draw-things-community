@@ -3,7 +3,7 @@ import NNC
 public struct MoondreamEncode<T: TensorNumeric & BinaryFloatingPoint> {
   public enum Version {
     case moondream1
-    case moondream2
+    case moondream2_240306
   }
   let filePaths: [String]
   let usesFlashAttention: Bool
@@ -41,7 +41,8 @@ extension MoondreamEncode {
       }
       var out = vit(inputs: x)[0].as(of: T.self)
       let visionProj =
-        existingVisionProj ?? MoondreamVisionProjection(layers: version == .moondream2 ? 1 : 2)
+        existingVisionProj
+        ?? MoondreamVisionProjection(layers: version == .moondream2_240306 ? 1 : 2)
       if existingVisionProj == nil {
         visionProj.compile(inputs: out)
         graph.openStore(

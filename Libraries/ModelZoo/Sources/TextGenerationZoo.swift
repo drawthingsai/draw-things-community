@@ -24,6 +24,8 @@ public struct TextGenerationZoo: DownloadZoo {
     Specification(name: "SigLIP Vision Transformer (8-bit)", file: "siglip_384_q8p.ckpt"),
     Specification(name: "Phi Moondream1 FT (6-bit)", file: "moondream1_q6p.ckpt"),
     Specification(name: "Phi Moondream2 FT (6-bit)", file: "moondream2_q6p.ckpt"),
+    Specification(name: "SigLIP (Moondream2/20240520) (8-bit)", file: "siglip_384_240520_q8p.ckpt"),
+    Specification(name: "Phi Moondream2/20240520 FT (6-bit)", file: "moondream2_240520_q6p.ckpt"),
   ]
 
   private static var specificationMapping: [String: Specification] = {
