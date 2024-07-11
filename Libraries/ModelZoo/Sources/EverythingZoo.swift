@@ -26,6 +26,9 @@ public struct EverythingZoo: DownloadZoo {
     "dino_v2_f16.ckpt": "0307862ca24f4021e585f2a6f849a8ec97fbede35d08568344e860ba7f0bdd9d",
     "is_net_v1.1_fp16.ckpt": "979e667a1ab7f9600b875dedc528c855ec6f12af1f8e8bfed477a785abd694a5",
     "film_1.0_f16.ckpt": "6716ef2f07e1479b5b2d6d5d3756ca221da6674f2c2a632c421d0fa41676f9c3",
+    "clip_vit_l14_vision_model_f16.ckpt":
+      "4c2e72331090ec33dce5b622728d26d456402dc6c827ff2b9968eaab65800ab3",
+    "clip_vit_l14_f16.ckpt": "809bfd12c8d4b3d79c14e850b99130a70854f6fd8dedcacdf429417c02fa3007",
   ]
 
   static let builtinSpecifications: [Specification] = [
@@ -38,6 +41,8 @@ public struct EverythingZoo: DownloadZoo {
     ),
     Specification(name: "IS Net 1.1", file: "is_net_v1.1_fp16.ckpt"),
     Specification(name: "FILM", file: "film_1.0_f16.ckpt"),
+    Specification(name: "CLIP L/14 Vision Model", file: "clip_vit_l14_vision_model_f16.ckpt"),
+    Specification(name: "CLIP L/14 Text Model", file: "clip_vit_l14_f16.ckpt"),
   ]
 
   public static var availableSpecifications: [Specification] { builtinSpecifications }
