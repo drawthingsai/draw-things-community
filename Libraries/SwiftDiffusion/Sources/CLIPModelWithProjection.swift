@@ -16,7 +16,7 @@ extension CLIPModelWithProjection {
     let textEmbeds = graph.withNoGrad {
       let maxLength = 77
       let (_, tokens, _, _, _) = tokenizer.tokenize(text: texts[0], truncation: true, maxLength: 77)
-      var tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [maxLength], of: Int32.self)
+      let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [maxLength], of: Int32.self)
       let positionTensor = graph.variable(
         .CPU, format: .NHWC, shape: [maxLength], of: Int32.self)
       // end token

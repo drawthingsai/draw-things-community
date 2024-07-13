@@ -14,7 +14,7 @@ private func SigLIPSelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttent
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), multiHeadOutputProjectionFused: true)
     let out = scaledDotProductAttention(queries, keys, values).reshaped([
-      b * t, h * k,
+      b, t, h * k,
     ])
     return (toqueries, tokeys, tovalues, scaledDotProductAttention, Model([x], [out]))
   } else {
@@ -27,7 +27,7 @@ private func SigLIPSelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttent
     dot = dot.softmax()
     dot = dot.reshaped([b, h, t, t])
     var out = dot * values
-    out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b * t, h * k])
+    out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b, t, h * k])
     let unifyheads = Dense(count: k * h)
     out = unifyheads(out)
     return (toqueries, tokeys, tovalues, unifyheads, Model([x], [out]))
@@ -42,8 +42,8 @@ private func SigLIPResidualAttentionBlock(
   let ln1 = LayerNorm(epsilon: 1e-6, axis: [2])
   let (_, _, _, _, attention) = SigLIPSelfAttention(
     k: k, h: h, b: b, t: t, usesFlashAttention: usesFlashAttention)
-  var out = x.reshaped([b * t, h * k]) + attention(ln1(x))
-  let ln2 = LayerNorm(epsilon: 1e-6, axis: [1])
+  var out = x + attention(ln1(x))
+  let ln2 = LayerNorm(epsilon: 1e-6, axis: [2])
   let fc = Dense(count: MLP)
   let gelu = GELU(approximate: approximate)
   let proj = Dense(count: k * h)
@@ -69,7 +69,7 @@ func SigLIPVisionTransformer<T: TensorNumeric & BinaryFloatingPoint>(
       t: gridX * gridY, MLP: MLP, usesFlashAttention: usesFlashAttention, approximate: approximate)
     out = block(out.reshaped([batchSize, gridX * gridY, width]))
   }
-  let lnPost = LayerNorm(epsilon: 1e-6, axis: [1])
+  let lnPost = LayerNorm(epsilon: 1e-6, axis: [2])
   out = lnPost(out)
   return Model([x], [out])
 }
