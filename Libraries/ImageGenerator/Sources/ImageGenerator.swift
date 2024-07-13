@@ -902,7 +902,7 @@ extension ImageGenerator {
     )
   }
 
-  public func tokenize(
+  private func tokenize(
     graph: DynamicGraph, modelVersion: ModelVersion, text: String, negativeText: String,
     negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool, clipL: String?,
     openClipG: String?
