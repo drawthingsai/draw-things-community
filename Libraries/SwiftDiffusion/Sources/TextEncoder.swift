@@ -1002,7 +1002,7 @@ extension TextEncoder {
     let lengthOfCond = lengthsOfCond.reduce(0, +)
     let lengthOfUncond = lengthsOfUncond.reduce(0, +)
     assert(tokens[0].shape[0] == 2 * max(lengthOfCond, lengthOfUncond))
-    let tokenLength = max(max(lengthOfCond, lengthOfUncond), 256)
+    let tokenLength = max(max(lengthOfCond + 2, lengthOfUncond + 2), 256)
     var rightAlignedTokens = Tensor<Int32>(.CPU, format: .NHWC, shape: [tokenLength * 2])
     for i in 0..<(tokenLength - lengthOfUncond - 2) {
       rightAlignedTokens[i] = 0

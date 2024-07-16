@@ -948,8 +948,8 @@ extension ImageGenerator {
           paddingToken: nil, conditionalLength: 4096, modifier: .chatglm3_6b,
           potentials: potentials,
           startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
-        result.7 = max(256, result.7)
-        result.8 = max(256, result.8)
+        result.7 = max(256, result.7 + 2)
+        result.8 = max(256, result.8 + 2)
         return result
       case nil:
         let tokenizerV2 = tokenizerXL

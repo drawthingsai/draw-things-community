@@ -334,10 +334,6 @@ public struct ModelZoo: DownloadZoo {
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt"),
     Specification(
-      name: "Kwai Kolors (v1.0)", file: "kwai_kolors_1.0_f16.ckpt", prefix: "", version: .sdxlBase,
-      defaultScale: 16, textEncoder: "chatglm3_6b_q6p_q8p.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", textEncoderVersion: .chatglm3_6b),
-    Specification(
       name: "SDXL Base v1.0 (8-bit)", file: "sd_xl_base_1.0_q6p_q8p.ckpt", prefix: "",
       version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
