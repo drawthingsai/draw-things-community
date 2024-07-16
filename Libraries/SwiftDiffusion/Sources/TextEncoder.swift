@@ -1062,9 +1062,9 @@ extension TextEncoder {
       rotaryEmbedding[0..<1, 0..<(lengthOfCond + 2), 0..<1, 0..<128]
     // ChatGLM3 alignment is a bit different, realign the token tensor.
     let (textModel, _) = GLMTransformer(
-      FloatType.self, vocabularySize: 65_024, width: 4_096, tokenLength: 256, layers: 28,
-      MLP: 13_696, heads: 33 - min(max(clipSkip - 1, 1), 31), batchSize: 2, outputPenultimate: true,
-      applyFinalNorm: false, usesFlashAttention: usesFlashAttention)
+      FloatType.self, vocabularySize: 65_024, width: 4_096, tokenLength: tokenLength,
+      layers: 29 - min(max(clipSkip - 1, 1), 27), MLP: 13_696, heads: 32, batchSize: 2,
+      outputPenultimate: true, applyFinalNorm: false, usesFlashAttention: usesFlashAttention)
     let rightAlignedTokensTensorGPU = graph.variable(rightAlignedTokens.toGPU(0))
     let rightAlignedRotaryEmbeddingGPU = graph.variable(rightAlignedRotaryEmbedding.toGPU(0))
     let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
