@@ -31,6 +31,7 @@ public struct ImageGenerator {
   public var tokenizerXL: TextualInversionAttentionCLIPTokenizer
   public var tokenizerKandinsky: SentencePieceTokenizer
   public var tokenizerT5: SentencePieceTokenizer
+  public var tokenizerChatGLM3: SentencePieceTokenizer
   let poseDrawer: PoseDrawer
   private let queue: DispatchQueue
   public init(
@@ -40,6 +41,7 @@ public struct ImageGenerator {
     tokenizerXL: TextualInversionAttentionCLIPTokenizer,
     tokenizerKandinsky: SentencePieceTokenizer,
     tokenizerT5: SentencePieceTokenizer,
+    tokenizerChatGLM3: SentencePieceTokenizer,
     poseDrawer: PoseDrawer
   ) {
     self.queue = queue
@@ -48,6 +50,7 @@ public struct ImageGenerator {
     self.tokenizerXL = tokenizerXL
     self.tokenizerKandinsky = tokenizerKandinsky
     self.tokenizerT5 = tokenizerT5
+    self.tokenizerChatGLM3 = tokenizerChatGLM3
     self.poseDrawer = poseDrawer
     modelPreloader = ModelPreloader(
       queue: queue, configurations: configurations, workspace: workspace)
@@ -622,7 +625,7 @@ extension ImageGenerator {
     graph: DynamicGraph, tokenizer: Tokenizer & TextualInversionPoweredTokenizer,
     text: String, negativeText: String, paddingToken: Int32?, conditionalLength: Int,
     modifier: TextualInversionZoo.Modifier, potentials: [String], startLength: Int = 1,
-    maxLength: Int = 77, paddingLength: Int = 77
+    endLength: Int = 1, maxLength: Int = 77, paddingLength: Int = 77
   ) -> (
     //    tokensTensors, positionTensors, embedMask, injectedEmbeddings, unconditionalAttentionWeights,
     //    attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
@@ -745,9 +748,9 @@ extension ImageGenerator {
         newUnconditionalWeights.count - unconditionalAttentionWeights.count)
     }
     let totalLengthOfUncond = lengthsOfUncond.reduce(0, +)
-    if totalLengthOfUncond + 1 + startLength > tokenLength {
+    if totalLengthOfUncond + endLength + startLength > tokenLength {
       lengthsOfUncond[lengthsOfUncond.count - 1] -=
-        totalLengthOfUncond + 1 + startLength - tokenLength
+        totalLengthOfUncond + endLength + startLength - tokenLength
     }
     unconditionalTokens = newUnconditionalTokens
     unconditionalAttentionWeights = newUnconditionalWeights
@@ -786,8 +789,9 @@ extension ImageGenerator {
       newUnconditionalWeights.removeLast(newWeights.count - attentionWeights.count)
     }
     let totalLengthOfCond = lengthsOfCond.reduce(0, +)
-    if totalLengthOfCond + 1 + startLength > tokenLength {
-      lengthsOfCond[lengthsOfCond.count - 1] -= totalLengthOfCond + 1 + startLength - tokenLength
+    if totalLengthOfCond + endLength + startLength > tokenLength {
+      lengthsOfCond[lengthsOfCond.count - 1] -=
+        totalLengthOfCond + endLength + startLength - tokenLength
     }
     tokens = newTokens
     attentionWeights = newWeights
@@ -821,7 +825,7 @@ extension ImageGenerator {
     var tokenLengthUncond = tokenLength
     // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than paddingLength.
     if prefixLength < tokenLength - 1 {
-      if maxPosition + 1 + startLength > paddingLength {  // If it is paddingLength, we can go to later to find i
+      if maxPosition + endLength + startLength > paddingLength {  // If it is paddingLength, we can go to later to find i
         tokenLengthUncond = prefixLength + 1
       }
       var position = maxPosition + 1
@@ -850,7 +854,7 @@ extension ImageGenerator {
     var tokenLengthCond = tokenLength
     // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than paddingLength.
     if prefixLength < tokenLength - 1 {
-      if maxPosition + 1 + startLength > paddingLength {  // If it is paddingLength, we can go to later to find i
+      if maxPosition + endLength + startLength > paddingLength {  // If it is paddingLength, we can go to later to find i
         tokenLengthCond = prefixLength + 1
       }
       var position = maxPosition + 1
@@ -903,9 +907,9 @@ extension ImageGenerator {
   }
 
   private func tokenize(
-    graph: DynamicGraph, modelVersion: ModelVersion, text: String, negativeText: String,
-    negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool, clipL: String?,
-    openClipG: String?
+    graph: DynamicGraph, modelVersion: ModelVersion, textEncoderVersion: TextEncoderVersion?,
+    text: String, negativeText: String, negativePromptForImagePrior: Bool, potentials: [String],
+    T5TextEncoder: Bool, clipL: String?, openClipG: String?
   ) -> (
     //  return:
     //  tokensTensors, positionTensors, embedMask, injectedEmbeddings, unconditionalAttentionWeights,
@@ -937,19 +941,31 @@ extension ImageGenerator {
         graph: graph, tokenizer: tokenizerXL, text: text, negativeText: negativeText,
         paddingToken: nil, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
     case .sdxlBase, .sdxlRefiner, .ssd1b:
-      let tokenizerV2 = tokenizerXL
-      var tokenizerV1 = tokenizerV1
-      tokenizerV1.textualInversions = tokenizerV2.textualInversions
-      var result = tokenize(
-        graph: graph, tokenizer: tokenizerV2, text: text, negativeText: negativeText,
-        paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
-      let (tokens, _, embedMask, injectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
-        graph: graph, tokenizer: tokenizerV1, text: text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials)
-      result.0 = tokens + result.0
-      result.2 = embedMask + result.2
-      result.3 = injectedEmbeddings + result.3
-      return result
+      switch textEncoderVersion {
+      case .chatglm3_6b:
+        var result = tokenize(
+          graph: graph, tokenizer: tokenizerChatGLM3, text: text, negativeText: negativeText,
+          paddingToken: nil, conditionalLength: 4096, modifier: .chatglm3_6b,
+          potentials: potentials,
+          startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
+        result.7 = max(256, result.7)
+        result.8 = max(256, result.8)
+        return result
+      case nil:
+        let tokenizerV2 = tokenizerXL
+        var tokenizerV1 = tokenizerV1
+        tokenizerV1.textualInversions = tokenizerV2.textualInversions
+        var result = tokenize(
+          graph: graph, tokenizer: tokenizerV2, text: text, negativeText: negativeText,
+          paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
+        let (tokens, _, embedMask, injectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
+          graph: graph, tokenizer: tokenizerV1, text: text, negativeText: negativeText,
+          paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials)
+        result.0 = tokens + result.0
+        result.2 = embedMask + result.2
+        result.3 = injectedEmbeddings + result.3
+        return result
+      }
     case .pixart:
       return tokenize(
         graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
@@ -2056,6 +2072,7 @@ extension ImageGenerator {
       file = ModelZoo.defaultSpecification.file
     }
     let modelVersion = ModelZoo.versionForModel(file)
+    let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     // generateTextOnly cannot handle I2v model.
     guard modelVersion != .svdI2v else {
       return (nil, 1)
@@ -2330,7 +2347,8 @@ extension ImageGenerator {
       attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
       lengthsOfCond
     ) = tokenize(
-      graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
+      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion, text: text,
+      negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
@@ -2340,7 +2358,7 @@ extension ImageGenerator {
     return graph.withNoGrad {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
-        version: modelVersion,
+        version: modelVersion, textEncoderVersion: textEncoderVersion,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
@@ -2908,6 +2926,7 @@ extension ImageGenerator {
       file = ModelZoo.defaultSpecification.file
     }
     let modelVersion = ModelZoo.versionForModel(file)
+    let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
     var textEncoderFiles: [String] =
@@ -3153,7 +3172,8 @@ extension ImageGenerator {
       attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
       lengthsOfCond
     ) = tokenize(
-      graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
+      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion, text: text,
+      negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
@@ -3185,7 +3205,7 @@ extension ImageGenerator {
     return graph.withNoGrad {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
-        version: modelVersion,
+        version: modelVersion, textEncoderVersion: textEncoderVersion,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
@@ -4101,6 +4121,7 @@ extension ImageGenerator {
       file = ModelZoo.defaultSpecification.file
     }
     let modelVersion = ModelZoo.versionForModel(file)
+    let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
     var textEncoderFiles: [String] =
@@ -4338,7 +4359,8 @@ extension ImageGenerator {
       attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
       lengthsOfCond
     ) = tokenize(
-      graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
+      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion, text: text,
+      negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
@@ -4361,7 +4383,7 @@ extension ImageGenerator {
     return graph.withNoGrad {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
-        version: modelVersion,
+        version: modelVersion, textEncoderVersion: textEncoderVersion,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
@@ -4785,6 +4807,7 @@ extension ImageGenerator {
       file = ModelZoo.defaultSpecification.file
     }
     let modelVersion = ModelZoo.versionForModel(file)
+    let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
     var textEncoderFiles: [String] =
@@ -5022,7 +5045,8 @@ extension ImageGenerator {
       attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
       lengthsOfCond
     ) = tokenize(
-      graph: graph, modelVersion: modelVersion, text: text, negativeText: negativeText,
+      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion, text: text,
+      negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
@@ -5044,7 +5068,7 @@ extension ImageGenerator {
     return graph.withNoGrad {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
-        version: modelVersion,
+        version: modelVersion, textEncoderVersion: textEncoderVersion,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,

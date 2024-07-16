@@ -65,23 +65,33 @@ extension UNetFixedEncoder {
         from: timeEmbedding(
           timestep: Float(negativeOriginalSize.width), batchSize: 1, embeddingSize: 256,
           maxPeriod: 10_000))
-      var vector = graph.variable(.GPU(0), .WC(batchSize, 2816), of: FloatType.self)
-      vector[0..<batchSize, 0..<1280] = textEmbedding
+      let textEmbeddingShape = textEmbedding.shape
+      var vector = graph.variable(
+        .GPU(0), .WC(batchSize, textEmbeddingShape[1] + 1536), of: FloatType.self)
+      vector[0..<batchSize, 0..<textEmbeddingShape[1]] = textEmbedding
       if zeroNegativePrompt && (batchSize % 2) == 0 && (version == .sdxlBase || version == .ssd1b) {
-        vector[0..<(batchSize / 2), 0..<1280].full(0)
+        vector[0..<(batchSize / 2), 0..<textEmbeddingShape[1]].full(0)
       }
       for i in 0..<batchSize {
         if i < batchSize / 2 {
-          vector[i..<(i + 1), 1280..<1536] = graph.variable(negativeOriginalHeight.toGPU(0))
-          vector[i..<(i + 1), 1536..<1792] = graph.variable(negativeOriginalWidth.toGPU(0))
+          vector[i..<(i + 1), textEmbeddingShape[1]..<(textEmbeddingShape[1] + 256)] =
+            graph.variable(negativeOriginalHeight.toGPU(0))
+          vector[i..<(i + 1), (textEmbeddingShape[1] + 256)..<(textEmbeddingShape[1] + 512)] =
+            graph.variable(negativeOriginalWidth.toGPU(0))
         } else {
-          vector[i..<(i + 1), 1280..<1536] = graph.variable(originalHeight.toGPU(0))
-          vector[i..<(i + 1), 1536..<1792] = graph.variable(originalWidth.toGPU(0))
+          vector[i..<(i + 1), textEmbeddingShape[1]..<(textEmbeddingShape[1] + 256)] =
+            graph.variable(originalHeight.toGPU(0))
+          vector[i..<(i + 1), (textEmbeddingShape[1] + 256)..<(textEmbeddingShape[1] + 512)] =
+            graph.variable(originalWidth.toGPU(0))
         }
-        vector[i..<(i + 1), 1792..<2048] = graph.variable(cropTop.toGPU(0))
-        vector[i..<(i + 1), 2048..<2304] = graph.variable(cropLeft.toGPU(0))
-        vector[i..<(i + 1), 2304..<2560] = graph.variable(targetHeight.toGPU(0))
-        vector[i..<(i + 1), 2560..<2816] = graph.variable(targetWidth.toGPU(0))
+        vector[i..<(i + 1), (textEmbeddingShape[1] + 512)..<(textEmbeddingShape[1] + 768)] =
+          graph.variable(cropTop.toGPU(0))
+        vector[i..<(i + 1), (textEmbeddingShape[1] + 768)..<(textEmbeddingShape[1] + 1024)] =
+          graph.variable(cropLeft.toGPU(0))
+        vector[i..<(i + 1), (textEmbeddingShape[1] + 1024)..<(textEmbeddingShape[1] + 1280)] =
+          graph.variable(targetHeight.toGPU(0))
+        vector[i..<(i + 1), (textEmbeddingShape[1] + 1280)..<(textEmbeddingShape[1] + 1536)] =
+          graph.variable(targetWidth.toGPU(0))
       }
       return [vector]
     case .sdxlRefiner:
@@ -171,13 +181,6 @@ extension UNetFixedEncoder {
     case .sdxlBase, .ssd1b:
       let batchSize = textEncoding[0].shape[0]
       let maxTokenLength = textEncoding[0].shape[1]
-      var crossattn = graph.variable(
-        textEncoding[0].kind, .HWC(batchSize, maxTokenLength, 2048), of: FloatType.self)
-      crossattn[0..<batchSize, 0..<maxTokenLength, 0..<768] = textEncoding[0]
-      crossattn[0..<batchSize, 0..<maxTokenLength, 768..<2048] = textEncoding[1]
-      if zeroNegativePrompt && (batchSize % 2) == 0 && (version == .sdxlBase || version == .ssd1b) {
-        crossattn[0..<(batchSize / 2), 0..<maxTokenLength, 0..<2048].full(0)
-      }
       let unetBaseFixed: Model
       let unetBaseFixedWeightMapper: ModelWeightMapper
       if version == .sdxlBase {
@@ -200,6 +203,29 @@ extension UNetFixedEncoder {
             outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
             usesFlashAttention: usesFlashAttention ? .scale1 : .none, isTemporalMixEnabled: false
           )
+      }
+      var textEncoding = textEncoding
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) {
+        if $0.read(like: "__encoder_hid_proj__[t-0-0]") != nil {
+          let encoderHidProj = Dense(count: 2_048)
+          encoderHidProj.compile(inputs: textEncoding[0])
+          $0.read(
+            "encoder_hid_proj", model: encoderHidProj, codec: [.jit, .q6p, .q8p, .externalData])
+          textEncoding = encoderHidProj(inputs: textEncoding[0]).map { $0.as(of: FloatType.self) }
+        }
+      }
+      var crossattn = graph.variable(
+        textEncoding[0].kind, .HWC(batchSize, maxTokenLength, 2048), of: FloatType.self)
+      if textEncoding.count >= 2 {
+        crossattn[0..<batchSize, 0..<maxTokenLength, 0..<768] = textEncoding[0]
+        crossattn[0..<batchSize, 0..<maxTokenLength, 768..<2048] = textEncoding[1]
+      } else {
+        crossattn[0..<batchSize, 0..<maxTokenLength, 0..<2048] = textEncoding[0]
+      }
+      if zeroNegativePrompt && (batchSize % 2) == 0 && (version == .sdxlBase || version == .ssd1b) {
+        crossattn[0..<(batchSize / 2), 0..<maxTokenLength, 0..<2048].full(0)
       }
       unetBaseFixed.compile(inputs: crossattn)
       graph.openStore(

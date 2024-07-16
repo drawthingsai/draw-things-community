@@ -278,6 +278,7 @@ public struct TextualInversionZoo: DownloadZoo {
     case clipG
     case clipL
     case t5xxl
+    case chatglm3_6b
   }
 
   public static func embeddingForModel<FloatType: TensorNumeric>(
@@ -298,7 +299,7 @@ public struct TextualInversionZoo: DownloadZoo {
         count = 1280
       case .clipL:
         count = 768
-      case .t5xxl:
+      case .t5xxl, .chatglm3_6b:
         count = 4096
       }
     case .pixart:
@@ -320,6 +321,8 @@ public struct TextualInversionZoo: DownloadZoo {
           tensorName = "string_to_param_clip_l"
         case .t5xxl:
           tensorName = "string_to_param_t5_xxl"
+        case .chatglm3_6b:
+          tensorName = "string_to_param_chatglm3_6b"
         }
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()

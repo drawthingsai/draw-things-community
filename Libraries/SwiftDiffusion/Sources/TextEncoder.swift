@@ -4,6 +4,7 @@ import NNC
 public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePaths: [String]
   public let version: ModelVersion
+  public let textEncoderVersion: TextEncoderVersion?
   public let usesFlashAttention: Bool
   public let injectEmbeddings: Bool
   public let maxLength: Int
@@ -11,11 +12,13 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let lora: [LoRAConfiguration]
   public let externalOnDemand: Bool
   public init(
-    filePaths: [String], version: ModelVersion, usesFlashAttention: Bool, injectEmbeddings: Bool,
-    externalOnDemand: Bool, maxLength: Int = 77, clipSkip: Int = 1, lora: [LoRAConfiguration] = []
+    filePaths: [String], version: ModelVersion, textEncoderVersion: TextEncoderVersion?,
+    usesFlashAttention: Bool, injectEmbeddings: Bool, externalOnDemand: Bool, maxLength: Int = 77,
+    clipSkip: Int = 1, lora: [LoRAConfiguration] = []
   ) {
     self.filePaths = filePaths
     self.version = version
+    self.textEncoderVersion = textEncoderVersion
     self.usesFlashAttention = usesFlashAttention
     self.injectEmbeddings = injectEmbeddings
     self.externalOnDemand = externalOnDemand
@@ -988,6 +991,107 @@ extension TextEncoder {
     return ([c], [textModel])
   }
 
+  private func encodeChatGLM3(
+    tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
+    mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
+    lengthsOfUncond: [Int], lengthsOfCond: [Int], textModels existingTextModels: [Model?]
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let graph = tokens[0].graph
+    let lengthOfCond = lengthsOfCond.reduce(0, +)
+    let lengthOfUncond = lengthsOfUncond.reduce(0, +)
+    assert(tokens[0].shape[0] == 2 * max(lengthOfCond, lengthOfUncond))
+    let tokenLength = max(max(lengthOfCond, lengthOfUncond), 256)
+    var rightAlignedTokens = Tensor<Int32>(.CPU, format: .NHWC, shape: [tokenLength * 2])
+    for i in 0..<(tokenLength - lengthOfUncond - 2) {
+      rightAlignedTokens[i] = 0
+    }
+    rightAlignedTokens[tokenLength - lengthOfUncond - 2] = 64_790
+    rightAlignedTokens[tokenLength - lengthOfUncond - 1] = 64_792
+    for i in (tokenLength - lengthOfUncond)..<tokenLength {
+      rightAlignedTokens[i] = tokens[0][i - (tokenLength - lengthOfUncond)]
+    }
+    for i in 0..<(tokenLength - lengthOfCond - 2) {
+      rightAlignedTokens[tokenLength + i] = 0
+    }
+    rightAlignedTokens[tokenLength + tokenLength - lengthOfCond - 2] = 64_790
+    rightAlignedTokens[tokenLength + tokenLength - lengthOfCond - 1] = 64_792
+    for i in (tokenLength - lengthOfCond)..<tokenLength {
+      rightAlignedTokens[tokenLength + i] =
+        tokens[0][max(lengthOfCond, lengthOfUncond) + i - (tokenLength - lengthOfCond)]
+    }
+    let causalAttentionMask = graph.variable(
+      .CPU, .NHWC(2, 1, tokenLength, tokenLength), of: FloatType.self)
+    causalAttentionMask.full(0)
+    for i in (tokenLength - lengthOfUncond - 2)..<(tokenLength - 1) {
+      for j in (i + 1)..<tokenLength {
+        causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    for i in (tokenLength - lengthOfUncond - 2)..<tokenLength {
+      for j in 0..<(tokenLength - lengthOfUncond - 2) {
+        causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    for i in (tokenLength - lengthOfCond - 2)..<(tokenLength - 1) {
+      for j in (i + 1)..<tokenLength {
+        causalAttentionMask[1, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    for i in (tokenLength - lengthOfCond - 2)..<tokenLength {
+      for j in 0..<(tokenLength - lengthOfCond - 2) {
+        causalAttentionMask[1, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    let rotaryEmbedding = GLMRotaryEmbedding(sequenceLength: tokenLength, of: FloatType.self)
+    var rightAlignedRotaryEmbedding = Tensor<FloatType>(.CPU, .NHWC(2, tokenLength, 1, 128))
+    for i in 0..<(tokenLength - lengthOfUncond - 2) {
+      rightAlignedRotaryEmbedding[0..<1, i..<(i + 1), 0..<1, 0..<128] =
+        rotaryEmbedding[0..<1, 0..<1, 0..<1, 0..<128]
+    }
+    rightAlignedRotaryEmbedding[
+      0..<1, (tokenLength - lengthOfUncond - 2)..<tokenLength, 0..<1, 0..<128] =
+      rotaryEmbedding[0..<1, 0..<(lengthOfUncond + 2), 0..<1, 0..<128]
+    for i in 0..<(tokenLength - lengthOfCond - 2) {
+      rightAlignedRotaryEmbedding[1..<2, i..<(i + 1), 0..<1, 0..<128] =
+        rotaryEmbedding[0..<1, 0..<1, 0..<1, 0..<128]
+    }
+    rightAlignedRotaryEmbedding[
+      1..<2, (tokenLength - lengthOfCond - 2)..<tokenLength, 0..<1, 0..<128] =
+      rotaryEmbedding[0..<1, 0..<(lengthOfCond + 2), 0..<1, 0..<128]
+    // ChatGLM3 alignment is a bit different, realign the token tensor.
+    let (textModel, _) = GLMTransformer(
+      FloatType.self, vocabularySize: 65_024, width: 4_096, tokenLength: 256, layers: 28,
+      MLP: 13_696, heads: 33 - min(max(clipSkip - 1, 1), 31), batchSize: 2, outputPenultimate: true,
+      applyFinalNorm: false, usesFlashAttention: usesFlashAttention)
+    let rightAlignedTokensTensorGPU = graph.variable(rightAlignedTokens.toGPU(0))
+    let rightAlignedRotaryEmbeddingGPU = graph.variable(rightAlignedRotaryEmbedding.toGPU(0))
+    let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
+    textModel.compile(
+      inputs: rightAlignedTokensTensorGPU, rightAlignedRotaryEmbeddingGPU, causalAttentionMaskGPU)
+    // Move ChatGLM3 to on-demand.
+    TensorData.makeExternalData(for: filePaths[0], graph: graph)
+    graph.openStore(
+      filePaths[0], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[0])
+    ) { store in
+      store.read(
+        "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    }
+    let c = textModel(
+      inputs: rightAlignedTokensTensorGPU, rightAlignedRotaryEmbeddingGPU, causalAttentionMaskGPU
+    ).map {
+      $0.as(
+        of: FloatType.self
+      )
+    }
+    var pooled = graph.variable(.GPU(0), .WC(2, 4096), of: FloatType.self)
+    pooled[0..<1, 0..<4096] = c[1][(tokenLength - 1)..<tokenLength, 0..<4096]
+    pooled[1..<2, 0..<4096] = c[1][(tokenLength * 2 - 1)..<(tokenLength * 2), 0..<4096]
+    return ([c[0].reshaped(.HWC(2, tokenLength, 4096)), pooled], [textModel])
+  }
+
   public func encode(
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
@@ -1015,10 +1119,18 @@ extension TextEncoder {
     case .kandinsky21:
       return encodeKandinsky(tokens: tokens, positions: positions)
     case .sdxlBase, .sdxlRefiner, .ssd1b:
-      return encodeSDXL(
-        tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
-        lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
-        textModels: existingTextModels)
+      switch textEncoderVersion {
+      case .chatglm3_6b:
+        return encodeChatGLM3(
+          tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
+          lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
+          textModels: existingTextModels)
+      case nil:
+        return encodeSDXL(
+          tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
+          lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
+          textModels: existingTextModels)
+      }
     case .svdI2v:
       return encodeI2v(image: image, textModels: existingTextModels)
     case .wurstchenStageC, .wurstchenStageB:

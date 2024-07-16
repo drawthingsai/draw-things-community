@@ -15,6 +15,10 @@ public enum ModelVersion: String, Codable {
   case pixart = "pixart"
 }
 
+public enum TextEncoderVersion: String, Codable {
+  case chatglm3_6b = "chatglm3_6b"
+}
+
 public enum AlternativeDecoderVersion: String, Codable {
   case transparent = "transparent"
 }

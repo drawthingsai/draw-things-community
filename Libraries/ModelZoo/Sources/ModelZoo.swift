@@ -67,6 +67,7 @@ public struct ModelZoo: DownloadZoo {
     public var latentsStd: [Float]?
     public var latentsScalingFactor: Float?
     public var stageModels: [String]?
+    public var textEncoderVersion: TextEncoderVersion?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -77,7 +78,8 @@ public struct ModelZoo: DownloadZoo {
       isConsistencyModel: Bool? = nil, conditioning: Denoiser.Conditioning? = nil,
       objective: Denoiser.Objective? = nil,
       noiseDiscretization: NoiseDiscretization? = nil, latentsMean: [Float]? = nil,
-      latentsStd: [Float]? = nil, latentsScalingFactor: Float? = nil, stageModels: [String]? = nil
+      latentsStd: [Float]? = nil, latentsScalingFactor: Float? = nil, stageModels: [String]? = nil,
+      textEncoderVersion: TextEncoderVersion? = nil
     ) {
       self.name = name
       self.file = file
@@ -103,6 +105,7 @@ public struct ModelZoo: DownloadZoo {
       self.latentsStd = latentsStd
       self.latentsScalingFactor = latentsScalingFactor
       self.stageModels = stageModels
+      self.textEncoderVersion = textEncoderVersion
     }
     fileprivate var predictV: Bool? = nil
   }
@@ -330,6 +333,10 @@ public struct ModelZoo: DownloadZoo {
       name: "SDXL Base (v1.0)", file: "sd_xl_base_1.0_f16.ckpt", prefix: "", version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt"),
+    Specification(
+      name: "Kwai Kolors (v1.0)", file: "kwai_kolors_1.0_f16.ckpt", prefix: "", version: .sdxlBase,
+      defaultScale: 16, textEncoder: "chatglm3_6b_q6p_q8p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", textEncoderVersion: .chatglm3_6b),
     Specification(
       name: "SDXL Base v1.0 (8-bit)", file: "sd_xl_base_1.0_q6p_q8p.ckpt", prefix: "",
       version: .sdxlBase,
@@ -889,6 +896,11 @@ public struct ModelZoo: DownloadZoo {
   public static func textEncoderForModel(_ name: String) -> String? {
     guard let specification = specificationMapping[name] else { return nil }
     return specification.textEncoder
+  }
+
+  public static func textEncoderVersionForModel(_ name: String) -> TextEncoderVersion? {
+    guard let specification = specificationMapping[name] else { return nil }
+    return specification.textEncoderVersion
   }
 
   public static func imageEncoderForModel(_ name: String) -> String? {
