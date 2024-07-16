@@ -195,7 +195,8 @@ private func InputBlocks(
         attentionBlock: attentionBlock, channels: channel, numHeads: numHeads, batchSize: batchSize,
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention)
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        injectedAttentionKV: false, outputSpatialAttnInput: false)
       previousChannel = channel
       if attentionBlock {
         out = inputLayer(out, emb, c)
@@ -288,7 +289,8 @@ private func InputBlocks(
         batchSize: batchSize,
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention)
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        injectedAttentionKV: false, outputSpatialAttnInput: false)
       previousChannel = channel
       if attentionBlock {
         out = inputLayer(out, emb, c)
@@ -380,11 +382,12 @@ public func ControlNet(
     attentionRes: attentionRes, upcastAttention: false, usesFlashAttention: usesFlashAttention,
     x: x, hint: hint, emb: emb, c: c)
   var out = inputBlocks
-  let (middleBlock, _, middleReader) = MiddleBlock(
+  let (middleBlock, _, middleReader, _) = MiddleBlock(
     prefix: "model.control_model",
     channels: 1280, numHeads: 8, batchSize: batchSize, height: startHeight / 8,
     width: startWidth / 8, embeddingLength: embeddingLength, injectIPAdapterLengths: [],
-    upcastAttention: false, usesFlashAttention: usesFlashAttention, x: out, emb: emb, c: c)
+    upcastAttention: false, usesFlashAttention: usesFlashAttention, x: out, emb: emb, c: c,
+    injectedAttentionKVs: [], outputSpatialAttnInput: false)
   out = middleBlock
   var zeroConvs = [Model]()
   var outputs = [Model.IO]()

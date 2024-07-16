@@ -206,7 +206,8 @@ extension UNetFromNNC {
             startWidth: tiledWidth, startHeight: tiledHeight,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-            injectIPAdapterLengths: injectIPAdapterLengths
+            injectIPAdapterLengths: injectIPAdapterLengths, injectAttentionKV: false,
+            outputSpatialAttnInput: false
           ).0
       }
     case .v2:

@@ -266,7 +266,7 @@ private func BasicTransformerBlock(
   var out = layerNorm1(x)
   let (tokeys1, toqueries1, tovalues1, unifyheads1, attn1) = SelfAttention(
     k: k, h: h, b: b, hw: hw, upcastAttention: upcastAttention,
-    usesFlashAttention: usesFlashAttention)
+    usesFlashAttention: usesFlashAttention, injectedAttentionKV: false)
   out = attn1(out) + x
   var residual = out
   let keys: Input?
@@ -504,7 +504,8 @@ func BasicTimeTransformerBlock(
   out = ffIn(normIn(out).reshaped([hw * b, k * h])).reshaped([hw, b, k * h]) + out
   let layerNorm1 = LayerNorm(epsilon: 1e-5, axis: [2])
   let (tokeys1, toqueries1, tovalues1, unifyheads1, attn1) = SelfAttention(
-    k: k, h: h, b: hw, hw: b, upcastAttention: false, usesFlashAttention: usesFlashAttention)
+    k: k, h: h, b: hw, hw: b, upcastAttention: false, usesFlashAttention: usesFlashAttention,
+    injectedAttentionKV: false)
   out = attn1(layerNorm1(out).reshaped([hw * b, k * h])) + out
   var residual = out
   let keys: Input?
