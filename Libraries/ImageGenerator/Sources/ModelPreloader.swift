@@ -360,6 +360,8 @@ extension ModelPreloader {
         modelVersion == .v1 || modelVersion == .v2 || modelVersion == .sdxlBase
           || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
       else { return false }
+      let textEncoderVersion = ModelZoo.textEncoderVersionForModel(modelFile)
+      guard textEncoderVersion == nil else { return false }
       if DeviceCapability.isMaxPerformance {
         return true
       }
