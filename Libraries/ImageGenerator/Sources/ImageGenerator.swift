@@ -808,7 +808,7 @@ extension ImageGenerator {
     positionTensor[tokenLength] = 0
     positionTensor[tokenLength * 2 - 1] = 76
     // For everything else, we will go through lengths of each, and assigning accordingly.
-    j = 1
+    j = startLength
     var maxPosition = 0
     prefixLength = startLength
     for length in lengthsOfUncond {
@@ -837,7 +837,7 @@ extension ImageGenerator {
         }
       }
     }
-    j = tokenLength + 1
+    j = tokenLength + startLength
     maxPosition = 0
     prefixLength = startLength
     for length in lengthsOfCond {
