@@ -1061,6 +1061,11 @@ extension TextEncoder {
       1..<2, (tokenLength - lengthOfCond - 2)..<tokenLength, 0..<1, 0..<128] =
       rotaryEmbedding[0..<1, 0..<(lengthOfCond + 2), 0..<1, 0..<128]
     // ChatGLM3 alignment is a bit different, realign the token tensor.
+    let flags = DynamicGraph.flags
+    defer {
+      DynamicGraph.flags = flags
+    }
+    DynamicGraph.flags.insert(.disableMFAGEMM)
     let (textModel, _) = GLMTransformer(
       FloatType.self, vocabularySize: 65_024, width: 4_096, tokenLength: tokenLength,
       layers: 29 - min(max(clipSkip - 1, 1), 27), MLP: 13_696, heads: 32, batchSize: 2,
