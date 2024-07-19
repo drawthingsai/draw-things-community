@@ -33,6 +33,8 @@ public struct ModelZoo: DownloadZoo {
       return "Stable Diffusion 3"
     case .pixart:
       return "PixArt Sigma"
+    case .auraflow:
+      return "AuraFlow"
     }
   }
 
@@ -946,7 +948,7 @@ public struct ModelZoo: DownloadZoo {
     }
     switch specification.version {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart:
+      .wurstchenStageB, .sd3, .pixart, .auraflow:
       return .timestep
     case .svdI2v:
       return .noise
@@ -977,6 +979,8 @@ public struct ModelZoo: DownloadZoo {
       return .edm(.init(sigmaMin: 0.01, sigmaMax: 99.995))
     case .sd3:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+    case .auraflow:
+      return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
 
@@ -995,7 +999,7 @@ public struct ModelZoo: DownloadZoo {
     switch specification.version {
     case .v1, .v2, .svdI2v:
       return (nil, nil, 0.18215, nil)
-    case .ssd1b, .sdxlBase, .sdxlRefiner, .pixart:
+    case .ssd1b, .sdxlBase, .sdxlRefiner, .pixart, .auraflow:
       return (nil, nil, 0.13025, nil)
     case .kandinsky21:
       return (nil, nil, 1, nil)
@@ -1080,6 +1084,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 2 * 1_024 * 1_024 * 1_024
       case .sd3:
         return fileSize < 3 * 1_024 * 1_024 * 1_024
+      case .auraflow:
+        return fileSize < 5 * 1_024 * 1_024 * 1_024
       }
     }
     return false

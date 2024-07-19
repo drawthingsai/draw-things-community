@@ -19,7 +19,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
 extension UNetFixedEncoder {
   static func isFixedEncoderRequired(version: ModelVersion) -> Bool {
     switch version {
-    case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .pixart, .wurstchenStageC,
+    case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .pixart, .auraflow, .wurstchenStageC,
       .wurstchenStageB:
       return true
     case .v1, .v2, .kandinsky21:
@@ -165,6 +165,8 @@ extension UNetFixedEncoder {
     case .sd3:
       return []
     case .pixart:
+      return []
+    case .auraflow:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -372,6 +374,8 @@ extension UNetFixedEncoder {
         [posEmbed] + unetFixed(inputs: timeEmbeds, c).map { $0.as(of: FloatType.self) },
         nil
       )
+    case .auraflow:
+      fatalError()
     case .sd3:
       var c: DynamicGraph.Tensor<FloatType>
       var pooled: DynamicGraph.Tensor<FloatType>

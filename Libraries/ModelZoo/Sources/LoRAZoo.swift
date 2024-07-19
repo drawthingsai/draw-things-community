@@ -393,6 +393,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (Stable Cascade, Wurstchen v3.0)"
     case .pixart:
       return " (PixArt Sigma)"
+    case .auraflow:
+      return " (AuraFlow)"
     }
   }
 

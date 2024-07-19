@@ -13,6 +13,7 @@ public enum ModelVersion: String, Codable {
   case wurstchenStageB = "wurstchen_v3.0_stage_b"
   case sd3 = "sd3"
   case pixart = "pixart"
+  case auraflow = "auraflow"
 }
 
 public enum TextEncoderVersion: String, Codable {

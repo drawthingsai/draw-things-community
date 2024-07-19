@@ -269,6 +269,8 @@ public enum LoRAImporter {
         return t5Mapper(.generativeModels)
       }
       textModelMapping2 = [:]
+    case .auraflow:
+      fatalError()
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
@@ -389,6 +391,8 @@ public enum LoRAImporter {
         (unetFixedMapper, unetFixed) = PixArtFixed(
           batchSize: 2, channels: 1152, layers: 28, tokenLength: (77, 77),
           usesFlashAttention: false, of: FloatType.self)
+      case .auraflow:
+        fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       case .ssd1b:
@@ -424,6 +428,9 @@ public enum LoRAImporter {
         case .pixart:
           inputDim = 4
           conditionalLength = 4096
+        case .auraflow:
+          inputDim = 4
+          conditionalLength = 2048
         case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
@@ -467,6 +474,8 @@ public enum LoRAImporter {
             ), graph.variable(.CPU, .HWC(2, 154, 4096), of: FloatType.self),
           ]
           tEmb = nil
+        case .auraflow:
+          fatalError()
         case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
@@ -493,7 +502,7 @@ public enum LoRAImporter {
           vectors = [graph.variable(.CPU, .WC(2, 2560), of: FloatType.self)]
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
-        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3:
+        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .auraflow:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -620,6 +629,8 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
+      case .auraflow:
+        fatalError()
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
         if let tensorDescClipG = stateDict["clip_g"] {
           try archive.with(tensorDescClipG) {
@@ -652,7 +663,7 @@ public enum LoRAImporter {
       case .wurstchenStageC, .wurstchenStageB:
         modelPrefix = "stage_c"
         modelPrefixFixed = "stage_c_fixed"
-      case .sd3, .pixart:
+      case .sd3, .pixart, .auraflow:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

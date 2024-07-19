@@ -439,6 +439,10 @@ public struct DeviceCapability {
     -> Bool
   {
     switch version {
+    case .auraflow:  // AuraFlow is a big model, we may need different logic for this.
+      guard (!isHighPerformance && !(isGoodPerformance && is8BitModel)) || force else {
+        return false
+      }
     case .sdxlBase, .sd3, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       guard (!isHighPerformance && !(isGoodPerformance && is8BitModel)) || force else {
         return false
