@@ -12,6 +12,7 @@ dflatc(
 dflatc(
     name = "tensor_history_schema",
     srcs = [
+        "Sources/script_session.fbs",
         "Sources/tensor_data.fbs",
         "Sources/tensor_history.fbs",
         "Sources/tensor_moodboard_data.fbs",

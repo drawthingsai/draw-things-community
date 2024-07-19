@@ -89,7 +89,26 @@ public struct ScriptZoo {
         )
       }
     }
-    return scripts
+    guard
+      let jsonData = try? Data(contentsOf: scriptsUrl.appendingPathComponent("custom_scripts.json"))
+    else {
+      return scripts
+    }
+    let jsonDecoder = JSONDecoder()
+    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    guard
+      let scriptsMetadata = try? jsonDecoder.decode([Script].self, from: jsonData)
+    else {
+      return scripts
+    }
+    var scriptFileToMetadata: [String: Script] = [:]
+    for metadata in scriptsMetadata {
+      scriptFileToMetadata[metadata.file] = metadata
+    }
+    return scripts.map({
+      guard let script = scriptFileToMetadata[$0.file] else { return $0 }
+      return script
+    })
   }
 
   private static var jsHeaderDoc: String = {

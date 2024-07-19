@@ -33,7 +33,7 @@ apple_support_dependencies()
 
 git_repository(
     name = "dflat",
-    commit = "86a069dc7be0995e4c5d0983216a0ddb0f6590d5",
+    commit = "65334e3804e58a3669337bc40eab6673205a43e4",
     remote = "https://github.com/liuliu/dflat.git",
     shallow_since = "1711389225 -0400",
 )

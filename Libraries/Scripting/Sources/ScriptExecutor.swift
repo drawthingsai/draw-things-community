@@ -148,9 +148,11 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func logJavascript(title: String, script: String, index: Int)
   func logMask(_ mask: Tensor<UInt8>)
   func openREPLConsole()
+  func evaluateScriptGroupBegan()
   func evaluateScriptBegan(sessionId: UInt64)
   func evaluateScriptBeforeREPL()
-  func evaluateScriptEnded()
+  func evaluateScriptEnded(session: ScriptExecutionSession)
+  func evaluateScriptGroupEnded()
   func clearCanvas()
   func CLIP(_ texts: [String]) throws -> [Float]
   func loadImageFileToCanvas(_ file: String)
@@ -175,12 +177,24 @@ public protocol ScriptExecutorDelegate: AnyObject {
   )
 }
 
+public struct ScriptExecutionSession {
+  // higher 44-bit is random, lower 20-bit is seconds since 1970.
+  // Usually it is already good with random number because SystemRNG
+  // uses high quality source. 20-bit is enough for a year wrap-around.
+  // So we have unique session id every second for a year, and if it happens
+  // in a second, we have enough entropy from rng to differentiate them.
+  // set the first bit to 0 to avoid UInt -> Int convertion overflow
+  public let sessionId: UInt64
+  public let sessionGroupId: UInt64
+  public let file: String
+}
+
 @objc public final class ScriptExecutor: NSObject {
   enum REPLCommand {
     case exit
     case javascript(file: String, script: String, completionHandler: (Bool) -> Void)
   }
-  private static var systemRandomNumberGenerator = SystemRandomNumberGenerator()
+  fileprivate static var systemRandomNumberGenerator = SystemRandomNumberGenerator()
   private static let queue = DispatchQueue(label: "com.draw-things.script", qos: .userInteractive)
   var hasExecuted = false
   var hasCancelled = false
@@ -189,8 +203,6 @@ public protocol ScriptExecutorDelegate: AnyObject {
   let maskManager = MaskManager()
   weak var delegate: ScriptExecutorDelegate?
   public let scripts: [(file: String, script: String)]
-  public private(set) var currentScriptName: String?
-  public private(set) var currentGenerationGroup: UInt32?
   var context: JSContext?
   public let isREPL: Bool
   private let replLock: DispatchQueue
@@ -292,6 +304,10 @@ extension ScriptExecutor: JSInterop {
         throw CancellationError.cancelled
       }
     }
+  }
+
+  func markAsOutput() {
+
   }
 
   func setCanvasZoom(_ zoomScale: Double) {
@@ -499,23 +515,24 @@ extension ScriptExecutor: JSInterop {
         self.subject.send(.ended)
       }
       self.context?.setObject(self, forKeyedSubscript: "__dtHooks" as NSCopying & NSObjectProtocol)
-      // higher 44-bit is random, lower 20-bit is seconds since 1970.
-      // Usually it is already good with random number because SystemRNG
-      // uses high quality source. 20-bit is enough for a year wrap-around.
-      // So we have unique session id every second for a year, and if it happens
-      // in a second, we have enough entropy from rng to differentiate them.
-      let sessionId =
-        (Self.systemRandomNumberGenerator.next() & 0xffff_ffff_fff0_0000)
-        | (UInt64(Date().timeIntervalSince1970) & 0xf_ffff)
-      self.delegate?.evaluateScriptBegan(sessionId: sessionId)
       // It's good to evaluate these as two separate scripts, rather than pasting them together into one script,
       // so that stack trace line numbers are accurate for the user for errors in their code
+      self.context?.evaluateScript(Self.SharedScript)
+      self.delegate?.evaluateScriptGroupBegan()
+      let firstSessionId = ScriptExecutionSession.sessionId()
       for (i, script) in self.scripts.enumerated() {
+        let session =
+          i == 0
+          ? ScriptExecutionSession(
+            sessionId: firstSessionId, sessionGroupId: firstSessionId, file: script.file)
+          : ScriptExecutionSession(
+            sessionId: ScriptExecutionSession.sessionId(), sessionGroupId: firstSessionId,
+            file: script.file)
+        self.delegate?.evaluateScriptBegan(sessionId: session.sessionId)
         self.delegate?.logJavascript(
           title: (script.file as NSString).lastPathComponent, script: script.script, index: i)
-        self.currentScriptName = script.file
-        self.currentGenerationGroup = UInt32.random(in: UInt32.min...UInt32.max)
         self.context?.evaluateScript(script.script)
+        self.delegate?.evaluateScriptEnded(session: session)
         if self.hasCancelled || self.hasException {
           break
         }
@@ -528,9 +545,8 @@ extension ScriptExecutor: JSInterop {
       }
       self.context = nil  // In case this will help prevent a retain cycle
       self.lifetimeObjects.removeAll()
-      self.delegate?.evaluateScriptEnded()
+      self.delegate?.evaluateScriptGroupEnded()
       self.subject.send(.ended)
-      // TODO: prevent network and file access
     }
   }
 
@@ -842,5 +858,12 @@ extension ScriptExecutor: JSInterop {
       let jsonObject = try JSONSerialization.jsonObject(with: data) as! [Any]
       return jsonObject
     }
+  }
+}
+
+extension ScriptExecutionSession {
+  static func sessionId() -> UInt64 {
+    (ScriptExecutor.systemRandomNumberGenerator.next() & 0xffff_ffff_fff0_0000)
+      | (UInt64(Date().timeIntervalSince1970) & 0xf_ffff)
   }
 }
