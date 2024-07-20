@@ -114,7 +114,7 @@ func SelfAttention(
   if usesFlashAttention == .scale1 || usesFlashAttention == .scaleMerged {
     if injectedAttentionKV {
       var queries: Model.IO
-      var xq = x.reshaped([b, hw, h * k], strides: [2 * hw * h * k, h * k, 1]).contiguous()
+      let xq = x.reshaped([b, hw, h * k], strides: [2 * hw * h * k, h * k, 1]).contiguous()
       if usesFlashAttention == .scale1 {
         queries = ((1.0 / Float(k).squareRoot()) * toqueries(xq)).reshaped([b, hw, h, k])
           .identity()
@@ -521,7 +521,7 @@ func BasicTransformerBlock(
   if injectedAttentionKV {
     let attnKV = Input()
     attnKVs.append(attnKV)
-    var injectedKVCondition = attnKV.reshaped([b, hw, h * k])
+    let injectedKVCondition = attnKV.reshaped([b, hw, h * k])
     layerNorm1Input = Concat(axis: 1)(layerNorm1Input, injectedKVCondition)
   }
   var out = layerNorm1(layerNorm1Input)
@@ -612,7 +612,7 @@ func BlockLayer(
   let k = channels / numHeads
   let (inLayerNorm, inLayerConv2d, embLayer, outLayerNorm, outLayerConv2d, skipModel, resBlock) =
     ResBlock(b: batchSize, outChannels: channels, skipConnection: skipConnection)
-  var out = resBlock(x, emb)
+  let out = resBlock(x, emb)
   let resBlockReader: PythonReader = { stateDict, archive in
     guard
       let in_layers_0_weight =
