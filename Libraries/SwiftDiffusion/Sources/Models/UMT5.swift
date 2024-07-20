@@ -63,7 +63,7 @@ private func UMT5Block(
   let norm2 = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm1")
   let (wi_0, wi_1, wo, ff) = UMT5DenseGatedActDense(
     hiddenSize: outFeatures, intermediateSize: intermediateSize)
-  out = out + ff(norm2(out))
+  out = out + ff(norm2(out).to(FloatType.dataType))
   let mapper: ModelWeightMapper = { _ in
     var mapping = [String: [String]]()
     mapping["\(prefix).layer.0.layer_norm.weight"] = [norm1.weight.name]

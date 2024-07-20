@@ -288,10 +288,21 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   var out = xEmbedder(x).reshaped([batchSize, h * w, channels])
   let posEmbed = Parameter<FloatType>(.GPU(0), .NHWC(1, 64, 64, channels), name: "pos_embed")
-  let spatialPosEmbed = posEmbed.reshaped(
-    [1, h, w, channels], offset: [0, (64 - h) / 2, (64 - w) / 2, 0],
-    strides: [64 * 64 * channels, 64 * channels, channels, 1]
-  ).contiguous().reshaped([1, h * w, channels])
+  let spatialPosEmbed: Model.IO
+  let maxDim = max(h, w)
+  if maxDim > 64 {
+    spatialPosEmbed = Upsample(
+      .bilinear, widthScale: Float(maxDim) / 64, heightScale: Float(maxDim) / 64)(posEmbed)
+      .reshaped(
+        [1, h, w, channels], offset: [0, (maxDim - h) / 2, (maxDim - w) / 2, 0],
+        strides: [maxDim * maxDim * channels, maxDim * channels, channels, 1]
+      ).contiguous().reshaped([1, h * w, channels])
+  } else {
+    spatialPosEmbed = posEmbed.reshaped(
+      [1, h, w, channels], offset: [0, (64 - h) / 2, (64 - w) / 2, 0],
+      strides: [64 * 64 * channels, 64 * channels, channels, 1]
+    ).contiguous().reshaped([1, h * w, channels])
+  }
   out = spatialPosEmbed + out
   var adaLNChunks = [Input]()
   var mappers = [ModelWeightMapper]()
