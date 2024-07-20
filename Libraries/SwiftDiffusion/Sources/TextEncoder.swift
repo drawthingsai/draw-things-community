@@ -991,6 +991,50 @@ extension TextEncoder {
     return ([c], [textModel])
   }
 
+  private func encodeAuraFlow(
+    tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
+    mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
+    lengthsOfUncond: [Int], lengthsOfCond: [Int], textModels existingTextModels: [Model?]
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let graph = tokens[0].graph
+    let tokenLength = tokens[0].shape[0] / 2
+    let (_, textModel) = UMT5ForConditionalGeneration(b: 2, t: tokenLength, of: FloatType.self)
+    let relativePositionBuckets = relativePositionBuckets(
+      sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
+    var attentionMask = Tensor<FloatType>(.CPU, .NHWC(2, 1, 1, tokenLength))
+    let lengthOfCond = lengthsOfCond.reduce(0, +)
+    let lengthOfUncond = lengthsOfUncond.reduce(0, +)
+    for i in 0..<tokenLength {
+      attentionMask[0, 0, 0, i] = i < lengthOfUncond + 1 ? 0 : -FloatType.greatestFiniteMagnitude
+      attentionMask[1, 0, 0, i] = i < lengthOfCond + 1 ? 0 : -FloatType.greatestFiniteMagnitude
+    }
+    let tokensTensorGPU = tokens[0].toGPU(0)
+    let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
+    let attentionMaskGPU = graph.variable(attentionMask.toGPU(0))
+    textModel.compile(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)
+    // Move Pile T5 XL to on-demand.
+    TensorData.makeExternalData(for: filePaths[0], graph: graph)
+    graph.openStore(
+      filePaths[0], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[0])
+    ) { store in
+      store.read(
+        "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    }
+    var c = textModel(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)[0].as(
+      of: FloatType.self
+    ).reshaped(.HWC(2, tokenLength, 2048))
+    var encoderMask = Tensor<FloatType>(.CPU, .HWC(2, tokenLength, 1))
+    for i in 0..<tokenLength {
+      encoderMask[0, i, 0] = i < lengthOfUncond + 1 ? 1 : 0
+      encoderMask[1, i, 0] = i < lengthOfCond + 1 ? 1 : 0
+    }
+    c = c .* graph.variable(encoderMask.toGPU(0))
+    return ([c], [textModel])
+  }
+
   private func encodeChatGLM3(
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
@@ -1117,7 +1161,10 @@ extension TextEncoder {
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         textModels: existingTextModels)
     case .auraflow:
-      fatalError()
+      return encodeAuraFlow(
+        tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
+        lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
+        textModels: existingTextModels)
     case .kandinsky21:
       return encodeKandinsky(tokens: tokens, positions: positions)
     case .sdxlBase, .sdxlRefiner, .ssd1b:

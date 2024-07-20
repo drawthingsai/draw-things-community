@@ -17,11 +17,10 @@ private func T5LayerSelfAttention(k: Int, h: Int, b: Int, t: Int, outFeatures: I
   let tokeys = Dense(count: k * h, noBias: true, name: "k")
   let toqueries = Dense(count: k * h, noBias: true, name: "q")
   let tovalues = Dense(count: k * h, noBias: true, name: "v")
-  let keys = tokeys(x).reshaped([b, t, h, k]).permuted(0, 2, 1, 3)
+  let keys = tokeys(x).reshaped([b, t, h, k]).transposed(1, 2)
   // No scaling the queries.
-  let queries = toqueries(x).reshaped([b, t, h, k])
-    .permuted(0, 2, 1, 3)
-  let values = tovalues(x).reshaped([b, t, h, k]).permuted(0, 2, 1, 3)
+  let queries = toqueries(x).reshaped([b, t, h, k]).transposed(1, 2)
+  let values = tovalues(x).reshaped([b, t, h, k]).transposed(1, 2)
   var dot = Matmul(transposeB: (2, 3))(queries, keys) + positionBias
   dot = dot.reshaped([b * h * t, t])
   dot = dot.softmax()

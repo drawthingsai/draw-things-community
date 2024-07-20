@@ -278,6 +278,7 @@ public struct TextualInversionZoo: DownloadZoo {
     case clipG
     case clipL
     case t5xxl
+    case pilet5xl
     case chatglm3_6b
   }
 
@@ -301,6 +302,8 @@ public struct TextualInversionZoo: DownloadZoo {
         count = 768
       case .t5xxl, .chatglm3_6b:
         count = 4096
+      case .pilet5xl:
+        count = 2048
       }
     case .pixart:
       count = 4096
@@ -323,6 +326,8 @@ public struct TextualInversionZoo: DownloadZoo {
           tensorName = "string_to_param_clip_l"
         case .t5xxl:
           tensorName = "string_to_param_t5_xxl"
+        case .pilet5xl:
+          tensorName = "string_to_param_pile_t5_xl"
         case .chatglm3_6b:
           tensorName = "string_to_param_chatglm3_6b"
         }

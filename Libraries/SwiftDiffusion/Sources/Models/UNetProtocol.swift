@@ -97,7 +97,12 @@ extension UNetProtocol {
             .copied()
         }
     case .auraflow:
-      fatalError()
+      return [conditions[0]]
+        + conditions[1..<conditions.count].map {
+          let shape = $0.shape
+          return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
+            .copied()
+        }
     case .pixart:
       var extractedConditions = [conditions[0]]
       let layers = (conditions.count - 3) / 8
@@ -430,7 +435,16 @@ extension UNetFromNNC {
           of: FloatType.self)
       }
     case .auraflow:
-      fatalError()
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      (_, unet) = AuraFlow(
+        batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
+        height: tiledHeight, width: tiledWidth, channels: 3072, layers: (4, 32),
+        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -803,8 +817,7 @@ extension UNetFromNNC {
         xT, 0, 0, 0, 0, &controlNets)
       return unet!(
         inputs: xT, (timestep.map { [$0] } ?? []) + c + injectedControls + injectedT2IAdapters)[0]
-        .as(
-          of: FloatType.self)
+        .as(of: FloatType.self)
     }
   }
 

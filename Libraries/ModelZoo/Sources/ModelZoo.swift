@@ -318,6 +318,10 @@ public struct ModelZoo: DownloadZoo {
       "b78f0f8d4988b6edf38eeff8c1d33d2b4ffca1fa79c4b45f51b8647aa3b625a0",
     "pixart_sigma_xl_2_1024_ms_q8p.ckpt":
       "d5379d9f7ad18e3dd8b6f4b564df1f03bc1e8377e1486bb793467fc4fab6ae5c",
+    "pile_t5_xl_encoder_q8p.ckpt":
+      "ef8b228e915bb21101c4c34e89039e2c42ddba843dae4b1e4f813a4785b1df1b",
+    "auraflow_v0.1_q8p.ckpt": "30ebb3796987ff2f79cb67b16e72f4ba5e31dd4706af0e8d0d91fb16165c71ee",
+    "auraflow_v0.1_f16.ckpt": "8c5e7ba677ccd11f899f2fb4092ab7cc4ad7686d01be172497e55eeba01c5bb0",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -331,6 +335,26 @@ public struct ModelZoo: DownloadZoo {
       name: "SDXL Refiner (v0.9)", file: "sd_xl_refiner_0.9_f16.ckpt", prefix: "",
       version: .sdxlRefiner, defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
       autoencoder: "sdxl_vae_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt"),
+    Specification(
+      name: "PixArt Sigma XL 1K", file: "pixart_sigma_xl_2_1024_ms_f16.ckpt", prefix: "",
+      version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
+    Specification(
+      name: "PixArt Sigma XL 1K (8-bit)", file: "pixart_sigma_xl_2_1024_ms_q8p.ckpt", prefix: "",
+      version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
+    Specification(
+      name: "PixArt Sigma XL 512", file: "pixart_sigma_xl_2_512_ms_f16.ckpt", prefix: "",
+      version: .pixart, defaultScale: 8, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
+    Specification(
+      name: "PixArt Sigma XL 512 (8-bit)", file: "pixart_sigma_xl_2_512_ms_q8p.ckpt", prefix: "",
+      version: .pixart, defaultScale: 8, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
+    Specification(
+      name: "AuraFlow v0.1", file: "auraflow_v0.1_q8p.ckpt", prefix: "",
+      version: .auraflow, defaultScale: 16, textEncoder: "pile_t5_xl_encoder_q8p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", objective: .u(conditionScale: 1000)),
     Specification(
       name: "SDXL Base (v1.0)", file: "sd_xl_base_1.0_f16.ckpt", prefix: "", version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
@@ -369,22 +393,6 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "wurstchen_3.0_stage_a_hq_f16.ckpt", deprecated: true,
       stageModels: ["wurstchen_3.0_stage_b_q6p_q8p.ckpt"]
     ),
-    Specification(
-      name: "PixArt Sigma XL 1K", file: "pixart_sigma_xl_2_1024_ms_f16.ckpt", prefix: "",
-      version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
-    Specification(
-      name: "PixArt Sigma XL 1K (8-bit)", file: "pixart_sigma_xl_2_1024_ms_q8p.ckpt", prefix: "",
-      version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
-    Specification(
-      name: "PixArt Sigma XL 512", file: "pixart_sigma_xl_2_512_ms_f16.ckpt", prefix: "",
-      version: .pixart, defaultScale: 8, textEncoder: "t5_xxl_encoder_q6p.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
-    Specification(
-      name: "PixArt Sigma XL 512 (8-bit)", file: "pixart_sigma_xl_2_512_ms_q8p.ckpt", prefix: "",
-      version: .pixart, defaultScale: 8, textEncoder: "t5_xxl_encoder_q6p.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
     Specification(
       name: "LCM SDXL Base (v1.0)", file: "lcm_sd_xl_base_1.0_f16.ckpt", prefix: "",
       version: .sdxlBase,
@@ -938,7 +946,21 @@ public struct ModelZoo: DownloadZoo {
 
   public static func objectiveForModel(_ name: String) -> Denoiser.Objective {
     guard let specification = specificationMapping[name] else { return .epsilon }
-    return specification.objective ?? (specification.predictV == true ? .v : .epsilon)
+    if let objective = specification.objective {
+      return objective
+    }
+    if specification.predictV == true {
+      return .v
+    }
+    switch specification.version {
+    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+      .wurstchenStageB, .pixart:
+      return .epsilon
+    case .sd3:
+      return .u(conditionScale: 1000)
+    case .auraflow:
+      return .u(conditionScale: 1000)
+    }
   }
 
   public static func conditioningForModel(_ name: String) -> Denoiser.Conditioning {

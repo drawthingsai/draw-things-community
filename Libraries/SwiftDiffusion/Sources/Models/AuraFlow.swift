@@ -276,7 +276,7 @@ private func SingleTransformerBlock(
 }
 
 func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  batchSize: Int, t: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
+  batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
   usesFlashAttention: FlashAttentionLevel, of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -300,9 +300,9 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
     let contextChunks = (0..<6).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = JointTransformerBlock(
-      prefix: "joint_transformer_blocks.\(i)", k: 256, h: channels / 256, b: batchSize, t: t + 8,
-      hw: h * w,
-      contextBlockPreOnly: false, usesFlashAtttention: usesFlashAttention)
+      prefix: "joint_transformer_blocks.\(i)", k: 256, h: channels / 256, b: batchSize,
+      t: tokenLength + 8,
+      hw: h * w, contextBlockPreOnly: false, usesFlashAtttention: usesFlashAttention)
     let blockOut = block([context, out] + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
@@ -313,9 +313,10 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
   for i in 0..<layers.1 {
     let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = SingleTransformerBlock(
-      prefix: "single_transformer_blocks.\(i)", k: 256, h: channels / 256, b: batchSize, t: t + 8,
+      prefix: "single_transformer_blocks.\(i)", k: 256, h: channels / 256, b: batchSize,
+      t: tokenLength + 8,
       hw: h * w,
-      contextBlockPreOnly: i == 31, usesFlashAtttention: usesFlashAttention)
+      contextBlockPreOnly: i == layers.1 - 1, usesFlashAtttention: usesFlashAttention)
     out = block([out] + xChunks)
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
@@ -394,21 +395,19 @@ private func SingleTransformerBlockFixed(
 }
 
 func AuraFlowFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  batchSize: Int, t: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel, of: FloatType.Type = FloatType.self
+  batchSize: (Int, Int), channels: Int, layers: (Int, Int),
+  of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let timestep = Input()
   let contextIn = Input()
-  let h = height / 2
-  let w = width / 2
   let (tMlp0, tMlp2, tEmbedder) = TimeEmbedder(channels: channels)
-  let c = tEmbedder(timestep).reshaped([batchSize, 1, channels]).swish()
+  let c = tEmbedder(timestep).reshaped([batchSize.1, 1, channels]).swish()
   let contextEmbedder = Dense(count: channels, noBias: true, name: "context_embedder")
   var outs = [Model.IO]()
   var context = contextEmbedder(contextIn)
   let registerTokens = Parameter<FloatType>(.GPU(0), .HWC(1, 8, channels), name: "register_tokens")
   context = Functional.concat(
-    axis: 1, Concat(axis: 0)(Array(repeating: registerTokens, count: batchSize)), context)
+    axis: 1, Concat(axis: 0)(Array(repeating: registerTokens, count: batchSize.0)), context)
   outs.append(context)
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
@@ -443,5 +442,5 @@ func AuraFlowFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
     mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
     return mapping
   }
-  return (mapper, Model([timestep, contextIn], outs))
+  return (mapper, Model([contextIn, timestep], outs))
 }

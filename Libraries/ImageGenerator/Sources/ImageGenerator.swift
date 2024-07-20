@@ -31,6 +31,7 @@ public struct ImageGenerator {
   public var tokenizerXL: TextualInversionAttentionCLIPTokenizer
   public var tokenizerKandinsky: SentencePieceTokenizer
   public var tokenizerT5: SentencePieceTokenizer
+  public var tokenizerPileT5: SentencePieceTokenizer
   public var tokenizerChatGLM3: SentencePieceTokenizer
   let poseDrawer: PoseDrawer
   private let queue: DispatchQueue
@@ -41,6 +42,7 @@ public struct ImageGenerator {
     tokenizerXL: TextualInversionAttentionCLIPTokenizer,
     tokenizerKandinsky: SentencePieceTokenizer,
     tokenizerT5: SentencePieceTokenizer,
+    tokenizerPileT5: SentencePieceTokenizer,
     tokenizerChatGLM3: SentencePieceTokenizer,
     poseDrawer: PoseDrawer
   ) {
@@ -50,6 +52,7 @@ public struct ImageGenerator {
     self.tokenizerXL = tokenizerXL
     self.tokenizerKandinsky = tokenizerKandinsky
     self.tokenizerT5 = tokenizerT5
+    self.tokenizerPileT5 = tokenizerPileT5
     self.tokenizerChatGLM3 = tokenizerChatGLM3
     self.poseDrawer = poseDrawer
     modelPreloader = ModelPreloader(
@@ -972,7 +975,10 @@ extension ImageGenerator {
         paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
     case .auraflow:
-      fatalError()
+      return tokenize(
+        graph: graph, tokenizer: tokenizerPileT5, text: text, negativeText: negativeText,
+        paddingToken: 1, conditionalLength: 2048, modifier: .pilet5xl, potentials: potentials,
+        startLength: 0, maxLength: 0, paddingLength: 0)
     case .sd3:
       let tokenizerV2 = tokenizerXL
       var tokenizerV1 = tokenizerV1

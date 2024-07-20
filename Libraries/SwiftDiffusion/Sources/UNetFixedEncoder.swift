@@ -375,7 +375,35 @@ extension UNetFixedEncoder {
         nil
       )
     case .auraflow:
-      fatalError()
+      var c = textEncoding[0]
+      if c.shape[1] < 256 {
+        let oldC = c
+        c = graph.variable(.GPU(0), .HWC(oldC.shape[0], 256, oldC.shape[2]))
+        c.full(0)
+        c[0..<oldC.shape[0], 0..<oldC.shape[1], 0..<oldC.shape[2]] = oldC
+      }
+      // Load the unetFixed.
+      let cBatchSize = c.shape[0]
+      let (_, unetFixed) = AuraFlowFixed(
+        batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (4, 32),
+        of: FloatType.self)
+      var timeEmbeds = graph.variable(
+        .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: cBatchSize, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = timeEmbed
+      }
+      unetFixed.compile(inputs: c, timeEmbeds)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+      }
+      return (unetFixed(inputs: c, timeEmbeds).map { $0.as(of: FloatType.self) }, nil)
     case .sd3:
       var c: DynamicGraph.Tensor<FloatType>
       var pooled: DynamicGraph.Tensor<FloatType>
