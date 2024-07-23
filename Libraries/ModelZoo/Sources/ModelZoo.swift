@@ -1112,7 +1112,7 @@ public struct ModelZoo: DownloadZoo {
       case .sd3:
         return fileSize < 3 * 1_024 * 1_024 * 1_024
       case .auraflow:
-        return fileSize < 5 * 1_024 * 1_024 * 1_024
+        return fileSize < 6 * 1_024 * 1_024 * 1_024
       }
     }
     return false
