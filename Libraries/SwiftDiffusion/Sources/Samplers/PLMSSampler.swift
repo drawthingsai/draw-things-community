@@ -322,7 +322,7 @@ extension PLMSSampler: Sampler {
       // Now do PLMS sampling.
       for i in startStep..<endStep {
         let rawValue: Tensor<FloatType>? =
-          (i > max(startStep, sampling.steps / 2) || i % 5 == 4) ? x.rawValue.toCPU() : nil
+          (i > max(startStep, sampling.steps / 2) || i % 2 == 1) ? x.rawValue.toCPU() : nil
         if i % 5 == 4, let rawValue = rawValue {
           if isNaN(rawValue) {
             return .failure(SamplerError.isNaN)

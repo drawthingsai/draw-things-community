@@ -310,7 +310,7 @@ extension DDIMSampler: Sampler {
       var oldDenoised: DynamicGraph.Tensor<FloatType>? = nil
       for i in startStep..<endStep {
         let rawValue: Tensor<FloatType>? =
-          (i > max(startStep, sampling.steps / 2) || i % 5 == 4)
+          (i > max(startStep, sampling.steps / 2) || i % 2 == 1)
           ? (oldDenoised.map { unet.decode($0) })?.rawValue.toCPU() : nil
         if i % 5 == 4, let rawValue = rawValue {
           if isNaN(rawValue) {

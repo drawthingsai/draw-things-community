@@ -321,6 +321,7 @@ extension EulerASampler: Sampler {
       if startStep.fractional == 0 && sigmas[0] != 1 {  // Otherwise it is already scaled properly with the noiseScaleFactor and sampleScaleFactor.
         x = Float(sigmas[0]) * x
       }
+      var oldDenoised: DynamicGraph.Tensor<FloatType>? = nil
       for i in startStep.integral..<endStep.integral {
         let sigma: Double
         if i == startStep.integral && Float(startStep.integral) != startStep.fractional {
@@ -349,8 +350,8 @@ extension EulerASampler: Sampler {
           input = Float(1.0 / (sigma * sigma + sigmaData * sigmaData).squareRoot()) * x
         }
         let rawValue: Tensor<FloatType>? =
-          (i > max(startStep.integral, sampling.steps / 2) || i % 5 == 4)
-          ? input.rawValue.toCPU() : nil
+          (i > max(startStep.integral, sampling.steps / 2) || i % 2 == 1)
+          ? oldDenoised?.rawValue.toCPU() : nil
         if i % 5 == 4, let rawValue = rawValue {
           if isNaN(rawValue) {
             return .failure(SamplerError.isNaN)
@@ -571,21 +572,26 @@ extension EulerASampler: Sampler {
             / (sigma * sigma)).squareRoot())
         let sigmaDown = (sigmas[i + 1] * sigmas[i + 1] - sigmaUp * sigmaUp).squareRoot()
         let dt = sigmaDown - sigma  // Notice this is already a negative.
+        var denoised: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
         case .u(_):
+          denoised = Functional.add(left: x, right: et, leftScalar: 1, rightScalar: Float(-sigma))
           x = Functional.add(
             left: x, right: et, leftScalar: Float(1 - sigmas[i + 1] + sigmaDown),
             rightScalar: Float(sigmaDown - sigma * sigmaDown - sigma * (1 - sigmas[i + 1])))
         case .v:
           // denoised = Float(1.0 / (sigma * sigma + 1)) * x - (sigma * sqrtAlphaCumprod) * et
+          denoised = Functional.add(
+            left: x, right: et, leftScalar: Float(1.0 / (sigma * sigma + 1)),
+            rightScalar: Float(-sigma * sqrtAlphaCumprod))
           // d = (x - denoised) / sigma // (x - Float(1.0 / (sigma * sigma + 1)) * x + (sigma * sqrtAlphaCumprod) * et) / sigma = (sigma / (sigma * sigma + 1)) * x + sqrtAlphaCumprod * et
           let d = Functional.add(
             left: x, right: et, leftScalar: Float(sigma / (sigma * sigma + 1)),
             rightScalar: Float(sqrtAlphaCumprod))
           x = Functional.add(left: x, right: d, leftScalar: 1, rightScalar: Float(dt))
         case .epsilon:
+          denoised = Functional.add(left: x, right: et, rightScalar: Float(-sigma))
           if version == .kandinsky21 {
-            var denoised = Functional.add(left: x, right: et, rightScalar: Float(-sigma))
             denoised = clipDenoised(denoised)
             let d = (x - denoised) * Float(1 / sigma)
             x = Functional.add(left: x, right: d, leftScalar: 1, rightScalar: Float(dt))
@@ -597,12 +603,16 @@ extension EulerASampler: Sampler {
         case .edm(let sigmaData):
           let sigmaData2 = sigmaData * sigmaData
           // denoised = Float(sigmaData2 / (sigma * sigma + sigmaData2)) * x + Float(sigma * sigmaData / (sigma * sigma + sigmaData2).squareRoot()) * et
+          denoised = Functional.add(
+            left: x, right: et, leftScalar: Float(sigmaData2 / (sigma * sigma + sigmaData2)),
+            rightScalar: Float(sigma * sigmaData / (sigma * sigma + sigmaData2).squareRoot()))
           // d = (x - denoised) / sigma // (x - sigmaData2 / (sigma * sigma + sigmaData2) * x - (sigma * sigmaData / (sigma * sigma + sigmaData2).squareRoot()) * et) / sigma
           let d = Functional.add(
             left: x, right: et, leftScalar: Float(sigma / (sigma * sigma + sigmaData2)),
             rightScalar: Float(-sigmaData / (sigma * sigma + sigmaData2).squareRoot()))
           x = Functional.add(left: x, right: d, leftScalar: 1, rightScalar: Float(dt))
         }
+        oldDenoised = denoised
         noise.randn(std: 1, mean: 0)
         if sigmaUp > 0 {
           x = Functional.add(left: x, right: noise, leftScalar: 1, rightScalar: Float(sigmaUp))
