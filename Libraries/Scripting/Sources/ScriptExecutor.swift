@@ -494,7 +494,7 @@ extension ScriptExecutor: JSInterop {
     hasException = true
   }
 
-  public func run() {
+  public func run(_ times: Int = 1) {
     Self.queue.async {
       if self.hasExecuted {
         // It's one-shot, e.g. to avoid having to manually let go of all masks stored in maskManager

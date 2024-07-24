@@ -107,7 +107,14 @@ public struct ScriptZoo {
     }
     return scripts.map({
       guard let script = scriptFileToMetadata[$0.file] else { return $0 }
-      return script
+      //  TODO: something is very wrong here
+      let newScript = Script(
+        name: script.name, file: script.file,
+        filePath: scriptsUrl.appendingPathComponent(script.file).path,
+        isSampleDuplicate: script.isSampleDuplicate, type: script.type,
+        description: script.description, author: script.author, tags: script.tags,
+        images: script.images, baseColor: script.baseColor, favicon: script.favicon)
+      return newScript
     })
   }
 
