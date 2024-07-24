@@ -22,8 +22,11 @@ public struct ScriptZoo {
   }
 
   public struct Script: Codable, Equatable, Hashable {
+    // display name/metadata name
     public var name: String
+    // local script folder file name
     public var file: String
+    // file path for downloaded script
     public var filePath: String?
     public var isSampleDuplicate: Bool?
     public var type: ScriptType?
