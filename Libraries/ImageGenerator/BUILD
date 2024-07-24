@@ -9,6 +9,7 @@ swift_library(
         "//Libraries/DataModels",
         "//Libraries/FaceRestorer",
         "//Libraries/ModelZoo",
+        "//Libraries/Scripting",
         "//Libraries/SwiftDiffusion",
         "//Libraries/SwiftDiffusion:SwiftDiffusionCoreML",
         "//Libraries/SwiftDiffusion:SwiftDiffusionPreprocessors",
