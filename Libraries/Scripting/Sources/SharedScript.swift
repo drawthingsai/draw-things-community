@@ -170,6 +170,13 @@ extension ScriptExecutor {
       }
     }
 
+    // A class to get device specific information
+    const device = {
+      get screenSize() {
+        return __dtHooks.screenSize();
+      }
+    };
+
     // The ObjC-bridged object with the functions is finnicky. Its functions can't be found with Object.keys,
     // and it's tricky to override functions on the object, or to call those functions as free functions.
     // Since it's good to decouple the behavior of the functions that consumers call from the limitations

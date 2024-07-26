@@ -122,6 +122,7 @@ extension SupportedPrefix {
   func detectHands() -> [[String: Any]]
   func downloadBuiltins(_ files: [String])
   func requestFromUser(_ title: String, _ confirm: String, _ config: [[String: Any]]) -> [Any]
+  func screenSize() -> [String: Any]
 }
 
 public protocol ScriptExecutorDelegate: AnyObject {
@@ -175,6 +176,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func requestFromUser(title: String, confirm: String, _ config: [[String: Any]]) throws -> (
     lifetimeObjects: [AnyObject], result: [Any]
   )
+  func screenSize() -> [String: Any]
 }
 
 public struct ScriptExecutionSession {
@@ -227,6 +229,7 @@ public struct ScriptExecutionSession {
 }
 
 extension ScriptExecutor: JSInterop {
+
   public enum CancellationError: Error {
     case cancelled
   }
@@ -857,6 +860,13 @@ extension ScriptExecutor: JSInterop {
       let data = try JSONSerialization.data(withJSONObject: result)
       let jsonObject = try JSONSerialization.jsonObject(with: data) as! [Any]
       return jsonObject
+    }
+  }
+
+  func screenSize() -> [String: Any] {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      return delegate.screenSize()
     }
   }
 }
