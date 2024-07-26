@@ -527,7 +527,6 @@ public final class ModelImporter {
         break
       }
       let unetFixed: Model?
-      let unetFixedReader: PythonReader?
       let unetFixedMapper: ModelWeightMapper?
       switch modelVersion {
       case .v1:
@@ -536,41 +535,43 @@ public final class ModelImporter {
           usesFlashAttention: .none, injectControls: false, injectT2IAdapters: false,
           injectIPAdapterLengths: [], injectAttentionKV: false, outputSpatialAttnInput: false)
         unetMapper = nil
-        (unetFixed, unetFixedReader, unetFixedMapper) = (nil, nil, nil)
+        (unetFixed, unetFixedMapper) = (nil, nil)
       case .v2:
         (unet, unetReader) = UNetv2(
           batchSize: batchSize, embeddingLength: (77, 77), startWidth: 64, startHeight: 64,
           upcastAttention: false, usesFlashAttention: .none, injectControls: false)
         unetMapper = nil
-        (unetFixed, unetFixedReader, unetFixedMapper) = (nil, nil, nil)
+        (unetFixed, unetFixedMapper) = (nil, nil)
       case .sdxlBase:
-        (unet, unetReader, unetMapper) = UNetXL(
+        (unet, _, unetMapper) = UNetXL(
           batchSize: batchSize, startHeight: 64, startWidth: 64,
           channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
           middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
           embeddingLength: (77, 77), injectIPAdapterLengths: [],
           upcastAttention: ([:], false, [:]), usesFlashAttention: .none, injectControls: false,
           isTemporalMixEnabled: false, of: FloatType.self)
-        (unetFixed, unetFixedReader, unetFixedMapper) = UNetXLFixed(
+        unetReader = nil
+        (unetFixed, _, unetFixedMapper) = UNetXLFixed(
           batchSize: batchSize, startHeight: 64, startWidth: 64, channels: [320, 640, 1280],
           embeddingLength: (77, 77), inputAttentionRes: [2: [2, 2], 4: [10, 10]],
           middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
           usesFlashAttention: .none, isTemporalMixEnabled: false)
       case .ssd1b:
-        (unet, unetReader, unetMapper) = UNetXL(
+        (unet, _, unetMapper) = UNetXL(
           batchSize: batchSize, startHeight: 64, startWidth: 64,
           channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [4, 4]],
           middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
           embeddingLength: (77, 77), injectIPAdapterLengths: [],
           upcastAttention: ([:], false, [:]), usesFlashAttention: .none, injectControls: false,
           isTemporalMixEnabled: false, of: FloatType.self)
-        (unetFixed, unetFixedReader, unetFixedMapper) = UNetXLFixed(
+        unetReader = nil
+        (unetFixed, _, unetFixedMapper) = UNetXLFixed(
           batchSize: batchSize, startHeight: 64, startWidth: 64, channels: [320, 640, 1280],
           embeddingLength: (77, 77), inputAttentionRes: [2: [2, 2], 4: [4, 4]],
           middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
           usesFlashAttention: .none, isTemporalMixEnabled: false)
       case .sdxlRefiner:
-        (unet, unetReader, unetMapper) =
+        (unet, _, unetMapper) =
           UNetXL(
             batchSize: batchSize, startHeight: 64, startWidth: 64,
             channels: [384, 768, 1536, 1536], inputAttentionRes: [2: [4, 4], 4: [4, 4]],
@@ -579,13 +580,14 @@ public final class ModelImporter {
             upcastAttention: ([:], false, [:]), usesFlashAttention: .none, injectControls: false,
             isTemporalMixEnabled: false, of: FloatType.self
           )
-        (unetFixed, unetFixedReader, unetFixedMapper) = UNetXLFixed(
+        unetReader = nil
+        (unetFixed, _, unetFixedMapper) = UNetXLFixed(
           batchSize: batchSize, startHeight: 64, startWidth: 64, channels: [384, 768, 1536, 1536],
           embeddingLength: (77, 77), inputAttentionRes: [2: [4, 4], 4: [4, 4]],
           middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
           usesFlashAttention: .none, isTemporalMixEnabled: false)
       case .svdI2v:
-        (unet, unetReader, unetMapper) =
+        (unet, _, unetMapper) =
           UNetXL(
             batchSize: batchSize, startHeight: 64, startWidth: 64,
             channels: [320, 640, 1280, 1280],
@@ -595,7 +597,8 @@ public final class ModelImporter {
             usesFlashAttention: .none, injectControls: false,
             isTemporalMixEnabled: true, of: FloatType.self
           )
-        (unetFixed, unetFixedReader, unetFixedMapper) = UNetXLFixed(
+        unetReader = nil
+        (unetFixed, _, unetFixedMapper) = UNetXLFixed(
           batchSize: batchSize, startHeight: 64, startWidth: 64,
           channels: [320, 640, 1280, 1280], embeddingLength: (1, 1),
           inputAttentionRes: [1: [1, 1], 2: [1, 1], 4: [1, 1]], middleAttentionBlocks: 1,
@@ -610,7 +613,6 @@ public final class ModelImporter {
         (unetFixed, unetFixedMapper) = WurstchenStageCFixed(
           batchSize: batchSize, t: (77 + 8, 77 + 8),
           usesFlashAttention: .none)
-        unetFixedReader = nil
       case .pixart:
         (unetMapper, unet) = PixArt(
           batchSize: batchSize, height: 64, width: 64, channels: 1152, layers: 28,
@@ -619,14 +621,12 @@ public final class ModelImporter {
         (unetFixedMapper, unetFixed) = PixArtFixed(
           batchSize: batchSize, channels: 1152, layers: 28, tokenLength: (77, 77),
           usesFlashAttention: false, of: FloatType.self)
-        unetFixedReader = nil
       case .sd3:
         (unetMapper, unet) = MMDiT(
           batchSize: batchSize, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
           usesFlashAttention: .none, of: FloatType.self)
         unetReader = nil
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 1536, layers: 24)
-        unetFixedReader = nil
       case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
@@ -683,14 +683,6 @@ public final class ModelImporter {
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
       }
-      if !isDiffusersFormat, let unetFixed = unetFixed, let unetFixedReader = unetFixedReader {
-        unetFixed.compile(inputs: crossattn)
-        try unetFixedReader(stateDict, archive)
-        graph.openStore(filePath) {
-          $0.removeAll()
-          $0.write("unet_fixed", model: unetFixed)
-        }
-      }
       if modelVersion == .v1 || modelVersion == .v2 {
         for (key, value) in stateDict {
           if !key.hasPrefix("model.diffusion_model.") {
@@ -739,15 +731,12 @@ public final class ModelImporter {
         }
       }
       // In case it is not on high performance device and it is SDXL model, read the parameters directly from the mapping.
-      if unetMapper != nil && (!DeviceCapability.isHighPerformance || isDiffusersFormat) {
-        unetReader = nil
-      }
       if let unetReader = unetReader {
         let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
         unet.compile(inputs: inputs)
         try! unetReader(stateDict, archive)
         graph.openStore(filePath) {
-          if unetFixed == nil && unetFixedReader == nil {
+          if unetFixed == nil {
             $0.removeAll()
           }
           $0.write("unet", model: unet)
