@@ -929,12 +929,29 @@ extension ControlModel {
       return textEncoding
     }
     let graph = textEncoding[0].graph
+    var textEncoding = textEncoding
+    graph.openStore(
+      filePaths[0], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[0])
+    ) {
+      if $0.read(like: "__encoder_hid_proj__[t-0-0]") != nil {
+        let encoderHidProj = Dense(count: 2_048)
+        encoderHidProj.compile(inputs: textEncoding[0])
+        $0.read(
+          "encoder_hid_proj", model: encoderHidProj, codec: [.jit, .q6p, .q8p, .externalData])
+        textEncoding = encoderHidProj(inputs: textEncoding[0]).map { $0.as(of: FloatType.self) }
+      }
+    }
     let batchSize = textEncoding[0].shape[0]
     let maxTokenLength = textEncoding[0].shape[1]
     var crossattn = graph.variable(
       textEncoding[0].kind, .HWC(batchSize, maxTokenLength, 2048), of: FloatType.self)
-    crossattn[0..<batchSize, 0..<maxTokenLength, 0..<768] = textEncoding[0]
-    crossattn[0..<batchSize, 0..<maxTokenLength, 768..<2048] = textEncoding[1]
+    if textEncoding.count >= 2 {
+      crossattn[0..<batchSize, 0..<maxTokenLength, 0..<768] = textEncoding[0]
+      crossattn[0..<batchSize, 0..<maxTokenLength, 768..<2048] = textEncoding[1]
+    } else {
+      crossattn[0..<batchSize, 0..<maxTokenLength, 0..<2048] = textEncoding[0]
+    }
     if zeroNegativePrompt && (version == .sdxlBase || version == .ssd1b) {
       crossattn[0..<(batchSize / 2), 0..<maxTokenLength, 0..<2048].full(0)
     }

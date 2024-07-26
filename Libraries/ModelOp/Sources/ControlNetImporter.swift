@@ -260,6 +260,18 @@ public final class ControlNetImporter {
         expectedTotalAccess = mapping.count + mappingFixed.count + hintMapping.count
         access = 0
         try store.withTransaction {
+          if let encoderHidProjWeightDescriptor = stateDict["encoder_hid_proj.weight"],
+            let encoderHidProjBiasDescriptor = stateDict["encoder_hid_proj.bias"]
+          {
+            try archive.with(encoderHidProjWeightDescriptor) { tensor in
+              let tensor = Tensor<FloatType>(from: tensor)
+              store.write("__encoder_hid_proj__[t-0-0]", tensor: tensor)
+            }
+            try archive.with(encoderHidProjBiasDescriptor) { tensor in
+              let tensor = Tensor<FloatType>(from: tensor)
+              store.write("__encoder_hid_proj__[t-0-1]", tensor: tensor)
+            }
+          }
           for (key, value) in mapping {
             guard let tensorDescriptor = stateDict[key] else {
               continue
