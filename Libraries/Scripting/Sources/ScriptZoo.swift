@@ -11,7 +11,7 @@ public struct ScriptZoo {
 
   public struct Image: Codable, Equatable, Hashable {
     public var url: String
-    public var tags: [String]
+    public var tags: [String]?
 
     public init(
       url: String, tags: [String]
