@@ -35,7 +35,7 @@ private func OpenCLIPResidualAttentionBlock(k: Int, h: Int, b: Int, t: Int) -> M
 
 public func VisionTransformer<T: TensorNumeric>(
   _ dataType: T.Type,
-  grid: Int, width: Int, outputDim: Int, layers: Int, heads: Int, batchSize: Int,
+  grid: Int, width: Int, layers: Int, heads: Int, batchSize: Int,
   noFinalLayerNorm: Bool = false
 ) -> Model {
   let x = Input()
@@ -76,7 +76,7 @@ private func CLIPResidualAttentionBlock(k: Int, h: Int, b: Int, t: Int) -> Model
 
 public func CLIPVisionTransformer<T: TensorNumeric>(
   _ dataType: T.Type,
-  grid: Int, width: Int, outputDim: Int, layers: Int, heads: Int, batchSize: Int,
+  grid: Int, width: Int, layers: Int, heads: Int, batchSize: Int,
   noFinalLayerNorm: Bool = false
 ) -> Model {
   let x = Input()

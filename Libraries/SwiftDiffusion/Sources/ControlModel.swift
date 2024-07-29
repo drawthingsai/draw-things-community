@@ -33,6 +33,24 @@ public enum ControlMode {
   case control
 }
 
+public struct IPAdapterConfig: Codable {
+  public var inputDim: Int
+  public var queryDim: Int
+  public var outputDim: Int
+  public var headDim: Int
+  public var numHeads: Int
+  public var grid: Int
+  public init(inputDim: Int, queryDim: Int, outputDim: Int, headDim: Int, numHeads: Int, grid: Int)
+  {
+    self.inputDim = inputDim
+    self.queryDim = queryDim
+    self.outputDim = outputDim
+    self.headDim = headDim
+    self.numHeads = numHeads
+    self.grid = grid
+  }
+}
+
 public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePaths: [String]
   public let type: ControlType
@@ -47,11 +65,14 @@ public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let globalAveragePooling: Bool
   public let transformerBlocks: [Int]
   public let targetBlocks: [String]
+  public let imageEncoderVersion: ImageEncoderVersion
+  public let ipAdapterConfig: IPAdapterConfig?
   public init(
     filePaths: [String], type: ControlType, modifier: ControlHintType,
     externalOnDemand: Bool, version: ModelVersion, tiledDiffusion: TiledConfiguration,
     usesFlashAttention: Bool, startStep: Int, endStep: Int, controlMode: ControlMode,
-    globalAveragePooling: Bool, transformerBlocks: [Int], targetBlocks: [String]
+    globalAveragePooling: Bool, transformerBlocks: [Int], targetBlocks: [String],
+    imageEncoderVersion: ImageEncoderVersion, ipAdapterConfig: IPAdapterConfig?
   ) {
     self.filePaths = filePaths
     self.type = type
@@ -66,6 +87,8 @@ public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.globalAveragePooling = globalAveragePooling
     self.transformerBlocks = transformerBlocks
     self.targetBlocks = targetBlocks
+    self.imageEncoderVersion = imageEncoderVersion
+    self.ipAdapterConfig = ipAdapterConfig
   }
 }
 
@@ -397,23 +420,40 @@ extension ControlModel {
         return inputs.map { hintNet(inputs: $0.hint).map { $0.as(of: FloatType.self) } }
       }
     case .ipadapterplus:
-      let imageEncoder = ImageEncoder<FloatType>(filePath: filePaths[1])
-      let zeroEmbeds = graph.variable(.GPU(0), .NHWC(1, 224, 224, 3), of: FloatType.self)
+      let imageEncoder = ImageEncoder<FloatType>(
+        filePath: filePaths[1], version: imageEncoderVersion)
+      let imageSize: Int
+      switch imageEncoderVersion {
+      case .clipL14_336:
+        imageSize = 336
+      case .openClipH14:
+        imageSize = 224
+      }
+      let zeroEmbeds = graph.variable(
+        .GPU(0), .NHWC(1, imageSize, imageSize, 3), of: FloatType.self)
       zeroEmbeds.full(0)
       let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds])
       let resampler: Model
-      switch version {
-      case .v1:
+      if let ipAdapterConfig = ipAdapterConfig {
         resampler = Resampler(
-          FloatType.self, width: 768, outputDim: 768, heads: 12, grid: 16, queries: 16, layers: 4,
+          FloatType.self, inputDim: ipAdapterConfig.inputDim, queryDim: ipAdapterConfig.queryDim,
+          outputDim: ipAdapterConfig.outputDim, headDim: ipAdapterConfig.headDim,
+          heads: ipAdapterConfig.numHeads, grid: ipAdapterConfig.grid, queries: 16, layers: 4,
           batchSize: 1)
-      case .sdxlBase:
-        resampler = Resampler(
-          FloatType.self, width: 1280, outputDim: 2048, heads: 20, grid: 16, queries: 16, layers: 4,
-          batchSize: 1)
-      case .v2, .sd3, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
-        .wurstchenStageC, .wurstchenStageB:
-        fatalError()
+      } else {
+        switch version {
+        case .v1:
+          resampler = Resampler(
+            FloatType.self, inputDim: 768, queryDim: 768, outputDim: 768, headDim: 64, heads: 12,
+            grid: 16, queries: 16, layers: 4, batchSize: 1)
+        case .sdxlBase:
+          resampler = Resampler(
+            FloatType.self, inputDim: 1280, queryDim: 1280, outputDim: 2048, headDim: 64, heads: 20,
+            grid: 16, queries: 16, layers: 4, batchSize: 1)
+        case .v2, .sd3, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
+          .wurstchenStageC, .wurstchenStageB:
+          fatalError()
+        }
       }
       resampler.compile(inputs: imageEmbeds[0])
       graph.openStore(
@@ -527,7 +567,8 @@ extension ControlModel {
         }
       }
     case .ipadapterfull:
-      let imageEncoder = ImageEncoder<FloatType>(filePath: filePaths[1])
+      let imageEncoder = ImageEncoder<FloatType>(
+        filePath: filePaths[1], version: imageEncoderVersion)
       let zeroEmbeds = graph.variable(.GPU(0), .NHWC(1, 224, 224, 3), of: FloatType.self)
       zeroEmbeds.full(0)
       let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds])

@@ -20,6 +20,11 @@ public enum TextEncoderVersion: String, Codable {
   case chatglm3_6b = "chatglm3_6b"
 }
 
+public enum ImageEncoderVersion: String, Codable {
+  case clipL14_336 = "clip_l14_336"
+  case openClipH14 = "open_clip_h14"
+}
+
 public enum AlternativeDecoderVersion: String, Codable {
   case transparent = "transparent"
 }

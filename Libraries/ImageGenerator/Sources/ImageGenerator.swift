@@ -1481,7 +1481,10 @@ extension ImageGenerator {
     return depthMapRawValue
   }
 
-  private func ipAdapterRGB(shuffles: [(Tensor<FloatType>, Float)], graph: DynamicGraph) -> [(
+  private func ipAdapterRGB(
+    shuffles: [(Tensor<FloatType>, Float)], imageEncoderVersion: ImageEncoderVersion,
+    graph: DynamicGraph
+  ) -> [(
     DynamicGraph.Tensor<FloatType>, Float
   )] {
     var rgbResults = [(DynamicGraph.Tensor<FloatType>, Float)]()
@@ -1503,12 +1506,19 @@ extension ImageGenerator {
       let inputHeight = input.shape[1]
       let inputWidth = input.shape[2]
       precondition(input.shape[3] == 3)
-      if inputHeight != 224 || inputWidth != 224 {
+      let imageSize: Int
+      switch imageEncoderVersion {
+      case .clipL14_336:
+        imageSize = 336
+      case .openClipH14:
+        imageSize = 224
+      }
+      if inputHeight != imageSize || inputWidth != imageSize {
         rgbResults.append(
           (
             (Upsample(
-              .bilinear, widthScale: Float(224) / Float(inputWidth),
-              heightScale: Float(224) / Float(inputHeight))(input) - mean) .* invStd,
+              .bilinear, widthScale: Float(imageSize) / Float(inputWidth),
+              heightScale: Float(imageSize) / Float(inputHeight))(input) - mean) .* invStd,
             strength
           ))
       } else {
@@ -1583,6 +1593,8 @@ extension ImageGenerator {
       let globalAveragePooling = modifier == .shuffle ? control.globalAveragePooling : false
       let downSamplingRate = max(control.downSamplingRate, 1)
       let transformerBlocks = ControlNetZoo.transformerBlocksForModel(file)
+      let imageEncoderVersion = ControlNetZoo.imageEncoderVersionForModel(file)
+      let ipAdapterConfig = ControlNetZoo.IPAdapterConfigForModel(file)
       var filePaths = [ControlNetZoo.filePathForModelDownloaded(file)]
       if let imageEncoder = ControlNetZoo.imageEncoderForModel(file) {
         filePaths.append(ControlNetZoo.filePathForModelDownloaded(imageEncoder))
@@ -1593,7 +1605,8 @@ extension ImageGenerator {
         tiledDiffusion: tiledDiffusion, usesFlashAttention: usesFlashAttention,
         startStep: startStep, endStep: endStep, controlMode: controlMode,
         globalAveragePooling: globalAveragePooling, transformerBlocks: transformerBlocks,
-        targetBlocks: control.targetBlocks)
+        targetBlocks: control.targetBlocks, imageEncoderVersion: imageEncoderVersion,
+        ipAdapterConfig: ipAdapterConfig)
       let customRGB: (Bool) -> DynamicGraph.Tensor<FloatType>? = { convert in
         custom.map({
           let input = graph.variable(Tensor<FloatType>($0).toGPU(0))
@@ -1894,7 +1907,8 @@ extension ImageGenerator {
           guard let custom = custom else { return nil }
           shuffles = [(custom, 1)]
         }
-        let rgbs = ipAdapterRGB(shuffles: shuffles, graph: graph)
+        let rgbs = ipAdapterRGB(
+          shuffles: shuffles, imageEncoderVersion: imageEncoderVersion, graph: graph)
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }
         ).map { ($0, 1) }

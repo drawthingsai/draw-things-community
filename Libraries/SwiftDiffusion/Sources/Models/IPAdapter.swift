@@ -1,6 +1,8 @@
 import NNC
 
-private func PerceiverAttention(prefix: String, k: Int, h: Int, b: Int, t: (Int, Int)) -> Model {
+private func PerceiverAttention(
+  prefix: String, k: Int, h: Int, queryDim: Int, b: Int, t: (Int, Int)
+) -> Model {
   let x = Input()
   let norm1 = LayerNorm(epsilon: 1e-5, axis: [2])
   let outX = norm1(x)
@@ -21,21 +23,21 @@ private func PerceiverAttention(prefix: String, k: Int, h: Int, b: Int, t: (Int,
   dot = dot.reshaped([b, h, t.1, t.0 + t.1])
   var out = dot * values
   out = out.reshaped([b, h, t.1, k]).transposed(1, 2).reshaped([b * t.1, h * k])
-  let unifyheads = Dense(count: k * h, noBias: true)
+  let unifyheads = Dense(count: queryDim, noBias: true)
   out = unifyheads(out)
   return Model([x, c], [out])
 }
 
-func ResamplerLayer(prefix: String, k: Int, h: Int, b: Int, t: (Int, Int)) -> Model {
+func ResamplerLayer(prefix: String, k: Int, h: Int, queryDim: Int, b: Int, t: (Int, Int)) -> Model {
   let x = Input()
   let c = Input()
   let attention = PerceiverAttention(
-    prefix: prefix + ".0", k: k, h: h, b: b, t: t)
-  var out = c + attention(x, c).reshaped([b, t.1, h * k])
+    prefix: prefix + ".0", k: k, h: h, queryDim: queryDim, b: b, t: t)
+  var out = c + attention(x, c).reshaped([b, t.1, queryDim])
   let layerNorm = LayerNorm(epsilon: 1e-5, axis: [2])
-  let fc1 = Dense(count: k * h * 4, noBias: true)
+  let fc1 = Dense(count: queryDim * 4, noBias: true)
   let gelu = GELU()
-  let fc2 = Dense(count: k * h, noBias: true)
+  let fc2 = Dense(count: queryDim, noBias: true)
   out = out + fc2(gelu(fc1(layerNorm(out))))
   return Model([x, c], [out])
 }
@@ -53,18 +55,21 @@ func MLPProjModel(width: Int, outputDim: Int) -> Model {
 
 func Resampler<T: TensorNumeric>(
   _ dataType: T.Type,
-  width: Int, outputDim: Int, heads: Int, grid: Int, queries: Int, layers: Int, batchSize: Int
+  inputDim: Int, queryDim: Int, outputDim: Int, headDim: Int, heads: Int, grid: Int, queries: Int,
+  layers: Int, batchSize: Int
 ) -> Model {
   let x = Input()
-  let latents = Parameter<T>(.GPU(0), .HWC(1, queries, width))
-  let projIn = Dense(count: width)
+  let latents = Parameter<T>(.GPU(0), .HWC(1, queries, inputDim))
+  let projIn = Dense(count: inputDim)
   let projX = projIn(x)
   let firstLayer = ResamplerLayer(
-    prefix: "layers.0", k: width / heads, h: heads, b: batchSize, t: (grid * grid + 1, queries))
+    prefix: "layers.0", k: headDim, h: heads, queryDim: queryDim, b: batchSize,
+    t: (grid * grid + 1, queries))
   var out = firstLayer(projX, latents)
   for i in 1..<layers {
     let layer = ResamplerLayer(
-      prefix: "layers.\(i)", k: width / heads, h: heads, b: batchSize, t: (grid * grid + 1, queries)
+      prefix: "layers.\(i)", k: headDim, h: heads, queryDim: queryDim, b: batchSize,
+      t: (grid * grid + 1, queries)
     )
     out = layer(projX, out)
   }

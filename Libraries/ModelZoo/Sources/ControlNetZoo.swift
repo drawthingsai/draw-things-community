@@ -13,10 +13,13 @@ public struct ControlNetZoo: DownloadZoo {
     public var preprocessor: String? = nil
     public var transformerBlocks: [Int]? = nil
     public var deprecated: Bool? = nil
+    public var imageEncoderVersion: ImageEncoderVersion? = nil
+    public var ipAdapterConfig: IPAdapterConfig? = nil
     public init(
       name: String, file: String, modifier: ControlHintType, version: ModelVersion,
       type: ControlType, globalAveragePooling: Bool = false, imageEncoder: String? = nil,
-      preprocessor: String? = nil, transformerBlocks: [Int]? = nil, deprecated: Bool? = nil
+      preprocessor: String? = nil, transformerBlocks: [Int]? = nil, deprecated: Bool? = nil,
+      imageEncoderVersion: ImageEncoderVersion? = nil, ipAdapterConfig: IPAdapterConfig? = nil
     ) {
       self.name = name
       self.file = file
@@ -28,6 +31,8 @@ public struct ControlNetZoo: DownloadZoo {
       self.preprocessor = preprocessor
       self.transformerBlocks = transformerBlocks
       self.deprecated = deprecated
+      self.imageEncoderVersion = imageEncoderVersion
+      self.ipAdapterConfig = ipAdapterConfig
     }
   }
 
@@ -232,6 +237,13 @@ public struct ControlNetZoo: DownloadZoo {
       file: "ip_adapter_full_face_sd_v1.x_open_clip_h14_f16.ckpt",
       modifier: .shuffle, version: .v1, type: .ipadapterfull,
       imageEncoder: "open_clip_vit_h14_vision_model_f16.ckpt"),
+    Specification(
+      name: "IP Adapter Plus (Kwai Kolors)",
+      file: "ip_adapter_plus_kolors_1.0_clip_l14_336_f16.ckpt",
+      modifier: .shuffle, version: .sdxlBase, type: .ipadapterplus,
+      imageEncoder: "clip_vit_l14_336_vision_model_f16.ckpt", imageEncoderVersion: .clipL14_336,
+      ipAdapterConfig: .init(
+        inputDim: 2048, queryDim: 2048, outputDim: 2048, headDim: 64, numHeads: 12, grid: 24)),
   ]
 
   public static var availableSpecifications: [Specification] = {
@@ -331,6 +343,16 @@ public struct ControlNetZoo: DownloadZoo {
   public static func imageEncoderForModel(_ name: String) -> String? {
     guard let specification = specificationMapping[name] else { return nil }
     return specification.imageEncoder
+  }
+
+  public static func imageEncoderVersionForModel(_ name: String) -> ImageEncoderVersion {
+    guard let specification = specificationMapping[name] else { return .openClipH14 }
+    return specification.imageEncoderVersion ?? .openClipH14
+  }
+
+  public static func IPAdapterConfigForModel(_ name: String) -> IPAdapterConfig? {
+    guard let specification = specificationMapping[name] else { return nil }
+    return specification.ipAdapterConfig
   }
 
   public static func preprocessorForModel(_ name: String) -> String? {

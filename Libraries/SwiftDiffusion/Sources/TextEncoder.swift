@@ -458,7 +458,7 @@ extension TextEncoder {
       vit = existingTextModel
     } else {
       vit = VisionTransformer(
-        FloatType.self, grid: 16, width: 1280, outputDim: 1024, layers: 32, heads: 16, batchSize: 1)
+        FloatType.self, grid: 16, width: 1280, layers: 32, heads: 16, batchSize: 1)
       vit.compile(inputs: input)
       graph.openStore(
         filePaths[0], flags: .readOnly,
