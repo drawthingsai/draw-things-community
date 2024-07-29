@@ -323,6 +323,9 @@ public struct ModelZoo: DownloadZoo {
     "auraflow_v0.1_q8p.ckpt": "30ebb3796987ff2f79cb67b16e72f4ba5e31dd4706af0e8d0d91fb16165c71ee",
     "auraflow_v0.1_f16.ckpt": "8c5e7ba677ccd11f899f2fb4092ab7cc4ad7686d01be172497e55eeba01c5bb0",
     "auraflow_v0.1_q5p.ckpt": "9aab1942ea2f025846d5d1dcd2ae5df762c1a10887c807b603c223ba8e5e5ad7",
+    "auraflow_v0.2_q8p.ckpt": "cda840bce05ada4c97d95080160f18dc594b6c5f2d4da45c33db51c37c070170",
+    "auraflow_v0.2_f16.ckpt": "727622af19710b8014da024c7294573c02fefb7be83e178fa4c2b50a9d2bc922",
+    "auraflow_v0.2_q5p.ckpt": "b3d4a2c3be69e285028de0d61a17a5fbe34b9e1504725f32f52e75b8d9d8a2cc",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -355,9 +358,17 @@ public struct ModelZoo: DownloadZoo {
     Specification(
       name: "AuraFlow v0.1", file: "auraflow_v0.1_q8p.ckpt", prefix: "",
       version: .auraflow, defaultScale: 16, textEncoder: "pile_t5_xl_encoder_q8p.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", objective: .u(conditionScale: 1000)),
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, objective: .u(conditionScale: 1000)),
     Specification(
       name: "AuraFlow v0.1 (8-bit)", file: "auraflow_v0.1_q5p.ckpt", prefix: "",
+      version: .auraflow, defaultScale: 16, textEncoder: "pile_t5_xl_encoder_q8p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, objective: .u(conditionScale: 1000)),
+    Specification(
+      name: "AuraFlow v0.2", file: "auraflow_v0.2_q8p.ckpt", prefix: "",
+      version: .auraflow, defaultScale: 16, textEncoder: "pile_t5_xl_encoder_q8p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt", objective: .u(conditionScale: 1000)),
+    Specification(
+      name: "AuraFlow v0.2 (8-bit)", file: "auraflow_v0.2_q5p.ckpt", prefix: "",
       version: .auraflow, defaultScale: 16, textEncoder: "pile_t5_xl_encoder_q8p.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt", objective: .u(conditionScale: 1000)),
     Specification(
