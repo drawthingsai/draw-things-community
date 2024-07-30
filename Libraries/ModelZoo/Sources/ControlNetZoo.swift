@@ -239,26 +239,6 @@ public struct ControlNetZoo: DownloadZoo {
       imageEncoder: "open_clip_vit_h14_vision_model_f16.ckpt"),
   ]
 
-  public static var availableSpecifications: [Specification] = {
-    var specifications = builtinSpecifications
-    let jsonFile = filePathForModelDownloaded("custom_controlnet.json")
-    guard let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) else {
-      return specifications
-    }
-    let jsonDecoder = JSONDecoder()
-    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-    guard
-      let jsonSpecification = try? jsonDecoder.decode(
-        [FailableDecodable<Specification>].self, from: jsonData
-      ).compactMap({ $0.value })
-    else {
-      return specifications
-    }
-    specifications.append(contentsOf: jsonSpecification)
-    specifications = specifications.sorted(by: { $0.name < $1.name })
-    return specifications
-  }()
-
   private static var specificationMapping: [String: Specification] = {
     var mapping = [String: Specification]()
     for specification in availableSpecifications {
@@ -372,7 +352,37 @@ public struct ControlNetZoo: DownloadZoo {
     return fileSHA256[name]
   }
 
-  private static let builtinModels: Set<String> = Set(builtinSpecifications.map { $0.file })
+  private static let builtinModelsAndAvailableSpecifications: (Set<String>, [Specification]) = {
+    let jsonFile = filePathForModelDownloaded("custom_controlnet.json")
+    guard let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) else {
+      return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
+    }
+    let jsonDecoder = JSONDecoder()
+    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    guard
+      let jsonSpecifications = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value })
+    else {
+      return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
+    }
+    var availableSpecifications = builtinSpecifications
+    var builtinModels = Set(builtinSpecifications.map { $0.file })
+    for specification in jsonSpecifications {
+      if builtinModels.contains(specification.file) {
+        builtinModels.remove(specification.file)
+        // Remove this from previous list.
+        availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+      }
+      availableSpecifications.append(specification)
+    }
+    return (builtinModels, availableSpecifications)
+  }()
+
+  private static let builtinModels: Set<String> = builtinModelsAndAvailableSpecifications.0
+
+  public static var availableSpecifications: [Specification] =
+    builtinModelsAndAvailableSpecifications.1
 
   public static func isBuiltinControl(_ name: String) -> Bool {
     return builtinModels.contains(name)
