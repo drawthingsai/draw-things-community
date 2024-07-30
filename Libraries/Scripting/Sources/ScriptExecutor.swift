@@ -518,10 +518,12 @@ extension ScriptExecutor: JSInterop {
         self.subject.send(.ended)
       }
       self.context?.setObject(self, forKeyedSubscript: "__dtHooks" as NSCopying & NSObjectProtocol)
+      self.delegate?.evaluateScriptGroupBegan()
       // It's good to evaluate these as two separate scripts, rather than pasting them together into one script,
       // so that stack trace line numbers are accurate for the user for errors in their code
       self.context?.evaluateScript(Self.SharedScript)
-      self.delegate?.evaluateScriptGroupBegan()
+      self.delegate?.logJavascript(
+        title: "Shared.js", script: Self.SharedScript, index: 0)
       let firstSessionId = ScriptExecutionSession.sessionId()
       for (i, script) in self.scripts.enumerated() {
         let session =
@@ -533,7 +535,7 @@ extension ScriptExecutor: JSInterop {
             file: script.file)
         self.delegate?.evaluateScriptBegan(sessionId: session.sessionId)
         self.delegate?.logJavascript(
-          title: (script.file as NSString).lastPathComponent, script: script.script, index: i)
+          title: (script.file as NSString).lastPathComponent, script: script.script, index: i + 1)
         self.context?.evaluateScript(script.script)
         self.delegate?.evaluateScriptEnded(session: session)
         if self.hasCancelled || self.hasException {
