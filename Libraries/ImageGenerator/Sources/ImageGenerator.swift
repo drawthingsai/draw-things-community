@@ -1437,8 +1437,7 @@ extension ImageGenerator {
   }
 
   public static var isDepthModelAvailable: Bool {
-    EverythingZoo.isModelDownloaded("dino_v2_f16.ckpt")
-      && EverythingZoo.isModelDownloaded("depth_anything_v1.0_f16.ckpt")
+    EverythingZoo.isModelDownloaded("depth_anything_v2.0_f16.ckpt")
   }
 
   public static func extractDepthMap(
@@ -1447,8 +1446,8 @@ extension ImageGenerator {
   ) -> Tensor<FloatType> {
     let depthEstimator = DepthEstimator<FloatType>(
       filePaths: (
-        EverythingZoo.filePathForModelDownloaded("dino_v2_f16.ckpt"),
-        EverythingZoo.filePathForModelDownloaded("depth_anything_v1.0_f16.ckpt")
+        EverythingZoo.filePathForModelDownloaded("depth_anything_v2.0_f16.ckpt"),
+        EverythingZoo.filePathForModelDownloaded("depth_anything_v2.0_f16.ckpt")
       ), usesFlashAttention: usesFlashAttention)
     var depthMap = depthEstimator.estimate(image)
     let shape = depthMap.shape

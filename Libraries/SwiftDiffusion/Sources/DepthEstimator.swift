@@ -64,7 +64,7 @@ extension DepthEstimator {
       let gridY = resizeHeight / 14
       let vit = DinoVisionTransformer(
         FloatType.self, gridX: gridX, gridY: gridY, width: 1024, layers: 24, heads: 16,
-        batchSize: 1, intermediateLayers: 4, usesFlashAttention: usesFlashAttention)
+        batchSize: 1, intermediateLayers: [4, 11, 17, 23], usesFlashAttention: usesFlashAttention)
       vit.compile(inputs: input)
       graph.openStore(filePaths.0, flags: .readOnly) {
         $0.read("vit", model: vit)

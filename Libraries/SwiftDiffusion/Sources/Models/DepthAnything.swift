@@ -53,7 +53,7 @@ func DinoResidualAttentionBlock<T: TensorNumeric>(
 func DinoVisionTransformer<T: TensorNumeric>(
   _ dataType: T.Type,
   gridX: Int, gridY: Int, width: Int, layers: Int, heads: Int, batchSize: Int,
-  intermediateLayers: Int, usesFlashAttention: Bool
+  intermediateLayers: [Int], usesFlashAttention: Bool
 ) -> Model {
   let x = Input()
   let classEmbedding = Parameter<T>(.GPU(0), .HWC(1, 1, 1024), initBound: 1, name: "cls_token")
@@ -81,7 +81,7 @@ func DinoVisionTransformer<T: TensorNumeric>(
       prefix: "blocks.\(i)", k: width / heads, h: heads, b: batchSize,
       t: gridX * gridY + 1, usesFlashAttention: usesFlashAttention)
     out = block(out.reshaped([batchSize, gridX * gridY + 1, width]))
-    if i >= layers - intermediateLayers {
+    if intermediateLayers.contains(i) {
       outs.append(out)
     }
   }

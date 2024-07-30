@@ -29,6 +29,8 @@ public struct EverythingZoo: DownloadZoo {
     "clip_vit_l14_vision_model_f16.ckpt":
       "4c2e72331090ec33dce5b622728d26d456402dc6c827ff2b9968eaab65800ab3",
     "clip_vit_l14_f16.ckpt": "809bfd12c8d4b3d79c14e850b99130a70854f6fd8dedcacdf429417c02fa3007",
+    "depth_anything_v2.0_f16.ckpt":
+      "6570605f408208f666268cbae81cc20f3d12aaa2224c271019daeac85b37a33b",
   ]
 
   static let builtinSpecifications: [Specification] = [
@@ -37,7 +39,11 @@ public struct EverythingZoo: DownloadZoo {
     ),
     Specification(name: "Dichotomous Image Segmentation", file: "dis_v1.0_f16.ckpt"),
     Specification(
-      name: "Depth Anything", file: "depth_anything_v1.0_f16.ckpt", backbone: "dino_v2_f16.ckpt"
+      name: "Depth Anything v1.0", file: "depth_anything_v1.0_f16.ckpt",
+      backbone: "dino_v2_f16.ckpt"
+    ),
+    Specification(
+      name: "Depth Anything v2.0", file: "depth_anything_v2.0_f16.ckpt"
     ),
     Specification(name: "IS Net 1.1", file: "is_net_v1.1_fp16.ckpt"),
     Specification(name: "FILM", file: "film_1.0_f16.ckpt"),
