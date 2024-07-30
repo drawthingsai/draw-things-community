@@ -279,6 +279,41 @@ public struct ControlNetZoo: DownloadZoo {
     specificationMapping[specification.file] = specification
   }
 
+  public static func sortCustomSpecifications() {
+    dispatchPrecondition(condition: .onQueue(.main))
+    var customSpecifications = [Specification]()
+    let jsonFile = filePathForModelDownloaded("custom_controlnet.json")
+    if let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) {
+      let jsonDecoder = JSONDecoder()
+      jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+      if let jsonSpecification = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value }) {
+        customSpecifications.append(contentsOf: jsonSpecification)
+      }
+    }
+    customSpecifications = customSpecifications.sorted(by: {
+      $0.name.localizedStandardCompare($1.name) == .orderedAscending
+    })
+
+    let jsonEncoder = JSONEncoder()
+    jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+    jsonEncoder.outputFormatting = .prettyPrinted
+    guard let jsonData = try? jsonEncoder.encode(customSpecifications) else { return }
+    try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
+
+    // Because this only does sorting, it won't impact the builtinModels set.
+    var availableSpecifications = builtinSpecifications
+    let builtinModels = Set(builtinSpecifications.map { $0.file })
+    for specification in customSpecifications {
+      if builtinModels.contains(specification.file) {
+        availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+      }
+      availableSpecifications.append(specification)
+    }
+    self.availableSpecifications = availableSpecifications
+  }
+
   public static func filePathForModelDownloaded(_ name: String) -> String {
     return ModelZoo.filePathForModelDownloaded(name)
   }
