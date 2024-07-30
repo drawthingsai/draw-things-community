@@ -36,7 +36,7 @@ public struct ControlNetZoo: DownloadZoo {
     }
   }
 
-  private static let fileSHA256: [String: String] = [
+  private static var fileSHA256: [String: String] = [
     "controlnet_canny_1.x_f16.ckpt":
       "4f4dc0d747a5e8650bcde753e01978e263af5b0e29e8f228437645fed63af546",
     "controlnet_canny_1.x_v1.1_f16.ckpt":
@@ -237,13 +237,6 @@ public struct ControlNetZoo: DownloadZoo {
       file: "ip_adapter_full_face_sd_v1.x_open_clip_h14_f16.ckpt",
       modifier: .shuffle, version: .v1, type: .ipadapterfull,
       imageEncoder: "open_clip_vit_h14_vision_model_f16.ckpt"),
-    Specification(
-      name: "IP Adapter Plus (Kwai Kolors)",
-      file: "ip_adapter_plus_kolors_1.0_clip_l14_336_f16.ckpt",
-      modifier: .shuffle, version: .sdxlBase, type: .ipadapterplus,
-      imageEncoder: "clip_vit_l14_336_vision_model_f16.ckpt", imageEncoderVersion: .clipL14_336,
-      ipAdapterConfig: .init(
-        inputDim: 2048, queryDim: 2048, outputDim: 2048, headDim: 64, numHeads: 12, grid: 24)),
   ]
 
   public static var availableSpecifications: [Specification] = {
@@ -383,6 +376,14 @@ public struct ControlNetZoo: DownloadZoo {
 
   public static func isBuiltinControl(_ name: String) -> Bool {
     return builtinModels.contains(name)
+  }
+
+  public static func mergeFileSHA256(_ sha256: [String: String]) {
+    var fileSHA256 = fileSHA256
+    for (key, value) in sha256 {
+      fileSHA256[key] = value
+    }
+    self.fileSHA256 = fileSHA256
   }
 
   public static func isModelDeprecated(_ name: String) -> Bool {
