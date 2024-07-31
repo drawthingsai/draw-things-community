@@ -806,10 +806,12 @@ extension ImageGenerator {
       tokensTensor[i + tokenLength] = tokens[i]
     }
     // position index computation is a bit more involved if there is line-break.
-    positionTensor[0] = 0
-    positionTensor[tokenLength - 1] = 76
-    positionTensor[tokenLength] = 0
-    positionTensor[tokenLength * 2 - 1] = 76
+    if tokenLength > 0 {
+      positionTensor[0] = 0
+      positionTensor[tokenLength - 1] = 76
+      positionTensor[tokenLength] = 0
+      positionTensor[tokenLength * 2 - 1] = 76
+    }
     // For everything else, we will go through lengths of each, and assigning accordingly.
     j = startLength
     var maxPosition = 0
