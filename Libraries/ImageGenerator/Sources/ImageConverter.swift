@@ -659,9 +659,9 @@ public enum ImageConverter {
             let r = 49.5210 * v0 + 29.0283 * v1 - 23.9673 * v2 - 39.4981 * v3 + 99.9368
             let g = 41.1373 * v0 + 42.4951 * v1 + 24.7349 * v2 - 50.8279 * v3 + 99.8421
             let b = 40.2919 * v0 + 18.9304 * v1 + 30.0236 * v2 - 81.9976 * v3 + 99.5384
-            bytes[i * 4] = UInt8(min(max(Int(r.isNaN ? 0 : r), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isNaN ? 0 : g), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isNaN ? 0 : b), 0), 255))
+            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
         case .sd3:
@@ -685,9 +685,9 @@ public enum ImageConverter {
               (0.1052 * v0 + 0.0650 * v1 + 0.0360 * v2 + 0.0889 * v3 - 0.0364 * v4 + 0.0284 * v5
                 + 0.0283 * v6 + 0.1047 * v7 + 0.0700 * v8 - 0.0039 * v9 + 0.1220 * v10 - 0.0481
                 * v11 + 0.1207 * v12 - 0.0867 * v13 - 0.0456 * v14 - 0.1259 * v15) * 127.5 + 127.5
-            bytes[i * 4] = UInt8(min(max(Int(r.isNaN ? 0 : r), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isNaN ? 0 : g), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isNaN ? 0 : b), 0), 255))
+            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
         case .sdxlBase, .sdxlRefiner, .ssd1b, .pixart, .auraflow:
@@ -697,9 +697,9 @@ public enum ImageConverter {
             let r = 47.195 * v0 - 29.114 * v1 + 11.883 * v2 - 38.063 * v3 + 141.64
             let g = 53.237 * v0 - 1.4623 * v1 + 12.991 * v2 - 28.043 * v3 + 127.46
             let b = 58.182 * v0 + 4.3734 * v1 - 3.3735 * v2 - 26.722 * v3 + 114.5
-            bytes[i * 4] = UInt8(min(max(Int(r.isNaN ? 0 : r), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isNaN ? 0 : g), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isNaN ? 0 : b), 0), 255))
+            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
         case .kandinsky21:
@@ -716,9 +716,9 @@ public enum ImageConverter {
             sr = linearsRGBTosRGB(x: sr) * 255
             sg = linearsRGBTosRGB(x: sg) * 255
             sb = linearsRGBTosRGB(x: sb) * 255
-            bytes[i * 4] = UInt8(min(max(Int(sr.isNaN ? 0 : sr), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(sg.isNaN ? 0 : sg), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(sb.isNaN ? 0 : sb), 0), 255))
+            bytes[i * 4] = UInt8(min(max(Int(sr.isFinite ? sr : 0), 0), 255))
+            bytes[i * 4 + 1] = UInt8(min(max(Int(sg.isFinite ? sg : 0), 0), 255))
+            bytes[i * 4 + 2] = UInt8(min(max(Int(sb.isFinite ? sb : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
         case .wurstchenStageC, .wurstchenStageB:
@@ -726,11 +726,12 @@ public enum ImageConverter {
             for i in 0..<imageHeight * imageWidth {
               // We need to do some computations from the latent values.
               let (r, g, b) = (fp16[i * 3], fp16[i * 3 + 1], fp16[i * 3 + 2])
-              bytes[i * 4] = UInt8(min(max(Int(r.isNaN ? 0 : (Float(r) * 255).rounded()), 0), 255))
+              bytes[i * 4] = UInt8(
+                min(max(Int(r.isFinite ? (Float(r) * 255).rounded() : 0), 0), 255))
               bytes[i * 4 + 1] = UInt8(
-                min(max(Int(g.isNaN ? 0 : (Float(g) * 255).rounded()), 0), 255))
+                min(max(Int(g.isFinite ? (Float(g) * 255).rounded() : 0), 0), 255))
               bytes[i * 4 + 2] = UInt8(
-                min(max(Int(b.isNaN ? 0 : (Float(b) * 255).rounded()), 0), 255))
+                min(max(Int(b.isFinite ? (Float(b) * 255).rounded() : 0), 0), 255))
               bytes[i * 4 + 3] = 255
             }
           } else {
@@ -742,9 +743,9 @@ public enum ImageConverter {
               let r = 10.175 * v0 - 20.807 * v1 - 27.834 * v2 - 2.0577 * v3 + 143.39
               let g = 21.07 * v0 - 4.3022 * v1 - 11.258 * v2 - 18.8 * v3 + 131.53
               let b = 7.8454 * v0 - 2.3713 * v1 - 0.45565 * v2 - 41.648 * v3 + 120.76
-              bytes[i * 4] = UInt8(min(max(Int(r.isNaN ? 0 : r), 0), 255))
-              bytes[i * 4 + 1] = UInt8(min(max(Int(g.isNaN ? 0 : g), 0), 255))
-              bytes[i * 4 + 2] = UInt8(min(max(Int(b.isNaN ? 0 : b), 0), 255))
+              bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+              bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+              bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
               bytes[i * 4 + 3] = 255
             }
           }
