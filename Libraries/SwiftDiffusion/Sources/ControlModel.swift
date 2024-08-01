@@ -979,7 +979,8 @@ extension ControlModel {
         let encoderHidProj = Dense(count: 2_048)
         encoderHidProj.compile(inputs: textEncoding[0])
         $0.read(
-          "encoder_hid_proj", model: encoderHidProj, codec: [.jit, .q6p, .q8p, .externalData])
+          "encoder_hid_proj", model: encoderHidProj,
+          codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
         textEncoding = encoderHidProj(inputs: textEncoding[0]).map { $0.as(of: FloatType.self) }
       }
     }
