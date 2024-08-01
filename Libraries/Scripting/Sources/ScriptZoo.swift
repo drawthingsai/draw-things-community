@@ -67,7 +67,7 @@ public struct ScriptZoo {
       ((try? FileManager.default.contentsOfDirectory(
         at: scriptsUrl,
         includingPropertiesForKeys: [],
-        options: .skipsHiddenFiles)) ?? [])
+        options: .skipsHiddenFiles)) ?? []).filter({ $0.pathExtension == "js" })
       .enumerated().map {
         let filePath = $1.path
         let file = $1.lastPathComponent
