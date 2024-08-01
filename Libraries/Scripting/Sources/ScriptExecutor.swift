@@ -2,6 +2,7 @@ import Combine
 import DataModels
 import Diffusion
 import Foundation
+import ImageSegmentation
 import JavaScriptCore
 import NNC
 import Utils
@@ -91,6 +92,7 @@ extension SupportedPrefix {
   func createMask(_ width: Double, _ height: Double, _ value: UInt8) -> Int
   func createForegroundMask() -> Int
   func createBackgroundMask() -> Int
+  func createBodyMask(_ types: [String], _ extraArea: Bool) -> Int
   func setCanvasZoom(_ zoomScale: Double)
   func canvasZoom() -> Double
   func existingConfiguration() -> [String: Any]
@@ -132,6 +134,9 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func currentMask() -> Tensor<UInt8>?
   func foregroundMask() -> Tensor<UInt8>?
   func backgroundMask() -> Tensor<UInt8>?
+  func createBodyMask(_ categories: [SCHPMaskGenerator.Category], _ extraArea: Bool) -> Tensor<
+    UInt8
+  >?
   func maskImageData(_ mask: Tensor<UInt8>) -> Data?
   func generateImage(
     prompt: String?, negativePrompt: String?, configuration: GenerationConfiguration,
@@ -446,6 +451,27 @@ extension ScriptExecutor: JSInterop {
       guard let backgroundMask = delegate.backgroundMask() else { return 0 }
       let jsMask = maskManager.createNewMask()
       maskManager.setMask(backgroundMask, forJSMask: jsMask)
+      return jsMask.handle
+    }
+  }
+
+  func createBodyMask(_ types: [String], _ extraArea: Bool) -> Int {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      let categories = types.compactMap {
+        if $0.lowercased().hasPrefix("lower") {
+          return SCHPMaskGenerator.Category.lowerBody
+        } else if $0.lowercased().hasPrefix("upper") {
+          return SCHPMaskGenerator.Category.upperBody
+        } else if $0.lowercased().hasPrefix("dress") {
+          return SCHPMaskGenerator.Category.dresses
+        }
+        return nil
+      }
+      guard !categories.isEmpty else { throw "No valid body category" }
+      guard let bodyMask = delegate.createBodyMask(categories, extraArea) else { return 0 }
+      let jsMask = maskManager.createNewMask()
+      maskManager.setMask(bodyMask, forJSMask: jsMask)
       return jsMask.handle
     }
   }

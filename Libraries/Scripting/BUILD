@@ -7,6 +7,7 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         "//Libraries/DataModels",
+        "//Libraries/ImageSegmentation",
         "//Libraries/SwiftDiffusion",
         "//Libraries/Utils",
         "@s4nnc//nnc",

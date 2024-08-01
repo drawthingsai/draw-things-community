@@ -251,6 +251,13 @@ extension ScriptExecutor {
         }
         return new Mask(handle);
       },
+      bodyMask(types, extraArea) {
+        const handle = __dtHooks.createBodyMask(types, extraArea);
+        if (handle == 0) {
+        return null;
+        }
+        return new Mask(handle);
+      },
       get topLeftCorner() {
         return __dtHooks.topLeftCorner();
       },
