@@ -164,8 +164,9 @@ func SelfAttention(
   return Model([x, costheta, sintheta, causalAttentionMask, kIn, vIn], [out])
 }
 
-func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String = "") -> (Model, Model, Model)
-{
+private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -> (
+  Model, Model, Model
+) {
   let x = Input()
   let w1 = Dense(count: intermediateSize)
   var out = GELU()(w1(x))
