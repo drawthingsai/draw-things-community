@@ -80,7 +80,7 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
     let scaleFactor: Float = 8
     out = (1 / scaleFactor) * out
   }
-  let outProjection = Dense(count: hiddenSize, name: "\(name)_out_proj")
+  let outProjection = Dense(count: hiddenSize, flags: .disableMFAGEMM, name: "\(name)_out_proj")
   out = outProjection(out)
   if upcast {
     let scaleFactor: Float = 8
@@ -346,7 +346,7 @@ private func SingleTransformerBlock(
   }
   let xUnifyheads = Dense(count: k * h, noBias: true, name: "x_o")
   let xLinear1 = Dense(count: k * h * 4, name: "x_linear1")
-  let xOutProjection = Dense(count: k * h, name: "x_out_proj")
+  let xOutProjection = Dense(count: k * h, flags: .disableMFAGEMM, name: "x_out_proj")
   out = xUnifyheads(out) + xOutProjection(xLinear1(xOut).GELU(approximate: .tanh))
   out = xIn + (xChunks[2] .* out).to(of: xIn)
   let mapper: ModelWeightMapper = { _ in
@@ -375,13 +375,10 @@ func Flux1(
   let rot = Input()
   let h = height / 2
   let w = width / 2
-  // TODO: xEmbedder should just be Convolution.
-  let xEmbedder = Dense(count: channels, name: "x_embedder")
-  var out = xEmbedder(
-    x.reshaped([batchSize, h, 2, w, 2, 16]).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped([
-      batchSize, h * w, 16 * 2 * 2,
-    ])
-  ).to(.Float32)
+  let xEmbedder = Convolution(
+    groups: 1, filters: channels, filterSize: [2, 2],
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
   var adaLNChunks = [Input]()
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
