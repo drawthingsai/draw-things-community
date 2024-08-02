@@ -589,9 +589,16 @@ extension UNetFixedEncoder {
         store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
       }
       let conditions = unetFixed(inputs: c, timeEmbeds, pooleds).map { $0.as(of: FloatType.self) }
+      let tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      let tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      let h = tiledHeight / 2
+      let w = tiledWidth / 2
       let rot = Tensor<FloatType>(
         from: Flux1RotaryPositionEmbedding(
-          height: startHeight / 2, width: startWidth / 2, tokenLength: t5Length, channels: 128)
+          height: h, width: w, tokenLength: t5Length, channels: 128)
       ).toGPU(0)
       return ([graph.variable(rot)] + conditions, nil)
     case .wurstchenStageB:

@@ -34,7 +34,7 @@ func Flux1RotaryPositionEmbedding(height: Int, width: Int, tokenLength: Int, cha
   }
   for y in 0..<height {
     for x in 0..<width {
-      let i = y * height + x + tokenLength
+      let i = y * width + x + tokenLength
       for k in 0..<(dim0 / 2) {
         let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))
         let sintheta = sin(theta)
@@ -400,8 +400,7 @@ func Flux1(
     let xChunks = (0..<3).map { _ in Input() }
     let (mapper, block) = SingleTransformerBlock(
       prefix: "single_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: tokenLength,
-      hw: h * w,
-      contextBlockPreOnly: i == layers.1 - 1, usesFlashAtttention: usesFlashAttention)
+      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAtttention: usesFlashAttention)
     out = block([out, rot] + xChunks)
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
@@ -527,7 +526,6 @@ func Flux1Fixed(
   }
   let scale = Dense(count: channels, name: "ada_ln_0")
   let shift = Dense(count: channels, name: "ada_ln_1")
-  let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   outs.append(contentsOf: [shift(c), 1 + scale(c)])
   let mapper: ModelWeightMapper = { format in
     var mapping = [String: [String]]()
