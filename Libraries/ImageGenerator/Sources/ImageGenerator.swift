@@ -986,13 +986,18 @@ extension ImageGenerator {
         graph: graph, tokenizer: tokenizerV1, text: openClipG ?? text, negativeText: negativeText,
         paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
       assert(result.7 >= 77 && result.8 >= 77)
-      let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
+      let (
+        t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, tokenLengthUncond, tokenLengthCond,
+        _, _
+      ) = tokenize(
         graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
         paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
         maxLength: 256, paddingLength: 256)
       result.0 = t5Tokens + result.0
       result.2 = t5EmbedMask + result.2
       result.3 = t5InjectedEmbeddings + result.3
+      result.7 = tokenLengthUncond
+      result.8 = tokenLengthCond
       return result
     case .sd3:
       let tokenizerV2 = tokenizerXL
@@ -2325,9 +2330,11 @@ extension ImageGenerator {
       firstPassStartHeight =
         (hiresFixEnabled ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
         * 8
-      if modelVersion == .sd3 {
+      switch modelVersion {
+      case .wurstchenStageC, .sd3, .flux1:
         firstPassChannels = 16
-      } else {
+      case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
+        .wurstchenStageB:
         firstPassChannels = 4
       }
     }
@@ -2811,9 +2818,11 @@ extension ImageGenerator {
           integral: initTimestep.roundedDownStartStep, fractional: initTimestep.startStep
         )
         let channels: Int
-        if modelVersion == .sd3 {
+        switch modelVersion {
+        case .wurstchenStageC, .sd3, .flux1:
           channels = 16
-        } else {
+        case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
+          .wurstchenStageB:
           channels = 4
         }
         let noise = graph.variable(
@@ -3166,9 +3175,11 @@ extension ImageGenerator {
     } else {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
-      if modelVersion == .sd3 {
+      switch modelVersion {
+      case .wurstchenStageC, .sd3, .flux1:
         channels = 16
-      } else {
+      case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
+        .wurstchenStageB:
         channels = 4
       }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
@@ -4299,9 +4310,11 @@ extension ImageGenerator {
     } else {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
-      if modelVersion == .sd3 {
+      switch modelVersion {
+      case .wurstchenStageC, .sd3, .flux1:
         channels = 16
-      } else {
+      case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
+        .wurstchenStageB:
         channels = 4
       }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
@@ -4985,9 +4998,11 @@ extension ImageGenerator {
     } else {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
-      if modelVersion == .sd3 {
+      switch modelVersion {
+      case .wurstchenStageC, .sd3, .flux1:
         channels = 16
-      } else {
+      case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
+        .wurstchenStageB:
         channels = 4
       }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)

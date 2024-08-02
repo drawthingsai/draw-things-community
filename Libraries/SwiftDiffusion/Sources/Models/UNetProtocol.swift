@@ -89,9 +89,16 @@ extension UNetProtocol {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
       .wurstchenStageC:
       return conditions
-    case .sd3, .auraflow, .flux1:
+    case .sd3, .auraflow:
       return [conditions[0]]
         + conditions[1..<conditions.count].map {
+          let shape = $0.shape
+          return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
+            .copied()
+        }
+    case .flux1:
+      return conditions[0..<2]
+        + conditions[2..<conditions.count].map {
           let shape = $0.shape
           return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
             .copied()
@@ -439,7 +446,16 @@ extension UNetFromNNC {
         height: tiledHeight, width: tiledWidth, channels: 3072, layers: (4, 32),
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
     case .flux1:
-      fatalError()
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      (_, unet) = Flux1(
+        batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
+        height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
+        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version

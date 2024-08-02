@@ -546,7 +546,54 @@ extension UNetFixedEncoder {
         nil
       )
     case .flux1:
-      fatalError()
+      let c0 = textEncoding[0]
+      var pooled = textEncoding[1]
+      let isCfgEnabled = c0.shape[0] > batchSize
+      let cBatchSize = c0.shape[0]
+      let t5Length = c0.shape[1]
+      var c = graph.variable(
+        .GPU(0), .HWC(cBatchSize, t5Length, 4096), of: FloatType.self)
+      c.full(0)
+      if zeroNegativePrompt && isCfgEnabled {
+        let oldPooled = pooled
+        pooled = graph.variable(like: oldPooled)
+        pooled.full(0)
+        pooled[batchSize..<(batchSize * 2), 0..<768] =
+          oldPooled[batchSize..<(batchSize * 2), 0..<768]
+        c[batchSize..<(batchSize * 2), 0..<t5Length, 0..<4096] =
+          c0[batchSize..<(batchSize * 2), 0..<t5Length, 0..<4096]
+      } else {
+        c[0..<cBatchSize, 0..<t5Length, 0..<4096] = c0
+      }
+      // Load the unetFixed.
+      let (_, unetFixed) = Flux1Fixed(
+        batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
+        guidanceEmbed: false)
+      var timeEmbeds = graph.variable(
+        .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
+      var pooleds = graph.variable(
+        .GPU(0), .WC(cBatchSize * timesteps.count, 768), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: cBatchSize, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = timeEmbed
+        pooleds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<768] = pooled
+      }
+      unetFixed.compile(inputs: c, timeEmbeds, pooleds)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+      }
+      let conditions = unetFixed(inputs: c, timeEmbeds, pooleds).map { $0.as(of: FloatType.self) }
+      let rot = Tensor<FloatType>(
+        from: Flux1RotaryPositionEmbedding(
+          height: startHeight / 2, width: startWidth / 2, tokenLength: t5Length, channels: 128)
+      ).toGPU(0)
+      return ([graph.variable(rot)] + conditions, nil)
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
       let effnetHeight = textEncoding[textEncoding.count - 1].shape[1]

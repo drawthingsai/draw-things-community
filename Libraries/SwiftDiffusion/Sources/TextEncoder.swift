@@ -1143,6 +1143,7 @@ extension TextEncoder {
   )
     -> ([DynamicGraph.Tensor<FloatType>], [Model])
   {
+    let maxLength = tokens[1].shape[0] / 2
     var causalAttentionMask = Tensor<FloatType>(
       Array(repeating: 0, count: 2 * maxLength * maxLength), .CPU, .NHWC(2, 1, maxLength, maxLength)
     )
