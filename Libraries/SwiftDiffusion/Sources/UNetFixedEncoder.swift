@@ -19,7 +19,8 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
 extension UNetFixedEncoder {
   static func isFixedEncoderRequired(version: ModelVersion) -> Bool {
     switch version {
-    case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .pixart, .auraflow, .wurstchenStageC,
+    case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .pixart, .auraflow, .flux1,
+      .wurstchenStageC,
       .wurstchenStageB:
       return true
     case .v1, .v2, .kandinsky21:
@@ -167,6 +168,8 @@ extension UNetFixedEncoder {
     case .pixart:
       return []
     case .auraflow:
+      return []
+    case .flux1:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -542,6 +545,8 @@ extension UNetFixedEncoder {
         },
         nil
       )
+    case .flux1:
+      fatalError()
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
       let effnetHeight = textEncoding[textEncoding.count - 1].shape[1]

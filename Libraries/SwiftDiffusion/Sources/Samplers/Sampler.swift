@@ -14,6 +14,7 @@ public enum ModelVersion: String, Codable {
   case sd3 = "sd3"
   case pixart = "pixart"
   case auraflow = "auraflow"
+  case flux1 = "flux1"
 }
 
 public enum TextEncoderVersion: String, Codable {

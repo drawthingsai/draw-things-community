@@ -124,7 +124,7 @@ extension ImageGenerator {
       samplingSigmas = [
         700.00, 54.5, 15.886, 7.977, 4.248, 1.789, 0.981, 0.403, 0.173, 0.034, 0.002,
       ]
-    case .sd3, .pixart, .auraflow, .kandinsky21, .wurstchenStageB, .wurstchenStageC:
+    case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB, .wurstchenStageC:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -981,6 +981,8 @@ extension ImageGenerator {
         graph: graph, tokenizer: tokenizerPileT5, text: text, negativeText: negativeText,
         paddingToken: 1, conditionalLength: 2048, modifier: .pilet5xl, potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
+    case .flux1:
+      fatalError()
     case .sd3:
       let tokenizerV2 = tokenizerXL
       var tokenizerV1 = tokenizerV1

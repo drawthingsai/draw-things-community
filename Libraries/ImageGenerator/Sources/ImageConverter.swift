@@ -690,6 +690,32 @@ public enum ImageConverter {
             bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
+        case .flux1:
+          for i in 0..<imageHeight * imageWidth {
+            let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
+              fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3], fp16[i * 16 + 4],
+              fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
+              fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
+              fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
+            )
+            // TBD, I may want to regress these coefficients myself.
+            let r: FloatType =
+              (-0.0404 * v0 + 0.0043 * v1 + 0.0328 * v2 - 0.0245 * v3 + 0.0966 * v4 + 0.0035 * v5
+                + 0.0583 * v6 - 0.0191 * v7 - 0.0324 * v8 + 0.0955 * v9 - 0.0504 * v10 + 0.0500
+                * v11 + 0.0982 * v12 - 0.1233 * v13 - 0.0005 * v14 - 0.1273 * v15) * 127.5 + 127.5
+            let g: FloatType =
+              (0.0159 * v0 + 0.0298 * v1 - 0.0749 * v2 + 0.0085 * v3 + 0.0894 * v4 + 0.0399 * v5
+                + 0.1184 * v6 - 0.0206 * v7 + 0.0055 * v8 + 0.0659 * v9 + 0.0231 * v10 - 0.0008
+                * v11 + 0.0941 * v12 - 0.0280 * v13 - 0.0530 * v14 - 0.0932 * v15) * 127.5 + 127.5
+            let b: FloatType =
+              (0.0609 * v0 + 0.0850 * v1 - 0.0503 * v2 + 0.0549 * v3 + 0.0530 * v4 + 0.0123 * v5
+                + 0.1262 * v6 - 0.0306 * v7 + 0.1001 * v8 - 0.0545 * v9 - 0.0013 * v10 - 0.0088
+                * v11 + 0.0976 * v12 - 0.0897 * v13 - 0.0020 * v14 - 0.0680 * v15) * 127.5 + 127.5
+            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+            bytes[i * 4 + 3] = 255
+          }
         case .sdxlBase, .sdxlRefiner, .ssd1b, .pixart, .auraflow:
           for i in 0..<imageHeight * imageWidth {
             // We need to do some computations from the latent values.

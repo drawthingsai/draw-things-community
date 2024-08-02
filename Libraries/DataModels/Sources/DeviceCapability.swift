@@ -443,6 +443,10 @@ public struct DeviceCapability {
       guard (!isHighPerformance && !(isGoodPerformance && is8BitModel)) || force else {
         return false
       }
+    case .flux1:
+      guard (!isMaxPerformance && !(isHighPerformance && is8BitModel)) || force else {
+        return false
+      }
     case .sdxlBase, .sd3, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       guard (!isHighPerformance && !(isGoodPerformance && is8BitModel)) || force else {
         return false

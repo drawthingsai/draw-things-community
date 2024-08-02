@@ -53,7 +53,7 @@ extension UNetProtocol {
             embeddingSize: timeEmbeddingSize,
             maxPeriod: 10_000)
         ).toGPU(0))
-    case .sd3, .pixart, .auraflow:
+    case .sd3, .pixart, .auraflow, .flux1:
       return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
@@ -89,14 +89,7 @@ extension UNetProtocol {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
       .wurstchenStageC:
       return conditions
-    case .sd3:
-      return [conditions[0]]
-        + conditions[1..<conditions.count].map {
-          let shape = $0.shape
-          return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
-            .copied()
-        }
-    case .auraflow:
+    case .sd3, .auraflow, .flux1:
       return [conditions[0]]
         + conditions[1..<conditions.count].map {
           let shape = $0.shape
@@ -445,6 +438,8 @@ extension UNetFromNNC {
         batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
         height: tiledHeight, width: tiledWidth, channels: 3072, layers: (4, 32),
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
+    case .flux1:
+      fatalError()
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -475,7 +470,8 @@ extension UNetFromNNC {
           }
         }
         c = newC
-      case .v2, .sd3, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .v2, .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+        .wurstchenStageB:
         fatalError()
       }
     }
@@ -523,7 +519,7 @@ extension UNetFromNNC {
       modelKey = "stage_b"
     case .wurstchenStageC:
       modelKey = "stage_c"
-    case .sd3, .pixart, .auraflow:
+    case .sd3, .pixart, .auraflow, .flux1:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -553,7 +549,7 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<28).map {
                   return ($0, $0)
                 })
-            case .auraflow:
+            case .auraflow, .flux1:
               fatalError()
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
@@ -804,7 +800,8 @@ extension UNetFromNNC {
           }
         }
         c = newC
-      case .v2, .sd3, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .v2, .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+        .wurstchenStageB:
         fatalError()
       }
     }
@@ -828,7 +825,8 @@ extension UNetFromNNC {
         return previewer(inputs: x)[0].as(of: FloatType.self)
       }
       return x
-    case .v1, .v2, .sd3, .pixart, .auraflow, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .kandinsky21,
+    case .v1, .v2, .sd3, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v,
+      .kandinsky21,
       .wurstchenStageB:
       return x
     }

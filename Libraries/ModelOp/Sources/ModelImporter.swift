@@ -228,7 +228,7 @@ public final class ModelImporter {
         expectedTotalAccess += 388 + 196
       case .sdxlRefiner:
         expectedTotalAccess += 388
-      case .sd3, .pixart, .auraflow:
+      case .sd3, .pixart, .auraflow, .flux1:
         throw Error.noTextEncoder
       case .svdI2v:
         throw Error.noTextEncoder
@@ -302,7 +302,8 @@ public final class ModelImporter {
               intermediateSize: 5120, usesFlashAttention: false, outputPenultimate: true)
             filePath = ModelZoo.filePathForModelDownloaded(
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
-          case .sd3, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+          case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+            .wurstchenStageB:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -340,7 +341,7 @@ public final class ModelImporter {
               if $0.keys.count < 517 {
                 throw Error.tensorWritesFailed
               }
-            case .sd3, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
+            case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
               .wurstchenStageB:
               fatalError()
             }
@@ -465,6 +466,9 @@ public final class ModelImporter {
     case .auraflow:
       conditionalLength = 2048
       batchSize = 2
+    case .flux1:
+      conditionalLength = 4096
+      batchSize = 1
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -485,7 +489,7 @@ public final class ModelImporter {
       let filePath = ModelZoo.filePathForModelDownloaded("\(self.modelName)_f16.ckpt")
       switch modelVersion {
       case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .pixart,
-        .sd3, .auraflow:
+        .sd3, .auraflow, .flux1:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false)
         cArr.insert(
@@ -504,7 +508,7 @@ public final class ModelImporter {
           vectors = [graph.variable(.CPU, .WC(batchSize, 2560), of: FloatType.self)]
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
-        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .auraflow:
+        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .auraflow, .flux1:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -627,7 +631,7 @@ public final class ModelImporter {
           usesFlashAttention: .none, of: FloatType.self)
         unetReader = nil
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 1536, layers: 24)
-      case .auraflow:
+      case .auraflow, .flux1:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
         fatalError()
@@ -678,7 +682,7 @@ public final class ModelImporter {
           ), graph.variable(.CPU, .HWC(batchSize, 154, 4096), of: FloatType.self),
         ]
         tEmb = nil
-      case .auraflow:
+      case .auraflow, .flux1:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
@@ -823,7 +827,7 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .auraflow:
+          case .auraflow, .flux1:
             fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
             fatalError()
@@ -930,7 +934,7 @@ public final class ModelImporter {
           if $0.keys.count != 1157 {
             throw Error.tensorWritesFailed
           }
-        case .auraflow:
+        case .auraflow, .flux1:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()

@@ -119,7 +119,7 @@ public final class ControlNetImporter {
       dim = 1024
     case .sdxlBase, .ssd1b:
       dim = 2048
-    case .sd3, .pixart, .auraflow, .kandinsky21, .svdI2v, .sdxlRefiner, .wurstchenStageC,
+    case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .sdxlRefiner, .wurstchenStageC,
       .wurstchenStageB:
       fatalError()
     }
@@ -212,8 +212,8 @@ public final class ControlNetImporter {
         }
       }
       controlNetReader = nil
-    case .sd3, .pixart, .auraflow, .kandinsky21, .ssd1b, .svdI2v, .sdxlRefiner, .wurstchenStageC,
-      .wurstchenStageB:
+    case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .ssd1b, .svdI2v, .sdxlRefiner,
+      .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
 
@@ -252,8 +252,8 @@ public final class ControlNetImporter {
             }
             hintMapping = mapper(.generativeModels)
           }
-        case .sd3, .pixart, .auraflow, .sdxlRefiner, .ssd1b, .v1, .v2, .kandinsky21, .svdI2v,
-          .wurstchenStageC, .wurstchenStageB:
+        case .sd3, .pixart, .auraflow, .flux1, .sdxlRefiner, .ssd1b, .v1, .v2, .kandinsky21,
+          .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
         store.removeAll()

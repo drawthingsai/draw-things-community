@@ -309,6 +309,8 @@ public struct TextualInversionZoo: DownloadZoo {
       count = 4096
     case .auraflow:
       count = 2048
+    case .flux1:
+      count = 4096
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
@@ -316,7 +318,7 @@ public struct TextualInversionZoo: DownloadZoo {
     graph.openStore(filePathForModelDownloaded(name), flags: .readOnly) {
       let tensorName: String
       switch version {
-      case .v1, .v2, .pixart, .auraflow:
+      case .v1, .v2, .pixart, .auraflow, .flux1:
         tensorName = "string_to_param"
       case .sd3, .sdxlBase, .sdxlRefiner, .ssd1b:
         switch modifier {

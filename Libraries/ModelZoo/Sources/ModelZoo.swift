@@ -35,6 +35,8 @@ public struct ModelZoo: DownloadZoo {
       return "PixArt Sigma"
     case .auraflow:
       return "AuraFlow"
+    case .flux1:
+      return "FLUX.1"
     }
   }
 
@@ -326,6 +328,10 @@ public struct ModelZoo: DownloadZoo {
     "auraflow_v0.2_q8p.ckpt": "cda840bce05ada4c97d95080160f18dc594b6c5f2d4da45c33db51c37c070170",
     "auraflow_v0.2_f16.ckpt": "727622af19710b8014da024c7294573c02fefb7be83e178fa4c2b50a9d2bc922",
     "auraflow_v0.2_q5p.ckpt": "b3d4a2c3be69e285028de0d61a17a5fbe34b9e1504725f32f52e75b8d9d8a2cc",
+    "flux_1_vae_f16.ckpt": "453d09645419d1ffc2f641e4a4c6ccf75f69c7215938a285e474ece3762fe293",
+    "flux_1_schnell_q8p.ckpt": "26a38212290a928aad21d4d9a6e534cca6c06ddb7ce0a926ac31533500e39f64",
+    "flux_1_schnell_f16.ckpt": "6fad328261de43847bf6a53a075445e90c5fd90f65c4a68dc538fcb7aa5f13a2",
+    "flux_1_schnell_q5p.ckpt": "37a28dcba93e23e4433b64d621b5352f4651d46eaf40251351d8a553642b907b",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -347,6 +353,16 @@ public struct ModelZoo: DownloadZoo {
       name: "PixArt Sigma XL 1K (8-bit)", file: "pixart_sigma_xl_2_1024_ms_q8p.ckpt", prefix: "",
       version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
+    Specification(
+      name: "FLUX.1 [schnell]", file: "flux_1_schnell_q8p.ckpt", prefix: "",
+      version: .flux1, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      isConsistencyModel: true, objective: .u(conditionScale: 1000)),
+    Specification(
+      name: "FLUX.1 [schnell] (8-bit)", file: "flux_1_schnell_q5p.ckpt", prefix: "",
+      version: .flux1, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
+      isConsistencyModel: true, objective: .u(conditionScale: 1000)),
     Specification(
       name: "PixArt Sigma XL 512", file: "pixart_sigma_xl_2_512_ms_f16.ckpt", prefix: "",
       version: .pixart, defaultScale: 8, textEncoder: "t5_xxl_encoder_q6p.ckpt",
@@ -972,9 +988,7 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .pixart:
       return .epsilon
-    case .sd3:
-      return .u(conditionScale: 1000)
-    case .auraflow:
+    case .sd3, .auraflow, .flux1:
       return .u(conditionScale: 1000)
     }
   }
@@ -986,7 +1000,7 @@ public struct ModelZoo: DownloadZoo {
     }
     switch specification.version {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1:
       return .timestep
     case .svdI2v:
       return .noise
@@ -1015,9 +1029,7 @@ public struct ModelZoo: DownloadZoo {
       return .edm(.init(sigmaMax: 700.0))
     case .wurstchenStageC, .wurstchenStageB:
       return .edm(.init(sigmaMin: 0.01, sigmaMax: 99.995))
-    case .sd3:
-      return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
-    case .auraflow:
+    case .sd3, .auraflow, .flux1:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
@@ -1045,6 +1057,8 @@ public struct ModelZoo: DownloadZoo {
       return (nil, nil, 2.32558139535, nil)
     case .sd3:
       return (nil, nil, 1.5305, 0.0609)
+    case .flux1:
+      return (nil, nil, 0.3611, 0.11590)
     }
   }
 
@@ -1124,6 +1138,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 3 * 1_024 * 1_024 * 1_024
       case .auraflow:
         return fileSize < 6 * 1_024 * 1_024 * 1_024
+      case .flux1:
+        return fileSize < 10 * 1_024 * 1_024 * 1_024
       }
     }
     return false

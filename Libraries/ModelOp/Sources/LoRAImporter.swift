@@ -269,7 +269,7 @@ public enum LoRAImporter {
         return t5Mapper(.generativeModels)
       }
       textModelMapping2 = [:]
-    case .auraflow:
+    case .auraflow, .flux1:
       fatalError()
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
@@ -391,7 +391,7 @@ public enum LoRAImporter {
         (unetFixedMapper, unetFixed) = PixArtFixed(
           batchSize: 2, channels: 1152, layers: 28, tokenLength: (77, 77),
           usesFlashAttention: false, of: FloatType.self)
-      case .auraflow:
+      case .auraflow, .flux1:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
@@ -431,6 +431,9 @@ public enum LoRAImporter {
         case .auraflow:
           inputDim = 4
           conditionalLength = 2048
+        case .flux1:
+          inputDim = 16
+          conditionalLength = 4096
         case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
@@ -474,7 +477,7 @@ public enum LoRAImporter {
             ), graph.variable(.CPU, .HWC(2, 154, 4096), of: FloatType.self),
           ]
           tEmb = nil
-        case .auraflow:
+        case .auraflow, .flux1:
           fatalError()
         case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
@@ -502,7 +505,7 @@ public enum LoRAImporter {
           vectors = [graph.variable(.CPU, .WC(2, 2560), of: FloatType.self)]
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
-        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .auraflow:
+        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .auraflow, .flux1:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -629,7 +632,7 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .auraflow:
+      case .auraflow, .flux1:
         fatalError()
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
         if let tensorDescClipG = stateDict["clip_g"] {
@@ -663,7 +666,7 @@ public enum LoRAImporter {
       case .wurstchenStageC, .wurstchenStageB:
         modelPrefix = "stage_c"
         modelPrefixFixed = "stage_c_fixed"
-      case .sd3, .pixart, .auraflow:
+      case .sd3, .pixart, .auraflow, .flux1:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

@@ -395,6 +395,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (PixArt Sigma)"
     case .auraflow:
       return " (AuraFlow)"
+    case .flux1:
+      return " (FLUX.1)"
     }
   }
 
