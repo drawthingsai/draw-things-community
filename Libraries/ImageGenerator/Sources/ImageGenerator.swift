@@ -951,8 +951,7 @@ extension ImageGenerator {
         var result = tokenize(
           graph: graph, tokenizer: tokenizerChatGLM3, text: text, negativeText: negativeText,
           paddingToken: nil, conditionalLength: 4096, modifier: .chatglm3_6b,
-          potentials: potentials,
-          startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
+          potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
         result.7 = max(256, result.7 + 2)
         result.8 = max(256, result.8 + 2)
         return result
@@ -982,7 +981,19 @@ extension ImageGenerator {
         paddingToken: 1, conditionalLength: 2048, modifier: .pilet5xl, potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
     case .flux1:
-      fatalError()
+      let tokenizerV1 = tokenizerV1
+      var result = tokenize(
+        graph: graph, tokenizer: tokenizerV1, text: openClipG ?? text, negativeText: negativeText,
+        paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
+      assert(result.7 >= 77 && result.8 >= 77)
+      let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
+        graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
+        maxLength: 256, paddingLength: 256)
+      result.0 = t5Tokens + result.0
+      result.2 = t5EmbedMask + result.2
+      result.3 = t5InjectedEmbeddings + result.3
+      return result
     case .sd3:
       let tokenizerV2 = tokenizerXL
       var tokenizerV1 = tokenizerV1

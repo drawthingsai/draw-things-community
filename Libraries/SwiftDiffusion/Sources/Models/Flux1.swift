@@ -25,7 +25,7 @@ func Flux1RotaryPositionEmbedding(height: Int, width: Int, tokenLength: Int, cha
       rotTensor[0, i, 0, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
     }
     for k in 0..<(dim2 / 2) {
-      let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / 28)
+      let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
       let sintheta = sin(theta)
       let costheta = cos(theta)
       rotTensor[0, i, 0, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
