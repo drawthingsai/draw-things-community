@@ -444,7 +444,10 @@ public struct DeviceCapability {
         return false
       }
     case .flux1:
-      guard (!isMaxPerformance && !(isHighPerformance && is8BitModel)) || force else {
+      guard
+        (!isMaxPerformance && !((isPhone() ? isMaxPerformance : isHighPerformance) && is8BitModel))
+          || force
+      else {
         return false
       }
     case .sdxlBase, .sd3, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB:
