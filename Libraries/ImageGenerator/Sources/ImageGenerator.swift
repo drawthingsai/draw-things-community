@@ -983,8 +983,8 @@ extension ImageGenerator {
     case .flux1:
       let tokenizerV1 = tokenizerV1
       var result = tokenize(
-        graph: graph, tokenizer: tokenizerV1, text: openClipG ?? text, negativeText: negativeText,
-        paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
+        graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials)
       assert(result.7 >= 77 && result.8 >= 77)
       let (
         t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, tokenLengthUncond, tokenLengthCond,
