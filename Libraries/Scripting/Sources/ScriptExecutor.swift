@@ -465,6 +465,8 @@ extension ScriptExecutor: JSInterop {
           return SCHPMaskGenerator.Category.upperBody
         } else if $0.lowercased().hasPrefix("dress") {
           return SCHPMaskGenerator.Category.dresses
+        } else if $0.lowercased().hasPrefix("neck") {
+          return SCHPMaskGenerator.Category.neck
         }
         return nil
       }
