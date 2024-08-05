@@ -5,6 +5,7 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePaths: [String]
   public let version: ModelVersion
   public let textEncoderVersion: TextEncoderVersion?
+  public let isCfgEnabled: Bool
   public let usesFlashAttention: Bool
   public let injectEmbeddings: Bool
   public let maxLength: Int
@@ -13,12 +14,13 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let externalOnDemand: Bool
   public init(
     filePaths: [String], version: ModelVersion, textEncoderVersion: TextEncoderVersion?,
-    usesFlashAttention: Bool, injectEmbeddings: Bool, externalOnDemand: Bool, maxLength: Int = 77,
-    clipSkip: Int = 1, lora: [LoRAConfiguration] = []
+    isCfgEnabled: Bool, usesFlashAttention: Bool, injectEmbeddings: Bool, externalOnDemand: Bool,
+    maxLength: Int = 77, clipSkip: Int = 1, lora: [LoRAConfiguration] = []
   ) {
     self.filePaths = filePaths
     self.version = version
     self.textEncoderVersion = textEncoderVersion
+    self.isCfgEnabled = isCfgEnabled
     self.usesFlashAttention = usesFlashAttention
     self.injectEmbeddings = injectEmbeddings
     self.externalOnDemand = externalOnDemand
@@ -1277,7 +1279,8 @@ extension TextEncoder {
         c.full(0)
       }
     }
-    var pooled = graph.variable(.GPU(0), .WC(2, 768), of: FloatType.self)
+    let batchSize = isCfgEnabled ? 2 : 1
+    var pooled = graph.variable(.GPU(0), .WC(batchSize, 768), of: FloatType.self)
     var unconditionalTokenEnd: Int? = nil
     var tokenEnd: Int? = nil
     if mask.count > 1 {
@@ -1300,17 +1303,27 @@ extension TextEncoder {
       }
     }
     if let unconditionalTokenEnd = unconditionalTokenEnd, let tokenEnd = tokenEnd {
-      pooled[0..<1, 0..<768] =
-        c0Out[1][unconditionalTokenEnd..<(unconditionalTokenEnd + 1), 0..<768]
-      pooled[1..<2, 0..<768] =
-        c0Out[1][(maxLength + tokenEnd)..<(maxLength + tokenEnd + 1), 0..<768]
+      if isCfgEnabled {
+        pooled[0..<1, 0..<768] =
+          c0Out[1][unconditionalTokenEnd..<(unconditionalTokenEnd + 1), 0..<768]
+        pooled[1..<2, 0..<768] =
+          c0Out[1][(maxLength + tokenEnd)..<(maxLength + tokenEnd + 1), 0..<768]
+      } else {
+        pooled[0..<1, 0..<768] =
+          c0Out[1][(maxLength + tokenEnd)..<(maxLength + tokenEnd + 1), 0..<768]
+      }
     }
     // Now load T5 encoder.
     let tokenLength = tokens[0].shape[0] / 2
-    let (_, t5) = T5ForConditionalGeneration(b: 2, t: tokenLength, of: FloatType.self)
+    let (_, t5) = T5ForConditionalGeneration(b: batchSize, t: tokenLength, of: FloatType.self)
     let relativePositionBuckets = relativePositionBuckets(
       sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
-    let tokens2TensorGPU = tokens[0].toGPU(0)
+    let tokens2TensorGPU: DynamicGraph.Tensor<Int32>
+    if isCfgEnabled {
+      tokens2TensorGPU = tokens[0].toGPU(0)
+    } else {
+      tokens2TensorGPU = tokens[0][tokenLength..<(tokenLength * 2)].toGPU(0)
+    }
     let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
     t5.compile(inputs: tokens2TensorGPU, relativePositionBucketsGPU)
     // Move T5 to on-demand.
@@ -1323,7 +1336,7 @@ extension TextEncoder {
     }
     let c2 = t5(inputs: tokens2TensorGPU, relativePositionBucketsGPU)[0].as(
       of: FloatType.self
-    ).reshaped(.HWC(2, tokenLength, 4096))
+    ).reshaped(.HWC(batchSize, tokenLength, 4096))
     return ([c2, pooled], [textModel])
   }
 

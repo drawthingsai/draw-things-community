@@ -64,6 +64,7 @@ public final class ModelPreloader {
 
   private var textEncoderFilePaths: [String]? = nil
   private var textEncoderVersion: ModelVersion? = nil
+  private var textEncoderIsCfgEnabled: Bool? = nil
   private var textEncoderUsesFlashAttention: Bool? = nil
   private var textEncoderInjectEmbeddings: Bool = false
   private var textEncoderMaxLength: Int = 77
@@ -760,6 +761,7 @@ extension ModelPreloader {
         }
         textEncoderFilePaths = [textEncoderPath]
         textEncoderVersion = modelVersion
+        textEncoderIsCfgEnabled = true
         textEncoderUsesFlashAttention = useMFA && DeviceCapability.isMFACausalAttentionMaskSupported
         textEncoderInjectEmbeddings = false
         textEncoderMaxLength = 77
@@ -1080,6 +1082,7 @@ extension ModelPreloader {
     }
     guard let textModel = textModel, textEncoderFilePaths == textEncoder.filePaths,
       textEncoderVersion == textEncoder.version,
+      textEncoderIsCfgEnabled == textEncoder.isCfgEnabled,
       textEncoderUsesFlashAttention == textEncoder.usesFlashAttention,
       textEncoderInjectEmbeddings == textEncoder.injectEmbeddings,
       textEncoderMaxLength == textEncoder.maxLength,
@@ -1100,6 +1103,7 @@ extension ModelPreloader {
       textModel = x.1[0]
       textEncoderFilePaths = textEncoder.filePaths
       textEncoderVersion = textEncoder.version
+      textEncoderIsCfgEnabled = textEncoder.isCfgEnabled
       textEncoderUsesFlashAttention = textEncoder.usesFlashAttention
       textEncoderInjectEmbeddings = textEncoder.injectEmbeddings
       textEncoderMaxLength = textEncoder.maxLength

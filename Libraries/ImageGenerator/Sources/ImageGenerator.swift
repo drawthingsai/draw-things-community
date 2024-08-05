@@ -2402,6 +2402,7 @@ extension ImageGenerator {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
+        isCfgEnabled: !isConsistencyModel,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
@@ -3253,6 +3254,7 @@ extension ImageGenerator {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
+        isCfgEnabled: !isConsistencyModel,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
@@ -4433,6 +4435,7 @@ extension ImageGenerator {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
+        isCfgEnabled: !isConsistencyModel,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
@@ -5120,6 +5123,7 @@ extension ImageGenerator {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
+        isCfgEnabled: !isConsistencyModel,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,

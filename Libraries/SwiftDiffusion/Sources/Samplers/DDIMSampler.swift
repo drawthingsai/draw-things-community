@@ -167,6 +167,7 @@ extension DDIMSampler: Sampler {
     var tokenLengthUncond = tokenLengthUncond
     if !isCfgEnabled && version != .svdI2v {
       for i in 0..<c.count {
+        guard c[i].shape[0] >= batchSize * 2 else { continue }
         let shape = c[i].shape
         if shape.count == 3 {
           let conditionalLength = version == .kandinsky21 ? shape[1] : tokenLengthCond
@@ -178,11 +179,14 @@ extension DDIMSampler: Sampler {
       }
       if var projection = extraProjection {
         let shape = projection.shape
-        if shape.count == 3 {
-          // Only tokenLengthCond is used.
-          projection = projection[batchSize..<(batchSize * 2), 0..<shape[1], 0..<shape[2]].copied()
-        } else if shape.count == 2 {
-          projection = projection[batchSize..<(batchSize * 2), 0..<shape[1]].copied()
+        if shape[0] >= batchSize * 2 {
+          if shape.count == 3 {
+            // Only tokenLengthCond is used.
+            projection = projection[batchSize..<(batchSize * 2), 0..<shape[1], 0..<shape[2]]
+              .copied()
+          } else if shape.count == 2 {
+            projection = projection[batchSize..<(batchSize * 2), 0..<shape[1]].copied()
+          }
         }
         extraProjection = projection
       }
