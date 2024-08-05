@@ -2268,7 +2268,8 @@ extension ImageGenerator {
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? Self.defaultAutoencoder
-    let isGuidanceEmbedEnabled = ModelZoo.guidanceEmbedForModel(file)
+    let isGuidanceEmbedEnabled =
+      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
@@ -2379,6 +2380,7 @@ extension ImageGenerator {
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
+    let guidanceEmbed = configuration.guidanceEmbed
     let originalSize =
       configuration.originalImageWidth == 0 || configuration.originalImageHeight == 0
       ? (width: Int(configuration.startWidth) * 64, height: Int(configuration.startHeight) * 64)
@@ -2666,7 +2668,8 @@ extension ImageGenerator {
               mask: mask, negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
-              imageGuidanceScale: imageGuidanceScale, startStep: (integral: 0, fractional: 0),
+              imageGuidanceScale: imageGuidanceScale, guidanceEmbed: guidanceEmbed,
+              startStep: (integral: 0, fractional: 0),
               endStep: (
                 integral: sampling.steps,
                 fractional: Float(sampling.steps)
@@ -2939,7 +2942,7 @@ extension ImageGenerator {
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: secondPassInjectedControls,
               textGuidanceScale: secondPassTextGuidance,
-              imageGuidanceScale: imageGuidanceScale,
+              imageGuidanceScale: imageGuidanceScale, guidanceEmbed: guidanceEmbed,
               startStep: startStep,
               endStep: (
                 integral: secondPassSampling.steps, fractional: Float(secondPassSampling.steps)
@@ -3070,7 +3073,8 @@ extension ImageGenerator {
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? "vae_ft_mse_840000_f16.ckpt"
-    let isGuidanceEmbedEnabled = ModelZoo.guidanceEmbedForModel(file)
+    let isGuidanceEmbedEnabled =
+      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
@@ -3148,6 +3152,7 @@ extension ImageGenerator {
     }
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
+    let guidanceEmbed = configuration.guidanceEmbed
     let originalSize =
       configuration.originalImageWidth == 0 || configuration.originalImageHeight == 0
       ? (width: Int(configuration.startWidth) * 64, height: Int(configuration.startHeight) * 64)
@@ -3465,7 +3470,7 @@ extension ImageGenerator {
               mask: mask, negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
-              imageGuidanceScale: imageGuidanceScale,
+              imageGuidanceScale: imageGuidanceScale, guidanceEmbed: guidanceEmbed,
               startStep: (
                 integral: initTimestep.roundedDownStartStep, fractional: initTimestep.startStep
               ),
@@ -3574,7 +3579,7 @@ extension ImageGenerator {
                 tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
                 injectedControls: [],  // TODO: Support injectedControls for this.
                 textGuidanceScale: secondPassTextGuidance,
-                imageGuidanceScale: imageGuidanceScale,
+                imageGuidanceScale: imageGuidanceScale, guidanceEmbed: guidanceEmbed,
                 startStep: (
                   integral: initTimestep.roundedDownStartStep, fractional: initTimestep.startStep
                 ),
@@ -4215,7 +4220,8 @@ extension ImageGenerator {
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? "vae_ft_mse_840000_f16.ckpt"
-    let isGuidanceEmbedEnabled = ModelZoo.guidanceEmbedForModel(file)
+    let isGuidanceEmbedEnabled =
+      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
@@ -4295,6 +4301,7 @@ extension ImageGenerator {
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
+    let guidanceEmbed = configuration.guidanceEmbed
     let originalSize =
       configuration.originalImageWidth == 0 || configuration.originalImageHeight == 0
       ? (width: Int(configuration.startWidth) * 64, height: Int(configuration.startHeight) * 64)
@@ -4603,7 +4610,7 @@ extension ImageGenerator {
               conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
-              imageGuidanceScale: imageGuidanceScale,
+              imageGuidanceScale: imageGuidanceScale, guidanceEmbed: guidanceEmbed,
               startStep: (
                 integral: initTimestep.roundedDownStartStep, fractional: initTimestep.startStep
               ),
@@ -4713,7 +4720,7 @@ extension ImageGenerator {
                 tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
                 injectedControls: [],  // TODO: Support injectedControls for this.
                 textGuidanceScale: secondPassTextGuidance,
-                imageGuidanceScale: imageGuidanceScale,
+                imageGuidanceScale: imageGuidanceScale, guidanceEmbed: guidanceEmbed,
                 startStep: (
                   integral: initTimestep.roundedDownStartStep, fractional: initTimestep.startStep
                 ),
@@ -4851,7 +4858,8 @@ extension ImageGenerator {
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? "vae_ft_mse_840000_f16.ckpt"
-    let isGuidanceEmbedEnabled = ModelZoo.guidanceEmbedForModel(file)
+    let isGuidanceEmbedEnabled =
+      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
@@ -4931,6 +4939,7 @@ extension ImageGenerator {
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
+    let guidanceEmbed = configuration.guidanceEmbed
     let originalSize =
       configuration.originalImageWidth == 0 || configuration.originalImageHeight == 0
       ? (width: Int(configuration.startWidth) * 64, height: Int(configuration.startHeight) * 64)
@@ -5248,6 +5257,7 @@ extension ImageGenerator {
           conditioning: c, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           extraProjection: extraProjection, injectedControls: injectedControls,
           textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
+          guidanceEmbed: guidanceEmbed,
           startStep: (integral: 0, fractional: 0),
           endStep: (integral: initTimestep.roundedUpStartStep, fractional: initTimestep.startStep),
           originalSize: originalSize,
@@ -5332,6 +5342,7 @@ extension ImageGenerator {
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
               extraProjection: extraProjection, injectedControls: injectedControls,
               textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
+              guidanceEmbed: guidanceEmbed,
               startStep: (
                 integral: initTimestep.roundedDownStartStep, fractional: initTimestep.startStep
               ),
@@ -5427,7 +5438,7 @@ extension ImageGenerator {
             tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
             injectedControls: [],  // TODO: Support injectedControls for this.
             textGuidanceScale: secondPassTextGuidance,
-            imageGuidanceScale: imageGuidanceScale,
+            imageGuidanceScale: imageGuidanceScale, guidanceEmbed: guidanceEmbed,
             startStep: (integral: 0, fractional: 0),
             endStep: (
               integral: initTimestep.roundedUpStartStep, fractional: initTimestep.startStep
@@ -5496,6 +5507,7 @@ extension ImageGenerator {
                 tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
                 extraProjection: extraProjection, injectedControls: injectedControls,
                 textGuidanceScale: secondPassTextGuidance, imageGuidanceScale: imageGuidanceScale,
+                guidanceEmbed: guidanceEmbed,
                 startStep: (
                   integral: initTimestep.roundedDownStartStep, fractional: initTimestep.startStep
                 ),

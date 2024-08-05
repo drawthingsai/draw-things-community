@@ -176,7 +176,8 @@ extension UNetFixedEncoder {
     }
   }
   public func encode(
-    isCfgEnabled: Bool, textGuidanceScale: Float, isGuidanceEmbedEnabled: Bool,
+    isCfgEnabled: Bool, textGuidanceScale: Float, guidanceEmbed: Float,
+    isGuidanceEmbedEnabled: Bool,
     textEncoding: [DynamicGraph.Tensor<FloatType>], timesteps: [Float], batchSize: Int,
     startHeight: Int, startWidth: Int, tokenLengthUncond: Int, tokenLengthCond: Int,
     lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration
@@ -563,15 +564,23 @@ extension UNetFixedEncoder {
         c[0..<cBatchSize, 0..<t5Length, 0..<4096] = c0
       }
       // Load the unetFixed.
+      // TODO: This is not ideal because we opened it twice, but hopefully it is OK for now until we are at 300ms domain.
+      let isGuidanceEmbedSupported =
+        (try?
+          (graph.openStore(
+            filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+          ) {
+            return $0.read(like: "__dit__[t-guidance_embedder_0-0-1]") != nil
+          }).get()) ?? false
       let (_, unetFixed) = Flux1Fixed(
         batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
-        guidanceEmbed: isGuidanceEmbedEnabled)
+        guidanceEmbed: isGuidanceEmbedSupported)
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
       var pooleds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 768), of: FloatType.self)
       var guidanceEmbeds: DynamicGraph.Tensor<FloatType>?
-      if isGuidanceEmbedEnabled {
+      if isGuidanceEmbedSupported {
         guidanceEmbeds = graph.variable(
           .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
       } else {
@@ -586,10 +595,11 @@ extension UNetFixedEncoder {
         timeEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = timeEmbed
         pooleds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<768] = pooled
         if var guidanceEmbeds = guidanceEmbeds {
+          let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : guidanceEmbed
           let guidanceEmbed = graph.variable(
             Tensor<FloatType>(
               from: timeEmbedding(
-                timestep: textGuidanceScale * 1_000, batchSize: cBatchSize, embeddingSize: 256,
+                timestep: guidanceScale * 1_000, batchSize: cBatchSize, embeddingSize: 256,
                 maxPeriod: 10_000)
             ).toGPU(0))
           guidanceEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = guidanceEmbed

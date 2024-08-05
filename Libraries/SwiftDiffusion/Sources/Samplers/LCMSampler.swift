@@ -68,7 +68,7 @@ extension LCMSampler: Sampler {
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )],
-    textGuidanceScale: Float, imageGuidanceScale: Float,
+    textGuidanceScale: Float, imageGuidanceScale: Float, guidanceEmbed: Float,
     startStep: (integral: Int, fractional: Float), endStep: (integral: Int, fractional: Float),
     originalSize: (width: Int, height: Int), cropTopLeft: (top: Int, left: Int),
     targetSize: (width: Int, height: Int), aestheticScore: Float,
@@ -185,7 +185,7 @@ extension LCMSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        isCfgEnabled: false, textGuidanceScale: textGuidanceScale,
+        isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         textEncoding: c,
         timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
@@ -352,7 +352,7 @@ extension LCMSampler: Sampler {
               vector
               + fixedEncoder.encode(
                 isCfgEnabled: false, textGuidanceScale: textGuidanceScale,
-                isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+                guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
                 textEncoding: oldC, timesteps: timesteps[i..<endStep.integral].map { Float($0) },
                 batchSize: batchSize, startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,

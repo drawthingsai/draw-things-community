@@ -150,7 +150,7 @@ extension UniPCSampler: Sampler {
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )],
-    textGuidanceScale: Float, imageGuidanceScale: Float,
+    textGuidanceScale: Float, imageGuidanceScale: Float, guidanceEmbed: Float,
     startStep: (integral: Int, fractional: Float), endStep: (integral: Int, fractional: Float),
     originalSize: (width: Int, height: Int), cropTopLeft: (top: Int, left: Int),
     targetSize: (width: Int, height: Int), aestheticScore: Float,
@@ -307,7 +307,7 @@ extension UniPCSampler: Sampler {
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
         isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
-        isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+        guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
@@ -446,7 +446,7 @@ extension UniPCSampler: Sampler {
               vector
               + fixedEncoder.encode(
                 isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
-                isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+                guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,

@@ -62,7 +62,7 @@ extension TCDSampler: Sampler {
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )],
-    textGuidanceScale: Float, imageGuidanceScale: Float,
+    textGuidanceScale: Float, imageGuidanceScale: Float, guidanceEmbed: Float,
     startStep: (integral: Int, fractional: Float), endStep: (integral: Int, fractional: Float),
     originalSize: (width: Int, height: Int), cropTopLeft: (top: Int, left: Int),
     targetSize: (width: Int, height: Int), aestheticScore: Float,
@@ -183,7 +183,7 @@ extension TCDSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        isCfgEnabled: false, textGuidanceScale: textGuidanceScale,
+        isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
@@ -324,7 +324,7 @@ extension TCDSampler: Sampler {
               vector
               + fixedEncoder.encode(
                 isCfgEnabled: false, textGuidanceScale: textGuidanceScale,
-                isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+                guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,

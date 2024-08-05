@@ -200,7 +200,7 @@ public protocol Sampler<FloatType, UNet> {
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )],
-    textGuidanceScale: Float, imageGuidanceScale: Float,
+    textGuidanceScale: Float, imageGuidanceScale: Float, guidanceEmbed: Float,
     startStep: (integral: Int, fractional: Float), endStep: (integral: Int, fractional: Float),
     originalSize: (width: Int, height: Int), cropTopLeft: (top: Int, left: Int),
     targetSize: (width: Int, height: Int), aestheticScore: Float,
