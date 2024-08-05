@@ -614,13 +614,8 @@ extension UNetFixedEncoder {
       let conditions = unetFixed(
         inputs: c, [timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
       ).map { $0.as(of: FloatType.self) }
-      let tiledWidth =
-        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
-      let tiledHeight =
-        tiledDiffusion.isEnabled
-        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
-      let h = tiledHeight / 2
-      let w = tiledWidth / 2
+      let h = startHeight / 2
+      let w = startWidth / 2
       let rot = Tensor<FloatType>(
         from: Flux1RotaryPositionEmbedding(
           height: h, width: w, tokenLength: t5Length, channels: 128)
