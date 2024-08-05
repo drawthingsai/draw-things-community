@@ -565,11 +565,18 @@ extension UNetFixedEncoder {
       // Load the unetFixed.
       let (_, unetFixed) = Flux1Fixed(
         batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
-        guidanceEmbed: false)
+        guidanceEmbed: guidanceEmbed)
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
       var pooleds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 768), of: FloatType.self)
+      var guidanceEmbeds: DynamicGraph.Tensor<FloatType>?
+      if guidanceEmbed {
+        guidanceEmbeds = graph.variable(
+          .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
+      } else {
+        guidanceEmbeds = nil
+      }
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(
           Tensor<FloatType>(
@@ -578,14 +585,25 @@ extension UNetFixedEncoder {
           ).toGPU(0))
         timeEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = timeEmbed
         pooleds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<768] = pooled
+        if var guidanceEmbeds = guidanceEmbeds {
+          let guidanceEmbed = graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: textGuidanceScale * 1_000, batchSize: cBatchSize, embeddingSize: 256,
+                maxPeriod: 10_000)
+            ).toGPU(0))
+          guidanceEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = guidanceEmbed
+        }
       }
-      unetFixed.compile(inputs: c, timeEmbeds, pooleds)
+      unetFixed.compile(inputs: [c, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? []))
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-      ) { store in
-        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+      ) {
+        $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
       }
-      let conditions = unetFixed(inputs: c, timeEmbeds, pooleds).map { $0.as(of: FloatType.self) }
+      let conditions = unetFixed(
+        inputs: c, [timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
+      ).map { $0.as(of: FloatType.self) }
       let tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
       let tiledHeight =

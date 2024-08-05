@@ -2168,7 +2168,7 @@ extension ImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? Self.defaultAutoencoder
     let guidanceEmebd = ModelZoo.guidanceEmbedForModel(file)
-    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file)
+    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !guidanceEmebd
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
     let conditioning = ModelZoo.conditioningForModel(file)
@@ -3027,7 +3027,7 @@ extension ImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? "vae_ft_mse_840000_f16.ckpt"
     let guidanceEmebd = ModelZoo.guidanceEmbedForModel(file)
-    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file)
+    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !guidanceEmebd
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
     let conditioning = ModelZoo.conditioningForModel(file)
@@ -4229,7 +4229,7 @@ extension ImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? "vae_ft_mse_840000_f16.ckpt"
     let guidanceEmebd = ModelZoo.guidanceEmbedForModel(file)
-    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file)
+    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !guidanceEmebd
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
     let conditioning = ModelZoo.conditioningForModel(file)
@@ -4922,7 +4922,7 @@ extension ImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? "vae_ft_mse_840000_f16.ckpt"
     let guidanceEmebd = ModelZoo.guidanceEmbedForModel(file)
-    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file)
+    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !guidanceEmebd
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
     let conditioning = ModelZoo.conditioningForModel(file)
