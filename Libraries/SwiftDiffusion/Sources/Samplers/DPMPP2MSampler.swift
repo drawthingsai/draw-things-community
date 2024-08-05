@@ -167,6 +167,7 @@ extension DPMPP2MSampler: Sampler {
     if !isCfgEnabled && version != .svdI2v {
       for i in 0..<c.count {
         let shape = c[i].shape
+        guard shape[0] >= batchSize * 2 else { continue }
         if shape.count == 3 {
           let conditionalLength = version == .kandinsky21 ? shape[1] : tokenLengthCond
           // Only tokenLengthCond is used.
@@ -177,11 +178,14 @@ extension DPMPP2MSampler: Sampler {
       }
       if var projection = extraProjection {
         let shape = projection.shape
-        if shape.count == 3 {
-          // Only tokenLengthCond is used.
-          projection = projection[batchSize..<(batchSize * 2), 0..<shape[1], 0..<shape[2]].copied()
-        } else if shape.count == 2 {
-          projection = projection[batchSize..<(batchSize * 2), 0..<shape[1]].copied()
+        if shape[0] >= batchSize * 2 {
+          if shape.count == 3 {
+            // Only tokenLengthCond is used.
+            projection = projection[batchSize..<(batchSize * 2), 0..<shape[1], 0..<shape[2]]
+              .copied()
+          } else if shape.count == 2 {
+            projection = projection[batchSize..<(batchSize * 2), 0..<shape[1]].copied()
+          }
         }
         extraProjection = projection
       }

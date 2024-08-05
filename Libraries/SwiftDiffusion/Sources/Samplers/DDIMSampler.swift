@@ -167,8 +167,8 @@ extension DDIMSampler: Sampler {
     var tokenLengthUncond = tokenLengthUncond
     if !isCfgEnabled && version != .svdI2v {
       for i in 0..<c.count {
-        guard c[i].shape[0] >= batchSize * 2 else { continue }
         let shape = c[i].shape
+        guard shape[0] >= batchSize * 2 else { continue }
         if shape.count == 3 {
           let conditionalLength = version == .kandinsky21 ? shape[1] : tokenLengthCond
           // Only tokenLengthCond is used.
