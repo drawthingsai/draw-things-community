@@ -85,6 +85,7 @@ public final class ModelPreloader {
   private var unetTokenLengthUncond: Int = 77
   private var unetTokenLengthCond: Int = 77
   private var unetScale: DeviceCapability.Scale? = nil
+  private var unetGuidanceEmbed: Bool? = nil
 
   private var unet = UNetWrapper<FloatType>()
   private var firstStageDecoder: Model? = nil
@@ -398,6 +399,7 @@ extension ModelPreloader {
     unetInjectT2IAdapters = nil
     unetInjectIPAdapterLengths = nil
     unetTiledDiffusion = nil
+    unetGuidanceEmbed = nil
     unetLoRA = nil
     unetTokenLengthUncond = 77
     unetTokenLengthCond = 77
@@ -426,6 +428,7 @@ extension ModelPreloader {
     textEncoderClipSkip = 1
     textEncoderLoRA = nil
     textEncoderFilePaths = nil
+    textEncoderIsCfgEnabled = nil
   }
 
   private func preloadIfPossible() {
@@ -540,7 +543,7 @@ extension ModelPreloader {
           cArr =
             vector
             + fixedEncoder.encode(
-              isCfgEnabled: true,
+              isCfgEnabled: true, textGuidanceScale: 3.5, guidanceEmbed: false,
               textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
               tiledDiffusion: tiledDiffusion
@@ -561,6 +564,7 @@ extension ModelPreloader {
         unetInjectT2IAdapters = false
         unetInjectIPAdapterLengths = []
         unetTiledDiffusion = tiledDiffusion
+        unetGuidanceEmbed = false
         unetVersion = modelVersion
         unetUpcastAttention = upcastAttention
         unetUsesFlashAttention = useMFA
@@ -1217,6 +1221,7 @@ extension ModelPreloader {
       unetInjectT2IAdapters == sampler.injectT2IAdapters,
       unetInjectIPAdapterLengths == sampler.injectIPAdapterLengths,
       unetTiledDiffusion == sampler.tiledDiffusion,
+      unetGuidanceEmbed == sampler.guidanceEmbed,
       unetLoRA == sampler.lora, unetTokenLengthUncond == tokenLengthUncond,
       unetTokenLengthCond == tokenLengthCond
     else {
@@ -1248,6 +1253,7 @@ extension ModelPreloader {
       unetInjectT2IAdapters = sampler.injectT2IAdapters
       unetInjectIPAdapterLengths = sampler.injectIPAdapterLengths
       unetTiledDiffusion = sampler.tiledDiffusion
+      unetGuidanceEmbed = sampler.guidanceEmbed
       unetLoRA = sampler.lora
       unetScale = scale
       unetTokenLengthUncond = tokenLengthUncond

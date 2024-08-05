@@ -76,15 +76,13 @@ extension ImageGenerator {
 
 extension ImageGenerator {
   public static func sampler<FloatType: TensorNumeric & BinaryFloatingPoint>(
-    from type: SamplerType, isConsistencyModel: Bool, filePath: String, modifier: SamplerModifier,
-    version: ModelVersion,
-    usesFlashAttention: Bool, objective: Denoiser.Objective, upcastAttention: Bool,
-    externalOnDemand: Bool, injectControls: Bool, injectT2IAdapters: Bool,
-    injectIPAdapterLengths: [Int],
-    lora: [LoRAConfiguration], is8BitModel: Bool, canRunLoRASeparately: Bool,
-    stochasticSamplingGamma: Float, conditioning: Denoiser.Conditioning,
-    parameterization: Denoiser.Parameterization, tiledDiffusion: TiledConfiguration,
-    of: FloatType.Type
+    from type: SamplerType, isCfgEnabled: Bool, filePath: String, modifier: SamplerModifier,
+    version: ModelVersion, usesFlashAttention: Bool, objective: Denoiser.Objective,
+    upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool, injectT2IAdapters: Bool,
+    injectIPAdapterLengths: [Int], lora: [LoRAConfiguration], guidanceEmbed: Bool,
+    is8BitModel: Bool, canRunLoRASeparately: Bool, stochasticSamplingGamma: Float,
+    conditioning: Denoiser.Conditioning, parameterization: Denoiser.Parameterization,
+    tiledDiffusion: TiledConfiguration, of: FloatType.Type
   ) -> any Sampler<FloatType, UNetWrapper<FloatType>> {
     let manualSubsteps: (Int) -> [Int] = {
       switch $0 {
@@ -128,7 +126,6 @@ extension ImageGenerator {
       samplingTimesteps = []
       samplingSigmas = []
     }
-    let isCfgEnabled = !isConsistencyModel
     guard version != .wurstchenStageC && version != .wurstchenStageB else {
       switch type {
       case .dPMPP2MKarras, .DPMPP2MAYS, .dPMPP2MTrailing:
@@ -138,7 +135,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
@@ -149,7 +147,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
@@ -160,7 +159,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
@@ -171,7 +171,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
@@ -182,7 +183,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
@@ -193,7 +195,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
@@ -204,7 +207,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+          guidanceEmbed: guidanceEmbed, is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately,
           conditioning: conditioning, tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .TCD:
@@ -214,7 +218,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+          guidanceEmbed: guidanceEmbed, is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: stochasticSamplingGamma,
           conditioning: conditioning, tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
@@ -228,7 +233,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+        is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective))
@@ -242,7 +248,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
@@ -256,7 +263,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
@@ -269,7 +277,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+        is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
@@ -281,7 +290,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+        is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
@@ -292,7 +302,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+        is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
@@ -307,7 +318,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
@@ -321,7 +333,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
@@ -334,7 +347,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+        is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
@@ -346,7 +360,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+        is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
@@ -358,7 +373,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+        is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
@@ -370,7 +386,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+        is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective))
@@ -381,7 +398,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+        is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(
@@ -396,7 +414,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
@@ -410,7 +429,8 @@ extension ImageGenerator {
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+          classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+          is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
@@ -423,7 +443,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: isCfgEnabled, is8BitModel: is8BitModel,
+        classifierFreeGuidance: isCfgEnabled, guidanceEmbed: guidanceEmbed,
+        is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
@@ -434,7 +455,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+        guidanceEmbed: guidanceEmbed, is8BitModel: is8BitModel,
+        canRunLoRASeparately: canRunLoRASeparately,
         conditioning: conditioning, tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .TCD:
@@ -444,7 +466,8 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+        guidanceEmbed: guidanceEmbed, is8BitModel: is8BitModel,
+        canRunLoRASeparately: canRunLoRASeparately,
         stochasticSamplingGamma: stochasticSamplingGamma,
         conditioning: conditioning, tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
@@ -455,7 +478,7 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: false, is8BitModel: is8BitModel,
+        classifierFreeGuidance: false, guidanceEmbed: guidanceEmbed, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearManualDiscretization(
@@ -469,7 +492,7 @@ extension ImageGenerator {
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        classifierFreeGuidance: false, is8BitModel: is8BitModel,
+        classifierFreeGuidance: false, guidanceEmbed: guidanceEmbed, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.LinearManualDiscretization(
@@ -913,8 +936,9 @@ extension ImageGenerator {
 
   private func tokenize(
     graph: DynamicGraph, modelVersion: ModelVersion, textEncoderVersion: TextEncoderVersion?,
-    text: String, negativeText: String, negativePromptForImagePrior: Bool, potentials: [String],
-    T5TextEncoder: Bool, clipL: String?, openClipG: String?
+    paddedTextEncodingLength: Int, text: String, negativeText: String,
+    negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool, clipL: String?,
+    openClipG: String?
   ) -> (
     //  return:
     //  tokensTensors, positionTensors, embedMask, injectedEmbeddings, unconditionalAttentionWeights,
@@ -992,7 +1016,7 @@ extension ImageGenerator {
       ) = tokenize(
         graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
         paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
-        maxLength: 256, paddingLength: 256)
+        maxLength: paddedTextEncodingLength, paddingLength: paddedTextEncodingLength)
       result.0 = t5Tokens + result.0
       result.2 = t5EmbedMask + result.2
       result.3 = t5InjectedEmbeddings + result.3
@@ -2143,8 +2167,10 @@ extension ImageGenerator {
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? Self.defaultAutoencoder
-    var isConsistencyModel = ModelZoo.isConsistencyModelForModel(file)
+    let guidanceEmebd = ModelZoo.guidanceEmbedForModel(file)
+    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file)
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
+    let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
     let conditioning = ModelZoo.conditioningForModel(file)
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
@@ -2176,7 +2202,7 @@ extension ImageGenerator {
           || (modelVersion == .kandinsky21 && loraVersion == .v1)
       else { return nil }
       if LoRAZoo.isConsistencyModelForModel(file) {
-        isConsistencyModel = true
+        isCfgEnabled = false
       }
       if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
         alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
@@ -2300,13 +2326,14 @@ extension ImageGenerator {
       }
     }
     let sampler = ImageGenerator.sampler(
-      from: configuration.sampler, isConsistencyModel: isConsistencyModel,
+      from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
       injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
-      lora: lora, is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+      lora: lora, guidanceEmbed: guidanceEmebd, is8BitModel: is8BitModel,
+      canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion,
@@ -2390,8 +2417,8 @@ extension ImageGenerator {
       attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
       lengthsOfCond
     ) = tokenize(
-      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion, text: text,
-      negativeText: negativeText,
+      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion,
+      paddedTextEncodingLength: paddedTextEncodingLength, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
@@ -2402,7 +2429,7 @@ extension ImageGenerator {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
-        isCfgEnabled: !isConsistencyModel,
+        isCfgEnabled: isCfgEnabled,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
@@ -2788,7 +2815,7 @@ extension ImageGenerator {
         secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(file)
       }
       let secondPassSampler = ImageGenerator.sampler(
-        from: configuration.sampler, isConsistencyModel: isConsistencyModel,
+        from: configuration.sampler, isCfgEnabled: isCfgEnabled,
         filePath: secondPassModelFilePath, modifier: modifier,
         version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
         objective: modelObjective,
@@ -2796,7 +2823,8 @@ extension ImageGenerator {
         externalOnDemand: externalOnDemand,
         injectControls: canInjectControls, injectT2IAdapters: canInjectT2IAdapters,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+        guidanceEmbed: guidanceEmebd, is8BitModel: is8BitModel,
+        canRunLoRASeparately: canRunLoRASeparately,
         stochasticSamplingGamma: configuration.stochasticSamplingGamma,
         conditioning: conditioning, parameterization: denoiserParameterization,
         tiledDiffusion: tiledDiffusion, of: FloatType.self)
@@ -2998,8 +3026,10 @@ extension ImageGenerator {
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? "vae_ft_mse_840000_f16.ckpt"
-    var isConsistencyModel = ModelZoo.isConsistencyModelForModel(file)
+    let guidanceEmebd = ModelZoo.guidanceEmbedForModel(file)
+    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file)
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
+    let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
     let conditioning = ModelZoo.conditioningForModel(file)
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
@@ -3031,7 +3061,7 @@ extension ImageGenerator {
           || (modelVersion == .kandinsky21 && loraVersion == .v1)
       else { return nil }
       if LoRAZoo.isConsistencyModelForModel(file) {
-        isConsistencyModel = true
+        isCfgEnabled = false
       }
       if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
         alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
@@ -3141,13 +3171,14 @@ extension ImageGenerator {
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
     let sampler = ImageGenerator.sampler(
-      from: configuration.sampler, isConsistencyModel: isConsistencyModel,
+      from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
       injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
-      lora: lora, is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+      lora: lora, guidanceEmbed: guidanceEmebd, is8BitModel: is8BitModel,
+      canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, of: FloatType.self)
@@ -3220,8 +3251,8 @@ extension ImageGenerator {
       attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
       lengthsOfCond
     ) = tokenize(
-      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion, text: text,
-      negativeText: negativeText,
+      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion,
+      paddedTextEncodingLength: paddedTextEncodingLength, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
@@ -3254,7 +3285,7 @@ extension ImageGenerator {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
-        isCfgEnabled: !isConsistencyModel,
+        isCfgEnabled: isCfgEnabled,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
@@ -3508,7 +3539,7 @@ extension ImageGenerator {
         let secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(
           ModelZoo.stageModelsForModel(file)[0])
         let secondPassSampler = ImageGenerator.sampler(
-          from: configuration.sampler, isConsistencyModel: isConsistencyModel,
+          from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
@@ -3516,7 +3547,8 @@ extension ImageGenerator {
           externalOnDemand: externalOnDemand,
           injectControls: canInjectControls, injectT2IAdapters: canInjectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+          guidanceEmbed: guidanceEmebd, is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
           conditioning: conditioning, parameterization: denoiserParameterization,
           tiledDiffusion: tiledDiffusion, of: FloatType.self
@@ -4196,8 +4228,10 @@ extension ImageGenerator {
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? "vae_ft_mse_840000_f16.ckpt"
-    var isConsistencyModel = ModelZoo.isConsistencyModelForModel(file)
+    let guidanceEmebd = ModelZoo.guidanceEmbedForModel(file)
+    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file)
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
+    let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
     let conditioning = ModelZoo.conditioningForModel(file)
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
@@ -4229,7 +4263,7 @@ extension ImageGenerator {
           || (modelVersion == .kandinsky21 && loraVersion == .v1)
       else { return nil }
       if LoRAZoo.isConsistencyModelForModel(file) {
-        isConsistencyModel = true
+        isCfgEnabled = false
       }
       if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
         alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
@@ -4368,13 +4402,14 @@ extension ImageGenerator {
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
     let sampler = ImageGenerator.sampler(
-      from: configuration.sampler, isConsistencyModel: isConsistencyModel,
+      from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
       injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
-      lora: lora, is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+      lora: lora, guidanceEmbed: guidanceEmebd, is8BitModel: is8BitModel,
+      canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, of: FloatType.self)
@@ -4410,8 +4445,8 @@ extension ImageGenerator {
       attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
       lengthsOfCond
     ) = tokenize(
-      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion, text: text,
-      negativeText: negativeText,
+      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion,
+      paddedTextEncodingLength: paddedTextEncodingLength, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
@@ -4435,7 +4470,7 @@ extension ImageGenerator {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
-        isCfgEnabled: !isConsistencyModel,
+        isCfgEnabled: isCfgEnabled,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
@@ -4690,7 +4725,7 @@ extension ImageGenerator {
         let secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(
           ModelZoo.stageModelsForModel(file)[0])
         let secondPassSampler = ImageGenerator.sampler(
-          from: configuration.sampler, isConsistencyModel: isConsistencyModel,
+          from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
@@ -4698,7 +4733,8 @@ extension ImageGenerator {
           externalOnDemand: externalOnDemand,
           injectControls: canInjectControls, injectT2IAdapters: canInjectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+          guidanceEmbed: guidanceEmebd, is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
           conditioning: conditioning, parameterization: denoiserParameterization,
           tiledDiffusion: tiledDiffusion, of: FloatType.self
@@ -4885,8 +4921,10 @@ extension ImageGenerator {
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? "vae_ft_mse_840000_f16.ckpt"
-    var isConsistencyModel = ModelZoo.isConsistencyModelForModel(file)
+    let guidanceEmebd = ModelZoo.guidanceEmbedForModel(file)
+    var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file)
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
+    let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
     let conditioning = ModelZoo.conditioningForModel(file)
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
@@ -4918,7 +4956,7 @@ extension ImageGenerator {
           || (modelVersion == .kandinsky21 && loraVersion == .v1)
       else { return nil }
       if LoRAZoo.isConsistencyModelForModel(file) {
-        isConsistencyModel = true
+        isCfgEnabled = false
       }
       if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
         alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
@@ -5057,13 +5095,14 @@ extension ImageGenerator {
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
     let sampler = ImageGenerator.sampler(
-      from: configuration.sampler, isConsistencyModel: isConsistencyModel,
+      from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
       injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
-      lora: lora, is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+      lora: lora, guidanceEmbed: guidanceEmebd, is8BitModel: is8BitModel,
+      canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, of: FloatType.self)
@@ -5099,8 +5138,8 @@ extension ImageGenerator {
       attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
       lengthsOfCond
     ) = tokenize(
-      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion, text: text,
-      negativeText: negativeText,
+      graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion,
+      paddedTextEncodingLength: paddedTextEncodingLength, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
@@ -5123,7 +5162,7 @@ extension ImageGenerator {
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
-        isCfgEnabled: !isConsistencyModel,
+        isCfgEnabled: isCfgEnabled,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
@@ -5470,7 +5509,7 @@ extension ImageGenerator {
         let secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(
           ModelZoo.stageModelsForModel(file)[0])
         let secondPassSampler = ImageGenerator.sampler(
-          from: configuration.sampler, isConsistencyModel: isConsistencyModel,
+          from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
@@ -5478,7 +5517,8 @@ extension ImageGenerator {
           externalOnDemand: externalOnDemand,
           injectControls: canInjectControls, injectT2IAdapters: canInjectT2IAdapters,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+          guidanceEmbed: guidanceEmebd, is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
           conditioning: conditioning, parameterization: denoiserParameterization,
           tiledDiffusion: tiledDiffusion, of: FloatType.self

@@ -103,7 +103,7 @@ struct Converter: ParsableCommand {
       if clipEncoder == nil {
         clipEncoder = "open_clip_vit_h14_visual_proj_f16.ckpt"
       }
-    case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow:
+    case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow, .flux1:
       fatalError()
     }
     let specification = Specification(

@@ -17,6 +17,7 @@ where UNet.FloatType == FloatType {
   public let injectIPAdapterLengths: [Int]
   public let lora: [LoRAConfiguration]
   public let classifierFreeGuidance: Bool
+  public let guidanceEmbed: Bool
   public let is8BitModel: Bool
   public let canRunLoRASeparately: Bool
   public let conditioning: Denoiser.Conditioning
@@ -26,7 +27,8 @@ where UNet.FloatType == FloatType {
     filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
-    classifierFreeGuidance: Bool, is8BitModel: Bool, canRunLoRASeparately: Bool,
+    classifierFreeGuidance: Bool, guidanceEmbed: Bool, is8BitModel: Bool,
+    canRunLoRASeparately: Bool,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
     discretization: Discretization
   ) {
@@ -41,6 +43,7 @@ where UNet.FloatType == FloatType {
     self.injectIPAdapterLengths = injectIPAdapterLengths
     self.lora = lora
     self.classifierFreeGuidance = classifierFreeGuidance
+    self.guidanceEmbed = guidanceEmbed
     self.is8BitModel = is8BitModel
     self.canRunLoRASeparately = canRunLoRASeparately
     self.conditioning = conditioning
@@ -228,7 +231,8 @@ extension DPMPPSDESampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        isCfgEnabled: isCfgEnabled,
+        isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
+        guidanceEmbed: guidanceEmbed,
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion)
@@ -398,7 +402,8 @@ extension DPMPPSDESampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
-                isCfgEnabled: isCfgEnabled,
+                isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
+                guidanceEmbed: guidanceEmbed,
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,

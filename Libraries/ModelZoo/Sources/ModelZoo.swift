@@ -72,6 +72,8 @@ public struct ModelZoo: DownloadZoo {
     public var latentsScalingFactor: Float?
     public var stageModels: [String]?
     public var textEncoderVersion: TextEncoderVersion?
+    public var guidanceEmbed: Bool?
+    public var paddedTextEncodingLength: Int?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -83,7 +85,8 @@ public struct ModelZoo: DownloadZoo {
       objective: Denoiser.Objective? = nil,
       noiseDiscretization: NoiseDiscretization? = nil, latentsMean: [Float]? = nil,
       latentsStd: [Float]? = nil, latentsScalingFactor: Float? = nil, stageModels: [String]? = nil,
-      textEncoderVersion: TextEncoderVersion? = nil
+      textEncoderVersion: TextEncoderVersion? = nil, guidanceEmbed: Bool? = nil,
+      paddedTextEncodingLength: Int? = nil
     ) {
       self.name = name
       self.file = file
@@ -110,6 +113,8 @@ public struct ModelZoo: DownloadZoo {
       self.latentsScalingFactor = latentsScalingFactor
       self.stageModels = stageModels
       self.textEncoderVersion = textEncoderVersion
+      self.guidanceEmbed = guidanceEmbed
+      self.paddedTextEncodingLength = paddedTextEncodingLength
     }
     fileprivate var predictV: Bool? = nil
   }
@@ -357,12 +362,14 @@ public struct ModelZoo: DownloadZoo {
       name: "FLUX.1 [schnell]", file: "flux_1_schnell_q8p.ckpt", prefix: "",
       version: .flux1, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
-      highPrecisionAutoencoder: true, isConsistencyModel: true, objective: .u(conditionScale: 1000)),
+      highPrecisionAutoencoder: true, isConsistencyModel: true, objective: .u(conditionScale: 1000),
+      paddedTextEncodingLength: 256),
     Specification(
       name: "FLUX.1 [schnell] (8-bit)", file: "flux_1_schnell_q5p.ckpt", prefix: "",
       version: .flux1, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
-      highPrecisionAutoencoder: true, isConsistencyModel: true, objective: .u(conditionScale: 1000)),
+      highPrecisionAutoencoder: true, isConsistencyModel: true, objective: .u(conditionScale: 1000),
+      paddedTextEncodingLength: 256),
     Specification(
       name: "PixArt Sigma XL 512", file: "pixart_sigma_xl_2_512_ms_f16.ckpt", prefix: "",
       version: .pixart, defaultScale: 8, textEncoder: "t5_xxl_encoder_q6p.ckpt",
@@ -1034,6 +1041,24 @@ public struct ModelZoo: DownloadZoo {
     }
   }
 
+  public static func paddedTextEncodingLengthForModel(_ name: String) -> Int {
+    guard let specification = specificationMapping[name] else { return 0 }
+    if let paddedTextEncodingLength = specification.paddedTextEncodingLength {
+      return paddedTextEncodingLength
+    }
+    switch specification.version {
+    case .v1, .v2, .svdI2v, .ssd1b, .sdxlBase, .sdxlRefiner, .kandinsky21, .wurstchenStageB,
+      .wurstchenStageC, .sd3:
+      return 77
+    case .pixart:
+      return 0
+    case .auraflow:
+      return 256
+    case .flux1:
+      return 512
+    }
+  }
+
   public static func latentsScalingForModel(_ name: String) -> (
     mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?
   ) {
@@ -1085,6 +1110,11 @@ public struct ModelZoo: DownloadZoo {
   public static func isConsistencyModelForModel(_ name: String) -> Bool {
     guard let specification = specificationMapping[name] else { return false }
     return specification.isConsistencyModel ?? false
+  }
+
+  public static func guidanceEmbedForModel(_ name: String) -> Bool {
+    guard let specification = specificationMapping[name] else { return false }
+    return specification.guidanceEmbed ?? false
   }
 
   public static func defaultScaleForModel(_ name: String?) -> UInt16 {

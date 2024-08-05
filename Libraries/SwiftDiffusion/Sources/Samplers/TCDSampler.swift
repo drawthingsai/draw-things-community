@@ -16,6 +16,7 @@ where UNet.FloatType == FloatType {
   public let injectT2IAdapters: Bool
   public let injectIPAdapterLengths: [Int]
   public let lora: [LoRAConfiguration]
+  public let guidanceEmbed: Bool
   public let is8BitModel: Bool
   public let canRunLoRASeparately: Bool
   public let stochasticSamplingGamma: Float
@@ -26,7 +27,7 @@ where UNet.FloatType == FloatType {
     filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
-    is8BitModel: Bool, canRunLoRASeparately: Bool,
+    guidanceEmbed: Bool, is8BitModel: Bool, canRunLoRASeparately: Bool,
     stochasticSamplingGamma: Float, conditioning: Denoiser.Conditioning,
     tiledDiffusion: TiledConfiguration, discretization: Discretization
   ) {
@@ -40,6 +41,7 @@ where UNet.FloatType == FloatType {
     self.injectT2IAdapters = injectT2IAdapters
     self.injectIPAdapterLengths = injectIPAdapterLengths
     self.lora = lora
+    self.guidanceEmbed = guidanceEmbed
     self.is8BitModel = is8BitModel
     self.canRunLoRASeparately = canRunLoRASeparately
     self.stochasticSamplingGamma = stochasticSamplingGamma
@@ -181,7 +183,7 @@ extension TCDSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        isCfgEnabled: false,
+        isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
@@ -320,7 +322,8 @@ extension TCDSampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
-                isCfgEnabled: false,
+                isCfgEnabled: false, textGuidanceScale: textGuidanceScale,
+                guidanceEmbed: guidanceEmbed,
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
