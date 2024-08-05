@@ -543,7 +543,7 @@ extension ModelPreloader {
           cArr =
             vector
             + fixedEncoder.encode(
-              isCfgEnabled: true, textGuidanceScale: 3.5, guidanceEmbed: false,
+              isCfgEnabled: true, textGuidanceScale: 3.5, isGuidanceEmbedEnabled: false,
               textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
               tiledDiffusion: tiledDiffusion
@@ -1222,7 +1222,7 @@ extension ModelPreloader {
       unetInjectT2IAdapters == sampler.injectT2IAdapters,
       unetInjectIPAdapterLengths == sampler.injectIPAdapterLengths,
       unetTiledDiffusion == sampler.tiledDiffusion,
-      unetGuidanceEmbed == sampler.guidanceEmbed,
+      unetGuidanceEmbed == sampler.isGuidanceEmbedEnabled,
       unetLoRA == sampler.lora, unetTokenLengthUncond == tokenLengthUncond,
       unetTokenLengthCond == tokenLengthCond
     else {
@@ -1254,7 +1254,7 @@ extension ModelPreloader {
       unetInjectT2IAdapters = sampler.injectT2IAdapters
       unetInjectIPAdapterLengths = sampler.injectIPAdapterLengths
       unetTiledDiffusion = sampler.tiledDiffusion
-      unetGuidanceEmbed = sampler.guidanceEmbed
+      unetGuidanceEmbed = sampler.isGuidanceEmbedEnabled
       unetLoRA = sampler.lora
       unetScale = scale
       unetTokenLengthUncond = tokenLengthUncond

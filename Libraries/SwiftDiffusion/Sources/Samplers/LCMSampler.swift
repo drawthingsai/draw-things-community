@@ -16,7 +16,7 @@ where UNet.FloatType == FloatType {
   public let injectT2IAdapters: Bool
   public let injectIPAdapterLengths: [Int]
   public let lora: [LoRAConfiguration]
-  public let guidanceEmbed: Bool
+  public let isGuidanceEmbedEnabled: Bool
   public let is8BitModel: Bool
   public let canRunLoRASeparately: Bool
   public let conditioning: Denoiser.Conditioning
@@ -26,7 +26,7 @@ where UNet.FloatType == FloatType {
     filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
-    guidanceEmbed: Bool, is8BitModel: Bool, canRunLoRASeparately: Bool,
+    isGuidanceEmbedEnabled: Bool, is8BitModel: Bool, canRunLoRASeparately: Bool,
     conditioning: Denoiser.Conditioning,
     tiledDiffusion: TiledConfiguration, discretization: Discretization
   ) {
@@ -40,7 +40,7 @@ where UNet.FloatType == FloatType {
     self.injectT2IAdapters = injectT2IAdapters
     self.injectIPAdapterLengths = injectIPAdapterLengths
     self.lora = lora
-    self.guidanceEmbed = guidanceEmbed
+    self.isGuidanceEmbedEnabled = isGuidanceEmbedEnabled
     self.is8BitModel = is8BitModel
     self.canRunLoRASeparately = canRunLoRASeparately
     self.conditioning = conditioning
@@ -185,7 +185,8 @@ extension LCMSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
-        isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
+        isCfgEnabled: false, textGuidanceScale: textGuidanceScale,
+        isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         textEncoding: c,
         timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
         batchSize: batchSize, startHeight: startHeight,
@@ -351,7 +352,7 @@ extension LCMSampler: Sampler {
               vector
               + fixedEncoder.encode(
                 isCfgEnabled: false, textGuidanceScale: textGuidanceScale,
-                guidanceEmbed: guidanceEmbed,
+                isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
                 textEncoding: oldC, timesteps: timesteps[i..<endStep.integral].map { Float($0) },
                 batchSize: batchSize, startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,

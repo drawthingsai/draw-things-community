@@ -176,7 +176,7 @@ extension UNetFixedEncoder {
     }
   }
   public func encode(
-    isCfgEnabled: Bool, textGuidanceScale: Float, guidanceEmbed: Bool,
+    isCfgEnabled: Bool, textGuidanceScale: Float, isGuidanceEmbedEnabled: Bool,
     textEncoding: [DynamicGraph.Tensor<FloatType>], timesteps: [Float], batchSize: Int,
     startHeight: Int, startWidth: Int, tokenLengthUncond: Int, tokenLengthCond: Int,
     lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration
@@ -565,13 +565,13 @@ extension UNetFixedEncoder {
       // Load the unetFixed.
       let (_, unetFixed) = Flux1Fixed(
         batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
-        guidanceEmbed: guidanceEmbed)
+        guidanceEmbed: isGuidanceEmbedEnabled)
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
       var pooleds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 768), of: FloatType.self)
       var guidanceEmbeds: DynamicGraph.Tensor<FloatType>?
-      if guidanceEmbed {
+      if isGuidanceEmbedEnabled {
         guidanceEmbeds = graph.variable(
           .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
       } else {

@@ -189,7 +189,7 @@ public protocol Sampler<FloatType, UNet> {
   var injectIPAdapterLengths: [Int] { get }
   var lora: [LoRAConfiguration] { get }
   var tiledDiffusion: TiledConfiguration { get }
-  var guidanceEmbed: Bool { get }
+  var isGuidanceEmbedEnabled: Bool { get }
 
   func sample(
     _ x_T: DynamicGraph.Tensor<FloatType>, unets: [UNet?], sample: DynamicGraph.Tensor<FloatType>?,
