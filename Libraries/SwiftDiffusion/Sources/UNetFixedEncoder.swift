@@ -176,6 +176,7 @@ extension UNetFixedEncoder {
     }
   }
   public func encode(
+    isCfgEnabled: Bool,
     textEncoding: [DynamicGraph.Tensor<FloatType>], timesteps: [Float], batchSize: Int,
     startHeight: Int, startWidth: Int, tokenLengthUncond: Int, tokenLengthCond: Int,
     lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration
@@ -344,7 +345,6 @@ extension UNetFixedEncoder {
       timeEmbeds = timeEmbeds.reshaped(.HWC(timesteps.count, 1, 256))
       var c = textEncoding[0]
       let cBatchSize = c.shape[0]
-      let isCfgEnabled = cBatchSize > batchSize
       if zeroNegativePrompt && isCfgEnabled {
         let oldC = c
         c = graph.variable(like: c)
@@ -416,7 +416,6 @@ extension UNetFixedEncoder {
         let c1 = textEncoding[1]
         let c2 = textEncoding[2]
         pooled = textEncoding[3]
-        let isCfgEnabled = c0.shape[0] > batchSize
         let cBatchSize = c0.shape[0]
         let maxLength = c0.shape[1]
         let t5Length = c2.shape[1]
@@ -444,7 +443,6 @@ extension UNetFixedEncoder {
         let c0 = textEncoding[0]
         let c1 = textEncoding[1]
         pooled = textEncoding[2]
-        let isCfgEnabled = c0.shape[0] > batchSize
         let cBatchSize = c0.shape[0]
         let maxLength = c0.shape[1]
         c = graph.variable(.GPU(0), .HWC(cBatchSize, maxLength, 4096), of: FloatType.self)
@@ -548,7 +546,6 @@ extension UNetFixedEncoder {
     case .flux1:
       let c0 = textEncoding[0]
       var pooled = textEncoding[1]
-      let isCfgEnabled = c0.shape[0] > batchSize
       let cBatchSize = c0.shape[0]
       let t5Length = c0.shape[1]
       var c = graph.variable(

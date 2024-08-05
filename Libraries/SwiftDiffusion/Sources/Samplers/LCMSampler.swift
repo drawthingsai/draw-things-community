@@ -182,6 +182,7 @@ extension LCMSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
+        isCfgEnabled: false,
         textEncoding: c,
         timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
         batchSize: batchSize, startHeight: startHeight,
@@ -346,6 +347,7 @@ extension LCMSampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
+                isCfgEnabled: false,
                 textEncoding: oldC, timesteps: timesteps[i..<endStep.integral].map { Float($0) },
                 batchSize: batchSize, startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,

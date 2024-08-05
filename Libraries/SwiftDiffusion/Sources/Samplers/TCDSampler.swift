@@ -181,6 +181,7 @@ extension TCDSampler: Sampler {
         negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
         fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
       let (encodings, weightMapper) = fixedEncoder.encode(
+        isCfgEnabled: false,
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
@@ -319,6 +320,7 @@ extension TCDSampler: Sampler {
             c =
               vector
               + fixedEncoder.encode(
+                isCfgEnabled: false,
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,

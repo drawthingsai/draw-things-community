@@ -539,6 +539,7 @@ extension ModelPreloader {
           cArr =
             vector
             + fixedEncoder.encode(
+              isCfgEnabled: true,
               textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
               tiledDiffusion: tiledDiffusion

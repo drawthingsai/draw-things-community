@@ -517,6 +517,7 @@ public final class ModelImporter {
         cArr =
           vectors
           + fixedEncoder.encode(
+            isCfgEnabled: true,
             textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0], batchSize: batchSize,
             startHeight: 64, startWidth: 64,
             tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
