@@ -134,6 +134,8 @@ public final class JSGenerationConfiguration: Codable {
   let clipLText: String?
   let separateOpenClipG: Bool
   let openClipGText: String?
+  let speedUpWithGuidanceEmbed: Bool
+  let guidanceEmbed: Float32
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -202,6 +204,8 @@ public final class JSGenerationConfiguration: Codable {
     clipLText = configuration.clipLText
     separateOpenClipG = configuration.separateOpenClipG
     openClipGText = configuration.openClipGText
+    speedUpWithGuidanceEmbed = configuration.speedUpWithGuidanceEmbed
+    guidanceEmbed = configuration.guidanceEmbed
   }
 
   public func createGenerationConfiguration() -> GenerationConfiguration {
@@ -244,7 +248,9 @@ public final class JSGenerationConfiguration: Codable {
       separateClipL: separateClipL,
       clipLText: clipLText,
       separateOpenClipG: separateOpenClipG,
-      openClipGText: openClipGText
+      openClipGText: openClipGText,
+      speedUpWithGuidanceEmbed: speedUpWithGuidanceEmbed,
+      guidanceEmbed: guidanceEmbed
     )
   }
 }

@@ -426,7 +426,9 @@ public final class ImageHistoryManager {
       separateClipL: imageHistory.separateClipL,
       clipLText: imageHistory.clipLText,
       separateOpenClipG: imageHistory.separateOpenClipG,
-      openClipGText: imageHistory.openClipGText
+      openClipGText: imageHistory.openClipGText,
+      speedUpWithGuidanceEmbed: imageHistory.speedUpWithGuidanceEmbed,
+      guidanceEmbed: imageHistory.guidanceEmbed
     )
     dataStored = imageData.sorted(by: { $0.index < $1.index }).map {
       let tensorId = $0.tensorId == 0 ? nil : $0.tensorId
@@ -662,7 +664,9 @@ public final class ImageHistoryManager {
       separateClipL: configuration.separateClipL,
       clipLText: configuration.clipLText,
       separateOpenClipG: configuration.separateOpenClipG,
-      openClipGText: configuration.openClipGText
+      openClipGText: configuration.openClipGText,
+      speedUpWithGuidanceEmbed: configuration.speedUpWithGuidanceEmbed,
+      guidanceEmbed: configuration.guidanceEmbed
     )
     let imageVersion = uniqueVersion()
     nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)

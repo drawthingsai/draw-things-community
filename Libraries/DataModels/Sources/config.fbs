@@ -118,6 +118,8 @@ table GenerationConfiguration {
   clip_l_text: string;
   separate_open_clip_g: bool = false;
   open_clip_g_text: string;
+  speed_up_with_guidance_embed: bool = true;
+  guidance_embed: float = 3.5;
 }
 
 root_type GenerationConfiguration;
