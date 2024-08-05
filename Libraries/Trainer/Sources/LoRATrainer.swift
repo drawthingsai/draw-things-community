@@ -121,7 +121,8 @@ public struct LoRATrainer {
     let latentsScaling = ModelZoo.latentsScalingForModel(model)
     let firstStage = FirstStage<FloatType>(
       filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
-      latentsScaling: latentsScaling, highPrecision: false, highPrecisionFallback: true,
+      latentsScaling: latentsScaling, highPrecisionKeysAndValues: false,
+      highPrecisionFallback: true,
       tiledDecoding: TiledConfiguration(
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
@@ -638,7 +639,8 @@ public struct LoRATrainer {
     let latentsScaling = ModelZoo.latentsScalingForModel(model)
     let firstStage = FirstStage<FloatType>(
       filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
-      latentsScaling: latentsScaling, highPrecision: false, highPrecisionFallback: true,
+      latentsScaling: latentsScaling, highPrecisionKeysAndValues: false,
+      highPrecisionFallback: true,
       tiledDecoding: TiledConfiguration(
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),

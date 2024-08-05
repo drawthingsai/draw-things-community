@@ -117,7 +117,7 @@ func ResnetBlock(prefix: (String, String), outChannels: Int, shortcut: Bool)
 
 func AttnBlock(
   prefix: (String, String), inChannels: Int, batchSize: Int, width: Int, height: Int,
-  usesFlashAttention: Bool
+  highPrecisionKeysAndValues: Bool, usesFlashAttention: Bool
 ) -> (
   Model, PythonReader, ModelWeightMapper
 ) {
@@ -133,24 +133,31 @@ func AttnBlock(
     groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
   let projOut: Model
   if usesFlashAttention {
+    if highPrecisionKeysAndValues {
+      out = out.to(.Float32)
+    }
     let q = toqueries(out).reshaped([batchSize, hw, inChannels]).identity().identity()
     let k = tokeys(out).reshaped([batchSize, hw, inChannels]).identity()
     let v = tovalues(out).reshaped([batchSize, hw, inChannels])
     projOut = ScaledDotProductAttention(
       scale: 1.0 / Float(inChannels).squareRoot(), multiHeadOutputProjectionFused: true)
     out = projOut(q, k, v).reshaped([batchSize, height, width, inChannels])
-    out = x + out
+    out = x + out.to(of: x)
   } else {
+    let original = out
+    if highPrecisionKeysAndValues {
+      out = out.to(.Float32)
+    }
     let k = tokeys(out).reshaped([batchSize, hw, inChannels])
     let q = ((1.0 / Float(inChannels).squareRoot()) * toqueries(out)).reshaped([
       batchSize, hw, inChannels,
     ])
-    let v = tovalues(out).reshaped([batchSize, hw, inChannels])
+    let v = tovalues(original).reshaped([batchSize, hw, inChannels])
     var dot = Matmul(transposeB: (1, 2))(q, k)
     dot = dot.reshaped([batchSize * hw, hw])
     dot = dot.softmax()
     dot = dot.reshaped([batchSize, hw, hw])
-    out = dot * v
+    out = dot.to(of: v) * v
     projOut = Convolution(
       groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
     out = x + projOut(out.reshaped([batchSize, height, width, inChannels]))
@@ -319,8 +326,8 @@ public func Encoder(
   out = midBlock1(out)
   let (midAttn1, midAttnReader1, midAttnMapper1) = AttnBlock(
     prefix: ("encoder.mid.attn_1", "encoder.mid_block.attentions.0"), inChannels: previousChannel,
-    batchSize: batchSize,
-    width: startWidth, height: startHeight, usesFlashAttention: usesFlashAttention)
+    batchSize: batchSize, width: startWidth, height: startHeight, highPrecisionKeysAndValues: false,
+    usesFlashAttention: usesFlashAttention)
   out = midAttn1(out)
   let (midBlock2, midBlockReader2, midBlockMapper2) = ResnetBlock(
     prefix: ("encoder.mid.block_2", "encoder.mid_block.resnets.1"), outChannels: previousChannel,
@@ -429,7 +436,8 @@ public func Encoder(
 
 public func Decoder(
   channels: [Int], numRepeat: Int, batchSize: Int, startWidth: Int, startHeight: Int,
-  usesFlashAttention: Bool, paddingFinalConvLayer: Bool, quantLayer: Bool = true
+  highPrecisionKeysAndValues: Bool, usesFlashAttention: Bool, paddingFinalConvLayer: Bool,
+  quantLayer: Bool = true
 )
   -> (Model, PythonReader, ModelWeightMapper)
 {
@@ -456,8 +464,8 @@ public func Decoder(
   out = midBlock1(out)
   let (midAttn1, midAttnReader1, midAttnMapper1) = AttnBlock(
     prefix: ("decoder.mid.attn_1", "decoder.mid_block.attentions.0"), inChannels: previousChannel,
-    batchSize: batchSize,
-    width: startWidth, height: startHeight, usesFlashAttention: usesFlashAttention)
+    batchSize: batchSize, width: startWidth, height: startHeight,
+    highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: usesFlashAttention)
   out = midAttn1(out)
   let (midBlock2, midBlockReader2, midBlockMapper2) = ResnetBlock(
     prefix: ("decoder.mid.block_2", "decoder.mid_block.resnets.1"), outChannels: previousChannel,

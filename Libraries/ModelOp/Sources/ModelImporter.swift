@@ -988,7 +988,8 @@ public final class ModelImporter {
             startHeight: 64, usesFlashAttention: false)
           let (decoder, decoderReader, decoderWeightMapper) = Decoder(
             channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: 64,
-            startHeight: 64, usesFlashAttention: false, paddingFinalConvLayer: false)
+            startHeight: 64, highPrecisionKeysAndValues: false, usesFlashAttention: false,
+            paddingFinalConvLayer: false)
           decoder.compile(inputs: decoderTensor)
           encoder.compile(inputs: encoderTensor)
           let filePath = ModelZoo.filePathForModelDownloaded("\(modelName)_vae_f16.ckpt")

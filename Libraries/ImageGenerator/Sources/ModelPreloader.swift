@@ -593,7 +593,8 @@ extension ModelPreloader {
         let z = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 4), of: FloatType.self)
         let decoder = Decoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, usesFlashAttention: false, paddingFinalConvLayer: true
+          startHeight: startHeight, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
+          usesFlashAttention: false, paddingFinalConvLayer: true
         ).0
         decoder.compile(inputs: z)
         graph.openStore(
@@ -1128,7 +1129,7 @@ extension ModelPreloader {
       firstStageEncoderExternalOnDemand == firstStage.externalOnDemand,
       firstStageEncoderVersion == firstStage.version,
       firstStageEncoderScale == scale,
-      firstStageEncoderHighPrecision == firstStage.highPrecision,
+      firstStageEncoderHighPrecision == firstStage.highPrecisionKeysAndValues,
       firstStageEncoderTiledDiffusion == firstStage.tiledDiffusion
     else {
       firstStageEncoder = nil
@@ -1146,7 +1147,7 @@ extension ModelPreloader {
       firstStageEncoderExternalOnDemand = firstStage.externalOnDemand
       firstStageEncoderVersion = firstStage.version
       firstStageEncoderScale = scale
-      firstStageEncoderHighPrecision = firstStage.highPrecision
+      firstStageEncoderHighPrecision = firstStage.highPrecisionKeysAndValues
       firstStageEncoderTiledDiffusion = firstStage.tiledDecoding
     }
     return (x.0, x.1)
@@ -1163,7 +1164,7 @@ extension ModelPreloader {
       firstStageEncoderExternalOnDemand = firstStage.externalOnDemand
       firstStageEncoderVersion = firstStage.version
       firstStageEncoderScale = scale
-      firstStageEncoderHighPrecision = firstStage.highPrecision
+      firstStageEncoderHighPrecision = firstStage.highPrecisionKeysAndValues
       firstStageEncoderTiledDiffusion = firstStage.tiledDecoding
     }
     return x.0
@@ -1180,7 +1181,7 @@ extension ModelPreloader {
       firstStageDecoderExternalOnDemand == firstStage.externalOnDemand,
       firstStageDecoderVersion == firstStage.version,
       firstStageDecoderScale == scale,
-      firstStageDecoderHighPrecision == firstStage.highPrecision,
+      firstStageDecoderHighPrecision == firstStage.highPrecisionKeysAndValues,
       firstStageDecoderTiledDecoding == firstStage.tiledDecoding
     else {
       firstStageDecoder = nil
@@ -1200,7 +1201,7 @@ extension ModelPreloader {
       firstStageDecoderExternalOnDemand = firstStage.externalOnDemand
       firstStageDecoderVersion = firstStage.version
       firstStageDecoderScale = scale
-      firstStageDecoderHighPrecision = firstStage.highPrecision
+      firstStageDecoderHighPrecision = firstStage.highPrecisionKeysAndValues
       firstStageDecoderTiledDecoding = firstStage.tiledDecoding
     }
     return x.0

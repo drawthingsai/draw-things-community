@@ -2594,7 +2594,7 @@ extension ImageGenerator {
         // TODO: This needs to be properly handled for Wurstchen (i.e. using EfficientNet to encode image).
         let firstStage = FirstStage<FloatType>(
           filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: modelVersion,
-          latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
+          latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
           highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
           tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
@@ -2689,7 +2689,7 @@ extension ImageGenerator {
         scale: imageScale)
       let firstStage = FirstStage<FloatType>(
         filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: modelVersion,
-        latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
+        latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
@@ -3371,7 +3371,7 @@ extension ImageGenerator {
       guard feedback(.textEncoded, signposts, nil) else { return (nil, 1) }
       var firstStage = FirstStage<FloatType>(
         filePath: firstStageFilePath, version: modelVersion,
-        latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
+        latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
@@ -3492,7 +3492,7 @@ extension ImageGenerator {
         guard feedback(.imageDecoded, signposts, nil) else { return (nil, 1) }
         firstStage = FirstStage<FloatType>(
           filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: .wurstchenStageB,
-          latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
+          latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
           highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
           tiledDecoding: TiledConfiguration(
             isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
@@ -4499,7 +4499,7 @@ extension ImageGenerator {
       guard feedback(.textEncoded, signposts, nil) else { return nil }
       var firstStage = FirstStage<FloatType>(
         filePath: firstStageFilePath, version: modelVersion,
-        latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
+        latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
@@ -4630,7 +4630,7 @@ extension ImageGenerator {
         guard feedback(.imageDecoded, signposts, nil) else { return nil }
         firstStage = FirstStage<FloatType>(
           filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: .wurstchenStageB,
-          latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
+          latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
           highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
           tiledDecoding: TiledConfiguration(
             isEnabled: false,
@@ -5134,7 +5134,7 @@ extension ImageGenerator {
       guard feedback(.textEncoded, signposts, nil) else { return nil }
       var firstStage = FirstStage<FloatType>(
         filePath: firstStageFilePath, version: modelVersion,
-        latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
+        latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
@@ -5357,7 +5357,7 @@ extension ImageGenerator {
         guard feedback(.imageDecoded, signposts, nil) else { return nil }
         firstStage = FirstStage<FloatType>(
           filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: .wurstchenStageB,
-          latentsScaling: latentsScaling, highPrecision: highPrecisionForAutoencoder,
+          latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
           highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
           tiledDecoding: TiledConfiguration(
             isEnabled: false,

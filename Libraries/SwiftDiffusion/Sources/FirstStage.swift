@@ -3,7 +3,7 @@ import NNC
 public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePath: String
   public let version: ModelVersion
-  public let highPrecision: Bool
+  public let highPrecisionKeysAndValues: Bool
   public let externalOnDemand: Bool
   public let tiledDecoding: TiledConfiguration
   public let tiledDiffusion: TiledConfiguration
@@ -16,14 +16,15 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public init(
     filePath: String, version: ModelVersion,
     latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?),
-    highPrecision: Bool, highPrecisionFallback: Bool, tiledDecoding: TiledConfiguration,
+    highPrecisionKeysAndValues: Bool, highPrecisionFallback: Bool,
+    tiledDecoding: TiledConfiguration,
     tiledDiffusion: TiledConfiguration, externalOnDemand: Bool, alternativeUsesFlashAttention: Bool,
     alternativeFilePath: String?, alternativeDecoderVersion: AlternativeDecoderVersion?
   ) {
     self.filePath = filePath
     self.version = version
     self.latentsScaling = latentsScaling
-    self.highPrecision = highPrecision
+    self.highPrecisionKeysAndValues = highPrecisionKeysAndValues
     self.highPrecisionFallback = highPrecisionFallback
     self.externalOnDemand = externalOnDemand
     self.tiledDecoding = tiledDecoding
@@ -99,7 +100,8 @@ extension FirstStage {
         existingDecoder
         ?? Decoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, usesFlashAttention: false, paddingFinalConvLayer: true
+          startHeight: startHeight, highPrecisionKeysAndValues: highPrecisionKeysAndValues,
+          usesFlashAttention: false, paddingFinalConvLayer: true
         ).0
       if existingDecoder == nil {
         if highPrecision {
@@ -149,7 +151,8 @@ extension FirstStage {
         existingDecoder
         ?? Decoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, usesFlashAttention: false, paddingFinalConvLayer: true,
+          startHeight: startHeight, highPrecisionKeysAndValues: highPrecisionKeysAndValues,
+          usesFlashAttention: false, paddingFinalConvLayer: true,
           quantLayer: false
         ).0
       if existingDecoder == nil {
@@ -295,9 +298,6 @@ extension FirstStage {
   public func decode(_ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?)
     -> (DynamicGraph.Tensor<FloatType>, Model)
   {
-    guard !highPrecision else {
-      return decode(x, decoder: existingDecoder, highPrecision: true)
-    }
     let (result, decoder) = decode(x, decoder: existingDecoder, highPrecision: false)
     if highPrecisionFallback && isNaN(result.rawValue.toCPU()) {
       let (highPrecisionResult, _) = decode(x, decoder: nil, highPrecision: true)
@@ -404,7 +404,7 @@ extension FirstStage {
           startHeight: tiledHeight, usesFlashAttention: false
         ).0
       if existingEncoder == nil {
-        if highPrecision {
+        if highPrecisionKeysAndValues {
           encoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
               from: x[0..<1, 0..<(tiledHeight * 8), 0..<(tiledWidth * 8), 0..<shape[3]]))
@@ -436,7 +436,7 @@ extension FirstStage {
           startHeight: tiledHeight, usesFlashAttention: false, quantLayer: false, outputChannels: 16
         ).0
       if existingEncoder == nil {
-        if highPrecision {
+        if highPrecisionKeysAndValues {
           encoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
               from: x[0..<1, 0..<(tiledHeight * 8), 0..<(tiledWidth * 8), 0..<shape[3]]))
@@ -531,7 +531,7 @@ extension FirstStage {
     let tiledEncoding =
       tiledDiffusion.isEnabled && (startWidth > tiledWidth || startHeight > tiledHeight)
     guard batchSize > 1 else {
-      if highPrecision {
+      if highPrecisionKeysAndValues {
         if tiledEncoding {
           return (
             DynamicGraph.Tensor<FloatType>(
@@ -564,7 +564,7 @@ extension FirstStage {
       .GPU(0), .NHWC(batchSize, startHeight, startWidth, outputChannels), of: FloatType.self)
     for i in 0..<batchSize {
       let z = x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
-      if highPrecision {
+      if highPrecisionKeysAndValues {
         if tiledEncoding {
           result[i..<(i + 1), 0..<startHeight, 0..<startWidth, 0..<outputChannels] = DynamicGraph
             .Tensor<
