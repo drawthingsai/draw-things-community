@@ -2104,6 +2104,105 @@ extension ImageGenerator {
     return (firstPassStartWidth, firstPassStartHeight)
   }
 
+  private func repeatConditionsToMatchBatchSize(
+    c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
+    unconditionalAttentionWeights: [Float], attentionWeights: [Float], version: ModelVersion,
+    tokenLength: Int, batchSize: Int, hasNonOneWeights: Bool
+  ) -> ([DynamicGraph.Tensor<FloatType>], DynamicGraph.Tensor<FloatType>?) {
+    var c = c
+    var extraProjection = extraProjection
+    if hasNonOneWeights {
+      // Need to scale c according to these weights. C has two parts, the unconditional and conditional.
+      // We also want to do z-score type of scaling, so we need to compute mean of both parts separately.
+      // This is only supported for SD v1, Stable Cascade, SDXL, SD3.
+      switch version {
+      case .ssd1b, .svdI2v, .v1, .v2, .sdxlBase, .sdxlRefiner, .wurstchenStageB, .wurstchenStageC,
+        .sd3:
+        c = c.map { c in
+          guard tokenLength == c.shape[1], c.shape.count == 3 else { return c }
+          let conditionalLength = c.shape[2]
+          // 768, 1280 is the length of CLIP-L and OpenCLIP-G
+          guard conditionalLength >= 1280 else { return c }
+          var c = c
+          let graph = c.graph
+          if c.shape[0] >= 2 {
+            let cc = c[1..<2, 0..<tokenLength, 0..<conditionalLength]
+            let cmean = cc.reduced(.mean, axis: [1, 2])
+            let cw = graph.variable(
+              Tensor<FloatType>(from: Tensor(attentionWeights, .CPU, .HWC(1, tokenLength, 1)))
+                .toGPU(
+                  0))
+            c[1..<2, 0..<tokenLength, 0..<conditionalLength] = (cc - cmean) .* cw + cmean
+            let uc = c[0..<1, 0..<tokenLength, 0..<conditionalLength]
+            let umean = uc.reduced(.mean, axis: [1, 2])
+            let uw = graph.variable(
+              Tensor<FloatType>(
+                from: Tensor(unconditionalAttentionWeights, .CPU, .HWC(1, tokenLength, 1))
+              )
+              .toGPU(0))
+            // Keep the mean unchanged while scale it.
+            c[0..<1, 0..<tokenLength, 0..<conditionalLength] = (uc - umean) .* uw + umean
+          } else {
+            let cc = c[0..<1, 0..<tokenLength, 0..<conditionalLength]
+            let cmean = cc.reduced(.mean, axis: [1, 2])
+            let cw = graph.variable(
+              Tensor<FloatType>(from: Tensor(attentionWeights, .CPU, .HWC(1, tokenLength, 1)))
+                .toGPU(
+                  0))
+            c[0..<1, 0..<tokenLength, 0..<conditionalLength] = (cc - cmean) .* cw + cmean
+          }
+          return c
+        }
+      case .auraflow, .flux1, .kandinsky21, .pixart:
+        break
+      }
+    }
+    if batchSize > 1 {
+      c = c.map { c in
+        var c = c
+        let oldC = c
+        let graph = c.graph
+        let shape = c.shape
+        let cBatchSize = batchSize * shape[0]
+        if shape.count == 3 {
+          c = graph.variable(
+            .GPU(0), .HWC(cBatchSize, shape[1], shape[2]), of: FloatType.self)
+          for i in 0..<batchSize {
+            for j in 0..<shape[0] {
+              c[(batchSize * j + i)..<(batchSize * j + i + 1), 0..<shape[1], 0..<shape[2]] =
+                oldC[j..<(j + 1), 0..<shape[1], 0..<shape[2]]
+            }
+          }
+        } else if shape.count == 2 {
+          c = graph.variable(
+            .GPU(0), .WC(cBatchSize, shape[1]), of: FloatType.self)
+          for i in 0..<batchSize {
+            for j in 0..<shape[0] {
+              c[(batchSize * j + i)..<(batchSize * j + i + 1), 0..<shape[1]] =
+                oldC[j..<(j + 1), 0..<shape[1]]
+            }
+          }
+        }
+        return c
+      }
+      if let oldProj = extraProjection {
+        let shape = oldProj.shape
+        let graph = oldProj.graph
+        let cBatchSize = batchSize * shape[0]
+        var xfProj = graph.variable(
+          .GPU(0), .HWC(cBatchSize, shape[1], shape[2]), of: FloatType.self)
+        for i in 0..<batchSize {
+          for j in 0..<shape[0] {
+            xfProj[(batchSize * j + i)..<(batchSize * j + i + 1), 0..<shape[1], 0..<shape[2]] =
+              oldProj[j..<(j + 1), 0..<shape[1], 0..<shape[2]]
+          }
+        }
+        extraProjection = xfProj
+      }
+    }
+    return (c, extraProjection)
+  }
+
   private func generateTextOnly(
     _ image: Tensor<FloatType>?, scaleFactor imageScaleFactor: Int,
     depth: Tensor<FloatType>?, hints: [ControlHintType: AnyTensor], custom: Tensor<FloatType>?,
@@ -2463,68 +2562,11 @@ extension ImageGenerator {
         extraProjection = nil
         c = textEncodings
       }
-      if hasNonOneWeights {
-        // Need to scale c according to these weights. C has two parts, the unconditional and conditional.
-        // We also want to do z-score type of scaling, so we need to compute mean of both parts separately.
-        c = c.map { c in
-          let conditionalLength = c.shape[2]
-          guard tokenLength == c.shape[1] else { return c }
-          var c = c
-          let uc = c[0..<1, 0..<tokenLength, 0..<conditionalLength]
-          let cc = c[1..<2, 0..<tokenLength, 0..<conditionalLength]
-          let umean = uc.reduced(.mean, axis: [1, 2])
-          let cmean = cc.reduced(.mean, axis: [1, 2])
-          let uw = graph.variable(
-            Tensor<FloatType>(
-              from: Tensor(unconditionalAttentionWeights, .CPU, .HWC(1, tokenLength, 1))
-            )
-            .toGPU(0))
-          let cw = graph.variable(
-            Tensor<FloatType>(from: Tensor(attentionWeights, .CPU, .HWC(1, tokenLength, 1))).toGPU(
-              0))
-          // Keep the mean unchanged while scale it.
-          c[0..<1, 0..<tokenLength, 0..<conditionalLength] = (uc - umean) .* uw + umean
-          c[1..<2, 0..<tokenLength, 0..<conditionalLength] = (cc - cmean) .* cw + cmean
-          return c
-        }
-      }
-      if batchSize > 1 {
-        c = c.map { c in
-          var c = c
-          let oldC = c
-          let shape = c.shape
-          if shape.count == 3 {
-            c = graph.variable(
-              .GPU(0), .HWC(batchSize * 2, shape[1], shape[2]), of: FloatType.self)
-            for i in 0..<batchSize {
-              c[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
-                oldC[0..<1, 0..<shape[1], 0..<shape[2]]
-              c[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1], 0..<shape[2]] =
-                oldC[1..<2, 0..<shape[1], 0..<shape[2]]
-            }
-          } else if shape.count == 2 {
-            c = graph.variable(
-              .GPU(0), .WC(batchSize * 2, shape[1]), of: FloatType.self)
-            for i in 0..<batchSize {
-              c[i..<(i + 1), 0..<shape[1]] = oldC[0..<1, 0..<shape[1]]
-              c[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1]] = oldC[1..<2, 0..<shape[1]]
-            }
-          }
-          return c
-        }
-        if let oldProj = extraProjection {
-          let shape = oldProj.shape
-          var xfProj = graph.variable(
-            .GPU(0), .HWC(batchSize * 2, shape[1], shape[2]), of: FloatType.self)
-          for i in 0..<batchSize {
-            xfProj[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
-              oldProj[0..<1, 0..<shape[1], 0..<shape[2]]
-            xfProj[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1], 0..<shape[2]] =
-              oldProj[1..<2, 0..<shape[1], 0..<shape[2]]
-          }
-          extraProjection = xfProj
-        }
-      }
+      (c, extraProjection) = repeatConditionsToMatchBatchSize(
+        c: c, extraProjection: extraProjection,
+        unconditionalAttentionWeights: unconditionalAttentionWeights,
+        attentionWeights: attentionWeights, version: modelVersion, tokenLength: tokenLength,
+        batchSize: batchSize, hasNonOneWeights: hasNonOneWeights)
       guard feedback(.textEncoded, signposts, nil) else { return (nil, 1) }
       var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
       var mask: DynamicGraph.Tensor<FloatType>? = nil
@@ -3321,68 +3363,11 @@ extension ImageGenerator {
         extraProjection = nil
         c = textEncodings
       }
-      if hasNonOneWeights {
-        // Need to scale c according to these weights. C has two parts, the unconditional and conditional.
-        // We also want to do z-score type of scaling, so we need to compute mean of both parts separately.
-        c = c.map { c in
-          let conditionalLength = c.shape[2]
-          guard tokenLength == c.shape[1] else { return c }
-          var c = c
-          let uc = c[0..<1, 0..<tokenLength, 0..<conditionalLength]
-          let cc = c[1..<2, 0..<tokenLength, 0..<conditionalLength]
-          let umean = uc.reduced(.mean, axis: [1, 2])
-          let cmean = cc.reduced(.mean, axis: [1, 2])
-          let uw = graph.variable(
-            Tensor<FloatType>(
-              from: Tensor(unconditionalAttentionWeights, .CPU, .HWC(1, tokenLength, 1))
-            )
-            .toGPU(0))
-          let cw = graph.variable(
-            Tensor<FloatType>(from: Tensor(attentionWeights, .CPU, .HWC(1, tokenLength, 1))).toGPU(
-              0))
-          // Keep the mean unchanged while scale it.
-          c[0..<1, 0..<tokenLength, 0..<conditionalLength] = (uc - umean) .* uw + umean
-          c[1..<2, 0..<tokenLength, 0..<conditionalLength] = (cc - cmean) .* cw + cmean
-          return c
-        }
-      }
-      if batchSize > 1 {
-        c = c.map { c in
-          var c = c
-          let oldC = c
-          let shape = c.shape
-          if shape.count == 3 {
-            c = graph.variable(
-              .GPU(0), .HWC(batchSize * 2, shape[1], shape[2]), of: FloatType.self)
-            for i in 0..<batchSize {
-              c[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
-                oldC[0..<1, 0..<shape[1], 0..<shape[2]]
-              c[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1], 0..<shape[2]] =
-                oldC[1..<2, 0..<shape[1], 0..<shape[2]]
-            }
-          } else if shape.count == 2 {
-            c = graph.variable(
-              .GPU(0), .WC(batchSize * 2, shape[1]), of: FloatType.self)
-            for i in 0..<batchSize {
-              c[i..<(i + 1), 0..<shape[1]] = oldC[0..<1, 0..<shape[1]]
-              c[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1]] = oldC[1..<2, 0..<shape[1]]
-            }
-          }
-          return c
-        }
-        if let oldProj = extraProjection {
-          let shape = oldProj.shape
-          var xfProj = graph.variable(
-            .GPU(0), .HWC(batchSize * 2, shape[1], shape[2]), of: FloatType.self)
-          for i in 0..<batchSize {
-            xfProj[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
-              oldProj[0..<1, 0..<shape[1], 0..<shape[2]]
-            xfProj[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1], 0..<shape[2]] =
-              oldProj[1..<2, 0..<shape[1], 0..<shape[2]]
-          }
-          extraProjection = xfProj
-        }
-      }
+      (c, extraProjection) = repeatConditionsToMatchBatchSize(
+        c: c, extraProjection: extraProjection,
+        unconditionalAttentionWeights: unconditionalAttentionWeights,
+        attentionWeights: attentionWeights, version: modelVersion, tokenLength: tokenLength,
+        batchSize: batchSize, hasNonOneWeights: hasNonOneWeights)
       guard feedback(.textEncoded, signposts, nil) else { return (nil, 1) }
       var firstStage = FirstStage<FloatType>(
         filePath: firstStageFilePath, version: modelVersion,
@@ -4506,68 +4491,11 @@ extension ImageGenerator {
         extraProjection = nil
         c = textEncodings
       }
-      if hasNonOneWeights {
-        // Need to scale c according to these weights. C has two parts, the unconditional and conditional.
-        // We also want to do z-score type of scaling, so we need to compute mean of both parts separately.
-        c = c.map { c in
-          let conditionalLength = c.shape[2]
-          guard tokenLength == c.shape[1] else { return c }
-          var c = c
-          let uc = c[0..<1, 0..<tokenLength, 0..<conditionalLength]
-          let cc = c[1..<2, 0..<tokenLength, 0..<conditionalLength]
-          let umean = uc.reduced(.mean, axis: [1, 2])
-          let cmean = cc.reduced(.mean, axis: [1, 2])
-          let uw = graph.variable(
-            Tensor<FloatType>(
-              from: Tensor(unconditionalAttentionWeights, .CPU, .HWC(1, tokenLength, 1))
-            )
-            .toGPU(0))
-          let cw = graph.variable(
-            Tensor<FloatType>(from: Tensor(attentionWeights, .CPU, .HWC(1, tokenLength, 1))).toGPU(
-              0))
-          // Keep the mean unchanged while scale it.
-          c[0..<1, 0..<tokenLength, 0..<conditionalLength] = (uc - umean) .* uw + umean
-          c[1..<2, 0..<tokenLength, 0..<conditionalLength] = (cc - cmean) .* cw + cmean
-          return c
-        }
-      }
-      if batchSize > 1 {
-        c = c.map { c in
-          var c = c
-          let oldC = c
-          let shape = c.shape
-          if shape.count == 3 {
-            c = graph.variable(
-              .GPU(0), .HWC(batchSize * 2, shape[1], shape[2]), of: FloatType.self)
-            for i in 0..<batchSize {
-              c[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
-                oldC[0..<1, 0..<shape[1], 0..<shape[2]]
-              c[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1], 0..<shape[2]] =
-                oldC[1..<2, 0..<shape[1], 0..<shape[2]]
-            }
-          } else if shape.count == 2 {
-            c = graph.variable(
-              .GPU(0), .WC(batchSize * 2, shape[1]), of: FloatType.self)
-            for i in 0..<batchSize {
-              c[i..<(i + 1), 0..<shape[1]] = oldC[0..<1, 0..<shape[1]]
-              c[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1]] = oldC[1..<2, 0..<shape[1]]
-            }
-          }
-          return c
-        }
-        if let oldProj = extraProjection {
-          let shape = oldProj.shape
-          var xfProj = graph.variable(
-            .GPU(0), .HWC(batchSize * 2, shape[1], shape[2]), of: FloatType.self)
-          for i in 0..<batchSize {
-            xfProj[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
-              oldProj[0..<1, 0..<shape[1], 0..<shape[2]]
-            xfProj[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1], 0..<shape[2]] =
-              oldProj[1..<2, 0..<shape[1], 0..<shape[2]]
-          }
-          extraProjection = xfProj
-        }
-      }
+      (c, extraProjection) = repeatConditionsToMatchBatchSize(
+        c: c, extraProjection: extraProjection,
+        unconditionalAttentionWeights: unconditionalAttentionWeights,
+        attentionWeights: attentionWeights, version: modelVersion, tokenLength: tokenLength,
+        batchSize: batchSize, hasNonOneWeights: hasNonOneWeights)
       guard feedback(.textEncoded, signposts, nil) else { return nil }
       var firstStage = FirstStage<FloatType>(
         filePath: firstStageFilePath, version: modelVersion,
@@ -5198,68 +5126,11 @@ extension ImageGenerator {
         extraProjection = nil
         c = textEncodings
       }
-      if hasNonOneWeights {
-        // Need to scale c according to these weights. C has two parts, the unconditional and conditional.
-        // We also want to do z-score type of scaling, so we need to compute mean of both parts separately.
-        c = c.map { c in
-          let conditionalLength = c.shape[2]
-          guard tokenLength == c.shape[1] else { return c }
-          var c = c
-          let uc = c[0..<1, 0..<tokenLength, 0..<conditionalLength]
-          let cc = c[1..<2, 0..<tokenLength, 0..<conditionalLength]
-          let umean = uc.reduced(.mean, axis: [1, 2])
-          let cmean = cc.reduced(.mean, axis: [1, 2])
-          let uw = graph.variable(
-            Tensor<FloatType>(
-              from: Tensor(unconditionalAttentionWeights, .CPU, .HWC(1, tokenLength, 1))
-            )
-            .toGPU(0))
-          let cw = graph.variable(
-            Tensor<FloatType>(from: Tensor(attentionWeights, .CPU, .HWC(1, tokenLength, 1))).toGPU(
-              0))
-          // Keep the mean unchanged while scale it.
-          c[0..<1, 0..<tokenLength, 0..<conditionalLength] = (uc - umean) .* uw + umean
-          c[1..<2, 0..<tokenLength, 0..<conditionalLength] = (cc - cmean) .* cw + cmean
-          return c
-        }
-      }
-      if batchSize > 1 {
-        c = c.map { c in
-          var c = c
-          let oldC = c
-          let shape = c.shape
-          if shape.count == 3 {
-            c = graph.variable(
-              .GPU(0), .HWC(batchSize * 2, shape[1], shape[2]), of: FloatType.self)
-            for i in 0..<batchSize {
-              c[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
-                oldC[0..<1, 0..<shape[1], 0..<shape[2]]
-              c[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1], 0..<shape[2]] =
-                oldC[1..<2, 0..<shape[1], 0..<shape[2]]
-            }
-          } else if shape.count == 2 {
-            c = graph.variable(
-              .GPU(0), .WC(batchSize * 2, shape[1]), of: FloatType.self)
-            for i in 0..<batchSize {
-              c[i..<(i + 1), 0..<shape[1]] = oldC[0..<1, 0..<shape[1]]
-              c[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1]] = oldC[1..<2, 0..<shape[1]]
-            }
-          }
-          return c
-        }
-        if let oldProj = extraProjection {
-          let shape = oldProj.shape
-          var xfProj = graph.variable(
-            .GPU(0), .HWC(batchSize * 2, shape[1], shape[2]), of: FloatType.self)
-          for i in 0..<batchSize {
-            xfProj[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
-              oldProj[0..<1, 0..<shape[1], 0..<shape[2]]
-            xfProj[(batchSize + i)..<(batchSize + i + 1), 0..<shape[1], 0..<shape[2]] =
-              oldProj[1..<2, 0..<shape[1], 0..<shape[2]]
-          }
-          extraProjection = xfProj
-        }
-      }
+      (c, extraProjection) = repeatConditionsToMatchBatchSize(
+        c: c, extraProjection: extraProjection,
+        unconditionalAttentionWeights: unconditionalAttentionWeights,
+        attentionWeights: attentionWeights, version: modelVersion, tokenLength: tokenLength,
+        batchSize: batchSize, hasNonOneWeights: hasNonOneWeights)
       guard feedback(.textEncoded, signposts, nil) else { return nil }
       var firstStage = FirstStage<FloatType>(
         filePath: firstStageFilePath, version: modelVersion,
