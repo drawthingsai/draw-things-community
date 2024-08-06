@@ -31,6 +31,8 @@ public struct EverythingZoo: DownloadZoo {
     "clip_vit_l14_f16.ckpt": "809bfd12c8d4b3d79c14e850b99130a70854f6fd8dedcacdf429417c02fa3007",
     "depth_anything_v2.0_f16.ckpt":
       "6570605f408208f666268cbae81cc20f3d12aaa2224c271019daeac85b37a33b",
+    "schp_atr_fp16.ckpt": "df0cbb7a4a27432c64405d579ac91c10a9fdcbfcb458e0600e54055b420131a4",
+    "schp_lip_fp16.ckpt": "69d6656afee5e5b9c84506614c10d5f7da534a984e81cfc6d6e813978feade07",
   ]
 
   static let builtinSpecifications: [Specification] = [
@@ -49,6 +51,8 @@ public struct EverythingZoo: DownloadZoo {
     Specification(name: "FILM", file: "film_1.0_f16.ckpt"),
     Specification(name: "CLIP L/14 Vision Model", file: "clip_vit_l14_vision_model_f16.ckpt"),
     Specification(name: "CLIP L/14 Text Model", file: "clip_vit_l14_f16.ckpt"),
+    Specification(name: "Self-Correcting Human Parsing (LIP)", file: "schp_lip_fp16.ckpt"),
+    Specification(name: "Self-Correcting Human Parsing (ATR)", file: "schp_atr_fp16.ckpt"),
   ]
 
   public static var availableSpecifications: [Specification] { builtinSpecifications }
