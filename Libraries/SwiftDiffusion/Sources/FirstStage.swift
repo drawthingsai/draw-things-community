@@ -370,6 +370,19 @@ extension FirstStage {
   public func encode(_ x: DynamicGraph.Tensor<FloatType>, encoder existingEncoder: Model?)
     -> (DynamicGraph.Tensor<FloatType>, Model)
   {
+    let (result, encoder) = encode(x, encoder: existingEncoder, highPrecision: false)
+    if highPrecisionFallback && isNaN(result.rawValue.toCPU()) {
+      let (highPrecisionResult, _) = encode(x, encoder: nil, highPrecision: true)
+      return (highPrecisionResult, encoder)
+    }
+    return (result, encoder)
+  }
+
+  private func encode(
+    _ x: DynamicGraph.Tensor<FloatType>, encoder existingEncoder: Model?, highPrecision: Bool
+  )
+    -> (DynamicGraph.Tensor<FloatType>, Model)
+  {
     let shape = x.shape
     let batchSize = shape[0]
     precondition(shape[1] % 32 == 0)
@@ -404,7 +417,7 @@ extension FirstStage {
           startHeight: tiledHeight, usesFlashAttention: false
         ).0
       if existingEncoder == nil {
-        if highPrecisionKeysAndValues {
+        if highPrecision {
           encoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
               from: x[0..<1, 0..<(tiledHeight * 8), 0..<(tiledWidth * 8), 0..<shape[3]]))
@@ -435,8 +448,9 @@ extension FirstStage {
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: tiledWidth,
           startHeight: tiledHeight, usesFlashAttention: false, quantLayer: false, outputChannels: 16
         ).0
+      // Don't use FP32 for SD3 / FLUX.1 encoding pass.
       if existingEncoder == nil {
-        if highPrecisionKeysAndValues {
+        if highPrecision {
           encoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
               from: x[0..<1, 0..<(tiledHeight * 8), 0..<(tiledWidth * 8), 0..<shape[3]]))
@@ -531,7 +545,7 @@ extension FirstStage {
     let tiledEncoding =
       tiledDiffusion.isEnabled && (startWidth > tiledWidth || startHeight > tiledHeight)
     guard batchSize > 1 else {
-      if highPrecisionKeysAndValues {
+      if highPrecision {
         if tiledEncoding {
           return (
             DynamicGraph.Tensor<FloatType>(
@@ -564,7 +578,7 @@ extension FirstStage {
       .GPU(0), .NHWC(batchSize, startHeight, startWidth, outputChannels), of: FloatType.self)
     for i in 0..<batchSize {
       let z = x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
-      if highPrecisionKeysAndValues {
+      if highPrecision {
         if tiledEncoding {
           result[i..<(i + 1), 0..<startHeight, 0..<startWidth, 0..<outputChannels] = DynamicGraph
             .Tensor<
