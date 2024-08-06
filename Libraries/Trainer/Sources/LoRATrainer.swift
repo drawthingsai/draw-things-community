@@ -1644,7 +1644,7 @@ public struct LoRATrainer {
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: version, usesFlashAttention: true,
-                zeroNegativePrompt: false)
+                zeroNegativePrompt: false, externalOnDemand: false)
               c =
                 unetFixEncoder.vector(
                   textEmbedding: pooled, originalSize: input.originalSize,
@@ -1684,7 +1684,7 @@ public struct LoRATrainer {
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: .sdxlRefiner, usesFlashAttention: true,
-                zeroNegativePrompt: false)
+                zeroNegativePrompt: false, externalOnDemand: false)
               c =
                 unetFixEncoder.vector(
                   textEmbedding: pooled, originalSize: input.originalSize,
@@ -1714,7 +1714,7 @@ public struct LoRATrainer {
               else { continue }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: version, usesFlashAttention: true,
-                zeroNegativePrompt: false)
+                zeroNegativePrompt: false, externalOnDemand: false)
               c =
                 unetFixEncoder.vector(
                   textEmbedding: graph.variable(Tensor<FloatType>(from: pooled).toGPU(0)),
@@ -1736,7 +1736,7 @@ public struct LoRATrainer {
               guard let pooled = sessionStore.read("pool_\(imagePath)") else { continue }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: .sdxlRefiner, usesFlashAttention: true,
-                zeroNegativePrompt: false)
+                zeroNegativePrompt: false, externalOnDemand: false)
               c =
                 unetFixEncoder.vector(
                   textEmbedding: graph.variable(Tensor<FloatType>(from: pooled).toGPU(0)),

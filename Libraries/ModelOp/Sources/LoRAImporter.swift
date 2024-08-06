@@ -487,7 +487,8 @@ public enum LoRAImporter {
         let cTensor = graph.variable(.CPU, .HWC(2, 77, conditionalLength), of: FloatType.self)
         var cArr = [cTensor]
         let fixedEncoder = UNetFixedEncoder<FloatType>(
-          filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false)
+          filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false,
+          externalOnDemand: false)
         cArr.insert(
           graph.variable(.CPU, .HWC(2, 77, 768), of: FloatType.self),
           at: 0)

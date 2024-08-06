@@ -491,7 +491,8 @@ public final class ModelImporter {
       case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .pixart,
         .sd3, .auraflow, .flux1:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
-          filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false)
+          filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false,
+          externalOnDemand: false)
         cArr.insert(
           graph.variable(.CPU, .HWC(batchSize, 77, 768), of: FloatType.self),
           at: 0)

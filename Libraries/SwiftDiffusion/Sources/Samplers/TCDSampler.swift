@@ -148,7 +148,7 @@ extension TCDSampler: Sampler {
     let oldC = c
     let fixedEncoder = UNetFixedEncoder<FloatType>(
       filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
-      zeroNegativePrompt: zeroNegativePrompt)
+      zeroNegativePrompt: zeroNegativePrompt, externalOnDemand: externalOnDemand)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
     let alphasCumprod = discretization.alphasCumprod(
       steps: sampling.steps + 1, shift: sampling.shift)
@@ -311,7 +311,8 @@ extension TCDSampler: Sampler {
           unets = [nil]
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
-            usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt)
+            usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
+            externalOnDemand: externalOnDemand)
           if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
             let vector = fixedEncoder.vector(
               textEmbedding: oldC[oldC.count - 1], originalSize: originalSize,

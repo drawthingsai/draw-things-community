@@ -524,7 +524,7 @@ extension ModelPreloader {
         if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: modelPath, version: modelVersion, usesFlashAttention: useMFA,
-            zeroNegativePrompt: false)
+            zeroNegativePrompt: false, externalOnDemand: false)
           cArr.insert(
             graph.variable(.GPU(0), .HWC(cfgChannels * batchSize, 77, 768), of: FloatType.self),
             at: 0)
