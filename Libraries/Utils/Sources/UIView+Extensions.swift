@@ -16,7 +16,9 @@
       }
     }
 
-    public func addGradientColors(_ colors: [UIColor], axis: NSLayoutConstraint.Axis) {
+    public func addGradientColors(_ colors: [UIColor], axis: NSLayoutConstraint.Axis)
+      -> CAGradientLayer
+    {
       // Create a gradient layer
       let gradientLayer = CAGradientLayer()
       gradientLayer.frame = bounds
@@ -38,6 +40,7 @@
 
       // Add the gradient layer to the button
       layer.addSublayer(gradientLayer)
+      return gradientLayer
     }
 
     private func shiftArrayByOne<T>(_ array: [T]) -> [T] {
