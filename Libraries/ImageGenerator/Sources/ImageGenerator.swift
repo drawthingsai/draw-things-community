@@ -2124,7 +2124,7 @@ extension ImageGenerator {
           guard tokenLength == c.shape[1], c.shape.count == 3 else { return c }
           let conditionalLength = c.shape[2]
           // 768, 1280 is the length of CLIP-L and OpenCLIP-G
-          guard conditionalLength >= 1280 else { return c }
+          guard conditionalLength <= 1280 else { return c }
           var c = c
           let graph = c.graph
           if c.shape[0] >= 2 {
