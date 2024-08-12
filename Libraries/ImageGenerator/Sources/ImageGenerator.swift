@@ -239,7 +239,7 @@ extension ImageGenerator {
         tiledDiffusion: tiledDiffusion,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective))
     case .DPMPP2MAYS:
-      if samplingTimesteps.isEmpty {
+      if samplingTimesteps.isEmpty && samplingSigmas.isEmpty {
         return DPMPP2MSampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
         >(
@@ -254,6 +254,21 @@ extension ImageGenerator {
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing))
+      } else if samplingTimesteps.isEmpty {
+        return DPMPP2MSampler<
+          FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
+        >(
+          filePath: filePath, modifier: modifier, version: version,
+          usesFlashAttention: usesFlashAttention,
+          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
+          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+          classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+          is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
+          discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
+            parameterization, objective: objective, samplingSigmas: samplingSigmas))
       } else {
         return DPMPP2MSampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
@@ -309,7 +324,7 @@ extension ImageGenerator {
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing))
     case .eulerAAYS:
-      if samplingTimesteps.isEmpty {
+      if samplingTimesteps.isEmpty && samplingSigmas.isEmpty {
         return EulerASampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
         >(
@@ -324,6 +339,21 @@ extension ImageGenerator {
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing))
+      } else if samplingTimesteps.isEmpty {
+        return EulerASampler<
+          FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
+        >(
+          filePath: filePath, modifier: modifier, version: version,
+          usesFlashAttention: usesFlashAttention,
+          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
+          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+          classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+          is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
+          discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
+            parameterization, objective: objective, samplingSigmas: samplingSigmas))
       } else {
         return EulerASampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
@@ -405,7 +435,7 @@ extension ImageGenerator {
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing))
     case .DPMPPSDEAYS:
-      if samplingTimesteps.isEmpty {
+      if samplingTimesteps.isEmpty && samplingSigmas.isEmpty {
         return DPMPPSDESampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
         >(
@@ -420,6 +450,21 @@ extension ImageGenerator {
           tiledDiffusion: tiledDiffusion,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing))
+      } else if samplingTimesteps.isEmpty {
+        return DPMPPSDESampler<
+          FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
+        >(
+          filePath: filePath, modifier: modifier, version: version,
+          usesFlashAttention: usesFlashAttention,
+          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
+          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+          classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+          is8BitModel: is8BitModel,
+          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion,
+          discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
+            parameterization, objective: objective, samplingSigmas: samplingSigmas))
       } else {
         return DPMPPSDESampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
