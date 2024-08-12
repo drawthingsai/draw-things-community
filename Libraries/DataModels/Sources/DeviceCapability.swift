@@ -32,6 +32,14 @@ import Utils
   }
 #endif
 
+private func isMacCatalystBuild() -> Bool {
+  #if targetEnvironment(macCatalyst)
+    return true
+  #else
+    return false
+  #endif
+}
+
 public struct DeviceCapability {
   public static let keepModelPreloaded: Bool = {
     return isHighPerformance
@@ -445,7 +453,8 @@ public struct DeviceCapability {
       }
     case .flux1:
       guard
-        (!isMaxPerformance && !((isPhone() ? isMaxPerformance : isHighPerformance) && is8BitModel))
+        (!isMaxPerformance
+          && !((isMacCatalystBuild() ? isHighPerformance : isMaxPerformance) && is8BitModel))
           || force
       else {
         return false
