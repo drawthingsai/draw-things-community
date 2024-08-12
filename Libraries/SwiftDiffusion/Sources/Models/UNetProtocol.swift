@@ -452,10 +452,20 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      (_, unet) = Flux1(
-        batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
-        height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
-        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        (_, unet) = LoRAFlux1(
+          batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
+          height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+          LoRAConfiguration: configuration)
+      } else {
+        (_, unet) = Flux1(
+          batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
+          height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+      }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -565,7 +575,12 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<28).map {
                   return ($0, $0)
                 })
-            case .auraflow, .flux1:
+            case .flux1:
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<(19 + 38)).map {
+                  return ($0, $0)
+                })
+            case .auraflow:
               fatalError()
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()

@@ -286,7 +286,8 @@ extension UniPCSampler: Sampler {
     let oldC = c
     let fixedEncoder = UNetFixedEncoder<FloatType>(
       filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
-      zeroNegativePrompt: zeroNegativePrompt, externalOnDemand: externalOnDemand)
+      zeroNegativePrompt: zeroNegativePrompt, is8BitModel: is8BitModel,
+      canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     let timesteps = (startStep..<endStep).map {
@@ -434,6 +435,7 @@ extension UniPCSampler: Sampler {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
+            is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
             externalOnDemand: externalOnDemand)
           if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
             let vector = fixedEncoder.vector(

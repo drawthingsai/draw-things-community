@@ -1,3 +1,4 @@
+import Collections
 import Foundation
 import NNC
 
@@ -6,15 +7,19 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let version: ModelVersion
   public let usesFlashAttention: Bool
   public let zeroNegativePrompt: Bool
+  public let is8BitModel: Bool
+  public let canRunLoRASeparately: Bool
   public let externalOnDemand: Bool
   public init(
     filePath: String, version: ModelVersion, usesFlashAttention: Bool, zeroNegativePrompt: Bool,
-    externalOnDemand: Bool
+    is8BitModel: Bool, canRunLoRASeparately: Bool, externalOnDemand: Bool
   ) {
     self.filePath = filePath
     self.version = version
     self.usesFlashAttention = usesFlashAttention
     self.zeroNegativePrompt = zeroNegativePrompt
+    self.is8BitModel = is8BitModel
+    self.canRunLoRASeparately = canRunLoRASeparately
     self.externalOnDemand = externalOnDemand
   }
 }
@@ -577,9 +582,35 @@ extension UNetFixedEncoder {
           ) {
             return $0.read(like: "__dit__[t-guidance_embedder_0-0-1]") != nil
           }).get()) ?? false
-      let (_, unetFixed) = Flux1Fixed(
-        batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
-        guidanceEmbed: isGuidanceEmbedSupported)
+      let unetFixed: Model
+      let lora = Array(
+        (OrderedDictionary<String, LoRAConfiguration>(
+          lora.filter({ $0.version == version }).map {
+            ($0.file, $0)
+          }
+        ) {
+          LoRAConfiguration(
+            file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
+            modifier: $0.modifier)
+        })
+        .values
+      ).filter { $0.weight != 0 }
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+        graph, of: lora.map { $0.file })
+      let isLoHa = lora.contains { $0.isLoHa }
+      let configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = is8BitModel || externalOnDemand
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        (_, unetFixed) = LoRAFlux1Fixed(
+          batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
+          LoRAConfiguration: configuration, guidanceEmbed: isGuidanceEmbedSupported)
+      } else {
+        (_, unetFixed) = Flux1Fixed(
+          batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
+          guidanceEmbed: isGuidanceEmbedSupported)
+      }
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
       var pooleds = graph.variable(
@@ -613,8 +644,32 @@ extension UNetFixedEncoder {
       unetFixed.compile(inputs: [c, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? []))
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-      ) {
-        $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+      ) { store in
+        if !lora.isEmpty {
+          if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<(19 + 38)).map {
+                return ($0, $0)
+              })
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, format, shape in
+                return loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                  store: store, dataType: dataType, format: format, shape: shape)
+              }
+            }
+          } else {
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, _, _, shape in
+                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              }
+            }
+          }
+        } else {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
       }
       let conditions = unetFixed(
         inputs: c, [timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])

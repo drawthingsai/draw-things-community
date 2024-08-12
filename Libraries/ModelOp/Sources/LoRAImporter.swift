@@ -183,6 +183,9 @@ public enum LoRAImporter {
       let isPixArtSigmaXL = stateDict.keys.contains {
         $0.contains("blocks_27_") || $0.contains("transformer_blocks_27_")
       }
+      let isFlux1 = stateDict.keys.contains {
+        $0.contains("double_blocks.18.img_attn.qkv.")
+      }
       if let tokey = stateDict.first(where: {
         $0.key.hasSuffix(
           "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -229,6 +232,8 @@ public enum LoRAImporter {
         return .sd3
       } else if isPixArtSigmaXL {
         return .pixart
+      } else if isFlux1 {
+        return .flux1
       } else {
         if let forceVersion = forceVersion {
           return forceVersion
@@ -269,7 +274,10 @@ public enum LoRAImporter {
         return t5Mapper(.generativeModels)
       }
       textModelMapping2 = [:]
-    case .auraflow, .flux1:
+    case .flux1:
+      textModelMapping1 = [:]
+      textModelMapping2 = [:]
+    case .auraflow:
       fatalError()
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
@@ -340,7 +348,7 @@ public enum LoRAImporter {
     }
     var UNetMappingFixed = [String: [String]]()
     if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
-      || modelVersion == .sd3 || modelVersion == .pixart
+      || modelVersion == .sd3 || modelVersion == .pixart || modelVersion == .flux1
     {
       let unet: Model
       let unetFixed: Model
@@ -391,7 +399,13 @@ public enum LoRAImporter {
         (unetFixedMapper, unetFixed) = PixArtFixed(
           batchSize: 2, channels: 1152, layers: 28, tokenLength: (77, 77),
           usesFlashAttention: false, of: FloatType.self)
-      case .auraflow, .flux1:
+      case .flux1:
+        (unetMapper, unet) = Flux1(
+          batchSize: 1, tokenLength: 256, height: 64, width: 64, channels: 3072, layers: (19, 38),
+          usesFlashAttention: .scaleMerged)
+        (unetFixedMapper, unetFixed) = Flux1Fixed(
+          batchSize: (1, 1), channels: 3072, layers: (19, 38), guidanceEmbed: true)
+      case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
@@ -439,8 +453,12 @@ public enum LoRAImporter {
         }
         let crossattn: [DynamicGraph.Tensor<FloatType>]
         let tEmb: DynamicGraph.Tensor<FloatType>?
+        let isCfgEnabled: Bool
+        let isGuidanceEmbedEnabled: Bool
         switch modelVersion {
         case .sdxlBase, .ssd1b:
+          isCfgEnabled = true
+          isGuidanceEmbedEnabled = false
           crossattn = [graph.variable(.CPU, .HWC(2, 77, 2048), of: FloatType.self)]
           tEmb = graph.variable(
             Tensor<FloatType>(
@@ -449,6 +467,8 @@ public enum LoRAImporter {
                 maxPeriod: 10_000)
             ))
         case .sdxlRefiner:
+          isCfgEnabled = true
+          isGuidanceEmbedEnabled = false
           crossattn = [graph.variable(.CPU, .HWC(2, 77, 1280), of: FloatType.self)]
           tEmb = graph.variable(
             Tensor<FloatType>(
@@ -457,6 +477,8 @@ public enum LoRAImporter {
                 maxPeriod: 10_000)
             ))
         case .pixart:
+          isCfgEnabled = true
+          isGuidanceEmbedEnabled = false
           crossattn = [
             graph.variable(
               Tensor<FloatType>(
@@ -467,6 +489,8 @@ public enum LoRAImporter {
           ]
           tEmb = nil
         case .sd3:
+          isCfgEnabled = true
+          isGuidanceEmbedEnabled = false
           crossattn = [
             graph.variable(.CPU, .WC(2, 2048), of: FloatType.self),
             graph.variable(
@@ -477,23 +501,43 @@ public enum LoRAImporter {
             ), graph.variable(.CPU, .HWC(2, 154, 4096), of: FloatType.self),
           ]
           tEmb = nil
-        case .auraflow, .flux1:
+        case .flux1:
+          isCfgEnabled = false
+          isGuidanceEmbedEnabled = true
+          crossattn = [
+            graph.variable(.CPU, .HWC(1, 256, 4096), of: FloatType.self),
+            graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+            graph.variable(.CPU, .WC(1, 768), of: FloatType.self),
+            graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+          ]
+          tEmb = nil
+        case .auraflow:
           fatalError()
         case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
         unetFixed.compile(inputs: crossattn)
-        let xTensor = graph.variable(.CPU, .NHWC(2, 64, 64, inputDim), of: FloatType.self)
-        let cTensor = graph.variable(.CPU, .HWC(2, 77, conditionalLength), of: FloatType.self)
-        var cArr = [cTensor]
+        let xTensor = graph.variable(
+          .CPU, .NHWC(isCfgEnabled ? 2 : 1, 64, 64, inputDim), of: FloatType.self)
+        var cArr: [DynamicGraph.Tensor<FloatType>]
+        if modelVersion == .flux1 {  // This logic should be switch and for auraflow too.
+          cArr = [
+            graph.variable(.CPU, .HWC(1, 256, 4096), of: FloatType.self),
+            graph.variable(.CPU, .WC(1, 768), of: FloatType.self),
+          ]
+        } else {
+          let cTensor = graph.variable(
+            .CPU, .HWC(isCfgEnabled ? 2 : 1, 77, conditionalLength), of: FloatType.self)
+          cArr = [cTensor]
+          cArr.insert(
+            graph.variable(.CPU, .HWC(isCfgEnabled ? 2 : 1, 77, 768), of: FloatType.self),
+            at: 0)
+          cArr.append(
+            graph.variable(.CPU, .WC(isCfgEnabled ? 2 : 1, 1280), of: FloatType.self))
+        }
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false,
-          externalOnDemand: false)
-        cArr.insert(
-          graph.variable(.CPU, .HWC(2, 77, 768), of: FloatType.self),
-          at: 0)
-        cArr.append(
-          graph.variable(.CPU, .WC(2, 1280), of: FloatType.self))
+          is8BitModel: false, canRunLoRASeparately: false, externalOnDemand: false)
         for c in cArr {
           c.full(0)
         }
@@ -515,9 +559,10 @@ public enum LoRAImporter {
         cArr =
           vectors
           + fixedEncoder.encode(
-            isCfgEnabled: true, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
-            isGuidanceEmbedEnabled: false,
-            textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0], batchSize: 2, startHeight: 64,
+            isCfgEnabled: isCfgEnabled, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
+            isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+            textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0],
+            batchSize: isCfgEnabled ? 2 : 1, startHeight: 64,
             startWidth: 64,
             tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
             tiledDiffusion: TiledConfiguration(
@@ -525,9 +570,19 @@ public enum LoRAImporter {
           ).0.map({ $0.toCPU() })
         let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
         unet.compile(inputs: inputs)
-        if modelVersion == .ssd1b || modelVersion == .sd3 || modelVersion == .pixart {
+        if modelVersion == .ssd1b || modelVersion == .sd3 || modelVersion == .pixart
+          || modelVersion == .flux1
+        {
           UNetMappingFixed = unetFixedMapper(.generativeModels)
           UNetMapping = unetMapper(.generativeModels)
+          for (key, value) in UNetMappingFixed {
+            guard !key.hasPrefix("diffusion_model.") else { continue }
+            UNetMappingFixed["diffusion_model.\(key)"] = value
+          }
+          for (key, value) in UNetMapping {
+            guard !key.hasPrefix("diffusion_model.") else { continue }
+            UNetMapping["diffusion_model.\(key)"] = value
+          }
         }
         let diffusersUNetMappingFixed = unetFixedMapper(.diffusers)
         let diffusersUNetMapping = unetMapper(.diffusers)
@@ -635,7 +690,21 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .auraflow, .flux1:
+      case .flux1:
+        if let tensorDescT5XXL = stateDict["t5_xxl"] {
+          try archive.with(tensorDescT5XXL) {
+            let tensor = Tensor<FloatType>(from: $0)
+            store.write("string_to_param_t5_xxl", tensor: tensor)
+            let textEmbeddingLengthT5XXL =
+              tensorDescT5XXL.shape.count > 1 ? tensorDescT5XXL.shape[0] : 1
+            guard textEmbeddingLengthT5XXL == textEmbeddingLength else {
+              textEmbeddingLength = 0
+              return
+            }
+            didImportTIEmbedding = true
+          }
+        }
+      case .auraflow:
         fatalError()
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
         if let tensorDescClipG = stateDict["clip_g"] {
