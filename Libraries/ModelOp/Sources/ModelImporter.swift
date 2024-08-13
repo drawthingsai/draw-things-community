@@ -59,10 +59,12 @@ public final class ModelImporter {
     public var modifier: SamplerModifier
     public var inputChannels: Int
     public var isDiffusersFormat: Bool
+    public var hasEncoderHidProj: Bool
     public var numberOfTensors: Int
     public init(
       version: ModelVersion, archive: TensorArchive, stateDict: [String: TensorDescriptor],
-      modifier: SamplerModifier, inputChannels: Int, isDiffusersFormat: Bool, numberOfTensors: Int
+      modifier: SamplerModifier, inputChannels: Int, isDiffusersFormat: Bool,
+      hasEncoderHidProj: Bool, numberOfTensors: Int
     ) {
       self.version = version
       self.archive = archive
@@ -70,6 +72,7 @@ public final class ModelImporter {
       self.modifier = modifier
       self.inputChannels = inputChannels
       self.isDiffusersFormat = isDiffusersFormat
+      self.hasEncoderHidProj = hasEncoderHidProj
       self.numberOfTensors = numberOfTensors
     }
   }
@@ -199,10 +202,11 @@ public final class ModelImporter {
     } else {
       throw UnpickleError.tensorNotFound
     }
+    let hasEncoderHidProj = stateDict.keys.contains { $0 == "encoder_hid_proj.weight" }
     return InspectionResult(
       version: modelVersion, archive: archive, stateDict: stateDict, modifier: modifier,
       inputChannels: inputDim, isDiffusersFormat: isDiffusersFormat,
-      numberOfTensors: expectedTotalAccess)
+      hasEncoderHidProj: hasEncoderHidProj, numberOfTensors: expectedTotalAccess)
   }
 
   private func internalImport(versionCheck: @escaping (ModelVersion) -> Void) throws -> (
@@ -215,6 +219,7 @@ public final class ModelImporter {
     let modelVersion = inspectionResult.version
     let inputDim = inspectionResult.inputChannels
     let isDiffusersFormat = inspectionResult.isDiffusersFormat
+    let hasEncoderHidProj = inspectionResult.hasEncoderHidProj
     expectedTotalAccess = inspectionResult.numberOfTensors
     versionCheck(modelVersion)
     progress?(0.05)
@@ -752,8 +757,8 @@ public final class ModelImporter {
         let unetFixed = unetFixed
       {
         try graph.openStore(filePath) { store in
-          let UNetMapping: [String: [String]]
-          let UNetMappingFixed: [String: [String]]
+          let UNetMapping: ModelWeightMapping
+          let UNetMappingFixed: ModelWeightMapping
           let modelPrefix: String
           let modelPrefixFixed: String
           switch modelVersion {
@@ -836,6 +841,18 @@ public final class ModelImporter {
             fatalError()
           }
           try store.withTransaction {
+            if let encoderHidProjWeightDescriptor = stateDict["encoder_hid_proj.weight"],
+              let encoderHidProjBiasDescriptor = stateDict["encoder_hid_proj.bias"]
+            {
+              try archive.with(encoderHidProjWeightDescriptor) { tensor in
+                let tensor = Tensor<FloatType>(from: tensor)
+                store.write("__encoder_hid_proj__[t-0-0]", tensor: tensor)
+              }
+              try archive.with(encoderHidProjBiasDescriptor) { tensor in
+                let tensor = Tensor<FloatType>(from: tensor)
+                store.write("__encoder_hid_proj__[t-0-1]", tensor: tensor)
+              }
+            }
             for (key, value) in UNetMapping {
               guard let tensorDescriptor = stateDict[key] else {
                 continue
@@ -909,15 +926,15 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .sdxlBase:
-          if $0.keys.count != 1820 {
+          if $0.keys.count != 1820 + (hasEncoderHidProj ? 2 : 0) {
             throw Error.tensorWritesFailed
           }
         case .ssd1b:
-          if $0.keys.count != 1012 {
+          if $0.keys.count != 1012 + (hasEncoderHidProj ? 2 : 0) {
             throw Error.tensorWritesFailed
           }
         case .sdxlRefiner:
-          if $0.keys.count != 1308 {
+          if $0.keys.count != 1308 + (hasEncoderHidProj ? 2 : 0) {
             throw Error.tensorWritesFailed
           }
         case .svdI2v:

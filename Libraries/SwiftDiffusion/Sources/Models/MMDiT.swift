@@ -22,7 +22,7 @@ private func MLP(hiddenSize: Int, intermediateSize: Int, name: String) -> (Model
   let x = Input()
   let fc1 = Dense(count: intermediateSize, name: "\(name)_fc1")
   var out = GELU(approximate: .tanh)(fc1(x))
-  let fc2 = Dense(count: hiddenSize, flags: .disableMFAGEMM, name: "\(name)_fc2")
+  let fc2 = Dense(count: hiddenSize, flags: [.Float32], name: "\(name)_fc2")
   out = fc2(out)
   return (fc1, fc2, Model([x], [out]))
 }
@@ -139,7 +139,7 @@ private func JointTransformerBlock(
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   xOut = xOut + xChunks[5] .* xMlp(xNorm2(xOut) .* xChunks[4] + xChunks[3])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["\(prefix.0).context_block.attn.qkv.weight"] = [
@@ -263,7 +263,7 @@ public func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
     batchSize, h * 2, w * 2, 16,
   ])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -293,7 +293,7 @@ private func LoRAMLP(
   let fc1 = LoRADense(count: intermediateSize, configuration: configuration, name: "\(name)_fc1")
   var out = GELU(approximate: .tanh)(fc1(x))
   let fc2 = LoRADense(
-    count: hiddenSize, configuration: configuration, flags: .disableMFAGEMM, name: "\(name)_fc2")
+    count: hiddenSize, configuration: configuration, flags: [.Float32], name: "\(name)_fc2")
   out = fc2(out)
   return (fc1, fc2, Model([x], [out]))
 }
@@ -412,7 +412,7 @@ private func LoRAJointTransformerBlock(
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   xOut = xOut + xChunks[5] .* xMlp(xNorm2(xOut) .* xChunks[4] + xChunks[3])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["\(prefix.0).context_block.attn.qkv.weight"] = [
@@ -537,7 +537,7 @@ public func LoRAMMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
     batchSize, h * 2, w * 2, 16,
   ])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -577,19 +577,23 @@ private func JointTransformerBlockFixed(
   }
   xChunks[4] = 1 + xChunks[4]
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping[
         "\(prefix.0).context_block.adaLN_modulation.1.weight"
-      ] = (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].weight.name }
+      ] = ModelWeightElement(
+        (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].weight.name })
       mapping[
         "\(prefix.0).context_block.adaLN_modulation.1.bias"
-      ] = (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].bias.name }
-      mapping["\(prefix.0).x_block.adaLN_modulation.1.weight"] = (0..<6).map {
-        xAdaLNs[$0].weight.name
-      }
-      mapping["\(prefix.0).x_block.adaLN_modulation.1.bias"] = (0..<6).map { xAdaLNs[$0].bias.name }
+      ] = ModelWeightElement(
+        (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].bias.name })
+      mapping["\(prefix.0).x_block.adaLN_modulation.1.weight"] = ModelWeightElement(
+        (0..<6).map {
+          xAdaLNs[$0].weight.name
+        })
+      mapping["\(prefix.0).x_block.adaLN_modulation.1.bias"] = ModelWeightElement(
+        (0..<6).map { xAdaLNs[$0].bias.name })
     case .diffusers:
       if contextBlockPreOnly {
         mapping["\(prefix.1).norm1_context.linear.weight"] = [
@@ -601,13 +605,15 @@ private func JointTransformerBlockFixed(
       } else {
         mapping[
           "\(prefix.1).norm1_context.linear.weight"
-        ] = (0..<6).map { contextAdaLNs[$0].weight.name }
+        ] = ModelWeightElement((0..<6).map { contextAdaLNs[$0].weight.name })
         mapping[
           "\(prefix.1).norm1_context.linear.bias"
-        ] = (0..<6).map { contextAdaLNs[$0].bias.name }
+        ] = ModelWeightElement((0..<6).map { contextAdaLNs[$0].bias.name })
       }
-      mapping["\(prefix.1).norm1.linear.weight"] = (0..<6).map { xAdaLNs[$0].weight.name }
-      mapping["\(prefix.1).norm1.linear.bias"] = (0..<6).map { xAdaLNs[$0].bias.name }
+      mapping["\(prefix.1).norm1.linear.weight"] = ModelWeightElement(
+        (0..<6).map { xAdaLNs[$0].weight.name })
+      mapping["\(prefix.1).norm1.linear.bias"] = ModelWeightElement(
+        (0..<6).map { xAdaLNs[$0].bias.name })
     }
     return mapping
   }
@@ -639,7 +645,7 @@ public func MMDiTFixed(batchSize: Int, channels: Int, layers: Int) -> (ModelWeig
   let scale = Dense(count: channels, name: "ada_ln_1")
   outs.append(contentsOf: [shift(c), 1 + scale(c)])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }

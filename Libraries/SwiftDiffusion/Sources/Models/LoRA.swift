@@ -6,21 +6,24 @@ public struct LoRANetworkConfiguration {
   public var highPrecision: Bool
   public var testing: Bool
   public var gradientCheckpointingFeedForward: Bool
+  public var keys: [String]?
   public init(
     rank: Int, scale: Float, highPrecision: Bool, testing: Bool = true,
-    gradientCheckpointingFeedForward: Bool = false
+    gradientCheckpointingFeedForward: Bool = false, keys: [String]? = nil
   ) {
     self.rank = rank
     self.scale = scale
     self.highPrecision = highPrecision
     self.testing = testing
     self.gradientCheckpointingFeedForward = gradientCheckpointingFeedForward
+    self.keys = keys
   }
 }
 
 public func LoRAConvolution(
   groups: Int, filters: Int, filterSize: [Int], configuration: LoRANetworkConfiguration,
-  noBias: Bool = false, hint: Hint = Hint(), format: Convolution.Format? = nil, name: String = ""
+  noBias: Bool = false, hint: Hint = Hint(), format: Convolution.Format? = nil, index: Int? = nil,
+  name: String = ""
 ) -> Model {
   let x = Input()
   let conv2d = Convolution(
@@ -28,6 +31,18 @@ public func LoRAConvolution(
     format: format, name: name)
   guard configuration.rank > 0 else {
     return conv2d
+  }
+  if let keys = configuration.keys {
+    let key: String
+    if let index = index {
+      key = "\(name)-\(index)"
+    } else {
+      key = name
+    }
+    // If cannot find existing key that matches the prefix, return vanilla convolution.
+    if !keys.contains(where: { $0.hasPrefix(key) }) {
+      return conv2d
+    }
   }
   let conv2dDown = Convolution(
     groups: groups, filters: configuration.rank, filterSize: filterSize, noBias: true, hint: hint,
@@ -53,12 +68,24 @@ public func LoRAConvolution(
 
 public func LoRADense(
   count: Int, configuration: LoRANetworkConfiguration, noBias: Bool = false,
-  flags: DynamicGraph.EnableBits = [], name: String = ""
+  flags: Functional.GEMMFlag = [], index: Int? = nil, name: String = ""
 ) -> Model {
   let x = Input()
   let dense = Dense(count: count, noBias: noBias, flags: flags, name: name)
   guard configuration.rank > 0 else {
     return dense
+  }
+  if let keys = configuration.keys {
+    let key: String
+    if let index = index {
+      key = "\(name)-\(index)"
+    } else {
+      key = name
+    }
+    // If cannot find existing key that matches the prefix, return vanilla dense layer.
+    if !keys.contains(where: { $0.hasPrefix(key) }) {
+      return dense
+    }
   }
   let denseDown = Dense(
     count: configuration.rank, noBias: true, trainable: true,
@@ -1446,7 +1473,7 @@ private func LoRABasicTransformerBlock(
   }
   out = ff(out) + residual
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     let formatPrefix: String
     switch format {
     case .generativeModels:
@@ -1536,7 +1563,7 @@ private func LoRASpatialTransformer(
     groups: 1, filters: ch, filterSize: [1, 1], configuration: LoRAConfiguration, format: .OIHW)
   out = projOut(out) + x
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -1595,7 +1622,7 @@ func LoRABlockLayer(
     kvs.append(contentsOf: c)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     if let transformerMapper = transformerMapper {
       mapping.merge(transformerMapper(format)) { v, _ in v }
     }
@@ -1745,7 +1772,7 @@ func LoRAMiddleBlock(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     if let transformerMapper = transformerMapper {
       mapping.merge(transformerMapper(format)) { v, _ in v }
     }
@@ -1969,7 +1996,7 @@ func LoRAInputBlocks(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["model.diffusion_model.input_blocks.0.0.down"] = [
@@ -2095,7 +2122,7 @@ func LoRAOutputBlocks(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -2173,7 +2200,7 @@ public func LoRAUNetXL(
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
   out = outConv2d(out)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(inputMapper(format)) { v, _ in v }
     mapping.merge(middleMapper(format)) { v, _ in v }
     mapping.merge(outputMapper(format)) { v, _ in v }
@@ -2279,7 +2306,7 @@ func LoRABasicTransformerBlockFixed(
     k: k, h: h, b: b, t: t, usesFlashAttention: usesFlashAttention,
     LoRAConfiguration: LoRAConfiguration)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["\(prefix.0).attn2.to_k.down"] = [
@@ -2332,7 +2359,7 @@ func LoRASpatialTransformerFixed(
     mappers.append(mapper)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -2416,7 +2443,7 @@ func LoRAInputBlocksFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -2471,7 +2498,7 @@ func LoRAOutputBlocksFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }

@@ -93,8 +93,8 @@ public enum DiffusersMapping {
 }
 
 public enum StableDiffusionMapping {
-  public static let CLIPTextModel: [String: [String]] = {
-    var textModel = [String: [String]]()
+  public static let CLIPTextModel: ModelWeightMapping = {
+    var textModel = ModelWeightMapping()
     textModel["cond_stage_model.transformer.text_model.embeddings.position_embedding.weight"] = [
       "t-0-0"
     ]
@@ -158,8 +158,8 @@ public enum StableDiffusionMapping {
     textModel["cond_stage_model.transformer.text_model.final_layer_norm.bias"] = ["t-98-1"]
     return textModel
   }()
-  public static let OpenCLIPTextModel: [String: [String]] = {
-    var textModel = [String: [String]]()
+  public static let OpenCLIPTextModel: ModelWeightMapping = {
+    var textModel = ModelWeightMapping()
     textModel["cond_stage_model.transformer.text_model.embeddings.position_embedding.weight"] = [
       "t-0-0"
     ]
@@ -223,8 +223,8 @@ public enum StableDiffusionMapping {
     textModel["cond_stage_model.transformer.text_model.final_layer_norm.bias"] = ["t-186-1"]
     return textModel
   }()
-  public static let OpenCLIPTextModelG: [String: [String]] = {
-    var textModel = [String: [String]]()
+  public static let OpenCLIPTextModelG: ModelWeightMapping = {
+    var textModel = ModelWeightMapping()
     textModel["cond_stage_model.model.positional_embedding"] = [
       "t-0-0"
     ]
@@ -275,8 +275,8 @@ public enum StableDiffusionMapping {
     textModel["cond_stage_model.model.ln_final.bias"] = ["t-258-1"]
     return textModel
   }()
-  public static let OpenCLIPTextModelGTransformers: [String: [String]] = {
-    var textModel = [String: [String]]()
+  public static let OpenCLIPTextModelGTransformers: ModelWeightMapping = {
+    var textModel = ModelWeightMapping()
     textModel["cond_stage_model.transformer.text_model.embeddings.position_embedding.weight"] = [
       "t-0-0"
     ]
@@ -340,7 +340,7 @@ public enum StableDiffusionMapping {
     textModel["cond_stage_model.transformer.text_model.final_layer_norm.bias"] = ["t-258-1"]
     return textModel
   }()
-  public static let UNet: [String: [String]] = [
+  public static let UNet: ModelWeightMapping = [
     "model.diffusion_model.time_embed.0.weight": ["t-0-0"],
     "model.diffusion_model.time_embed.0.bias": ["t-0-1"],
     "model.diffusion_model.time_embed.2.weight": ["t-1-0"],
@@ -1145,7 +1145,7 @@ public enum StableDiffusionMapping {
     "model.diffusion_model.out.2.bias": ["t-406-1"],
   ]
 
-  public static let Encoder: [String: [String]] = [
+  public static let Encoder: ModelWeightMapping = [
     "first_stage_model.encoder.conv_in.weight": ["t-0-0"],
     "first_stage_model.encoder.conv_in.bias": ["t-0-1"],
     "first_stage_model.encoder.down.0.block.0.norm1.weight": ["t-1-0"],
@@ -1255,7 +1255,7 @@ public enum StableDiffusionMapping {
     "first_stage_model.quant_conv.weight": ["t-53-0"],
     "first_stage_model.quant_conv.bias": ["t-53-1"],
   ]
-  public static let Decoder: [String: [String]] = [
+  public static let Decoder: ModelWeightMapping = [
     "first_stage_model.post_quant_conv.weight": ["t-0-0"],
     "first_stage_model.post_quant_conv.bias": ["t-0-1"],
     "first_stage_model.decoder.conv_in.weight": ["t-1-0"],
@@ -1398,7 +1398,7 @@ public enum StableDiffusionMapping {
     "first_stage_model.decoder.conv_out.bias": ["t-69-1"],
   ]
 
-  public static let UNetXLRefinerFixed: [String: [String]] = [
+  public static let UNetXLRefinerFixed: ModelWeightMapping = [
     "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight": ["t-0-0"],
     "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_v.weight": ["t-1-0"],
     "model.diffusion_model.input_blocks.4.1.transformer_blocks.1.attn2.to_k.weight": ["t-2-0"],
@@ -1489,7 +1489,7 @@ public enum StableDiffusionMapping {
     "model.diffusion_model.output_blocks.8.1.transformer_blocks.3.attn2.to_v.weight": ["t-87-0"],
   ]
 
-  public static let UNetXLBaseFixed: [String: [String]] = [
+  public static let UNetXLBaseFixed: ModelWeightMapping = [
     "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight": ["t-0-0"],
     "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_v.weight": ["t-1-0"],
     "model.diffusion_model.input_blocks.4.1.transformer_blocks.1.attn2.to_k.weight": ["t-2-0"],
@@ -1632,7 +1632,7 @@ public enum StableDiffusionMapping {
     "model.diffusion_model.output_blocks.5.1.transformer_blocks.1.attn2.to_v.weight": ["t-139-0"],
   ]
 
-  public static let UNetXLBase: [String: [String]] = [
+  public static let UNetXLBase: ModelWeightMapping = [
     "model.diffusion_model.time_embed.0.weight": ["t-2-0"],
     "model.diffusion_model.time_embed.0.bias": ["t-2-1"],
     "model.diffusion_model.time_embed.2.weight": ["t-3-0"],
@@ -3674,7 +3674,7 @@ public enum StableDiffusionMapping {
     "model.diffusion_model.out.2.weight": ["t-979-0"],
     "model.diffusion_model.out.2.bias": ["t-979-1"],
   ]
-  public static let UNetXLRefiner: [String: [String]] = [
+  public static let UNetXLRefiner: ModelWeightMapping = [
     "model.diffusion_model.time_embed.0.weight": ["t-2-0"],
     "model.diffusion_model.time_embed.0.bias": ["t-2-1"],
     "model.diffusion_model.time_embed.2.weight": ["t-3-0"],

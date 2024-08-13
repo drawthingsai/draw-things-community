@@ -219,9 +219,9 @@ public final class ControlNetImporter {
 
     if let controlNetMapper = controlNetMapper {
       try graph.openStore(ModelZoo.filePathForModelDownloaded(filename)) { store in
-        let mapping: [String: [String]]
-        let mappingFixed: [String: [String]]
-        let hintMapping: [String: [String]]
+        let mapping: ModelWeightMapping
+        let mappingFixed: ModelWeightMapping
+        let hintMapping: ModelWeightMapping
         switch modelVersion {
         case .sdxlBase:
           let vector = graph.variable(.GPU(0), .WC(2, 2816), of: FloatType.self)

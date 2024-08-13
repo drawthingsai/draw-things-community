@@ -65,7 +65,7 @@ private func UMT5Block(
     hiddenSize: outFeatures, intermediateSize: intermediateSize)
   out = out + ff(norm2(out).to(FloatType.dataType))
   let mapper: ModelWeightMapper = { _ in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).layer.0.layer_norm.weight"] = [norm1.weight.name]
     mapping["\(prefix).layer.0.SelfAttention.relative_attention_bias.weight"] = [
       relativePositionEmbedding.weight.name
@@ -103,7 +103,7 @@ func UMT5ForConditionalGeneration<FloatType: TensorNumeric & BinaryFloatingPoint
   let finalNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "final_norm")
   out = finalNorm(out).to(FloatType.dataType)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["shared.weight"] = [textEmbed.weight.name]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }

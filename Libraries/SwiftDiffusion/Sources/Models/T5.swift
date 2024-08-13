@@ -60,7 +60,7 @@ private func T5Block(
     hiddenSize: outFeatures, intermediateSize: intermediateSize)
   out = out + ff(norm2(out).to(FloatType.dataType))
   let mapper: ModelWeightMapper = { _ in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).layer.0.layer_norm.weight"] = [norm1.weight.name]
     mapping["\(prefix).layer.0.SelfAttention.k.weight"] = [tokeys.weight.name]
     mapping["\(prefix).layer.0.SelfAttention.q.weight"] = [toqueries.weight.name]
@@ -98,7 +98,7 @@ public func T5ForConditionalGeneration<FloatType: TensorNumeric & BinaryFloating
   let finalNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "final_norm")
   out = finalNorm(out).to(FloatType.dataType)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["shared.weight"] = [textEmbed.weight.name]
     mapping[
       "encoder.block.0.layer.0.SelfAttention.relative_attention_bias.weight"
@@ -204,7 +204,7 @@ private func LoRAT5Block(
     hiddenSize: outFeatures, intermediateSize: intermediateSize, configuration: configuration)
   out = out + ff(norm2(out).to(FloatType.dataType))
   let mapper: ModelWeightMapper = { _ in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).layer.0.layer_norm.weight"] = [norm1.weight.name]
     mapping["\(prefix).layer.0.SelfAttention.k.weight"] = [tokeys.weight.name]
     mapping["\(prefix).layer.0.SelfAttention.q.weight"] = [toqueries.weight.name]
@@ -242,7 +242,7 @@ public func LoRAT5ForConditionalGeneration<FloatType: TensorNumeric & BinaryFloa
   let finalNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "final_norm")
   out = finalNorm(out).to(FloatType.dataType)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["shared.weight"] = [textEmbed.weight.name]
     mapping[
       "encoder.block.0.layer.0.SelfAttention.relative_attention_bias.weight"

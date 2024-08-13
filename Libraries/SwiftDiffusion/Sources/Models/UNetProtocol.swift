@@ -185,7 +185,7 @@ extension UNetFromNNC {
     let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
       graph, of: lora.map { $0.file })
     let isLoHa = lora.contains { $0.isLoHa }
-    let configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+    var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
     let runLoRASeparatelyIsPreferred = is8BitModel || externalOnDemand
     switch version {
     case .v1:
@@ -455,6 +455,8 @@ extension UNetFromNNC {
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file })
+        configuration.keys = keys
         (_, unet) = LoRAFlux1(
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),

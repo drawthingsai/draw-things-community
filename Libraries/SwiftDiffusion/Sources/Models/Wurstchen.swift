@@ -43,7 +43,7 @@ private func ResBlock(
     out = convOut(out) + x
   }
   let mapper: ModelWeightMapper = { _ in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).depthwise.weight"] = [depthwise.weight.name]
     mapping["\(prefix).depthwise.bias"] = [depthwise.bias.name]
     mapping["\(prefix).channelwise.0.weight"] = [convIn.weight.name]
@@ -92,7 +92,7 @@ private func TimestepBlock(
       [batchSize, 1, 1, channels], offset: [0, 0, 0, channels],
       strides: [channels * 2, channels * 2, channels * 2, 1])
   let modelWeightMapper: ModelWeightMapper = { _ in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).mapper.weight"] = [mapper.weight.name]
     mapping["\(prefix).mapper.bias"] = [mapper.bias.name]
     for (otherMapper, tCond) in zip(otherMappers, tConds) {
@@ -137,7 +137,7 @@ private func MultiHeadAttention(
       }
       let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
       let mapper: ModelWeightMapper = { _ in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         mapping["\(prefix).attention.attn.in_proj_weight"] = [
           toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
         ]
@@ -200,7 +200,7 @@ private func MultiHeadAttention(
       let unifyheads = Dense(count: k * h, name: "unifyheads")
       out = unifyheads(out)
       let mapper: ModelWeightMapper = { _ in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         mapping["\(prefix).attention.attn.in_proj_weight"] = [
           toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
         ]
@@ -248,7 +248,7 @@ private func MultiHeadAttention(
       let unifyheads = Dense(count: k * h, name: "unifyheads")
       out = unifyheads(out)
       let mapper: ModelWeightMapper = { _ in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         mapping["\(prefix).attention.attn.in_proj_weight"] = [
           toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
         ]
@@ -321,7 +321,7 @@ private func MultiHeadAttention(
       let unifyheads = Dense(count: k * h, name: "unifyheads")
       out = unifyheads(out).reshaped([b, hw, h * k])
       let mapper: ModelWeightMapper = { _ in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         mapping["\(prefix).attention.attn.in_proj_weight"] = [
           toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
         ]
@@ -393,7 +393,7 @@ func AttnBlockFixed(
   let tovalues = Dense(count: channels, name: "\(prefix).values")
   let k = channels / nHead
   let mapper: ModelWeightMapper = { _ in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).kv_mapper.1.weight"] = [kvMapper.weight.name]
     mapping["\(prefix).kv_mapper.1.bias"] = [kvMapper.bias.name]
     // These will be fill in from the main model.
@@ -464,7 +464,7 @@ public func WurstchenStageCFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -502,7 +502,7 @@ public func WurstchenStageC(
         groups: 1, filters: 2048, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
       out = downscaler(out)
       mappers.append { _ in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         mapping["down_downscalers.\(i).1.blocks.0.weight"] = [downscaler.weight.name]
         mapping["down_downscalers.\(i).1.blocks.0.bias"] = [downscaler.bias.name]
         return mapping
@@ -595,7 +595,7 @@ public func WurstchenStageC(
         groups: 1, filters: 2048, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
       out = upscaler(out)
       mappers.append { _ in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         mapping["up_upscalers.\(i).1.blocks.1.weight"] = [upscaler.weight.name]
         mapping["up_upscalers.\(i).1.blocks.1.bias"] = [upscaler.bias.name]
         return mapping
@@ -610,7 +610,7 @@ public func WurstchenStageC(
     groups: 1, filters: 16, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
   out = convOut(out)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -634,7 +634,7 @@ private func SpatialMapper(prefix: String, cHidden: Int) -> (Model, ModelWeightM
   let normOut = LayerNorm(epsilon: 1e-6, axis: [3], elementwiseAffine: false)
   out = normOut(out)
   let mapper: ModelWeightMapper = { _ in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).0.weight"] = [convIn.weight.name]
     mapping["\(prefix).0.bias"] = [convIn.bias.name]
     mapping["\(prefix).2.weight"] = [convOut.weight.name]
@@ -700,7 +700,7 @@ func WurstchenStageBFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(effnetMapperMapper(format)) { v, _ in v }
     mapping["clip_mapper.weight"] = [clipMapper.weight.name]
     mapping["clip_mapper.bias"] = [clipMapper.bias.name]
@@ -743,7 +743,7 @@ func WurstchenStageB(
         format: .OIHW)
       out = downscaler(out)
       mappers.append { _ in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         mapping["down_downscalers.\(i).1.weight"] = [downscaler.weight.name]
         mapping["down_downscalers.\(i).1.bias"] = [downscaler.bias.name]
         return mapping
@@ -833,7 +833,7 @@ func WurstchenStageB(
           format: .OIHW)
         out = repmap(out)
         mappers.append { _ in
-          var mapping = [String: [String]]()
+          var mapping = ModelWeightMapping()
           mapping["up_repeat_mappers.\(i).\(j).weight"] = [repmap.weight.name]
           mapping["up_repeat_mappers.\(i).\(j).bias"] = [repmap.bias.name]
           return mapping
@@ -848,7 +848,7 @@ func WurstchenStageB(
         format: .OIHW)
       out = upscaler(out)
       mappers.append { _ in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         mapping["up_upscalers.\(i).1.weight"] = [upscaler.weight.name]
         mapping["up_upscalers.\(i).1.bias"] = [upscaler.bias.name]
         return mapping
@@ -865,7 +865,7 @@ func WurstchenStageB(
   out = convOut(out).reshaped([batchSize, height, width, 4, 2, 2]).transposed(3, 4).transposed(4, 5)
     .transposed(2, 3).reshaped([batchSize, height * 2, width * 2, 4])  // This is the same as .permuted(0, 1, 4, 2, 5, 3).
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["embedding.1.weight"] = [conv2d.weight.name]
     mapping["embedding.1.bias"] = [conv2d.bias.name]
     for mapper in mappers {
@@ -902,7 +902,7 @@ private func StageAResBlock(prefix: String, channels: Int) -> (Model, ModelWeigh
   out = out + convOut(convIn(xTemp).GELU())
     .* gammas.reshaped([1, 1, 1, 1], offset: [0, 0, 0, 5], strides: [6, 6, 6, 1])
   let mapper: ModelWeightMapper = { _ in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).depthwise.1.weight"] = [depthwise.weight.name]
     mapping["\(prefix).depthwise.1.bias"] = [depthwise.bias.name]
     mapping["\(prefix).channelwise.0.weight"] = [convIn.weight.name]
@@ -931,7 +931,7 @@ func WurstchenStageAEncoder(batchSize: Int) -> (Model, ModelWeightMapper) {
       out = conv2d(out)
       let layer = j
       mappers.append { _ in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         mapping["down_blocks.\(layer).weight"] = [conv2d.weight.name]
         mapping["down_blocks.\(layer).bias"] = [conv2d.bias.name]
         return mapping
@@ -948,7 +948,7 @@ func WurstchenStageAEncoder(batchSize: Int) -> (Model, ModelWeightMapper) {
     groups: 1, filters: 4, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
   out = conv2d(out)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["in_block.1.weight"] = [convIn.weight.name]
     mapping["in_block.1.bias"] = [convIn.bias.name]
     for mapper in mappers {
@@ -999,7 +999,7 @@ func WurstchenStageADecoder(batchSize: Int, height: Int, width: Int) -> (Model, 
       out = conv2d(out)
       let layer = j
       mappers.append { _ in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         mapping["up_blocks.\(layer).weight"] = [conv2d.weight.name]
         mapping["up_blocks.\(layer).bias"] = [conv2d.bias.name]
         return mapping
@@ -1013,7 +1013,7 @@ func WurstchenStageADecoder(batchSize: Int, height: Int, width: Int) -> (Model, 
     convOut(out).reshaped([batchSize, height, width, 3, 2, 2]).transposed(3, 4).transposed(4, 5)
     .transposed(2, 3).reshaped([batchSize, height * 2, width * 2, 3]) * 2 - 1  // This is the same as .permuted(0, 1, 4, 2, 5, 3).
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["up_blocks.0.0.weight"] = [convIn.weight.name]
     mapping["up_blocks.0.0.bias"] = [convIn.bias.name]
     for mapper in mappers {

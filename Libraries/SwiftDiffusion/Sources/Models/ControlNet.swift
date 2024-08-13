@@ -128,7 +128,7 @@ func InputHintBlocks(modelChannel: Int, hint: Model.IO) -> (
     try conv2d7.bias.copy(from: input_hint_block_14_bias, zip: archive, of: FloatType.self)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .diffusers:
       mapping["controlnet_cond_embedding.conv_in.weight"] = [conv2d0.weight.name]

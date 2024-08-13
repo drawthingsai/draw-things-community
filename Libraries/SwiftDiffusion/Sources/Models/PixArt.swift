@@ -38,7 +38,7 @@ private func MLP(hiddenSize: Int, intermediateSize: Int, name: String) -> (Model
   let x = Input()
   let fc1 = Dense(count: intermediateSize, name: "\(name)_fc1")
   var out = GELU(approximate: .tanh)(fc1(x))
-  let fc2 = Dense(count: hiddenSize, flags: .disableMFAGEMM, name: "\(name)_fc2")
+  let fc2 = Dense(count: hiddenSize, flags: [.Float32], name: "\(name)_fc2")
   out = fc2(out)
   return (fc1, fc2, Model([x], [out]))
 }
@@ -261,7 +261,7 @@ private func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   out = out + gateMlp
     .* mlp(norm2(out) .* scaleMlp + shiftMlp)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["\(prefix.0).attn.qkv.weight"] = [
@@ -351,7 +351,7 @@ public func PixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
     batchSize, h * 2, w * 2, 8,
   ])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .diffusers:
       mapping["pos_embed.proj.weight"] = [xEmbedder.weight.name]
@@ -379,7 +379,7 @@ private func LoRAMLP(
   let fc1 = LoRADense(count: intermediateSize, configuration: configuration, name: "\(name)_fc1")
   var out = GELU(approximate: .tanh)(fc1(x))
   let fc2 = LoRADense(
-    count: hiddenSize, configuration: configuration, flags: .disableMFAGEMM, name: "\(name)_fc2")
+    count: hiddenSize, configuration: configuration, flags: [.Float32], name: "\(name)_fc2")
   out = fc2(out)
   return (fc1, fc2, Model([x], [out]))
 }
@@ -611,7 +611,7 @@ private func LoRAPixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   out = out + gateMlp
     .* mlp(norm2(out) .* scaleMlp + shiftMlp)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["\(prefix.0).attn.qkv.weight"] = [
@@ -702,7 +702,7 @@ public func LoRAPixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
     batchSize, h * 2, w * 2, 8,
   ])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .diffusers:
       mapping["pos_embed.proj.weight"] = [xEmbedder.weight.name]
@@ -784,7 +784,7 @@ private func PixArtMSBlockFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
     case .diffusers:
       formatPrefix = prefix.1
     }
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(formatPrefix).scale_shift_table"] = [
       shiftMsaShift.weight.name, scaleMsaShift.weight.name, gateMsaShift.weight.name,
       shiftMlpShift.weight.name, scaleMlpShift.weight.name, gateMlpShift.weight.name,
@@ -844,15 +844,15 @@ public func PixArtFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   outs.append(shiftShift + t0)
   outs.append(scaleShift + 1 + t0)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .diffusers:
       mapping["adaln_single.emb.timestep_embedder.linear_1.weight"] = [tMlp0.weight.name]
       mapping["adaln_single.emb.timestep_embedder.linear_1.bias"] = [tMlp0.bias.name]
       mapping["adaln_single.emb.timestep_embedder.linear_2.weight"] = [tMlp2.weight.name]
       mapping["adaln_single.emb.timestep_embedder.linear_2.bias"] = [tMlp2.bias.name]
-      mapping["adaln_single.linear.weight"] = tBlock.map { $0.weight.name }
-      mapping["adaln_single.linear.bias"] = tBlock.map { $0.bias.name }
+      mapping["adaln_single.linear.weight"] = ModelWeightElement(tBlock.map { $0.weight.name })
+      mapping["adaln_single.linear.bias"] = ModelWeightElement(tBlock.map { $0.bias.name })
       mapping["caption_projection.linear_1.weight"] = [fc1.weight.name]
       mapping["caption_projection.linear_1.bias"] = [fc1.bias.name]
       mapping["caption_projection.linear_2.weight"] = [fc2.weight.name]
@@ -863,8 +863,8 @@ public func PixArtFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
       mapping["t_embedder.mlp.0.bias"] = [tMlp0.bias.name]
       mapping["t_embedder.mlp.2.weight"] = [tMlp2.weight.name]
       mapping["t_embedder.mlp.2.bias"] = [tMlp2.bias.name]
-      mapping["t_block.1.weight"] = tBlock.map { $0.weight.name }
-      mapping["t_block.1.bias"] = tBlock.map { $0.bias.name }
+      mapping["t_block.1.weight"] = ModelWeightElement(tBlock.map { $0.weight.name })
+      mapping["t_block.1.bias"] = ModelWeightElement(tBlock.map { $0.bias.name })
       mapping["y_embedder.y_proj.fc1.weight"] = [fc1.weight.name]
       mapping["y_embedder.y_proj.fc1.bias"] = [fc1.bias.name]
       mapping["y_embedder.y_proj.fc2.weight"] = [fc2.weight.name]

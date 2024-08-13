@@ -145,7 +145,7 @@ private func JointTransformerBlock(
   let xNorm2 = LayerNorm(epsilon: 1e-5, axis: [2], elementwiseAffine: false)
   xOut = x + xChunks[5] .* xFF(xNorm2(xOut) .* xChunks[4] + xChunks[3])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).attn.add_q_proj.weight"] = [contextToQueries.weight.name]
     mapping["\(prefix).attn.add_k_proj.weight"] = [contextToKeys.weight.name]
     mapping["\(prefix).attn.add_v_proj.weight"] = [contextToValues.weight.name]
@@ -262,7 +262,7 @@ private func SingleTransformerBlock(
   let xNorm2 = LayerNorm(epsilon: 1e-5, axis: [2], elementwiseAffine: false)
   out = xIn + xChunks[5] .* xFF(xNorm2(out) .* xChunks[4] + xChunks[3])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).attn.to_q.weight"] = [xToQueries.weight.name]
     mapping["\(prefix).attn.to_k.weight"] = [xToKeys.weight.name]
     mapping["\(prefix).attn.to_v.weight"] = [xToValues.weight.name]
@@ -343,7 +343,7 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
     batchSize, h * 2, w * 2, 4,
   ])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -373,15 +373,17 @@ private func JointTransformerBlockFixed(
   }
   xChunks[4] = 1 + xChunks[4]
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping[
       "\(prefix).norm1_context.linear.weight"
-    ] = (0..<(contextBlockPreOnly ? 2 : 6)).map {
-      contextAdaLNs[$0].weight.name
-    }
-    mapping["\(prefix).norm1.linear.weight"] = (0..<6).map {
-      xAdaLNs[$0].weight.name
-    }
+    ] = ModelWeightElement(
+      (0..<(contextBlockPreOnly ? 2 : 6)).map {
+        contextAdaLNs[$0].weight.name
+      })
+    mapping["\(prefix).norm1.linear.weight"] = ModelWeightElement(
+      (0..<6).map {
+        xAdaLNs[$0].weight.name
+      })
     return mapping
   }
   return (mapper, Model([c], contextChunks + xChunks))
@@ -396,10 +398,11 @@ private func SingleTransformerBlockFixed(
   xChunks[1] = 1 + xChunks[1]
   xChunks[4] = 1 + xChunks[4]
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
-    mapping["\(prefix).norm1.linear.weight"] = (0..<6).map {
-      xAdaLNs[$0].weight.name
-    }
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).norm1.linear.weight"] = ModelWeightElement(
+      (0..<6).map {
+        xAdaLNs[$0].weight.name
+      })
     return mapping
   }
   return (mapper, Model([c], xChunks))
@@ -440,7 +443,7 @@ func AuraFlowFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let shift = Dense(count: channels, name: "ada_ln_1")
   outs.append(contentsOf: [shift(c), 1 + scale(c)])
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }

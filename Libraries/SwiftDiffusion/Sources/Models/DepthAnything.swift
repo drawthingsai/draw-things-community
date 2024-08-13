@@ -10,7 +10,7 @@ func DinoSelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttention: Bool)
     let keys = tokeys(x).reshaped([b, t, h, k]).identity()
     let values = tovalues(x).reshaped([b, t, h, k])
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), upcast: true, multiHeadOutputProjectionFused: true)
+      scale: 1.0 / Float(k).squareRoot(), flags: [.Float32], multiHeadOutputProjectionFused: true)
     let out = scaledDotProductAttention(queries, keys, values).reshaped([
       b * t, h * k,
     ])

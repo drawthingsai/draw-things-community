@@ -65,7 +65,7 @@ private func SelfAttention(
   let unifyheads = Dense(count: k * h, noBias: true, name: "o")
   out = unifyheads(out)
   let mapper: ModelWeightMapper = { _ in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).self_attention.query_key_value.weight"] = [
       toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
     ]
@@ -111,7 +111,7 @@ private func GLMTransformerBlock(
   let (w1, w2, w3, ffn) = FeedForward(hiddenSize: h * k, intermediateSize: MLP, name: "ffn")
   out = residual + ffn(out)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).input_layernorm.weight"] = [norm1.weight.name]
     mapping.merge(attentionMapper(format)) { v, _ in v }
     mapping["\(prefix).post_attention_layernorm.weight"] = [norm2.weight.name]
@@ -130,7 +130,7 @@ private func TextEmbedding<T: TensorNumeric>(
     T.self, vocabularySize: vocabularySize, embeddingSize: embeddingSize, name: "word_embeddings")
   let embedding = tokenEmbed(tokens)
   let mapper: ModelWeightMapper = { _ in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["embedding.word_embeddings.weight"] = [tokenEmbed.weight.name]
     return mapping
   }
@@ -169,7 +169,7 @@ func GLMTransformer<T: TensorNumeric>(
     finalNorm = nil
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(embeddingMapper(format)) { v, _ in v }
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }

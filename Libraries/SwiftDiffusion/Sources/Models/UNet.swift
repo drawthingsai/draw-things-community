@@ -126,10 +126,10 @@ func SelfAttention(
       let scaledDotProductAttention: ScaledDotProductAttention
       if usesFlashAttention == .scale1 {
         scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1, upcast: upcastAttention, multiHeadOutputProjectionFused: true)
+          scale: 1, flags: upcastAttention ? [.Float32] : [], multiHeadOutputProjectionFused: true)
       } else {
         scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), upcast: upcastAttention,
+          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [],
           multiHeadOutputProjectionFused: true)
       }
       let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
@@ -146,10 +146,10 @@ func SelfAttention(
     let scaledDotProductAttention: ScaledDotProductAttention
     if usesFlashAttention == .scale1 {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1, upcast: upcastAttention, multiHeadOutputProjectionFused: true)
+        scale: 1, flags: upcastAttention ? [.Float32] : [], multiHeadOutputProjectionFused: true)
     } else {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(), upcast: upcastAttention,
+        scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [],
         multiHeadOutputProjectionFused: true)
     }
     let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
@@ -1937,7 +1937,7 @@ private func InputBlocksFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -1989,7 +1989,7 @@ private func OutputBlocksFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -2022,7 +2022,7 @@ public func UNetIPFixed(
     upcastAttention: false, usesFlashAttention: usesFlashAttention, c: c)
   outs.append(contentsOf: outputBlocks)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(inputMapper(format)) { v, _ in v }
     mapping.merge(middleMapper(format)) { v, _ in v }
     mapping.merge(outputMapper(format)) { v, _ in v }

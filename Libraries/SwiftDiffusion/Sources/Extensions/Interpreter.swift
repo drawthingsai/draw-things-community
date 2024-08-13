@@ -8,7 +8,44 @@ public enum ModelWeightFormat {
   case diffusers
   case generativeModels
 }
-public typealias ModelWeightMapper = (ModelWeightFormat) -> [String: [String]]
+
+public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLiteral {
+  public enum Format {
+    case O
+    case I
+  }
+  public let format: Format
+  public let offsets: [Int]?
+  private let underlyingArray: [String]
+
+  public typealias Element = String
+  public typealias Index = Int
+  public typealias Indices = Range<Index>
+  public typealias SubSequence = Array<Element>.SubSequence
+  public var endIndex: Index { underlyingArray.endIndex }
+  public var indices: Indices { underlyingArray.indices }
+  public var startIndex: Index { underlyingArray.startIndex }
+  public func formIndex(after i: inout Index) { underlyingArray.formIndex(after: &i) }
+  public func formIndex(before i: inout Index) { underlyingArray.formIndex(before: &i) }
+  public subscript(position: Index) -> Element { underlyingArray[position] }
+  public subscript(x: Indices) -> SubSequence { underlyingArray[x] }
+
+  public init(_ array: [Element], format: Format = .O, offsets: [Int]? = nil) {
+    self.underlyingArray = array
+    self.format = format
+    self.offsets = offsets
+  }
+
+  public init(arrayLiteral elements: Element...) {
+    self.underlyingArray = elements
+    self.format = .O
+    self.offsets = nil
+  }
+}
+
+public typealias ModelWeightMapping = [String: ModelWeightElement]
+
+public typealias ModelWeightMapper = (ModelWeightFormat) -> ModelWeightMapping
 
 public enum UnpickleError: Error {
   case dataNotFound

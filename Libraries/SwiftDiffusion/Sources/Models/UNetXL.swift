@@ -453,7 +453,7 @@ private func BasicTransformerBlock(
     try layerNorm3.bias.copy(from: norm3_bias, zip: archive, of: FloatType.self)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     let formatPrefix: String
     switch format {
     case .generativeModels:
@@ -749,7 +749,7 @@ func BasicTimeTransformerBlock(
     try layerNorm3.bias.copy(from: norm3_bias, zip: archive, of: FloatType.self)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     let formatPrefix: String
     switch format {
     case .generativeModels:
@@ -925,7 +925,7 @@ private func SpatialTransformer<FloatType: TensorNumeric & BinaryFloatingPoint>(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -1225,7 +1225,7 @@ func BlockLayer<FloatType: TensorNumeric & BinaryFloatingPoint>(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     if let transformerMapper = transformerMapper {
       mapping.merge(transformerMapper(format)) { v, _ in v }
     }
@@ -1842,7 +1842,7 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     if let transformerMapper = transformerMapper {
       mapping.merge(transformerMapper(format)) { v, _ in v }
     }
@@ -2199,7 +2199,7 @@ func InputBlocks<FloatType: TensorNumeric & BinaryFloatingPoint>(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["model.diffusion_model.input_blocks.0.0.weight"] = [conv2d.weight.name]
@@ -2336,7 +2336,7 @@ func OutputBlocks<FloatType: TensorNumeric & BinaryFloatingPoint>(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -2467,7 +2467,7 @@ public func UNetXL<FloatType: TensorNumeric & BinaryFloatingPoint>(
     try outConv2d.bias.copy(from: out_2_bias, zip: archive, of: FloatType.self)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(inputMapper(format)) { v, _ in v }
     mapping.merge(middleMapper(format)) { v, _ in v }
     mapping.merge(outputMapper(format)) { v, _ in v }
@@ -2575,7 +2575,7 @@ func BasicTransformerBlockFixed(
       try unifyheads2.bias.copy(from: attn2_to_out_bias, zip: archive, of: FloatType.self)
     }
     let mapper: ModelWeightMapper = { format in
-      var mapping = [String: [String]]()
+      var mapping = ModelWeightMapping()
       switch format {
       case .generativeModels:
         mapping["\(prefix.0).attn2.to_v.weight"] = [tovalues2.weight.name]
@@ -2613,7 +2613,7 @@ func BasicTransformerBlockFixed(
       try tovalues2.weight.copy(from: attn2_to_v_weight, zip: archive, of: FloatType.self)
     }
     let mapper: ModelWeightMapper = { format in
-      var mapping = [String: [String]]()
+      var mapping = ModelWeightMapping()
       switch format {
       case .generativeModels:
         mapping["\(prefix.0).attn2.to_k.weight"] = [tokeys2.weight.name]
@@ -2667,7 +2667,7 @@ func TimePosEmbedTransformerBlockFixed(
     try timePosFc2.bias.copy(from: time_pos_embed_2_bias, zip: archive, of: FloatType.self)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["\(prefix.0).time_pos_embed.0.weight"] = [timePosFc0.weight.name]
@@ -2719,7 +2719,7 @@ func BasicTimeTransformerBlockFixed(
       try unifyheads2.bias.copy(from: attn2_to_out_bias, zip: archive, of: FloatType.self)
     }
     let mapper: ModelWeightMapper = { format in
-      var mapping = [String: [String]]()
+      var mapping = ModelWeightMapping()
       switch format {
       case .generativeModels:
         mapping["\(prefix.0).attn2.to_v.weight"] = [tovalues2.weight.name]
@@ -2755,7 +2755,7 @@ func BasicTimeTransformerBlockFixed(
       try tovalues2.weight.copy(from: attn2_to_v_weight, zip: archive, of: FloatType.self)
     }
     let mapper: ModelWeightMapper = { format in
-      var mapping = [String: [String]]()
+      var mapping = ModelWeightMapping()
       switch format {
       case .generativeModels:
         mapping["\(prefix.0).attn2.to_k.weight"] = [tokeys2.weight.name]
@@ -2816,7 +2816,7 @@ func SpatialTransformerFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -2916,7 +2916,7 @@ func InputBlocksFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -2981,7 +2981,7 @@ func OutputBlocksFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -3048,7 +3048,7 @@ public func UNetXLFixed(
     try outputReader(stateDict, archive)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(inputMapper(format)) { v, _ in v }
     if let middleMapper = middleMapper {
       mapping.merge(middleMapper(format)) { v, _ in v }

@@ -80,7 +80,7 @@ func ResnetBlock(prefix: (String, String), outChannels: Int, shortcut: Bool)
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["first_stage_model.\(prefix.0).norm1.weight"] = [norm1.weight.name]
@@ -206,7 +206,7 @@ func AttnBlock(
     try projOut.parameters(for: .bias).copy(from: proj_out_bias, zip: archive, of: FloatType.self)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["first_stage_model.\(prefix.0).norm.weight"] = [norm.weight.name]
@@ -300,7 +300,7 @@ public func Encoder(
       }
       readers.append(reader)
       let mapper: ModelWeightMapper = { format in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         switch format {
         case .generativeModels:
           mapping["first_stage_model.encoder.down.\(downLayer).downsample.conv.weight"] = [
@@ -397,7 +397,7 @@ public func Encoder(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -510,7 +510,7 @@ public func Decoder(
       }
       readers.append(reader)
       let mapper: ModelWeightMapper = { format in
-        var mapping = [String: [String]]()
+        var mapping = ModelWeightMapping()
         switch format {
         case .generativeModels:
           mapping["first_stage_model.decoder.up.\(upLayer).upsample.conv.weight"] = [
@@ -585,7 +585,7 @@ public func Decoder(
     try convOut.parameters(for: .bias).copy(from: conv_out_bias, zip: archive, of: FloatType.self)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }

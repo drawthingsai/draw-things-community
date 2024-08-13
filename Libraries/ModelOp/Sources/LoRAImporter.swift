@@ -48,8 +48,8 @@ public enum LoRAImporter {
     return isDiagonal
   }
 
-  static private func findKeysAndValues(_ dictionary: [String: [String]], keys: [String]) -> (
-    String, [String]
+  static private func findKeysAndValues(_ dictionary: ModelWeightMapping, keys: [String]) -> (
+    String, ModelWeightElement
   )? {
     for key in keys {
       guard let value = dictionary[key] else { continue }
@@ -181,10 +181,12 @@ public enum LoRAImporter {
           || $0.contains("transformer_blocks_22_ff_context_")
       }
       let isPixArtSigmaXL = stateDict.keys.contains {
-        $0.contains("blocks_27_") || $0.contains("transformer_blocks_27_")
+        ($0.contains("blocks_27_") || $0.contains("transformer_blocks_27_"))
+          && !($0.contains("single_transformer_blocks_27_"))
       }
       let isFlux1 = stateDict.keys.contains {
         $0.contains("double_blocks.18.img_attn.qkv.")
+          || $0.contains("single_transformer_blocks_37_")
       }
       if let tokey = stateDict.first(where: {
         $0.key.hasSuffix(
@@ -242,8 +244,8 @@ public enum LoRAImporter {
       }
     }()
     let graph = DynamicGraph()
-    var textModelMapping1: [String: [String]]
-    var textModelMapping2: [String: [String]]
+    var textModelMapping1: ModelWeightMapping
+    var textModelMapping2: ModelWeightMapping
     switch modelVersion {
     case .v1:
       textModelMapping1 = StableDiffusionMapping.CLIPTextModel
@@ -346,7 +348,7 @@ public enum LoRAImporter {
           value
       }
     }
-    var UNetMappingFixed = [String: [String]]()
+    var UNetMappingFixed = ModelWeightMapping()
     if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
       || modelVersion == .sd3 || modelVersion == .pixart || modelVersion == .flux1
     {
@@ -555,19 +557,38 @@ public enum LoRAImporter {
         case .kandinsky21, .v1, .v2:
           fatalError()
         }
-        // These values doesn't matter, it won't affect the model shape, just the input vector.
-        cArr =
-          vectors
-          + fixedEncoder.encode(
-            isCfgEnabled: isCfgEnabled, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
-            isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
-            textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0],
-            batchSize: isCfgEnabled ? 2 : 1, startHeight: 64,
-            startWidth: 64,
-            tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
-            tiledDiffusion: TiledConfiguration(
-              isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0)
-          ).0.map({ $0.toCPU() })
+        switch modelVersion {
+        case .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .wurstchenStageC, .wurstchenStageB, .pixart,
+          .sd3, .auraflow:
+          // These values doesn't matter, it won't affect the model shape, just the input vector.
+          cArr =
+            vectors
+            + fixedEncoder.encode(
+              isCfgEnabled: isCfgEnabled, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
+              isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+              textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0],
+              batchSize: isCfgEnabled ? 2 : 1, startHeight: 64,
+              startWidth: 64,
+              tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
+              tiledDiffusion: TiledConfiguration(
+                isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0)
+            ).0.map({ $0.toCPU() })
+        case .flux1:
+          cArr =
+            [
+              graph.variable(
+                Tensor<FloatType>(
+                  from: Flux1RotaryPositionEmbedding(
+                    height: 32, width: 32, tokenLength: 256, channels: 128)))
+            ]
+            + Flux1FixedOutputShapes(
+              batchSize: (1, 1), channels: 3072, layers: (19, 38), guidanceEmbed: true
+            ).map {
+              graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+            }
+        case .kandinsky21, .v1, .v2:
+          fatalError()
+        }
         let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
         unet.compile(inputs: inputs)
         if modelVersion == .ssd1b || modelVersion == .sd3 || modelVersion == .pixart
@@ -770,54 +791,24 @@ public enum LoRAImporter {
               try archive.with(descriptor) {
                 var tensor = Tensor<FloatType>(from: $0)
                 let loraDim = Float(tensor.shape[1])
-                if unetParams.count > 1 {
-                  // Check if this tensor is diagonal. If it is, marking it and prepare to slice the corresponding lora_down.weight.
-                  // First, check if the shape is right.
-                  let isDiagonal = Self.isDiagonal(tensor, count: unetParams.count)
-                  let shape = tensor.shape
-                  if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(Double(scalar / loraDim) * scaleFactor.squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  } else if scaleFactor != 1 {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(scaleFactor.squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  }
-                  let count = shape[0] / unetParams.count
-                  if isDiagonal {
-                    diagonalMatrixKeys.insert(newKey)
-                    let jCount = shape[1] / unetParams.count
-                    for (i, name) in unetParams.enumerated() {
-                      store.write(
-                        "__\(modelPrefix)__[\(name)]__up__",
-                        tensor: tensor[
-                          (i * count)..<((i + 1) * count), (i * jCount)..<((i + 1) * jCount)
-                        ].copied())
-                    }
-                  } else {
-                    for (i, name) in unetParams.enumerated() {
-                      store.write(
-                        "__\(modelPrefix)__[\(name)]__up__",
-                        tensor: tensor[(i * count)..<((i + 1) * count), 0..<tensor.shape[1]]
-                          .copied())
-                    }
-                  }
-                } else if let name = unetParams.first {
-                  if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(Double(scalar / loraDim) * scaleFactor.squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  } else if scaleFactor != 1 {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(scaleFactor.squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  }
-                  store.write("__\(modelPrefix)__[\(name)]__up__", tensor: tensor)
+                let isDiagonal =
+                  unetParams.count > 1 ? Self.isDiagonal(tensor, count: unetParams.count) : false
+                if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(Double(scalar / loraDim) * scaleFactor.squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                } else if scaleFactor != 1 {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(scaleFactor.squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                }
+                if isDiagonal {
+                  diagonalMatrixKeys.insert(newKey)
+                }
+                unetParams.write(to: store, tensor: tensor, format: .O, isDiagonal: isDiagonal) {
+                  "__\(modelPrefix)__[\($0)]__up__"
                 }
               }
             } else if key.hasSuffix("hada_w1_a") || key.hasSuffix("hada_w2_a") {
@@ -832,42 +823,21 @@ public enum LoRAImporter {
               try archive.with(descriptor) {
                 var tensor = Tensor<FloatType>(from: $0)
                 let loraDim = Float(tensor.shape[1])
-                if unetParams.count > 1 {
-                  let shape = tensor.shape
-                  if let scalar = scalar {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(
-                        Double(scalar / loraDim).squareRoot()
-                          * scaleFactor.squareRoot().squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  } else if scaleFactor != 1 {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(scaleFactor.squareRoot().squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  }
-                  let count = shape[0] / unetParams.count
-                  for (i, name) in unetParams.enumerated() {
-                    store.write(
-                      "__\(modelPrefix)__[\(name)]__\(wSuffix)__",
-                      tensor: tensor[(i * count)..<((i + 1) * count), 0..<tensor.shape[1]].copied())
-                  }
-                } else if let name = unetParams.first {
-                  if let scalar = scalar {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(
-                        Double(scalar / loraDim).squareRoot()
-                          * scaleFactor.squareRoot().squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  } else if scaleFactor != 1 {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(scaleFactor.squareRoot().squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  }
-                  store.write("__\(modelPrefix)__[\(name)]__\(wSuffix)__", tensor: tensor)
+                if let scalar = scalar {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(
+                      Double(scalar / loraDim).squareRoot()
+                        * scaleFactor.squareRoot().squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                } else if scaleFactor != 1 {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(scaleFactor.squareRoot().squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                }
+                unetParams.write(to: store, tensor: tensor, format: .O, isDiagonal: false) {
+                  "__\(modelPrefix)__[\($0)]__\(wSuffix)__"
                 }
               }
               isLoHa = true
@@ -895,15 +865,8 @@ public enum LoRAImporter {
                       * graph.variable(Tensor<Float>(from: tensor)))
                       .rawValue)
                 }
-                if unetParams.count > 1 {
-                  let count = tensor.shape[0] / unetParams.count
-                  for (i, name) in unetParams.enumerated() {
-                    store.write(
-                      "__\(modelPrefixFixed)__[\(name)]__up__",
-                      tensor: tensor[(i * count)..<((i + 1) * count), 0..<tensor.shape[1]].copied())
-                  }
-                } else if let name = unetParams.first {
-                  store.write("__\(modelPrefixFixed)__[\(name)]__up__", tensor: tensor)
+                unetParams.write(to: store, tensor: tensor, format: .O, isDiagonal: false) {
+                  "__\(modelPrefixFixed)__[\($0)]__up__"
                 }
               }
             } else if key.hasSuffix("hada_w1_a") || key.hasSuffix("hada_w2_a") {
@@ -918,48 +881,27 @@ public enum LoRAImporter {
               try archive.with(descriptor) {
                 var tensor = Tensor<FloatType>(from: $0)
                 let loraDim = Float(tensor.shape[1])
-                if unetParams.count > 1 {
-                  let shape = tensor.shape
-                  if let scalar = scalar {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(
-                        Double(scalar / loraDim).squareRoot()
-                          * scaleFactor.squareRoot().squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  } else if scaleFactor != 1 {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(scaleFactor.squareRoot().squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  }
-                  let count = shape[0] / unetParams.count
-                  for (i, name) in unetParams.enumerated() {
-                    store.write(
-                      "__\(modelPrefixFixed)__[\(name)]__\(wSuffix)__",
-                      tensor: tensor[(i * count)..<((i + 1) * count), 0..<tensor.shape[1]].copied())
-                  }
-                } else if let name = unetParams.first {
-                  if let scalar = scalar {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(
-                        Double(scalar / loraDim).squareRoot()
-                          * scaleFactor.squareRoot().squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  } else if scaleFactor != 1 {
-                    tensor = Tensor<FloatType>(
-                      from: (Float(scaleFactor.squareRoot().squareRoot())
-                        * graph.variable(Tensor<Float>(from: tensor)))
-                        .rawValue)
-                  }
-                  store.write("__\(modelPrefixFixed)__[\(name)]__\(wSuffix)__", tensor: tensor)
+                if let scalar = scalar {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(
+                      Double(scalar / loraDim).squareRoot()
+                        * scaleFactor.squareRoot().squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                } else if scaleFactor != 1 {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(scaleFactor.squareRoot().squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                }
+                unetParams.write(to: store, tensor: tensor, format: .O, isDiagonal: false) {
+                  "__\(modelPrefixFixed)__[\($0)]__\(wSuffix)__"
                 }
               }
               isLoHa = true
             }
           } else {
-            let textModelMapping: [String: [String]]
+            let textModelMapping: ModelWeightMapping
             if te2 != swapTE2 {
               textModelMapping = textModelMapping2
             } else {
@@ -1062,32 +1004,11 @@ public enum LoRAImporter {
                       * graph.variable(Tensor<Float>(from: tensor)))
                       .rawValue)
                 }
-                if unetParams.count > 1 && diagonalMatrixKeys.contains(newKey) {
-                  let shape = tensor.shape
-                  let count = shape[0] / unetParams.count
-                  if shape.count == 2 {
-                    for (i, name) in unetParams.enumerated() {
-                      store.write(
-                        "__\(modelPrefix)__[\(name)]__down__",
-                        tensor: tensor[(i * count)..<((i + 1) * count), 0..<shape[1]].copied())
-                    }
-                  } else if shape.count == 4 {
-                    for (i, name) in unetParams.enumerated() {
-                      store.write(
-                        "__\(modelPrefix)__[\(name)]__down__",
-                        tensor: tensor[
-                          (i * count)..<((i + 1) * count), 0..<shape[1], 0..<shape[2], 0..<shape[3]
-                        ].copied())
-                    }
-                  } else {
-                    for name in unetParams {
-                      store.write("__\(modelPrefix)__[\(name)]__down__", tensor: tensor)
-                    }
-                  }
-                } else {
-                  for name in unetParams {
-                    store.write("__\(modelPrefix)__[\(name)]__down__", tensor: tensor)
-                  }
+                unetParams.write(
+                  to: store, tensor: tensor, format: .I,
+                  isDiagonal: diagonalMatrixKeys.contains(newKey)
+                ) {
+                  return "__\(modelPrefix)__[\($0)]__down__"
                 }
               }
             } else if key.hasSuffix("mid.weight") {
@@ -1134,7 +1055,9 @@ public enum LoRAImporter {
                 }
               }
             }
-          } else if let (_, unetParams) = Self.findKeysAndValues(UNetMappingFixed, keys: newKeys) {
+          } else if let (newKey, unetParams) = Self.findKeysAndValues(
+            UNetMappingFixed, keys: newKeys)
+          {
             if key.hasSuffix("down.weight") {
               try archive.with(descriptor) {
                 var tensor = Tensor<FloatType>(from: $0)
@@ -1144,8 +1067,11 @@ public enum LoRAImporter {
                       * graph.variable(Tensor<Float>(from: tensor)))
                       .rawValue)
                 }
-                for name in unetParams {
-                  store.write("__\(modelPrefixFixed)__[\(name)]__down__", tensor: tensor)
+                unetParams.write(
+                  to: store, tensor: tensor, format: .I,
+                  isDiagonal: diagonalMatrixKeys.contains(newKey)
+                ) {
+                  return "__\(modelPrefix)__[\($0)]__down__"
                 }
               }
             } else if key.hasSuffix("mid.weight") {
@@ -1179,7 +1105,7 @@ public enum LoRAImporter {
               }
             }
           } else {
-            let textModelMapping: [String: [String]]
+            let textModelMapping: ModelWeightMapping
             if te2 != swapTE2 {
               textModelMapping = textModelMapping2
             } else {

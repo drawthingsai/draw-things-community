@@ -104,7 +104,7 @@ private func BasicTransformerBlockFixed(
   let (tokeys, tovalues, attn2) = CrossAttentionFixed(
     k: k, h: h, b: b, hw: hw, t: t, usesFlashAttention: usesFlashAttention)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping["\(prefix).attn2.to_k.weight"] = [tokeys.weight.name]
     mapping["\(prefix).attn2.to_v.weight"] = [tovalues.weight.name]
     return mapping
@@ -129,7 +129,7 @@ private func SpatialTransformerFixed(
     mappers.append(mapper)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -209,7 +209,7 @@ private func InputBlocksFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -262,7 +262,7 @@ private func OutputBlocksFixed(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -299,7 +299,7 @@ func UNetXLIPFixed(
     usesFlashAttention: usesFlashAttention, c: c)
   out.append(contentsOf: outputBlocks)
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(inputMapper(format)) { v, _ in v }
     mapping.merge(middleMapper(format)) { v, _ in v }
     mapping.merge(outputMapper(format)) { v, _ in v }

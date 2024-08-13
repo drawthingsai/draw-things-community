@@ -111,7 +111,7 @@ func InputBlocks<FloatType: TensorNumeric & BinaryFloatingPoint>(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["model.control_model.input_blocks.0.0.weight"] = [conv2d.weight.name]
@@ -242,7 +242,7 @@ public func ControlNetXL(
     try middleBlockOut.bias.copy(from: middle_block_out_0_bias, zip: archive, of: FloatType.self)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(inputMapper(format)) { v, _ in v }
     mapping.merge(middleMapper(format)) { v, _ in v }
     switch format {
@@ -320,7 +320,7 @@ public func ControlNetXLFixed(
     try middleReader?(stateDict, archive)
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(inputMapper(format)) { v, _ in v }
     if let middleMapper = middleMapper {
       mapping.merge(middleMapper(format)) { v, _ in v }
@@ -418,7 +418,7 @@ func LoRAInputBlocks(
     }
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
       mapping["model.control_model.input_blocks.0.0.down"] = [
@@ -492,7 +492,7 @@ public func LoRAControlNetXL(
     hint: Hint(stride: [1, 1]), format: .OIHW)
   outputs.append(middleBlockOut(out))
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(inputMapper(format)) { v, _ in v }
     mapping.merge(middleMapper(format)) { v, _ in v }
     switch format {
@@ -583,7 +583,7 @@ public func LoRAControlNetXLFixed(
     middleMapper = nil
   }
   let mapper: ModelWeightMapper = { format in
-    var mapping = [String: [String]]()
+    var mapping = ModelWeightMapping()
     mapping.merge(inputMapper(format)) { v, _ in v }
     if let middleMapper = middleMapper {
       mapping.merge(middleMapper(format)) { v, _ in v }

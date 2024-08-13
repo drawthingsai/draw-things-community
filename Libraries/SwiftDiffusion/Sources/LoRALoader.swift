@@ -62,6 +62,24 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
       }, filesRequireMerge
     )
   }
+  public static func keys(_ graph: DynamicGraph, of files: [String], prefix: String = "")
+    -> [String]
+  {
+    return Array(
+      files.reduce(Set<String>()) { oldKeys, file in
+        var keys = Set<String>()
+        graph.openStore(file, flags: .readOnly) {
+          for key in $0.keys {
+            guard prefix.isEmpty || key.hasPrefix(prefix) else { continue }
+            // this is to check if it is a key for LoRA network directly.
+            let components = key.components(separatedBy: ["[", "]"])
+            guard components.count >= 2, components[1].hasPrefix("t-") else { continue }
+            keys.insert(String(components[1].dropFirst(2)))
+          }
+        }
+        return oldKeys.union(keys)
+      })
+  }
   var stores: [(file: String, DynamicGraph.Store)]
   var weights: [Float]
   var isLoHas: [Bool]
