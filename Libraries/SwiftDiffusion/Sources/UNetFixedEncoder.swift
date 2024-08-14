@@ -343,6 +343,7 @@ extension UNetFixedEncoder {
       let posEmbed = graph.variable(
         Tensor<FloatType>(from: sinCos2DPositionEmbedding(height: h, width: w, embeddingSize: 1152))
           .reshaped(.HWC(1, h * w, 1152)).toGPU(0))
+      precondition(timesteps.count > 0)
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
       for (i, timestep) in timesteps.enumerated() {
@@ -399,6 +400,7 @@ extension UNetFixedEncoder {
       }
       // Load the unetFixed.
       let cBatchSize = c.shape[0]
+      precondition(timesteps.count > 0)
       let (_, unetFixed) = AuraFlowFixed(
         batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (4, 32),
         of: FloatType.self)
@@ -474,6 +476,7 @@ extension UNetFixedEncoder {
         }
       }
       // Load the unetFixed.
+      precondition(timesteps.count > 0)
       let cBatchSize = c.shape[0]
       let (_, unetFixed) = MMDiTFixed(
         batchSize: cBatchSize * timesteps.count, channels: 1536, layers: 24)
@@ -573,6 +576,7 @@ extension UNetFixedEncoder {
       } else {
         c[0..<cBatchSize, 0..<t5Length, 0..<4096] = c0
       }
+      precondition(timesteps.count > 0)
       // Load the unetFixed.
       // TODO: This is not ideal because we opened it twice, but hopefully it is OK for now until we are at 300ms domain.
       let isGuidanceEmbedSupported =
