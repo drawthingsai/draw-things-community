@@ -1071,7 +1071,7 @@ public enum LoRAImporter {
                   to: store, tensor: tensor, format: .I,
                   isDiagonal: diagonalMatrixKeys.contains(newKey)
                 ) {
-                  return "__\(modelPrefix)__[\($0)]__down__"
+                  return "__\(modelPrefixFixed)__[\($0)]__down__"
                 }
               }
             } else if key.hasSuffix("mid.weight") {

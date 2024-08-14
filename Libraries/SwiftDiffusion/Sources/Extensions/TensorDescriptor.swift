@@ -59,7 +59,7 @@ extension ModelWeightElement {
                 renamer(name),
                 tensor: tensor[
                   (offsets[i])..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0]),
-                  0..<tensor.shape[1]
+                  0..<shape[1]
                 ]
                 .copied())
             }
@@ -67,7 +67,7 @@ extension ModelWeightElement {
             for (i, name) in self.enumerated() {
               store.write(
                 renamer(name),
-                tensor: tensor[(i * count)..<((i + 1) * count), 0..<tensor.shape[1]]
+                tensor: tensor[(i * count)..<((i + 1) * count), 0..<shape[1]]
                   .copied())
             }
           }
