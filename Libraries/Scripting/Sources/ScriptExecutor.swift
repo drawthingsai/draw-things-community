@@ -157,7 +157,8 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func evaluateScriptGroupBegan()
   func evaluateScriptBegan(sessionId: UInt64)
   func evaluateScriptBeforeREPL()
-  func evaluateScriptEnded(session: ScriptExecutionSession)
+  func evaluateScriptEnded(
+    session: ScriptExecutionSession, models: [String], loras: [String], controls: [String])
   func evaluateScriptGroupEnded()
   func clearCanvas()
   func CLIP(_ texts: [String]) throws -> [Float]
@@ -215,6 +216,10 @@ public struct ScriptExecutionSession {
   private let replLock: DispatchQueue
   private let replSignal: DispatchSemaphore
   private var replCommand: [REPLCommand]
+  private var models: Set<String> = []
+  private var loras: Set<String> = []
+  private var controls: Set<String> = []
+
   private let subject: PassthroughSubject<ScriptExecutionState, Never> =
     PassthroughSubject<ScriptExecutionState, Never>()
   public var executionStatePublisher: AnyPublisher<ScriptExecutionState, Never> {
@@ -304,6 +309,19 @@ extension ScriptExecutor: JSInterop {
       fixDimensionIfNecessary(&jsConfiguration.decodingTileHeight)
       fixDimensionIfNecessary(&jsConfiguration.decodingTileOverlap)
       let configuration = jsConfiguration.createGenerationConfiguration()
+      if let model = configuration.model {
+        models.insert(model)
+      }
+      configuration.loras.forEach {
+        if let file = $0.file {
+          loras.insert(file)
+        }
+      }
+      configuration.controls.forEach {
+        if let file = $0.file {
+          controls.insert(file)
+        }
+      }
       let prompt = (args["prompt"] as? NSString) as? String
       let negativePrompt = (args["negativePrompt"] as? NSString) as? String
       let notAborted = delegate.generateImage(
@@ -565,7 +583,9 @@ extension ScriptExecutor: JSInterop {
         self.delegate?.logJavascript(
           title: (script.file as NSString).lastPathComponent, script: script.script, index: i + 1)
         self.context?.evaluateScript(script.script)
-        self.delegate?.evaluateScriptEnded(session: session)
+        self.delegate?.evaluateScriptEnded(
+          session: session, models: self.models.sorted(), loras: self.loras.sorted(),
+          controls: self.controls.sorted())
         if self.hasCancelled || self.hasException {
           break
         }
