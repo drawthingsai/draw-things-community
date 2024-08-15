@@ -1,8 +1,10 @@
 import CoreGraphics
 import DataModels
 import Diffusion
+import ImageIO
 import ModelZoo
 import NNC
+import ScriptDataModels
 import Scripting
 import UniformTypeIdentifiers
 

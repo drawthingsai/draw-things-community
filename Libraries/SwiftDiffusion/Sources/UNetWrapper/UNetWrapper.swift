@@ -1,22 +1,43 @@
+import Dflat
 import Diffusion
 import NNC
 
+#if !os(Linux)
+  import DiffusionCoreML
+#endif
+
 public struct UNetWrapper<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetProtocol {
   private var unetFromNNC = UNetFromNNC<FloatType>()
-  private var unetFromCoreML = UNetFromCoreML<FloatType>()
+  #if !os(Linux)
+    private var unetFromCoreML = UNetFromCoreML<FloatType>()
+  #endif
   private var preferCoreML = false
   public init() {}
   public var version: ModelVersion {
-    if preferCoreML {
-      return unetFromCoreML.version
-    } else {
+    #if !os(Linux)
+      if preferCoreML {
+        return unetFromCoreML.version
+      } else {
+        return unetFromNNC.version
+      }
+    #else
       return unetFromNNC.version
-    }
+    #endif
+
   }
-  public var isLoaded: Bool { unetFromCoreML.isLoaded || unetFromNNC.isLoaded }
+  public var isLoaded: Bool {
+    #if !os(Linux)
+      return unetFromCoreML.isLoaded || unetFromNNC.isLoaded
+    #else
+      return unetFromNNC.isLoaded
+    #endif
+  }
   public func unloadResources() {
     unetFromNNC.unloadResources()
-    unetFromCoreML.unloadResources()
+    #if !os(Linux)
+      unetFromCoreML.unloadResources()
+    #endif
+
   }
 }
 
@@ -38,20 +59,24 @@ extension UNetWrapper {
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
     tiledDiffusion: TiledConfiguration
   ) -> Bool {
-    if unetFromCoreML.compileModel(
-      filePath: filePath, externalOnDemand: externalOnDemand, version: version,
-      upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
-      injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-      injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-      is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT, timestep, c,
-      tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-      extraProjection: extraProjection, injectedControls: injectedControls,
-      injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-      tiledDiffusion: tiledDiffusion)
-    {
-      preferCoreML = true
-      return true
-    }
+    #if !os(Linux)
+
+      if unetFromCoreML.compileModel(
+        filePath: filePath, externalOnDemand: externalOnDemand, version: version,
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+        is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT,
+        timestep, c,
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        extraProjection: extraProjection, injectedControls: injectedControls,
+        injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
+        tiledDiffusion: tiledDiffusion)
+      {
+        preferCoreML = true
+        return true
+      }
+    #endif
     let _ = unetFromNNC.compileModel(
       filePath: filePath, externalOnDemand: externalOnDemand, version: version,
       upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
@@ -80,13 +105,17 @@ extension UNetWrapper {
     tiledDiffusion: TiledConfiguration,
     controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
-    if preferCoreML {
-      return unetFromCoreML(
-        timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
-        injectedControlsAndAdapters: injectedControlsAndAdapters,
-        injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
-        controlNets: &controlNets)
-    }
+    #if !os(Linux)
+
+      if preferCoreML {
+        return unetFromCoreML(
+          timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
+          injectedControlsAndAdapters: injectedControlsAndAdapters,
+          injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+          controlNets: &controlNets)
+      }
+    #endif
+
     return unetFromNNC(
       timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
       injectedControlsAndAdapters: injectedControlsAndAdapters,
@@ -95,10 +124,13 @@ extension UNetWrapper {
   }
 
   public func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType> {
-    if preferCoreML {
-      return unetFromCoreML.decode(x)
-    } else {
-      return unetFromNNC.decode(x)
-    }
+    #if !os(Linux)
+      if preferCoreML {
+        return unetFromCoreML.decode(x)
+      }
+    #endif
+
+    return unetFromNNC.decode(x)
+
   }
 }

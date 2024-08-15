@@ -2,13 +2,17 @@ import C_ccv
 import DataModels
 import Dflat
 import Diffusion
-import DiffusionCoreML
 import DiffusionPreprocessors
-import FaceRestorer
+import DiffusionUNetWrapper
 import Foundation
 import ModelZoo
 import NNC
 import Upscaler
+
+#if !os(Linux)
+  import DiffusionCoreML
+  import FaceRestorer
+#endif
 
 public func xorshift(_ a: UInt32) -> UInt32 {
   var x = a == 0 ? 0xbad_5eed : a
@@ -1242,73 +1246,83 @@ extension ImageGenerator {
   private func faceRestoreImage(
     _ image: DynamicGraph.Tensor<FloatType>, configuration: GenerationConfiguration
   ) -> DynamicGraph.Tensor<FloatType> {
-    guard let faceRestoration = configuration.faceRestoration,
-      EverythingZoo.isModelDownloaded(faceRestoration)
-        && EverythingZoo.isModelDownloaded(EverythingZoo.parsenetForModel(faceRestoration))
-    else { return image }
-    let parsenet = EverythingZoo.parsenetForModel(faceRestoration)
-    let filePath = EverythingZoo.filePathForModelDownloaded(faceRestoration)
-    let parseFilePath = EverythingZoo.filePathForModelDownloaded(parsenet)
-    let faceRestorer = FaceRestorer<FloatType>(filePath: filePath, parseFilePath: parseFilePath)
-    let shape = image.shape
-    if shape[3] > 3 {
-      let graph = image.graph
-      var original = graph.variable(like: image)
-      let (result, _, _, _) = faceRestorer.enhance(
-        image[0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]].copied())
-      // Copy back so we retain the other channels.
-      original[0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]] = result
-      original[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<(shape[3] - 3)] =
-        image[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<(shape[3] - 3)]
-      return original
-    } else {
-      let (result, _, _, _) = faceRestorer.enhance(image)
-      return result
-    }
+    #if !os(Linux)
+
+      guard let faceRestoration = configuration.faceRestoration,
+        EverythingZoo.isModelDownloaded(faceRestoration)
+          && EverythingZoo.isModelDownloaded(EverythingZoo.parsenetForModel(faceRestoration))
+      else { return image }
+      let parsenet = EverythingZoo.parsenetForModel(faceRestoration)
+      let filePath = EverythingZoo.filePathForModelDownloaded(faceRestoration)
+      let parseFilePath = EverythingZoo.filePathForModelDownloaded(parsenet)
+      let faceRestorer = FaceRestorer<FloatType>(filePath: filePath, parseFilePath: parseFilePath)
+      let shape = image.shape
+      if shape[3] > 3 {
+        let graph = image.graph
+        var original = graph.variable(like: image)
+        let (result, _, _, _) = faceRestorer.enhance(
+          image[0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]].copied())
+        // Copy back so we retain the other channels.
+        original[0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]] = result
+        original[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<(shape[3] - 3)] =
+          image[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<(shape[3] - 3)]
+        return original
+      } else {
+        let (result, _, _, _) = faceRestorer.enhance(image)
+        return result
+      }
+    #else
+      return image
+    #endif
   }
 
   private func faceRestoreImages(
     _ images: [Tensor<FloatType>], configuration: GenerationConfiguration
   ) -> [Tensor<FloatType>] {
-    guard let faceRestoration = configuration.faceRestoration,
-      EverythingZoo.isModelDownloaded(faceRestoration)
-        && EverythingZoo.isModelDownloaded(EverythingZoo.parsenetForModel(faceRestoration))
-    else { return images }
-    let parsenet = EverythingZoo.parsenetForModel(faceRestoration)
-    let filePath = EverythingZoo.filePathForModelDownloaded(faceRestoration)
-    let parseFilePath = EverythingZoo.filePathForModelDownloaded(parsenet)
-    let graph = DynamicGraph()
-    return graph.withNoGrad {
-      let faceRestorer = FaceRestorer<FloatType>(filePath: filePath, parseFilePath: parseFilePath)
-      var restoreFormer: Model? = nil
-      var embedding: DynamicGraph.Tensor<FloatType>? = nil
-      var parsenet: Model? = nil
-      var results = [Tensor<FloatType>]()
-      for image in images {
-        let shape = image.shape
-        if shape[3] > 3 {
-          var original = graph.variable(image).toGPU(0)
-          let (result, net1, embedding1, net2) = faceRestorer.enhance(
-            original[0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]].copied(),
-            restoreFormer: restoreFormer, embedding: embedding, parsenet: parsenet)
-          restoreFormer = net1
-          embedding = embedding1
-          parsenet = net2
-          // Copy back so we retain the other channels.
-          original[0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]] = result
-          results.append(original.toCPU().rawValue.copied())
-        } else {
-          let (result, net1, embedding1, net2) = faceRestorer.enhance(
-            graph.variable(image).toGPU(),
-            restoreFormer: restoreFormer, embedding: embedding, parsenet: parsenet)
-          restoreFormer = net1
-          embedding = embedding1
-          parsenet = net2
-          results.append(result.toCPU().rawValue.copied())
+    #if !os(Linux)
+      guard let faceRestoration = configuration.faceRestoration,
+        EverythingZoo.isModelDownloaded(faceRestoration)
+          && EverythingZoo.isModelDownloaded(EverythingZoo.parsenetForModel(faceRestoration))
+      else { return images }
+      let parsenet = EverythingZoo.parsenetForModel(faceRestoration)
+      let filePath = EverythingZoo.filePathForModelDownloaded(faceRestoration)
+      let parseFilePath = EverythingZoo.filePathForModelDownloaded(parsenet)
+      let graph = DynamicGraph()
+      return graph.withNoGrad {
+        let faceRestorer = FaceRestorer<FloatType>(filePath: filePath, parseFilePath: parseFilePath)
+        var restoreFormer: Model? = nil
+        var embedding: DynamicGraph.Tensor<FloatType>? = nil
+        var parsenet: Model? = nil
+        var results = [Tensor<FloatType>]()
+        for image in images {
+          let shape = image.shape
+          if shape[3] > 3 {
+            var original = graph.variable(image).toGPU(0)
+            let (result, net1, embedding1, net2) = faceRestorer.enhance(
+              original[0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]]
+                .copied(),
+              restoreFormer: restoreFormer, embedding: embedding, parsenet: parsenet)
+            restoreFormer = net1
+            embedding = embedding1
+            parsenet = net2
+            // Copy back so we retain the other channels.
+            original[0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]] = result
+            results.append(original.toCPU().rawValue.copied())
+          } else {
+            let (result, net1, embedding1, net2) = faceRestorer.enhance(
+              graph.variable(image).toGPU(),
+              restoreFormer: restoreFormer, embedding: embedding, parsenet: parsenet)
+            restoreFormer = net1
+            embedding = embedding1
+            parsenet = net2
+            results.append(result.toCPU().rawValue.copied())
+          }
         }
+        return results
       }
-      return results
-    }
+    #else
+      return images
+    #endif
   }
 
   @inline(__always)

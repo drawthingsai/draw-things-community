@@ -68,74 +68,74 @@ public final class JSControl: Codable {
 // TODO: when we decode from JSON, should we catch any unknown keys, e.g. from a misspelling like:
 // configuration.startWidth = 2;
 public final class JSGenerationConfiguration: Codable {
-  let id: Int64
-  var width: UInt32
-  var height: UInt32
-  let seed: Int64
-  let steps: UInt32
-  let guidanceScale: Float32
-  let strength: Float32
-  let model: String?
-  let sampler: Int8
-  let hiresFix: Bool
-  var hiresFixWidth: UInt32
-  var hiresFixHeight: UInt32
-  let hiresFixStrength: Float32
-  let tiledDecoding: Bool
-  var decodingTileWidth: UInt32
-  var decodingTileHeight: UInt32
-  var decodingTileOverlap: UInt32
-  let tiledDiffusion: Bool
-  var diffusionTileWidth: UInt32
-  var diffusionTileHeight: UInt32
-  var diffusionTileOverlap: UInt32
-  let upscaler: String?
-  var upscalerScaleFactor: UInt8
-  let imageGuidanceScale: Float32
-  let seedMode: Int8
-  let clipSkip: UInt32
-  let controls: [JSControl]
-  let loras: [JSLoRA]
-  let maskBlur: Float32
-  let maskBlurOutset: Int32
-  let sharpness: Float32
-  let faceRestoration: String?
-  let clipWeight: Float32
-  let negativePromptForImagePrior: Bool
-  let imagePriorSteps: UInt32
-  let refinerModel: String?
-  let originalImageHeight: UInt32
-  let originalImageWidth: UInt32
-  let cropTop: Int32
-  let cropLeft: Int32
-  let targetImageHeight: UInt32
-  let targetImageWidth: UInt32
-  let aestheticScore: Float32
-  let negativeAestheticScore: Float32
-  let zeroNegativePrompt: Bool
-  let refinerStart: Float32
-  let negativeOriginalImageHeight: UInt32
-  let negativeOriginalImageWidth: UInt32
-  let batchCount: UInt32
-  let batchSize: UInt32
-  let numFrames: UInt32
-  let fps: UInt32
-  let motionScale: UInt32
-  let guidingFrameNoise: Float32
-  let startFrameGuidance: Float32
-  let shift: Float32
-  let stage2Steps: UInt32
-  let stage2Guidance: Float32
-  let stage2Shift: Float32
-  let stochasticSamplingGamma: Float32
-  let preserveOriginalAfterInpaint: Bool
-  let t5TextEncoder: Bool
-  let separateClipL: Bool
-  let clipLText: String?
-  let separateOpenClipG: Bool
-  let openClipGText: String?
-  let speedUpWithGuidanceEmbed: Bool
-  let guidanceEmbed: Float32
+  public let id: Int64
+  public var width: UInt32
+  public var height: UInt32
+  public let seed: Int64
+  public let steps: UInt32
+  public let guidanceScale: Float32
+  public let strength: Float32
+  public let model: String?
+  public let sampler: Int8
+  public let hiresFix: Bool
+  public var hiresFixWidth: UInt32
+  public var hiresFixHeight: UInt32
+  public let hiresFixStrength: Float32
+  public let tiledDecoding: Bool
+  public var decodingTileWidth: UInt32
+  public var decodingTileHeight: UInt32
+  public var decodingTileOverlap: UInt32
+  public let tiledDiffusion: Bool
+  public var diffusionTileWidth: UInt32
+  public var diffusionTileHeight: UInt32
+  public var diffusionTileOverlap: UInt32
+  public let upscaler: String?
+  public var upscalerScaleFactor: UInt8
+  public let imageGuidanceScale: Float32
+  public let seedMode: Int8
+  public let clipSkip: UInt32
+  public let controls: [JSControl]
+  public let loras: [JSLoRA]
+  public let maskBlur: Float32
+  public let maskBlurOutset: Int32
+  public let sharpness: Float32
+  public let faceRestoration: String?
+  public let clipWeight: Float32
+  public let negativePromptForImagePrior: Bool
+  public let imagePriorSteps: UInt32
+  public let refinerModel: String?
+  public let originalImageHeight: UInt32
+  public let originalImageWidth: UInt32
+  public let cropTop: Int32
+  public let cropLeft: Int32
+  public let targetImageHeight: UInt32
+  public let targetImageWidth: UInt32
+  public let aestheticScore: Float32
+  public let negativeAestheticScore: Float32
+  public let zeroNegativePrompt: Bool
+  public let refinerStart: Float32
+  public let negativeOriginalImageHeight: UInt32
+  public let negativeOriginalImageWidth: UInt32
+  public let batchCount: UInt32
+  public let batchSize: UInt32
+  public let numFrames: UInt32
+  public let fps: UInt32
+  public let motionScale: UInt32
+  public let guidingFrameNoise: Float32
+  public let startFrameGuidance: Float32
+  public let shift: Float32
+  public let stage2Steps: UInt32
+  public let stage2Guidance: Float32
+  public let stage2Shift: Float32
+  public let stochasticSamplingGamma: Float32
+  public let preserveOriginalAfterInpaint: Bool
+  public let t5TextEncoder: Bool
+  public let separateClipL: Bool
+  public let clipLText: String?
+  public let separateOpenClipG: Bool
+  public let openClipGText: String?
+  public let speedUpWithGuidanceEmbed: Bool
+  public let guidanceEmbed: Float32
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -255,88 +255,59 @@ public final class JSGenerationConfiguration: Codable {
   }
 }
 
-final class JSPoint: Codable {
-  let x: CGFloat
-  let y: CGFloat
+public final class JSPoint: Codable {
+  public let x: CGFloat
+  public let y: CGFloat
 
-  init(point: CGPoint) {
+  public init(point: CGPoint) {
     self.x = point.x
     self.y = point.y
   }
 
-  func createCGPoint() -> CGPoint {
+  public func createCGPoint() -> CGPoint {
     return CGPoint(x: x, y: y)
   }
 }
 
-final class JSLandmark: Codable {
-  let rect: JSRect
-  let normalizedPoints: [JSPoint]
+public final class JSLandmark: Codable {
+  public let rect: JSRect
+  public let normalizedPoints: [JSPoint]
 
-  init(rect: JSRect, points: [JSPoint]) {
+  public init(rect: JSRect, points: [JSPoint]) {
     self.rect = rect
     self.normalizedPoints = points
   }
 }
 
-final class JSRect: Codable {
-  let origin: JSPoint
-  let size: JSSize
+public final class JSRect: Codable {
+  public let origin: JSPoint
+  public let size: JSSize
 
-  init(rect: CGRect) {
+  public init(rect: CGRect) {
     self.origin = JSPoint(point: rect.origin)
     self.size = JSSize(size: rect.size)
   }
-  init(lowerLeftRect: CGRect) {
+  public init(lowerLeftRect: CGRect) {
     self.origin = JSPoint(
       point: CGPoint(
         x: lowerLeftRect.origin.x, y: lowerLeftRect.origin.y - lowerLeftRect.size.height))
     self.size = JSSize(size: lowerLeftRect.size)
   }
-  func createCGRect() -> CGRect {
+  public func createCGRect() -> CGRect {
     return CGRect(origin: origin.createCGPoint(), size: size.createCGSize())
   }
 }
 
-final class JSSize: Codable {
-  let width: CGFloat
-  let height: CGFloat
+public final class JSSize: Codable {
+  public let width: CGFloat
+  public let height: CGFloat
 
-  init(size: CGSize) {
+  public init(size: CGSize) {
     self.width = size.width
     self.height = size.height
   }
 
-  func createCGSize() -> CGSize {
+  public func createCGSize() -> CGSize {
     return CGSize(width: width, height: height)
-  }
-}
-
-final class MaskManager {
-  // Start actual handles at 1, because 0 indicates that a null mask handle was passed from JS
-  let nullMask = JSMask(handle: 0)
-  private var nextMaskHandle: Int = 1
-  private var maskHandleToMask: [Int: Tensor<UInt8>] = [:]
-
-  func mask(forJSMask jsMask: JSMask) -> Tensor<UInt8>? {
-    return maskHandleToMask[jsMask.handle]
-  }
-
-  func setMask(_ mask: Tensor<UInt8>, forJSMask jsMask: JSMask) {
-    maskHandleToMask[jsMask.handle] = mask
-  }
-
-  func createNewMask() -> JSMask {
-    let mask = JSMask(handle: nextMaskHandle)
-    nextMaskHandle += 1
-    return mask
-  }
-}
-
-final class JSMask: Codable {
-  let handle: Int
-
-  fileprivate init(handle: Int) {
-    self.handle = handle
   }
 }

@@ -35,7 +35,7 @@ public struct EverythingZoo: DownloadZoo {
     "schp_lip_fp16.ckpt": "69d6656afee5e5b9c84506614c10d5f7da534a984e81cfc6d6e813978feade07",
   ]
 
-  static let builtinSpecifications: [Specification] = [
+  public static let builtinSpecifications: [Specification] = [
     Specification(
       name: "RestoreFormer", file: "restoreformer_v1.0_f16.ckpt", parsenet: "parsenet_v1.0_f16.ckpt"
     ),

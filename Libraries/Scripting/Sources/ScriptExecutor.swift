@@ -5,8 +5,38 @@ import Foundation
 import ImageSegmentation
 import JavaScriptCore
 import NNC
+import ScriptDataModels
 import Utils
 import Vision
+
+final class MaskManager {
+  // Start actual handles at 1, because 0 indicates that a null mask handle was passed from JS
+  let nullMask = JSMask(handle: 0)
+  private var nextMaskHandle: Int = 1
+  private var maskHandleToMask: [Int: Tensor<UInt8>] = [:]
+
+  func mask(forJSMask jsMask: JSMask) -> Tensor<UInt8>? {
+    return maskHandleToMask[jsMask.handle]
+  }
+
+  func setMask(_ mask: Tensor<UInt8>, forJSMask jsMask: JSMask) {
+    maskHandleToMask[jsMask.handle] = mask
+  }
+
+  func createNewMask() -> JSMask {
+    let mask = JSMask(handle: nextMaskHandle)
+    nextMaskHandle += 1
+    return mask
+  }
+}
+
+final class JSMask: Codable {
+  let handle: Int
+
+  fileprivate init(handle: Int) {
+    self.handle = handle
+  }
+}
 
 public func jsonObject(from object: Encodable) throws -> Any {
   let data = try JSONEncoder().encode(object)

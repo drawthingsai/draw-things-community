@@ -2,6 +2,7 @@ import Algorithms
 import Atomics
 import CoreML
 import Diffusion
+import DiffusionCoreMLModelManager
 import Foundation
 import NNC
 import NNCCoreMLConversion
@@ -16,42 +17,6 @@ public struct UNetFromCoreML<FloatType: TensorNumeric & BinaryFloatingPoint>: UN
   public func unloadResources() {
     unetChunk1?.unloadResources()
     unetChunk2?.unloadResources()
-  }
-}
-
-public struct CoreMLModelManager {
-  public static let maxNumberOfConvertedModels = ManagedAtomic(3)
-  public static let reduceMemoryFor1x = ManagedAtomic(false)
-  public static let reduceMemoryFor2x = ManagedAtomic(false)
-  public static let isCoreMLSupported = ManagedAtomic(false)
-  public static let isLoRASupported = ManagedAtomic(false)
-  public static let computeUnits = ManagedAtomic(0)  // 0 - cpuAndNeuralEngine, 1 - cpuAndGPU, 2 - all
-  static var lock = os_unfair_lock()
-  static var modelConverted = Set<String>()
-  static func isModelConverted(_ model: String) -> Bool {
-    os_unfair_lock_lock(&lock)
-    let isModelConverted = modelConverted.contains(model)
-    os_unfair_lock_unlock(&lock)
-    return isModelConverted
-  }
-  static func setModelConverted(_ model: String) {
-    os_unfair_lock_lock(&lock)
-    modelConverted.insert(model)
-    os_unfair_lock_unlock(&lock)
-  }
-  static func removeModelsConverted(_ models: [String]) {
-    os_unfair_lock_lock(&lock)
-    modelConverted.subtract(models)
-    os_unfair_lock_unlock(&lock)
-  }
-  public static func removeAllConvertedModels() {
-    let fileManager = FileManager.default
-    let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
-    let coreMLUrl = urls.first!.appendingPathComponent("coreml")
-    try? fileManager.removeItem(at: coreMLUrl)
-    os_unfair_lock_lock(&lock)
-    modelConverted.removeAll()
-    os_unfair_lock_unlock(&lock)
   }
 }
 

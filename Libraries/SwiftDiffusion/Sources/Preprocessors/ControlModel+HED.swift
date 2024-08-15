@@ -1,7 +1,5 @@
-import CoreML
 import Diffusion
 import NNC
-import NNCCoreMLConversion
 
 extension ControlModel {
 

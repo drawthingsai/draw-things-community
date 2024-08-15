@@ -2,7 +2,8 @@ import Atomics
 import DataModels
 import Dflat
 import Diffusion
-import DiffusionCoreML
+import DiffusionCoreMLModelManager
+import DiffusionUNetWrapper
 import Foundation
 import ModelZoo
 import NNC
@@ -36,8 +37,12 @@ public final class ModelPreloader {
       }
     }
   }
-  @Published
-  public private(set) var preloadState: PreloadState = .preloadDone
+  #if canImport(Combine)
+    @Published
+    public private(set) var preloadState: PreloadState = .preloadDone
+  #else
+    public private(set) var preloadState: PreloadState = .preloadDone
+  #endif
   private let queue: DispatchQueue
   private var workspace: Workspace
   private var isGenerating: Bool = false
