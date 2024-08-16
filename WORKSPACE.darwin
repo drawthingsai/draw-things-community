@@ -93,6 +93,14 @@ load("@swift-sentencepiece//:deps.bzl", "swift_sentencepiece_deps")
 swift_sentencepiece_deps()
 
 new_git_repository(
+    name = "SwiftNumerics",
+    build_file = "swift-numerics.BUILD",
+    remote = "https://github.com/apple/swift-numerics.git",
+    commit = "4a2cbc186b1f8cbbc1ace12cef43d65784b2559e",
+    shallow_since = "1605460976 -0500",
+)
+
+new_git_repository(
     name = "SwiftAlgorithms",
     build_file = "swift-algorithms.BUILD",
     remote = "https://github.com/apple/swift-algorithms.git",
@@ -130,6 +138,62 @@ new_git_repository(
     commit = "dae787c1998f57b62ee9b1393bcb40684d206e44",
     remote = "https://github.com/apple/swift-system.git",
     shallow_since = "1710897818 -0700",
+)
+
+new_git_repository(
+    name = "SwiftProtobuf",
+    build_file = "swift-protobuf.BUILD",
+    commit = "d57a5aecf24a25b32ec4a74be2f5d0a995a47c4b",
+    remote = "https://github.com/apple/swift-protobuf.git",
+)
+
+new_git_repository(
+    name = "SwiftLog",
+    build_file = "swift-log.BUILD",
+    commit = "6fe203dc33195667ce1759bf0182975e4653ba1c",
+    remote = "https://github.com/apple/swift-log.git",
+)
+
+new_git_repository(
+    name = "SwiftNIO",
+    build_file = "swift-nio.BUILD",
+    commit = "a16e2f54a25b2af217044e5168997009a505930f",
+    remote = "https://github.com/apple/swift-nio.git",
+)
+
+new_git_repository(
+    name = "SwiftNIOExtras",
+    build_file = "swift-nio-extras.BUILD",
+    commit = "b4dbfacff47fb8d0f9e0a422d8d37935a9f10570",
+    remote = "https://github.com/apple/swift-nio-extras.git",
+)
+
+new_git_repository(
+    name = "SwiftNIOHTTP2",
+    build_file = "swift-nio-http2.BUILD",
+    commit = "6d021a48483dbb273a9be43f65234bdc9185b364",
+    remote = "https://github.com/apple/swift-nio-http2.git",
+)
+
+new_git_repository(
+    name = "SwiftNIOSSL",
+    build_file = "swift-nio-ssl.BUILD",
+    commit = "9d0d5d8798a576fbf674a823734e65e15ca5f2ec",
+    remote = "https://github.com/apple/swift-nio-ssl.git",
+)
+
+new_git_repository(
+    name = "SwiftNIOTransportService",
+    build_file = "swift-nio-transport-services.BUILD",
+    commit = "c0d9a144cfaec8d3d596aadde3039286a266c15c",
+    remote = "https://github.com/apple/swift-nio-transport-services.git",
+)
+
+new_git_repository(
+    name = "grpc-swift",
+    build_file = "grpc-swift.BUILD",
+    commit = "4ab02e1ae5b4dfdd723773e955b62f35ccbaa7c7",
+    remote = "https://github.com/grpc/grpc-swift.git",
 )
 
 new_git_repository(
