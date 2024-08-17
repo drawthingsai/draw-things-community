@@ -120,6 +120,7 @@ table GenerationConfiguration {
   open_clip_g_text: string;
   speed_up_with_guidance_embed: bool = true;
   guidance_embed: float = 3.5;
+  resolution_dependent_shift: bool = true;
 }
 
 root_type GenerationConfiguration;

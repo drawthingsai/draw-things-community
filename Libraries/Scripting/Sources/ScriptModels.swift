@@ -136,6 +136,7 @@ public final class JSGenerationConfiguration: Codable {
   public let openClipGText: String?
   public let speedUpWithGuidanceEmbed: Bool
   public let guidanceEmbed: Float32
+  public let resolutionDependentShift: Bool
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -206,6 +207,7 @@ public final class JSGenerationConfiguration: Codable {
     openClipGText = configuration.openClipGText
     speedUpWithGuidanceEmbed = configuration.speedUpWithGuidanceEmbed
     guidanceEmbed = configuration.guidanceEmbed
+    resolutionDependentShift = configuration.resolutionDependentShift
   }
 
   public func createGenerationConfiguration() -> GenerationConfiguration {
@@ -250,7 +252,8 @@ public final class JSGenerationConfiguration: Codable {
       separateOpenClipG: separateOpenClipG,
       openClipGText: openClipGText,
       speedUpWithGuidanceEmbed: speedUpWithGuidanceEmbed,
-      guidanceEmbed: guidanceEmbed
+      guidanceEmbed: guidanceEmbed,
+      resolutionDependentShift: resolutionDependentShift
     )
   }
 }

@@ -620,7 +620,16 @@ extension ImageGenerator {
     case .rf(let rf):
       denoiserParameterization = .rf(rf)
     }
-    let sampling = Sampling(steps: Int(configuration.steps), shift: Double(configuration.shift))
+    let shift: Double
+    let modelVersion = ModelZoo.versionForModel(file)
+    if modelVersion == .flux1 || modelVersion == .sd3, configuration.resolutionDependentShift {
+      shift = exp(
+        ((Double(configuration.startHeight) * Double(configuration.startWidth)) * 16 - 256)
+          * (1.15 - 0.5) / (4096 - 256) + 0.5)
+    } else {
+      shift = Double(configuration.shift)
+    }
+    let sampling = Sampling(steps: Int(configuration.steps), shift: shift)
     guard let image = image else {
       return generateTextOnly(
         nil, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
