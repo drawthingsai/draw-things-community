@@ -92,8 +92,8 @@ public struct DeviceCapability {
     #else
       if #available(iOS 16, macOS 13, macCatalyst 16, *) {
         if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple7) {
-          // MFA GEMM is slower on apple9.
-          return device.supportsFamily(.apple9) ? false : true
+          // MFA GEMM should be faster on all devices.
+          return true
         }
         return false
       }
