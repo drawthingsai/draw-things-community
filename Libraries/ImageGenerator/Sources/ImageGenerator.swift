@@ -621,11 +621,12 @@ extension ImageGenerator {
       denoiserParameterization = .rf(rf)
     }
     let shift: Double
-    let modelVersion = ModelZoo.versionForModel(file)
-    if modelVersion == .flux1 || modelVersion == .sd3, configuration.resolutionDependentShift {
-      shift = exp(
-        ((Double(configuration.startHeight) * Double(configuration.startWidth)) * 16 - 256)
-          * (1.15 - 0.5) / (4096 - 256) + 0.5)
+    if ModelZoo.isResolutionDependentShiftAvailable(
+      ModelZoo.versionForModel(file), isConsistencyModel: ModelZoo.isConsistencyModelForModel(file)),
+      configuration.resolutionDependentShift
+    {
+      shift = ModelZoo.shiftFor(
+        (width: configuration.startWidth, height: configuration.startHeight))
     } else {
       shift = Double(configuration.shift)
     }

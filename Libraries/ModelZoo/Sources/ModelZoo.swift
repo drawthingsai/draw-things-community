@@ -1273,4 +1273,20 @@ extension ModelZoo {
     }
     return files
   }
+
+  public static func isResolutionDependentShiftAvailable(
+    _ version: ModelVersion, isConsistencyModel: Bool
+  ) -> Bool {
+    guard version == .flux1 || version == .sd3 else { return false }
+    if isConsistencyModel {
+      return false
+    }
+    return true
+  }
+
+  public static func shiftFor(_ resolution: (width: UInt16, height: UInt16)) -> Double {
+    return exp(
+      ((Double(resolution.height) * Double(resolution.width)) * 16 - 256)
+        * (1.15 - 0.5) / (4096 - 256) + 0.5)
+  }
 }
