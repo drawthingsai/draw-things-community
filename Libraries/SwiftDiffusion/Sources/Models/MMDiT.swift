@@ -106,7 +106,7 @@ private func JointTransformerBlock(
   }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
-    contextOut = out.reshaped([b, t, h * k], strides: [(t + hw) * h * k, h * k, 1]).contiguous()
+    contextOut = out.reshaped([b, t, h * k], strides: [(t + hw) * h * k, h * k, 1])
     let unifyheads = Dense(count: k * h, name: "c_o")
     contextOut = unifyheads(contextOut)
     contextUnifyheads = unifyheads
@@ -114,7 +114,6 @@ private func JointTransformerBlock(
     contextUnifyheads = nil
   }
   xOut = out.reshaped([b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1])
-    .contiguous()
   let xUnifyheads = Dense(count: k * h, name: "x_o")
   xOut = xUnifyheads(xOut)
   if !contextBlockPreOnly {
@@ -378,7 +377,7 @@ private func LoRAJointTransformerBlock(
   }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
-    contextOut = out.reshaped([b, t, h * k], strides: [(t + hw) * h * k, h * k, 1]).contiguous()
+    contextOut = out.reshaped([b, t, h * k], strides: [(t + hw) * h * k, h * k, 1])
     let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "c_o")
     contextOut = unifyheads(contextOut)
     contextUnifyheads = unifyheads
@@ -386,7 +385,6 @@ private func LoRAJointTransformerBlock(
     contextUnifyheads = nil
   }
   xOut = out.reshaped([b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1])
-    .contiguous()
   let xUnifyheads = LoRADense(count: k * h, configuration: configuration, name: "x_o")
   xOut = xUnifyheads(xOut)
   if !contextBlockPreOnly {
