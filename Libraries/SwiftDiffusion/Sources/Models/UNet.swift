@@ -51,7 +51,7 @@ func TimeEmbed(modelChannels: Int) -> (Model, Model, Model) {
   return (fc0, fc2, Model([x], [out]))
 }
 
-func ResBlock(b: Int, outChannels: Int, skipConnection: Bool) -> (
+func ResBlock(b: Int, outChannels: Int, skipConnection: Bool, flags: Functional.GEMMFlag) -> (
   Model, Model, Model, Model, Model, Model?, Model
 ) {
   let x = Input()
@@ -63,7 +63,7 @@ func ResBlock(b: Int, outChannels: Int, skipConnection: Bool) -> (
     groups: 1, filters: outChannels, filterSize: [3, 3],
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
   out = inLayerConv2d(out)
-  let embLayer = Dense(count: outChannels)
+  let embLayer = Dense(count: outChannels, flags: flags)
   var embOut = emb.swish()
   embOut = embLayer(embOut).reshaped([b, 1, 1, outChannels])
   out = out + embOut
@@ -100,7 +100,7 @@ public enum FlashAttentionLevel {
 
 func SelfAttention(
   k: Int, h: Int, b: Int, hw: Int, upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel,
-  injectedAttentionKV: Bool
+  flags: Functional.GEMMFlag, injectedAttentionKV: Bool
 )
   -> (
     Model, Model, Model, Model, Model
@@ -108,9 +108,9 @@ func SelfAttention(
 {
   let x = Input()
 
-  let tokeys = Dense(count: k * h, noBias: true)
-  let toqueries = Dense(count: k * h, noBias: true)
-  let tovalues = Dense(count: k * h, noBias: true)
+  let tokeys = Dense(count: k * h, noBias: true, flags: flags)
+  let toqueries = Dense(count: k * h, noBias: true, flags: flags)
+  let tovalues = Dense(count: k * h, noBias: true, flags: flags)
   if usesFlashAttention == .scale1 || usesFlashAttention == .scaleMerged {
     if injectedAttentionKV {
       var queries: Model.IO
@@ -209,7 +209,7 @@ func SelfAttention(
         out = dot * values  // b, h, hw, 2*hw @ b, h, 2*hw, k --> b, h, hw, k
         out = out.reshaped([b, h, hw, k]).transposed(1, 2).reshaped([b, hw, h * k])
       }
-      let unifyheads = Dense(count: k * h)
+      let unifyheads = Dense(count: k * h, flags: flags)
       out = unifyheads(out)
       return (tokeys, toqueries, tovalues, unifyheads, Model([x], [out]))
     }
@@ -260,7 +260,7 @@ func SelfAttention(
       out = dot * values
       out = out.reshaped([b, h, hw, k]).transposed(1, 2).reshaped([b, hw, h * k])
     }
-    let unifyheads = Dense(count: k * h)
+    let unifyheads = Dense(count: k * h, flags: flags)
     out = unifyheads(out)
     return (tokeys, toqueries, tovalues, unifyheads, Model([x], [out]))
   }
@@ -268,15 +268,15 @@ func SelfAttention(
 
 func CrossAttention(
   k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), injectIPAdapterLengths: [Int],
-  upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel
+  upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel, flags: Functional.GEMMFlag
 ) -> (
   Model, Model, Model, Model, Model
 ) {
   let x = Input()
   let c = Input()
-  let tokeys = Dense(count: k * h, noBias: true)
-  let toqueries = Dense(count: k * h, noBias: true)
-  let tovalues = Dense(count: k * h, noBias: true)
+  let tokeys = Dense(count: k * h, noBias: true, flags: flags)
+  let toqueries = Dense(count: k * h, noBias: true, flags: flags)
+  let tovalues = Dense(count: k * h, noBias: true, flags: flags)
   if usesFlashAttention == .scale1 || usesFlashAttention == .scaleMerged {
     if t.0 == t.1 {
       let t = t.0
@@ -302,7 +302,7 @@ func CrossAttention(
           out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
           ipKVs.append(contentsOf: [ipKeys, ipValues])
         }
-        let unifyheads = Dense(count: k * h)
+        let unifyheads = Dense(count: k * h, flags: flags)
         out = unifyheads(out)
         return (tokeys, toqueries, tovalues, unifyheads, Model([x, c] + ipKVs, [out]))
       } else {
@@ -401,7 +401,7 @@ func CrossAttention(
       if upcastAttention {
         out = out.to(of: valueType)
       }
-      let unifyheads = Dense(count: k * h)
+      let unifyheads = Dense(count: k * h, flags: flags)
       out = unifyheads(out)
       return (tokeys, toqueries, tovalues, unifyheads, Model([x, c] + ipKVs, [out]))
     }
@@ -488,19 +488,21 @@ func CrossAttention(
       out = out + (dot * ipValues).transposed(1, 2).reshaped([b, hw, h * k])
       ipKVs.append(contentsOf: [ipKeys, ipValues])
     }
-    let unifyheads = Dense(count: k * h)
+    let unifyheads = Dense(count: k * h, flags: flags)
     out = unifyheads(out)
     return (tokeys, toqueries, tovalues, unifyheads, Model([x, c] + ipKVs, [out]))
   }
 }
 
-func FeedForward(hiddenSize: Int, intermediateSize: Int) -> (Model, Model, Model, Model) {
+func FeedForward(hiddenSize: Int, intermediateSize: Int, flags: Functional.GEMMFlag) -> (
+  Model, Model, Model, Model
+) {
   let x = Input()
-  let fc10 = Dense(count: intermediateSize)
-  let fc11 = Dense(count: intermediateSize)
+  let fc10 = Dense(count: intermediateSize, flags: flags)
+  let fc11 = Dense(count: intermediateSize, flags: flags)
   var out = fc10(x)
   out = out .* GELU()(fc11(x))
-  let fc2 = Dense(count: hiddenSize)
+  let fc2 = Dense(count: hiddenSize, flags: .Float16)
   out = fc2(out)
   return (fc10, fc11, fc2, Model([x], [out]))
 }
@@ -508,7 +510,7 @@ func FeedForward(hiddenSize: Int, intermediateSize: Int) -> (Model, Model, Model
 func BasicTransformerBlock(
   k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), intermediateSize: Int,
   injectIPAdapterLengths: [Int], upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel,
-  injectedAttentionKV: Bool
+  flags: Functional.GEMMFlag, injectedAttentionKV: Bool
 ) -> (
   Model, Model, Model, Model, Model, Model, Model, Model, Model, Model, Model, Model, Model, Model,
   Model
@@ -527,7 +529,7 @@ func BasicTransformerBlock(
   var out = layerNorm1(layerNorm1Input)
   let (tokeys1, toqueries1, tovalues1, unifyheads1, attn1) = SelfAttention(
     k: k, h: h, b: b, hw: hw, upcastAttention: upcastAttention,
-    usesFlashAttention: usesFlashAttention, injectedAttentionKV: injectedAttentionKV)
+    usesFlashAttention: usesFlashAttention, flags: flags, injectedAttentionKV: injectedAttentionKV)
   out = attn1([out])
   if injectedAttentionKV {
     layerNorm1Input = layerNorm1Input.chunked(2, axis: 1)[0]
@@ -539,7 +541,7 @@ func BasicTransformerBlock(
   out = layerNorm2(out)
   let (tokeys2, toqueries2, tovalues2, unifyheads2, attn2) = CrossAttention(
     k: k, h: h, b: b, hw: hw, t: t, injectIPAdapterLengths: injectIPAdapterLengths,
-    upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention)
+    upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: flags)
   let ipKVs = (0..<(injectIPAdapterLengths.count * 2)).map { _ in Input() }
   out = attn2([out, c] + ipKVs) + residual
   residual = out
@@ -547,7 +549,8 @@ func BasicTransformerBlock(
   let layerNorm3 = LayerNorm(epsilon: 1e-5, axis: [2])
   out = layerNorm3(out)
 
-  let (fc10, fc11, fc2, ff) = FeedForward(hiddenSize: k * h, intermediateSize: intermediateSize)
+  let (fc10, fc11, fc2, ff) = FeedForward(
+    hiddenSize: k * h, intermediateSize: intermediateSize, flags: flags)
   out = ff(out) + residual
   return (
     layerNorm1, tokeys1, toqueries1, tovalues1, unifyheads1, layerNorm2, tokeys2, toqueries2,
@@ -559,7 +562,7 @@ func BasicTransformerBlock(
 func SpatialTransformer(
   ch: Int, k: Int, h: Int, b: Int, height: Int, width: Int, t: (Int, Int), intermediateSize: Int,
   injectIPAdapterLengths: [Int], upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel,
-  injectedAttentionKV: Bool, outputSpatialAttnInput: Bool
+  flags: Functional.GEMMFlag, injectedAttentionKV: Bool, outputSpatialAttnInput: Bool
 ) -> (
   Model, Model, Model, Model, Model, Model, Model, Model, Model, Model, Model, Model, Model, Model,
   Model, Model, Model, Model
@@ -578,7 +581,7 @@ func SpatialTransformer(
   ) = BasicTransformerBlock(
     k: k, h: h, b: b, hw: hw, t: t, intermediateSize: intermediateSize,
     injectIPAdapterLengths: injectIPAdapterLengths, upcastAttention: upcastAttention,
-    usesFlashAttention: usesFlashAttention, injectedAttentionKV: injectedAttentionKV)
+    usesFlashAttention: usesFlashAttention, flags: flags, injectedAttentionKV: injectedAttentionKV)
   let ipKVs = (0..<(injectIPAdapterLengths.count * 2)).map { _ in Input() }
   var attnKVs = [Input]()
   if injectedAttentionKV {
@@ -604,14 +607,14 @@ func BlockLayer(
   layerStart: Int, skipConnection: Bool, attentionBlock: Bool, channels: Int, numHeads: Int,
   batchSize: Int, height: Int, width: Int, embeddingLength: (Int, Int), intermediateSize: Int,
   injectIPAdapterLengths: [Int], upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel,
-  injectedAttentionKV: Bool, outputSpatialAttnInput: Bool
+  flags: Functional.GEMMFlag, injectedAttentionKV: Bool, outputSpatialAttnInput: Bool
 ) -> (Model, PythonReader) {
   let x = Input()
   let emb = Input()
   precondition(channels % numHeads == 0)
   let k = channels / numHeads
   let (inLayerNorm, inLayerConv2d, embLayer, outLayerNorm, outLayerConv2d, skipModel, resBlock) =
-    ResBlock(b: batchSize, outChannels: channels, skipConnection: skipConnection)
+    ResBlock(b: batchSize, outChannels: channels, skipConnection: skipConnection, flags: flags)
   let out = resBlock(x, emb)
   let resBlockReader: PythonReader = { stateDict, archive in
     guard
@@ -746,8 +749,8 @@ func BlockLayer(
       ch: channels, k: k, h: numHeads, b: batchSize, height: height, width: width,
       t: embeddingLength, intermediateSize: channels * 4,
       injectIPAdapterLengths: injectIPAdapterLengths, upcastAttention: upcastAttention,
-      usesFlashAttention: usesFlashAttention, injectedAttentionKV: injectedAttentionKV,
-      outputSpatialAttnInput: outputSpatialAttnInput)
+      usesFlashAttention: usesFlashAttention, flags: flags,
+      injectedAttentionKV: injectedAttentionKV, outputSpatialAttnInput: outputSpatialAttnInput)
     let ipKVs = (0..<(injectIPAdapterLengths.count * 2)).map { _ in Input() }
     var attnKVs = [Input]()
     if injectedAttentionKV {
@@ -1034,7 +1037,7 @@ func MiddleBlock(
   precondition(channels % numHeads == 0)
   let k = channels / numHeads
   let (inLayerNorm1, inLayerConv2d1, embLayer1, outLayerNorm1, outLayerConv2d1, _, resBlock1) =
-    ResBlock(b: batchSize, outChannels: channels, skipConnection: false)
+    ResBlock(b: batchSize, outChannels: channels, skipConnection: false, flags: .Float16)
   var layerOutput = [Model.IO]()
   var attnKVs = [Model.IO]()
 
@@ -1046,8 +1049,8 @@ func MiddleBlock(
   ) = SpatialTransformer(
     ch: channels, k: k, h: numHeads, b: batchSize, height: height, width: width, t: embeddingLength,
     intermediateSize: channels * 4, injectIPAdapterLengths: injectIPAdapterLengths,
-    upcastAttention: upcastAttention,
-    usesFlashAttention: usesFlashAttention, injectedAttentionKV: !injectedAttentionKVs.isEmpty,
+    upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
+    injectedAttentionKV: !injectedAttentionKVs.isEmpty,
     outputSpatialAttnInput: outputSpatialAttnInput)
   if !injectedAttentionKVs.isEmpty {
     let attnKV = injectedAttentionKVs[6]
@@ -1059,7 +1062,7 @@ func MiddleBlock(
     layerOutput.append(outs[1])
   }
   let (inLayerNorm2, inLayerConv2d2, embLayer2, outLayerNorm2, outLayerConv2d2, _, resBlock2) =
-    ResBlock(b: batchSize, outChannels: channels, skipConnection: false)
+    ResBlock(b: batchSize, outChannels: channels, skipConnection: false, flags: .Float16)
   out = resBlock2(out, emb)
   let reader: PythonReader = { stateDict, archive in
     let intermediateSize = channels * 4
@@ -1499,8 +1502,7 @@ private func InputBlocks(
   channels: [Int], numRepeat: Int, numHeads: Int, batchSize: Int, startHeight: Int, startWidth: Int,
   embeddingLength: (Int, Int), attentionRes: Set<Int>, injectIPAdapterLengths: [Int],
   upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel, x: Model.IO, emb: Model.IO,
-  c: Model.IO,
-  adapters: [Model.IO], injectedAttentionKVs: [Model.IO], outputSpatialAttnInput: Bool
+  c: Model.IO, adapters: [Model.IO], injectedAttentionKVs: [Model.IO], outputSpatialAttnInput: Bool
 ) -> ([Model.IO], Model.IO, [Input], PythonReader, [Model.IO]) {
   let conv2d = Convolution(
     groups: 1, filters: 320, filterSize: [3, 3],
@@ -1529,7 +1531,7 @@ private func InputBlocks(
         attentionBlock: attentionBlock, channels: channel, numHeads: numHeads, batchSize: batchSize,
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: injectIPAdapterLengths,
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
         injectedAttentionKV: !injectedAttentionKVs.isEmpty,
         outputSpatialAttnInput: outputSpatialAttnInput)
       previousChannel = channel
@@ -1654,7 +1656,7 @@ func OutputBlocks(
         attentionBlock: attentionBlock, channels: channel, numHeads: numHeads, batchSize: batchSize,
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: injectIPAdapterLengths,
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
         injectedAttentionKV: !injectedAttentionKVs.isEmpty,
         outputSpatialAttnInput: outputSpatialAttnInput)
       if attentionBlock {

@@ -32,7 +32,7 @@ func InputBlocks<FloatType: TensorNumeric & BinaryFloatingPoint>(
         batchSize: batchSize, height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: injectIPAdapterLengths,
         upcastAttention: upcastAttention.contains(j), usesFlashAttention: usesFlashAttention,
-        isTemporalMixEnabled: isTemporalMixEnabled, of: FloatType.self)
+        flags: .Float16, isTemporalMixEnabled: isTemporalMixEnabled, of: FloatType.self)
       previousChannel = channel
       var c: [Input]
       if embeddingLength.0 == 1 && embeddingLength.1 == 1 {

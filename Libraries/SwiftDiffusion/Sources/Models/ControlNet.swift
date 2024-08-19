@@ -195,7 +195,7 @@ private func InputBlocks(
         attentionBlock: attentionBlock, channels: channel, numHeads: numHeads, batchSize: batchSize,
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
         injectedAttentionKV: false, outputSpatialAttnInput: false)
       previousChannel = channel
       if attentionBlock {
@@ -289,7 +289,7 @@ private func InputBlocks(
         batchSize: batchSize,
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
         injectedAttentionKV: false, outputSpatialAttnInput: false)
       previousChannel = channel
       if attentionBlock {

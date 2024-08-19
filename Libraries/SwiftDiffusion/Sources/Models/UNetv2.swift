@@ -13,7 +13,7 @@ func MiddleBlock(
   let numHeads = channels / numHeadChannels
   let k = numHeadChannels
   let (inLayerNorm1, inLayerConv2d1, embLayer1, outLayerNorm1, outLayerConv2d1, _, resBlock1) =
-    ResBlock(b: batchSize, outChannels: channels, skipConnection: false)
+    ResBlock(b: batchSize, outChannels: channels, skipConnection: false, flags: .Float16)
   var out = resBlock1(x, emb)
   let (
     norm, projIn, layerNorm1, tokeys1, toqueries1, tovalues1, unifyheads1, layerNorm2, tokeys2,
@@ -21,11 +21,11 @@ func MiddleBlock(
   ) = SpatialTransformer(
     ch: channels, k: k, h: numHeads, b: batchSize, height: height, width: width, t: embeddingLength,
     intermediateSize: channels * 4, injectIPAdapterLengths: [], upcastAttention: upcastAttention,
-    usesFlashAttention: usesFlashAttention, injectedAttentionKV: false,
+    usesFlashAttention: usesFlashAttention, flags: .Float16, injectedAttentionKV: false,
     outputSpatialAttnInput: false)
   out = transformer(out, c)
   let (inLayerNorm2, inLayerConv2d2, embLayer2, outLayerNorm2, outLayerConv2d2, _, resBlock2) =
-    ResBlock(b: batchSize, outChannels: channels, skipConnection: false)
+    ResBlock(b: batchSize, outChannels: channels, skipConnection: false, flags: .Float16)
   out = resBlock2(out, emb)
   let reader: PythonReader = { stateDict, archive in
     let intermediateSize = channels * 4
@@ -487,7 +487,7 @@ private func InputBlocks(
         batchSize: batchSize,
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
         injectedAttentionKV: false, outputSpatialAttnInput: false)
       previousChannel = channel
       if attentionBlock {
@@ -594,7 +594,7 @@ func OutputBlocks(
         batchSize: batchSize,
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
         injectedAttentionKV: false, outputSpatialAttnInput: false)
       if attentionBlock {
         out = outputLayer(out, emb, c)

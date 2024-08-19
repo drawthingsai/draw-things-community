@@ -21,7 +21,7 @@ func TimePosEmbed(modelChannels: Int) -> (Model, Model, Model) {
   return (fc0, fc2, Model([x], [out], name: "time_pos_embed"))
 }
 
-func TimeResBlock(b: Int, h: Int, w: Int, channels: Int) -> (
+func TimeResBlock(b: Int, h: Int, w: Int, channels: Int, flags: Functional.GEMMFlag) -> (
   Model, Model, Model, Model, Model, Model
 ) {
   let x = Input()
@@ -34,7 +34,7 @@ func TimeResBlock(b: Int, h: Int, w: Int, channels: Int) -> (
     groups: 1, filters: channels, filterSize: [3, 1],
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 0], end: [1, 0])), format: .OIHW)
   out = inLayerConv2d(out)
-  let embLayer = Dense(count: channels)
+  let embLayer = Dense(count: channels, flags: flags)
   var embOut = Swish()(emb)
   embOut = embLayer(embOut).reshaped([1, 1, 1, channels])
   out = out + embOut
@@ -55,15 +55,14 @@ func TimeResBlock(b: Int, h: Int, w: Int, channels: Int) -> (
 
 func CrossAttentionKeysAndValues(
   k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), upcastAttention: Bool,
-  injectIPAdapterLengths: [Int],
-  usesFlashAttention: FlashAttentionLevel
+  injectIPAdapterLengths: [Int], usesFlashAttention: FlashAttentionLevel, flags: Functional.GEMMFlag
 ) -> (
   Model, Model, Model
 ) {
   let x = Input()
   let keys = Input()
   let values = Input()
-  let toqueries = Dense(count: k * h, noBias: true)
+  let toqueries = Dense(count: k * h, noBias: true, flags: flags)
   if usesFlashAttention == .scale1 || usesFlashAttention == .scaleMerged {
     if t.0 == t.1 {
       let queries = toqueries(x).reshaped([b, hw, h, k])
@@ -80,7 +79,7 @@ func CrossAttentionKeysAndValues(
           out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
           ipKVs.append(contentsOf: [ipKeys, ipValues])
         }
-        let unifyheads = Dense(count: k * h)
+        let unifyheads = Dense(count: k * h, flags: flags)
         out = unifyheads(out)
         return (toqueries, unifyheads, Model([x, keys, values] + ipKVs, [out]))
       } else {
@@ -165,7 +164,7 @@ func CrossAttentionKeysAndValues(
         out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
         ipKVs.append(contentsOf: [ipKeys, ipValues])
       }
-      let unifyheads = Dense(count: k * h)
+      let unifyheads = Dense(count: k * h, flags: flags)
       out = unifyheads(out)
       return (toqueries, unifyheads, Model([x, keys, values] + ipKVs, [out]))
     }
@@ -249,7 +248,7 @@ func CrossAttentionKeysAndValues(
       out = out + (dot * ipValues).transposed(1, 2).reshaped([b, hw, h * k])
       ipKVs.append(contentsOf: [ipKeys, ipValues])
     }
-    let unifyheads = Dense(count: k * h)
+    let unifyheads = Dense(count: k * h, flags: flags)
     out = unifyheads(out).reshaped([b, hw, h * k])
     return (toqueries, unifyheads, Model([x, keys, values] + ipKVs, [out]))
   }
@@ -258,7 +257,7 @@ func CrossAttentionKeysAndValues(
 private func BasicTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), intermediateSize: Int,
   injectIPAdapterLengths: [Int], upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel,
-  isTemporalMixEnabled: Bool
+  flags: Functional.GEMMFlag, isTemporalMixEnabled: Bool
 ) -> (PythonReader, ModelWeightMapper, Model) {
   let x = Input()
   let values = Input()
@@ -266,7 +265,7 @@ private func BasicTransformerBlock(
   var out = layerNorm1(x)
   let (tokeys1, toqueries1, tovalues1, unifyheads1, attn1) = SelfAttention(
     k: k, h: h, b: b, hw: hw, upcastAttention: upcastAttention,
-    usesFlashAttention: usesFlashAttention, injectedAttentionKV: false)
+    usesFlashAttention: usesFlashAttention, flags: flags, injectedAttentionKV: false)
   out = attn1(out) + x
   var residual = out
   let keys: Input?
@@ -287,7 +286,7 @@ private func BasicTransformerBlock(
     let (toqueries, unifyheads, attn2) = CrossAttentionKeysAndValues(
       k: k, h: h, b: b, hw: hw, t: t, upcastAttention: false,
       injectIPAdapterLengths: injectIPAdapterLengths,
-      usesFlashAttention: isTemporalMixEnabled ? .none : usesFlashAttention)
+      usesFlashAttention: isTemporalMixEnabled ? .none : usesFlashAttention, flags: flags)
     out = attn2([out, keys2, values] + ipKVs) + residual
     keys = keys2
     layerNorm2 = layerNorm
@@ -297,7 +296,8 @@ private func BasicTransformerBlock(
   residual = out
   let layerNorm3 = LayerNorm(epsilon: 1e-5, axis: [2])
   out = layerNorm3(out)
-  let (fc10, fc11, fc2, ff) = FeedForward(hiddenSize: k * h, intermediateSize: intermediateSize)
+  let (fc10, fc11, fc2, ff) = FeedForward(
+    hiddenSize: k * h, intermediateSize: intermediateSize, flags: flags)
   out = ff(out) + residual
   let reader: PythonReader = { stateDict, archive in
     guard
@@ -492,7 +492,7 @@ private func BasicTransformerBlock(
 
 func BasicTimeTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), intermediateSize: Int,
-  injectIPAdapterLengths: [Int], usesFlashAttention: FlashAttentionLevel
+  injectIPAdapterLengths: [Int], usesFlashAttention: FlashAttentionLevel, flags: Functional.GEMMFlag
 ) -> (PythonReader, ModelWeightMapper, Model) {
   let x = Input()
   let timeEmb = Input()
@@ -500,12 +500,12 @@ func BasicTimeTransformerBlock(
   var out = x.transposed(0, 1) + timeEmb.reshaped([1, b, k * h])
   let normIn = LayerNorm(epsilon: 1e-5, axis: [2])
   let (ffIn10, ffIn11, ffIn2, ffIn) = FeedForward(
-    hiddenSize: k * h, intermediateSize: intermediateSize)
+    hiddenSize: k * h, intermediateSize: intermediateSize, flags: flags)
   out = ffIn(normIn(out).reshaped([hw * b, k * h])).reshaped([hw, b, k * h]) + out
   let layerNorm1 = LayerNorm(epsilon: 1e-5, axis: [2])
   let (tokeys1, toqueries1, tovalues1, unifyheads1, attn1) = SelfAttention(
     k: k, h: h, b: hw, hw: b, upcastAttention: false, usesFlashAttention: usesFlashAttention,
-    injectedAttentionKV: false)
+    flags: flags, injectedAttentionKV: false)
   out = attn1(layerNorm1(out).reshaped([hw * b, k * h])) + out
   var residual = out
   let keys: Input?
@@ -524,7 +524,7 @@ func BasicTimeTransformerBlock(
     out = layerNorm(out).reshaped([hw * b, k * h])
     let (toqueries, unifyheads, attn2) = CrossAttentionKeysAndValues(
       k: k, h: h, b: hw, hw: b, t: t, upcastAttention: false,
-      injectIPAdapterLengths: injectIPAdapterLengths, usesFlashAttention: .none)
+      injectIPAdapterLengths: injectIPAdapterLengths, usesFlashAttention: .none, flags: flags)
     out = attn2(out, keys2, values) + residual
     keys = keys2
     layerNorm2 = layerNorm
@@ -534,7 +534,8 @@ func BasicTimeTransformerBlock(
   residual = out
   let layerNorm3 = LayerNorm(epsilon: 1e-5, axis: [2])
   out = layerNorm3(out).reshaped([hw * b, k * h])
-  let (fc10, fc11, fc2, ff) = FeedForward(hiddenSize: k * h, intermediateSize: intermediateSize)
+  let (fc10, fc11, fc2, ff) = FeedForward(
+    hiddenSize: k * h, intermediateSize: intermediateSize, flags: flags)
   out = ff(out).reshaped([hw, b, k * h]) + residual
   out = out.transposed(0, 1)
   let reader: PythonReader = { stateDict, archive in
@@ -796,7 +797,7 @@ private func SpatialTransformer<FloatType: TensorNumeric & BinaryFloatingPoint>(
   prefix: (String, String),
   ch: Int, k: Int, h: Int, b: Int, height: Int, width: Int, depth: Int, t: (Int, Int),
   intermediateSize: Int, injectIPAdapterLengths: [Int], upcastAttention: Bool,
-  usesFlashAttention: FlashAttentionLevel, isTemporalMixEnabled: Bool,
+  usesFlashAttention: FlashAttentionLevel, flags: Functional.GEMMFlag, isTemporalMixEnabled: Bool,
   of: FloatType.Type = FloatType.self
 ) -> (PythonReader, ModelWeightMapper, Model) {
   let x = Input()
@@ -828,7 +829,7 @@ private func SpatialTransformer<FloatType: TensorNumeric & BinaryFloatingPoint>(
         k: k,
         h: h, b: b, hw: hw, t: t,
         intermediateSize: intermediateSize, injectIPAdapterLengths: injectIPAdapterLengths,
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: flags,
         isTemporalMixEnabled: isTemporalMixEnabled)
       let ipKVs = (0..<(injectIPAdapterLengths.count * 2)).map { _ in Input() }
       kvs.append(contentsOf: ipKVs)
@@ -842,7 +843,8 @@ private func SpatialTransformer<FloatType: TensorNumeric & BinaryFloatingPoint>(
           prefix: ("\(prefix.0).time_stack.\(i)", "\(prefix.1).temporal_transformer_blocks.\(i)"),
           k: k, h: h, b: b,
           hw: hw, t: t, intermediateSize: intermediateSize,
-          injectIPAdapterLengths: injectIPAdapterLengths, usesFlashAttention: usesFlashAttention)
+          injectIPAdapterLengths: injectIPAdapterLengths, usesFlashAttention: usesFlashAttention,
+          flags: flags)
         out = mixFactor .* out + (1 - mixFactor) .* block(out, timeEmb, values)
         readers.append(reader)
         mappers.append(mapper)
@@ -857,7 +859,7 @@ private func SpatialTransformer<FloatType: TensorNumeric & BinaryFloatingPoint>(
         k: k,
         h: h, b: b, hw: hw, t: t,
         intermediateSize: intermediateSize, injectIPAdapterLengths: injectIPAdapterLengths,
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: flags,
         isTemporalMixEnabled: isTemporalMixEnabled)
       let ipKVs = (0..<(injectIPAdapterLengths.count * 2)).map { _ in Input() }
       kvs.append(contentsOf: ipKVs)
@@ -873,7 +875,8 @@ private func SpatialTransformer<FloatType: TensorNumeric & BinaryFloatingPoint>(
           prefix: ("\(prefix.0).time_stack.\(i)", "\(prefix.1).temporal_transformer_blocks.\(i)"),
           k: k, h: h, b: b,
           hw: hw, t: t, intermediateSize: intermediateSize,
-          injectIPAdapterLengths: injectIPAdapterLengths, usesFlashAttention: usesFlashAttention)
+          injectIPAdapterLengths: injectIPAdapterLengths, usesFlashAttention: usesFlashAttention,
+          flags: flags)
         out = mixFactor .* out + (1 - mixFactor) .* block(out, timeEmb, keys, values)
         readers.append(reader)
         mappers.append(mapper)
@@ -955,7 +958,7 @@ func BlockLayer<FloatType: TensorNumeric & BinaryFloatingPoint>(
   repeatStart: Int, skipConnection: Bool, attentionBlock: Int, channels: Int, numHeadChannels: Int,
   batchSize: Int, height: Int, width: Int, embeddingLength: (Int, Int), intermediateSize: Int,
   injectIPAdapterLengths: [Int], upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel,
-  isTemporalMixEnabled: Bool, of: FloatType.Type = FloatType.self
+  flags: Functional.GEMMFlag, isTemporalMixEnabled: Bool, of: FloatType.Type = FloatType.self
 ) -> (PythonReader, ModelWeightMapper, Model) {
   let x = Input()
   let emb = Input()
@@ -965,7 +968,7 @@ func BlockLayer<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let k = numHeadChannels
   let (inLayerNorm, inLayerConv2d, embLayer, outLayerNorm, outLayerConv2d, skipModel, resBlock) =
     ResBlock(
-      b: batchSize, outChannels: channels, skipConnection: skipConnection)
+      b: batchSize, outChannels: channels, skipConnection: skipConnection, flags: flags)
   var out = resBlock(x, emb)
   let timeInLayerNorm: Model?
   let timeInLayerConv2d: Model?
@@ -978,7 +981,7 @@ func BlockLayer<FloatType: TensorNumeric & BinaryFloatingPoint>(
     (
       timeInLayerNorm, timeInLayerConv2d, timeEmbLayer, timeOutLayerNorm, timeOutLayerConv2d,
       timeResBlock
-    ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels)
+    ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels, flags: flags)
     let mix = Parameter<FloatType>(.GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
     out = mix .* out + (1 - mix) .* timeResBlock(out, emb)
     mixFactor = mix
@@ -1012,7 +1015,7 @@ func BlockLayer<FloatType: TensorNumeric & BinaryFloatingPoint>(
       depth: attentionBlock, t: embeddingLength,
       intermediateSize: channels * 4, injectIPAdapterLengths: injectIPAdapterLengths,
       upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
-      isTemporalMixEnabled: isTemporalMixEnabled, of: FloatType.self)
+      flags: flags, isTemporalMixEnabled: isTemporalMixEnabled, of: FloatType.self)
     out = transformer([out] + c)
     kvs.append(contentsOf: c)
   }
@@ -1374,7 +1377,7 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let numHeads = channels / numHeadChannels
   let k = numHeadChannels
   let (inLayerNorm1, inLayerConv2d1, embLayer1, outLayerNorm1, outLayerConv2d1, _, resBlock1) =
-    ResBlock(b: batchSize, outChannels: channels, skipConnection: false)
+    ResBlock(b: batchSize, outChannels: channels, skipConnection: false, flags: [])
   var out = resBlock1(x, emb)
   let timeInLayerNorm1: Model?
   let timeInLayerConv2d1: Model?
@@ -1387,7 +1390,7 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
     (
       timeInLayerNorm1, timeInLayerConv2d1, timeEmbLayer1, timeOutLayerNorm1, timeOutLayerConv2d1,
       timeResBlock1
-    ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels)
+    ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels, flags: [])
     let mix = Parameter<FloatType>(.GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
     out = mix .* out + (1 - mix) .* timeResBlock1(out, emb)
     mixFactor1 = mix
@@ -1431,21 +1434,21 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
       h: numHeads, b: batchSize, height: height, width: width, depth: attentionBlock,
       t: embeddingLength, intermediateSize: channels * 4,
       injectIPAdapterLengths: injectIPAdapterLengths, upcastAttention: upcastAttention,
-      usesFlashAttention: usesFlashAttention, isTemporalMixEnabled: isTemporalMixEnabled,
+      usesFlashAttention: usesFlashAttention, flags: [], isTemporalMixEnabled: isTemporalMixEnabled,
       of: FloatType.self)
     transformerReader = reader
     transformerMapper = mapper
     out = transformer([out] + kvs)
     let resBlock2: Model
     (inLayerNorm2, inLayerConv2d2, embLayer2, outLayerNorm2, outLayerConv2d2, _, resBlock2) =
-      ResBlock(b: batchSize, outChannels: channels, skipConnection: false)
+      ResBlock(b: batchSize, outChannels: channels, skipConnection: false, flags: [])
     out = resBlock2(out, emb)
     if isTemporalMixEnabled {
       let timeResBlock2: Model
       (
         timeInLayerNorm2, timeInLayerConv2d2, timeEmbLayer2, timeOutLayerNorm2, timeOutLayerConv2d2,
         timeResBlock2
-      ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels)
+      ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels, flags: [])
       let mix = Parameter<FloatType>(.GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
       out = mix .* out + (1 - mix) .* timeResBlock2(out, emb)
       mixFactor2 = mix
@@ -1464,21 +1467,21 @@ func MiddleBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
         h: numHeads, b: batchSize, height: height, width: width, depth: 0,  // Zero depth so we still apply norm, proj_in, proj_out.
         t: embeddingLength, intermediateSize: channels * 4,
         injectIPAdapterLengths: injectIPAdapterLengths, upcastAttention: upcastAttention,
-        usesFlashAttention: usesFlashAttention, isTemporalMixEnabled: isTemporalMixEnabled,
-        of: FloatType.self)
+        usesFlashAttention: usesFlashAttention, flags: [],
+        isTemporalMixEnabled: isTemporalMixEnabled, of: FloatType.self)
       transformerReader = reader
       transformerMapper = mapper
       out = transformer(out)
       let resBlock2: Model
       (inLayerNorm2, inLayerConv2d2, embLayer2, outLayerNorm2, outLayerConv2d2, _, resBlock2) =
-        ResBlock(b: batchSize, outChannels: channels, skipConnection: false)
+        ResBlock(b: batchSize, outChannels: channels, skipConnection: false, flags: [])
       out = resBlock2(out, emb)
       if isTemporalMixEnabled {
         let timeResBlock2: Model
         (
           timeInLayerNorm2, timeInLayerConv2d2, timeEmbLayer2, timeOutLayerNorm2,
           timeOutLayerConv2d2, timeResBlock2
-        ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels)
+        ) = TimeResBlock(b: batchSize, h: height, w: width, channels: channels, flags: [])
         let mix = Parameter<FloatType>(
           .GPU(0), format: .NHWC, shape: [1], name: "time_mixer")
         out = mix .* out + (1 - mix) .* timeResBlock2(out, emb)
@@ -2120,7 +2123,7 @@ func InputBlocks<FloatType: TensorNumeric & BinaryFloatingPoint>(
         batchSize: batchSize, height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: injectIPAdapterLengths,
         upcastAttention: upcastAttention.contains(j), usesFlashAttention: usesFlashAttention,
-        isTemporalMixEnabled: isTemporalMixEnabled, of: FloatType.self)
+        flags: .Float16, isTemporalMixEnabled: isTemporalMixEnabled, of: FloatType.self)
       previousChannel = channel
       var c: [Input]
       if embeddingLength.0 == 1 && embeddingLength.1 == 1 {
@@ -2262,7 +2265,7 @@ func OutputBlocks<FloatType: TensorNumeric & BinaryFloatingPoint>(
         batchSize: batchSize, height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: injectIPAdapterLengths,
         upcastAttention: upcastAttention.contains(j), usesFlashAttention: usesFlashAttention,
-        isTemporalMixEnabled: isTemporalMixEnabled, of: FloatType.self)
+        flags: .Float16, isTemporalMixEnabled: isTemporalMixEnabled, of: FloatType.self)
       var c: [Input]
       if embeddingLength.0 == 1 && embeddingLength.1 == 1 {
         c = (0..<(attentionBlock[j] * (injectIPAdapterLengths.count + 1))).map { _ in Input() }
