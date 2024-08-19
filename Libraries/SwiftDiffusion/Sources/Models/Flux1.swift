@@ -399,7 +399,7 @@ private func SingleTransformerBlock(
       mapping["\(prefix.0).norm.key_norm.scale"] = [normK.weight.name]
       mapping["\(prefix.0).norm.query_norm.scale"] = [normQ.weight.name]
       mapping["\(prefix.0).linear2.weight"] = ModelWeightElement(
-        [xUnifyheads.weight.name, xOutProjection.weight.name], format: .I)
+        [xUnifyheads.weight.name, xOutProjection.weight.name], format: .I, offsets: [0, k * h])
       mapping["\(prefix.0).linear2.bias"] = [xOutProjection.bias.name]
     case .diffusers:
       mapping["\(prefix.1).attn.to_q.weight"] = [xToQueries.weight.name]

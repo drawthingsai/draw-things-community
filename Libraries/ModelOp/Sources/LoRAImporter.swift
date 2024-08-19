@@ -182,61 +182,84 @@ public enum LoRAImporter {
       }
       let isPixArtSigmaXL = stateDict.keys.contains {
         ($0.contains("blocks_27_") || $0.contains("transformer_blocks_27_"))
-          && !($0.contains("single_transformer_blocks_27_"))
+          && !($0.contains("single_transformer_blocks_27_")) && !($0.contains("single_blocks_27_"))
       }
       let isFlux1 = stateDict.keys.contains {
         $0.contains("double_blocks.18.img_attn.qkv.")
+          || $0.contains("double_blocks_18_img_attn_qkv.")
           || $0.contains("single_transformer_blocks_37_")
       }
-      if let tokey = stateDict.first(where: {
-        $0.key.hasSuffix(
+      let isSDOrSDXL = stateDict.keys.contains {
+        $0.hasSuffix(
           "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
-          || $0.key.hasSuffix(
+          || $0.hasSuffix(
             "up_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
-          || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.lora_down.weight")
-          || $0.key.hasSuffix(
+          || $0.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.lora_down.weight")
+          || $0.hasSuffix(
             "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.hada_w1_b")
-          || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w1_b")
-      })?.value
-        ?? stateDict.first(where: {
-          $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.lora_down.weight")
-            || $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.hada_w1_b")
+          || $0.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w1_b")
+        // For models we can only infer from CLIP, we let user pick which model that should be.
+        // || $0.hasSuffix("encoder_layers_0_self_attn_k_proj.lora_down.weight")
+        // || $0.hasSuffix("encoder_layers_0_self_attn_k_proj.hada_w1_b")
+      }
+      // Only confident about these if there is no ambiguity. If there are, we will use force version value.
+      switch (isSDOrSDXL, isSD3, isPixArtSigmaXL, isFlux1) {
+      case (true, false, false, false):
+        if let tokey = stateDict.first(where: {
+          $0.key.hasSuffix(
+            "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
+            || $0.key.hasSuffix(
+              "up_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
+            || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.lora_down.weight")
+            || $0.key.hasSuffix(
+              "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.hada_w1_b")
+            || $0.key.hasSuffix("input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w1_b")
         })?.value
-      {
-        switch tokey.shape.last {
-        case 2048:
-          if !stateDict.keys.contains(where: {
-            $0.contains("mid_block_attentions_0_transformer_blocks_")
-              || $0.contains("middle_block_1_transformer_blocks_")
-          }) {
-            return .ssd1b
-          } else {
-            return .sdxlBase
+          ?? stateDict.first(where: {
+            $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.lora_down.weight")
+              || $0.key.hasSuffix("encoder_layers_0_self_attn_k_proj.hada_w1_b")
+          })?.value
+        {
+          switch tokey.shape.last {
+          case 2048:
+            if !stateDict.keys.contains(where: {
+              $0.contains("mid_block_attentions_0_transformer_blocks_")
+                || $0.contains("middle_block_1_transformer_blocks_")
+            }) {
+              return .ssd1b
+            } else {
+              return .sdxlBase
+            }
+          case 1280:
+            return .sdxlRefiner
+          case 1024:
+            return .v2
+          case 768:
+            // Check if it has lora_te2, if it does, this might be text-encoder only SDXL Base.
+            if stateDict.contains(where: { $0.key.hasPrefix("lora_te2_") }) {
+              return .sdxlBase
+            } else {
+              return .v1
+            }
+          default:
+            if let forceVersion = forceVersion {
+              return forceVersion
+            }
+            throw UnpickleError.tensorNotFound
           }
-        case 1280:
-          return .sdxlRefiner
-        case 1024:
-          return .v2
-        case 768:
-          // Check if it has lora_te2, if it does, this might be text-encoder only SDXL Base.
-          if stateDict.contains(where: { $0.key.hasPrefix("lora_te2_") }) {
-            return .sdxlBase
-          } else {
-            return .v1
-          }
-        default:
+        } else {
           if let forceVersion = forceVersion {
             return forceVersion
           }
           throw UnpickleError.tensorNotFound
         }
-      } else if isSD3 {
+      case (false, true, false, false):
         return .sd3
-      } else if isPixArtSigmaXL {
+      case (false, false, true, false):
         return .pixart
-      } else if isFlux1 {
+      case (false, false, false, true):
         return .flux1
-      } else {
+      default:
         if let forceVersion = forceVersion {
           return forceVersion
         }
