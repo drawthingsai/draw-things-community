@@ -173,7 +173,7 @@ extension UNetFromCoreML {
                 let tensor: AnyTensor?
                 guard let tensorShape = store.read(like: key) else { continue }
                 switch loader.mergeLoRA(graph, name: key, store: store, shape: tensorShape.shape) {
-                case .continue(let name):
+                case .continue(let name, _):
                   tensor = store.read(name, codec: [.q6p, .q8p, .ezm7, .externalData])
                 case .final(let x):
                   tensor = x
