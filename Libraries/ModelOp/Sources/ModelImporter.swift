@@ -37,7 +37,7 @@ public final class ModelImporter {
 
   public func `import`(
     versionCheck: @escaping (ModelVersion) -> Void, progress: @escaping (Float) -> Void
-  ) throws -> ([String], ModelVersion, SamplerModifier) {
+  ) throws -> ([String], ModelVersion, SamplerModifier, InspectionResult) {
     self.progress = progress
     defer { self.progress = nil }
     Interpreter.inflateInterrupter = self.interrupt
@@ -60,11 +60,12 @@ public final class ModelImporter {
     public var inputChannels: Int
     public var isDiffusersFormat: Bool
     public var hasEncoderHidProj: Bool
+    public var hasGuidanceEmbed: Bool
     public var numberOfTensors: Int
     public init(
       version: ModelVersion, archive: TensorArchive, stateDict: [String: TensorDescriptor],
       modifier: SamplerModifier, inputChannels: Int, isDiffusersFormat: Bool,
-      hasEncoderHidProj: Bool, numberOfTensors: Int
+      hasEncoderHidProj: Bool, hasGuidanceEmbed: Bool, numberOfTensors: Int
     ) {
       self.version = version
       self.archive = archive
@@ -73,6 +74,7 @@ public final class ModelImporter {
       self.inputChannels = inputChannels
       self.isDiffusersFormat = isDiffusersFormat
       self.hasEncoderHidProj = hasEncoderHidProj
+      self.hasGuidanceEmbed = hasGuidanceEmbed
       self.numberOfTensors = numberOfTensors
     }
   }
@@ -217,14 +219,18 @@ public final class ModelImporter {
       throw UnpickleError.tensorNotFound
     }
     let hasEncoderHidProj = stateDict.keys.contains { $0 == "encoder_hid_proj.weight" }
+    let hasGuidanceEmbed = stateDict.keys.contains {
+      $0.contains(".guidance_embedder.") || $0.contains("guidance_in.")
+    }
     return InspectionResult(
       version: modelVersion, archive: archive, stateDict: stateDict, modifier: modifier,
       inputChannels: inputDim, isDiffusersFormat: isDiffusersFormat,
-      hasEncoderHidProj: hasEncoderHidProj, numberOfTensors: expectedTotalAccess)
+      hasEncoderHidProj: hasEncoderHidProj, hasGuidanceEmbed: hasGuidanceEmbed,
+      numberOfTensors: expectedTotalAccess)
   }
 
   private func internalImport(versionCheck: @escaping (ModelVersion) -> Void) throws -> (
-    [String], ModelVersion, SamplerModifier
+    [String], ModelVersion, SamplerModifier, InspectionResult
   ) {
     let inspectionResult = try inspect()
     var archive = inspectionResult.archive
@@ -1108,7 +1114,7 @@ public final class ModelImporter {
         throw Error.autoencoder(error)
       }
     }
-    return (filePaths, modelVersion, modifier)
+    return (filePaths, modelVersion, modifier, inspectionResult)
   }
 }
 
