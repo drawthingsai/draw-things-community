@@ -14,6 +14,7 @@ public struct Storage {
   var size: Int
   var dataType: DataType
   var BF16: Bool
+  var FP8: Bool
 }
 
 public struct TensorDescriptor {
@@ -55,20 +56,34 @@ extension ModelWeightElement {
         } else {
           if let offsets = offsets {
             for (i, name) in self.enumerated() {
-              store.write(
-                renamer(name),
-                tensor: tensor[
-                  (offsets[i])..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0]),
-                  0..<shape[1]
-                ]
-                .copied())
+              if shape.count > 1 {
+                store.write(
+                  renamer(name),
+                  tensor: tensor[
+                    (offsets[i])..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0]),
+                    0..<shape[1]
+                  ].copied())
+              } else {
+                store.write(
+                  renamer(name),
+                  tensor: tensor[
+                    (offsets[i])..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0])
+                  ].copied())
+              }
             }
           } else {
             for (i, name) in self.enumerated() {
-              store.write(
-                renamer(name),
-                tensor: tensor[(i * count)..<((i + 1) * count), 0..<shape[1]]
-                  .copied())
+              if shape.count > 1 {
+                store.write(
+                  renamer(name),
+                  tensor: tensor[(i * count)..<((i + 1) * count), 0..<shape[1]]
+                    .copied())
+              } else {
+                store.write(
+                  renamer(name),
+                  tensor: tensor[(i * count)..<((i + 1) * count)]
+                    .copied())
+              }
             }
           }
         }
@@ -83,19 +98,33 @@ extension ModelWeightElement {
         if self.format == .I {
           if let offsets = offsets {
             for (i, name) in self.enumerated() {
-              store.write(
-                renamer(name),
-                tensor: tensor[
-                  0..<shape[0],
-                  offsets[i]..<(i < offsets.count - 1 ? offsets[i + 1] : shape[1])
-                ].copied())
+              if shape.count > 1 {
+                store.write(
+                  renamer(name),
+                  tensor: tensor[
+                    0..<shape[0],
+                    offsets[i]..<(i < offsets.count - 1 ? offsets[i + 1] : shape[1])
+                  ].copied())
+              } else {
+                store.write(
+                  renamer(name),
+                  tensor: tensor[
+                    offsets[i]..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0])
+                  ].copied())
+              }
             }
           } else {
-            let count = shape[1] / self.count
+            let count = shape.count > 1 ? shape[1] / self.count : shape[0] / self.count
             for (i, name) in self.enumerated() {
-              store.write(
-                renamer(name),
-                tensor: tensor[0..<shape[0], (i * count)..<((i + 1) * count)].copied())
+              if shape.count > 1 {
+                store.write(
+                  renamer(name),
+                  tensor: tensor[0..<shape[0], (i * count)..<((i + 1) * count)].copied())
+              } else {
+                store.write(
+                  renamer(name),
+                  tensor: tensor[(i * count)..<((i + 1) * count)].copied())
+              }
             }
           }
         } else {
@@ -114,6 +143,12 @@ extension ModelWeightElement {
                   (i * count)..<((i + 1) * count), 0..<shape[1], 0..<shape[2],
                   0..<shape[3]
                 ].copied())
+            }
+          } else {
+            for (i, name) in self.enumerated() {
+              store.write(
+                renamer(name),
+                tensor: tensor[(i * count)..<((i + 1) * count)].copied())
             }
           }
         }

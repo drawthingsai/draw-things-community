@@ -111,11 +111,16 @@ public final class ModelImporter {
     let isSvdI2v = stateDict.keys.contains { $0.contains("time_mixer") }
     var isWurstchenStageC = stateDict.keys.contains { $0.contains("clip_txt_mapper.") }
     var isPixArtSigmaXL = stateDict.keys.contains {
-      $0.contains("blocks.27.") || $0.contains("transformer_blocks.27.")
+      ($0.contains("blocks.27.") || $0.contains("transformer_blocks.27."))
+        && !($0.contains("single_transformer_blocks.27.")) && !($0.contains("single_blocks.27."))
     }
     var isSD3 = stateDict.keys.contains {
       $0.contains("joint_blocks.23.context_block.")
         || $0.contains("transformer_blocks.22.ff_context.")
+    }
+    var isFlux1 = stateDict.keys.contains {
+      $0.contains("double_blocks.18.img_attn.qkv.")
+        || $0.contains("single_transformer_blocks.37.")
     }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
@@ -179,6 +184,7 @@ public final class ModelImporter {
       isWurstchenStageC = false
       isPixArtSigmaXL = false
       isSD3 = false
+      isFlux1 = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -198,6 +204,14 @@ public final class ModelImporter {
       expectedTotalAccess = 1157
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("transformer_blocks.22.ff_context.")
+      }
+    } else if isFlux1 {
+      modelVersion = .flux1
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 1732
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("single_transformer_blocks.37.")
       }
     } else {
       throw UnpickleError.tensorNotFound
@@ -494,7 +508,7 @@ public final class ModelImporter {
       let filePath = ModelZoo.filePathForModelDownloaded("\(self.modelName)_f16.ckpt")
       switch modelVersion {
       case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .pixart,
-        .sd3, .auraflow, .flux1:
+        .sd3, .auraflow:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false,
           is8BitModel: false, canRunLoRASeparately: false, externalOnDemand: false)
@@ -535,6 +549,19 @@ public final class ModelImporter {
           // Only take the first half (positive part).
           cArr = Array(cArr[0..<(1 + (cArr.count - 1) / 2)])
         }
+      case .flux1:
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: Flux1RotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 256, channels: 128)))
+          ]
+          + Flux1FixedOutputShapes(
+            batchSize: (1, 1), channels: 3072, layers: (19, 38), guidanceEmbed: true
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -639,7 +666,14 @@ public final class ModelImporter {
           usesFlashAttention: .none, of: FloatType.self)
         unetReader = nil
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 1536, layers: 24)
-      case .auraflow, .flux1:
+      case .flux1:
+        (unetMapper, unet) = Flux1(
+          batchSize: batchSize, tokenLength: 256, height: 64, width: 64, channels: 3072,
+          layers: (19, 38),
+          usesFlashAttention: .scaleMerged)
+        (unetFixedMapper, unetFixed) = Flux1Fixed(
+          batchSize: (batchSize, batchSize), channels: 3072, layers: (19, 38), guidanceEmbed: true)
+      case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
         fatalError()
@@ -690,7 +724,15 @@ public final class ModelImporter {
           ), graph.variable(.CPU, .HWC(batchSize, 154, 4096), of: FloatType.self),
         ]
         tEmb = nil
-      case .auraflow, .flux1:
+      case .flux1:
+        crossattn = [
+          graph.variable(.CPU, .HWC(batchSize, 256, 4096), of: FloatType.self),
+          graph.variable(.CPU, .WC(batchSize, 256), of: FloatType.self),
+          graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self),
+          graph.variable(.CPU, .WC(batchSize, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
@@ -733,6 +775,15 @@ public final class ModelImporter {
           }
         }
       } else if modelVersion == .pixart {
+        // Remove the model.diffusion_model / model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          } else if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
+          }
+        }
+      } else if modelVersion == .flux1 {
         // Remove the model.diffusion_model / model prefix.
         for (key, value) in stateDict {
           if key.hasPrefix("model.diffusion_model.") {
@@ -835,7 +886,16 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .auraflow, .flux1:
+          case .flux1:
+            let inputs: [DynamicGraph.Tensor<FloatType>] =
+              [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
+            unet.compile(inputs: inputs)
+            unetFixed.compile(inputs: crossattn)
+            UNetMapping = unetMapper(isDiffusersFormat ? .diffusers : .generativeModels)
+            UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
+            modelPrefix = "dit"
+            modelPrefixFixed = "dit"
+          case .auraflow:
             fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
             fatalError()
@@ -860,19 +920,9 @@ public final class ModelImporter {
               try archive.with(tensorDescriptor) { tensor in
                 if value.count > 1 {
                   let tensor = Tensor<FloatType>(from: tensor)
-                  let count = tensor.shape[0] / value.count
-                  for (i, name) in value.enumerated() {
-                    if tensor.shape.count > 1 {
-                      store.write(
-                        "__\(modelPrefix)__[\(name)]",
-                        tensor: tensor[(i * count)..<((i + 1) * count), 0..<tensor.shape[1]]
-                          .copied())
-                    } else {
-                      store.write(
-                        "__\(modelPrefix)__[\(name)]",
-                        tensor: tensor[(i * count)..<((i + 1) * count)].copied())
-                    }
+                  value.write(to: store, tensor: tensor, format: value.format, isDiagonal: false) {
                     let _ = interrupt()
+                    return "__\(modelPrefix)__[\($0)]"
                   }
                 } else if let name = value.first {
                   if name.contains("time_mixer") {
@@ -896,19 +946,9 @@ public final class ModelImporter {
               try archive.with(tensorDescriptor) { tensor in
                 let tensor = Tensor<FloatType>(from: tensor)
                 if value.count > 1 {
-                  let count = tensor.shape[0] / value.count
-                  for (i, name) in value.enumerated() {
-                    if tensor.shape.count > 1 {
-                      store.write(
-                        "__\(modelPrefixFixed)__[\(name)]",
-                        tensor: tensor[(i * count)..<((i + 1) * count), 0..<tensor.shape[1]]
-                          .copied())
-                    } else {
-                      store.write(
-                        "__\(modelPrefixFixed)__[\(name)]",
-                        tensor: tensor[(i * count)..<((i + 1) * count)].copied())
-                    }
+                  value.write(to: store, tensor: tensor, format: value.format, isDiagonal: false) {
                     let _ = interrupt()
+                    return "__\(modelPrefixFixed)__[\($0)]"
                   }
                 } else if let name = value.first {
                   store.write("__\(modelPrefixFixed)__[\(name)]", tensor: tensor)
@@ -954,7 +994,11 @@ public final class ModelImporter {
           if $0.keys.count != 1157 {
             throw Error.tensorWritesFailed
           }
-        case .auraflow, .flux1:
+        case .flux1:
+          if $0.keys.count != 1732 && $0.keys.count != 1728 {
+            throw Error.tensorWritesFailed
+          }
+        case .auraflow:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()

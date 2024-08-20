@@ -75,13 +75,13 @@ extension Interpreter {
       }
       let storage: Storage
       if global.function == "HalfStorage" {
-        storage = Storage(name: name, size: size, dataType: .Float16, BF16: false)
+        storage = Storage(name: name, size: size, dataType: .Float16, BF16: false, FP8: false)
       } else if global.function == "BFloat16Storage" {
-        storage = Storage(name: name, size: size, dataType: .Float16, BF16: true)
+        storage = Storage(name: name, size: size, dataType: .Float16, BF16: true, FP8: false)
       } else if global.function == "DoubleStorage" {
-        storage = Storage(name: name, size: size, dataType: .Float64, BF16: false)
+        storage = Storage(name: name, size: size, dataType: .Float64, BF16: false, FP8: false)
       } else {
-        storage = Storage(name: name, size: size, dataType: .Float32, BF16: false)
+        storage = Storage(name: name, size: size, dataType: .Float32, BF16: false, FP8: false)
       }
       return [storage]
     }
