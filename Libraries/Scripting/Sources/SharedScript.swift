@@ -54,6 +54,13 @@ extension ScriptExecutor {
       DDIM_TRAILING: 16
     }
 
+    const BodyMaskType = {
+      CLOTHING: "clothing",
+      UPPER_BODY: "upper_body",
+      LOWER_BODY: "lower_body",
+      NECK: "neck"
+    }
+
     class Point {
       constructor(x, y) {
         this.x = x;
@@ -294,6 +301,9 @@ extension ScriptExecutor {
       },
       CLIP(listOfText) {
         return __dtHooks.CLIP(listOfText);
+      },
+      answer(model, question) {
+        return __dtHooks.answer(model, question);
       },
       loadImage(file) {
         __dtHooks.loadImageFileToCanvas(file);

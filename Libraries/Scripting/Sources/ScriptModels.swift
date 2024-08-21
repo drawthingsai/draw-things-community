@@ -65,8 +65,6 @@ public final class JSControl: Codable {
   }
 }
 
-// TODO: when we decode from JSON, should we catch any unknown keys, e.g. from a misspelling like:
-// configuration.startWidth = 2;
 public final class JSGenerationConfiguration: Codable {
   public let id: Int64
   public var width: UInt32

@@ -155,6 +155,7 @@ extension SupportedPrefix {
   func downloadBuiltins(_ files: [String])
   func requestFromUser(_ title: String, _ confirm: String, _ config: [[String: Any]]) -> [Any]
   func screenSize() -> [String: Any]
+  func answer(_: String, _: String) -> String
 }
 
 public protocol ScriptExecutorDelegate: AnyObject {
@@ -213,6 +214,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
     lifetimeObjects: [AnyObject], result: [Any]
   )
   func screenSize() -> [String: Any]
+  func answer(model: String, question: String) throws -> String
 }
 
 public struct ScriptExecutionSession {
@@ -503,6 +505,13 @@ extension ScriptExecutor: JSInterop {
     }
   }
 
+  func answer(_ model: String, _ question: String) -> String {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      return try delegate.answer(model: model, question: question)
+    }
+  }
+
   func createBodyMask(_ types: [String], _ extraArea: Bool) -> Int {
     return forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
@@ -511,7 +520,7 @@ extension ScriptExecutor: JSInterop {
           return SCHPMaskGenerator.Category.lowerBody
         } else if $0.lowercased().hasPrefix("upper") {
           return SCHPMaskGenerator.Category.upperBody
-        } else if $0.lowercased().hasPrefix("dress") {
+        } else if $0.lowercased().hasPrefix("dress") || $0.lowercased().hasPrefix("clothing") {
           return SCHPMaskGenerator.Category.dresses
         } else if $0.lowercased().hasPrefix("neck") {
           return SCHPMaskGenerator.Category.neck

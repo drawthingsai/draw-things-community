@@ -20,6 +20,12 @@ extension Int: DefaultCreatable {
   }
 }
 
+extension String: DefaultCreatable {
+  public static func defaultInstance() -> String {
+    return ""
+  }
+}
+
 extension Optional: DefaultCreatable {
   public static func defaultInstance() -> Wrapped? {
     return nil
