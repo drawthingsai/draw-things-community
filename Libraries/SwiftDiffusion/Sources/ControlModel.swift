@@ -25,7 +25,7 @@ public enum ControlType: String, Codable {
   case ipadapterplus
   case ipadapterfull
   case controlnetlora
-  case injectKV
+  case injectKV = "inject_kv"
 }
 
 public enum ControlMode {
