@@ -17,7 +17,8 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -
   let linear1 = Dense(count: intermediateSize, noBias: true, name: "\(name)_linear1")
   let linear2 = Dense(count: intermediateSize, noBias: true, name: "\(name)_linear2")
   var out = linear1(x).swish() .* linear2(x)
-  let outProjection = Dense(count: hiddenSize, noBias: true, name: "\(name)_out_proj")
+  let outProjection = Dense(
+    count: hiddenSize, noBias: true, flags: .Float32, name: "\(name)_out_proj")
   out = outProjection(out)
   return (linear1, linear2, outProjection, Model([x], [out]))
 }

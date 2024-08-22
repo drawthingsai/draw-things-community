@@ -77,6 +77,9 @@ extension DPMPPSDESampler: Sampler {
     startFrameCfg: Float, sharpness: Float, sampling: Sampling,
     feedback: (Int, Tensor<FloatType>?) -> Bool
   ) -> Result<SamplerOutput<FloatType, UNet>, Error> {
+    guard endStep.integral > startStep.integral else {
+      return .success(SamplerOutput(x: x_T, unets: [nil]))
+    }
     var x = x_T
     var c0 = c[0]
     let batchSize = x.shape[0]

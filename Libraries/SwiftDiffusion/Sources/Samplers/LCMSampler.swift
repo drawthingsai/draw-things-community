@@ -82,6 +82,9 @@ extension LCMSampler: Sampler {
     startFrameCfg: Float, sharpness: Float, sampling: Sampling,
     feedback: (Int, Tensor<FloatType>?) -> Bool
   ) -> Result<SamplerOutput<FloatType, UNet>, Error> {
+    guard endStep.integral > startStep.integral else {
+      return .success(SamplerOutput(x: x_T, unets: [nil]))
+    }
     var x = x_T
     let batchSize = x.shape[0]
     let startHeight = x.shape[1]
