@@ -196,7 +196,7 @@ private func InputBlocks(
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
-        injectedAttentionKV: false, outputSpatialAttnInput: false)
+        injectedAttentionKV: false)
       previousChannel = channel
       if attentionBlock {
         out = inputLayer(out, emb, c)
@@ -290,7 +290,7 @@ private func InputBlocks(
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
-        injectedAttentionKV: false, outputSpatialAttnInput: false)
+        injectedAttentionKV: false)
       previousChannel = channel
       if attentionBlock {
         out = inputLayer(out, emb, c)
@@ -387,7 +387,7 @@ public func ControlNet(
     channels: 1280, numHeads: 8, batchSize: batchSize, height: startHeight / 8,
     width: startWidth / 8, embeddingLength: embeddingLength, injectIPAdapterLengths: [],
     upcastAttention: false, usesFlashAttention: usesFlashAttention, x: out, emb: emb, c: c,
-    injectedAttentionKVs: [], outputSpatialAttnInput: false)
+    injectedAttentionKVs: [])
   out = middleBlock
   var zeroConvs = [Model]()
   var outputs = [Model.IO]()
@@ -496,7 +496,7 @@ public func ControlNetv2(
     prefix: "model.control_model",
     channels: 1280, numHeadChannels: 64, batchSize: batchSize, height: startHeight / 8,
     width: startWidth / 8, embeddingLength: embeddingLength, upcastAttention: upcastAttention,
-    usesFlashAttention: usesFlashAttention, x: out, emb: emb, c: c)
+    usesFlashAttention: usesFlashAttention, x: out, emb: emb, c: c, injectedAttentionKV: false)
   out = middleBlock
   var zeroConvs = [Model]()
   var outputs = [Model.IO]()

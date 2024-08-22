@@ -11,6 +11,7 @@ public protocol UNetProtocol {
   mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
     usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
+    injectAttentionKV: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
@@ -19,8 +20,9 @@ public protocol UNetProtocol {
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration
+    tiledDiffusion: TiledConfiguration, injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
   ) -> Bool
+
   func callAsFunction(
     timestep: Float,
     inputs: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>?,
@@ -30,13 +32,16 @@ public protocol UNetProtocol {
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
-      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+      injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
     tiledDiffusion: TiledConfiguration,
     controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType>
+
   func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType>
+
 }
 
 extension UNetProtocol {
@@ -150,6 +155,7 @@ extension UNetFromNNC {
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
     usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
+    injectAttentionKV: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
@@ -158,7 +164,7 @@ extension UNetFromNNC {
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration
+    tiledDiffusion: TiledConfiguration, injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
   ) -> Bool {
     guard unet == nil else { return true }
     let shape = xT.shape
@@ -213,8 +219,7 @@ extension UNetFromNNC {
             startWidth: tiledWidth, startHeight: tiledHeight,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-            injectIPAdapterLengths: injectIPAdapterLengths, injectAttentionKV: false,
-            outputSpatialAttnInput: false
+            injectIPAdapterLengths: injectIPAdapterLengths, injectAttentionKV: injectAttentionKV
           ).0
       }
     case .v2:
@@ -516,6 +521,9 @@ extension UNetFromNNC {
     if injectT2IAdapters {
       inputs.append(contentsOf: injectedT2IAdapters)
     }
+    if !injectedAttentionKVs.isEmpty {
+      inputs.append(contentsOf: injectedAttentionKVs)
+    }
     let tileOverlap = min(
       min(
         tiledDiffusion.tileOverlap * tileScaleFactor,
@@ -683,7 +691,8 @@ extension UNetFromNNC {
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
-      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+      injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     ), controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     let shape = xT.shape
@@ -692,7 +701,7 @@ extension UNetFromNNC {
     ].copied()
     // Need to rework the shape. For Wurstchen B, we need to slice them up.
     // For ControlNet, we already sliced them up into batch dimension, now need to extract them out.
-    let (injectedControls, injectedT2IAdapters) = injectedControlsAndAdapters(
+    let (injectedControls, injectedT2IAdapters, _) = injectedControlsAndAdapters(
       xT, inputStartYPad, inputEndYPad, inputStartXPad, inputEndXPad, &controlNets)
     let inputs = sliceInputs(
       inputs + injectedControls + injectedT2IAdapters, originalShape: shape, xyTiles: xyTiles,
@@ -709,16 +718,19 @@ extension UNetFromNNC {
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
-      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+      injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     ), controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     guard let xTileWeightsAndIndexes = xTileWeightsAndIndexes,
       let yTileWeightsAndIndexes = yTileWeightsAndIndexes
     else {
-      let (injectedControls, injectedT2IAdapters) = injectedControlsAndAdapters(
-        xT, 0, 0, 0, 0, &controlNets)
-      return unet!(inputs: xT, inputs + injectedControls + injectedT2IAdapters)[0].as(
-        of: FloatType.self)
+      let (injectedControls, injectedT2IAdapters, injectedAttentionKVs) =
+        injectedControlsAndAdapters(
+          xT, 0, 0, 0, 0, &controlNets)
+      return unet!(
+        inputs: xT, inputs + injectedControls + injectedT2IAdapters + injectedAttentionKVs)[0].as(
+          of: FloatType.self)
     }
     let shape = xT.shape
     let startHeight = shape[1]
@@ -808,7 +820,8 @@ extension UNetFromNNC {
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
-      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+      injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
@@ -863,10 +876,14 @@ extension UNetFromNNC {
         tiledDiffusion: tiledDiffusion, xT: xT, inputs: (timestep.map { [$0] } ?? []) + c,
         injectedControlsAndAdapters: injectedControlsAndAdapters, controlNets: &controlNets)
     } else {
-      let (injectedControls, injectedT2IAdapters) = injectedControlsAndAdapters(
-        xT, 0, 0, 0, 0, &controlNets)
+      let (injectedControls, injectedT2IAdapters, injectedAttentionKVs) =
+        injectedControlsAndAdapters(
+          xT, 0, 0, 0, 0, &controlNets)
+
       return unet!(
-        inputs: xT, (timestep.map { [$0] } ?? []) + c + injectedControls + injectedT2IAdapters)[0]
+        inputs: xT,
+        (timestep.map { [$0] } ?? []) + c + injectedControls + injectedT2IAdapters
+          + injectedAttentionKVs)[0]
         .as(of: FloatType.self)
     }
   }

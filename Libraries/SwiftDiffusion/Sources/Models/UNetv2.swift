@@ -7,7 +7,7 @@ func MiddleBlock(
   channels: Int, numHeadChannels: Int, batchSize: Int, height: Int, width: Int,
   embeddingLength: (Int, Int),
   upcastAttention: Bool, usesFlashAttention: FlashAttentionLevel,
-  x: Model.IO, emb: Model.IO, c: Model.IO
+  x: Model.IO, emb: Model.IO, c: Model.IO, injectedAttentionKV: Bool
 ) -> (Model.IO, PythonReader) {
   precondition(channels % numHeadChannels == 0)
   let numHeads = channels / numHeadChannels
@@ -21,8 +21,7 @@ func MiddleBlock(
   ) = SpatialTransformer(
     ch: channels, k: k, h: numHeads, b: batchSize, height: height, width: width, t: embeddingLength,
     intermediateSize: channels * 4, injectIPAdapterLengths: [], upcastAttention: upcastAttention,
-    usesFlashAttention: usesFlashAttention, flags: .Float16, injectedAttentionKV: false,
-    outputSpatialAttnInput: false)
+    usesFlashAttention: usesFlashAttention, flags: .Float16, injectedAttentionKV: false)
   out = transformer(out, c)
   let (inLayerNorm2, inLayerConv2d2, embLayer2, outLayerNorm2, outLayerConv2d2, _, resBlock2) =
     ResBlock(b: batchSize, outChannels: channels, skipConnection: false, flags: .Float16)
@@ -488,7 +487,7 @@ private func InputBlocks(
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
-        injectedAttentionKV: false, outputSpatialAttnInput: false)
+        injectedAttentionKV: false)
       previousChannel = channel
       if attentionBlock {
         out = inputLayer(out, emb, c)
@@ -595,7 +594,7 @@ func OutputBlocks(
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
-        injectedAttentionKV: false, outputSpatialAttnInput: false)
+        injectedAttentionKV: false)
       if attentionBlock {
         out = outputLayer(out, emb, c)
       } else {
@@ -674,7 +673,7 @@ public func UNetv2(
     prefix: "model.diffusion_model",
     channels: 1280, numHeadChannels: 64, batchSize: batchSize, height: startHeight / 8,
     width: startWidth / 8, embeddingLength: embeddingLength, upcastAttention: upcastAttention,
-    usesFlashAttention: usesFlashAttention, x: out, emb: emb, c: c)
+    usesFlashAttention: usesFlashAttention, x: out, emb: emb, c: c, injectedAttentionKV: false)
   out = middleBlock
   if injectControls {
     out = out + injectedControls[12]

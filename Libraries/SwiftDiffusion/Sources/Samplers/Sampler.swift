@@ -35,6 +35,7 @@ public enum SamplerModifier: String, Codable {
   case inpainting = "inpainting"
   case depth = "depth"
   case editing = "editing"
+  case double = "double"
 }
 
 public struct LoRAConfiguration: Equatable {

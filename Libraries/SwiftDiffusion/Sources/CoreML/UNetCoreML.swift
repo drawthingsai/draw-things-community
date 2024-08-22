@@ -31,6 +31,7 @@ extension UNetFromCoreML {
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
     usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
+    injectAttentionKV: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
@@ -39,7 +40,7 @@ extension UNetFromCoreML {
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration
+    tiledDiffusion: TiledConfiguration, injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
   ) -> Bool {
     #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
       // We cannot handle upcast attention, yet.
@@ -315,7 +316,8 @@ extension UNetFromCoreML {
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
-      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+      injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
     tiledDiffusion: TiledConfiguration,

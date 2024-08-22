@@ -1175,7 +1175,7 @@ public struct LoRATrainer {
       case .depth:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentHeight, latentWidth, 5), of: FloatType.self)
-      case .none:
+      case .none, .double:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentHeight, latentWidth, 4), of: FloatType.self)
       }

@@ -83,6 +83,7 @@ extension ImageGenerator {
     from type: SamplerType, isCfgEnabled: Bool, filePath: String, modifier: SamplerModifier,
     version: ModelVersion, usesFlashAttention: Bool, objective: Denoiser.Objective,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool, injectT2IAdapters: Bool,
+    injectAttentionKV: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration], isGuidanceEmbedEnabled: Bool,
     is8BitModel: Bool, canRunLoRASeparately: Bool, stochasticSamplingGamma: Float,
     conditioning: Denoiser.Conditioning, parameterization: Denoiser.Parameterization,
@@ -138,6 +139,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -150,6 +152,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -162,6 +165,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -174,6 +178,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -186,6 +191,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -198,6 +204,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -210,6 +217,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately,
@@ -221,6 +229,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately,
@@ -236,6 +245,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -251,6 +261,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -266,6 +277,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -281,6 +293,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -295,6 +308,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -308,6 +322,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -320,6 +335,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -336,6 +352,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -351,6 +368,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -366,6 +384,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -380,6 +399,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -393,6 +413,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -406,6 +427,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -419,6 +441,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -431,6 +454,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -447,6 +471,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -462,6 +487,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -477,6 +503,7 @@ extension ImageGenerator {
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           is8BitModel: is8BitModel,
@@ -491,6 +518,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -503,6 +531,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately,
@@ -514,6 +543,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately,
@@ -526,6 +556,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: false, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -541,6 +572,7 @@ extension ImageGenerator {
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: false, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         is8BitModel: is8BitModel,
@@ -1472,12 +1504,13 @@ extension ImageGenerator {
     shuffleCount: Int, controls: [Control], version: ModelVersion
   ) -> (
     injectControls: Bool, injectT2IAdapters: Bool, injectIPAdapterLengths: [Int],
-    injectedControls: Int
+    injectedControls: Int, injectAttentionKVs: Bool
   ) {
     var injectControls = false
     var injectT2IAdapters = false
     var injectIPAdapterLengths = [Int]()
     var injectedControls = 0
+    var injectAttentionKVs = false
     for control in controls {
       guard let file = control.file, let specification = ControlNetZoo.specificationForModel(file),
         ControlNetZoo.isModelDownloaded(specification)
@@ -1522,6 +1555,8 @@ extension ImageGenerator {
           injectControls = injectControls || hasImage
           injectedControls += hasImage ? 1 : 0
         }
+      case .injectKV:
+        injectAttentionKVs = injectAttentionKVs || shuffleCount > 0 || hasCustom
       case .ipadapterplus:
         if hasCustom || shuffleCount > 0 {
           injectIPAdapterLengths.append((shuffleCount > 0 ? shuffleCount : 1) * 16)
@@ -1548,7 +1583,10 @@ extension ImageGenerator {
         }
       }
     }
-    return (injectControls, injectT2IAdapters, injectIPAdapterLengths, injectedControls)
+    return (
+      injectControls, injectT2IAdapters, injectIPAdapterLengths, injectedControls,
+      injectAttentionKVs
+    )
   }
 
   public static var isDepthModelAvailable: Bool {
@@ -1712,6 +1750,9 @@ extension ImageGenerator {
       var filePaths = [ControlNetZoo.filePathForModelDownloaded(file)]
       if let imageEncoder = ControlNetZoo.imageEncoderForModel(file) {
         filePaths.append(ControlNetZoo.filePathForModelDownloaded(imageEncoder))
+      }
+      if type == .injectKV {
+        filePaths.append(ModelZoo.filePathForModelDownloaded("vae_ft_mse_840000_f16.ckpt"))
       }
       let controlModel = ControlModel<FloatType>(
         filePaths: filePaths, type: type, modifier: modifier,
@@ -2015,6 +2056,13 @@ extension ImageGenerator {
         case .color:
           return nil  // Not supported at the moment.
         }
+      case .injectKV:
+        guard !shuffles.isEmpty else { return nil }
+        let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
+          inputs: shuffles.map { (hint: graph.variable($0.0).toGPU(0), weight: $0.1) }
+        ).map { ($0, 1) }
+        return (model: controlModel, hints: hints)
+
       case .ipadapterplus, .ipadapterfull:
         var shuffles = shuffles
         if shuffles.isEmpty {
@@ -2417,7 +2465,10 @@ extension ImageGenerator {
       signposts.insert(.imageUpscaled)
     }
     let hasHints = Set(hints.keys)
-    let (canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls) =
+    let (
+      canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls,
+      canInjectAttentionKVs
+    ) =
       Self.canInjectControls(
         hasImage: image != nil, hasDepth: depth != nil, hasHints: hasHints,
         hasCustom: custom != nil,
@@ -2503,7 +2554,8 @@ extension ImageGenerator {
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
-      injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
+      injectT2IAdapters: canInjectT2IAdapters, injectAttentionKV: canInjectAttentionKVs,
+      injectIPAdapterLengths: injectIPAdapterLengths,
       lora: lora, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
       canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
@@ -2719,12 +2771,14 @@ extension ImageGenerator {
           heightScale: Float(firstPassStartWidth * 8) / Float(depthWidth))($0)
       }
       let firstPassDepth2Img = firstPassDepthImage.map { downscaleDepthForDepth2Img($0) }
+
       let injectedControls = generateInjectedControls(
         graph: graph, startHeight: firstPassStartHeight, startWidth: firstPassStartWidth,
         image: firstPassImage, depth: firstPassDepthImage, hints: hints, custom: custom,
         shuffles: shuffles, mask: nil, controls: configuration.controls, version: modelVersion,
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, steps: sampling.steps)
+
       guard
         let x =
           try? modelPreloader.consumeUNet(
@@ -2761,6 +2815,7 @@ extension ImageGenerator {
       }
       let isHighPrecisionVAEFallbackEnabled = DeviceCapability.isHighPrecisionVAEFallbackEnabled(
         scale: imageScale)
+
       let firstStage = FirstStage<FloatType>(
         filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: modelVersion,
         latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
@@ -2769,6 +2824,7 @@ extension ImageGenerator {
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion)
+
       if DeviceCapability.isLowPerformance {
         graph.garbageCollect()
       }
@@ -2899,7 +2955,10 @@ extension ImageGenerator {
           heightScale: Float(startWidth * 8) / Float(depthWidth))($0)
       }
       let secondPassDepth2Img = secondPassDepthImage.map { downscaleDepthForDepth2Img($0) }
-      let (canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls) =
+      let (
+        canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls,
+        canInjectAttentionKVs
+      ) =
         Self.canInjectControls(
           hasImage: true, hasDepth: secondPassDepthImage != nil, hasHints: hasHints,
           hasCustom: custom != nil, shuffleCount: shuffles.count, controls: configuration.controls,
@@ -2938,6 +2997,7 @@ extension ImageGenerator {
         upcastAttention: modelUpcastAttention,
         externalOnDemand: externalOnDemand,
         injectControls: canInjectControls, injectT2IAdapters: canInjectT2IAdapters,
+        injectAttentionKV: canInjectAttentionKVs,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
         canRunLoRASeparately: canRunLoRASeparately,
@@ -3206,7 +3266,10 @@ extension ImageGenerator {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
-    let (canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls) =
+    let (
+      canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls,
+      canInjectAttentionKVs
+    ) =
       Self.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
@@ -3294,7 +3357,8 @@ extension ImageGenerator {
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
-      injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
+      injectT2IAdapters: canInjectT2IAdapters, injectAttentionKV: canInjectAttentionKVs,
+      injectIPAdapterLengths: injectIPAdapterLengths,
       lora: lora, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
       canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
@@ -3607,6 +3671,7 @@ extension ImageGenerator {
           upcastAttention: modelUpcastAttention,
           externalOnDemand: externalOnDemand,
           injectControls: canInjectControls, injectT2IAdapters: canInjectT2IAdapters,
+          injectAttentionKV: canInjectAttentionKVs,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately,
@@ -4353,7 +4418,10 @@ extension ImageGenerator {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
-    let (canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls) =
+    let (
+      canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls,
+      canInjectAttentionKVs
+    ) =
       Self.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
@@ -4470,7 +4538,8 @@ extension ImageGenerator {
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
-      injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
+      injectT2IAdapters: canInjectT2IAdapters, injectAttentionKV: canInjectAttentionKVs,
+      injectIPAdapterLengths: injectIPAdapterLengths,
       lora: lora, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
       canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
@@ -4619,7 +4688,9 @@ extension ImageGenerator {
         usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
         steps: sampling.steps)
       var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
-      if modifier == .inpainting || modifier == .editing || modelVersion == .svdI2v {
+      if modifier == .inpainting || modifier == .editing || modifier == .double
+        || modelVersion == .svdI2v
+      {
         if modelVersion != .svdI2v {
           image = image .* graph.variable(imageNegMask2.toGPU(0))
         }
@@ -4738,6 +4809,7 @@ extension ImageGenerator {
           upcastAttention: modelUpcastAttention,
           externalOnDemand: externalOnDemand,
           injectControls: canInjectControls, injectT2IAdapters: canInjectT2IAdapters,
+          injectAttentionKV: canInjectAttentionKVs,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately,
@@ -4991,7 +5063,10 @@ extension ImageGenerator {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
-    let (canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls) =
+    let (
+      canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls,
+      canInjectAttentionKVs
+    ) =
       Self.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
@@ -5108,7 +5183,8 @@ extension ImageGenerator {
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
-      injectT2IAdapters: canInjectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
+      injectT2IAdapters: canInjectT2IAdapters, injectAttentionKV: canInjectAttentionKVs,
+      injectIPAdapterLengths: injectIPAdapterLengths,
       lora: lora, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
       canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
@@ -5469,6 +5545,7 @@ extension ImageGenerator {
           upcastAttention: modelUpcastAttention,
           externalOnDemand: externalOnDemand,
           injectControls: canInjectControls, injectT2IAdapters: canInjectT2IAdapters,
+          injectAttentionKV: canInjectAttentionKVs,
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately,

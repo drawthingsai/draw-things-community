@@ -3,7 +3,7 @@ import NNC
 public struct ImageEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   let filePath: String
   let version: ImageEncoderVersion
-  init(filePath: String, version: ImageEncoderVersion) {
+  public init(filePath: String, version: ImageEncoderVersion) {
     self.filePath = filePath
     self.version = version
   }
@@ -18,7 +18,8 @@ extension ImageEncoder {
       switch version {
       case .clipL14_336:
         vit = CLIPVisionTransformer(
-          FloatType.self, grid: 24, width: 1024, layers: 24, heads: 16, batchSize: 1,
+          FloatType.self, grid: 24, width: 1024, layers: 24, heads: 16,
+          batchSize: 1,
           noFinalLayerNorm: true)
       case .openClipH14:
         vit = VisionTransformer(

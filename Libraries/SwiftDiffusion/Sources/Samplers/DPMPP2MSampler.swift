@@ -14,6 +14,8 @@ where UNet.FloatType == FloatType {
   public let externalOnDemand: Bool
   public let injectControls: Bool
   public let injectT2IAdapters: Bool
+  public let injectAttentionKV: Bool
+
   public let injectIPAdapterLengths: [Int]
   public let lora: [LoRAConfiguration]
   public let classifierFreeGuidance: Bool
@@ -26,7 +28,8 @@ where UNet.FloatType == FloatType {
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
-    injectT2IAdapters: Bool, injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
+    injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
+    lora: [LoRAConfiguration],
     classifierFreeGuidance: Bool, isGuidanceEmbedEnabled: Bool, is8BitModel: Bool,
     canRunLoRASeparately: Bool,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
@@ -40,6 +43,8 @@ where UNet.FloatType == FloatType {
     self.externalOnDemand = externalOnDemand
     self.injectControls = injectControls
     self.injectT2IAdapters = injectT2IAdapters
+    self.injectAttentionKV = injectAttentionKV
+
     self.injectIPAdapterLengths = injectIPAdapterLengths
     self.lora = lora
     self.classifierFreeGuidance = classifierFreeGuidance
@@ -98,6 +103,10 @@ extension DPMPP2MSampler: Sampler {
         inChannels = channels + 1
       case .editing:
         cfgChannels = 3
+        inChannels = channels * 2
+        isCfgEnabled = true
+      case .double:
+        cfgChannels = 2
         inChannels = channels * 2
         isCfgEnabled = true
       case .none:
@@ -161,6 +170,20 @@ extension DPMPP2MSampler: Sampler {
             (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
             channels..<(channels + 1)] =
             depthImage
+        }
+      }
+    case .double:
+      let maskedImage = maskedImage!
+      let maskedImageChannels = maskedImage.shape[3]
+      for i in 0..<batchSize {
+        xIn[
+          i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + maskedImageChannels)] =
+          maskedImage
+        if isCfgEnabled {
+          xIn[
+            (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
+            channels..<(channels + maskedImageChannels)] =
+            maskedImage
         }
       }
     case .none:
@@ -263,7 +286,7 @@ extension DPMPP2MSampler: Sampler {
         discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1
       let t = unet.timeEmbed(
         graph: graph, batchSize: cfgChannels * batchSize, timestep: firstTimestep, version: version)
-      let (injectedControls, injectedT2IAdapters, injectedIPAdapters) =
+      let (injectedControls, injectedT2IAdapters, injectedIPAdapters, injectedAttentionKVs) =
         ControlModel<FloatType>
         .emptyInjectedControlsAndAdapters(
           injecteds: injectedControls, step: 0, version: version, inputs: xIn,
@@ -278,6 +301,7 @@ extension DPMPP2MSampler: Sampler {
         filePath: filePath, externalOnDemand: externalOnDemand, version: version,
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
         inputs: xIn, t,
@@ -287,7 +311,7 @@ extension DPMPP2MSampler: Sampler {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
         injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-        tiledDiffusion: tiledDiffusion)
+        tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedAttentionKVs)
     }
     var noise: DynamicGraph.Tensor<FloatType>? = nil
     if mask != nil {
@@ -418,7 +442,9 @@ extension DPMPP2MSampler: Sampler {
           let t = unet.timeEmbed(
             graph: graph, batchSize: cfgChannels * batchSize, timestep: firstTimestep,
             version: currentModelVersion)
-          let (injectedControls, injectedT2IAdapters, injectedIPAdapters) =
+          let (
+            injectedControls, injectedT2IAdapters, injectedIPAdapters, injectedEmptyAttentionKVs
+          ) =
             ControlModel<FloatType>
             .emptyInjectedControlsAndAdapters(
               injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn,
@@ -433,7 +459,9 @@ extension DPMPP2MSampler: Sampler {
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
             version: refiner.version, upcastAttention: upcastAttention,
             usesFlashAttention: usesFlashAttention, injectControls: injectControls,
-            injectT2IAdapters: injectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
+            injectT2IAdapters: injectT2IAdapters, injectAttentionKV: injectAttentionKV,
+
+            injectIPAdapterLengths: injectIPAdapterLengths,
             lora: lora, is8BitModel: refiner.is8BitModel,
             canRunLoRASeparately: canRunLoRASeparately,
             inputs: xIn, t,
@@ -443,7 +471,7 @@ extension DPMPP2MSampler: Sampler {
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection, injectedControls: injectedControls,
             injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-            tiledDiffusion: tiledDiffusion)
+            tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedEmptyAttentionKVs)
           refinerKickIn = -1
           unets.append(unet)
         }

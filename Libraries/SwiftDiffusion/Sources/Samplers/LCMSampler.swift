@@ -14,6 +14,8 @@ where UNet.FloatType == FloatType {
   public let externalOnDemand: Bool
   public let injectControls: Bool
   public let injectT2IAdapters: Bool
+  public let injectAttentionKV: Bool
+
   public let injectIPAdapterLengths: [Int]
   public let lora: [LoRAConfiguration]
   public let isGuidanceEmbedEnabled: Bool
@@ -25,7 +27,8 @@ where UNet.FloatType == FloatType {
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
-    injectT2IAdapters: Bool, injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
+    injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
+    lora: [LoRAConfiguration],
     isGuidanceEmbedEnabled: Bool, is8BitModel: Bool, canRunLoRASeparately: Bool,
     conditioning: Denoiser.Conditioning,
     tiledDiffusion: TiledConfiguration, discretization: Discretization
@@ -38,6 +41,8 @@ where UNet.FloatType == FloatType {
     self.externalOnDemand = externalOnDemand
     self.injectControls = injectControls
     self.injectT2IAdapters = injectT2IAdapters
+    self.injectAttentionKV = injectAttentionKV
+
     self.injectIPAdapterLengths = injectIPAdapterLengths
     self.lora = lora
     self.isGuidanceEmbedEnabled = isGuidanceEmbedEnabled
@@ -94,6 +99,8 @@ extension LCMSampler: Sampler {
         inChannels = channels + 1
       case .editing:
         inChannels = channels * 2
+      case .double:
+        inChannels = channels * 2
       case .none:
         inChannels = channels
       }
@@ -121,6 +128,14 @@ extension LCMSampler: Sampler {
       let depthImage = depthImage!
       for i in 0..<batchSize {
         xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + 1)] = depthImage
+      }
+    case .double:
+      let maskedImage = maskedImage!
+      let maskedImageChannels = maskedImage.shape[3]
+      for i in 0..<batchSize {
+        xIn[
+          i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + maskedImageChannels)] =
+          maskedImage
       }
     case .none:
       break
@@ -219,7 +234,7 @@ extension LCMSampler: Sampler {
         discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1
       let t = unet.timeEmbed(
         graph: graph, batchSize: batchSize, timestep: firstTimestep, version: version)
-      let (injectedControls, injectedT2IAdapters, injectedIPAdapters) =
+      let (injectedControls, injectedT2IAdapters, injectedIPAdapters, injectedAttentionKVs) =
         ControlModel<FloatType>
         .emptyInjectedControlsAndAdapters(
           injecteds: injectedControls, step: 0, version: version, inputs: xIn,
@@ -234,6 +249,7 @@ extension LCMSampler: Sampler {
         filePath: filePath, externalOnDemand: externalOnDemand, version: version,
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
         inputs: xIn, t,
@@ -243,7 +259,7 @@ extension LCMSampler: Sampler {
         tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
         injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-        tiledDiffusion: tiledDiffusion)
+        tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedAttentionKVs)
     }
     var noise: DynamicGraph.Tensor<FloatType>? = nil
     if mask != nil || version == .kandinsky21 {
@@ -375,7 +391,7 @@ extension LCMSampler: Sampler {
             cfgCond = graph.variable(like: t)
             cfgCond.full(0)
           }
-          let (injectedControls, injectedT2IAdapters, injectedIPAdapters) =
+          let (injectedControls, injectedT2IAdapters, injectedIPAdapters, injectedAttentionKVs) =
             ControlModel<FloatType>
             .emptyInjectedControlsAndAdapters(
               injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn,
@@ -390,7 +406,9 @@ extension LCMSampler: Sampler {
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
             version: refiner.version, upcastAttention: upcastAttention,
             usesFlashAttention: usesFlashAttention, injectControls: injectControls,
-            injectT2IAdapters: injectT2IAdapters, injectIPAdapterLengths: injectIPAdapterLengths,
+            injectT2IAdapters: injectT2IAdapters, injectAttentionKV: injectAttentionKV,
+
+            injectIPAdapterLengths: injectIPAdapterLengths,
             lora: lora, is8BitModel: refiner.is8BitModel,
             canRunLoRASeparately: canRunLoRASeparately,
             inputs: xIn, t,
@@ -400,7 +418,7 @@ extension LCMSampler: Sampler {
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection, injectedControls: injectedControls,
             injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-            tiledDiffusion: tiledDiffusion)
+            tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedAttentionKVs)
           refinerKickIn = -1
           unets.append(unet)
         }
@@ -444,6 +462,7 @@ extension LCMSampler: Sampler {
           injectedControlsAndAdapters: injectedControlsAndAdapters,
           injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
           controlNets: &controlNets)
+
         if channels < etOut.shape[3] {
           etOut = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
         }

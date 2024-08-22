@@ -498,6 +498,7 @@ public enum ImageConverter {
     return (rgbTensor, binaryMask)
   }
   #if canImport(UIKit)
+
     public static func image(
       from tensor: Tensor<FloatType>, scaleFactor: CGFloat, binaryMask: Tensor<UInt8>? = nil,
       only1: Bool = false, overlayRects: [CGRect] = []
@@ -1000,7 +1001,7 @@ public enum ImageConverter {
             ["model": $0.file, "weight": $0.weight] as [String: Any]
           }
         }
-        let (canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, _) =
+        let (canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, _, _) =
           ImageGenerator.canInjectControls(
             hasImage: true, hasDepth: true, hasHints: Set([.scribble, .pose, .color]),
             hasCustom: true, shuffleCount: 1,

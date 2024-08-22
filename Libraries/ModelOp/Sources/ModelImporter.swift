@@ -578,7 +578,7 @@ public final class ModelImporter {
         (unet, unetReader) = UNet(
           batchSize: batchSize, embeddingLength: (77, 77), startWidth: 64, startHeight: 64,
           usesFlashAttention: .none, injectControls: false, injectT2IAdapters: false,
-          injectIPAdapterLengths: [], injectAttentionKV: false, outputSpatialAttnInput: false)
+          injectIPAdapterLengths: [], injectAttentionKV: false)
         unetMapper = nil
         (unetFixed, unetFixedMapper) = (nil, nil)
       case .v2:

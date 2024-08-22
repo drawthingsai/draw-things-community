@@ -25,6 +25,7 @@ public enum ControlType: String, Codable {
   case ipadapterplus
   case ipadapterfull
   case controlnetlora
+  case injectKV
 }
 
 public enum ControlMode {
@@ -110,7 +111,7 @@ extension ControlModel {
     for (i, injected) in injecteds.enumerated() {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
-      case .controlnet, .controlnetlora, .t2iadapter:
+      case .controlnet, .controlnetlora, .t2iadapter, .injectKV:
         continue
       case .ipadapterplus, .ipadapterfull:
         var instanceInjectedIPAdapters = [DynamicGraph.Tensor<FloatType>]()
@@ -140,7 +141,7 @@ extension ControlModel {
     return injectedIPAdapters
   }
 
-  static func injectedControlsAndAdapters(
+  public static func injectedControlsAndAdapters(
     injecteds: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )],
@@ -156,15 +157,32 @@ extension ControlModel {
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
-      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+      injectedKVs: [DynamicGraph.Tensor<FloatType>]
     )
   ) {
     var injectedT2IAdapters = [DynamicGraph.Tensor<FloatType>]()
+    var injectedKVs = [DynamicGraph.Tensor<FloatType>]()
+
     for (i, injected) in injecteds.enumerated() {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
       case .controlnet, .controlnetlora, .ipadapterplus, .ipadapterfull:
         continue
+      case .injectKV:
+        for (hint, strength) in injected.hints {
+          let newHint = injected.model(
+            inputStartYPad: 0, inputEndYPad: 0, inputStartXPad: 0, inputEndXPad: 0,
+            step: step, inputs: xT, hint, strength: strength, timestep, c[i],
+            tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: mainUNetAndWeightMapper,
+            controlNet: &existingControlNets[i])
+          if injectedKVs.isEmpty {
+            injectedKVs = newHint
+          } else {
+            injectedKVs = zip(injectedKVs, newHint).map { $0 + $1 }
+          }
+        }
       case .t2iadapter:
         for (hint, strength) in injected.hints {
           let newInjectedT2IAdapters = injected.model(
@@ -201,11 +219,11 @@ extension ControlModel {
               injectedControls = zip(injectedControls, newInjectedControls).map { $0 + $1 }
             }
           }
-        case .ipadapterplus, .ipadapterfull, .t2iadapter:
+        case .ipadapterplus, .ipadapterfull, .t2iadapter, .injectKV:
           continue
         }
       }
-      return (injectedControls, injectedT2IAdapters)
+      return (injectedControls, injectedT2IAdapters, injectedKVs)
     }
   }
 
@@ -217,11 +235,12 @@ extension ControlModel {
     tiledDiffusion: TiledConfiguration
   ) -> (
     [DynamicGraph.Tensor<FloatType>], [DynamicGraph.Tensor<FloatType>],
-    [DynamicGraph.Tensor<FloatType>]
+    [DynamicGraph.Tensor<FloatType>], [DynamicGraph.Tensor<FloatType>]
   ) {
     var injectedControls = [DynamicGraph.Tensor<FloatType>]()
     var injectedT2IAdapters = [DynamicGraph.Tensor<FloatType>]()
     var injectedIPAdapters = [DynamicGraph.Tensor<FloatType>]()
+    var injectedKVs = [DynamicGraph.Tensor<FloatType>]()
     let graph = xT.graph
     let batchSize = xT.shape[0]
     let startHeight = xT.shape[1]
@@ -270,9 +289,14 @@ extension ControlModel {
           injectedT2IAdapters = emptyAdapters(
             graph: graph, startWidth: tiledWidth, startHeight: tiledHeight)
         }
+      case .injectKV:
+        if injectedKVs.isEmpty {
+          injectedKVs = emptyInjectKV(
+            graph: graph, batchSize: batchSize, startWidth: tiledWidth, startHeight: tiledHeight)
+        }
       }
     }
-    return (injectedControls, injectedT2IAdapters, injectedIPAdapters)
+    return (injectedControls, injectedT2IAdapters, injectedIPAdapters, injectedKVs)
   }
 }
 
@@ -419,6 +443,131 @@ extension ControlModel {
         }
       } else {
         return inputs.map { hintNet(inputs: $0.hint).map { $0.as(of: FloatType.self) } }
+      }
+    case .injectKV:
+      return inputs.map {
+        var promptEmbeds = graph.variable(.GPU(0), .HWC(2, 2, 768), of: FloatType.self)
+        let image = $0.hint
+
+        // vae encoding
+        let x = image
+        let shape = x.shape
+        let startHeight = shape[1] / 8
+        let startWidth = shape[2] / 8
+        let encoder = Encoder(
+          channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
+          startHeight: startHeight, usesFlashAttention: false
+        ).0
+        encoder.compile(inputs: x[0..<1, 0..<(startHeight * 8), 0..<(startWidth * 8), 0..<shape[3]])
+        let vaeFilePath = filePaths[2]
+        graph.openStore(
+          vaeFilePath, flags: .readOnly
+        ) {
+          $0.read("encoder", model: encoder, codec: [.jit])
+        }
+        var vaeEncoding = encoder(inputs: x)[0].as(of: FloatType.self)
+        vaeEncoding = vaeEncoding
+
+        // clip image encoding
+        let inputHeight = image.shape[1]
+        let inputWidth = image.shape[2]
+        precondition(image.shape[3] == 3)
+        let mean = graph.variable(
+          Tensor<FloatType>(
+            [
+              FloatType(2 * 0.48145466 - 1), FloatType(2 * 0.4578275 - 1),
+              FloatType(2 * 0.40821073 - 1),
+            ], .GPU(0), .NHWC(1, 1, 1, 3)))
+        let invStd = graph.variable(
+          Tensor<FloatType>(
+            [
+              FloatType(0.5 / 0.26862954), FloatType(0.5 / 0.26130258), FloatType(0.5 / 0.27577711),
+            ],
+            .GPU(0), .NHWC(1, 1, 1, 3)))
+        var imageTensorsGPU: DynamicGraph.Tensor<FloatType> = image.toGPU(0)
+        if inputHeight != 224 || inputWidth != 224 {
+          imageTensorsGPU =
+            (Upsample(
+              .bilinear, widthScale: Float(224) / Float(inputWidth),
+              heightScale: Float(224) / Float(inputHeight))(imageTensorsGPU) - mean) .* invStd
+        } else {
+          imageTensorsGPU = (imageTensorsGPU - mean) .* invStd
+        }
+        let vit = CLIPVisionTransformer(
+          FloatType.self, grid: 16, width: 1024, layers: 24, heads: 16, batchSize: 1
+        )
+        vit.compile(inputs: imageTensorsGPU)
+        let visualProj = graph.variable(.GPU(0), .NC(1024, 768), of: FloatType.self)
+        graph.openStore(
+          filePaths[1], flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: filePaths[1])
+        ) {
+          $0.read("vision_model", model: vit)
+          $0.read("visual_proj", variable: visualProj)
+        }
+        var imageOut = vit(inputs: imageTensorsGPU)[0].as(of: FloatType.self)
+        imageOut = imageOut * visualProj
+
+        // preset clip text encoding
+        let textEmbeds = graph.variable(.GPU(0), .HWC(1, 1, 768), of: FloatType.self)
+        graph.openStore(
+          filePaths[0], externalStore: TensorData.externalStore(filePath: filePaths[0])
+        ) {
+          $0.read("text_embeds", variable: textEmbeds)
+        }
+        let vaeShape = vaeEncoding.shape
+        let vaeEmbedsTensor = vaeEncoding[0..<1, 0..<vaeShape[1], 0..<vaeShape[2], 0..<4]
+          .contiguous()
+
+        promptEmbeds[0..<1, 0..<1, 0..<768] = textEmbeds
+        promptEmbeds[0..<1, 1..<2, 0..<768] = imageOut
+        promptEmbeds[1..<2, 0..<1, 0..<768] = textEmbeds
+        promptEmbeds[1..<2, 1..<2, 0..<768] = imageOut
+        let vaeStartHeight = vaeEmbedsTensor.shape[1]
+        let vaeStartWidth = vaeEmbedsTensor.shape[2]
+        let channels = vaeEmbedsTensor.shape[3]
+        let cfgChannels = 2
+        let t = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: 0, batchSize: cfgChannels, embeddingSize: 320, maxPeriod: 10_000
+            )
+          ).toGPU(0))
+
+        var xIn = graph.variable(
+          .GPU(0), .NHWC(cfgChannels, startHeight, startWidth, channels),
+          of: FloatType.self
+        )
+        xIn.full(0)
+        xIn[1..<2, 0..<startHeight, 0..<startWidth, 0..<channels] = vaeEmbedsTensor
+        let newC = [promptEmbeds]
+        let tiledWidth =
+          tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+        let tiledHeight =
+          tiledDiffusion.isEnabled
+          ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+
+        let garmUnet = UNet(
+          batchSize: 2, embeddingLength: (2, 2),
+          startWidth: tiledWidth, startHeight: tiledHeight,
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+          injectControls: false, injectT2IAdapters: false,
+          injectIPAdapterLengths: [], injectAttentionKV: false
+        ).0
+
+        var inputs = [DynamicGraph.Tensor<FloatType>]()
+        inputs.append(t)
+        inputs.append(contentsOf: newC)
+        garmUnet.compile(inputs: [xIn] + inputs)
+        graph.openStore(
+          filePaths[0], flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: filePaths[0])
+        ) {
+          $0.read("unet", model: garmUnet)
+        }
+
+        var etOut = garmUnet(inputs: xIn, [t] + newC).map { $0.as(of: FloatType.self) }
+        return Array(etOut[2..<18])
       }
     case .ipadapterplus:
       let imageEncoder = ImageEncoder<FloatType>(
@@ -841,6 +990,43 @@ extension ControlModel {
     return emptyControls
   }
 
+  private static func emptyInjectKV(
+    graph: DynamicGraph, batchSize: Int, startWidth: Int, startHeight: Int
+  )
+    -> [DynamicGraph.Tensor<FloatType>]
+  {
+    precondition(startWidth % 8 == 0)
+    precondition(startHeight % 8 == 0)
+    let emptyInjectKVs: [DynamicGraph.Tensor<FloatType>] = [
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, 320)),
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, 320)),
+
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 2, startWidth / 2, 640)),
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 2, startWidth / 2, 640)),
+
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
+
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 8, startWidth / 8, 1280)),
+
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
+
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 2, startWidth / 2, 640)),
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 2, startWidth / 2, 640)),
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 2, startWidth / 2, 640)),
+
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, 320)),
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, 320)),
+      graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, 320)),
+    ]
+    for emptyInjectKV in emptyInjectKVs {
+      emptyInjectKV.full(0)
+    }
+    return emptyInjectKVs
+  }
+
   private static func emptyAdapters(graph: DynamicGraph, startWidth: Int, startHeight: Int)
     -> [DynamicGraph.Tensor<FloatType>]
   {
@@ -1089,7 +1275,7 @@ extension ControlModel {
           }
         }
       }
-    case .ipadapterfull, .ipadapterplus, .t2iadapter:
+    case .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV:
       fatalError()
     }
     return (vector.map({ [$0] }) ?? [])
@@ -1125,10 +1311,31 @@ extension ControlModel {
           usesFlashAttention: usesFlashAttention)
       case .t2iadapter:
         return Self.emptyAdapters(graph: graph, startWidth: startWidth, startHeight: startHeight)
+      case .injectKV:
+        return Self.emptyInjectKV(
+          graph: graph, batchSize: batchSize, startWidth: startWidth, startHeight: startHeight)
       }
     }
     guard type == .controlnet || type == .controlnetlora else {
       switch type {
+      case .injectKV:
+        return hint.map {
+          let shape = $0.shape
+          guard shape[0] != batchSize else { return $0 }
+          precondition(shape[0] == 2)
+          var x = graph.variable(
+            .GPU(0), .HWC(batchSize, shape[1], shape[2]), of: FloatType.self)
+          for i in 0..<(batchSize / 2) {
+            x[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
+              $0[0..<1, 0..<shape[1], 0..<shape[2]]
+          }
+          for i in (batchSize / 2)..<batchSize {
+            x[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
+              $0[1..<2, 0..<shape[1], 0..<shape[2]]
+          }
+          return x
+
+        }
       case .ipadapterplus, .ipadapterfull:
         return hint.map {
           let shape = $0.shape

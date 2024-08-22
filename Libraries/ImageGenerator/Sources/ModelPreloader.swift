@@ -502,6 +502,9 @@ extension ModelPreloader {
     case .editing:
       cfgChannels = 3
       numberOfChannels = 8
+    case .double:
+      cfgChannels = 2
+      numberOfChannels = 8
     case .none:
       cfgChannels = 2
       numberOfChannels = 4
@@ -559,12 +562,13 @@ extension ModelPreloader {
         let _ = unet.compileModel(
           filePath: modelPath, externalOnDemand: externalOnDemand,
           version: modelVersion, upcastAttention: upcastAttention, usesFlashAttention: useMFA,
-          injectControls: false, injectT2IAdapters: false, injectIPAdapterLengths: [], lora: lora,
+          injectControls: false, injectT2IAdapters: false, injectAttentionKV: false,
+          injectIPAdapterLengths: [], lora: lora,
           is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately,
           inputs: x, t, cArr, tokenLengthUncond: 77, tokenLengthCond: 77, extraProjection: nil,
           injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
-          tiledDiffusion: tiledDiffusion)
+          tiledDiffusion: tiledDiffusion, injectedAttentionKVs: [])
         unetFilePath = modelPath
         unetExternalOnDemand = externalOnDemand
         unetInjectControls = false

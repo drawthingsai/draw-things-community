@@ -7,6 +7,7 @@ import NNC
 #endif
 
 public struct UNetWrapper<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetProtocol {
+
   private var unetFromNNC = UNetFromNNC<FloatType>()
   #if !os(Linux)
     private var unetFromCoreML = UNetFromCoreML<FloatType>()
@@ -49,6 +50,7 @@ extension UNetWrapper {
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
     usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
+    injectAttentionKV: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
     is8BitModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
@@ -57,7 +59,8 @@ extension UNetWrapper {
     injectedControls: [DynamicGraph.Tensor<FloatType>],
     injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration
+    tiledDiffusion: TiledConfiguration,
+    injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
   ) -> Bool {
     #if !os(Linux)
 
@@ -65,13 +68,14 @@ extension UNetWrapper {
         filePath: filePath, externalOnDemand: externalOnDemand, version: version,
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT,
         timestep, c,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
         injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-        tiledDiffusion: tiledDiffusion)
+        tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedAttentionKVs)
       {
         preferCoreML = true
         return true
@@ -81,12 +85,13 @@ extension UNetWrapper {
       filePath: filePath, externalOnDemand: externalOnDemand, version: version,
       upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
       injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+      injectAttentionKV: injectAttentionKV,
       injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
       is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT, timestep, c,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       extraProjection: extraProjection, injectedControls: injectedControls,
       injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-      tiledDiffusion: tiledDiffusion)
+      tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedAttentionKVs)
     return true
   }
 
@@ -99,7 +104,8 @@ extension UNetWrapper {
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
-      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+      injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
     tiledDiffusion: TiledConfiguration,
