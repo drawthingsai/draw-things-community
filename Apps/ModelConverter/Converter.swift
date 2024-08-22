@@ -29,6 +29,7 @@ struct Converter: ParsableCommand {
     var autoencoder: String?
     var clipEncoder: String?
     var t5Encoder: String?
+    var guidanceEmbed: Bool?
   }
 
   mutating func run() throws {
@@ -38,7 +39,7 @@ struct Converter: ParsableCommand {
       filePath: file, modelName: fileName,
       isTextEncoderCustomized: textEncoders,
       autoencoderFilePath: autoencoderFile, textEncoderFilePath: nil, textEncoder2FilePath: nil)
-    let (filePaths, modelVersion, modifier) = try importer.import { _ in
+    let (filePaths, modelVersion, modifier, inspectionResult) = try importer.import { _ in
     } progress: { _ in
     }
     let fileNames = filePaths.map { ($0 as NSString).lastPathComponent }
@@ -103,13 +104,22 @@ struct Converter: ParsableCommand {
       if clipEncoder == nil {
         clipEncoder = "open_clip_vit_h14_visual_proj_f16.ckpt"
       }
-    case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow, .flux1:
+    case .flux1:
+      textEncoder = "t5_xxl_encoder_q6p.ckpt"
+      clipEncoder = "clip_vit_l14_f16.ckpt"
+      if autoencoder == nil {
+        autoencoder = "flux_1_vae_f16.ckpt"
+      }
+    case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow:
       fatalError()
     }
-    let specification = Specification(
+    var specification = Specification(
       name: name, file: "\(fileName)_f16.ckpt", version: modelVersion, modifier: modifier,
       textEncoder: textEncoder, autoencoder: autoencoder, clipEncoder: clipEncoder,
       t5Encoder: t5Encoder)
+    if inspectionResult.hasGuidanceEmbed {
+      specification.guidanceEmbed = true
+    }
     let jsonEncoder = JSONEncoder()
     jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
     jsonEncoder.outputFormatting = .prettyPrinted

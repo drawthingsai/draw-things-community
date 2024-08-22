@@ -158,7 +158,7 @@ extension ControlModel {
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-      injectedKVs: [DynamicGraph.Tensor<FloatType>]
+      injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     )
   ) {
     var injectedT2IAdapters = [DynamicGraph.Tensor<FloatType>]()
