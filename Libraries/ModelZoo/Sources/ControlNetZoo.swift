@@ -15,11 +15,13 @@ public struct ControlNetZoo: DownloadZoo {
     public var deprecated: Bool? = nil
     public var imageEncoderVersion: ImageEncoderVersion? = nil
     public var ipAdapterConfig: IPAdapterConfig? = nil
+    public var autoencoder: String? = nil
     public init(
       name: String, file: String, modifier: ControlHintType, version: ModelVersion,
       type: ControlType, globalAveragePooling: Bool = false, imageEncoder: String? = nil,
       preprocessor: String? = nil, transformerBlocks: [Int]? = nil, deprecated: Bool? = nil,
-      imageEncoderVersion: ImageEncoderVersion? = nil, ipAdapterConfig: IPAdapterConfig? = nil
+      imageEncoderVersion: ImageEncoderVersion? = nil, ipAdapterConfig: IPAdapterConfig? = nil,
+      autoencoder: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -33,6 +35,7 @@ public struct ControlNetZoo: DownloadZoo {
       self.deprecated = deprecated
       self.imageEncoderVersion = imageEncoderVersion
       self.ipAdapterConfig = ipAdapterConfig
+      self.autoencoder = autoencoder
     }
   }
 
@@ -330,6 +333,7 @@ public struct ControlNetZoo: DownloadZoo {
     // Make sure both the model and the image encoder is downloaded.
     return ModelZoo.isModelDownloaded(specification.file)
       && (specification.imageEncoder.map { ModelZoo.isModelDownloaded($0) } ?? true)
+      && (specification.autoencoder.map { ModelZoo.isModelDownloaded($0) } ?? true)
       && (specification.preprocessor.map { ModelZoo.isModelDownloaded($0) } ?? true)
   }
 
@@ -361,6 +365,11 @@ public struct ControlNetZoo: DownloadZoo {
   public static func IPAdapterConfigForModel(_ name: String) -> IPAdapterConfig? {
     guard let specification = specificationMapping[name] else { return nil }
     return specification.ipAdapterConfig
+  }
+
+  public static func autoencoderForModel(_ name: String) -> String? {
+    guard let specification = specificationMapping[name] else { return nil }
+    return specification.autoencoder
   }
 
   public static func preprocessorForModel(_ name: String) -> String? {
@@ -445,6 +454,9 @@ public struct ControlNetZoo: DownloadZoo {
       files.insert(specification.file)
       if let imageEncoder = specification.imageEncoder {
         files.insert(imageEncoder)
+      }
+      if let autoencoder = specification.autoencoder {
+        files.insert(autoencoder)
       }
       if let preprocessor = specification.preprocessor {
         files.insert(preprocessor)

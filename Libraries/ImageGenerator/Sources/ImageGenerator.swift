@@ -1751,8 +1751,8 @@ extension ImageGenerator {
       if let imageEncoder = ControlNetZoo.imageEncoderForModel(file) {
         filePaths.append(ControlNetZoo.filePathForModelDownloaded(imageEncoder))
       }
-      if type == .injectKV {
-        filePaths.append(ModelZoo.filePathForModelDownloaded("vae_ft_mse_840000_f16.ckpt"))
+      if let autoencoder = ControlNetZoo.autoencoderForModel(file) {
+        filePaths.append(ControlNetZoo.filePathForModelDownloaded(autoencoder))
       }
       let controlModel = ControlModel<FloatType>(
         filePaths: filePaths, type: type, modifier: modifier,
