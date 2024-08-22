@@ -1169,13 +1169,13 @@ public struct LoRATrainer {
       case .inpainting:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentHeight, latentWidth, 9), of: FloatType.self)
-      case .editing:
+      case .editing, .double:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentHeight, latentWidth, 8), of: FloatType.self)
       case .depth:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentHeight, latentWidth, 5), of: FloatType.self)
-      case .none, .double:
+      case .none:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentHeight, latentWidth, 4), of: FloatType.self)
       }

@@ -109,15 +109,11 @@ public struct ScriptZoo {
       scriptFileToMetadata[metadata.file] = metadata
     }
     return scripts.map({
-      guard let script = scriptFileToMetadata[$0.file] else { return $0 }
-      //  TODO: something is very wrong here
-      let newScript = Script(
-        name: script.name, file: script.file,
-        filePath: scriptsUrl.appendingPathComponent(script.file).path,
-        isSampleDuplicate: script.isSampleDuplicate, type: script.type,
-        description: script.description, author: script.author, tags: script.tags,
-        images: script.images, baseColor: script.baseColor, favicon: script.favicon)
-      return newScript
+      guard var script = scriptFileToMetadata[$0.file] else { return $0 }
+      if script.filePath == nil {
+        script.filePath = scriptsUrl.appendingPathComponent(script.file).path
+      }
+      return script
     })
   }
 
@@ -149,15 +145,54 @@ public struct ScriptZoo {
     }
   }
 
-  public static func save(_ content: String, to file: String) {
+  public static func save(_ content: String, to file: String, script: Script? = nil) {
     try? FileManager.default.createDirectory(at: scriptsUrl, withIntermediateDirectories: true)
-    // TODO: is it best to crash here if writing fails?
     var presetContent = content
     if presetContent == "" {
       presetContent = jsHeaderDoc
     }
-    try? presetContent.write(
-      to: scriptsUrl.appendingPathComponent(file), atomically: true, encoding: .utf8)
+    do {
+      try presetContent.write(
+        to: scriptsUrl.appendingPathComponent(file), atomically: true, encoding: .utf8)
+    } catch {
+      return
+    }
+    // If there is no error, append to the disk if there is a script metadata.
+    guard var script = script else { return }
+    script.file = file
+    let completionHandler: ([Script]) -> Void = {
+      let jsonEncoder = JSONEncoder()
+      jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+      jsonEncoder.outputFormatting = .prettyPrinted
+      if let data = try? jsonEncoder.encode($0) {
+        try? data.write(
+          to: scriptsUrl.appendingPathComponent("custom_scripts.json"), options: [.atomic])
+      }
+    }
+    guard
+      let jsonData = try? Data(contentsOf: scriptsUrl.appendingPathComponent("custom_scripts.json"))
+    else {
+      completionHandler([script])
+      return
+    }
+    let jsonDecoder = JSONDecoder()
+    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    guard var scripts = try? jsonDecoder.decode([Script].self, from: jsonData) else {
+      completionHandler([script])
+      return
+    }
+    var updated = false
+    for (i, availableScript) in scripts.enumerated() {
+      if availableScript.file == script.file {
+        scripts[i] = script
+        updated = true
+        break
+      }
+    }
+    if !updated {
+      scripts.append(script)
+    }
+    completionHandler(scripts)
   }
 
   public static func contentOf(_ path: String) -> String? {
