@@ -160,6 +160,7 @@ public struct ScriptZoo {
     // If there is no error, append to the disk if there is a script metadata.
     guard var script = script else { return }
     script.file = file
+    script.filePath = nil
     let completionHandler: ([Script]) -> Void = {
       let jsonEncoder = JSONEncoder()
       jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
