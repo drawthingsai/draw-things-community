@@ -446,7 +446,6 @@ extension ControlModel {
       }
     case .injectKV:
       return inputs.map {
-        var promptEmbeds = graph.variable(.GPU(0), .HWC(2, 2, 768), of: FloatType.self)
         let image = $0.hint
 
         // vae encoding
@@ -454,100 +453,117 @@ extension ControlModel {
         let shape = x.shape
         let startHeight = shape[1] / 8
         let startWidth = shape[2] / 8
-        let encoder = Encoder(
-          channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, usesFlashAttention: false
-        ).0
-        encoder.compile(inputs: x[0..<1, 0..<(startHeight * 8), 0..<(startWidth * 8), 0..<shape[3]])
-        let vaeFilePath = filePaths[2]
-        graph.openStore(
-          vaeFilePath, flags: .readOnly
-        ) {
-          $0.read("encoder", model: encoder, codec: [.jit])
+        let tiledWidth =
+          tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+        let tiledHeight =
+          tiledDiffusion.isEnabled
+          ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+        let externalData: DynamicGraph.Store.Codec =
+          externalOnDemand ? .externalOnDemand : .externalData
+        let vaeEncoding = graph.withNoGrad {
+          let encoder = Encoder(
+            channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: tiledWidth,
+            startHeight: tiledHeight, usesFlashAttention: false
+          ).0
+          let input: DynamicGraph.Tensor<FloatType>
+          if shape[1] != tiledHeight * 8 || shape[2] != tiledWidth * 8 {
+            input =
+              Upsample(
+                .bilinear, widthScale: Float(tiledWidth * 8) / Float(shape[2]),
+                heightScale: Float(tiledHeight * 8) / Float(shape[1]))(x)
+          } else {
+            input = x
+          }
+          encoder.compile(inputs: input)
+          let vaeFilePath = filePaths[2]
+          graph.openStore(
+            vaeFilePath, flags: .readOnly,
+            externalStore: TensorData.externalStore(filePath: vaeFilePath)
+          ) {
+            $0.read("encoder", model: encoder, codec: [.jit, .q8p, .ezm7, externalData])
+          }
+          var vaeEncoding = encoder(inputs: input)[0].as(of: FloatType.self)
+          vaeEncoding = vaeEncoding
+          return vaeEncoding
         }
-        var vaeEncoding = encoder(inputs: x)[0].as(of: FloatType.self)
-        vaeEncoding = vaeEncoding
 
         // clip image encoding
         let inputHeight = image.shape[1]
         let inputWidth = image.shape[2]
         precondition(image.shape[3] == 3)
-        let mean = graph.variable(
-          Tensor<FloatType>(
-            [
-              FloatType(2 * 0.48145466 - 1), FloatType(2 * 0.4578275 - 1),
-              FloatType(2 * 0.40821073 - 1),
-            ], .GPU(0), .NHWC(1, 1, 1, 3)))
-        let invStd = graph.variable(
-          Tensor<FloatType>(
-            [
-              FloatType(0.5 / 0.26862954), FloatType(0.5 / 0.26130258), FloatType(0.5 / 0.27577711),
-            ],
-            .GPU(0), .NHWC(1, 1, 1, 3)))
-        var imageTensorsGPU: DynamicGraph.Tensor<FloatType> = image.toGPU(0)
-        if inputHeight != 224 || inputWidth != 224 {
-          imageTensorsGPU =
-            (Upsample(
-              .bilinear, widthScale: Float(224) / Float(inputWidth),
-              heightScale: Float(224) / Float(inputHeight))(imageTensorsGPU) - mean) .* invStd
-        } else {
-          imageTensorsGPU = (imageTensorsGPU - mean) .* invStd
+        let imageOut = graph.withNoGrad {
+          let mean = graph.variable(
+            Tensor<FloatType>(
+              [
+                FloatType(2 * 0.48145466 - 1), FloatType(2 * 0.4578275 - 1),
+                FloatType(2 * 0.40821073 - 1),
+              ], .GPU(0), .NHWC(1, 1, 1, 3)))
+          let invStd = graph.variable(
+            Tensor<FloatType>(
+              [
+                FloatType(0.5 / 0.26862954), FloatType(0.5 / 0.26130258),
+                FloatType(0.5 / 0.27577711),
+              ],
+              .GPU(0), .NHWC(1, 1, 1, 3)))
+          var imageTensorsGPU: DynamicGraph.Tensor<FloatType> = image.toGPU(0)
+          if inputHeight != 224 || inputWidth != 224 {
+            imageTensorsGPU =
+              (Upsample(
+                .bilinear, widthScale: Float(224) / Float(inputWidth),
+                heightScale: Float(224) / Float(inputHeight))(imageTensorsGPU) - mean) .* invStd
+          } else {
+            imageTensorsGPU = (imageTensorsGPU - mean) .* invStd
+          }
+          let vit = CLIPVisionTransformer(
+            FloatType.self, grid: 16, width: 1024, layers: 24, heads: 16, batchSize: 1
+          )
+          vit.compile(inputs: imageTensorsGPU)
+          let visualProj = graph.variable(.GPU(0), .NC(1024, 768), of: FloatType.self)
+          graph.openStore(
+            filePaths[1], flags: .readOnly,
+            externalStore: TensorData.externalStore(filePath: filePaths[1])
+          ) {
+            $0.read("vision_model", model: vit, codec: [externalData, .q8p, .ezm7])
+            $0.read("visual_proj", variable: visualProj, codec: [.externalData, .q8p, .ezm7])
+          }
+          var imageOut = vit(inputs: imageTensorsGPU)[0].as(of: FloatType.self)
+          imageOut = imageOut * visualProj
+          return imageOut
         }
-        let vit = CLIPVisionTransformer(
-          FloatType.self, grid: 16, width: 1024, layers: 24, heads: 16, batchSize: 1
-        )
-        vit.compile(inputs: imageTensorsGPU)
-        let visualProj = graph.variable(.GPU(0), .NC(1024, 768), of: FloatType.self)
-        graph.openStore(
-          filePaths[1], flags: .readOnly,
-          externalStore: TensorData.externalStore(filePath: filePaths[1])
-        ) {
-          $0.read("vision_model", model: vit)
-          $0.read("visual_proj", variable: visualProj)
-        }
-        var imageOut = vit(inputs: imageTensorsGPU)[0].as(of: FloatType.self)
-        imageOut = imageOut * visualProj
 
         // preset clip text encoding
         let textEmbeds = graph.variable(.GPU(0), .HWC(1, 1, 768), of: FloatType.self)
         graph.openStore(
           filePaths[0], externalStore: TensorData.externalStore(filePath: filePaths[0])
         ) {
-          $0.read("text_embeds", variable: textEmbeds)
+          $0.read("text_embeds", variable: textEmbeds, codec: [.externalData, .q8p, .ezm7])
         }
         let vaeShape = vaeEncoding.shape
         let vaeEmbedsTensor = vaeEncoding[0..<1, 0..<vaeShape[1], 0..<vaeShape[2], 0..<4]
           .contiguous()
 
+        var promptEmbeds = graph.variable(.GPU(0), .HWC(2, 2, 768), of: FloatType.self)
         promptEmbeds[0..<1, 0..<1, 0..<768] = textEmbeds
         promptEmbeds[0..<1, 1..<2, 0..<768] = imageOut
         promptEmbeds[1..<2, 0..<1, 0..<768] = textEmbeds
         promptEmbeds[1..<2, 1..<2, 0..<768] = imageOut
-        let vaeStartHeight = vaeEmbedsTensor.shape[1]
-        let vaeStartWidth = vaeEmbedsTensor.shape[2]
         let channels = vaeEmbedsTensor.shape[3]
-        let cfgChannels = 2
         let t = graph.variable(
           Tensor<FloatType>(
             from: timeEmbedding(
-              timestep: 0, batchSize: cfgChannels, embeddingSize: 320, maxPeriod: 10_000
+              timestep: 0, batchSize: 2, embeddingSize: 320, maxPeriod: 10_000
             )
           ).toGPU(0))
 
         var xIn = graph.variable(
-          .GPU(0), .NHWC(cfgChannels, startHeight, startWidth, channels),
+          .GPU(0), .NHWC(2, tiledHeight, tiledWidth, channels),
           of: FloatType.self
         )
         xIn.full(0)
-        xIn[1..<2, 0..<startHeight, 0..<startWidth, 0..<channels] = vaeEmbedsTensor
+        xIn[1..<2, 0..<tiledHeight, 0..<tiledWidth, 0..<channels] = vaeEmbedsTensor
         let newC = [promptEmbeds]
-        let tiledWidth =
-          tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
-        let tiledHeight =
-          tiledDiffusion.isEnabled
-          ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
 
-        let garmUnet = UNet(
+        let garmUnet = GarmentUNet(
           batchSize: 2, embeddingLength: (2, 2),
           startWidth: tiledWidth, startHeight: tiledHeight,
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
@@ -563,11 +579,10 @@ extension ControlModel {
           filePaths[0], flags: .readOnly,
           externalStore: TensorData.externalStore(filePath: filePaths[0])
         ) {
-          $0.read("unet", model: garmUnet)
+          $0.read("unet", model: garmUnet, codec: [.jit, .q8p, .ezm7, externalData])
         }
 
-        var etOut = garmUnet(inputs: xIn, [t] + newC).map { $0.as(of: FloatType.self) }
-        return Array(etOut[2..<18])
+        return garmUnet(inputs: xIn, [t] + newC).map { $0.as(of: FloatType.self) }
       }
     case .ipadapterplus:
       let imageEncoder = ImageEncoder<FloatType>(

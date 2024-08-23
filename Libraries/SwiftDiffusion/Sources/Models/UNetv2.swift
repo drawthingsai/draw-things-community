@@ -21,7 +21,8 @@ func MiddleBlock(
   ) = SpatialTransformer(
     ch: channels, k: k, h: numHeads, b: batchSize, height: height, width: width, t: embeddingLength,
     intermediateSize: channels * 4, injectIPAdapterLengths: [], upcastAttention: upcastAttention,
-    usesFlashAttention: usesFlashAttention, flags: .Float16, injectedAttentionKV: false)
+    usesFlashAttention: usesFlashAttention, flags: .Float16, injectedAttentionKV: false,
+    outputSpatialAttnInput: false)
   out = transformer(out, c)
   let (inLayerNorm2, inLayerConv2d2, embLayer2, outLayerNorm2, outLayerConv2d2, _, resBlock2) =
     ResBlock(b: batchSize, outChannels: channels, skipConnection: false, flags: .Float16)
@@ -487,7 +488,7 @@ private func InputBlocks(
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
-        injectedAttentionKV: false)
+        injectedAttentionKV: false, outputSpatialAttnInput: false)
       previousChannel = channel
       if attentionBlock {
         out = inputLayer(out, emb, c)
@@ -594,7 +595,7 @@ func OutputBlocks(
         height: height, width: width, embeddingLength: embeddingLength,
         intermediateSize: channel * 4, injectIPAdapterLengths: [],
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention, flags: .Float16,
-        injectedAttentionKV: false)
+        injectedAttentionKV: false, outputSpatialAttnInput: false)
       if attentionBlock {
         out = outputLayer(out, emb, c)
       } else {

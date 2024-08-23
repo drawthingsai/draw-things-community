@@ -701,13 +701,13 @@ extension UNetFromNNC {
     ].copied()
     // Need to rework the shape. For Wurstchen B, we need to slice them up.
     // For ControlNet, we already sliced them up into batch dimension, now need to extract them out.
-    let (injectedControls, injectedT2IAdapters, _) = injectedControlsAndAdapters(
+    let (injectedControls, injectedT2IAdapters, injectedAttentionKVs) = injectedControlsAndAdapters(
       xT, inputStartYPad, inputEndYPad, inputStartXPad, inputEndXPad, &controlNets)
     let inputs = sliceInputs(
       inputs + injectedControls + injectedT2IAdapters, originalShape: shape, xyTiles: xyTiles,
       index: index, inputStartYPad: inputStartYPad,
       inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad)
-    return unet!(inputs: xT, inputs)[0].as(of: FloatType.self)
+    return unet!(inputs: xT, inputs + injectedAttentionKVs)[0].as(of: FloatType.self)
   }
 
   private func tiledDiffuse(
