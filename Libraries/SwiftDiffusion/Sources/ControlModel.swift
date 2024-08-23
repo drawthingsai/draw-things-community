@@ -445,7 +445,8 @@ extension ControlModel {
         return inputs.map { hintNet(inputs: $0.hint).map { $0.as(of: FloatType.self) } }
       }
     case .injectKV:
-      return inputs.map {
+      // TODO: this is not efficient as for many more samples, we will load the model many more times.
+      var injectedKVs = inputs.map {
         let image = $0.hint
 
         // vae encoding
@@ -584,6 +585,20 @@ extension ControlModel {
 
         return garmUnet(inputs: xIn, [t] + newC).map { $0.as(of: FloatType.self) }
       }
+      injectedKVs = zip(inputs, injectedKVs).map {
+        guard $0.weight != 1 else {
+          return $1
+        }
+        let weight = $0.weight
+        // This can be improved, it makes more sense to manipulate key / value. But this looks OK for now.
+        // The reason to do this is to push the magnitude so it is more likely to attend these keys, rather
+        // than averaging out the variance, which will be more likely to loss information.
+        return $1.map {
+          let mean = $0.reduced(.mean, axis: [1])
+          return Functional.add(left: $0, right: mean, rightScalar: weight - 1)
+        }
+      }
+      return injectedKVs
     case .ipadapterplus:
       let imageEncoder = ImageEncoder<FloatType>(
         filePath: filePaths[1], version: imageEncoderVersion)
@@ -1013,28 +1028,28 @@ extension ControlModel {
     precondition(startWidth % 8 == 0)
     precondition(startHeight % 8 == 0)
     let emptyInjectKVs: [DynamicGraph.Tensor<FloatType>] = [
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, 320)),
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, 320)),
+      graph.variable(.GPU(0), .HWC(batchSize, startHeight * startWidth, 320)),
+      graph.variable(.GPU(0), .HWC(batchSize, startHeight * startWidth, 320)),
 
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 2, startWidth / 2, 640)),
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 2, startWidth / 2, 640)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 640)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 640)),
 
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 4) * (startWidth / 4), 1280)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 4) * (startWidth / 4), 1280)),
 
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 8, startWidth / 8, 1280)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 8) * (startWidth / 8), 1280)),
 
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 4) * (startWidth / 4), 1280)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 4) * (startWidth / 4), 1280)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 4) * (startWidth / 4), 1280)),
 
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 2, startWidth / 2, 640)),
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 2, startWidth / 2, 640)),
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 2, startWidth / 2, 640)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 640)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 640)),
+      graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 640)),
 
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, 320)),
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, 320)),
-      graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, 320)),
+      graph.variable(.GPU(0), .HWC(batchSize, startHeight * startWidth, 320)),
+      graph.variable(.GPU(0), .HWC(batchSize, startHeight * startWidth, 320)),
+      graph.variable(.GPU(0), .HWC(batchSize, startHeight * startWidth, 320)),
     ]
     for emptyInjectKV in emptyInjectKVs {
       emptyInjectKV.full(0)

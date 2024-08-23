@@ -2059,7 +2059,9 @@ extension ImageGenerator {
       case .injectKV:
         guard !shuffles.isEmpty else { return nil }
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
-          inputs: shuffles.map { (hint: graph.variable($0.0).toGPU(0), weight: $0.1) }
+          inputs: shuffles.map {
+            (hint: graph.variable($0.0).toGPU(0), weight: $0.1 * control.weight)
+          }
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
 
