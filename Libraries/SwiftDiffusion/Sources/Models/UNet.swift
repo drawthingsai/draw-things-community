@@ -530,12 +530,7 @@ func BasicTransformerBlock(
   let (tokeys1, toqueries1, tovalues1, unifyheads1, attn1) = SelfAttention(
     k: k, h: h, b: b, hw: hw, upcastAttention: upcastAttention,
     usesFlashAttention: usesFlashAttention, flags: flags, injectedAttentionKV: injectedAttentionKV)
-  out = attn1([out])
-  if injectedAttentionKV {
-    layerNorm1Input = layerNorm1Input.reshaped(
-      [b, hw, h * k], strides: [2 * hw * h * k, h * k, 1])
-  }
-  out = out + layerNorm1Input
+  out = attn1([out]) + x
 
   var residual = out
   let layerNorm2 = LayerNorm(epsilon: 1e-5, axis: [2])

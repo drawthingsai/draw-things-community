@@ -1340,13 +1340,20 @@ extension ControlModel {
           precondition(shape[0] == 2)
           var x = graph.variable(
             .GPU(0), .HWC(batchSize, shape[1], shape[2]), of: FloatType.self)
-          for i in 0..<(batchSize / 2) {
-            x[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
-              $0[0..<1, 0..<shape[1], 0..<shape[2]]
-          }
-          for i in (batchSize / 2)..<batchSize {
-            x[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
-              $0[1..<2, 0..<shape[1], 0..<shape[2]]
+          if isCfgEnabled {
+            for i in 0..<(batchSize / 2) {
+              x[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
+                $0[0..<1, 0..<shape[1], 0..<shape[2]]
+            }
+            for i in (batchSize / 2)..<batchSize {
+              x[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
+                $0[1..<2, 0..<shape[1], 0..<shape[2]]
+            }
+          } else {
+            for i in 0..<batchSize {
+              x[i..<(i + 1), 0..<shape[1], 0..<shape[2]] =
+                $0[(shape[0] - 1)..<shape[0], 0..<shape[1], 0..<shape[2]]
+            }
           }
           return x
 

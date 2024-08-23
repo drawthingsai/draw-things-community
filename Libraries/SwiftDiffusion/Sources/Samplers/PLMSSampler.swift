@@ -121,9 +121,8 @@ extension PLMSSampler: Sampler {
         inChannels = channels * 2
         isCfgEnabled = true
       case .double:
-        cfgChannels = 2
+        cfgChannels = isCfgEnabled ? 2 : 1
         inChannels = channels * 2
-        isCfgEnabled = true
       case .none:
         cfgChannels = isCfgEnabled ? 2 : 1
         inChannels = channels
