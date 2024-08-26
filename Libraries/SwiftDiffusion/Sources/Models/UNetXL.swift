@@ -68,14 +68,14 @@ func CrossAttentionKeysAndValues(
       let queries = toqueries(x).reshaped([b, hw, h, k])
       if injectIPAdapterLengths.count > 0 {
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot())
+          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [])
         var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, h * k])
         var ipKVs = [Input]()
         for _ in injectIPAdapterLengths {
           let ipKeys = Input()
           let ipValues = Input()
           let scaledDotProductAttention = ScaledDotProductAttention(
-            scale: 1.0 / Float(k).squareRoot())
+            scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [])
           out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
           ipKVs.append(contentsOf: [ipKeys, ipValues])
         }
@@ -84,7 +84,8 @@ func CrossAttentionKeysAndValues(
         return (toqueries, unifyheads, Model([x, keys, values] + ipKVs, [out]))
       } else {
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), multiHeadOutputProjectionFused: true)
+          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [],
+          multiHeadOutputProjectionFused: true)
         let out = scaledDotProductAttention(queries, keys, values)
         return (toqueries, scaledDotProductAttention, Model([x, keys, values], [out]))
       }
@@ -100,9 +101,10 @@ func CrossAttentionKeysAndValues(
         let values0 = values.reshaped(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out0 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
-          queries0, keys0, values0
-        ).reshaped([b0, hw, h * k])
+        out0 = ScaledDotProductAttention(
+          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [])(
+            queries0, keys0, values0
+          ).reshaped([b0, hw, h * k])
       } else {
         var outs = [Model.IO]()
         for i in 0..<b0 {
@@ -115,9 +117,10 @@ func CrossAttentionKeysAndValues(
             [1, t.0, h, k], offset: [i, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
-              queries0, keys0, values0
-            ).reshaped([1, hw, h * k]))
+            ScaledDotProductAttention(
+              scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [])(
+                queries0, keys0, values0
+              ).reshaped([1, hw, h * k]))
         }
         out0 = Concat(axis: 0)(outs)
       }
@@ -131,9 +134,10 @@ func CrossAttentionKeysAndValues(
         let values1 = values.reshaped(
           [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out1 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
-          queries1, keys1, values1
-        ).reshaped([b0, hw, h * k])
+        out1 = ScaledDotProductAttention(
+          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [])(
+            queries1, keys1, values1
+          ).reshaped([b0, hw, h * k])
       } else {
         var outs = [Model.IO]()
         for i in 0..<b0 {
@@ -148,9 +152,10 @@ func CrossAttentionKeysAndValues(
             strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
-              queries1, keys1, values1
-            ).reshaped([1, hw, h * k]))
+            ScaledDotProductAttention(
+              scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [])(
+                queries1, keys1, values1
+              ).reshaped([1, hw, h * k]))
         }
         out1 = Concat(axis: 0)(outs)
       }
@@ -160,7 +165,7 @@ func CrossAttentionKeysAndValues(
         let ipKeys = Input()
         let ipValues = Input()
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot())
+          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [])
         out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
         ipKVs.append(contentsOf: [ipKeys, ipValues])
       }
@@ -284,7 +289,7 @@ private func BasicTransformerBlock(
     let layerNorm = LayerNorm(epsilon: 1e-5, axis: [2])
     out = layerNorm(out)
     let (toqueries, unifyheads, attn2) = CrossAttentionKeysAndValues(
-      k: k, h: h, b: b, hw: hw, t: t, upcastAttention: false,
+      k: k, h: h, b: b, hw: hw, t: t, upcastAttention: upcastAttention,
       injectIPAdapterLengths: injectIPAdapterLengths,
       usesFlashAttention: isTemporalMixEnabled ? .none : usesFlashAttention, flags: flags)
     out = attn2([out, keys2, values] + ipKVs) + residual

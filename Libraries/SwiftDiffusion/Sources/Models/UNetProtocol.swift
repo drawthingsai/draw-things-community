@@ -295,7 +295,8 @@ extension UNetFromNNC {
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
             middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
             embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            injectIPAdapterLengths: injectIPAdapterLengths, upcastAttention: ([:], false, [:]),
+            injectIPAdapterLengths: injectIPAdapterLengths,
+            upcastAttention: upcastAttention ? ([:], false, [2: [0, 1, 2]]) : ([:], false, [:]),
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             injectControls: injectControls, LoRAConfiguration: configuration
           )
@@ -306,7 +307,8 @@ extension UNetFromNNC {
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
             middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
             embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            injectIPAdapterLengths: injectIPAdapterLengths, upcastAttention: ([:], false, [:]),
+            injectIPAdapterLengths: injectIPAdapterLengths,
+            upcastAttention: upcastAttention ? ([:], false, [2: [0, 1, 2]]) : ([:], false, [:]),
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             injectControls: injectControls, isTemporalMixEnabled: false, of: FloatType.self
           )
