@@ -120,7 +120,12 @@ extension ImageGenerator {
       samplingTimesteps = [999, 850, 736, 645, 545, 455, 343, 233, 124, 24, 0]
       samplingSigmas = []
     case .sdxlBase, .sdxlRefiner, .ssd1b:
-      samplingTimesteps = [999, 845, 730, 587, 443, 310, 193, 116, 53, 13, 0]
+      switch parameterization {
+      case .rf(_), .edm(_):
+        samplingTimesteps = []
+      case .ddpm(_):
+        samplingTimesteps = [999, 845, 730, 587, 443, 310, 193, 116, 53, 13, 0]
+      }
       samplingSigmas = []
     case .svdI2v:
       samplingTimesteps = []
