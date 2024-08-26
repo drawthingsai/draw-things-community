@@ -1001,12 +1001,16 @@ public enum ImageConverter {
             ["model": $0.file, "weight": $0.weight] as [String: Any]
           }
         }
-        let (canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, _, _) =
+        let (
+          canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths, _
+        ) =
           ImageGenerator.canInjectControls(
             hasImage: true, hasDepth: true, hasHints: Set([.scribble, .pose, .color]),
             hasCustom: true, shuffleCount: 1,
             controls: configuration.controls, version: modelVersion)
-        if canInjectControls || canInjectT2IAdapters || !injectIPAdapterLengths.isEmpty {
+        if canInjectControls || canInjectT2IAdapters || canInjectAttentionKVs
+          || !injectIPAdapterLengths.isEmpty
+        {
           let controls:
             [(
               file: String, weight: Float, guidanceStart: Float, guidanceEnd: Float, noPrompt: Bool,

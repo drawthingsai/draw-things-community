@@ -1503,8 +1503,9 @@ extension ImageGenerator {
     hasImage: Bool, hasDepth: Bool, hasHints: Set<ControlHintType>, hasCustom: Bool,
     shuffleCount: Int, controls: [Control], version: ModelVersion
   ) -> (
-    injectControls: Bool, injectT2IAdapters: Bool, injectIPAdapterLengths: [Int],
-    injectedControls: Int, injectAttentionKVs: Bool
+    injectControls: Bool, injectT2IAdapters: Bool, injectAttentionKVs: Bool,
+    injectIPAdapterLengths: [Int],
+    injectedControls: Int
   ) {
     var injectControls = false
     var injectT2IAdapters = false
@@ -1584,8 +1585,8 @@ extension ImageGenerator {
       }
     }
     return (
-      injectControls, injectT2IAdapters, injectIPAdapterLengths, injectedControls,
-      injectAttentionKVs
+      injectControls, injectT2IAdapters, injectAttentionKVs, injectIPAdapterLengths,
+      injectedControls
     )
   }
 
@@ -2468,8 +2469,8 @@ extension ImageGenerator {
     }
     let hasHints = Set(hints.keys)
     let (
-      canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls,
-      canInjectAttentionKVs
+      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
+      canInjectedControls
     ) =
       Self.canInjectControls(
         hasImage: image != nil, hasDepth: depth != nil, hasHints: hasHints,
@@ -2958,8 +2959,8 @@ extension ImageGenerator {
       }
       let secondPassDepth2Img = secondPassDepthImage.map { downscaleDepthForDepth2Img($0) }
       let (
-        canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls,
-        canInjectAttentionKVs
+        canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
+        canInjectedControls
       ) =
         Self.canInjectControls(
           hasImage: true, hasDepth: secondPassDepthImage != nil, hasHints: hasHints,
@@ -3269,8 +3270,8 @@ extension ImageGenerator {
       }
     }
     let (
-      canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls,
-      canInjectAttentionKVs
+      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
+      canInjectedControls
     ) =
       Self.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
@@ -4421,8 +4422,8 @@ extension ImageGenerator {
       }
     }
     let (
-      canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls,
-      canInjectAttentionKVs
+      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
+      canInjectedControls
     ) =
       Self.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
@@ -5066,8 +5067,8 @@ extension ImageGenerator {
       }
     }
     let (
-      canInjectControls, canInjectT2IAdapters, injectIPAdapterLengths, canInjectedControls,
-      canInjectAttentionKVs
+      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
+      canInjectedControls
     ) =
       Self.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
