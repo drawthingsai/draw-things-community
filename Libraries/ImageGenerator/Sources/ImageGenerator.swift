@@ -2454,7 +2454,7 @@ extension ImageGenerator {
     var signposts = Set<Signpost>([
       .textEncoded, .sampling(sampling.steps), .imageDecoded,
     ])
-    if modifier == .inpainting || modifier == .editing {
+    if modifier == .inpainting || modifier == .editing || modifier == .double {
       signposts.insert(.imageEncoded)
     }
     if let faceRestoration = configuration.faceRestoration,
@@ -2701,7 +2701,7 @@ extension ImageGenerator {
         downscaleImageAndToGPU(graph.variable($0), scaleFactor: imageScaleFactor)
       }
       var firstPassImage: DynamicGraph.Tensor<FloatType>? = nil
-      if modifier == .inpainting || modifier == .editing || canInjectControls
+      if modifier == .inpainting || modifier == .editing || modifier == .double || canInjectControls
         || canInjectT2IAdapters || !injectIPAdapterLengths.isEmpty
       {
         // TODO: This needs to be properly handled for Wurstchen (i.e. using EfficientNet to encode image).
@@ -2717,7 +2717,7 @@ extension ImageGenerator {
               heightScale: Float(firstPassStartHeight * 8) / Float(imageHeight))($0)
           })
       }
-      if modifier == .inpainting || modifier == .editing {
+      if modifier == .inpainting || modifier == .editing || modifier == .double {
         // TODO: This needs to be properly handled for Wurstchen (i.e. using EfficientNet to encode image).
         let firstStage = FirstStage<FloatType>(
           filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: modelVersion,
@@ -2914,7 +2914,7 @@ extension ImageGenerator {
         (sample, _, _) = firstStage.sample(
           DynamicGraph.Tensor<FloatType>(from: firstStageImage), encoder: nil)
       }
-      if modifier == .inpainting || modifier == .editing {
+      if modifier == .inpainting || modifier == .editing || modifier == .double {
         // TODO: Support this properly for Wurstchen models.
         let image =
           (image.flatMap {
@@ -5318,7 +5318,9 @@ extension ImageGenerator {
             firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale)
       var maskedImage1: DynamicGraph.Tensor<FloatType>? = nil
       var maskedImage2: DynamicGraph.Tensor<FloatType>? = nil
-      if modifier == .inpainting || modifier == .editing || modelVersion == .svdI2v {
+      if modifier == .inpainting || modifier == .editing || modifier == .double
+        || modelVersion == .svdI2v
+      {
         var batch: DynamicGraph.Tensor<FloatType>
         if modelVersion == .svdI2v {
           batch = image
