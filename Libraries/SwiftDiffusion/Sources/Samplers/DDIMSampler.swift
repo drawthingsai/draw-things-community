@@ -357,7 +357,7 @@ extension DDIMSampler: Sampler {
         let timestep = discretization.timestep(for: alphasCumprod[i])
         if timestep < refinerKickIn, let refiner = refiner {
           let timesteps = (i..<endStep).map {
-            let alphaCumprod = alphasCumprod[$0 + i]
+            let alphaCumprod = alphasCumprod[$0]
             switch conditioning {
             case .noise:
               return discretization.noise(for: alphaCumprod)
