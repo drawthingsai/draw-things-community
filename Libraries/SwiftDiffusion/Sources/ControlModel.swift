@@ -1326,6 +1326,10 @@ extension ControlModel {
     let startWidth = xT.shape[2]
     let channels = xT.shape[3]
     guard step >= startStep && step < endStep else {
+      if step >= endStep {
+        // If we already ended, we can nil out the model.
+        existingControlNet = nil
+      }
       switch type {
       case .controlnet, .controlnetlora:
         return Self.emptyControls(
