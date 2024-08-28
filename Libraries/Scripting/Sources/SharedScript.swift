@@ -323,6 +323,9 @@ extension ScriptExecutor {
       loadDepthMapFromPhotos() {
         __dtHooks.loadLayerFromPhotos("depthMap");
       },
+      extractDepthMapFromPhotos() {
+        __dtHooks.loadLayerFromPhotos("extractDepthMap");
+      },
       loadScribbleFromPhotos() {
         __dtHooks.loadLayerFromPhotos("scribble");
       },
@@ -344,6 +347,9 @@ extension ScriptExecutor {
       loadDepthMapFromFiles() {
         __dtHooks.loadLayerFromFiles("depthMap");
       },
+      extractDepthMapFromFiles() {
+        __dtHooks.loadLayerFromFiles("extractDepthMap");
+      },
       loadScribbleFromFiles() {
         __dtHooks.loadLayerFromFiles("scribble");
       },
@@ -364,6 +370,9 @@ extension ScriptExecutor {
       },
       loadDepthMapFromSrc(srcContent) {
         __dtHooks.loadLayerFromSrc(srcContent, "depthMap");
+      },
+      extractDepthMapFromSrc(srcContent) {
+        __dtHooks.loadLayerFromSrc(srcContent, "extractDepthMap");
       },
       loadScribbleFromSrc(srcContent) {
         __dtHooks.loadLayerFromSrc(srcContent, "scribble");
