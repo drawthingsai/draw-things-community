@@ -332,6 +332,16 @@ extension ScriptExecutor: JSInterop {
       }
       let jsConfiguration = try swiftObject(
         jsonObject: argsConfiguration, type: JSGenerationConfiguration.self)
+      // Do additional check to report most likely any misspells.
+      let mirror = Mirror(reflecting: jsConfiguration)
+      let existingKeys = Set(
+        mirror.children.compactMap {
+          $0.label
+        })
+      for key in argsConfiguration.keys {
+        guard !existingKeys.contains(key) else { continue }
+        log("pipeline.run() - configuration contains unknown key \(key)")
+      }
 
       fixDimensionIfNecessary(&jsConfiguration.width)
       fixDimensionIfNecessary(&jsConfiguration.height)
