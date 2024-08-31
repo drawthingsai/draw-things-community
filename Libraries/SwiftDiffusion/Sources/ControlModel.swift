@@ -531,23 +531,30 @@ extension ControlModel {
           imageOut = imageOut * visualProj
           return imageOut
         }
-
-        // preset clip text encoding
-        let textEmbeds = graph.variable(.GPU(0), .HWC(1, 1, 768), of: FloatType.self)
-        graph.openStore(
-          filePaths[0], externalStore: TensorData.externalStore(filePath: filePaths[0])
-        ) {
-          $0.read("text_embeds", variable: textEmbeds, codec: [.externalData, .q8p, .ezm7])
-        }
         let vaeShape = vaeEncoding.shape
         let vaeEmbedsTensor = vaeEncoding[0..<1, 0..<vaeShape[1], 0..<vaeShape[2], 0..<4]
           .contiguous()
 
-        var promptEmbeds = graph.variable(.GPU(0), .HWC(2, 2, 768), of: FloatType.self)
-        promptEmbeds[0..<1, 0..<1, 0..<768] = textEmbeds
-        promptEmbeds[0..<1, 1..<2, 0..<768] = imageOut
-        promptEmbeds[1..<2, 0..<1, 0..<768] = textEmbeds
-        promptEmbeds[1..<2, 1..<2, 0..<768] = imageOut
+        // preset clip text encoding
+        var textEmbedings: DynamicGraph.Tensor<FloatType>? = nil
+        graph.openStore(
+          filePaths[0], externalStore: TensorData.externalStore(filePath: filePaths[0])
+        ) {
+          if let tensor = $0.read("text_embeds", codec: [.externalData, .q8p, .ezm7]) {
+            textEmbedings = graph.variable(tensor as! Tensor<FloatType>).toGPU(0)
+          }
+        }
+        let textEmbeds =
+          textEmbedings ?? graph.variable(.GPU(0), .HWC(1, 1, 768), of: FloatType.self)
+
+        var embeddingLength = textEmbeds.shape[1] + 1
+        var promptEmbeds = graph.variable(
+          .GPU(0), .HWC(2, embeddingLength, 768), of: FloatType.self)
+        promptEmbeds[0..<1, 0..<textEmbeds.shape[1], 0..<768] = textEmbeds
+        promptEmbeds[0..<1, textEmbeds.shape[1]..<embeddingLength, 0..<768] = imageOut
+        promptEmbeds[1..<2, 0..<textEmbeds.shape[1], 0..<768] = textEmbeds
+        promptEmbeds[1..<2, textEmbeds.shape[1]..<embeddingLength, 0..<768] = imageOut
+
         let channels = vaeEmbedsTensor.shape[3]
         let t = graph.variable(
           Tensor<FloatType>(
@@ -565,7 +572,7 @@ extension ControlModel {
         let newC = [promptEmbeds]
 
         let garmUnet = GarmentUNet(
-          batchSize: 2, embeddingLength: (2, 2),
+          batchSize: 2, embeddingLength: (embeddingLength, embeddingLength),
           startWidth: tiledWidth, startHeight: tiledHeight,
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
           injectControls: false, injectT2IAdapters: false,
