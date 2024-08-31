@@ -536,18 +536,22 @@ extension ControlModel {
           .contiguous()
 
         // preset clip text encoding
-        var textEmbedings: DynamicGraph.Tensor<FloatType>? = nil
-        graph.openStore(
-          filePaths[0], externalStore: TensorData.externalStore(filePath: filePaths[0])
-        ) {
-          if let tensor = $0.read("text_embeds", codec: [.externalData, .q8p, .ezm7]) {
-            textEmbedings = graph.variable(tensor as! Tensor<FloatType>).toGPU(0)
-          }
-        }
         let textEmbeds =
-          textEmbedings ?? graph.variable(.GPU(0), .HWC(1, 1, 768), of: FloatType.self)
+          (try?
+          (graph.openStore(
+            filePaths[0], externalStore: TensorData.externalStore(filePath: filePaths[0])
+          ) {
+            return $0.read("text_embeds", codec: [.externalData, .q8p, .ezm7]).map {
+              graph.variable(Tensor<FloatType>($0).toGPU(0))
+            }
+          }).get()).flatMap({ $0 })
+          ?? {
+            let textEmbeds = graph.variable(.GPU(0), .HWC(1, 1, 768), of: FloatType.self)
+            textEmbeds.full(0)
+            return textEmbeds
+          }()
 
-        var embeddingLength = textEmbeds.shape[1] + 1
+        let embeddingLength = textEmbeds.shape[1] + 1
         var promptEmbeds = graph.variable(
           .GPU(0), .HWC(2, embeddingLength, 768), of: FloatType.self)
         promptEmbeds[0..<1, 0..<textEmbeds.shape[1], 0..<768] = textEmbeds
