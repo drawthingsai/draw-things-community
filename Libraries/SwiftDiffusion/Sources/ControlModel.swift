@@ -542,7 +542,7 @@ extension ControlModel {
             filePaths[0], externalStore: TensorData.externalStore(filePath: filePaths[0])
           ) {
             return $0.read("text_embeds", codec: [.externalData, .q8p, .ezm7]).map {
-              graph.variable(Tensor<FloatType>($0).toGPU(0))
+              graph.variable(Tensor<FloatType>(from: $0).toGPU(0))
             }
           }).get()).flatMap({ $0 })
           ?? {
