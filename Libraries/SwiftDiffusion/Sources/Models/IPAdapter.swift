@@ -309,7 +309,7 @@ func UNetXLIPFixed(
 }
 
 func FaceResampler(
-  width: Int, IDEmbedDim: Int, keyValueDim: Int, outputDim: Int, heads: Int, grid: Int,
+  width: Int, IDEmbedDim: Int, outputDim: Int, heads: Int, grid: Int,
   queries: Int, layers: Int, batchSize: Int
 ) -> Model {
   let x = Input()
@@ -321,12 +321,12 @@ func FaceResampler(
   let projIn = Dense(count: width)
   let projX = projIn(x)
   let firstLayer = ResamplerLayer(
-    prefix: "perceiver_resampler.layers.0", k: keyValueDim / heads, h: heads,
+    prefix: "perceiver_resampler.layers.0", k: outputDim / heads, h: heads,
     queryDim: outputDim, b: batchSize, t: (grid * grid + 1, queries))
   var out = firstLayer(projX, latents)
   for i in 1..<layers {
     let layer = ResamplerLayer(
-      prefix: "perceiver_resampler.layers.\(i)", k: keyValueDim / heads, h: heads,
+      prefix: "perceiver_resampler.layers.\(i)", k: outputDim / heads, h: heads,
       queryDim: outputDim, b: batchSize, t: (grid * grid + 1, queries)
     )
     out = layer(projX, out)
