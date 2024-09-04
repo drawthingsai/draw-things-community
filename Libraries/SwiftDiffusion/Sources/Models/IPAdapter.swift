@@ -307,3 +307,33 @@ func UNetXLIPFixed(
   }
   return (mapper, Model([c], out))
 }
+
+func FaceResampler(
+  width: Int, IDEmbedDim: Int, keyValueDim: Int, outputDim: Int, heads: Int, grid: Int,
+  queries: Int, layers: Int, batchSize: Int
+) -> Model {
+  let x = Input()
+  let IDEmbeds = Input()
+  let proj0 = Dense(count: IDEmbedDim * 2)
+  let proj2 = Dense(count: width * queries)
+  let norm = LayerNorm(epsilon: 1e-5, axis: [2])
+  let latents = norm(proj2(proj0(IDEmbeds).GELU()).reshaped([batchSize, queries, width]))
+  let projIn = Dense(count: width)
+  let projX = projIn(x)
+  let firstLayer = ResamplerLayer(
+    prefix: "perceiver_resampler.layers.0", k: keyValueDim / heads, h: heads,
+    queryDim: outputDim, b: batchSize, t: (grid * grid + 1, queries))
+  var out = firstLayer(projX, latents)
+  for i in 1..<layers {
+    let layer = ResamplerLayer(
+      prefix: "perceiver_resampler.layers.\(i)", k: keyValueDim / heads, h: heads,
+      queryDim: outputDim, b: batchSize, t: (grid * grid + 1, queries)
+    )
+    out = layer(projX, out)
+  }
+  let projOut = Dense(count: outputDim)
+  out = projOut(out)
+  let normOut = LayerNorm(epsilon: 1e-5, axis: [2])
+  out = latents + normOut(out)
+  return Model([IDEmbeds, x], [out])
+}
