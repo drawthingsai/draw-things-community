@@ -18,9 +18,8 @@ extension ImageEncoder {
       switch version {
       case .clipL14_336:
         vit = CLIPVisionTransformer(
-          FloatType.self, grid: 24, width: 1024, layers: 24, heads: 16,
-          batchSize: 1,
-          noFinalLayerNorm: true)
+          FloatType.self, grid: 24, width: 1024, layers: 23, heads: 16,
+          batchSize: 1, noFinalLayerNorm: true)
       case .openClipH14:
         vit = VisionTransformer(
           FloatType.self, grid: 16, width: 1280, layers: 31, heads: 16, batchSize: 1,
