@@ -567,8 +567,10 @@ extension ModelPreloader {
           is8BitModel: is8BitModel,
           canRunLoRASeparately: canRunLoRASeparately,
           inputs: x, t, cArr, tokenLengthUncond: 77, tokenLengthCond: 77, extraProjection: nil,
-          injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
-          tiledDiffusion: tiledDiffusion, injectedAttentionKVs: [])
+          injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>(
+            injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
+            injectedAttentionKVs: []),
+          tiledDiffusion: tiledDiffusion)
         unetFilePath = modelPath
         unetExternalOnDemand = externalOnDemand
         unetInjectControls = false

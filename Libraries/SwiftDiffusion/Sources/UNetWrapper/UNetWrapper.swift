@@ -56,11 +56,8 @@ extension UNetWrapper {
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControls: [DynamicGraph.Tensor<FloatType>],
-    injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration,
-    injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
+    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
+    tiledDiffusion: TiledConfiguration
   ) -> Bool {
     #if !os(Linux)
 
@@ -73,9 +70,8 @@ extension UNetWrapper {
         is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT,
         timestep, c,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-        extraProjection: extraProjection, injectedControls: injectedControls,
-        injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-        tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedAttentionKVs)
+        extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
+        tiledDiffusion: tiledDiffusion)
       {
         preferCoreML = true
         return true
@@ -89,9 +85,8 @@ extension UNetWrapper {
       injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
       is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT, timestep, c,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-      extraProjection: extraProjection, injectedControls: injectedControls,
-      injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-      tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedAttentionKVs)
+      extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
+      tiledDiffusion: tiledDiffusion)
     return true
   }
 

@@ -311,9 +311,11 @@ extension DPMPP2MSampler: Sampler {
           graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
           version: version),
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-        extraProjection: extraProjection, injectedControls: injectedControls,
-        injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-        tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedAttentionKVs)
+        extraProjection: extraProjection,
+        injectedControlsAndAdapters: InjectedControlsAndAdapters(
+          injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
+          injectedIPAdapters: injectedIPAdapters, injectedAttentionKVs: injectedAttentionKVs),
+        tiledDiffusion: tiledDiffusion)
     }
     var noise: DynamicGraph.Tensor<FloatType>? = nil
     if mask != nil {
@@ -471,9 +473,12 @@ extension DPMPP2MSampler: Sampler {
               graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
               version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            extraProjection: extraProjection, injectedControls: injectedControls,
-            injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-            tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedEmptyAttentionKVs)
+            extraProjection: extraProjection,
+            injectedControlsAndAdapters: InjectedControlsAndAdapters(
+              injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
+              injectedIPAdapters: injectedIPAdapters,
+              injectedAttentionKVs: injectedEmptyAttentionKVs),
+            tiledDiffusion: tiledDiffusion)
           refinerKickIn = -1
           unets.append(unet)
         }

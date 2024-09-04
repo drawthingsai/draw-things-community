@@ -37,10 +37,8 @@ extension UNetFromCoreML {
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControls: [DynamicGraph.Tensor<FloatType>],
-    injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration, injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
+    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
+    tiledDiffusion: TiledConfiguration
   ) -> Bool {
     #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
       // We cannot handle upcast attention, yet.

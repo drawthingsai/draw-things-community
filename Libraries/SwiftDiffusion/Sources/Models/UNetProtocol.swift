@@ -1,6 +1,24 @@
 import Collections
 import NNC
 
+public struct InjectedControlsAndAdapters<FloatType: TensorNumeric & BinaryFloatingPoint> {
+  var injectedControls: [DynamicGraph.Tensor<FloatType>]
+  var injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
+  var injectedIPAdapters: [DynamicGraph.Tensor<FloatType>]
+  var injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
+  public init(
+    injectedControls: [DynamicGraph.Tensor<FloatType>],
+    injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
+  ) {
+    self.injectedControls = injectedControls
+    self.injectedT2IAdapters = injectedT2IAdapters
+    self.injectedIPAdapters = injectedIPAdapters
+    self.injectedAttentionKVs = injectedAttentionKVs
+  }
+}
+
 public protocol UNetProtocol {
   associatedtype FloatType: TensorNumeric & BinaryFloatingPoint
   init()
@@ -17,10 +35,8 @@ public protocol UNetProtocol {
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControls: [DynamicGraph.Tensor<FloatType>],
-    injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration, injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
+    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
+    tiledDiffusion: TiledConfiguration
   ) -> Bool
 
   func callAsFunction(
@@ -161,12 +177,14 @@ extension UNetFromNNC {
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControls: [DynamicGraph.Tensor<FloatType>],
-    injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration, injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
+    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
+    tiledDiffusion: TiledConfiguration
   ) -> Bool {
     guard unet == nil else { return true }
+    let injectedControls = injectedControlsAndAdapters.injectedControls
+    let injectedIPAdapters = injectedControlsAndAdapters.injectedIPAdapters
+    let injectedT2IAdapters = injectedControlsAndAdapters.injectedT2IAdapters
+    let injectedAttentionKVs = injectedControlsAndAdapters.injectedAttentionKVs
     let shape = xT.shape
     let batchSize = shape[0]
     let startHeight = shape[1]

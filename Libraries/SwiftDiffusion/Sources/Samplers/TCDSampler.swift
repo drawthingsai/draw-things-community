@@ -255,9 +255,11 @@ extension TCDSampler: Sampler {
           graph: graph, index: 0, batchSize: batchSize, conditions: newC, version: version),
         tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond,
-        extraProjection: extraProjection, injectedControls: injectedControls,
-        injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-        tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedAttentionKVs)
+        extraProjection: extraProjection,
+        injectedControlsAndAdapters: InjectedControlsAndAdapters(
+          injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
+          injectedIPAdapters: injectedIPAdapters, injectedAttentionKVs: injectedAttentionKVs),
+        tiledDiffusion: tiledDiffusion)
     }
     let noise: DynamicGraph.Tensor<FloatType> = graph.variable(
       .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
@@ -386,9 +388,11 @@ extension TCDSampler: Sampler {
               graph: graph, index: 0, batchSize: batchSize, conditions: newC,
               version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            extraProjection: extraProjection, injectedControls: injectedControls,
-            injectedT2IAdapters: injectedT2IAdapters, injectedIPAdapters: injectedIPAdapters,
-            tiledDiffusion: tiledDiffusion, injectedAttentionKVs: injectedAttentionKVs)
+            extraProjection: extraProjection,
+            injectedControlsAndAdapters: InjectedControlsAndAdapters(
+              injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
+              injectedIPAdapters: injectedIPAdapters, injectedAttentionKVs: injectedAttentionKVs),
+            tiledDiffusion: tiledDiffusion)
           refinerKickIn = -1
           unets.append(unet)
         }
