@@ -899,7 +899,6 @@ extension UNetFromNNC {
       let (injectedControls, injectedT2IAdapters, injectedAttentionKVs) =
         injectedControlsAndAdapters(
           xT, 0, 0, 0, 0, &controlNets)
-
       return unet!(
         inputs: xT,
         (timestep.map { [$0] } ?? []) + c + injectedControls + injectedT2IAdapters

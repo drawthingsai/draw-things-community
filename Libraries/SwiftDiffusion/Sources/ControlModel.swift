@@ -112,9 +112,9 @@ extension ControlModel {
     for (i, injected) in injecteds.enumerated() {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
-      case .controlnet, .controlnetlora, .t2iadapter, .injectKV, .ipadapterfaceidplus:
+      case .controlnet, .controlnetlora, .t2iadapter, .injectKV:
         continue
-      case .ipadapterplus, .ipadapterfull:
+      case .ipadapterplus, .ipadapterfull, .ipadapterfaceidplus:
         var instanceInjectedIPAdapters = [DynamicGraph.Tensor<FloatType>]()
         for (hint, strength) in injected.hints {
           let newInjectedIPAdapters = injected.model(
@@ -239,7 +239,6 @@ extension ControlModel {
     var injectedT2IAdapters = [DynamicGraph.Tensor<FloatType>]()
     var injectedIPAdapters = [DynamicGraph.Tensor<FloatType>]()
     var injectedKVs = [DynamicGraph.Tensor<FloatType>]()
-    var injectedPromptEmbeds = [DynamicGraph.Tensor<FloatType>]()
     let graph = xT.graph
     let batchSize = xT.shape[0]
     let startHeight = xT.shape[1]
@@ -281,7 +280,12 @@ extension ControlModel {
       case .ipadapterfull:
         guard injected.hints.count > 0 else { continue }
         injectedIPAdapters += emptyIPAdapters(
-          graph: graph, batchSize: batchSize, length: injected.hints.count, numTokens: 256,
+          graph: graph, batchSize: batchSize, length: injected.hints.count, numTokens: 257,
+          version: injected.model.version, usesFlashAttention: injected.model.usesFlashAttention)
+      case .ipadapterfaceidplus:
+        guard injected.hints.count > 0 else { continue }
+        injectedIPAdapters += emptyIPAdapters(
+          graph: graph, batchSize: batchSize, length: injected.hints.count, numTokens: 6,
           version: injected.model.version, usesFlashAttention: injected.model.usesFlashAttention)
       case .t2iadapter:
         if injectedT2IAdapters.isEmpty {
@@ -293,15 +297,6 @@ extension ControlModel {
           injectedKVs = emptyInjectKV(
             graph: graph, batchSize: batchSize, startWidth: tiledWidth, startHeight: tiledHeight)
         }
-      case .ipadapterfaceidplus:
-        injectedPromptEmbeds.append(
-          contentsOf: injected.hints.flatMap {
-            $0.0.map {
-              let emptyPromptEmbed = graph.variable(like: $0)
-              emptyPromptEmbed.full(0)
-              return emptyPromptEmbed
-            }
-          })
       }
     }
     return InjectedControlsAndAdapters(
@@ -912,51 +907,172 @@ extension ControlModel {
       let imageEmbeds = imageEncoder.encode(inputs[..<inputSize].map(\.hint))
       let faceEmbeds: [DynamicGraph.Tensor<FloatType>]
       if inputSize > 0 {
-        let arcface = ArcFace(batchSize: 1, of: FloatType.self)
-        arcface.compile(inputs: inputs[inputSize].hint)
-        graph.openStore(
-          filePaths[2], flags: .readOnly,
-          externalStore: TensorData.externalStore(filePath: filePaths[2])
-        ) {
-          try! $0.read(
-            "arcface", model: arcface, strict: true,
-            codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
-        }
-        faceEmbeds = inputs[inputSize...].map {
-          arcface(inputs: $0.hint)[0].as(of: FloatType.self)
+        faceEmbeds = graph.withNoGrad {
+          let arcface = ArcFace(batchSize: 1, of: FloatType.self)
+          arcface.compile(inputs: inputs[inputSize].hint)
+          graph.openStore(
+            filePaths[2], flags: .readOnly,
+            externalStore: TensorData.externalStore(filePath: filePaths[2])
+          ) {
+            $0.read(
+              "arcface", model: arcface,
+              codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+          }
+          return inputs[inputSize...].map {
+            arcface(inputs: $0.hint)[0].as(of: FloatType.self)
+          }
         }
       } else {
         faceEmbeds = []
       }
-      let resampler: Model
-      if let ipAdapterConfig = ipAdapterConfig {
-        resampler = FaceResampler(
-          width: ipAdapterConfig.inputDim, IDEmbedDim: 512,
-          outputDim: ipAdapterConfig.outputDim,
-          heads: ipAdapterConfig.numHeads, grid: ipAdapterConfig.grid, queries: 6, layers: 4,
-          batchSize: 1)
-      } else {
-        resampler = FaceResampler(
-          width: 4096, IDEmbedDim: 512, outputDim: 4096, heads: 64,
-          grid: 24, queries: 6, layers: 4, batchSize: 1)
+      var imagePromptEmbeds = graph.withNoGrad {
+        let resampler: Model
+        if let ipAdapterConfig = ipAdapterConfig {
+          resampler = FaceResampler(
+            width: ipAdapterConfig.inputDim, IDEmbedDim: 512,
+            outputDim: ipAdapterConfig.outputDim,
+            heads: ipAdapterConfig.numHeads, grid: ipAdapterConfig.grid, queries: 6, layers: 4,
+            batchSize: 1)
+        } else {
+          resampler = FaceResampler(
+            width: 4096, IDEmbedDim: 512, outputDim: 4096, heads: 64,
+            grid: 24, queries: 6, layers: 4, batchSize: 1)
+        }
+        resampler.compile(inputs: faceEmbeds[0], imageEmbeds[0])
+        graph.openStore(
+          filePaths[0], flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: filePaths[0])
+        ) {
+          $0.read(
+            "resampler", model: resampler,
+            codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+        }
+        let zeroFaceEmbed = graph.variable(like: faceEmbeds[0])
+        zeroFaceEmbed.full(0)
+        let zeroImageEmbed = graph.variable(like: imageEmbeds[0])
+        zeroImageEmbed.full(0)
+        return zip(faceEmbeds + [zeroFaceEmbed], imageEmbeds + [zeroImageEmbed]).map {
+          return resampler(inputs: $0.0, $0.1)[0].as(of: FloatType.self)
+        }
       }
-      resampler.compile(inputs: faceEmbeds[0], imageEmbeds[0])
       graph.openStore(
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) {
-        try! $0.read(
-          "resampler", model: resampler, strict: true,
-          codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+        if $0.read(like: "__encoder_hid_proj__[t-0-0]") != nil {
+          let encoderHidProj = Dense(count: 2_048)
+          encoderHidProj.compile(inputs: imagePromptEmbeds[0])
+          $0.read(
+            "encoder_hid_proj", model: encoderHidProj,
+            codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+          imagePromptEmbeds = imagePromptEmbeds.map {
+            return encoderHidProj(inputs: $0)[0].as(of: FloatType.self)
+          }
+        }
       }
-      let zeroFaceEmbed = graph.variable(like: faceEmbeds[0])
-      zeroFaceEmbed.full(0)
-      let zeroImageEmbed = graph.variable(like: imageEmbeds[0])
-      zeroImageEmbed.full(0)
-      let promptEmbeds = zip(faceEmbeds + [zeroFaceEmbed], imageEmbeds + [zeroImageEmbed]).map {
-        return resampler(inputs: $0.0, $0.1)[0].as(of: FloatType.self)
+      let inputs = Array(inputs[0..<inputSize])
+      let batchedImagePromptEmbeds = (0..<inputs.count).map { i in
+        switch version {
+        case .v1:
+          var imagePromptEmbed = graph.variable(.GPU(0), .HWC(2, 6, 768), of: FloatType.self)
+          imagePromptEmbed[0..<1, 0..<6, 0..<768] = imagePromptEmbeds[inputs.count]  // The zero prompt embed.
+          imagePromptEmbed[1..<2, 0..<6, 0..<768] = imagePromptEmbeds[i]
+          return imagePromptEmbed
+        case .sdxlBase:
+          var imagePromptEmbed = graph.variable(.GPU(0), .HWC(2, 6, 2048), of: FloatType.self)
+          imagePromptEmbed[0..<1, 0..<6, 0..<2048] = imagePromptEmbeds[inputs.count]  // The zero prompt embed.
+          imagePromptEmbed[1..<2, 0..<6, 0..<2048] = imagePromptEmbeds[i]
+          return imagePromptEmbed
+        case .v2, .sd3, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
+          .wurstchenStageC, .wurstchenStageB:
+          fatalError()
+        }
       }
-      return [promptEmbeds]
+      // Redo imagePromptEmbeds to be batch of 2.
+      let unetIPFixedMapper: ModelWeightMapper
+      let unetIPFixed: Model
+      switch version {
+      case .v1:
+        (unetIPFixedMapper, unetIPFixed) = UNetIPFixed(
+          batchSize: 2, embeddingLength: (6, 6), startWidth: 64, startHeight: 64,
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+      case .sdxlBase:
+        (unetIPFixedMapper, unetIPFixed) = UNetXLIPFixed(
+          batchSize: 2, startHeight: 128, startWidth: 128, channels: [320, 640, 1280],
+          embeddingLength: 6, attentionRes: [2: 2, 4: 10],
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+      case .v2, .sd3, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
+        .wurstchenStageC, .wurstchenStageB:
+        fatalError()
+      }
+      unetIPFixed.compile(inputs: batchedImagePromptEmbeds[0])
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) {
+        if targetBlocks.isEmpty {
+          $0.read(
+            "unet_ip_fixed", model: unetIPFixed, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+        } else {
+          let mapping = unetIPFixedMapper(.diffusers)
+          var reverseMapping = [String: String]()
+          for (key, values) in mapping {
+            guard values.count == 1 else { continue }
+            reverseMapping["__unet_ip_fixed__[\(values[0])]"] = key
+          }
+          $0.read(
+            "unet_ip_fixed", model: unetIPFixed, codec: [.ezm7, .q6p, .q8p, .jit, .externalData]
+          ) { name, dataType, format, shape in
+            guard let diffusersName = reverseMapping[name] else { return .continue(name) }
+            guard diffusersName.hasSuffix("to_v.weight") else { return .continue(name) }
+            // Only retain the ones with this name.
+            for targetBlock in targetBlocks {
+              if diffusersName.contains(targetBlock) {
+                return .continue(name)
+              }
+            }
+            return .final(zeroTensor(dataType: dataType, format: format, shape: shape))
+          }
+        }
+      }
+      let kvs = batchedImagePromptEmbeds.map {
+        unetIPFixed(inputs: $0).map { $0.as(of: FloatType.self) }
+      }
+      return zip(kvs, inputs).map { (kvs, input) in
+        guard input.weight != 1 || controlMode != .prompt else { return kvs }
+        return kvs.enumerated().map {
+          let weight: Float
+          // This logic doesn't quite work for FaceID, only enable it for control mode.
+          if controlMode != .control {
+            weight = input.weight
+          } else {
+            switch version {
+            case .v1:
+              weight = input.weight * Float($0.element.shape[3]) / 160
+            case .sdxlBase:
+              weight = input.weight * Float($0.element.shape[usesFlashAttention ? 2 : 1]) / 20
+            case .v2, .sd3, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
+              .wurstchenStageC, .wurstchenStageB:
+              fatalError()
+            }
+          }
+          if $0.offset % 2 == 0 {
+            // This is for K. Note that after weighting, the formulation is slightly different than IP-Adapter training recipe. Basically, it reducies model's "certainty" around certain values.
+            return weight * $0.element
+          } else {
+            // This is a formulation to shift the mean but retain the variance.
+            if usesFlashAttention {
+              let v = $0.element
+              let mean = v.reduced(.mean, axis: [1])
+              return Functional.add(left: v, right: mean, rightScalar: weight - 1)
+            } else {
+              let v = $0.element
+              let mean = v.reduced(.mean, axis: [2])
+              return Functional.add(left: v, right: mean, rightScalar: weight - 1)
+            }
+          }
+        }
+      }
     case .t2iadapter:
       // For T2I-Adapter, we go all the way.
       let adapter: Model
@@ -1427,7 +1543,9 @@ extension ControlModel {
           graph: graph, batchSize: batchSize, length: 1, numTokens: 257, version: version,
           usesFlashAttention: usesFlashAttention)
       case .ipadapterfaceidplus:
-        return []
+        return Self.emptyIPAdapters(
+          graph: graph, batchSize: batchSize, length: 1, numTokens: 6, version: version,
+          usesFlashAttention: usesFlashAttention)
       case .t2iadapter:
         return Self.emptyAdapters(graph: graph, startWidth: startWidth, startHeight: startHeight)
       case .injectKV:
@@ -1462,7 +1580,7 @@ extension ControlModel {
           return x
 
         }
-      case .ipadapterplus, .ipadapterfull:
+      case .ipadapterplus, .ipadapterfull, .ipadapterfaceidplus:
         return hint.map {
           let shape = $0.shape
           guard shape[0] != batchSize else { return $0 }
@@ -1496,8 +1614,6 @@ extension ControlModel {
             return x
           }
         }
-      case .ipadapterfaceidplus:
-        fatalError()
       case .t2iadapter:
         guard controlMode == .control && isCfgEnabled else { return hint }
         return hint.map {

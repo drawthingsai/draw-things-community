@@ -1572,7 +1572,9 @@ extension ImageGenerator {
           injectIPAdapterLengths.append((shuffleCount > 0 ? shuffleCount : 1) * 257)
         }
       case .ipadapterfaceidplus:
-        continue
+        if hasCustom || shuffleCount > 0 {
+          injectIPAdapterLengths.append((shuffleCount > 0 ? shuffleCount : 1) * 6)
+        }
       case .t2iadapter:
         switch modifier {
         case .canny, .mlsd, .tile:
