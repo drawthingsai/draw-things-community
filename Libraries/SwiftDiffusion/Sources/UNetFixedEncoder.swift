@@ -185,10 +185,9 @@ extension UNetFixedEncoder {
   }
   public func encode(
     isCfgEnabled: Bool, textGuidanceScale: Float, guidanceEmbed: Float,
-    isGuidanceEmbedEnabled: Bool,
-    textEncoding: [DynamicGraph.Tensor<FloatType>], timesteps: [Float], batchSize: Int,
-    startHeight: Int, startWidth: Int, tokenLengthUncond: Int, tokenLengthCond: Int,
-    lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration
+    isGuidanceEmbedEnabled: Bool, textEncoding: [DynamicGraph.Tensor<FloatType>],
+    timesteps: [Float], batchSize: Int, startHeight: Int, startWidth: Int, tokenLengthUncond: Int,
+    tokenLengthCond: Int, lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration
   ) -> ([DynamicGraph.Tensor<FloatType>], ModelWeightMapper?) {
     let graph = textEncoding[0].graph
     let lora = lora.filter { $0.version == version }
@@ -242,7 +241,7 @@ extension UNetFixedEncoder {
       } else {
         crossattn[0..<batchSize, 0..<maxTokenLength, 0..<2048] = textEncoding[0]
       }
-      if zeroNegativePrompt && (batchSize % 2) == 0 && (version == .sdxlBase || version == .ssd1b) {
+      if zeroNegativePrompt && isCfgEnabled && (version == .sdxlBase || version == .ssd1b) {
         crossattn[0..<(batchSize / 2), 0..<maxTokenLength, 0..<2048].full(0)
       }
       unetBaseFixed.compile(inputs: crossattn)

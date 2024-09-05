@@ -234,14 +234,12 @@ extension ControlModel {
     )],
     step: Int, version: ModelVersion, inputs xT: DynamicGraph.Tensor<FloatType>,
     tiledDiffusion: TiledConfiguration
-  ) -> (
-    [DynamicGraph.Tensor<FloatType>], [DynamicGraph.Tensor<FloatType>],
-    [DynamicGraph.Tensor<FloatType>], [DynamicGraph.Tensor<FloatType>]
-  ) {
+  ) -> InjectedControlsAndAdapters<FloatType> {
     var injectedControls = [DynamicGraph.Tensor<FloatType>]()
     var injectedT2IAdapters = [DynamicGraph.Tensor<FloatType>]()
     var injectedIPAdapters = [DynamicGraph.Tensor<FloatType>]()
     var injectedKVs = [DynamicGraph.Tensor<FloatType>]()
+    var injectedPromptEmbeds = [DynamicGraph.Tensor<FloatType>]()
     let graph = xT.graph
     let batchSize = xT.shape[0]
     let startHeight = xT.shape[1]
@@ -296,10 +294,19 @@ extension ControlModel {
             graph: graph, batchSize: batchSize, startWidth: tiledWidth, startHeight: tiledHeight)
         }
       case .ipadapterfaceidplus:
-        continue
+        injectedPromptEmbeds.append(
+          contentsOf: injected.hints.flatMap {
+            $0.0.map {
+              let emptyPromptEmbed = graph.variable(like: $0)
+              emptyPromptEmbed.full(0)
+              return emptyPromptEmbed
+            }
+          })
       }
     }
-    return (injectedControls, injectedT2IAdapters, injectedIPAdapters, injectedKVs)
+    return InjectedControlsAndAdapters(
+      injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
+      injectedIPAdapters: injectedIPAdapters, injectedAttentionKVs: injectedKVs)
   }
 }
 
@@ -911,7 +918,9 @@ extension ControlModel {
           filePaths[2], flags: .readOnly,
           externalStore: TensorData.externalStore(filePath: filePaths[2])
         ) {
-          $0.read("arcface", model: arcface, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+          try! $0.read(
+            "arcface", model: arcface, strict: true,
+            codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
         }
         faceEmbeds = inputs[inputSize...].map {
           arcface(inputs: $0.hint)[0].as(of: FloatType.self)
@@ -936,7 +945,9 @@ extension ControlModel {
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) {
-        $0.read("resampler", model: resampler, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+        try! $0.read(
+          "resampler", model: resampler, strict: true,
+          codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
       }
       let zeroFaceEmbed = graph.variable(like: faceEmbeds[0])
       zeroFaceEmbed.full(0)

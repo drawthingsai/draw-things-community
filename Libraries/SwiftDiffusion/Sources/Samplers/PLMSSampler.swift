@@ -285,7 +285,7 @@ extension PLMSSampler: Sampler {
         discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1
       let t = unet.timeEmbed(
         graph: graph, batchSize: cfgChannels * batchSize, timestep: firstTimestep, version: version)
-      let (injectedControls, injectedT2IAdapters, injectedIPAdapters, injectedAttentionKVs) =
+      let emptyInjectedControlsAndAdapters =
         ControlModel<FloatType>
         .emptyInjectedControlsAndAdapters(
           injecteds: injectedControls, step: 0, version: version, inputs: xIn,
@@ -309,9 +309,7 @@ extension PLMSSampler: Sampler {
           version: version),
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection,
-        injectedControlsAndAdapters: InjectedControlsAndAdapters(
-          injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-          injectedIPAdapters: injectedIPAdapters, injectedAttentionKVs: injectedAttentionKVs),
+        injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
         tiledDiffusion: tiledDiffusion)
     }
     var noise: DynamicGraph.Tensor<FloatType>? = nil
@@ -411,7 +409,7 @@ extension PLMSSampler: Sampler {
           let t = unet.timeEmbed(
             graph: graph, batchSize: cfgChannels * batchSize, timestep: firstTimestep,
             version: currentModelVersion)
-          let (injectedControls, injectedT2IAdapters, injectedIPAdapters, injectedAttentionKVs) =
+          let emptyInjectedControlsAndAdapters =
             ControlModel<FloatType>
             .emptyInjectedControlsAndAdapters(
               injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn,
@@ -437,9 +435,7 @@ extension PLMSSampler: Sampler {
               version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             extraProjection: extraProjection,
-            injectedControlsAndAdapters: InjectedControlsAndAdapters(
-              injectedControls: injectedControls, injectedT2IAdapters: injectedT2IAdapters,
-              injectedIPAdapters: injectedIPAdapters, injectedAttentionKVs: injectedAttentionKVs),
+            injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
             tiledDiffusion: tiledDiffusion)
           refinerKickIn = -1
           unets.append(unet)
