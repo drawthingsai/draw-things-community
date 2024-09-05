@@ -240,14 +240,6 @@ public struct ControlNetZoo: DownloadZoo {
       file: "ip_adapter_full_face_sd_v1.x_open_clip_h14_f16.ckpt",
       modifier: .shuffle, version: .v1, type: .ipadapterfull,
       imageEncoder: "open_clip_vit_h14_vision_model_f16.ckpt"),
-    Specification(
-      name: "IP Adapter FaceID Plus (Kwai Kolors 1.0)",
-      file: "ip_adapter_faceid_plus_kwai_kolors_1.0_clip_l14_336_f16.ckpt", modifier: .shuffle,
-      version: .sdxlBase, type: .ipadapterfaceidplus,
-      imageEncoder: "clip_vit_l14_336_vision_model_f16.ckpt", preprocessor: "arcface_f16.ckpt",
-      imageEncoderVersion: .clipL14_336,
-      ipAdapterConfig: IPAdapterConfig(
-        inputDim: 4096, queryDim: 4096, outputDim: 4096, headDim: 64, numHeads: 64, grid: 24)),
   ]
 
   private static var specificationMapping: [String: Specification] = {
