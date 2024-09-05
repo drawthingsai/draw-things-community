@@ -975,12 +975,24 @@ extension ControlModel {
         switch version {
         case .v1:
           var imagePromptEmbed = graph.variable(.GPU(0), .HWC(2, 6, 768), of: FloatType.self)
-          imagePromptEmbed[0..<1, 0..<6, 0..<768] = imagePromptEmbeds[inputs.count]  // The zero prompt embed.
+          switch controlMode {
+          case .prompt:
+            // For prompt mode, don't increase contrast against negative.
+            imagePromptEmbed[0..<1, 0..<6, 0..<768] = imagePromptEmbeds[i]
+          case .balanced, .control:
+            imagePromptEmbed[0..<1, 0..<6, 0..<768] = imagePromptEmbeds[inputs.count]  // The zero prompt embed.
+          }
           imagePromptEmbed[1..<2, 0..<6, 0..<768] = imagePromptEmbeds[i]
           return imagePromptEmbed
         case .sdxlBase:
           var imagePromptEmbed = graph.variable(.GPU(0), .HWC(2, 6, 2048), of: FloatType.self)
-          imagePromptEmbed[0..<1, 0..<6, 0..<2048] = imagePromptEmbeds[inputs.count]  // The zero prompt embed.
+          switch controlMode {
+          case .prompt:
+            // For prompt mode, don't increase contrast against negative.
+            imagePromptEmbed[0..<1, 0..<6, 0..<2048] = imagePromptEmbeds[i]
+          case .balanced, .control:
+            imagePromptEmbed[0..<1, 0..<6, 0..<2048] = imagePromptEmbeds[inputs.count]  // The zero prompt embed.
+          }
           imagePromptEmbed[1..<2, 0..<6, 0..<2048] = imagePromptEmbeds[i]
           return imagePromptEmbed
         case .v2, .sd3, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
@@ -1043,9 +1055,10 @@ extension ControlModel {
         return kvs.enumerated().map {
           let weight: Float
           // This logic doesn't quite work for FaceID, only enable it for control mode.
-          if controlMode != .control {
+          switch controlMode {
+          case .balanced, .prompt:
             weight = input.weight
-          } else {
+          case .control:
             switch version {
             case .v1:
               weight = input.weight * Float($0.element.shape[3]) / 160
