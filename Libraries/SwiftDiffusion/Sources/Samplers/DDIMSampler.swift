@@ -353,268 +353,268 @@ extension DDIMSampler: Sampler {
     var unets: [UNet?] = [unet]
     var currentModelVersion = version
     var indexOffset = startStep.integral
-    // let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
-    var oldDenoised: DynamicGraph.Tensor<FloatType>? = nil
-    for i in startStep.integral..<endStep.integral {
-      let rawValue: Tensor<FloatType>? =
-        (i > max(startStep.integral, sampling.steps / 2) || i % 2 == 1)
-        ? (oldDenoised.map { unet.decode($0) })?.rawValue.toCPU() : nil
-      if i % 5 == 4, let rawValue = rawValue {
-        if isNaN(rawValue) {
-          return .failure(SamplerError.isNaN)
-        }
-      }
-      guard feedback(i - startStep.integral, rawValue) else {
-        return .failure(SamplerError.cancelled)
-      }
-      let alphaCumprod: Double
-      if i == startStep.integral && Float(startStep.integral) != startStep.fractional {
-        let lowTimestep = discretization.timestep(
-          for: alphasCumprod[max(0, min(Int(startStep.integral), alphasCumprod.count - 1))])
-        let highTimestep = discretization.timestep(
-          for: alphasCumprod[
-            max(0, min(Int(startStep.fractional.rounded(.up)), alphasCumprod.count - 1))])
-        let timestep =
-          lowTimestep
-          + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
-        alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
-      } else {
-        alphaCumprod = alphasCumprod[i]
-      }
-      let timestep = discretization.timestep(for: alphaCumprod)
-      if timestep < refinerKickIn, let refiner = refiner {
-        let timesteps = (i..<endStep.integral).map {
-          let alphaCumprod = alphasCumprod[$0]
-          switch conditioning {
-          case .noise:
-            return discretization.noise(for: alphaCumprod)
-          case .timestep:
-            return discretization.timestep(for: alphaCumprod)
+    let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
+      var oldDenoised: DynamicGraph.Tensor<FloatType>? = nil
+      for i in startStep.integral..<endStep.integral {
+        let rawValue: Tensor<FloatType>? =
+          (i > max(startStep.integral, sampling.steps / 2) || i % 2 == 1)
+          ? (oldDenoised.map { unet.decode($0) })?.rawValue.toCPU() : nil
+        if i % 5 == 4, let rawValue = rawValue {
+          if isNaN(rawValue) {
+            return .failure(SamplerError.isNaN)
           }
         }
-        unets = [nil]
-        let fixedEncoder = UNetFixedEncoder<FloatType>(
-          filePath: refiner.filePath, version: refiner.version,
-          usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
-          is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
-          externalOnDemand: externalOnDemand)
-        if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
-          let vector = fixedEncoder.vector(
-            textEmbedding: oldC[oldC.count - 1], originalSize: originalSize,
-            cropTopLeft: cropTopLeft,
-            targetSize: targetSize, aestheticScore: aestheticScore,
-            negativeOriginalSize: negativeOriginalSize,
-            negativeAestheticScore: negativeAestheticScore, fpsId: fpsId,
-            motionBucketId: motionBucketId, condAug: condAug)
-          c =
-            vector
-            + fixedEncoder.encode(
-              isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
-              guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
-              textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
-              startHeight: startHeight,
-              startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
-              tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion
-            ).0
-          indexOffset = i
+        guard feedback(i - startStep.integral, rawValue) else {
+          return .failure(SamplerError.cancelled)
         }
-        unet = UNet()
-        currentModelVersion = refiner.version
-        let firstTimestep =
-          discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1
-        let t = unet.timeEmbed(
-          graph: graph, batchSize: cfgChannels * batchSize, timestep: firstTimestep,
-          version: currentModelVersion)
-        let emptyInjectedControlsAndAdapters =
-          ControlModel<FloatType>
-          .emptyInjectedControlsAndAdapters(
-            injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn,
-            tiledDiffusion: tiledDiffusion)
-        let newC: [DynamicGraph.Tensor<FloatType>]
-        if refiner.version == .svdI2v {
-          newC = Array(c[0..<(1 + (c.count - 1) / 2)])
+        let alphaCumprod: Double
+        if i == startStep.integral && Float(startStep.integral) != startStep.fractional {
+          let lowTimestep = discretization.timestep(
+            for: alphasCumprod[max(0, min(Int(startStep.integral), alphasCumprod.count - 1))])
+          let highTimestep = discretization.timestep(
+            for: alphasCumprod[
+              max(0, min(Int(startStep.fractional.rounded(.up)), alphasCumprod.count - 1))])
+          let timestep =
+            lowTimestep
+            + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
+          alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
         } else {
-          newC = c
+          alphaCumprod = alphasCumprod[i]
         }
-        let _ = unet.compileModel(
-          filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
-          version: refiner.version, upcastAttention: upcastAttention,
-          usesFlashAttention: usesFlashAttention, injectControls: injectControls,
-          injectT2IAdapters: injectT2IAdapters, injectAttentionKV: injectAttentionKV,
-          injectIPAdapterLengths: injectIPAdapterLengths,
-          lora: lora, is8BitModel: refiner.is8BitModel,
-          canRunLoRASeparately: canRunLoRASeparately,
-          inputs: xIn, t,
-          unet.extractConditions(
-            graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
-            version: currentModelVersion),
-          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-          extraProjection: extraProjection,
-          injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-          tiledDiffusion: tiledDiffusion)
-        refinerKickIn = -1
-        unets.append(unet)
-      }
-      let cNoise: Float
-      switch conditioning {
-      case .noise:
-        cNoise = discretization.noise(for: alphaCumprod)
-      case .timestep:
-        cNoise = timestep
-      }
-      let t = unet.timeEmbed(
-        graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
-        version: currentModelVersion)
-      let c = unet.extractConditions(
-        graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize, conditions: c,
-        version: currentModelVersion)
-      var et: DynamicGraph.Tensor<FloatType>
-      if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
-        let condAugFrames = condAugFrames
-      {
-        xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
-        xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)] =
-          condAugFrames
-        let injectedIPAdapters = ControlModel<FloatType>
-          .injectedIPAdapters(
-            injecteds: injectedControls, step: i, version: unet.version,
-            usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
+        let timestep = discretization.timestep(for: alphaCumprod)
+        if timestep < refinerKickIn, let refiner = refiner {
+          let timesteps = (i..<endStep.integral).map {
+            let alphaCumprod = alphasCumprod[$0]
+            switch conditioning {
+            case .noise:
+              return discretization.noise(for: alphaCumprod)
+            case .timestep:
+              return discretization.timestep(for: alphaCumprod)
+            }
+          }
+          unets = [nil]
+          let fixedEncoder = UNetFixedEncoder<FloatType>(
+            filePath: refiner.filePath, version: refiner.version,
+            usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
+            is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+            externalOnDemand: externalOnDemand)
+          if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
+            let vector = fixedEncoder.vector(
+              textEmbedding: oldC[oldC.count - 1], originalSize: originalSize,
+              cropTopLeft: cropTopLeft,
+              targetSize: targetSize, aestheticScore: aestheticScore,
+              negativeOriginalSize: negativeOriginalSize,
+              negativeAestheticScore: negativeAestheticScore, fpsId: fpsId,
+              motionBucketId: motionBucketId, condAug: condAug)
+            c =
+              vector
+              + fixedEncoder.encode(
+                isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
+                guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+                textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
+                startHeight: startHeight,
+                startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
+                tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion
+              ).0
+            indexOffset = i
+          }
+          unet = UNet()
+          currentModelVersion = refiner.version
+          let firstTimestep =
+            discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1
+          let t = unet.timeEmbed(
+            graph: graph, batchSize: cfgChannels * batchSize, timestep: firstTimestep,
+            version: currentModelVersion)
+          let emptyInjectedControlsAndAdapters =
+            ControlModel<FloatType>
+            .emptyInjectedControlsAndAdapters(
+              injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn,
+              tiledDiffusion: tiledDiffusion)
+          let newC: [DynamicGraph.Tensor<FloatType>]
+          if refiner.version == .svdI2v {
+            newC = Array(c[0..<(1 + (c.count - 1) / 2)])
+          } else {
+            newC = c
+          }
+          let _ = unet.compileModel(
+            filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
+            version: refiner.version, upcastAttention: upcastAttention,
+            usesFlashAttention: usesFlashAttention, injectControls: injectControls,
+            injectT2IAdapters: injectT2IAdapters, injectAttentionKV: injectAttentionKV,
+            injectIPAdapterLengths: injectIPAdapterLengths,
+            lora: lora, is8BitModel: refiner.is8BitModel,
+            canRunLoRASeparately: canRunLoRASeparately,
+            inputs: xIn, t,
+            unet.extractConditions(
+              graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
+              version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
-            controlNets: &controlNets)
-        let injectedControlsAndAdapters = ControlModel<FloatType>
-          .injectedControlsAndAdapters(
-            injecteds: injectedControls, step: i, version: unet.version,
-            usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
-            tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
-            controlNets: &controlNets)
-        let cCond = Array(c[0..<(1 + (c.count - 1) / 2)])
-        var etCond = unet(
-          timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
-          injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
-          controlNets: &controlNets)
-        let alpha =
-          0.001 * sharpness * (discretization.timesteps - timestep)
-          / discretization.timesteps
-        if isCfgEnabled {
-          xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)].full(0)
-          let cUncond = Array([c[0]] + c[(1 + (c.count - 1) / 2)...])
-          let etUncond = unet(
-            timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
+            extraProjection: extraProjection,
+            injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
+            tiledDiffusion: tiledDiffusion)
+          refinerKickIn = -1
+          unets.append(unet)
+        }
+        let cNoise: Float
+        switch conditioning {
+        case .noise:
+          cNoise = discretization.noise(for: alphaCumprod)
+        case .timestep:
+          cNoise = timestep
+        }
+        let t = unet.timeEmbed(
+          graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
+          version: currentModelVersion)
+        let c = unet.extractConditions(
+          graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize, conditions: c,
+          version: currentModelVersion)
+        var et: DynamicGraph.Tensor<FloatType>
+        if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
+          let condAugFrames = condAugFrames
+        {
+          xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
+          xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)] =
+            condAugFrames
+          let injectedIPAdapters = ControlModel<FloatType>
+            .injectedIPAdapters(
+              injecteds: injectedControls, step: i, version: unet.version,
+              usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
+              tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+              controlNets: &controlNets)
+          let injectedControlsAndAdapters = ControlModel<FloatType>
+            .injectedControlsAndAdapters(
+              injecteds: injectedControls, step: i, version: unet.version,
+              usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
+              tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+              controlNets: &controlNets)
+          let cCond = Array(c[0..<(1 + (c.count - 1) / 2)])
+          var etCond = unet(
+            timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
             controlNets: &controlNets)
-          if let blur = blur {
-            let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
-            etCond = Functional.add(
-              left: etCondDegraded, right: etCond, leftScalar: alpha, rightScalar: 1 - alpha)
-          }
-          et = etUncond + textGuidanceVector .* (etCond - etUncond)
-        } else {
-          if let blur = blur {
-            let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
-            etCond = Functional.add(
-              left: etCondDegraded, right: etCond, leftScalar: alpha, rightScalar: 1 - alpha)
-          }
-          et = etCond
-        }
-      } else {
-        xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
-        if isCfgEnabled {
-          xIn[batchSize..<(batchSize * 2), 0..<startHeight, 0..<startWidth, 0..<channels] = x
-          if modifier == .editing {
-            xIn[
-              (batchSize * 2)..<(batchSize * 3), 0..<startHeight, 0..<startWidth, 0..<channels] =
-              x
-          }
-        }
-        let injectedIPAdapters = ControlModel<FloatType>
-          .injectedIPAdapters(
-            injecteds: injectedControls, step: i, version: unet.version,
-            usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
-            tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
-            controlNets: &controlNets)
-        let injectedControlsAndAdapters = ControlModel<FloatType>
-          .injectedControlsAndAdapters(
-            injecteds: injectedControls, step: i, version: unet.version,
-            usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
-            tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
-            controlNets: &controlNets)
-        var etOut = unet(
-          timestep: cNoise, inputs: xIn, t, c, extraProjection: extraProjection,
-          injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
-          controlNets: &controlNets)
-        let alpha =
-          0.001 * sharpness * (discretization.timesteps - timestep)
-          / discretization.timesteps
-        if isCfgEnabled {
-          var etUncond = graph.variable(
-            .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
-          var etCond = graph.variable(
-            .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
-          etUncond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] =
-            etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels]
-          etCond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] =
-            etOut[batchSize..<(batchSize * 2), 0..<startHeight, 0..<startWidth, 0..<channels]
-          if let blur = blur {
-            let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
-            etCond = Functional.add(
-              left: etCondDegraded, right: etCond, leftScalar: alpha, rightScalar: 1 - alpha)
-          }
-          if modifier == .editing {
-            var etAllUncond = graph.variable(
-              .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
-            etAllUncond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] =
-              etOut[
-                (batchSize * 2)..<(batchSize * 3), 0..<startHeight, 0..<startWidth, 0..<channels]
-            et =
-              etAllUncond + textGuidanceScale * (etCond - etUncond) + imageGuidanceScale
-              * (etUncond - etAllUncond)
+          let alpha =
+            0.001 * sharpness * (discretization.timesteps - timestep)
+            / discretization.timesteps
+          if isCfgEnabled {
+            xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)].full(0)
+            let cUncond = Array([c[0]] + c[(1 + (c.count - 1) / 2)...])
+            let etUncond = unet(
+              timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
+              injectedControlsAndAdapters: injectedControlsAndAdapters,
+              injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+              controlNets: &controlNets)
+            if let blur = blur {
+              let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
+              etCond = Functional.add(
+                left: etCondDegraded, right: etCond, leftScalar: alpha, rightScalar: 1 - alpha)
+            }
+            et = etUncond + textGuidanceVector .* (etCond - etUncond)
           } else {
-            et = etUncond + textGuidanceScale * (etCond - etUncond)
+            if let blur = blur {
+              let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
+              etCond = Functional.add(
+                left: etCondDegraded, right: etCond, leftScalar: alpha, rightScalar: 1 - alpha)
+            }
+            et = etCond
           }
         } else {
-          if channels < etOut.shape[3] {
-            etOut = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+          xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
+          if isCfgEnabled {
+            xIn[batchSize..<(batchSize * 2), 0..<startHeight, 0..<startWidth, 0..<channels] = x
+            if modifier == .editing {
+              xIn[
+                (batchSize * 2)..<(batchSize * 3), 0..<startHeight, 0..<startWidth, 0..<channels] =
+                x
+            }
           }
-          if let blur = blur {
-            let etOutDegraded = blur(inputs: etOut)[0].as(of: FloatType.self)
-            etOut = Functional.add(
-              left: etOutDegraded, right: etOut, leftScalar: alpha, rightScalar: 1 - alpha)
+          let injectedIPAdapters = ControlModel<FloatType>
+            .injectedIPAdapters(
+              injecteds: injectedControls, step: i, version: unet.version,
+              usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
+              tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+              controlNets: &controlNets)
+          let injectedControlsAndAdapters = ControlModel<FloatType>
+            .injectedControlsAndAdapters(
+              injecteds: injectedControls, step: i, version: unet.version,
+              usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
+              tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+              controlNets: &controlNets)
+          var etOut = unet(
+            timestep: cNoise, inputs: xIn, t, c, extraProjection: extraProjection,
+            injectedControlsAndAdapters: injectedControlsAndAdapters,
+            injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+            controlNets: &controlNets)
+          let alpha =
+            0.001 * sharpness * (discretization.timesteps - timestep)
+            / discretization.timesteps
+          if isCfgEnabled {
+            var etUncond = graph.variable(
+              .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
+            var etCond = graph.variable(
+              .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
+            etUncond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] =
+              etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels]
+            etCond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] =
+              etOut[batchSize..<(batchSize * 2), 0..<startHeight, 0..<startWidth, 0..<channels]
+            if let blur = blur {
+              let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
+              etCond = Functional.add(
+                left: etCondDegraded, right: etCond, leftScalar: alpha, rightScalar: 1 - alpha)
+            }
+            if modifier == .editing {
+              var etAllUncond = graph.variable(
+                .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
+              etAllUncond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] =
+                etOut[
+                  (batchSize * 2)..<(batchSize * 3), 0..<startHeight, 0..<startWidth, 0..<channels]
+              et =
+                etAllUncond + textGuidanceScale * (etCond - etUncond) + imageGuidanceScale
+                * (etUncond - etAllUncond)
+            } else {
+              et = etUncond + textGuidanceScale * (etCond - etUncond)
+            }
+          } else {
+            if channels < etOut.shape[3] {
+              etOut = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+            }
+            if let blur = blur {
+              let etOutDegraded = blur(inputs: etOut)[0].as(of: FloatType.self)
+              etOut = Functional.add(
+                left: etOutDegraded, right: etOut, leftScalar: alpha, rightScalar: 1 - alpha)
+            }
+            et = etOut
           }
-          et = etOut
         }
-      }
-      let alpha = alphaCumprod
-      let alphaPrev = alphasCumprod[i + 1]
-      switch discretization.objective {
-      case .u(_):
-        let denoised = Functional.add(
-          left: x, right: et, leftScalar: 1, rightScalar: Float(alpha - 1))
-        oldDenoised = denoised
-        x = Functional.add(
-          left: x, right: et, leftScalar: 1, rightScalar: Float(alpha - alphaPrev))
-      case .v:
-        let predX0 = Float(alpha.squareRoot()) * x - Float((1 - alpha).squareRoot()) * et
-        let eps = Float(alpha.squareRoot()) * et + Float((1 - alpha).squareRoot()) * x
-        let dirXt = Float((1 - alphaPrev).squareRoot()) * eps
-        let xPrev = Float(alphaPrev.squareRoot()) * predX0 + dirXt
-        x = xPrev
-        oldDenoised = predX0
-      case .epsilon:
-        var predX0 = Float(1 / alpha.squareRoot()) * (x - Float((1 - alpha).squareRoot()) * et)
-        if version == .kandinsky21 {
-          predX0 = clipDenoised(predX0)
-          et =
-            (Float(1 / alpha.squareRoot()) * x - predX0) * Float(1 / (1 / alpha - 1).squareRoot())
-        }
-        oldDenoised = predX0
-        /*
+        let alpha = alphaCumprod
+        let alphaPrev = alphasCumprod[i + 1]
+        switch discretization.objective {
+        case .u(_):
+          let denoised = Functional.add(
+            left: x, right: et, leftScalar: 1, rightScalar: Float(alpha - 1))
+          oldDenoised = denoised
+          x = Functional.add(
+            left: x, right: et, leftScalar: 1, rightScalar: Float(alpha - alphaPrev))
+        case .v:
+          let predX0 = Float(alpha.squareRoot()) * x - Float((1 - alpha).squareRoot()) * et
+          let eps = Float(alpha.squareRoot()) * et + Float((1 - alpha).squareRoot()) * x
+          let dirXt = Float((1 - alphaPrev).squareRoot()) * eps
+          let xPrev = Float(alphaPrev.squareRoot()) * predX0 + dirXt
+          x = xPrev
+          oldDenoised = predX0
+        case .epsilon:
+          var predX0 = Float(1 / alpha.squareRoot()) * (x - Float((1 - alpha).squareRoot()) * et)
+          if version == .kandinsky21 {
+            predX0 = clipDenoised(predX0)
+            et =
+              (Float(1 / alpha.squareRoot()) * x - predX0) * Float(1 / (1 / alpha - 1).squareRoot())
+          }
+          oldDenoised = predX0
+          /*
           if version == .kandinsky21 {
             predX0 = clipDenoise(predX0)
             let beta = 1 - Double(alpha) / Double(alphaPrev)
@@ -637,46 +637,46 @@ extension DDIMSampler: Sampler {
               x = x + std .* noise
             }
           }*/
-        let dirXt = Float((1 - alphaPrev).squareRoot()) * et
-        let xPrev = Float(alphaPrev.squareRoot()) * predX0 + dirXt
-        x = xPrev
-      case .edm(let sigmaData):
-        let sigmaData2 = sigmaData * sigmaData
-        let sigma = ((1 - alphaCumprod) / alphaCumprod).squareRoot()
-        let predX0 = Functional.add(
-          left: x, right: et,
-          leftScalar: Float(sigmaData2 / (sigma * sigma + sigmaData2).squareRoot()),
-          rightScalar: Float(sigma * sigmaData / (sigma * sigma + sigmaData2).squareRoot()))
-        oldDenoised = predX0
-        let dirXt = Float((1 - alphaPrev).squareRoot()) * et
-        let xPrev = Float(alphaPrev.squareRoot()) * predX0 + dirXt
-        x = xPrev
-      }
-      if i < endStep.integral - 1, let noise = noise, let sample = sample, let mask = mask,
-        let negMask = negMask
-      {
-        noise.randn(std: 1, mean: 0)
-        let qSample: DynamicGraph.Tensor<FloatType>
-        if case .u(_) = discretization.objective {
-          qSample = Functional.add(
-            left: sample, right: noise, leftScalar: Float(alphaPrev),
-            rightScalar: Float(1 - alphaPrev))
-        } else {
-          qSample =
-            Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
+          let dirXt = Float((1 - alphaPrev).squareRoot()) * et
+          let xPrev = Float(alphaPrev.squareRoot()) * predX0 + dirXt
+          x = xPrev
+        case .edm(let sigmaData):
+          let sigmaData2 = sigmaData * sigmaData
+          let sigma = ((1 - alphaCumprod) / alphaCumprod).squareRoot()
+          let predX0 = Functional.add(
+            left: x, right: et,
+            leftScalar: Float(sigmaData2 / (sigma * sigma + sigmaData2).squareRoot()),
+            rightScalar: Float(sigma * sigmaData / (sigma * sigma + sigmaData2).squareRoot()))
+          oldDenoised = predX0
+          let dirXt = Float((1 - alphaPrev).squareRoot()) * et
+          let xPrev = Float(alphaPrev.squareRoot()) * predX0 + dirXt
+          x = xPrev
         }
-        x = qSample .* negMask + x .* mask
-      }
-      if i == endStep.integral - 1 {
-        if isNaN(x.rawValue.toCPU()) {
-          return .failure(SamplerError.isNaN)
+        if i < endStep.integral - 1, let noise = noise, let sample = sample, let mask = mask,
+          let negMask = negMask
+        {
+          noise.randn(std: 1, mean: 0)
+          let qSample: DynamicGraph.Tensor<FloatType>
+          if case .u(_) = discretization.objective {
+            qSample = Functional.add(
+              left: sample, right: noise, leftScalar: Float(alphaPrev),
+              rightScalar: Float(1 - alphaPrev))
+          } else {
+            qSample =
+              Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
+          }
+          x = qSample .* negMask + x .* mask
+        }
+        if i == endStep.integral - 1 {
+          if isNaN(x.rawValue.toCPU()) {
+            return .failure(SamplerError.isNaN)
+          }
         }
       }
+      return .success(SamplerOutput(x: x, unets: unets))
     }
-    return .success(SamplerOutput(x: x, unets: unets))
-    // }
-    //streamContext.joined()
-    //return result
+    streamContext.joined()
+    return result
   }
 
   public func timestep(for strength: Float, sampling: Sampling) -> (
