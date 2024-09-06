@@ -101,6 +101,6 @@ public func ArcFace<FloatType: TensorNumeric & BinaryFloatingPoint>(
   )
   out = layer4(out)
   let fc = Dense(count: 512)
-  out = fc(out.reshaped([batchSize, 512 * 7 * 7]))
+  out = fc(out.permuted(0, 3, 1, 2).reshaped([batchSize, 512 * 7 * 7]))
   return Model([x], [out])
 }
