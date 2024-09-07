@@ -891,39 +891,26 @@ extension ControlModel {
         }
       }
     case .ipadapterfaceidplus:
+      let faceExtractor = FaceExtractor<FloatType>(
+        filePath: filePaths[2], imageEncoderVersion: imageEncoderVersion)
+      let images = faceExtractor.extract(inputs.map(\.hint))
       let imageEncoder = ImageEncoder<FloatType>(
         filePath: filePaths[1], version: imageEncoderVersion)
-      let imageSize: Int
-      switch imageEncoderVersion {
-      case .clipL14_336:
-        imageSize = 336
-      case .openClipH14:
-        imageSize = 224
-      }
-      let zeroEmbeds = graph.variable(
-        .GPU(0), .NHWC(1, imageSize, imageSize, 3), of: FloatType.self)
-      zeroEmbeds.full(0)
-      let inputSize = inputs.count / 2
-      let imageEmbeds = imageEncoder.encode(inputs[..<inputSize].map(\.hint))
-      let faceEmbeds: [DynamicGraph.Tensor<FloatType>]
-      if inputSize > 0 {
-        faceEmbeds = graph.withNoGrad {
-          let arcface = ArcFace(batchSize: 1, of: FloatType.self)
-          arcface.compile(inputs: inputs[inputSize].hint)
-          graph.openStore(
-            filePaths[2], flags: .readOnly,
-            externalStore: TensorData.externalStore(filePath: filePaths[2])
-          ) {
-            $0.read(
-              "arcface", model: arcface,
-              codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
-          }
-          return inputs[inputSize...].map {
-            arcface(inputs: $0.hint)[0].as(of: FloatType.self)
-          }
+      let imageEmbeds = imageEncoder.encode(images.map { $0.0 })
+      let faceEmbeds = graph.withNoGrad {
+        let arcface = ArcFace(batchSize: 1, of: FloatType.self)
+        arcface.compile(inputs: images[0].1)
+        graph.openStore(
+          filePaths[2], flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: filePaths[2])
+        ) {
+          $0.read(
+            "arcface", model: arcface,
+            codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
         }
-      } else {
-        faceEmbeds = []
+        return images.map {
+          arcface(inputs: $0.1)[0].as(of: FloatType.self)
+        }
       }
       var imagePromptEmbeds = graph.withNoGrad {
         let resampler: Model
@@ -970,7 +957,6 @@ extension ControlModel {
           }
         }
       }
-      let inputs = Array(inputs[0..<inputSize])
       let batchedImagePromptEmbeds = (0..<inputs.count).map { i in
         switch version {
         case .v1:

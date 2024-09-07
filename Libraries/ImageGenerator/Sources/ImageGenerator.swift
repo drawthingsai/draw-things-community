@@ -1690,33 +1690,6 @@ extension ImageGenerator {
     return rgbResults
   }
 
-  private func faceIDRGB(
-    shuffles: [(Tensor<FloatType>, Float)], graph: DynamicGraph
-  ) -> [(
-    DynamicGraph.Tensor<FloatType>, Float
-  )] {
-    var rgbResults = [(DynamicGraph.Tensor<FloatType>, Float)]()
-    for (shuffle, strength) in shuffles {
-      let input = graph.variable(Tensor<FloatType>(shuffle).toGPU(0))
-      let inputHeight = input.shape[1]
-      let inputWidth = input.shape[2]
-      precondition(input.shape[3] == 3)
-      let imageSize = 112
-      if inputHeight != imageSize || inputWidth != imageSize {
-        rgbResults.append(
-          (
-            Upsample(
-              .bilinear, widthScale: Float(imageSize) / Float(inputWidth),
-              heightScale: Float(imageSize) / Float(inputHeight))(input),
-            strength
-          ))
-      } else {
-        rgbResults.append((input, strength))
-      }
-    }
-    return rgbResults
-  }
-
   private func shuffleRGB(
     shuffles: [(Tensor<FloatType>, Float)], graph: DynamicGraph, startHeight: Int, startWidth: Int
   ) -> [(DynamicGraph.Tensor<FloatType>, Float)] {
@@ -2123,12 +2096,9 @@ extension ImageGenerator {
           guard let custom = custom else { return nil }
           shuffles = [(custom, 1)]
         }
-        let rgbs = ipAdapterRGB(
-          shuffles: shuffles, imageEncoderVersion: imageEncoderVersion, graph: graph)
-        let face = faceIDRGB(shuffles: shuffles, graph: graph)
+        let rgbs = shuffles.map { (graph.variable($0.0), $0.1) }
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           inputs: (rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) })
-            + (face.map { (hint: $0.0, weight: $0.1 * control.weight) })
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
       case .t2iadapter:
