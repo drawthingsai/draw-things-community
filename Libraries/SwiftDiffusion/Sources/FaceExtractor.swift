@@ -1,6 +1,5 @@
 import C_ccv
 import NNC
-import UIKit
 
 public struct FaceExtractor<FloatType: TensorNumeric & BinaryFloatingPoint> {
   let filePath: String
