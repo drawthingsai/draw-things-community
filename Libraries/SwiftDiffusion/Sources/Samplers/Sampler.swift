@@ -150,18 +150,18 @@ public struct Refiner: Equatable {
   public var filePath: String
   public var externalOnDemand: Bool
   public var version: ModelVersion
-  public var is8BitModel: Bool
+  public var isQuantizedModel: Bool
   public var isConsistencyModel: Bool
   // We probably need to copy all the rest in sampler over, but for now, we will just ignore.
   public init(
     start: Float, filePath: String, externalOnDemand: Bool, version: ModelVersion,
-    is8BitModel: Bool, isConsistencyModel: Bool
+    isQuantizedModel: Bool, isConsistencyModel: Bool
   ) {
     self.start = start
     self.filePath = filePath
     self.externalOnDemand = externalOnDemand
     self.version = version
-    self.is8BitModel = is8BitModel
+    self.isQuantizedModel = isQuantizedModel
     self.isConsistencyModel = isConsistencyModel
   }
 }

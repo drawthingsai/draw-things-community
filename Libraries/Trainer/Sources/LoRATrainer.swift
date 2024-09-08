@@ -1644,7 +1644,7 @@ public struct LoRATrainer {
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: version, usesFlashAttention: true,
-                zeroNegativePrompt: false, is8BitModel: false, canRunLoRASeparately: false,
+                zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)
               c =
                 unetFixEncoder.vector(
@@ -1685,7 +1685,7 @@ public struct LoRATrainer {
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: .sdxlRefiner, usesFlashAttention: true,
-                zeroNegativePrompt: false, is8BitModel: false, canRunLoRASeparately: false,
+                zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)
               c =
                 unetFixEncoder.vector(
@@ -1716,7 +1716,7 @@ public struct LoRATrainer {
               else { continue }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: version, usesFlashAttention: true,
-                zeroNegativePrompt: false, is8BitModel: false, canRunLoRASeparately: false,
+                zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)
               c =
                 unetFixEncoder.vector(
@@ -1739,7 +1739,7 @@ public struct LoRATrainer {
               guard let pooled = sessionStore.read("pool_\(imagePath)") else { continue }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: .sdxlRefiner, usesFlashAttention: true,
-                zeroNegativePrompt: false, is8BitModel: false, canRunLoRASeparately: false,
+                zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)
               c =
                 unetFixEncoder.vector(

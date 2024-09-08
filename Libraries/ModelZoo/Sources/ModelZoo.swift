@@ -1181,6 +1181,42 @@ public struct ModelZoo: DownloadZoo {
     }
     return false
   }
+
+  public static func isQuantizedModel(_ name: String) -> Bool {
+    let filePath = Self.filePathForModelDownloaded(name)
+    let fileSize = (try? URL(fileURLWithPath: filePath).resourceValues(forKeys: [.fileSizeKey]))?
+      .fileSize
+    let externalFileSize =
+      (try? URL(fileURLWithPath: TensorData.externalStore(filePath: filePath)).resourceValues(
+        forKeys: [.fileSizeKey]))?.fileSize
+    if var fileSize = fileSize {
+      fileSize += externalFileSize ?? 0
+      let version = versionForModel(name)
+      switch version {
+      case .sdxlBase, .sdxlRefiner:
+        return fileSize < 3 * 1_024 * 1_024 * 1_024
+      case .ssd1b:
+        return fileSize < 2 * 1_024 * 1_024 * 1_024
+      case .v1, .v2, .pixart:
+        return fileSize < 1_024 * 1_024 * 1_024
+      case .kandinsky21:
+        return fileSize < 2 * 1_024 * 1_024 * 1_024
+      case .svdI2v:
+        return fileSize < 2 * 1_024 * 1_024 * 1_024
+      case .wurstchenStageC:
+        return fileSize < 4 * 1_024 * 1_024 * 1_024
+      case .wurstchenStageB:
+        return fileSize < 2 * 1_024 * 1_024 * 1_024
+      case .sd3:
+        return fileSize < 3 * 1_024 * 1_024 * 1_024
+      case .auraflow:
+        return fileSize < 10 * 1_024 * 1_024 * 1_024
+      case .flux1:
+        return fileSize < 16 * 1_024 * 1_024 * 1_024
+      }
+    }
+    return false
+  }
 }
 
 extension ModelZoo {

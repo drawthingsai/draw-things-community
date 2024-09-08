@@ -7,18 +7,18 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let version: ModelVersion
   public let usesFlashAttention: Bool
   public let zeroNegativePrompt: Bool
-  public let is8BitModel: Bool
+  public let isQuantizedModel: Bool
   public let canRunLoRASeparately: Bool
   public let externalOnDemand: Bool
   public init(
     filePath: String, version: ModelVersion, usesFlashAttention: Bool, zeroNegativePrompt: Bool,
-    is8BitModel: Bool, canRunLoRASeparately: Bool, externalOnDemand: Bool
+    isQuantizedModel: Bool, canRunLoRASeparately: Bool, externalOnDemand: Bool
   ) {
     self.filePath = filePath
     self.version = version
     self.usesFlashAttention = usesFlashAttention
     self.zeroNegativePrompt = zeroNegativePrompt
-    self.is8BitModel = is8BitModel
+    self.isQuantizedModel = isQuantizedModel
     self.canRunLoRASeparately = canRunLoRASeparately
     self.externalOnDemand = externalOnDemand
   }
@@ -602,7 +602,7 @@ extension UNetFixedEncoder {
         graph, of: lora.map { $0.file })
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
-      let runLoRASeparatelyIsPreferred = is8BitModel || externalOnDemand
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {

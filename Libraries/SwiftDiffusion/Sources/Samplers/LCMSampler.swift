@@ -19,7 +19,7 @@ where UNet.FloatType == FloatType {
   public let injectIPAdapterLengths: [Int]
   public let lora: [LoRAConfiguration]
   public let isGuidanceEmbedEnabled: Bool
-  public let is8BitModel: Bool
+  public let isQuantizedModel: Bool
   public let canRunLoRASeparately: Bool
   public let conditioning: Denoiser.Conditioning
   public let tiledDiffusion: TiledConfiguration
@@ -29,7 +29,7 @@ where UNet.FloatType == FloatType {
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
-    isGuidanceEmbedEnabled: Bool, is8BitModel: Bool, canRunLoRASeparately: Bool,
+    isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
     conditioning: Denoiser.Conditioning,
     tiledDiffusion: TiledConfiguration, discretization: Discretization
   ) {
@@ -46,7 +46,7 @@ where UNet.FloatType == FloatType {
     self.injectIPAdapterLengths = injectIPAdapterLengths
     self.lora = lora
     self.isGuidanceEmbedEnabled = isGuidanceEmbedEnabled
-    self.is8BitModel = is8BitModel
+    self.isQuantizedModel = isQuantizedModel
     self.canRunLoRASeparately = canRunLoRASeparately
     self.conditioning = conditioning
     self.tiledDiffusion = tiledDiffusion
@@ -172,7 +172,7 @@ extension LCMSampler: Sampler {
     let oldC = c
     let fixedEncoder = UNetFixedEncoder<FloatType>(
       filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
-      zeroNegativePrompt: zeroNegativePrompt, is8BitModel: is8BitModel,
+      zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
       canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
     let alphasCumprod = Array(
@@ -254,7 +254,7 @@ extension LCMSampler: Sampler {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+        isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
         inputs: xIn, t,
         unet.extractConditions(
           graph: graph, index: 0, batchSize: batchSize, conditions: newC, version: version),
@@ -360,7 +360,7 @@ extension LCMSampler: Sampler {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
-            is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+            isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
             externalOnDemand: externalOnDemand)
           if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
             let vector = fixedEncoder.vector(
@@ -412,7 +412,7 @@ extension LCMSampler: Sampler {
             injectT2IAdapters: injectT2IAdapters, injectAttentionKV: injectAttentionKV,
 
             injectIPAdapterLengths: injectIPAdapterLengths,
-            lora: lora, is8BitModel: refiner.is8BitModel,
+            lora: lora, isQuantizedModel: refiner.isQuantizedModel,
             canRunLoRASeparately: canRunLoRASeparately,
             inputs: xIn, t,
             unet.extractConditions(

@@ -562,7 +562,7 @@ public enum LoRAImporter {
         }
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false,
-          is8BitModel: false, canRunLoRASeparately: false, externalOnDemand: false)
+          isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false)
         for c in cArr {
           c.full(0)
         }

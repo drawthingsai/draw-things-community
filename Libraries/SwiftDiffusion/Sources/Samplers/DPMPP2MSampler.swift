@@ -20,7 +20,7 @@ where UNet.FloatType == FloatType {
   public let lora: [LoRAConfiguration]
   public let classifierFreeGuidance: Bool
   public let isGuidanceEmbedEnabled: Bool
-  public let is8BitModel: Bool
+  public let isQuantizedModel: Bool
   public let canRunLoRASeparately: Bool
   public let conditioning: Denoiser.Conditioning
   public let tiledDiffusion: TiledConfiguration
@@ -30,7 +30,7 @@ where UNet.FloatType == FloatType {
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
-    classifierFreeGuidance: Bool, isGuidanceEmbedEnabled: Bool, is8BitModel: Bool,
+    classifierFreeGuidance: Bool, isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool,
     canRunLoRASeparately: Bool,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
     discretization: Discretization
@@ -49,7 +49,7 @@ where UNet.FloatType == FloatType {
     self.lora = lora
     self.classifierFreeGuidance = classifierFreeGuidance
     self.isGuidanceEmbedEnabled = isGuidanceEmbedEnabled
-    self.is8BitModel = is8BitModel
+    self.isQuantizedModel = isQuantizedModel
     self.canRunLoRASeparately = canRunLoRASeparately
     self.conditioning = conditioning
     self.tiledDiffusion = tiledDiffusion
@@ -223,7 +223,7 @@ extension DPMPP2MSampler: Sampler {
     let oldC = c
     let fixedEncoder = UNetFixedEncoder<FloatType>(
       filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
-      zeroNegativePrompt: zeroNegativePrompt, is8BitModel: is8BitModel,
+      zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
       canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
@@ -305,7 +305,7 @@ extension DPMPP2MSampler: Sampler {
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
         injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
-        is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+        isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
         inputs: xIn, t,
         unet.extractConditions(
           graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
@@ -415,7 +415,7 @@ extension DPMPP2MSampler: Sampler {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
-            is8BitModel: is8BitModel, canRunLoRASeparately: canRunLoRASeparately,
+            isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
             externalOnDemand: externalOnDemand)
           if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
             let vector = fixedEncoder.vector(
@@ -461,7 +461,7 @@ extension DPMPP2MSampler: Sampler {
             usesFlashAttention: usesFlashAttention, injectControls: injectControls,
             injectT2IAdapters: injectT2IAdapters, injectAttentionKV: injectAttentionKV,
             injectIPAdapterLengths: injectIPAdapterLengths,
-            lora: lora, is8BitModel: refiner.is8BitModel,
+            lora: lora, isQuantizedModel: refiner.isQuantizedModel,
             canRunLoRASeparately: canRunLoRASeparately,
             inputs: xIn, t,
             unet.extractConditions(

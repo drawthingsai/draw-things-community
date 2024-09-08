@@ -31,7 +31,7 @@ public protocol UNetProtocol {
     usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
     injectAttentionKV: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
-    is8BitModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
+    isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
@@ -173,7 +173,7 @@ extension UNetFromNNC {
     usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
     injectAttentionKV: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
-    is8BitModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
+    isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
@@ -210,7 +210,7 @@ extension UNetFromNNC {
       graph, of: lora.map { $0.file })
     let isLoHa = lora.contains { $0.isLoHa }
     var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
-    let runLoRASeparatelyIsPreferred = is8BitModel || externalOnDemand
+    let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
     switch version {
     case .v1:
       tiledWidth =

@@ -517,7 +517,7 @@ public final class ModelImporter {
         .sd3, .auraflow:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false,
-          is8BitModel: false, canRunLoRASeparately: false, externalOnDemand: false)
+          isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false)
         cArr.insert(
           graph.variable(.CPU, .HWC(batchSize, 77, 768), of: FloatType.self),
           at: 0)

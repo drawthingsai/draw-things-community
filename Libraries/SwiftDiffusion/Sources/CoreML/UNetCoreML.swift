@@ -33,7 +33,7 @@ extension UNetFromCoreML {
     usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
     injectAttentionKV: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
-    is8BitModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
+    isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,

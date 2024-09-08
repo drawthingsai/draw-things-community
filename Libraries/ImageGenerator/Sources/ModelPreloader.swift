@@ -458,7 +458,7 @@ extension ModelPreloader {
     else { return }
     let modelPath = ModelZoo.filePathForModelDownloaded(modelFile)
     let modelVersion = ModelZoo.versionForModel(modelFile)
-    let is8BitModel = ModelZoo.is8BitModel(modelFile)
+    let isQuantizedModel = ModelZoo.isQuantizedModel(modelFile)
     let canRunLoRASeparately = canRunLoRASeparately
     let upcastAttention = ModelZoo.isUpcastAttentionForModel(modelFile)
     let modelModifier = ModelZoo.modifierForModel(modelFile)
@@ -532,7 +532,7 @@ extension ModelPreloader {
         if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: modelPath, version: modelVersion, usesFlashAttention: useMFA,
-            zeroNegativePrompt: false, is8BitModel: false, canRunLoRASeparately: false,
+            zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
             externalOnDemand: false)
           cArr.insert(
             graph.variable(.GPU(0), .HWC(cfgChannels * batchSize, 77, 768), of: FloatType.self),
@@ -564,7 +564,7 @@ extension ModelPreloader {
           version: modelVersion, upcastAttention: upcastAttention, usesFlashAttention: useMFA,
           injectControls: false, injectT2IAdapters: false, injectAttentionKV: false,
           injectIPAdapterLengths: [], lora: lora,
-          is8BitModel: is8BitModel,
+          isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           inputs: x, t, cArr, tokenLengthUncond: 77, tokenLengthCond: 77, extraProjection: nil,
           injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>(
