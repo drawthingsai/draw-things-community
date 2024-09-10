@@ -636,14 +636,34 @@ extension ImageGenerator {
   public func stopGenerating() {
     modelPreloader.stopGenerating()
   }
+
   public func generate(
-    _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?, depth: Tensor<FloatType>?,
-    hints: [ControlHintType: AnyTensor], custom: Tensor<FloatType>?,
-    shuffles: [(Tensor<FloatType>, Float)],
+    _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
+    hints: [(ControlHintType, [(AnyTensor, Float)])],
     text: String,
     negativeText: String, configuration: GenerationConfiguration,
     feedback: @escaping (Signpost, Set<Signpost>, Tensor<FloatType>?) -> Bool
   ) -> ([Tensor<FloatType>]?, Int) {
+
+    let depth =
+      (hints.first {
+        $0.0 == .depth
+      })?.1.first?.0 as? Tensor<FloatType>
+
+    let custom: Tensor<FloatType>? =
+      (hints.first {
+        $0.0 == .custom
+      })?.1.first?.0 as? Tensor<FloatType>
+
+    let shuffles: [(Tensor<FloatType>, Float)] =
+      hints.first(where: { $0.0 == .shuffle })?.1 as! [(Tensor<FloatType>, Float)]
+
+    let hints: [ControlHintType: AnyTensor] = hints.reduce(into: [:]) { dict, hint in
+      if hint.0 != .depth, hint.0 != .custom, hint.0 != .shuffle, let tensor = hint.1.first?.0 {
+        dict[hint.0] = tensor
+      }
+    }
+
     let file =
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
