@@ -631,7 +631,7 @@ extension ScriptExecutor: JSInterop {
         self.delegate?.evaluateScriptBegan(sessionId: session.sessionId)
         self.delegate?.logJavascript(
           title: (script.file as NSString).lastPathComponent, script: script.script, index: i + 1)
-        self.context?.evaluateScript(script.script)
+        self.context?.evaluateScript("(function (){\(script.script)})()")
         self.delegate?.evaluateScriptEnded(
           session: session, models: self.models.sorted(), loras: self.loras.sorted(),
           controls: self.controls.sorted())
