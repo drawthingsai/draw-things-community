@@ -44,9 +44,9 @@ dflat_deps()
 
 git_repository(
     name = "s4nnc",
-    commit = "a470d1de0856a7aeb56e0415de807f04eba0f0a1",
+    commit = "7c40d70ba92f925c2177a7387c1e35c2ec85e7e1",
     remote = "https://github.com/liuliu/s4nnc.git",
-    shallow_since = "1726445620 -0400",
+    shallow_since = "1726462053 -0400",
 )
 
 load("@s4nnc//:deps.bzl", "s4nnc_deps")
