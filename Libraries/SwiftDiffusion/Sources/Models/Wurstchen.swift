@@ -129,10 +129,10 @@ private func MultiHeadAttention(
       let scaledDotProductAttention: ScaledDotProductAttention
       if usesFlashAttention == .scale1 {
         scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1, multiHeadOutputProjectionFused: true, name: "unifyheads")
+          scale: 1, flags: [.Float16], multiHeadOutputProjectionFused: true, name: "unifyheads")
       } else {
         scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(),
+          scale: 1.0 / Float(k).squareRoot(), flags: [.Float16],
           multiHeadOutputProjectionFused: true, name: "unifyheads")
       }
       let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
@@ -180,7 +180,7 @@ private func MultiHeadAttention(
         [b0, hw + t.0, h, k], offset: [0, 0, 0, 0],
         strides: [(hw + max(t.0, t.1)) * h * k, h * k, k, 1]
       )
-      let out0 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+      let out0 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
         queries0, keys0, values0
       ).reshaped([b0, hw, h * k])
       let keys1 = keys.reshaped(
@@ -193,7 +193,7 @@ private func MultiHeadAttention(
         [b0, hw + t.1, h, k], offset: [b0, 0, 0, 0],
         strides: [(hw + max(t.0, t.1)) * h * k, h * k, k, 1]
       )
-      let out1 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+      let out1 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
         queries1, keys1, values1
       ).reshaped([b0, hw, h * k])
       var out = Functional.concat(axis: 0, out0, out1)

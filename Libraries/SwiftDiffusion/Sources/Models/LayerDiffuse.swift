@@ -56,10 +56,10 @@ private func SelfAttention(
     let scaledDotProductAttention: ScaledDotProductAttention
     if usesFlashAttention == .scale1 {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1, multiHeadOutputProjectionFused: true, name: "to_out")
+        scale: 1, flags: [.Float16], multiHeadOutputProjectionFused: true, name: "to_out")
     } else {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(),
+        scale: 1.0 / Float(k).squareRoot(), flags: [.Float16],
         multiHeadOutputProjectionFused: true, name: "to_out")
     }
     let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])

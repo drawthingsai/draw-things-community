@@ -55,7 +55,7 @@ private func SelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttention: B
     let queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, t, h, k])
     let values = tovalues(x).reshaped([b, t, h, k])
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1, multiHeadOutputProjectionFused: true, name: "o")
+      scale: 1, flags: [.Float16], multiHeadOutputProjectionFused: true, name: "o")
     let out = scaledDotProductAttention(queries, keys, values).reshaped([b, t, k * h])
     return (tokeys, toqueries, tovalues, scaledDotProductAttention, Model([x], [out]))
   } else {
@@ -110,7 +110,7 @@ private func CrossAttentionKeysAndValues(
     let t = t.0
     if usesFlashAttention {
       let scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1, multiHeadOutputProjectionFused: true, name: "c_o")
+        scale: 1, flags: [.Float16], multiHeadOutputProjectionFused: true, name: "c_o")
       let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
       return (toqueries, scaledDotProductAttention, Model([x, keys, values], [out]))
     } else {
@@ -138,7 +138,7 @@ private func CrossAttentionKeysAndValues(
         let values0 = values.reshaped(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out0 = ScaledDotProductAttention(scale: 1)(
+        out0 = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
           queries0, keys0, values0
         ).reshaped([b0, hw, h * k])
       } else {
@@ -153,7 +153,7 @@ private func CrossAttentionKeysAndValues(
             [1, t.0, h, k], offset: [i, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1)(
+            ScaledDotProductAttention(scale: 1, flags: [.Float16])(
               queries0, keys0, values0
             ).reshaped([1, hw, h * k]))
         }
@@ -169,7 +169,7 @@ private func CrossAttentionKeysAndValues(
         let values1 = values.reshaped(
           [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out1 = ScaledDotProductAttention(scale: 1)(
+        out1 = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
           queries1, keys1, values1
         ).reshaped([b0, hw, h * k])
       } else {
@@ -186,7 +186,7 @@ private func CrossAttentionKeysAndValues(
             strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1)(
+            ScaledDotProductAttention(scale: 1, flags: [.Float16])(
               queries1, keys1, values1
             ).reshaped([1, hw, h * k]))
         }
@@ -398,7 +398,7 @@ private func LoRASelfAttention(
     let queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, t, h, k])
     let values = tovalues(x).reshaped([b, t, h, k])
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1)
+      scale: 1, flags: [.Float16])
     var out = scaledDotProductAttention(queries, keys, values).reshaped([b, t, k * h])
     let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "o")
     out = unifyheads(out)
@@ -456,7 +456,7 @@ private func LoRACrossAttentionKeysAndValues(
     let t = t.0
     if usesFlashAttention {
       let scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1)
+        scale: 1, flags: [.Float16])
       var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
       let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "c_o")
       out = unifyheads(out)
@@ -486,7 +486,7 @@ private func LoRACrossAttentionKeysAndValues(
         let values0 = values.reshaped(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out0 = ScaledDotProductAttention(scale: 1)(
+        out0 = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
           queries0, keys0, values0
         ).reshaped([b0, hw, h * k])
       } else {
@@ -501,7 +501,7 @@ private func LoRACrossAttentionKeysAndValues(
             [1, t.0, h, k], offset: [i, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1)(
+            ScaledDotProductAttention(scale: 1, flags: [.Float16])(
               queries0, keys0, values0
             ).reshaped([1, hw, h * k]))
         }
@@ -517,7 +517,7 @@ private func LoRACrossAttentionKeysAndValues(
         let values1 = values.reshaped(
           [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out1 = ScaledDotProductAttention(scale: 1)(
+        out1 = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
           queries1, keys1, values1
         ).reshaped([b0, hw, h * k])
       } else {
@@ -534,7 +534,7 @@ private func LoRACrossAttentionKeysAndValues(
             strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1)(
+            ScaledDotProductAttention(scale: 1, flags: [.Float16])(
               queries1, keys1, values1
             ).reshaped([1, hw, h * k]))
         }

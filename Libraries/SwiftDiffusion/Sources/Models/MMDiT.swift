@@ -95,13 +95,14 @@ private func JointTransformerBlock(
     keys = keys.reshaped([b, t + hw, h, k])
     queries = ((1.0 / Float(k).squareRoot()) * queries).reshaped([b, t + hw, h, k])
     values = values.reshaped([b, t + hw, h, k])
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1)
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
   case .scaleMerged:
     keys = keys.reshaped([b, t + hw, h, k])
     queries = queries.reshaped([b, t + hw, h, k])
     values = values.reshaped([b, t + hw, h, k])
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
   }
   let contextUnifyheads: Model?
@@ -366,13 +367,14 @@ private func LoRAJointTransformerBlock(
     keys = keys.reshaped([b, t + hw, h, k])
     queries = ((1.0 / Float(k).squareRoot()) * queries).reshaped([b, t + hw, h, k])
     values = values.reshaped([b, t + hw, h, k])
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1)
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
   case .scaleMerged:
     keys = keys.reshaped([b, t + hw, h, k])
     queries = queries.reshaped([b, t + hw, h, k])
     values = values.reshaped([b, t + hw, h, k])
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
   }
   let contextUnifyheads: Model?

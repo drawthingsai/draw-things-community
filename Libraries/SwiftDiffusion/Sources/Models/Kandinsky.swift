@@ -13,7 +13,7 @@ private func SelfAttention(prefix: String, k: Int, h: Int, b: Int, t: Int, usesF
     let keys = tokeys(x).reshaped([b, t, h, k]).identity()
     let values = tovalues(x).reshaped([b, t, h, k])
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), isCausal: true, hasAttentionMask: true,
+      scale: 1.0 / Float(k).squareRoot(), isCausal: true, hasAttentionMask: true, flags: [.Float16],
       multiHeadOutputProjectionFused: true)
     let out = scaledDotProductAttention(queries, keys, values, causalAttentionMask).reshaped([
       b * t, h * k,
@@ -153,7 +153,7 @@ private func AttentionBlock(
     keys = Functional.concat(axis: 1, encoderkeys, keys).identity()
     values = Functional.concat(axis: 1, encodervalues, values)
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), multiHeadOutputProjectionFused: true)
+      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16], multiHeadOutputProjectionFused: true)
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, height, width, k * h]) + x
   } else {
     let encoderkeys = toencoderkeys(encoderIn).reshaped([b, t, h, k]).transposed(1, 2)

@@ -126,10 +126,10 @@ func SelfAttention(
       let scaledDotProductAttention: ScaledDotProductAttention
       if usesFlashAttention == .scale1 {
         scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1, flags: upcastAttention ? [.Float32] : [], multiHeadOutputProjectionFused: true)
+          scale: 1, flags: upcastAttention ? [] : [.Float16], multiHeadOutputProjectionFused: true)
       } else {
         scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [],
+          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16],
           multiHeadOutputProjectionFused: true)
       }
       let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
@@ -146,10 +146,10 @@ func SelfAttention(
     let scaledDotProductAttention: ScaledDotProductAttention
     if usesFlashAttention == .scale1 {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1, flags: upcastAttention ? [.Float32] : [], multiHeadOutputProjectionFused: true)
+        scale: 1, flags: upcastAttention ? [] : [.Float16], multiHeadOutputProjectionFused: true)
     } else {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [.Float32] : [],
+        scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16],
         multiHeadOutputProjectionFused: true)
     }
     let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
@@ -291,14 +291,14 @@ func CrossAttention(
       }
       if injectIPAdapterLengths.count > 0 {
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot())
+          scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
         var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, h * k])
         var ipKVs = [Input]()
         for _ in injectIPAdapterLengths {
           let ipKeys = Input()
           let ipValues = Input()
           let scaledDotProductAttention = ScaledDotProductAttention(
-            scale: 1.0 / Float(k).squareRoot())
+            scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
           out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
           ipKVs.append(contentsOf: [ipKeys, ipValues])
         }
@@ -307,7 +307,8 @@ func CrossAttention(
         return (tokeys, toqueries, tovalues, unifyheads, Model([x, c] + ipKVs, [out]))
       } else {
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), multiHeadOutputProjectionFused: true)
+          scale: 1.0 / Float(k).squareRoot(), flags: [.Float16],
+          multiHeadOutputProjectionFused: true)
         var out = scaledDotProductAttention(queries, keys, values)
         if upcastAttention {
           out = out.to(of: valueType)
@@ -334,7 +335,7 @@ func CrossAttention(
         let values0 = values.reshaped(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out0 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+        out0 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
           queries0, keys0, values0
         ).reshaped([b0, hw, h * k])
       } else {
@@ -349,7 +350,7 @@ func CrossAttention(
             [1, t.0, h, k], offset: [i, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+            ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
               queries0, keys0, values0
             ).reshaped([1, hw, h * k]))
         }
@@ -365,7 +366,7 @@ func CrossAttention(
         let values1 = values.reshaped(
           [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out1 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+        out1 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
           queries1, keys1, values1
         ).reshaped([b0, hw, h * k])
       } else {
@@ -382,7 +383,7 @@ func CrossAttention(
             strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+            ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
               queries1, keys1, values1
             ).reshaped([1, hw, h * k]))
         }
@@ -394,7 +395,7 @@ func CrossAttention(
         let ipKeys = Input()
         let ipValues = Input()
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot())
+          scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
         out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
         ipKVs.append(contentsOf: [ipKeys, ipValues])
       }
