@@ -455,7 +455,7 @@ public func Flux1(
     if injectControls {
       let injectedControl = Input()
       let injectedControlFP32 = injectedControl.to(.Float32)
-      injectedControlFP32.add(dependencies: [out])
+      injectedControlFP32.add(dependencies: [blockOut])  // out has no associated nodes, use blockOut instead.
       let scaleFactor: Float = 8
       out = out + (injectedControlFP32 * scaleFactor)
       injectedControls.append(injectedControl)
@@ -889,7 +889,7 @@ public func LoRAFlux1(
     if injectControls {
       let injectedControl = Input()
       let injectedControlFP32 = injectedControl.to(.Float32)
-      injectedControlFP32.add(dependencies: [out])
+      injectedControlFP32.add(dependencies: [blockOut])  // out has no associated nodes, use blockOut instead.
       let scaleFactor: Float = 8
       out = out + (injectedControlFP32 * scaleFactor)
       injectedControls.append(injectedControl)
@@ -1355,7 +1355,7 @@ public func ControlNetFlux1(
     mappers.append(mapper)
     let zeroConv = Dense(count: channels, name: "zero_conv")
     if let last = outs.last {
-      out.add(dependencies: [last])
+      blockOut.add(dependencies: [last])  // out has no associated nodes, use blockOut instead.
     }
     let scaleFactor: Float = 1 / 8  // We already scaled bias for zero conv.
     outs.append(zeroConv((out * scaleFactor).to(of: controlnetX)))
