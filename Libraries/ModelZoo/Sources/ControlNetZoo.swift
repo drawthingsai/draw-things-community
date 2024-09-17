@@ -5,7 +5,7 @@ public struct ControlNetZoo: DownloadZoo {
   public struct Specification: Codable {
     public var name: String
     public var file: String
-    public var modifier: ControlHintType
+    public var modifier: ControlHintType?
     public var version: ModelVersion
     public var type: ControlType
     public var globalAveragePooling: Bool = false
@@ -17,7 +17,7 @@ public struct ControlNetZoo: DownloadZoo {
     public var ipAdapterConfig: IPAdapterConfig? = nil
     public var autoencoder: String? = nil
     public init(
-      name: String, file: String, modifier: ControlHintType, version: ModelVersion,
+      name: String, file: String, modifier: ControlHintType?, version: ModelVersion,
       type: ControlType, globalAveragePooling: Bool = false, imageEncoder: String? = nil,
       preprocessor: String? = nil, transformerBlocks: [Int]? = nil, deprecated: Bool? = nil,
       imageEncoderVersion: ImageEncoderVersion? = nil, ipAdapterConfig: IPAdapterConfig? = nil,
@@ -344,7 +344,7 @@ public struct ControlNetZoo: DownloadZoo {
 
   public static func modifierForModel(_ name: String) -> ControlHintType {
     guard let specification = specificationMapping[name] else { return .canny }
-    return specification.modifier
+    return specification.modifier ?? .canny
   }
 
   public static func versionForModel(_ name: String) -> ModelVersion {

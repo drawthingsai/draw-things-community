@@ -1550,7 +1550,7 @@ extension ImageGenerator {
       switch type {
       case .controlnet, .controlnetunion, .controlnetlora:
         switch modifier {
-        case .canny, .mlsd, .tile:
+        case .canny, .mlsd, .tile, .blur, .gray, .lowquality:
           injectControls = injectControls || hasImage || hasCustom
           injectedControls += hasImage || hasCustom ? 1 : 0
         case .depth:
@@ -1597,7 +1597,7 @@ extension ImageGenerator {
         }
       case .t2iadapter:
         switch modifier {
-        case .canny, .mlsd, .tile:
+        case .canny, .mlsd, .tile, .blur, .gray, .lowquality:
           injectT2IAdapters = injectT2IAdapters || hasImage || hasCustom
         case .depth:
           injectT2IAdapters =
@@ -2039,7 +2039,7 @@ extension ImageGenerator {
             (hint: input, weight: 1)
           ]).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
-        case .tile:
+        case .tile, .blur, .gray, .lowquality:
           // Prefer custom for tile.
           if let rgb = customRGB(true) {
             let hint = controlModel.hint(inputs: [(hint: rgb, weight: 1)])[0]
@@ -2248,7 +2248,7 @@ extension ImageGenerator {
           ]).map { ($0, 1) }
           return (model: controlModel, hints: hints)
         case .normalbae, .lineart, .softedge, .seg, .inpaint, .ip2p, .shuffle, .mlsd, .tile,
-          .custom:
+          .custom, .blur, .gray, .lowquality:
           return nil  // Not supported at the moment.
         }
       }

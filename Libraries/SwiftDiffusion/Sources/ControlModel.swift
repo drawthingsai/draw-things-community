@@ -17,6 +17,9 @@ public enum ControlHintType: String, Codable & CaseIterable {
   case shuffle
   case mlsd
   case tile
+  case blur
+  case lowquality
+  case gray
 }
 
 public enum ControlType: String, Codable {
@@ -1610,11 +1613,17 @@ extension ControlModel {
         mode[0] = 1
       case .depth:
         mode[0] = 2
+      case .blur:
+        mode[0] = 3
       case .pose:
         mode[0] = 4
+      case .gray:
+        mode[0] = 5
+      case .lowquality:
+        mode[0] = 6
       case .custom, .color, .inpaint, .ip2p, .lineart, .mlsd, .normalbae, .scribble, .seg, .shuffle,
         .softedge:
-        mode[0] = 5  // ?? 3: blur, 5: gray, 6: low quality.
+        mode[0] = 0
       }
       let controlMode = graph.variable(mode.toGPU(0))
       controlNetFlux1Fixed.compile(

@@ -31,6 +31,28 @@ enum ControlMode: byte {
   Control,
 }
 
+enum ControlInputType: byte {
+  Unspecified,
+  Custom,
+  Depth,
+  Canny,
+  Scribble,
+  Pose,
+  Normalbae,
+  Color,
+  Lineart,
+  Softedge,
+  Seg,
+  Inpaint,
+  Ip2p,
+  Shuffle,
+  Mlsd,
+  Tile,
+  Blur,
+  Lowquality,
+  Gray,
+}
+
 table Control {
   file: string;
   weight: float = 1;
@@ -41,6 +63,7 @@ table Control {
   down_sampling_rate: float = 1;
   control_mode: ControlMode = Balanced;
   target_blocks: [string];
+  input_override: ControlInputType = Unspecified;
 }
 
 table LoRA {

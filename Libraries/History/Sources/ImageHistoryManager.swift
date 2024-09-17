@@ -142,6 +142,96 @@ extension DataModels.ControlMode {
   }
 }
 
+extension ControlInputType {
+  public init(from controlInputType: DataModels.ControlInputType) {
+    switch controlInputType {
+    case .blur:
+      self = .blur
+    case .canny:
+      self = .canny
+    case .color:
+      self = .color
+    case .custom:
+      self = .custom
+    case .depth:
+      self = .depth
+    case .gray:
+      self = .gray
+    case .inpaint:
+      self = .inpaint
+    case .ip2p:
+      self = .ip2p
+    case .lineart:
+      self = .lineart
+    case .lowquality:
+      self = .lowquality
+    case .mlsd:
+      self = .mlsd
+    case .unspecified:
+      self = .unspecified
+    case .normalbae:
+      self = .normalbae
+    case .pose:
+      self = .pose
+    case .scribble:
+      self = .scribble
+    case .seg:
+      self = .seg
+    case .shuffle:
+      self = .shuffle
+    case .softedge:
+      self = .softedge
+    case .tile:
+      self = .tile
+    }
+  }
+}
+
+extension DataModels.ControlInputType {
+  public init(from controlInputType: ControlInputType) {
+    switch controlInputType {
+    case .blur:
+      self = .blur
+    case .canny:
+      self = .canny
+    case .color:
+      self = .color
+    case .custom:
+      self = .custom
+    case .depth:
+      self = .depth
+    case .gray:
+      self = .gray
+    case .inpaint:
+      self = .inpaint
+    case .ip2p:
+      self = .ip2p
+    case .lineart:
+      self = .lineart
+    case .lowquality:
+      self = .lowquality
+    case .mlsd:
+      self = .mlsd
+    case .unspecified:
+      self = .unspecified
+    case .normalbae:
+      self = .normalbae
+    case .pose:
+      self = .pose
+    case .scribble:
+      self = .scribble
+    case .seg:
+      self = .seg
+    case .shuffle:
+      self = .shuffle
+    case .softedge:
+      self = .softedge
+    case .tile:
+      self = .tile
+    }
+  }
+}
+
 extension Control {
   public init(from control: DataModels.Control) {
     self.init(
@@ -149,7 +239,7 @@ extension Control {
       guidanceEnd: control.guidanceEnd, noPrompt: control.noPrompt,
       globalAveragePooling: control.globalAveragePooling,
       downSamplingRate: control.downSamplingRate, controlMode: .init(from: control.controlMode),
-      targetBlocks: control.targetBlocks
+      targetBlocks: control.targetBlocks, inputOverride: .init(from: control.inputOverride)
     )
   }
 }
@@ -161,7 +251,7 @@ extension DataModels.Control {
       guidanceEnd: control.guidanceEnd, noPrompt: control.noPrompt,
       globalAveragePooling: control.globalAveragePooling,
       downSamplingRate: control.downSamplingRate, controlMode: .init(from: control.controlMode),
-      targetBlocks: control.targetBlocks
+      targetBlocks: control.targetBlocks, inputOverride: .init(from: control.inputOverride)
     )
   }
 }

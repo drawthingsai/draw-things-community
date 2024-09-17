@@ -1024,9 +1024,8 @@ public enum ImageConverter {
                 let modifier = ControlNetZoo.modifierForModel(file)
                 switch modifier {
                 case .canny, .custom, .depth, .scribble, .pose, .color, .normalbae, .lineart,
-                  .softedge,
-                  .seg,
-                  .inpaint, .ip2p, .shuffle, .mlsd, .tile:
+                  .softedge, .seg, .inpaint, .ip2p, .shuffle, .mlsd, .tile, .blur, .gray,
+                  .lowquality:
                   return (
                     file, $0.weight, $0.guidanceStart, $0.guidanceEnd, $0.noPrompt,
                     $0.globalAveragePooling
