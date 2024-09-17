@@ -24,6 +24,7 @@ public final class JSControl: Codable {
   let globalAveragePooling: Bool
   let downSamplingRate: Float32
   let controlImportance: String
+  let inputOverride: String
   let targetBlocks: [String]
 
   public init(control: DataModels.Control) {
@@ -43,6 +44,7 @@ public final class JSControl: Codable {
       controlImportance = "control"
     }
     targetBlocks = control.targetBlocks
+    inputOverride = control.inputOverride.description.lowercased()
   }
 
   public func createControl() -> DataModels.Control {
@@ -58,10 +60,19 @@ public final class JSControl: Codable {
         return .balanced
       }
     }()
+    let inputOverride: ControlInputType = {
+      for inputType in ControlInputType.allCases {
+        if self.inputOverride.lowercased() == inputType.description.lowercased() {
+          return inputType
+        }
+      }
+      return .unspecified
+    }()
     return Control(
       file: file, weight: weight, guidanceStart: guidanceStart, guidanceEnd: guidanceEnd,
       noPrompt: noPrompt, globalAveragePooling: globalAveragePooling,
-      downSamplingRate: downSamplingRate, controlMode: controlMode, targetBlocks: targetBlocks)
+      downSamplingRate: downSamplingRate, controlMode: controlMode, targetBlocks: targetBlocks,
+      inputOverride: inputOverride)
   }
 }
 
