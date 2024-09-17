@@ -11,6 +11,8 @@ build --features=swift.enable_batch_mode
 build --swiftcopt=-Xfrontend
 build --swiftcopt=-internalize-at-link
 
+build --modify_execution_info=^(ObjcLink|BundleApp|ProcessAndSign)$=+no-cache
+
 common:release --define=enable_mps=true
 common:release --swiftcopt=-whole-module-optimization
 common:release --compilation_mode=opt
