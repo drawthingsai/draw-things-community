@@ -262,7 +262,8 @@ extension LCMSampler: Sampler {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
         inputs: xIn, t,
-        unet.extractConditions(
+        UNetExtractConditions(
+          of: FloatType.self,
           graph: graph, index: 0, batchSize: batchSize, conditions: newC, version: version),
         tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond,
@@ -421,7 +422,8 @@ extension LCMSampler: Sampler {
             lora: lora, isQuantizedModel: refiner.isQuantizedModel,
             canRunLoRASeparately: canRunLoRASeparately,
             inputs: xIn, t,
-            unet.extractConditions(
+            UNetExtractConditions(
+              of: FloatType.self,
               graph: graph, index: 0, batchSize: batchSize, conditions: newC,
               version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
@@ -441,7 +443,8 @@ extension LCMSampler: Sampler {
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: batchSize, timestep: cNoise, version: currentModelVersion)
-        let c = unet.extractConditions(
+        let c = UNetExtractConditions(
+          of: FloatType.self,
           graph: graph, index: i - indexOffset, batchSize: batchSize, conditions: c,
           version: currentModelVersion)
         xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x

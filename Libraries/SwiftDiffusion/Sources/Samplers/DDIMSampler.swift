@@ -311,7 +311,8 @@ extension DDIMSampler: Sampler {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
         inputs: xIn, t,
-        unet.extractConditions(
+        UNetExtractConditions(
+          of: FloatType.self,
           graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
           version: version), tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond,
@@ -451,7 +452,8 @@ extension DDIMSampler: Sampler {
             lora: lora, isQuantizedModel: refiner.isQuantizedModel,
             canRunLoRASeparately: canRunLoRASeparately,
             inputs: xIn, t,
-            unet.extractConditions(
+            UNetExtractConditions(
+              of: FloatType.self,
               graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
               version: currentModelVersion),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
@@ -471,7 +473,8 @@ extension DDIMSampler: Sampler {
         let t = unet.timeEmbed(
           graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
           version: currentModelVersion)
-        let c = unet.extractConditions(
+        let c = UNetExtractConditions(
+          of: FloatType.self,
           graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize, conditions: c,
           version: currentModelVersion)
         var et: DynamicGraph.Tensor<FloatType>

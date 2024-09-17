@@ -99,54 +99,52 @@ extension UNetProtocol {
   }
 }
 
-extension UNetProtocol {
-  public func extractConditions(
-    graph: DynamicGraph, index: Int, batchSize: Int, conditions: [DynamicGraph.Tensor<FloatType>],
-    version: ModelVersion
-  )
-    -> [DynamicGraph.Tensor<FloatType>]
-  {
-    switch version {
-    case .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
-      .wurstchenStageC:
-      return conditions
-    case .sd3, .auraflow:
-      return [conditions[0]]
-        + conditions[1..<conditions.count].map {
-          let shape = $0.shape
-          return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
-            .copied()
-        }
-    case .flux1:
-      return conditions[0..<2]
-        + conditions[2..<conditions.count].map {
-          let shape = $0.shape
-          return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
-            .copied()
-        }
-    case .pixart:
-      var extractedConditions = [conditions[0]]
-      let layers = (conditions.count - 3) / 8
-      for i in 0..<layers {
-        let shape = conditions[1 + i * 8].shape
-        extractedConditions.append(contentsOf: [
-          conditions[1 + i * 8][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-          conditions[1 + i * 8 + 1][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-          conditions[1 + i * 8 + 2][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-          conditions[1 + i * 8 + 3],
-          conditions[1 + i * 8 + 4],
-          conditions[1 + i * 8 + 5][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-          conditions[1 + i * 8 + 6][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-          conditions[1 + i * 8 + 7][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-        ])
+public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  of: FloatType.Type = FloatType.self, graph: DynamicGraph, index: Int, batchSize: Int,
+  conditions: [DynamicGraph.Tensor<FloatType>], version: ModelVersion
+)
+  -> [DynamicGraph.Tensor<FloatType>]
+{
+  switch version {
+  case .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
+    .wurstchenStageC:
+    return conditions
+  case .sd3, .auraflow:
+    return [conditions[0]]
+      + conditions[1..<conditions.count].map {
+        let shape = $0.shape
+        return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
+          .copied()
       }
-      let shape = conditions[conditions.count - 2].shape
+  case .flux1:
+    return conditions[0..<2]
+      + conditions[2..<conditions.count].map {
+        let shape = $0.shape
+        return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
+          .copied()
+      }
+  case .pixart:
+    var extractedConditions = [conditions[0]]
+    let layers = (conditions.count - 3) / 8
+    for i in 0..<layers {
+      let shape = conditions[1 + i * 8].shape
       extractedConditions.append(contentsOf: [
-        conditions[conditions.count - 2][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-        conditions[conditions.count - 1][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+        conditions[1 + i * 8][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+        conditions[1 + i * 8 + 1][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+        conditions[1 + i * 8 + 2][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+        conditions[1 + i * 8 + 3],
+        conditions[1 + i * 8 + 4],
+        conditions[1 + i * 8 + 5][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+        conditions[1 + i * 8 + 6][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+        conditions[1 + i * 8 + 7][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
       ])
-      return extractedConditions
     }
+    let shape = conditions[conditions.count - 2].shape
+    extractedConditions.append(contentsOf: [
+      conditions[conditions.count - 2][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+      conditions[conditions.count - 1][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+    ])
+    return extractedConditions
   }
 }
 

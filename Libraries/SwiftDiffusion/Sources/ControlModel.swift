@@ -1228,9 +1228,9 @@ extension ControlModel {
         graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
       ]
     case .flux1:
-      emptyControls = (0..<(19 + 38)).map { _ in
-        graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 3072))
-      }
+      let emptyControl = graph.variable(
+        .GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 3072), of: FloatType.self)
+      emptyControls = Array(repeating: emptyControl, count: 19 + 38)
     case .sd3, .pixart, .auraflow, .kandinsky21, .svdI2v, .sdxlRefiner, .ssd1b,
       .wurstchenStageC, .wurstchenStageB:
       fatalError()
@@ -1902,8 +1902,15 @@ extension ControlModel {
       }
     }
     let tiledDiffusionIsEnabled = inputEndYPad > 0 && inputEndXPad > 0
-    let c = UNetFromNNC<FloatType>().extractConditions(
+    var c = UNetExtractConditions(
+      of: FloatType.self,
       graph: graph, index: index, batchSize: batchSize, conditions: c, version: version)
+    if tiledDiffusionIsEnabled {
+      let shape = hint[0].shape
+      c = sliceInputs(
+        c, originalShape: shape, inputStartYPad: inputStartYPad, inputEndYPad: inputEndYPad,
+        inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad)
+    }
     if existingControlNet == nil {
       if tiledDiffusionIsEnabled {
         let shape = hint[0].shape
@@ -2066,5 +2073,36 @@ extension ControlModel {
       }
     }
     return y
+  }
+}
+
+extension ControlModel {
+  private func sliceInputs(
+    _ inputs: [DynamicGraph.Tensor<FloatType>], originalShape: TensorShape, inputStartYPad: Int,
+    inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int
+  ) -> [DynamicGraph.Tensor<FloatType>] {
+    return inputs.enumerated().map {
+      // For FLUX.1, if it is the first one, we need to handle its slicing (rotary encoding).
+      if $0.0 == 0 && version == .flux1 {
+        let shape = $0.1.shape
+        let tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
+        let graph = $0.1.graph
+        let tokenEncoding = $0.1[0..<shape[0], 0..<tokenLength, 0..<shape[2], 0..<shape[3]].copied()
+        let imageEncoding = $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied().reshaped(.NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+        let h = inputEndYPad / 2 - inputStartYPad / 2
+        let w = inputEndXPad / 2 - inputStartXPad / 2
+        let sliceEncoding = imageEncoding[
+          0..<shape[0], (inputStartYPad / 2)..<(inputEndYPad / 2),
+          (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[3]
+        ].copied().reshaped(.NHWC(shape[0], h * w, 1, shape[3]))
+        var finalEncoding = graph.variable(
+          $0.1.kind, .NHWC(shape[0], h * w + tokenLength, 1, shape[3]), of: FloatType.self)
+        finalEncoding[0..<shape[0], 0..<tokenLength, 0..<1, 0..<shape[3]] = tokenEncoding
+        finalEncoding[0..<shape[0], tokenLength..<(h * w), 0..<1, 0..<shape[3]] = sliceEncoding
+        return finalEncoding
+      }
+      return $0.1
+    }
   }
 }
