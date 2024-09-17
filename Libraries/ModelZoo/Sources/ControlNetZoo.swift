@@ -114,8 +114,6 @@ public struct ControlNetZoo: DownloadZoo {
       "732fc3543b725d93854ef6950291123edfb6056dc372cdcf7adad4df0055dbe8",
     "controlnet_depth_sdxl_v1.0_mid_f16.ckpt":
       "6629c9ccdc2a7741c1100089c28588df7f3d3dd26260c17e9204765d62167215",
-    "controlnet_union_pro_flux_1_dev_1.0_f16.ckpt":
-      "cfed467ada97320059ccd6584ad0d45337ea523d409d820973ecc36bc3ac4ca5",
   ]
 
   public static let builtinSpecifications: [Specification] = [
@@ -144,10 +142,6 @@ public struct ControlNetZoo: DownloadZoo {
     Specification(
       name: "Depth Map (SD v2.x, ControlNet)", file: "controlnet_depth_2.x_f16.ckpt",
       modifier: .depth, version: .v2, type: .controlnet),
-    Specification(
-      name: "Union (FLUX.1 [dev], ControlNet)",
-      file: "controlnet_union_pro_flux_1_dev_1.0_f16.ckpt",
-      modifier: .depth, version: .flux1, type: .controlnetunion, transformerBlocks: [5, 10]),
     Specification(
       name: "Depth Map (SDXL, ControlNet, Diffusers 1.0 Mid)",
       file: "controlnet_depth_sdxl_v1.0_mid_f16.ckpt",
