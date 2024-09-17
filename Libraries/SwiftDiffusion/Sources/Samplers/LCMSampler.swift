@@ -215,7 +215,10 @@ extension LCMSampler: Sampler {
       c = vector + encodings
       injectedControlsC = injectedControls.map {
         $0.model.encode(
-          textEncoding: oldC, vector: vector.first, batchSize: batchSize, startHeight: startHeight,
+          isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
+          isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, textEncoding: oldC,
+          timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
+          vector: vector.first, batchSize: batchSize, startHeight: startHeight,
           startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, zeroNegativePrompt: zeroNegativePrompt,
           mainUNetFixed: (fixedEncoder.filePath, weightMapper))
@@ -223,7 +226,10 @@ extension LCMSampler: Sampler {
     } else {
       injectedControlsC = injectedControls.map {
         $0.model.encode(
-          textEncoding: oldC, vector: nil, batchSize: batchSize, startHeight: startHeight,
+          isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
+          isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, textEncoding: oldC,
+          timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
+          vector: nil, batchSize: batchSize, startHeight: startHeight,
           startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, zeroNegativePrompt: zeroNegativePrompt,
           mainUNetFixed: (fixedEncoder.filePath, nil))
@@ -444,14 +450,16 @@ extension LCMSampler: Sampler {
             injecteds: injectedControls, step: i, version: unet.version,
             usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            isCfgEnabled: false, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+            isCfgEnabled: false, index: i - startStep.integral,
+            mainUNetAndWeightMapper: unet.modelAndWeightMapper,
             controlNets: &controlNets)
         let injectedControlsAndAdapters = ControlModel<FloatType>
           .injectedControlsAndAdapters(
             injecteds: injectedControls, step: i, version: unet.version,
             usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            isCfgEnabled: false, mainUNetAndWeightMapper: unet.modelAndWeightMapper,
+            isCfgEnabled: false, index: i - startStep.integral,
+            mainUNetAndWeightMapper: unet.modelAndWeightMapper,
             controlNets: &controlNets)
         let newC: [DynamicGraph.Tensor<FloatType>]
         if version == .svdI2v {

@@ -27,6 +27,7 @@ public enum ControlType: String, Codable {
   case controlnetlora
   case injectKV = "inject_kv"
   case ipadapterfaceidplus
+  case controlnetunion
 }
 
 public enum ControlMode {
@@ -69,12 +70,14 @@ public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let targetBlocks: [String]
   public let imageEncoderVersion: ImageEncoderVersion
   public let ipAdapterConfig: IPAdapterConfig?
+  public let firstStage: FirstStage<FloatType>?
   public init(
     filePaths: [String], type: ControlType, modifier: ControlHintType,
     externalOnDemand: Bool, version: ModelVersion, tiledDiffusion: TiledConfiguration,
     usesFlashAttention: Bool, startStep: Int, endStep: Int, controlMode: ControlMode,
     globalAveragePooling: Bool, transformerBlocks: [Int], targetBlocks: [String],
-    imageEncoderVersion: ImageEncoderVersion, ipAdapterConfig: IPAdapterConfig?
+    imageEncoderVersion: ImageEncoderVersion, ipAdapterConfig: IPAdapterConfig?,
+    firstStage: FirstStage<FloatType>?
   ) {
     self.filePaths = filePaths
     self.type = type
@@ -91,6 +94,7 @@ public struct ControlModel<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.targetBlocks = targetBlocks
     self.imageEncoderVersion = imageEncoderVersion
     self.ipAdapterConfig = ipAdapterConfig
+    self.firstStage = firstStage
   }
 }
 
@@ -102,7 +106,7 @@ extension ControlModel {
     step: Int, version: ModelVersion, usesFlashAttention: Bool,
     inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [[DynamicGraph.Tensor<FloatType>]],
-    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool, index: Int,
     mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
     controlNets existingControlNets: inout [Model?]
   ) -> (
@@ -112,7 +116,7 @@ extension ControlModel {
     for (i, injected) in injecteds.enumerated() {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
-      case .controlnet, .controlnetlora, .t2iadapter, .injectKV:
+      case .controlnet, .controlnetlora, .controlnetunion, .t2iadapter, .injectKV:
         continue
       case .ipadapterplus, .ipadapterfull, .ipadapterfaceidplus:
         var instanceInjectedIPAdapters = [DynamicGraph.Tensor<FloatType>]()
@@ -121,7 +125,8 @@ extension ControlModel {
             inputStartYPad: 0, inputEndYPad: 0, inputStartXPad: 0, inputEndXPad: 0,
             step: step, inputs: xT, hint, strength: strength, timestep, c[i],
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: mainUNetAndWeightMapper,
+            isCfgEnabled: isCfgEnabled, index: index,
+            mainUNetAndWeightMapper: mainUNetAndWeightMapper,
             controlNet: &existingControlNets[i])
           if instanceInjectedIPAdapters.isEmpty {
             instanceInjectedIPAdapters = newInjectedIPAdapters
@@ -149,7 +154,7 @@ extension ControlModel {
     step: Int, version: ModelVersion, usesFlashAttention: Bool,
     inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [[DynamicGraph.Tensor<FloatType>]],
-    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool, index: Int,
     mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
     controlNets existingControlNets: inout [Model?]
   ) -> (
@@ -168,7 +173,8 @@ extension ControlModel {
     for (i, injected) in injecteds.enumerated() {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
-      case .controlnet, .controlnetlora, .ipadapterplus, .ipadapterfull, .ipadapterfaceidplus:
+      case .controlnet, .controlnetlora, .controlnetunion, .ipadapterplus, .ipadapterfull,
+        .ipadapterfaceidplus:
         continue
       case .injectKV:
         for (hint, strength) in injected.hints {
@@ -176,7 +182,8 @@ extension ControlModel {
             inputStartYPad: 0, inputEndYPad: 0, inputStartXPad: 0, inputEndXPad: 0,
             step: step, inputs: xT, hint, strength: strength, timestep, c[i],
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: mainUNetAndWeightMapper,
+            isCfgEnabled: isCfgEnabled, index: index,
+            mainUNetAndWeightMapper: mainUNetAndWeightMapper,
             controlNet: &existingControlNets[i])
           if injectedKVs.isEmpty {
             injectedKVs = newHint
@@ -190,7 +197,8 @@ extension ControlModel {
             inputStartYPad: 0, inputEndYPad: 0, inputStartXPad: 0, inputEndXPad: 0,
             step: step, inputs: xT, hint, strength: strength, timestep, c[i],
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: mainUNetAndWeightMapper,
+            isCfgEnabled: isCfgEnabled, index: index,
+            mainUNetAndWeightMapper: mainUNetAndWeightMapper,
             controlNet: &existingControlNets[i])
           if injectedT2IAdapters.isEmpty {
             injectedT2IAdapters = newInjectedT2IAdapters
@@ -205,14 +213,15 @@ extension ControlModel {
       for (i, injected) in injecteds.enumerated() {
         guard injected.model.version == version else { continue }
         switch injected.model.type {
-        case .controlnet, .controlnetlora:
+        case .controlnet, .controlnetlora, .controlnetunion:
           for (hint, strength) in injected.hints {
             let newInjectedControls = injected.model(
               inputStartYPad: inputStartYPad, inputEndYPad: inputEndYPad,
               inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
               step: step, inputs: xT, hint, strength: strength, timestep, c[i],
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, mainUNetAndWeightMapper: mainUNetAndWeightMapper,
+              isCfgEnabled: isCfgEnabled, index: index,
+              mainUNetAndWeightMapper: mainUNetAndWeightMapper,
               controlNet: &existingControlNets[i])
             if injectedControls.isEmpty {
               injectedControls = newInjectedControls
@@ -266,7 +275,7 @@ extension ControlModel {
     for injected in injecteds {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
-      case .controlnet, .controlnetlora:
+      case .controlnet, .controlnetlora, .controlnetunion:
         if injectedControls.isEmpty {
           injectedControls = emptyControls(
             graph: graph, batchSize: batchSize, startWidth: tiledWidth, startHeight: tiledHeight,
@@ -344,10 +353,18 @@ extension ControlModel {
     }
     let graph = inputs[0].hint.graph
     switch type {
-    case .controlnet, .controlnetlora:
+    case .controlnet, .controlnetlora, .controlnetunion:
       let shape = inputs[0].hint.shape
       let startHeight = shape[1]
       let startWidth = shape[2]
+      if let firstStage = firstStage {  // For FLUX.1, we use the VAE as encoder.
+        var encoder: Model? = nil
+        return inputs.map {
+          let result = firstStage.sample($0.hint, encoder: encoder)
+          encoder = result.2
+          return [result.0]
+        }
+      }
       let tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 64, startHeight) : startHeight
@@ -1207,9 +1224,12 @@ extension ControlModel {
         graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
         graph.variable(.GPU(0), .NHWC(batchSize, startHeight / 4, startWidth / 4, 1280)),
       ]
-    case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .sdxlRefiner, .ssd1b,
-      .wurstchenStageC,
-      .wurstchenStageB:
+    case .flux1:
+      emptyControls = (0..<(19 + 38)).map { _ in
+        graph.variable(.GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 3072))
+      }
+    case .sd3, .pixart, .auraflow, .kandinsky21, .svdI2v, .sdxlRefiner, .ssd1b,
+      .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
     for emptyControl in emptyControls {
@@ -1377,14 +1397,11 @@ extension ControlModel {
     return reversedDictionary
   }
 
-  public func encode(
+  public func encodeSDXL(
     textEncoding: [DynamicGraph.Tensor<FloatType>], vector: DynamicGraph.Tensor<FloatType>?,
     batchSize: Int, startHeight: Int, startWidth: Int, tokenLengthUncond: Int, tokenLengthCond: Int,
     zeroNegativePrompt: Bool, mainUNetFixed: (filePath: String, weightMapper: ModelWeightMapper?)
   ) -> [DynamicGraph.Tensor<FloatType>] {
-    guard version == .sdxlBase && (type == .controlnet || type == .controlnetlora) else {
-      return textEncoding
-    }
     let graph = textEncoding[0].graph
     var textEncoding = textEncoding
     graph.openStore(
@@ -1447,6 +1464,8 @@ extension ControlModel {
           "controlnet_fixed", model: controlNetFixed,
           codec: [.q6p, .q8p, .ezm7, .jit, .externalData])
       }
+    case .controlnetunion:
+      fatalError()
     case .controlnetlora:
       guard let weightMapper = mainUNetFixed.weightMapper else { return textEncoding }
       let rank = LoRALoader<FloatType>.rank(
@@ -1510,12 +1529,161 @@ extension ControlModel {
       + controlNetFixed(inputs: crossattn).map { $0.as(of: FloatType.self) }
   }
 
+  private func encodeFlux1(
+    isCfgEnabled: Bool, textGuidanceScale: Float, guidanceEmbed: Float,
+    isGuidanceEmbedEnabled: Bool, textEncoding: [DynamicGraph.Tensor<FloatType>],
+    timesteps: [Float], vector: DynamicGraph.Tensor<FloatType>?, batchSize: Int, startHeight: Int,
+    startWidth: Int, tokenLengthUncond: Int, tokenLengthCond: Int, zeroNegativePrompt: Bool,
+    mainUNetFixed: (filePath: String, weightMapper: ModelWeightMapper?)
+  ) -> [DynamicGraph.Tensor<FloatType>] {
+    let graph = textEncoding[0].graph
+    switch type {
+    case .controlnetunion:
+      let c0 = textEncoding[0]
+      var pooled = textEncoding[1]
+      let cBatchSize = c0.shape[0]
+      let t5Length = c0.shape[1]
+      var c = graph.variable(
+        .GPU(0), .HWC(cBatchSize, t5Length, 4096), of: FloatType.self)
+      c.full(0)
+      if zeroNegativePrompt && isCfgEnabled {
+        let oldPooled = pooled
+        pooled = graph.variable(like: oldPooled)
+        pooled.full(0)
+        pooled[batchSize..<(batchSize * 2), 0..<768] =
+          oldPooled[batchSize..<(batchSize * 2), 0..<768]
+        c[batchSize..<(batchSize * 2), 0..<t5Length, 0..<4096] =
+          c0[batchSize..<(batchSize * 2), 0..<t5Length, 0..<4096]
+      } else {
+        c[0..<cBatchSize, 0..<t5Length, 0..<4096] = c0
+      }
+      precondition(timesteps.count > 0)
+      // Load the unetFixed.
+      // TODO: This is not ideal because we opened it twice, but hopefully it is OK for now until we are at 300ms domain.
+      let isGuidanceEmbedSupported =
+        (try?
+          (graph.openStore(
+            filePaths[0], flags: .readOnly,
+            externalStore: TensorData.externalStore(filePath: filePaths[0])
+          ) {
+            return $0.read(like: "__dit__[t-guidance_embedder_0-0-1]") != nil
+          }).get()) ?? false
+      let (_, controlNetFlux1Fixed) = ControlNetFlux1Fixed(
+        union: true, batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072,
+        layers: (transformerBlocks[0], transformerBlocks[1]),
+        guidanceEmbed: isGuidanceEmbedSupported, of: FloatType.self)
+      var timeEmbeds = graph.variable(
+        .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
+      var pooleds = graph.variable(
+        .GPU(0), .WC(cBatchSize * timesteps.count, 768), of: FloatType.self)
+      var guidanceEmbeds: DynamicGraph.Tensor<FloatType>?
+      if isGuidanceEmbedSupported {
+        guidanceEmbeds = graph.variable(
+          .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
+      } else {
+        guidanceEmbeds = nil
+      }
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: cBatchSize, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = timeEmbed
+        pooleds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<768] = pooled
+        if var guidanceEmbeds = guidanceEmbeds {
+          let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : guidanceEmbed
+          let guidanceEmbed = graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: guidanceScale * 1_000, batchSize: cBatchSize, embeddingSize: 256,
+                maxPeriod: 10_000)
+            ).toGPU(0))
+          guidanceEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = guidanceEmbed
+        }
+      }
+      var mode = Tensor<Int32>(.CPU, format: .NHWC, shape: [1])
+      switch modifier {
+      case .canny:
+        mode[0] = 0
+      case .tile:
+        mode[0] = 1
+      case .depth:
+        mode[0] = 2
+      case .pose:
+        mode[0] = 4
+      case .custom, .color, .inpaint, .ip2p, .lineart, .mlsd, .normalbae, .scribble, .seg, .shuffle,
+        .softedge:
+        mode[0] = 5  // ?? 3: blur, 5: gray, 6: low quality.
+      }
+      let controlMode = graph.variable(mode.toGPU(0))
+      controlNetFlux1Fixed.compile(
+        inputs: [controlMode, c, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? []))
+      let externalData: DynamicGraph.Store.Codec =
+        externalOnDemand ? .externalOnDemand : .externalData
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) {
+        $0.read(
+          "controlnet", model: controlNetFlux1Fixed, codec: [externalData, .jit, .q6p, .q8p, .ezm7])
+      }
+      let conditions = controlNetFlux1Fixed(
+        inputs: controlMode, [c, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
+      ).map { $0.as(of: FloatType.self) }
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let rot = Tensor<FloatType>(
+        from: Flux1RotaryPositionEmbedding(
+          height: h, width: w, tokenLength: t5Length + 1, channels: 128)
+      ).toGPU(0)
+      return [graph.variable(rot)] + conditions
+    case .controlnet, .controlnetlora, .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV,
+      .ipadapterfaceidplus:
+      fatalError()
+    }
+  }
+
+  public func encode(
+    isCfgEnabled: Bool, textGuidanceScale: Float, guidanceEmbed: Float,
+    isGuidanceEmbedEnabled: Bool, textEncoding: [DynamicGraph.Tensor<FloatType>],
+    timesteps: [Float], vector: DynamicGraph.Tensor<FloatType>?, batchSize: Int, startHeight: Int,
+    startWidth: Int, tokenLengthUncond: Int, tokenLengthCond: Int, zeroNegativePrompt: Bool,
+    mainUNetFixed: (filePath: String, weightMapper: ModelWeightMapper?)
+  ) -> [DynamicGraph.Tensor<FloatType>] {
+    guard
+      (version == .sdxlBase || version == .flux1)
+        && (type == .controlnet || type == .controlnetlora || type == .controlnetunion)
+    else {
+      return textEncoding
+    }
+    switch version {
+    case .sdxlBase:
+      return encodeSDXL(
+        textEncoding: textEncoding, vector: vector, batchSize: batchSize, startHeight: startHeight,
+        startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
+        tokenLengthCond: tokenLengthCond, zeroNegativePrompt: zeroNegativePrompt,
+        mainUNetFixed: mainUNetFixed)
+    case .flux1:
+      return encodeFlux1(
+        isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
+        guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+        textEncoding: textEncoding, timesteps: timesteps, vector: vector, batchSize: batchSize,
+        startHeight: startHeight, startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
+        tokenLengthCond: tokenLengthCond, zeroNegativePrompt: zeroNegativePrompt,
+        mainUNetFixed: mainUNetFixed)
+    case .auraflow, .kandinsky21, .pixart, .sd3, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
+      .wurstchenStageB, .wurstchenStageC:
+      fatalError()
+    }
+  }
+
   public func callAsFunction(
     inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int,
     step: Int, inputs xT: DynamicGraph.Tensor<FloatType>, _ hint: [DynamicGraph.Tensor<FloatType>],
     strength: Float, _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
-    isCfgEnabled: Bool, mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
+    isCfgEnabled: Bool, index: Int, mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
     controlNet existingControlNet: inout Model?
   ) -> [DynamicGraph.Tensor<FloatType>] {
     let graph = xT.graph
@@ -1529,7 +1697,7 @@ extension ControlModel {
         existingControlNet = nil
       }
       switch type {
-      case .controlnet, .controlnetlora:
+      case .controlnet, .controlnetlora, .controlnetunion:
         return Self.emptyControls(
           graph: graph, batchSize: batchSize, startWidth: startWidth, startHeight: startHeight,
           version: version)
@@ -1552,7 +1720,7 @@ extension ControlModel {
           graph: graph, batchSize: batchSize, startWidth: startWidth, startHeight: startHeight)
       }
     }
-    guard type == .controlnet || type == .controlnetlora else {
+    guard type == .controlnet || type == .controlnetlora || type == .controlnetunion else {
       switch type {
       case .injectKV:
         return hint.map {
@@ -1626,17 +1794,27 @@ extension ControlModel {
           }
           return x
         }
-      case .controlnet, .controlnetlora:
+      case .controlnet, .controlnetunion, .controlnetlora:
         fatalError()
       }
     }
-    let xIn =
-      channels == 4 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<4].copied()
+    let xIn: DynamicGraph.Tensor<FloatType>
     let controlNet: Model
     let controlNetWeightMapper: ModelWeightMapper?
     if let existingControlNet = existingControlNet {
       controlNet = existingControlNet
       controlNetWeightMapper = nil
+      switch version {
+      case .v1, .v2, .sdxlBase:
+        xIn =
+          channels == 4 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<4].copied()
+      case .flux1:
+        xIn =
+          channels == 16 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<16].copied()
+      case .sd3, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+        .wurstchenStageB:
+        fatalError()
+      }
     } else {
       switch version {
       case .v1:
@@ -1647,6 +1825,8 @@ extension ControlModel {
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
           ).0
         controlNetWeightMapper = nil
+        xIn =
+          channels == 4 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<4].copied()
       case .v2:
         controlNet =
           ControlNetv2(
@@ -1655,6 +1835,8 @@ extension ControlModel {
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
           ).0
         controlNetWeightMapper = nil
+        xIn =
+          channels == 4 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<4].copied()
       case .sdxlBase:
         let inputAttentionRes: KeyValuePairs<Int, [Int]>
         let middleAttentionBlocks: Int
@@ -1691,13 +1873,28 @@ extension ControlModel {
             ).0
           controlNetWeightMapper = nil
         }
-      case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v,
-        .wurstchenStageC,
+        xIn =
+          channels == 4 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<4].copied()
+      case .flux1:
+        let union = (type == .controlnetunion)
+        controlNet =
+          ControlNetFlux1(
+            union: union, batchSize: batchSize,
+            tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)), height: startHeight,
+            width: startWidth, channels: 3072, layers: (transformerBlocks[0], transformerBlocks[1]),
+            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
+          ).1
+        controlNetWeightMapper = nil
+        xIn =
+          channels == 16 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<16].copied()
+      case .sd3, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       }
     }
     let tiledDiffusionIsEnabled = inputEndYPad > 0 && inputEndXPad > 0
+    let c = UNetFromNNC<FloatType>().extractConditions(
+      graph: graph, index: index, batchSize: batchSize, conditions: c, version: version)
     if existingControlNet == nil {
       if tiledDiffusionIsEnabled {
         let shape = hint[0].shape
@@ -1785,15 +1982,34 @@ extension ControlModel {
     }
     // In ControlNet implementation, we degrade influence as it approaches lower level.
     if controlMode != .balanced {
-      return result.enumerated().map {
+      result = result.enumerated().map {
         return powf(0.825, Float(12 - $0)) * $1 * strength
       }
     } else {
       if strength != 1 {
-        return result.map { $0 * strength }
+        result = result.map { $0 * strength }
       }
-      return result
     }
+    // If it is Flux1, expand the result to the Flux layers.
+    switch version {
+    case .flux1:
+      if transformerBlocks[0] != 19 || transformerBlocks[1] != 38 {
+        var newResult = [DynamicGraph.Tensor<FloatType>]()
+        let doubleIntervalControl = (19 + transformerBlocks[0] - 1) / transformerBlocks[0]
+        for i in 0..<19 {
+          newResult.append(result[i / doubleIntervalControl])
+        }
+        let singleIntervalControl = (38 + transformerBlocks[1] - 1) / transformerBlocks[1]
+        for i in 0..<38 {
+          newResult.append(result[i / singleIntervalControl + transformerBlocks[0]])
+        }
+        result = newResult
+      }
+    case .auraflow, .kandinsky21, .pixart, .sd3, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
+      .wurstchenStageB, .wurstchenStageC:
+      break
+    }
+    return result
   }
 }
 

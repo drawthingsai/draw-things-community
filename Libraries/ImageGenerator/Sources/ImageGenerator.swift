@@ -1548,7 +1548,7 @@ extension ImageGenerator {
       let isPreprocessorDownloaded =
         ControlNetZoo.preprocessorForModel(file).map { ControlNetZoo.isModelDownloaded($0) } ?? true
       switch type {
-      case .controlnet, .controlnetlora:
+      case .controlnet, .controlnetunion, .controlnetlora:
         switch modifier {
         case .canny, .mlsd, .tile:
           injectControls = injectControls || hasImage || hasCustom
@@ -1740,7 +1740,7 @@ extension ImageGenerator {
     depth: DynamicGraph.Tensor<FloatType>?, hints: [ControlHintType: AnyTensor],
     custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], mask: Tensor<FloatType>?,
     controls: [Control], version: ModelVersion, tiledDiffusion: TiledConfiguration,
-    usesFlashAttention: Bool, externalOnDemand: Bool, steps: Int
+    usesFlashAttention: Bool, externalOnDemand: Bool, steps: Int, firstStage: FirstStage<FloatType>
   ) -> [(model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)])] {
     return controls.enumerated().compactMap {
       index, control -> (
@@ -1794,7 +1794,7 @@ extension ImageGenerator {
         startStep: startStep, endStep: endStep, controlMode: controlMode,
         globalAveragePooling: globalAveragePooling, transformerBlocks: transformerBlocks,
         targetBlocks: control.targetBlocks, imageEncoderVersion: imageEncoderVersion,
-        ipAdapterConfig: ipAdapterConfig)
+        ipAdapterConfig: ipAdapterConfig, firstStage: version == .flux1 ? firstStage : nil)  // TODO: temporary holder, we need a new setting to know whether to reuse the image encoder from first stage or something else.
       let customRGB: (Bool) -> DynamicGraph.Tensor<FloatType>? = { convert in
         custom.map({
           let input = graph.variable(Tensor<FloatType>($0).toGPU(0))
@@ -1819,7 +1819,7 @@ extension ImageGenerator {
         })
       }
       switch type {
-      case .controlnet, .controlnetlora:
+      case .controlnet, .controlnetunion, .controlnetlora:
         switch modifier {
         case .canny:
           guard let image = image else {
@@ -2763,16 +2763,15 @@ extension ImageGenerator {
               heightScale: Float(firstPassStartHeight * 8) / Float(imageHeight))($0)
           })
       }
+      var firstStage = FirstStage<FloatType>(
+        filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: modelVersion,
+        latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
+        highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
+        tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
+        externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
+        alternativeFilePath: alternativeDecoderFilePath,
+        alternativeDecoderVersion: alternativeDecoderVersion)
       if modifier == .inpainting || modifier == .editing || modifier == .double {
-        // TODO: This needs to be properly handled for Wurstchen (i.e. using EfficientNet to encode image).
-        let firstStage = FirstStage<FloatType>(
-          filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: modelVersion,
-          latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
-          highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
-          tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
-          externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
-          alternativeFilePath: alternativeDecoderFilePath,
-          alternativeDecoderVersion: alternativeDecoderVersion)
         // Only apply the image fill logic (for image encoding purpose) when it is inpainting or editing.
         let firstPassImage =
           firstPassImage
@@ -2825,7 +2824,7 @@ extension ImageGenerator {
         image: firstPassImage, depth: firstPassDepthImage, hints: hints, custom: custom,
         shuffles: shuffles, mask: nil, controls: configuration.controls, version: modelVersion,
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand, steps: sampling.steps)
+        externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage)
 
       guard
         let x =
@@ -2864,7 +2863,7 @@ extension ImageGenerator {
       let isHighPrecisionVAEFallbackEnabled = DeviceCapability.isHighPrecisionVAEFallbackEnabled(
         scale: imageScale)
 
-      let firstStage = FirstStage<FloatType>(
+      firstStage = FirstStage<FloatType>(
         filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: modelVersion,
         latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
@@ -3026,7 +3025,8 @@ extension ImageGenerator {
         image: image ?? firstStageImage, depth: secondPassDepthImage, hints: hints, custom: custom,
         shuffles: shuffles, mask: nil, controls: configuration.controls, version: modelVersion,
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: secondPassControlExternalOnDemand, steps: sampling.steps)
+        externalOnDemand: secondPassControlExternalOnDemand, steps: sampling.steps,
+        firstStage: firstStage)
       let secondPassModelVersion: ModelVersion
       let secondPassModelFilePath: String
       if modelVersion == .wurstchenStageC {
@@ -3640,7 +3640,7 @@ extension ImageGenerator {
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: nil,
         controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
         usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
-        steps: sampling.steps)
+        steps: sampling.steps, firstStage: firstStage)
       guard
         var x =
           try? modelPreloader.consumeUNet(
@@ -4738,7 +4738,7 @@ extension ImageGenerator {
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: imageNegMask2,
         controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
         usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
-        steps: sampling.steps)
+        steps: sampling.steps, firstStage: firstStage)
       var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modifier == .double
         || modelVersion == .svdI2v
@@ -5434,7 +5434,7 @@ extension ImageGenerator {
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: imageNegMask1,
         controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
         usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
-        steps: sampling.steps)
+        steps: sampling.steps, firstStage: firstStage)
       let redoInjectedControls = configuration.controls.contains {
         $0.file.map { ControlNetZoo.modifierForModel($0) == .inpaint } ?? false
       }
@@ -5530,7 +5530,7 @@ extension ImageGenerator {
           depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: imageNegMask2,
           controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
           usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
-          steps: sampling.steps
+          steps: sampling.steps, firstStage: firstStage
         )
       }
       guard

@@ -425,7 +425,7 @@ private func SingleTransformerBlock(
 
 public func Flux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel
+  usesFlashAttention: FlashAttentionLevel, injectControls: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let contextIn = Input()
@@ -437,6 +437,7 @@ public func Flux1(
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
   var adaLNChunks = [Input]()
+  var injectedControls = [Input]()
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
   for i in 0..<layers.0 {
@@ -445,11 +446,20 @@ public func Flux1(
     let (mapper, block) = JointTransformerBlock(
       prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize, t: tokenLength,
-      hw: h * w, contextBlockPreOnly: false, upcast: i > 16, usesFlashAtttention: usesFlashAttention
+      hw: h * w, contextBlockPreOnly: false, upcast: i > (layers.0 - 3),
+      usesFlashAtttention: usesFlashAttention
     )
     let blockOut = block([context, out, rot] + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
+    if injectControls {
+      let injectedControl = Input()
+      let injectedControlFP32 = injectedControl.to(.Float32)
+      injectedControlFP32.add(dependencies: [out])
+      let scaleFactor: Float = 8
+      out = out + (injectedControlFP32 * scaleFactor)
+      injectedControls.append(injectedControl)
+    }
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
@@ -461,6 +471,25 @@ public func Flux1(
       b: batchSize, t: tokenLength,
       hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAtttention: usesFlashAttention)
     out = block([out, rot] + xChunks)
+    if injectControls {
+      let injectedControl = Input()
+      let injectedControlFP32 = injectedControl.to(.Float32)
+      injectedControlFP32.add(dependencies: [out])
+      let scaleFactor: Float = 8
+      if i == layers.1 - 1 {
+        out = out + (injectedControlFP32 * scaleFactor)
+      } else {
+        let encoderHiddenStates = out.reshaped(
+          [batchSize, tokenLength, channels], offset: [0, 0, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        var hiddenStates = out.reshaped(
+          [batchSize, h * w, channels], offset: [0, tokenLength, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        hiddenStates = hiddenStates + (injectedControlFP32 * scaleFactor)
+        out = Functional.concat(axis: 1, encoderHiddenStates, hiddenStates)
+      }
+      injectedControls.append(injectedControl)
+    }
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
   }
@@ -494,7 +523,7 @@ public func Flux1(
     }
     return mapping
   }
-  return (mapper, Model([x, rot, contextIn] + adaLNChunks, [out]))
+  return (mapper, Model([x, rot, contextIn] + adaLNChunks + injectedControls, [out]))
 }
 
 private func LoRAMLPEmbedder(channels: Int, configuration: LoRANetworkConfiguration, name: String)
@@ -830,7 +859,8 @@ private func LoRASingleTransformerBlock(
 
 public func LoRAFlux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel, LoRAConfiguration: LoRANetworkConfiguration
+  usesFlashAttention: FlashAttentionLevel, injectControls: Bool,
+  LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let contextIn = Input()
@@ -842,6 +872,7 @@ public func LoRAFlux1(
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
   var adaLNChunks = [Input]()
+  var injectedControls = [Input]()
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
   for i in 0..<layers.0 {
@@ -855,6 +886,14 @@ public func LoRAFlux1(
     let blockOut = block([context, out, rot] + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
+    if injectControls {
+      let injectedControl = Input()
+      let injectedControlFP32 = injectedControl.to(.Float32)
+      injectedControlFP32.add(dependencies: [out])
+      let scaleFactor: Float = 8
+      out = out + (injectedControlFP32 * scaleFactor)
+      injectedControls.append(injectedControl)
+    }
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
@@ -866,6 +905,25 @@ public func LoRAFlux1(
       hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAtttention: usesFlashAttention,
       layerIndex: i + layers.0, configuration: LoRAConfiguration)
     out = block([out, rot] + xChunks)
+    if injectControls {
+      let injectedControl = Input()
+      let injectedControlFP32 = injectedControl.to(.Float32)
+      injectedControlFP32.add(dependencies: [out])
+      let scaleFactor: Float = 8
+      if i == layers.1 - 1 {
+        out = out + (injectedControlFP32 * scaleFactor)
+      } else {
+        let encoderHiddenStates = out.reshaped(
+          [batchSize, tokenLength, channels], offset: [0, 0, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        var hiddenStates = out.reshaped(
+          [batchSize, h * w, channels], offset: [0, tokenLength, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        hiddenStates = hiddenStates + (injectedControlFP32 * scaleFactor)
+        out = Functional.concat(axis: 1, encoderHiddenStates, hiddenStates)
+      }
+      injectedControls.append(injectedControl)
+    }
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
   }
@@ -891,7 +949,7 @@ public func LoRAFlux1(
     mapping["final_layer.linear.bias"] = [projOut.bias.name]
     return mapping
   }
-  return (mapper, Model([x, rot, contextIn] + adaLNChunks, [out]))
+  return (mapper, Model([x, rot, contextIn] + adaLNChunks + injectedControls, [out]))
 }
 
 private func JointTransformerBlockFixed(
@@ -1252,4 +1310,224 @@ public func LoRAFlux1Fixed(
     return mapping
   }
   return (mapper, Model([contextIn, timestep, y] + (guidance.map { [$0] } ?? []), outs))
+}
+
+public func ControlNetFlux1(
+  union: Bool,
+  batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
+  usesFlashAttention: FlashAttentionLevel
+) -> (ModelWeightMapper, Model) {
+  let tokenLength = union ? tokenLength + 1 : tokenLength
+  let x = Input()
+  let controlnetX = Input()
+  let contextIn = Input()
+  let rot = Input()
+  let h = height / 2
+  let w = width / 2
+  let xEmbedder = Convolution(
+    groups: 1, filters: channels, filterSize: [2, 2],
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+  // Doing this here such that when we do tiled diffusion, we deal with smaller input even though there are some redundant compute.
+  let controlnetXEmbedder = Convolution(
+    groups: 1, filters: channels, filterSize: [2, 2],
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "controlnet_x_embedder")
+  var out =
+    xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+    + controlnetXEmbedder(controlnetX).reshaped([batchSize, h * w, channels]).to(.Float32)
+  var adaLNChunks = [Input]()
+  var mappers = [ModelWeightMapper]()
+  var context = contextIn.to(.Float32)
+  var zeroConvs = [Dense]()
+  var outs = [Model.IO]()
+  for i in 0..<layers.0 {
+    let contextChunks = (0..<6).map { _ in Input() }
+    let xChunks = (0..<6).map { _ in Input() }
+    let (mapper, block) = JointTransformerBlock(
+      prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
+      b: batchSize, t: tokenLength,
+      hw: h * w, contextBlockPreOnly: false, upcast: i > (layers.0 - 3),
+      usesFlashAtttention: usesFlashAttention
+    )
+    let blockOut = block([context, out, rot] + contextChunks + xChunks)
+    context = blockOut[0]
+    out = blockOut[1]
+    adaLNChunks.append(contentsOf: contextChunks + xChunks)
+    mappers.append(mapper)
+    let zeroConv = Dense(count: channels, name: "zero_conv")
+    if let last = outs.last {
+      out.add(dependencies: [last])
+    }
+    let scaleFactor: Float = 1 / 8  // We already scaled bias for zero conv.
+    outs.append(zeroConv((out * scaleFactor).to(of: controlnetX)))
+    zeroConvs.append(zeroConv)
+  }
+  out = Functional.concat(axis: 1, context, out)
+  for i in 0..<layers.1 {
+    let xChunks = (0..<3).map { _ in Input() }
+    let (mapper, block) = SingleTransformerBlock(
+      prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128, h: channels / 128,
+      b: batchSize, t: tokenLength,
+      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAtttention: usesFlashAttention)
+    out = block([out, rot] + xChunks)
+    adaLNChunks.append(contentsOf: xChunks)
+    mappers.append(mapper)
+    let zeroConv = Dense(count: channels, name: "zero_conv")
+    if let last = outs.last {
+      out.add(dependencies: [last])
+    }
+    let scaleFactor: Float = 1 / 8
+    if i == layers.1 - 1 {
+      outs.append(zeroConv((out * scaleFactor).to(of: controlnetX)))
+    } else {
+      outs.append(
+        zeroConv(
+          (out.reshaped(
+            [batchSize, h * w, channels], offset: [0, tokenLength, 0],
+            strides: [(tokenLength + h * w) * channels, channels, 1]) * scaleFactor).to(
+              of: controlnetX)))
+    }
+    zeroConvs.append(zeroConv)
+  }
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    switch format {
+    case .generativeModels:
+      mapping["img_in.weight"] = [xEmbedder.weight.name]
+      mapping["img_in.bias"] = [xEmbedder.bias.name]
+    case .diffusers:
+      mapping["x_embedder.weight"] = [xEmbedder.weight.name]
+      mapping["x_embedder.bias"] = [xEmbedder.bias.name]
+      mapping["controlnet_x_embedder.weight"] = [controlnetXEmbedder.weight.name]
+      mapping["controlnet_x_embedder.bias"] = [controlnetXEmbedder.bias.name]
+      for i in 0..<layers.0 {
+        mapping["controlnet_blocks.\(i).weight"] = [zeroConvs[i].weight.name]
+        mapping["controlnet_blocks.\(i).bias"] = [zeroConvs[i].bias.name]
+      }
+      for i in 0..<layers.1 {
+        mapping["controlnet_single_blocks.\(i).weight"] = [zeroConvs[i + layers.0].weight.name]
+        mapping["controlnet_single_blocks.\(i).bias"] = [zeroConvs[i + layers.0].bias.name]
+      }
+    }
+    return mapping
+  }
+  return (mapper, Model([x, controlnetX, rot, contextIn] + adaLNChunks, outs))
+}
+
+public func ControlNetFlux1Fixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  union: Bool,
+  batchSize: (Int, Int), channels: Int, layers: (Int, Int), guidanceEmbed: Bool = false,
+  of: FloatType.Type = FloatType.self
+) -> (ModelWeightMapper, Model) {
+  let timestep = Input()
+  let y = Input()
+  let contextIn = Input()
+  let guidance: Input?
+  let (tMlp0, tMlp2, tEmbedder) = MLPEmbedder(channels: channels, name: "t")
+  var vec = tEmbedder(timestep)
+  let gMlp0: Model?
+  let gMlp2: Model?
+  if guidanceEmbed {
+    let (mlp0, mlp2, gEmbedder) = MLPEmbedder(channels: channels, name: "guidance")
+    let g = Input()
+    vec = vec + gEmbedder(g)
+    guidance = g
+    gMlp0 = mlp0
+    gMlp2 = mlp2
+  } else {
+    gMlp0 = nil
+    gMlp2 = nil
+    guidance = nil
+  }
+  let (yMlp0, yMlp2, yEmbedder) = MLPEmbedder(channels: channels, name: "vector")
+  vec = vec + yEmbedder(y)
+  var outs = [Model.IO]()
+  let contextEmbedder = Dense(count: channels, name: "context_embedder")
+  var context = contextEmbedder(contextIn)
+  let controlnetMode: Input?
+  let controlnetModeEmbedder: Embedding?
+  if union {
+    let modeEmbedder = Embedding(
+      FloatType.self, vocabularySize: 10, embeddingSize: channels, name: "controlnet_mode_embedder")
+    let mode = Input()
+    context = Functional.concat(axis: 1, modeEmbedder(mode).reshaped([1, 1, channels]), context)
+    controlnetMode = mode
+    controlnetModeEmbedder = modeEmbedder
+  } else {
+    controlnetMode = nil
+    controlnetModeEmbedder = nil
+  }
+  outs.append(context)
+  let c = vec.reshaped([batchSize.1, 1, channels]).swish()
+  var mappers = [ModelWeightMapper]()
+  for i in 0..<layers.0 {
+    let (mapper, block) = JointTransformerBlockFixed(
+      prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
+      contextBlockPreOnly: false)
+    let blockOut = block(c)
+    mappers.append(mapper)
+    outs.append(blockOut)
+  }
+  for i in 0..<layers.1 {
+    let (mapper, block) = SingleTransformerBlockFixed(
+      prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128, h: channels / 128)
+    let blockOut = block(c)
+    mappers.append(mapper)
+    outs.append(blockOut)
+  }
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    switch format {
+    case .generativeModels:
+      mapping["time_in.in_layer.weight"] = [tMlp0.weight.name]
+      mapping["time_in.in_layer.bias"] = [tMlp0.bias.name]
+      mapping["time_in.out_layer.weight"] = [tMlp2.weight.name]
+      mapping["time_in.out_layer.bias"] = [tMlp2.bias.name]
+      if let gMlp0 = gMlp0, let gMlp2 = gMlp2 {
+        mapping["guidance_in.in_layer.weight"] = [gMlp0.weight.name]
+        mapping["guidance_in.in_layer.bias"] = [gMlp0.bias.name]
+        mapping["guidance_in.out_layer.weight"] = [gMlp2.weight.name]
+        mapping["guidance_in.out_layer.bias"] = [gMlp2.bias.name]
+      }
+      mapping["vector_in.in_layer.weight"] = [yMlp0.weight.name]
+      mapping["vector_in.in_layer.bias"] = [yMlp0.bias.name]
+      mapping["vector_in.out_layer.weight"] = [yMlp2.weight.name]
+      mapping["vector_in.out_layer.bias"] = [yMlp2.bias.name]
+      mapping["txt_in.weight"] = [contextEmbedder.weight.name]
+      mapping["txt_in.bias"] = [contextEmbedder.bias.name]
+    case .diffusers:
+      mapping["time_text_embed.timestep_embedder.linear_1.weight"] = [tMlp0.weight.name]
+      mapping["time_text_embed.timestep_embedder.linear_1.bias"] = [tMlp0.bias.name]
+      mapping["time_text_embed.timestep_embedder.linear_2.weight"] = [tMlp2.weight.name]
+      mapping["time_text_embed.timestep_embedder.linear_2.bias"] = [tMlp2.bias.name]
+      if let gMlp0 = gMlp0, let gMlp2 = gMlp2 {
+        mapping["time_text_embed.guidance_embedder.linear_1.weight"] = [gMlp0.weight.name]
+        mapping["time_text_embed.guidance_embedder.linear_1.bias"] = [gMlp0.bias.name]
+        mapping["time_text_embed.guidance_embedder.linear_2.weight"] = [gMlp2.weight.name]
+        mapping["time_text_embed.guidance_embedder.linear_2.bias"] = [gMlp2.bias.name]
+      }
+      mapping["time_text_embed.text_embedder.linear_1.weight"] = [yMlp0.weight.name]
+      mapping["time_text_embed.text_embedder.linear_1.bias"] = [yMlp0.bias.name]
+      mapping["time_text_embed.text_embedder.linear_2.weight"] = [yMlp2.weight.name]
+      mapping["time_text_embed.text_embedder.linear_2.bias"] = [yMlp2.bias.name]
+      mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
+      mapping["context_embedder.bias"] = [contextEmbedder.bias.name]
+      if let controlnetModeEmbedder = controlnetModeEmbedder {
+        mapping["controlnet_mode_embedder.weight"] = [controlnetModeEmbedder.weight.name]
+        mapping["controlnet_mode_embedder.bias"] = [controlnetModeEmbedder.bias.name]
+      }
+    }
+    return mapping
+  }
+  return (
+    mapper,
+    Model(
+      (controlnetMode.map { [$0] } ?? []) + [contextIn, timestep, y]
+        + (guidance.map { [$0] } ?? []), outs)
+  )
 }

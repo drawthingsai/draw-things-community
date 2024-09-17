@@ -486,12 +486,14 @@ extension UNetFromNNC {
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+          injectControls: injectControls,
           LoRAConfiguration: configuration)
       } else {
         (_, unet) = Flux1(
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
-          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+          injectControls: injectControls)
       }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
