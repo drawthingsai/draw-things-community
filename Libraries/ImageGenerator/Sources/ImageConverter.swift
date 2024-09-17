@@ -1019,9 +1019,10 @@ public enum ImageConverter {
               configuration.controls.compactMap {
                 guard let file = $0.file,
                   let specification = ControlNetZoo.specificationForModel(file),
-                  ControlNetZoo.isModelDownloaded(specification)
+                  ControlNetZoo.isModelDownloaded(specification),
+                  let modifier = ControlNetZoo.modifierForModel(file)
+                    ?? ControlHintType(from: $0.inputOverride)
                 else { return nil }
-                let modifier = ControlNetZoo.modifierForModel(file)
                 switch modifier {
                 case .canny, .custom, .depth, .scribble, .pose, .color, .normalbae, .lineart,
                   .softedge, .seg, .inpaint, .ip2p, .shuffle, .mlsd, .tile, .blur, .gray,

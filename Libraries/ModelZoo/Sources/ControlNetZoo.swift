@@ -342,9 +342,9 @@ public struct ControlNetZoo: DownloadZoo {
     return specification.name
   }
 
-  public static func modifierForModel(_ name: String) -> ControlHintType {
-    guard let specification = specificationMapping[name] else { return .canny }
-    return specification.modifier ?? .canny
+  public static func modifierForModel(_ name: String) -> ControlHintType? {
+    guard let specification = specificationMapping[name] else { return nil }
+    return specification.modifier
   }
 
   public static func versionForModel(_ name: String) -> ModelVersion {

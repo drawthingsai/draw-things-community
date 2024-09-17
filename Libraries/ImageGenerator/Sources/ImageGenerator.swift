@@ -1543,7 +1543,10 @@ extension ImageGenerator {
       else { continue }
       guard ControlNetZoo.versionForModel(file) == version else { continue }
       guard control.weight > 0 else { continue }
-      let modifier = ControlNetZoo.modifierForModel(file)
+      guard
+        let modifier = ControlNetZoo.modifierForModel(file)
+          ?? ControlHintType(from: control.inputOverride)
+      else { continue }
       let type = ControlNetZoo.typeForModel(file)
       let isPreprocessorDownloaded =
         ControlNetZoo.preprocessorForModel(file).map { ControlNetZoo.isModelDownloaded($0) } ?? true
@@ -1752,9 +1755,12 @@ extension ImageGenerator {
       else { return nil }
       guard ControlNetZoo.versionForModel(file) == version else { return nil }
       guard control.weight > 0 else { return nil }
+      guard
+        let modifier = ControlNetZoo.modifierForModel(file)
+          ?? ControlHintType(from: control.inputOverride)
+      else { return nil }
       let startStep = Int(floor(Float(steps - 1) * control.guidanceStart + 0.5))
       let endStep = Int(ceil(Float(steps - 1) * control.guidanceEnd + 0.5))
-      let modifier = ControlNetZoo.modifierForModel(file)
       let type = ControlNetZoo.typeForModel(file)
       let isPreprocessorDownloaded =
         ControlNetZoo.preprocessorForModel(file).map { ControlNetZoo.isModelDownloaded($0) }

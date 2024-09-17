@@ -1,4 +1,5 @@
 import Dflat
+import Diffusion
 
 extension GenerationConfiguration {
   public static var `default`: GenerationConfiguration {
@@ -143,5 +144,95 @@ extension LoRATrainingConfiguration {
       textModelLearningRate: 4e-5, clipSkip: 1, noiseOffset: 0.05, denoisingStart: 0,
       denoisingEnd: 1, autoCaptioning: true, cotrainCustomEmbedding: false,
       customEmbeddingLearningRate: 0.05, customEmbeddingLength: 4, stopEmbeddingTrainingAtStep: 500)
+  }
+}
+
+extension ControlHintType {
+  public init?(from controlInputType: ControlInputType) {
+    switch controlInputType {
+    case .unspecified:
+      return nil
+    case .custom:
+      self = .custom
+    case .depth:
+      self = .depth
+    case .canny:
+      self = .canny
+    case .scribble:
+      self = .scribble
+    case .pose:
+      self = .pose
+    case .normalbae:
+      self = .normalbae
+    case .color:
+      self = .color
+    case .lineart:
+      self = .lineart
+    case .softedge:
+      self = .softedge
+    case .seg:
+      self = .seg
+    case .inpaint:
+      self = .inpaint
+    case .ip2p:
+      self = .ip2p
+    case .shuffle:
+      self = .shuffle
+    case .mlsd:
+      self = .mlsd
+    case .tile:
+      self = .tile
+    case .blur:
+      self = .blur
+    case .lowquality:
+      self = .lowquality
+    case .gray:
+      self = .gray
+    }
+  }
+}
+
+extension ControlInputType: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .unspecified:
+      return ""
+    case .custom:
+      return "Custom"
+    case .depth:
+      return "Depth"
+    case .canny:
+      return "Canny"
+    case .scribble:
+      return "Scribble"
+    case .pose:
+      return "Pose"
+    case .normalbae:
+      return "Normal BAE"
+    case .color:
+      return "Color"
+    case .lineart:
+      return "LineArt"
+    case .softedge:
+      return "SoftEdge"
+    case .seg:
+      return "Segmentation"
+    case .inpaint:
+      return "Inpaint"
+    case .ip2p:
+      return "Instruct Pix2Pix"
+    case .shuffle:
+      return "Shuffle"
+    case .mlsd:
+      return "MLSD"
+    case .tile:
+      return "Tile"
+    case .blur:
+      return "Blur"
+    case .lowquality:
+      return "Low Quality"
+    case .gray:
+      return "Gray"
+    }
   }
 }
