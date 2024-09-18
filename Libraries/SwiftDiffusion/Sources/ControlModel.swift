@@ -1608,8 +1608,9 @@ extension ControlModel {
           ) {
             return $0.read(like: "__dit__[t-guidance_embedder_0-0-1]") != nil
           }).get()) ?? false
+      let union = (type == .controlnetunion)
       let (_, controlNetFlux1Fixed) = ControlNetFlux1Fixed(
-        union: true, batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072,
+        union: union, batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072,
         layers: (transformerBlocks[0], transformerBlocks[1]),
         guidanceEmbed: isGuidanceEmbedSupported, of: FloatType.self)
       var timeEmbeds = graph.variable(
@@ -1643,7 +1644,7 @@ extension ControlModel {
         }
       }
       let controlMode: DynamicGraph.Tensor<Int32>? = {
-        guard type == .controlnetunion else {
+        guard union else {
           return nil
         }
         var mode = Tensor<Int32>(.CPU, format: .NHWC, shape: [1])
@@ -1695,7 +1696,7 @@ extension ControlModel {
       let w = startWidth / 2
       let rot = Tensor<FloatType>(
         from: Flux1RotaryPositionEmbedding(
-          height: h, width: w, tokenLength: t5Length + 1, channels: 128)
+          height: h, width: w, tokenLength: t5Length + (union ? 1 : 0), channels: 128)
       ).toGPU(0)
       return [graph.variable(rot)] + conditions
     case .controlnetlora, .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV,
