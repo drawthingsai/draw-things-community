@@ -2046,30 +2046,18 @@ extension ControlModel {
     // If it is Flux1, expand the result to the Flux layers.
     switch version {
     case .flux1:
-      let lastBlock = result[result.count - 1]  // Keep the last block unchanged.
-      let tokenLength = max(256, max(tokenLengthCond, tokenLengthUncond))
-      for i in transformerBlocks[0]..<(transformerBlocks[0] + transformerBlocks[1]) {
-        // Update the result to be the tokenLength + h * w
-        let shape = result[i].shape
-        var block = graph.variable(
-          .GPU(0), .HWC(shape[0], tokenLength + shape[1], shape[2]), of: FloatType.self)
-        block.full(0)
-        block[0..<shape[0], tokenLength..<(tokenLength + shape[1]), 0..<shape[2]] = result[i]
-        result[i] = block
-      }
       if transformerBlocks[0] != 19 || transformerBlocks[1] != 38 {
-        var blocks = [DynamicGraph.Tensor<FloatType>]()
+        var newResult = [DynamicGraph.Tensor<FloatType>]()
         let doubleIntervalControl = (19 + transformerBlocks[0] - 1) / transformerBlocks[0]
         for i in 0..<19 {
-          blocks.append(result[i / doubleIntervalControl])
+          newResult.append(result[i / doubleIntervalControl])
         }
         let singleIntervalControl = (38 + transformerBlocks[1] - 1) / transformerBlocks[1]
         for i in 0..<38 {
-          blocks.append(result[i / singleIntervalControl + transformerBlocks[0]])
+          newResult.append(result[i / singleIntervalControl + transformerBlocks[0]])
         }
-        result = blocks
+        result = newResult
       }
-      result[result.count - 1] = lastBlock
     case .auraflow, .kandinsky21, .pixart, .sd3, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
       .wurstchenStageB, .wurstchenStageC:
       break

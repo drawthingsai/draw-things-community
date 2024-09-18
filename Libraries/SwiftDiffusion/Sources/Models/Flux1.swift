@@ -476,7 +476,18 @@ public func Flux1(
       let injectedControlFP32 = injectedControl.to(.Float32)
       injectedControlFP32.add(dependencies: [out])
       let scaleFactor: Float = 8
-      out = out + (injectedControlFP32 * scaleFactor)
+      if i == layers.1 - 1 {
+        out = out + (injectedControlFP32 * scaleFactor)
+      } else {
+        let encoderHiddenStates = out.reshaped(
+          [batchSize, tokenLength, channels], offset: [0, 0, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        var hiddenStates = out.reshaped(
+          [batchSize, h * w, channels], offset: [0, tokenLength, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        hiddenStates = hiddenStates + (injectedControlFP32 * scaleFactor)
+        out = Functional.concat(axis: 1, encoderHiddenStates, hiddenStates)
+      }
       injectedControls.append(injectedControl)
     }
     adaLNChunks.append(contentsOf: xChunks)
@@ -899,7 +910,18 @@ public func LoRAFlux1(
       let injectedControlFP32 = injectedControl.to(.Float32)
       injectedControlFP32.add(dependencies: [out])
       let scaleFactor: Float = 8
-      out = out + (injectedControlFP32 * scaleFactor)
+      if i == layers.1 - 1 {
+        out = out + (injectedControlFP32 * scaleFactor)
+      } else {
+        let encoderHiddenStates = out.reshaped(
+          [batchSize, tokenLength, channels], offset: [0, 0, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        var hiddenStates = out.reshaped(
+          [batchSize, h * w, channels], offset: [0, tokenLength, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        hiddenStates = hiddenStates + (injectedControlFP32 * scaleFactor)
+        out = Functional.concat(axis: 1, encoderHiddenStates, hiddenStates)
+      }
       injectedControls.append(injectedControl)
     }
     adaLNChunks.append(contentsOf: xChunks)
