@@ -1147,8 +1147,7 @@ private func SingleTransformerBlockFixedOutputShapes(
 }
 
 public func Flux1FixedOutputShapes(
-  batchSize: (Int, Int), channels: Int, layers: (Int, Int),
-  guidanceEmbed: Bool = false
+  batchSize: (Int, Int), channels: Int, layers: (Int, Int)
 ) -> [TensorShape] {
   var outs = [TensorShape]()
   outs.append(TensorShape([batchSize.0, 256, channels]))
@@ -1523,7 +1522,6 @@ public func ControlNetFlux1Fixed<FloatType: TensorNumeric & BinaryFloatingPoint>
       mapping["context_embedder.bias"] = [contextEmbedder.bias.name]
       if let controlnetModeEmbedder = controlnetModeEmbedder {
         mapping["controlnet_mode_embedder.weight"] = [controlnetModeEmbedder.weight.name]
-        mapping["controlnet_mode_embedder.bias"] = [controlnetModeEmbedder.bias.name]
       }
     }
     return mapping

@@ -18,9 +18,11 @@ public final class ControlNetImporter {
     return false
   }
 
-  private static func numberOfTransformBlocks(prefix: String, upTo: Int, keys: [String]) -> Int {
+  private static func numberOfTransformBlocks(
+    prefix: String, attn: String, upTo: Int, keys: [String]
+  ) -> Int {
     for i in 0..<upTo {
-      let suffix = "\(prefix).transformer_blocks.\(i).attn2.to_k.weight"
+      let suffix = "\(prefix).transformer_blocks.\(i).\(attn).to_k.weight"
       if !keys.contains(where: { $0.hasSuffix(suffix) }) {
         return i
       }
@@ -28,8 +30,127 @@ public final class ControlNetImporter {
     return upTo
   }
 
+  private static func numberOfSingleTransformerBlocks(
+    prefix: String, attn: String, upTo: Int, keys: [String]
+  ) -> Int {
+    for i in 0..<upTo {
+      let suffix = "\(prefix).single_transformer_blocks.\(i).\(attn).to_k.weight"
+      if !keys.contains(where: { $0.hasSuffix(suffix) }) {
+        return i
+      }
+    }
+    return upTo
+  }
+
+  public func importFlux1(
+    archive: TensorArchive, stateDict: [String: TensorDescriptor], filename: String,
+    progress: @escaping (Float) -> Void
+  ) throws -> (transformerBlocks: [Int], version: ModelVersion, type: ControlType) {
+    let keys = Array(stateDict.keys)
+    guard
+      (keys.contains {
+        $0.contains("transformer_blocks.0.")
+      })
+    else {
+      throw UnpickleError.tensorNotFound
+    }
+    let doubleControls = Self.numberOfTransformBlocks(
+      prefix: "model.control_model", attn: "attn", upTo: 19, keys: keys)
+    let singleControls = Self.numberOfSingleTransformerBlocks(
+      prefix: "model.control_model", attn: "attn", upTo: 38, keys: keys)
+    guard doubleControls > 0 && singleControls > 0 else {
+      throw UnpickleError.tensorNotFound
+    }
+    let union = keys.contains { $0.hasSuffix("controlnet_mode_embedder.weight") }
+    // Union is handled in ControlNetFlux1Fixed, the union provided here is only about +1 to tokenLength, which will be counterproductive if ew use Flux1FixedOutputShapes to get the proper shape.
+    let (controlNetMapper, controlNet) = ControlNetFlux1(
+      union: false, batchSize: 1, tokenLength: 256, height: 64, width: 64, channels: 3072,
+      layers: (doubleControls, singleControls), usesFlashAttention: .none)
+    let (controlNetFixedMapper, controlNetFixed) = ControlNetFlux1Fixed(
+      union: union, batchSize: (1, 1), channels: 3072, layers: (doubleControls, singleControls),
+      guidanceEmbed: true, of: FloatType.self)
+    let graph = DynamicGraph()
+    var crossattn: [DynamicGraph_Any] = [
+      graph.variable(.CPU, .HWC(1, 256, 4096), of: FloatType.self),
+      graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+      graph.variable(.CPU, .WC(1, 768), of: FloatType.self),
+      graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+    ]
+    if union {
+      crossattn.insert(graph.variable(.CPU, format: .NHWC, shape: [1], of: Int32.self), at: 0)
+    }
+    controlNetFixed.compile(inputs: crossattn)
+    let controlNetFixedMapping = controlNetFixedMapper(.diffusers)
+    let flux1FixedOutputShapes = Flux1FixedOutputShapes(
+      batchSize: (1, 1), channels: 3072, layers: (doubleControls, singleControls))
+    let cArr =
+      [
+        graph.variable(
+          Tensor<FloatType>(
+            from: Flux1RotaryPositionEmbedding(
+              height: 32, width: 32, tokenLength: 256, channels: 128)))
+      ]
+      + flux1FixedOutputShapes.map {
+        graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+      }
+    let xTensor = graph.variable(.CPU, .NHWC(1, 64, 64, 16), of: FloatType.self)
+    // Remove the last two because for Flux1, there is additional scale / shift and not for ControlNetFlux1.
+    controlNet.compile(inputs: [xTensor, xTensor] + cArr.prefix(upTo: cArr.count - 2))
+    let controlNetMapping = controlNetMapper(.diffusers)
+    try graph.openStore(ModelZoo.filePathForModelDownloaded(filename)) { store in
+      store.removeAll()
+      expectedTotalAccess = controlNetMapping.count + controlNetFixedMapping.count
+      access = 0
+      try store.withTransaction {
+        for (key, value) in controlNetMapping {
+          guard let tensorDescriptor = stateDict[key] else {
+            continue
+          }
+          try archive.with(tensorDescriptor) { tensor in
+            let tensor = {
+              // If it is a zero conv bias, because we scale the output by 1/8, we should scale the bias by the same amount too.
+              guard key.hasSuffix(".bias") && (value.contains { $0.contains("zero_conv") }) else {
+                return Tensor<FloatType>(from: tensor)
+              }
+              let f32 = graph.variable(Tensor<Float>(from: tensor))
+              return Tensor<FloatType>(from: f32.scaled(by: 1.0 / 8).rawValue)
+            }()
+            if value.count > 1 {
+              value.write(to: store, tensor: tensor, format: value.format, isDiagonal: false) {
+                return "__controlnet__[\($0)]"
+              }
+            } else if let name = value.first {
+              store.write("__controlnet__[\(name)]", tensor: tensor)
+            }
+          }
+          progress(0.05 + Float(access) / Float(max(expectedTotalAccess, 1)) * 0.95)
+        }
+        for (key, value) in controlNetFixedMapping {
+          guard let tensorDescriptor = stateDict[key] else {
+            continue
+          }
+          try archive.with(tensorDescriptor) { tensor in
+            let tensor = Tensor<FloatType>(from: tensor)
+            if value.count > 1 {
+              value.write(to: store, tensor: tensor, format: value.format, isDiagonal: false) {
+                return "__controlnet__[\($0)]"
+              }
+            } else if let name = value.first {
+              store.write("__controlnet__[\(name)]", tensor: tensor)
+            }
+          }
+          progress(0.05 + Float(access) / Float(max(expectedTotalAccess, 1)) * 0.95)
+        }
+      }
+    }
+    return (
+      transformerBlocks: [doubleControls, singleControls], version: .flux1,
+      type: union ? .controlnetunion : .controlnet
+    )
+  }
+
   public func `import`(
-    downloadedFile: String, name: String, filename: String, modifier: ControlHintType,
+    downloadedFile: String, name: String, filename: String, modifier: ControlHintType?,
     progress: @escaping (Float) -> Void
   ) throws -> (transformerBlocks: [Int], version: ModelVersion, type: ControlType) {
     Interpreter.inflateInterrupter = interrupt
@@ -89,7 +210,9 @@ public final class ControlNetImporter {
           || $0.key.hasSuffix("label_emb.0.0.down")
       })?.value
     else {
-      throw UnpickleError.tensorNotFound
+      // See if we can import this as Flux1. If we support more ControlNet in the future, we can do detection there and keep this method to import SD v1.5 / SDXL only.
+      return try importFlux1(
+        archive: archive, stateDict: stateDict, filename: filename, progress: progress)
     }
     var modelVersion: ModelVersion = .v1
     switch tokey.shape.last {
@@ -159,15 +282,15 @@ public final class ControlNetImporter {
         // To make this generic, we will get "transform_blocks" and configure the network accordingly.
         let keys = Array(stateDict.keys)
         let downBlocks1AttentionRes = Self.numberOfTransformBlocks(
-          prefix: "down_blocks.1.attentions.0", upTo: 2, keys: keys)
+          prefix: "down_blocks.1.attentions.0", attn: "attn2", upTo: 2, keys: keys)
         let downBlocks2AttentionRes = Self.numberOfTransformBlocks(
-          prefix: "down_blocks.2.attentions.0", upTo: 10, keys: keys)
+          prefix: "down_blocks.2.attentions.0", attn: "attn2", upTo: 10, keys: keys)
         inputAttentionRes = [
           2: [downBlocks1AttentionRes, downBlocks1AttentionRes],
           4: [downBlocks2AttentionRes, downBlocks2AttentionRes],
         ]
         middleAttentionBlocks = Self.numberOfTransformBlocks(
-          prefix: "mid_block.attentions.0", upTo: 10, keys: keys)
+          prefix: "mid_block.attentions.0", attn: "attn2", upTo: 10, keys: keys)
         if downBlocks1AttentionRes != 2 || downBlocks2AttentionRes != 10
           || middleAttentionBlocks != 10
         {
@@ -302,7 +425,6 @@ public final class ControlNetImporter {
                 store.write("__controlnet__[\(name)]", tensor: tensor)
               }
             }
-            access += 1
             progress(0.05 + Float(access) / Float(max(expectedTotalAccess, 1)) * 0.95)
           }
           for (key, value) in mappingFixed {
@@ -335,7 +457,6 @@ public final class ControlNetImporter {
                 store.write("__controlnet_fixed__[\(name)]", tensor: tensor)
               }
             }
-            access += 1
             progress(0.05 + Float(access) / Float(max(expectedTotalAccess, 1)) * 0.95)
           }
           for (key, value) in hintMapping {
@@ -362,7 +483,6 @@ public final class ControlNetImporter {
                 store.write("__hintnet__[\(name)]", tensor: tensor)
               }
             }
-            access += 1
             progress(0.05 + Float(access) / Float(max(expectedTotalAccess, 1)) * 0.95)
           }
         }

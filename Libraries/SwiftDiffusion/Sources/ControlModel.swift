@@ -1578,7 +1578,7 @@ extension ControlModel {
   ) -> [DynamicGraph.Tensor<FloatType>] {
     let graph = textEncoding[0].graph
     switch type {
-    case .controlnetunion:
+    case .controlnet, .controlnetunion:
       let c0 = textEncoding[0]
       var pooled = textEncoding[1]
       let cBatchSize = c0.shape[0]
@@ -1642,29 +1642,36 @@ extension ControlModel {
           guidanceEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = guidanceEmbed
         }
       }
-      var mode = Tensor<Int32>(.CPU, format: .NHWC, shape: [1])
-      switch modifier {
-      case .canny:
-        mode[0] = 0
-      case .tile:
-        mode[0] = 1
-      case .depth:
-        mode[0] = 2
-      case .blur:
-        mode[0] = 3
-      case .pose:
-        mode[0] = 4
-      case .gray:
-        mode[0] = 5
-      case .lowquality:
-        mode[0] = 6
-      case .custom, .color, .inpaint, .ip2p, .lineart, .mlsd, .normalbae, .scribble, .seg, .shuffle,
-        .softedge:
-        mode[0] = 0
-      }
-      let controlMode = graph.variable(mode.toGPU(0))
+      let controlMode: DynamicGraph.Tensor<Int32>? = {
+        guard type == .controlnetunion else {
+          return nil
+        }
+        var mode = Tensor<Int32>(.CPU, format: .NHWC, shape: [1])
+        switch modifier {
+        case .canny:
+          mode[0] = 0
+        case .tile:
+          mode[0] = 1
+        case .depth:
+          mode[0] = 2
+        case .blur:
+          mode[0] = 3
+        case .pose:
+          mode[0] = 4
+        case .gray:
+          mode[0] = 5
+        case .lowquality:
+          mode[0] = 6
+        case .custom, .color, .inpaint, .ip2p, .lineart, .mlsd, .normalbae, .scribble, .seg,
+          .shuffle,
+          .softedge:
+          mode[0] = 0
+        }
+        return graph.variable(mode.toGPU(0))
+      }()
       controlNetFlux1Fixed.compile(
-        inputs: [controlMode, c, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? []))
+        inputs: (controlMode.map { [$0] } ?? []) + [c, timeEmbeds, pooleds]
+          + (guidanceEmbeds.map { [$0] } ?? []))
       let externalData: DynamicGraph.Store.Codec =
         externalOnDemand ? .externalOnDemand : .externalData
       graph.openStore(
@@ -1674,9 +1681,16 @@ extension ControlModel {
         $0.read(
           "controlnet", model: controlNetFlux1Fixed, codec: [externalData, .jit, .q6p, .q8p, .ezm7])
       }
-      let conditions = controlNetFlux1Fixed(
-        inputs: controlMode, [c, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
-      ).map { $0.as(of: FloatType.self) }
+      let conditions: [DynamicGraph.Tensor<FloatType>]
+      if let controlMode = controlMode {
+        conditions = controlNetFlux1Fixed(
+          inputs: controlMode, [c, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
+        ).map { $0.as(of: FloatType.self) }
+      } else {
+        conditions = controlNetFlux1Fixed(
+          inputs: c, [timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
+        ).map { $0.as(of: FloatType.self) }
+      }
       let h = startHeight / 2
       let w = startWidth / 2
       let rot = Tensor<FloatType>(
@@ -1684,7 +1698,7 @@ extension ControlModel {
           height: h, width: w, tokenLength: t5Length + 1, channels: 128)
       ).toGPU(0)
       return [graph.variable(rot)] + conditions
-    case .controlnet, .controlnetlora, .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV,
+    case .controlnetlora, .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV,
       .ipadapterfaceidplus:
       fatalError()
     }

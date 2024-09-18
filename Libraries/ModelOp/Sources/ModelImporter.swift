@@ -564,7 +564,7 @@ public final class ModelImporter {
                   height: 32, width: 32, tokenLength: 256, channels: 128)))
           ]
           + Flux1FixedOutputShapes(
-            batchSize: (1, 1), channels: 3072, layers: (19, 38), guidanceEmbed: true
+            batchSize: (1, 1), channels: 3072, layers: (19, 38)
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
