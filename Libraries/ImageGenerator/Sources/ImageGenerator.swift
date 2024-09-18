@@ -1793,6 +1793,8 @@ extension ImageGenerator {
       if let preprocessor = ControlNetZoo.preprocessorForModel(file) {
         filePaths.append(ControlNetZoo.filePathForModelDownloaded(preprocessor))
       }
+      // We don't adjust RGB range if it is a ControlNet not trained for SDXL.
+      let adjustRGB = (version != .flux1)
       let controlModel = ControlModel<FloatType>(
         filePaths: filePaths, type: type, modifier: modifier,
         externalOnDemand: externalOnDemand, version: version,
@@ -1816,12 +1818,12 @@ extension ImageGenerator {
               heightScale: Float(startHeight * 8) / Float(inputHeight))(input)
           }
           guard inputHeight != startHeight * 8 || inputWidth != startWidth * 8 else {
-            return 0.5 * (input + 1)
+            return adjustRGB ? 0.5 * (input + 1) : input
           }
-          return 0.5
-            * (Upsample(
-              .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
-              heightScale: Float(startHeight * 8) / Float(inputHeight))(input) + 1)
+          let resampled = Upsample(
+            .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
+            heightScale: Float(startHeight * 8) / Float(inputHeight))(input)
+          return adjustRGB ? 0.5 * (resampled + 1) : resampled
         })
       }
       switch type {
@@ -1835,7 +1837,8 @@ extension ImageGenerator {
             ]).map { ($0, control.weight) }
             return (model: controlModel, hints: hints)
           }
-          let canny = graph.variable(ControlModel<FloatType>.canny(image.rawValue.toCPU()).toGPU(0))
+          let canny = graph.variable(
+            ControlModel<FloatType>.canny(image.rawValue.toCPU(), adjustRGB: adjustRGB).toGPU(0))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(inputs: [
             (hint: canny, weight: 1)
           ]).map { ($0, control.weight) }
@@ -1901,7 +1904,9 @@ extension ImageGenerator {
           // ControlNet input is always RGB at 0~1 range.
           let shape = depth.shape
           precondition(shape[3] == 1)
-          depth = 0.5 * (depth + 1)
+          if adjustRGB {
+            depth = 0.5 * (depth + 1)
+          }
           var depthRGB = graph.variable(
             .GPU(0), .NHWC(shape[0], shape[1], shape[2], 3), of: FloatType.self)
           depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] = depth
@@ -1996,12 +2001,11 @@ extension ImageGenerator {
           let inputWidth = input.shape[2]
           precondition(input.shape[3] == 3)
           if inputHeight != startHeight * 8 || inputWidth != startWidth * 8 {
-            input =
-              0.5
-              * (Upsample(
-                .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
-                heightScale: Float(startHeight * 8) / Float(inputHeight))(input) + 1)
-          } else {
+            input = Upsample(
+              .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
+              heightScale: Float(startHeight * 8) / Float(inputHeight))(input)
+          }
+          if adjustRGB {
             input = 0.5 * (input + 1)
           }
           // If mask exists, apply mask, by making the mask area (0) to -1.
@@ -2033,12 +2037,11 @@ extension ImageGenerator {
           let inputWidth = input.shape[2]
           precondition(input.shape[3] == 3)
           if inputHeight != startHeight * 8 || inputWidth != startWidth * 8 {
-            input =
-              0.5
-              * (Upsample(
-                .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
-                heightScale: Float(startHeight * 8) / Float(inputHeight))(input) + 1)
-          } else {
+            input = Upsample(
+              .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
+              heightScale: Float(startHeight * 8) / Float(inputHeight))(input)
+          }
+          if adjustRGB {
             input = 0.5 * (input + 1)
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(inputs: [
@@ -2056,12 +2059,11 @@ extension ImageGenerator {
           let inputWidth = input.shape[2]
           precondition(input.shape[3] == 3)
           if inputHeight != startHeight * 8 || inputWidth != startWidth * 8 {
-            input =
-              0.5
-              * (Upsample(
-                .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
-                heightScale: Float(startHeight * 8) / Float(inputHeight))(input) + 1)
-          } else {
+            input = Upsample(
+              .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
+              heightScale: Float(startHeight * 8) / Float(inputHeight))(input)
+          }
+          if adjustRGB {
             input = 0.5 * (input + 1)
           }
           if downSamplingRate > 1.1 {
@@ -2140,7 +2142,8 @@ extension ImageGenerator {
             let hint = controlModel.hint(inputs: [(hint: input, weight: control.weight)])[0]
             return (model: controlModel, hints: [(hint, 1)])
           }
-          let canny = graph.variable(ControlModel<FloatType>.canny(image.rawValue.toCPU()).toGPU(0))
+          let canny = graph.variable(
+            ControlModel<FloatType>.canny(image.rawValue.toCPU(), adjustRGB: adjustRGB).toGPU(0))
           let shape = canny.shape
           let input = canny[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1].copied().reshaped(
             format: .NHWC, shape: [shape[0], startHeight, 8, startWidth, 8]
@@ -2155,7 +2158,9 @@ extension ImageGenerator {
           // ControlNet input is always RGB at 0~1 range.
           let shape = depth.shape
           precondition(shape[3] == 1)
-          depth = 0.5 * (depth + 1)
+          if adjustRGB {
+            depth = 0.5 * (depth + 1)
+          }
           var depthRGB = graph.variable(
             .GPU(0), .NHWC(shape[0], shape[1], shape[2], 3), of: FloatType.self)
           depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] = depth
@@ -2244,7 +2249,9 @@ extension ImageGenerator {
           else { return nil }
           let shape = rgb.shape
           precondition(shape[3] == 3)
-          rgb = 0.5 * (rgb + 1)
+          if adjustRGB {
+            rgb = 0.5 * (rgb + 1)
+          }
           let input = rgb.reshaped(
             format: .NHWC, shape: [shape[0], startHeight, 8, startWidth, 8, 3]
           ).permuted(0, 1, 3, 5, 2, 4).copied().reshaped(

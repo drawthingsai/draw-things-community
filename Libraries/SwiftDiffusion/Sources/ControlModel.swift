@@ -2068,7 +2068,7 @@ extension ControlModel {
 
 extension ControlModel {
   // Assuming input is in the range of -1 to 1, and in form of NHWC with 3 channels.
-  public static func canny(_ x: Tensor<FloatType>) -> Tensor<FloatType> {
+  public static func canny(_ x: Tensor<FloatType>, adjustRGB: Bool) -> Tensor<FloatType> {
     let shape = x.shape
     precondition(x.kind == .CPU)
     precondition(shape.count == 4)
@@ -2095,16 +2095,32 @@ extension ControlModel {
     ccv_canny(u8Img, &cannyImg, 0, 3, 100, 200)
     var y = Tensor<FloatType>(.CPU, .NHWC(1, startHeight, startWidth, 3))
     if let cannyImg = cannyImg {
-      for i in 0..<startHeight {
-        for j in 0..<startWidth {
-          if cannyImg.pointee.data.u8[i * startWidth + j] == 0 {
-            y[0, i, j, 0] = 0
-            y[0, i, j, 1] = 0
-            y[0, i, j, 2] = 0
-          } else {
-            y[0, i, j, 0] = 1
-            y[0, i, j, 1] = 1
-            y[0, i, j, 2] = 1
+      if adjustRGB {
+        for i in 0..<startHeight {
+          for j in 0..<startWidth {
+            if cannyImg.pointee.data.u8[i * startWidth + j] == 0 {
+              y[0, i, j, 0] = -1
+              y[0, i, j, 1] = -1
+              y[0, i, j, 2] = -1
+            } else {
+              y[0, i, j, 0] = 1
+              y[0, i, j, 1] = 1
+              y[0, i, j, 2] = 1
+            }
+          }
+        }
+      } else {
+        for i in 0..<startHeight {
+          for j in 0..<startWidth {
+            if cannyImg.pointee.data.u8[i * startWidth + j] == 0 {
+              y[0, i, j, 0] = 0
+              y[0, i, j, 1] = 0
+              y[0, i, j, 2] = 0
+            } else {
+              y[0, i, j, 0] = 1
+              y[0, i, j, 1] = 1
+              y[0, i, j, 2] = 1
+            }
           }
         }
       }
