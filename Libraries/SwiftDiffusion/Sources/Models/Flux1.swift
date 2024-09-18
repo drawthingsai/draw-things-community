@@ -1333,7 +1333,7 @@ public func ControlNetFlux1(
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "controlnet_x_embedder")
   var out =
     xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
-    + controlnetXEmbedder(controlnetX).reshaped([batchSize, h * w, channels]).to(.Float32)
+    + controlnetXEmbedder(controlnetX).reshaped([1, h * w, channels]).to(.Float32)
   var adaLNChunks = [Input]()
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
@@ -1452,7 +1452,11 @@ public func ControlNetFlux1Fixed<FloatType: TensorNumeric & BinaryFloatingPoint>
     let modeEmbedder = Embedding(
       FloatType.self, vocabularySize: 10, embeddingSize: channels, name: "controlnet_mode_embedder")
     let mode = Input()
-    context = Functional.concat(axis: 1, modeEmbedder(mode).reshaped([1, 1, channels]), context)
+    var modeEmbed = modeEmbedder(mode).reshaped([1, 1, channels])
+    if batchSize.0 > 1 {
+      modeEmbed = Concat(axis: 0)(Array(repeating: modeEmbed, count: batchSize.0))
+    }
+    context = Functional.concat(axis: 1, modeEmbed, context)
     controlnetMode = mode
     controlnetModeEmbedder = modeEmbedder
   } else {
