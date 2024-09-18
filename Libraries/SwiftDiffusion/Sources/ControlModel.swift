@@ -213,11 +213,20 @@ extension ControlModel {
     }
     return { xT, inputStartYPad, inputEndYPad, inputStartXPad, inputEndXPad, existingControlNets in
       var injectedControls = [DynamicGraph.Tensor<FloatType>]()
+      var controlNetMap = [TypeAndFilePaths: Model]()
       for (i, injected) in injecteds.enumerated() {
         guard injected.model.version == version else { continue }
         switch injected.model.type {
         case .controlnet, .controlnetlora, .controlnetunion:
           for (hint, strength) in injected.hints {
+            if let controlNet = controlNetMap[
+              TypeAndFilePaths(type: injected.model.type, filePaths: injected.model.filePaths)]
+            {
+              if existingControlNets[i] == nil {
+                existingControlNets[i] = controlNet
+              }
+            }
+            let insertControlNetMapIfEmpty = (existingControlNets[i] == nil)
             let newInjectedControls = injected.model(
               inputStartYPad: inputStartYPad, inputEndYPad: inputEndYPad,
               inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
@@ -226,10 +235,28 @@ extension ControlModel {
               isCfgEnabled: isCfgEnabled, index: index,
               mainUNetAndWeightMapper: mainUNetAndWeightMapper,
               controlNet: &existingControlNets[i])
+            if insertControlNetMapIfEmpty, let controlNet = existingControlNets[i] {
+              // Now we can share the same controlNet with everyone else. This is particularly useful for ControlNet Union where the backbone is the same.
+              controlNetMap[
+                TypeAndFilePaths(type: injected.model.type, filePaths: injected.model.filePaths)] =
+                controlNet
+            }
             if injectedControls.isEmpty {
               injectedControls = newInjectedControls
             } else {
-              injectedControls = zip(injectedControls, newInjectedControls).map { $0 + $1 }
+              // This is OK for SDXL / v1 ControlNet, but if not careful, we can end up with pretty big intermediate tensors for FLUX.1 ControlNet. It is because we have 19 + 38 tensors to be injected while most ControlNet are lightweight (expanded from 15 or 5 layers). This logic detects the duplicated tensors and don't do the compute again to save RAM usage.
+              var duplicateComputeMap = [Pair: DynamicGraph.Tensor<FloatType>]()
+              injectedControls = zip(injectedControls, newInjectedControls).map {
+                if let computed = duplicateComputeMap[
+                  Pair(first: ObjectIdentifier($0), second: ObjectIdentifier($1))]
+                {
+                  return computed
+                }
+                let result = $0 + $1
+                duplicateComputeMap[
+                  Pair(first: ObjectIdentifier($0), second: ObjectIdentifier($1))] = result
+                return result
+              }
             }
           }
         case .ipadapterplus, .ipadapterfull, .t2iadapter, .injectKV, .ipadapterfaceidplus:
@@ -238,6 +265,16 @@ extension ControlModel {
       }
       return (injectedControls, injectedT2IAdapters, injectedKVs)
     }
+  }
+
+  private struct TypeAndFilePaths: Equatable & Hashable {
+    var type: ControlType
+    var filePaths: [String]
+  }
+
+  private struct Pair: Equatable & Hashable {
+    var first: ObjectIdentifier
+    var second: ObjectIdentifier
   }
 
   static func emptyInjectedControlsAndAdapters(
