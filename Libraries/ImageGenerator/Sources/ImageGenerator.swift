@@ -5,6 +5,7 @@ import Diffusion
 import DiffusionPreprocessors
 import DiffusionUNetWrapper
 import Foundation
+import ImageGenerator
 import ModelZoo
 import NNC
 import Upscaler
@@ -26,7 +27,7 @@ public protocol PoseDrawer {
   func drawPose(_ pose: Tensor<Float>, startWidth: Int, startHeight: Int) -> Tensor<FloatType>?
 }
 
-public struct ImageGenerator {
+public struct LocalImageGenerator {
   public static let defaultTextEncoder = "clip_vit_l14_f16.ckpt"
   public static let defaultAutoencoder = "vae_ft_mse_840000_f16.ckpt"
   public let modelPreloader: ModelPreloader
@@ -64,21 +65,7 @@ public struct ImageGenerator {
   }
 }
 
-extension ImageGenerator {
-  public enum Signpost: Equatable & Hashable {
-    case textEncoded
-    case imageEncoded
-    case sampling(Int)
-    case imageDecoded
-    case secondPassImageEncoded
-    case secondPassSampling(Int)
-    case secondPassImageDecoded
-    case faceRestored
-    case imageUpscaled
-  }
-}
-
-extension ImageGenerator {
+extension LocalImageGenerator {
   public static func sampler<FloatType: TensorNumeric & BinaryFloatingPoint>(
     from type: SamplerType, isCfgEnabled: Bool, filePath: String, modifier: SamplerModifier,
     version: ModelVersion, usesFlashAttention: Bool, objective: Denoiser.Objective,
@@ -589,60 +576,21 @@ extension ImageGenerator {
   }
 }
 
-extension ImageGenerator {
-  public static func expectedSignposts(
-    _ image: Bool, mask: Bool, text: String, negativeText: String,
-    configuration: GenerationConfiguration, version: ModelVersion
-  ) -> Set<Signpost> {
-    var signposts = Set<Signpost>([.textEncoded, .imageDecoded])
-    if let faceRestoration = configuration.faceRestoration,
-      EverythingZoo.isModelDownloaded(faceRestoration)
-        && EverythingZoo.isModelDownloaded(EverythingZoo.parsenetForModel(faceRestoration))
-    {
-      signposts.insert(.faceRestored)
-    }
-    if let upscaler = configuration.upscaler, UpscalerZoo.isModelDownloaded(upscaler) {
-      signposts.insert(.imageUpscaled)
-    }
-    guard image else {
-      signposts.insert(.sampling(Int(configuration.steps)))
-      if configuration.hiresFix || version == .wurstchenStageC {
-        signposts.insert(.secondPassImageEncoded)
-        if version == .wurstchenStageC {
-          let tEnc = Int(configuration.stage2Steps)
-          signposts.insert(.secondPassSampling(tEnc))
-        } else {
-          let tEnc = Int(configuration.hiresFixStrength * Float(Int(configuration.steps)))
-          signposts.insert(.secondPassSampling(tEnc))
-        }
-        signposts.insert(.secondPassImageDecoded)
-      }
-      return signposts
-    }
-    signposts.insert(.imageEncoded)
-    let tEnc = Int(configuration.strength * Float(configuration.steps))
-    signposts.insert(.sampling(tEnc))
-    if version == .wurstchenStageC {
-      signposts.insert(.secondPassImageEncoded)
-      let tEnc = Int(configuration.strength * Float(configuration.stage2Steps))
-      signposts.insert(.secondPassSampling(tEnc))
-      signposts.insert(.secondPassImageDecoded)
-    }
-    return signposts
-  }
+extension LocalImageGenerator {
+
   public func startGenerating() {
     modelPreloader.startGenerating()
   }
   public func stopGenerating() {
     modelPreloader.stopGenerating()
   }
-
   public func generate(
     _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],
     text: String,
     negativeText: String, configuration: GenerationConfiguration,
-    feedback: @escaping (Signpost, Set<Signpost>, Tensor<FloatType>?) -> Bool
+    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+      Bool
   ) -> ([Tensor<FloatType>]?, Int) {
 
     let depth =
@@ -716,7 +664,7 @@ extension ImageGenerator {
   }
 }
 
-extension ImageGenerator {
+extension LocalImageGenerator {
   private func kandinskyTokenize(
     graph: DynamicGraph, text: String, negativeText: String, negativePromptForImagePrior: Bool
   ) -> (
@@ -2393,7 +2341,8 @@ extension ImageGenerator {
     shuffles: [(Tensor<FloatType>, Float)],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
-    feedback: @escaping (Signpost, Set<Signpost>, Tensor<FloatType>?) -> Bool
+    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
+      -> Bool
   ) -> ([Tensor<FloatType>]?, Int) {
     dispatchPrecondition(condition: .onQueue(queue))
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
@@ -2514,7 +2463,7 @@ extension ImageGenerator {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
-    var signposts = Set<Signpost>([
+    var signposts = Set<ImageGeneratorSignpost>([
       .textEncoded, .sampling(sampling.steps), .imageDecoded,
     ])
     if modifier == .inpainting || modifier == .editing || modifier == .double {
@@ -2614,7 +2563,7 @@ extension ImageGenerator {
         DynamicGraph.memoryEfficient = isMemoryEfficient
       }
     }
-    let sampler = ImageGenerator.sampler(
+    let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
@@ -3056,7 +3005,7 @@ extension ImageGenerator {
         secondPassModelVersion = modelVersion
         secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(file)
       }
-      let secondPassSampler = ImageGenerator.sampler(
+      let secondPassSampler = LocalImageGenerator.sampler(
         from: configuration.sampler, isCfgEnabled: isCfgEnabled,
         filePath: secondPassModelFilePath, modifier: modifier,
         version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
@@ -3217,7 +3166,8 @@ extension ImageGenerator {
     text: String,
     negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
-    feedback: @escaping (Signpost, Set<Signpost>, Tensor<FloatType>?) -> Bool
+    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+      Bool
   ) -> ([Tensor<FloatType>]?, Int) {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
     defer {
@@ -3419,7 +3369,7 @@ extension ImageGenerator {
       scale: DeviceCapability.Scale(
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
-    let sampler = ImageGenerator.sampler(
+    let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
@@ -3510,7 +3460,7 @@ extension ImageGenerator {
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil
     )
     let tokenLength = max(tokenLengthUncond, tokenLengthCond)
-    var signposts = Set<Signpost>([
+    var signposts = Set<ImageGeneratorSignpost>([
       .textEncoded, .imageEncoded, .sampling(sampling.steps - initTimestep.roundedDownStartStep),
       .imageDecoded,
     ])
@@ -3732,7 +3682,7 @@ extension ImageGenerator {
         let secondPassModelVersion = ModelVersion.wurstchenStageB
         let secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(
           ModelZoo.stageModelsForModel(file)[0])
-        let secondPassSampler = ImageGenerator.sampler(
+        let secondPassSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
@@ -4053,7 +4003,8 @@ extension ImageGenerator {
     text: String,
     negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
-    feedback: @escaping (Signpost, Set<Signpost>, Tensor<FloatType>?) -> Bool
+    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+      Bool
   ) -> ([Tensor<FloatType>]?, Int) {
     // The binary mask is a shape of (height, width), with content of 0, 1, 2, 3
     // 2 means it is explicit masked, if 2 is presented, we will treat 0 as areas to retain, and
@@ -4252,7 +4203,7 @@ extension ImageGenerator {
         negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
     }
-    var signposts = Set<Signpost>()
+    var signposts = Set<ImageGeneratorSignpost>()
     if let faceRestoration = configuration.faceRestoration,
       EverythingZoo.isModelDownloaded(faceRestoration)
         && EverythingZoo.isModelDownloaded(EverythingZoo.parsenetForModel(faceRestoration))
@@ -4370,8 +4321,9 @@ extension ImageGenerator {
     custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], text: String,
     negativeText: String,
     configuration: GenerationConfiguration, denoiserParameterization: Denoiser.Parameterization,
-    sampling: Sampling, signposts: inout Set<Signpost>,
-    feedback: @escaping (Signpost, Set<Signpost>, Tensor<FloatType>?) -> Bool
+    sampling: Sampling, signposts: inout Set<ImageGeneratorSignpost>,
+    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+      Bool
   ) -> [Tensor<FloatType>]? {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
     defer {
@@ -4602,7 +4554,7 @@ extension ImageGenerator {
       scale: DeviceCapability.Scale(
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
-    let sampler = ImageGenerator.sampler(
+    let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
@@ -4872,7 +4824,7 @@ extension ImageGenerator {
         let secondPassModelVersion = ModelVersion.wurstchenStageB
         let secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(
           ModelZoo.stageModelsForModel(file)[0])
-        let secondPassSampler = ImageGenerator.sampler(
+        let secondPassSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
@@ -5017,8 +4969,9 @@ extension ImageGenerator {
     shuffles: [(Tensor<FloatType>, Float)],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
-    signposts: inout Set<Signpost>,
-    feedback: @escaping (Signpost, Set<Signpost>, Tensor<FloatType>?) -> Bool
+    signposts: inout Set<ImageGeneratorSignpost>,
+    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+      Bool
   ) -> [Tensor<FloatType>]? {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
     defer {
@@ -5249,7 +5202,7 @@ extension ImageGenerator {
       scale: DeviceCapability.Scale(
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
-    let sampler = ImageGenerator.sampler(
+    let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
@@ -5615,7 +5568,7 @@ extension ImageGenerator {
         let secondPassModelVersion = ModelVersion.wurstchenStageB
         let secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(
           ModelZoo.stageModelsForModel(file)[0])
-        let secondPassSampler = ImageGenerator.sampler(
+        let secondPassSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,

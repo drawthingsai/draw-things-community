@@ -1,6 +1,7 @@
 import CoreGraphics
 import DataModels
 import Diffusion
+import ImageGenerator
 import ImageIO
 import ModelZoo
 import NNC
@@ -1004,7 +1005,7 @@ public enum ImageConverter {
         let (
           canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths, _
         ) =
-          ImageGenerator.canInjectControls(
+          ImageGeneratorUtils.canInjectControls(
             hasImage: true, hasDepth: true, hasHints: Set([.scribble, .pose, .color]),
             hasCustom: true, shuffleCount: 1,
             controls: configuration.controls, version: modelVersion)

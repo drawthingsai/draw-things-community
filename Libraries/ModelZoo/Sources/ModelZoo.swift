@@ -798,6 +798,7 @@ public struct ModelZoo: DownloadZoo {
     jsonEncoder.outputFormatting = .prettyPrinted
     guard let jsonData = try? jsonEncoder.encode(customSpecifications) else { return }
     try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
+
     // Modify these two are not thread safe. availableSpecifications are OK. specificationMapping is particularly problematic (as it is access on both main thread and a background thread).
     var availableSpecifications = availableSpecifications
     availableSpecifications = availableSpecifications.filter { $0.file != specification.file }

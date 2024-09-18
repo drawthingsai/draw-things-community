@@ -8,18 +8,23 @@ config_setting(
 )
 
 swift_library(
-    name = "ImageGenerator",
+    name = "LocalImageGenerator",
     srcs = glob(
                ["Sources/**/*.swift"],
-               exclude = ["Sources/ImageConverter.swift"],
+               exclude = [
+                   "Sources/ImageConverter.swift",
+                   "Sources/ImageGeneratorProtocol.swift",
+                   "Sources/ImageGeneratorUtils.swift",
+               ],
            ) +
            select({
                ":macos_build": ["Sources/ImageConverter.swift"],
                "//conditions:default": [],
            }),
-    module_name = "ImageGenerator",
+    module_name = "LocalImageGenerator",
     visibility = ["//visibility:public"],
     deps = [
+        ":ImageGenerator",
         "//Libraries/DataModels",
         "//Libraries/ModelZoo",
         "//Libraries/Scripting:ScriptDataModels",
@@ -30,6 +35,10 @@ swift_library(
         "//Libraries/Upscaler",
         "@ccv//lib:ccv",
         "@s4nnc//nnc",
+        "//Libraries/GRPC:GRPCModels",
+        "//Libraries/GRPC:GRPCServer",
+        "@grpc-swift//:GRPC",
+        "@SwiftLog//:Logging",
     ] + select({
         ":macos_build": [
             "//Libraries/FaceRestorer",
@@ -38,4 +47,24 @@ swift_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+swift_library(
+    name = "ImageGenerator",
+    srcs = glob(
+        [
+            "Sources/ImageGeneratorProtocol.swift",
+            "Sources/ImageGeneratorUtils.swift",
+        ],
+    ),
+    module_name = "ImageGenerator",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//Libraries/DataModels",
+        "//Libraries/GRPC:GRPCModels",
+        "//Libraries/ModelZoo",
+        "//Libraries/SwiftDiffusion",
+        "@ccv//lib:ccv",
+        "@s4nnc//nnc",
+    ],
 )
