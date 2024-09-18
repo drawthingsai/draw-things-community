@@ -5454,8 +5454,11 @@ extension ImageGenerator {
         controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
         usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
         steps: sampling.steps, firstStage: firstStage)
-      let redoInjectedControls = configuration.controls.contains {
-        $0.file.map { ControlNetZoo.modifierForModel($0) == .inpaint } ?? false
+      let redoInjectedControls = configuration.controls.contains { control in
+        control.file.map {
+          (ControlNetZoo.modifierForModel($0) ?? ControlHintType(from: control.inputOverride))
+            == .inpaint
+        } ?? false
       }
       var batchSize = batchSize
       if modelVersion == .svdI2v {

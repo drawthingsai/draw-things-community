@@ -1014,7 +1014,7 @@ public enum ImageConverter {
           let controls:
             [(
               file: String, weight: Float, guidanceStart: Float, guidanceEnd: Float, noPrompt: Bool,
-              globalAveragePooling: Bool
+              globalAveragePooling: Bool, inputOverride: ControlInputType
             )] =
               configuration.controls.compactMap {
                 guard let file = $0.file,
@@ -1029,7 +1029,7 @@ public enum ImageConverter {
                   .lowquality:
                   return (
                     file, $0.weight, $0.guidanceStart, $0.guidanceEnd, $0.noPrompt,
-                    $0.globalAveragePooling
+                    $0.globalAveragePooling, $0.inputOverride
                   )
                 }
               }
@@ -1042,7 +1042,11 @@ public enum ImageConverter {
                 "file": control.file, "weight": control.weight, "no_prompt": control.noPrompt,
                 "guidance_start": control.guidanceStart, "guidance_end": control.guidanceEnd,
               ]
-              if ControlNetZoo.modifierForModel(control.file) == .shuffle {
+
+              let modifier =
+                ControlNetZoo.modifierForModel(control.file)
+                ?? ControlHintType(from: control.inputOverride)
+              if modifier == .shuffle {
                 subjson["global_average_pooling"] = control.globalAveragePooling
                 description +=
                   ", Control \(i + 1) Global Average Pooling: \(control.globalAveragePooling ? "true" : "false")"
