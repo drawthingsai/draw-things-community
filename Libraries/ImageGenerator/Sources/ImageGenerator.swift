@@ -682,8 +682,14 @@ extension ImageGenerator {
       ModelZoo.versionForModel(file), isConsistencyModel: ModelZoo.isConsistencyModelForModel(file)),
       configuration.resolutionDependentShift
     {
-      shift = ModelZoo.shiftFor(
-        (width: configuration.startWidth, height: configuration.startHeight))
+      let tiledWidth =
+        configuration.tiledDiffusion
+        ? min(configuration.diffusionTileWidth, configuration.startWidth) : configuration.startWidth
+      let tiledHeight =
+        configuration.tiledDiffusion
+        ? min(configuration.diffusionTileHeight, configuration.startHeight)
+        : configuration.startHeight
+      shift = ModelZoo.shiftFor((width: tiledWidth, height: tiledHeight))
     } else {
       shift = Double(configuration.shift)
     }
