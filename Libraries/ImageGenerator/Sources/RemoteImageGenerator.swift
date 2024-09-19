@@ -13,6 +13,7 @@ public struct RemoteImageGenerator: ImageGenerator {
   let ip: String
   let port: Int
   let logger = Logger(label: "com.draw-things.remote-image-generator")
+
   public init(ip: String, port: Int) {
     self.ip = ip
     self.port = port
@@ -30,7 +31,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
     defer {
-      try! group.syncShutdownGracefully()
+      try? group.syncShutdownGracefully()
     }
 
     var grpcConfiguration = GRPCChannelPool.Configuration.with(
@@ -38,10 +39,12 @@ public struct RemoteImageGenerator: ImageGenerator {
       transportSecurity: .plaintext,
       eventLoopGroup: group)
     grpcConfiguration.maximumReceiveMessageLength = 16 * 1024 * 1024
-    let channel = try! GRPCChannelPool.with(configuration: grpcConfiguration)
+    guard let channel = try? GRPCChannelPool.with(configuration: grpcConfiguration) else {
+      return (nil, 1)
+    }
 
     defer {
-      try! channel.close().wait()
+      try? channel.close().wait()
     }
 
     let client = ImageGeneratingServiceNIOClient(channel: channel)
@@ -87,8 +90,11 @@ public struct RemoteImageGenerator: ImageGenerator {
         }
       }
     }
+    var call: ServerStreamingCall<ImageGeneratingRequest, ImageGeneratingResponse>? = nil
+
     // Send the request
-    let call = client.generateImage(
+    // handler is running on event group thread
+    call = client.generateImage(
       request,
       handler: { response in
         if !response.generatedImages.isEmpty {
@@ -117,7 +123,11 @@ public struct RemoteImageGenerator: ImageGenerator {
             {
               previewTensor = tensor
             }
-            let _ = feedback(currentSignpost, signpostsSet, previewTensor)
+            let isGenerating = feedback(currentSignpost, signpostsSet, previewTensor)
+            if !isGenerating {
+              logger.info("Stream cancel image generating")
+              call?.cancel(promise: nil)
+            }
           }
         }
 
@@ -126,6 +136,10 @@ public struct RemoteImageGenerator: ImageGenerator {
         }
 
       })
+    guard let call = call else {
+      logger.error("Failed to start stream connection")
+      return (nil, 1)
+    }
 
     call.status.whenComplete { result in
       switch result {
@@ -135,7 +149,6 @@ public struct RemoteImageGenerator: ImageGenerator {
         logger.error("Stream failed with error: \(error)")
       }
     }
-
     do {
       let _ = try call.status.wait()
     } catch {
