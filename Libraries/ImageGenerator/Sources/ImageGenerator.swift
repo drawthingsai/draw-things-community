@@ -28,8 +28,6 @@ public protocol PoseDrawer {
 }
 
 public struct LocalImageGenerator {
-  public static let defaultTextEncoder = "clip_vit_l14_f16.ckpt"
-  public static let defaultAutoencoder = "vae_ft_mse_840000_f16.ckpt"
   public let modelPreloader: ModelPreloader
   public var tokenizerV1: TextualInversionAttentionCLIPTokenizer
   public var tokenizerV2: TextualInversionAttentionCLIPTokenizer
@@ -1478,148 +1476,6 @@ extension LocalImageGenerator {
     return x_T
   }
 
-  public static func canInjectControls(
-    hasImage: Bool, hasDepth: Bool, hasHints: Set<ControlHintType>, hasCustom: Bool,
-    shuffleCount: Int, controls: [Control], version: ModelVersion
-  ) -> (
-    injectControls: Bool, injectT2IAdapters: Bool, injectAttentionKVs: Bool,
-    injectIPAdapterLengths: [Int],
-    injectedControls: Int
-  ) {
-    var injectControls = false
-    var injectT2IAdapters = false
-    var injectIPAdapterLengths = [Int]()
-    var injectedControls = 0
-    var injectAttentionKVs = false
-    for control in controls {
-      guard let file = control.file, let specification = ControlNetZoo.specificationForModel(file),
-        ControlNetZoo.isModelDownloaded(specification)
-      else { continue }
-      guard ControlNetZoo.versionForModel(file) == version else { continue }
-      guard control.weight > 0 else { continue }
-      guard
-        let modifier = ControlNetZoo.modifierForModel(file)
-          ?? ControlHintType(from: control.inputOverride)
-      else { continue }
-      let type = ControlNetZoo.typeForModel(file)
-      let isPreprocessorDownloaded =
-        ControlNetZoo.preprocessorForModel(file).map { ControlNetZoo.isModelDownloaded($0) } ?? true
-      switch type {
-      case .controlnet, .controlnetunion, .controlnetlora:
-        switch modifier {
-        case .canny, .mlsd, .tile, .blur, .gray, .lowquality:
-          injectControls = injectControls || hasImage || hasCustom
-          injectedControls += hasImage || hasCustom ? 1 : 0
-        case .depth:
-          let hasDepth = (hasImage && Self.isDepthModelAvailable) || hasDepth
-          injectControls = injectControls || hasDepth
-          injectedControls += hasDepth ? 1 : 0
-        case .pose:
-          injectControls = injectControls || hasHints.contains(modifier) || hasCustom
-          injectedControls += hasHints.contains(modifier) || hasCustom ? 1 : 0
-        case .scribble:
-          injectControls =
-            injectControls || hasHints.contains(modifier) || (isPreprocessorDownloaded && hasImage)
-          injectedControls +=
-            hasHints.contains(modifier) || (isPreprocessorDownloaded && hasImage) ? 1 : 0
-        case .color:
-          injectControls = injectControls || hasHints.contains(modifier) || hasImage
-          injectedControls += hasHints.contains(modifier) || hasImage ? 1 : 0
-        case .softedge:
-          injectControls = injectControls || (isPreprocessorDownloaded && hasImage) || hasCustom
-          injectedControls += (isPreprocessorDownloaded && hasImage) || hasCustom ? 1 : 0
-        case .normalbae, .lineart, .seg, .custom:
-          injectControls = injectControls || hasCustom
-          injectedControls += hasCustom ? 1 : 0
-        case .shuffle:
-          injectControls = injectControls || shuffleCount > 0 || hasCustom
-          injectedControls += shuffleCount > 0 || hasCustom ? 1 : 0
-        case .inpaint, .ip2p:
-          injectControls = injectControls || hasImage
-          injectedControls += hasImage ? 1 : 0
-        }
-      case .injectKV:
-        injectAttentionKVs = injectAttentionKVs || shuffleCount > 0 || hasCustom
-      case .ipadapterplus:
-        if hasCustom || shuffleCount > 0 {
-          injectIPAdapterLengths.append((shuffleCount > 0 ? shuffleCount : 1) * 16)
-        }
-      case .ipadapterfull:
-        if hasCustom || shuffleCount > 0 {
-          injectIPAdapterLengths.append((shuffleCount > 0 ? shuffleCount : 1) * 257)
-        }
-      case .ipadapterfaceidplus:
-        if hasCustom || shuffleCount > 0 {
-          injectIPAdapterLengths.append((shuffleCount > 0 ? shuffleCount : 1) * 6)
-        }
-      case .t2iadapter:
-        switch modifier {
-        case .canny, .mlsd, .tile, .blur, .gray, .lowquality:
-          injectT2IAdapters = injectT2IAdapters || hasImage || hasCustom
-        case .depth:
-          injectT2IAdapters =
-            injectT2IAdapters || (hasImage && Self.isDepthModelAvailable) || hasDepth
-        case .pose:
-          injectT2IAdapters = injectT2IAdapters || hasHints.contains(modifier) || hasCustom
-        case .scribble:
-          injectT2IAdapters = injectT2IAdapters || hasHints.contains(modifier)
-        case .color:
-          injectT2IAdapters = injectT2IAdapters || hasHints.contains(modifier) || hasImage
-        case .normalbae, .lineart, .softedge, .seg, .inpaint, .ip2p, .shuffle, .custom:
-          break
-        }
-      }
-    }
-    return (
-      injectControls, injectT2IAdapters, injectAttentionKVs, injectIPAdapterLengths,
-      injectedControls
-    )
-  }
-
-  public static var isDepthModelAvailable: Bool {
-    EverythingZoo.isModelDownloaded("depth_anything_v2.0_f16.ckpt")
-  }
-
-  public static func extractDepthMap(
-    _ image: DynamicGraph.Tensor<FloatType>, imageWidth: Int, imageHeight: Int,
-    usesFlashAttention: Bool
-  ) -> Tensor<FloatType> {
-    let depthEstimator = DepthEstimator<FloatType>(
-      filePaths: (
-        EverythingZoo.filePathForModelDownloaded("depth_anything_v2.0_f16.ckpt"),
-        EverythingZoo.filePathForModelDownloaded("depth_anything_v2.0_f16.ckpt")
-      ), usesFlashAttention: usesFlashAttention)
-    var depthMap = depthEstimator.estimate(image)
-    let shape = depthMap.shape
-    if shape[1] != imageHeight || shape[2] != imageWidth {
-      depthMap = Upsample(
-        .bilinear, widthScale: Float(imageWidth) / Float(shape[2]),
-        heightScale: Float(imageHeight) / Float(shape[1]))(depthMap)
-    }
-    var depthMapRawValue = depthMap.rawValue.toCPU()
-    var maxVal = depthMapRawValue[0, 0, 0, 0]
-    var minVal = maxVal
-    depthMapRawValue.withUnsafeBytes {
-      guard let f16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
-      for i in 0..<(imageHeight * imageWidth) {
-        let val = f16[i]
-        maxVal = max(maxVal, val)
-        minVal = min(minVal, val)
-      }
-    }
-    if maxVal - minVal > 0 {
-      let scale = (maxVal - minVal) * 0.5
-      let midVal = scale + minVal
-      depthMapRawValue.withUnsafeMutableBytes {
-        guard let f16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
-        for i in 0..<(imageHeight * imageWidth) {
-          f16[i] = (f16[i] - midVal) / scale
-        }
-      }
-    }
-    return depthMapRawValue
-  }
-
   private func ipAdapterRGB(
     shuffles: [(Tensor<FloatType>, Float)], imageEncoderVersion: ImageEncoderVersion,
     graph: DynamicGraph
@@ -1846,9 +1702,9 @@ extension LocalImageGenerator {
           guard
             var depth = depth
               ?? (image.flatMap {
-                guard Self.isDepthModelAvailable else { return nil }
+                guard ImageGeneratorUtils.isDepthModelAvailable else { return nil }
                 return graph.variable(
-                  Self.extractDepthMap(
+                  ImageGeneratorUtils.extractDepthMap(
                     $0, imageWidth: startWidth * 8, imageHeight: startHeight * 8,
                     usesFlashAttention: usesFlashAttention
                   )
@@ -2380,7 +2236,7 @@ extension LocalImageGenerator {
       [
         ModelZoo.textEncoderForModel(file).flatMap {
           ModelZoo.isModelDownloaded($0) ? $0 : nil
-        } ?? Self.defaultTextEncoder
+        } ?? ImageGeneratorUtils.defaultTextEncoder
       ]
       + ((ModelZoo.CLIPEncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil })
         .map { [$0] } ?? [])
@@ -2398,7 +2254,7 @@ extension LocalImageGenerator {
     let autoencoderFile =
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
-      } ?? Self.defaultAutoencoder
+      } ?? ImageGeneratorUtils.defaultAutoencoder
     let isGuidanceEmbedEnabled =
       ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
@@ -2483,7 +2339,7 @@ extension LocalImageGenerator {
       canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
       canInjectedControls
     ) =
-      Self.canInjectControls(
+      ImageGeneratorUtils.canInjectControls(
         hasImage: image != nil, hasDepth: depth != nil, hasHints: hasHints,
         hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
@@ -2974,7 +2830,7 @@ extension LocalImageGenerator {
         canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
         canInjectedControls
       ) =
-        Self.canInjectControls(
+        ImageGeneratorUtils.canInjectControls(
           hasImage: true, hasDepth: secondPassDepthImage != nil, hasHints: hasHints,
           hasCustom: custom != nil, shuffleCount: shuffles.count, controls: configuration.controls,
           version: modelVersion)
@@ -3287,7 +3143,7 @@ extension LocalImageGenerator {
       canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
       canInjectedControls
     ) =
-      Self.canInjectControls(
+      ImageGeneratorUtils.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
     let isMemoryEfficient = DynamicGraph.memoryEfficient
@@ -4443,7 +4299,7 @@ extension LocalImageGenerator {
       canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
       canInjectedControls
     ) =
-      Self.canInjectControls(
+      ImageGeneratorUtils.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
     let isMemoryEfficient = DynamicGraph.memoryEfficient
@@ -5091,7 +4947,7 @@ extension LocalImageGenerator {
       canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
       canInjectedControls
     ) =
-      Self.canInjectControls(
+      ImageGeneratorUtils.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
     let isMemoryEfficient = DynamicGraph.memoryEfficient
