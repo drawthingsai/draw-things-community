@@ -80,6 +80,8 @@ public struct ImageGeneratorUtils {
 
   public static let defaultAutoencoder = "vae_ft_mse_840000_f16.ckpt"
 
+  public static let defaultSoftEdgePreprocessor = "hed_f16.ckpt"
+
   public static func convertTensorToData(
     tensor: AnyTensor, using codec: DynamicGraph.Store.Codec = []
   )
@@ -129,8 +131,9 @@ public struct ImageGeneratorUtils {
           ?? ControlHintType(from: control.inputOverride)
       else { continue }
       let type = ControlNetZoo.typeForModel(file)
-      let isPreprocessorDownloaded =
-        ControlNetZoo.preprocessorForModel(file).map { ControlNetZoo.isModelDownloaded($0) } ?? true
+      let isPreprocessorDownloaded = ControlNetZoo.preprocessorForModel(file).map {
+        ControlNetZoo.isModelDownloaded($0)
+      }
       switch type {
       case .controlnet, .controlnetunion, .controlnetlora:
         switch modifier {
@@ -145,6 +148,9 @@ public struct ImageGeneratorUtils {
           injectControls = injectControls || hasHints.contains(modifier) || hasCustom
           injectedControls += hasHints.contains(modifier) || hasCustom ? 1 : 0
         case .scribble:
+          let isPreprocessorDownloaded =
+            isPreprocessorDownloaded
+            ?? ControlNetZoo.isModelDownloaded(Self.defaultSoftEdgePreprocessor)
           injectControls =
             injectControls || hasHints.contains(modifier) || (isPreprocessorDownloaded && hasImage)
           injectedControls +=
@@ -153,6 +159,9 @@ public struct ImageGeneratorUtils {
           injectControls = injectControls || hasHints.contains(modifier) || hasImage
           injectedControls += hasHints.contains(modifier) || hasImage ? 1 : 0
         case .softedge:
+          let isPreprocessorDownloaded =
+            isPreprocessorDownloaded
+            ?? ControlNetZoo.isModelDownloaded(Self.defaultSoftEdgePreprocessor)
           injectControls = injectControls || (isPreprocessorDownloaded && hasImage) || hasCustom
           injectedControls += (isPreprocessorDownloaded && hasImage) || hasCustom ? 1 : 0
         case .normalbae, .lineart, .seg, .custom:

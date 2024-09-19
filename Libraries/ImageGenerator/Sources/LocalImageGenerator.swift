@@ -1572,9 +1572,9 @@ extension LocalImageGenerator {
       let startStep = Int(floor(Float(steps - 1) * control.guidanceStart + 0.5))
       let endStep = Int(ceil(Float(steps - 1) * control.guidanceEnd + 0.5))
       let type = ControlNetZoo.typeForModel(file)
-      let isPreprocessorDownloaded =
-        ControlNetZoo.preprocessorForModel(file).map { ControlNetZoo.isModelDownloaded($0) }
-        ?? false
+      let isPreprocessorDownloaded = ControlNetZoo.preprocessorForModel(file).map {
+        ControlNetZoo.isModelDownloaded($0)
+      }
       let controlMode: Diffusion.ControlMode =
         (type == .controlnet || type == .controlnetlora) && modifier == .shuffle
         ? .control
@@ -1654,6 +1654,9 @@ extension LocalImageGenerator {
           ]).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .softedge:
+          let isPreprocessorDownloaded =
+            isPreprocessorDownloaded
+            ?? ControlNetZoo.isModelDownloaded(ImageGeneratorUtils.defaultSoftEdgePreprocessor)
           guard isPreprocessorDownloaded, let image = image else {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(inputs: [
@@ -1663,19 +1666,18 @@ extension LocalImageGenerator {
           }
           var softedge = graph.variable(image.rawValue.toGPU(0))
           let shape = softedge.shape
-          if let preprocessor = ControlNetZoo.preprocessorForModel(file) {
-            let preprocessed = ControlModel<FloatType>.hed(
-              softedge,
-              modelFilePath: ControlNetZoo.filePathForModelDownloaded(preprocessor))
-            var softedgeRGB = graph.variable(
-              .GPU(0), .NHWC(shape[0], shape[1], shape[2], 3), of: FloatType.self)
-            softedgeRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] = preprocessed
-            softedgeRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 1..<2] = preprocessed
-            softedgeRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = preprocessed
-            softedge = softedgeRGB
-          } else {
-            return nil
-          }
+          let preprocessor =
+            ControlNetZoo.preprocessorForModel(file)
+            ?? ImageGeneratorUtils.defaultSoftEdgePreprocessor
+          let preprocessed = ControlModel<FloatType>.hed(
+            softedge,
+            modelFilePath: ControlNetZoo.filePathForModelDownloaded(preprocessor))
+          var softedgeRGB = graph.variable(
+            .GPU(0), .NHWC(shape[0], shape[1], shape[2], 3), of: FloatType.self)
+          softedgeRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] = preprocessed
+          softedgeRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 1..<2] = preprocessed
+          softedgeRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = preprocessed
+          softedge = softedgeRGB
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(inputs: [
             (hint: softedge, weight: 1)
           ]).map { ($0, control.weight) }
@@ -1727,6 +1729,9 @@ extension LocalImageGenerator {
           ]).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .scribble:
+          let isPreprocessorDownloaded =
+            isPreprocessorDownloaded
+            ?? ControlNetZoo.isModelDownloaded(ImageGeneratorUtils.defaultSoftEdgePreprocessor)
           var scribble: DynamicGraph.Tensor<FloatType>? = nil
           if let rgb = hints[.scribble].map({
             let input = graph.variable(Tensor<FloatType>($0).toGPU(0))
@@ -1740,21 +1745,21 @@ extension LocalImageGenerator {
               heightScale: Float(startHeight * 8) / Float(inputHeight))(input)
           }) {
             scribble = rgb
-
           } else if isPreprocessorDownloaded, let image = image {
             let rawImage = graph.variable(image.rawValue.toGPU(0))
             let shape = rawImage.shape
-            if let preprocessor = ControlNetZoo.preprocessorForModel(file) {
-              let preprocessed = ControlModel<FloatType>.hed(
-                rawImage,
-                modelFilePath: ControlNetZoo.filePathForModelDownloaded(preprocessor))
-              var scribbleRGB = graph.variable(
-                .GPU(0), .NHWC(shape[0], shape[1], shape[2], 3), of: FloatType.self)
-              scribbleRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] = preprocessed
-              scribbleRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 1..<2] = preprocessed
-              scribbleRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = preprocessed
-              scribble = scribbleRGB
-            }
+            let preprocessor =
+              ControlNetZoo.preprocessorForModel(file)
+              ?? ImageGeneratorUtils.defaultSoftEdgePreprocessor
+            let preprocessed = ControlModel<FloatType>.hed(
+              rawImage,
+              modelFilePath: ControlNetZoo.filePathForModelDownloaded(preprocessor))
+            var scribbleRGB = graph.variable(
+              .GPU(0), .NHWC(shape[0], shape[1], shape[2], 3), of: FloatType.self)
+            scribbleRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] = preprocessed
+            scribbleRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 1..<2] = preprocessed
+            scribbleRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = preprocessed
+            scribble = scribbleRGB
           }
           guard let scribble = scribble else {
             return nil

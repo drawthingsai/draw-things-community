@@ -1649,11 +1649,11 @@ extension ControlModel {
         }
         var mode = Tensor<Int32>(.CPU, format: .NHWC, shape: [1])
         switch modifier {
-        case .canny:
+        case .canny, .mlsd, .lineart, .scribble, .softedge:
           mode[0] = 0
         case .tile:
           mode[0] = 1
-        case .depth:
+        case .depth, .normalbae:
           mode[0] = 2
         case .blur:
           mode[0] = 3
@@ -1663,10 +1663,8 @@ extension ControlModel {
           mode[0] = 5
         case .lowquality:
           mode[0] = 6
-        case .custom, .color, .inpaint, .ip2p, .lineart, .mlsd, .normalbae, .scribble, .seg,
-          .shuffle,
-          .softedge:
-          mode[0] = 0
+        case .custom, .color, .inpaint, .ip2p, .seg, .shuffle:
+          mode[0] = 1
         }
         return graph.variable(mode.toGPU(0))
       }()
