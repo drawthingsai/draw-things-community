@@ -211,6 +211,9 @@ extension ScriptExecutor {
       downloadBuiltins(filenames) {
         return __dtHooks.downloadBuiltins(filenames);
       },
+      areModelsDownloaded(filenames) {
+        return __dtHooks.areModelsDownloaded(filenames);
+      },
       findControlByName(name) {
         return __dtHooks.createControl(name);
       },

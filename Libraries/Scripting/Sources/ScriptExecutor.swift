@@ -153,6 +153,7 @@ extension SupportedPrefix {
   func detectFaces() -> [[String: Any]]
   func detectHands() -> [[String: Any]]
   func downloadBuiltins(_ files: [String])
+  func areModelsDownloaded(_ files: [String]) -> [Bool]
   func requestFromUser(_ title: String, _ confirm: String, _ config: [[String: Any]]) -> [Any]
   func screenSize() -> [String: Any]
   func answer(_: String, _: String) -> String
@@ -210,6 +211,7 @@ public protocol ScriptExecutorDelegate: AnyObject {
   func detectFaces() throws -> [CGRect]
   func detectHands() throws -> [CGRect]
   func downloadBuiltins(_ files: [String]) throws
+  func areModelsDownloaded(_ files: [String]) throws -> [Bool]
   func requestFromUser(title: String, confirm: String, _ config: [[String: Any]]) throws -> (
     lifetimeObjects: [AnyObject], result: [Any]
   )
@@ -926,6 +928,13 @@ extension ScriptExecutor: JSInterop {
     return forwardExceptionsToJS {
       guard let delegate = delegate else { throw "No delegate" }
       try delegate.downloadBuiltins(files)
+    }
+  }
+
+  func areModelsDownloaded(_ files: [String]) -> [Bool] {
+    return forwardExceptionsToJS {
+      guard let delegate = delegate else { throw "No delegate" }
+      return try delegate.areModelsDownloaded(files)
     }
   }
 
