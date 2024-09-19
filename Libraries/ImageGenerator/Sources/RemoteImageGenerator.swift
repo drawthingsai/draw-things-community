@@ -46,7 +46,7 @@ public struct RemoteImageGenerator: ImageGenerator {
         try! channel.close().wait()
       }
 
-      let client = ImageGeneratingServiceClient(channel: channel)
+      let client = ImageGeneratingServiceNIOClient(channel: channel)
 
       var request = ImageGeneratingRequest()
       request.configuration = configuration.toData()
@@ -71,7 +71,7 @@ public struct RemoteImageGenerator: ImageGenerator {
             var tensorWithScore = TensorWithScore()
             tensorWithScore.tensor = ImageGeneratorUtils.convertTensorToData(
               tensor: tensor, using: [.zip, .fpzip])
-            tensorWithScore.score = 1.0
+            tensorWithScore.score = score
             hintMessage.tensors.append(tensorWithScore)
           }
           request.hints.append(hintMessage)
@@ -90,7 +90,7 @@ public struct RemoteImageGenerator: ImageGenerator {
         }
       }
       // Send the request
-      let call = try! client.generateImage(
+      let call = client.generateImage(
         request,
         handler: { response in
           if !response.generatedImages.isEmpty {
@@ -114,12 +114,12 @@ public struct RemoteImageGenerator: ImageGenerator {
                 })
               var previewTensor: Tensor<FloatType>? = nil
               if response.hasPreviewImage,
-                var tensor = Tensor<FloatType>(
+                let tensor = Tensor<FloatType>(
                   data: response.previewImage, using: [.zip, .fpzip])
               {
                 previewTensor = tensor
               }
-              feedback(currentSignpost, signpostsSet, previewTensor)
+              let _ = feedback(currentSignpost, signpostsSet, previewTensor)
             }
           }
 
@@ -139,7 +139,7 @@ public struct RemoteImageGenerator: ImageGenerator {
       }
 
       do {
-        try call.status.wait()
+        let _ = try call.status.wait()
       } catch {
         logger.error("Failed to receive stream completion: \(error)")
       }
