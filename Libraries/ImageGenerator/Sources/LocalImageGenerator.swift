@@ -1677,7 +1677,12 @@ extension LocalImageGenerator {
           softedgeRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] = preprocessed
           softedgeRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 1..<2] = preprocessed
           softedgeRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = preprocessed
-          softedge = softedgeRGB
+          if adjustRGB {
+            // HED output is 0 to 1.
+            softedge = softedgeRGB
+          } else {
+            softedge = softedgeRGB * 2 - 1
+          }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(inputs: [
             (hint: softedge, weight: 1)
           ]).map { ($0, control.weight) }
@@ -1744,7 +1749,12 @@ extension LocalImageGenerator {
               .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
               heightScale: Float(startHeight * 8) / Float(inputHeight))(input)
           }) {
-            scribble = rgb
+            if adjustRGB {
+              // rgb output is 0 to 1.
+              scribble = rgb
+            } else {
+              scribble = rgb * 2 - 1
+            }
           } else if isPreprocessorDownloaded, let image = image {
             let rawImage = graph.variable(image.rawValue.toGPU(0))
             let shape = rawImage.shape
@@ -1759,7 +1769,12 @@ extension LocalImageGenerator {
             scribbleRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] = preprocessed
             scribbleRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 1..<2] = preprocessed
             scribbleRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = preprocessed
-            scribble = scribbleRGB
+            if adjustRGB {
+              // HED output is 0 to 1.
+              scribble = scribbleRGB
+            } else {
+              scribble = scribbleRGB * 2 - 1
+            }
           }
           guard let scribble = scribble else {
             return nil
