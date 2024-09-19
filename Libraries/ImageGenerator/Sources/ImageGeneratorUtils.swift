@@ -2,7 +2,6 @@ import DataModels
 import Diffusion
 import Foundation
 import GRPCModels
-import ImageGenerator
 import ModelZoo
 import NNC
 
