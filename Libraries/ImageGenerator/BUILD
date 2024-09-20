@@ -15,6 +15,7 @@ swift_library(
                    "Sources/ImageConverter.swift",
                    "Sources/ImageGeneratorProtocol.swift",
                    "Sources/ImageGeneratorUtils.swift",
+                   "Sources/GenerationEstimator.swift",
                ],
            ) +
            select({
@@ -55,6 +56,7 @@ swift_library(
         [
             "Sources/ImageGeneratorProtocol.swift",
             "Sources/ImageGeneratorUtils.swift",
+            "Sources/GenerationEstimator.swift",
         ],
     ),
     module_name = "ImageGenerator",

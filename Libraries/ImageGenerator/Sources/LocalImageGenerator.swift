@@ -27,7 +27,7 @@ public protocol PoseDrawer {
   func drawPose(_ pose: Tensor<Float>, startWidth: Int, startHeight: Int) -> Tensor<FloatType>?
 }
 
-public struct LocalImageGenerator {
+public struct LocalImageGenerator: ImageGenerator {
   public let modelPreloader: ModelPreloader
   public var tokenizerV1: TextualInversionAttentionCLIPTokenizer
   public var tokenizerV2: TextualInversionAttentionCLIPTokenizer
