@@ -19,6 +19,22 @@ public struct InjectedControlsAndAdapters<FloatType: TensorNumeric & BinaryFloat
   }
 }
 
+public struct InjectControlsAndAdapters {
+  public var injectControls: Bool
+  public var injectT2IAdapters: Bool
+  public var injectAttentionKV: Bool
+  public var injectIPAdapterLengths: [Int]
+  public init(
+    injectControls: Bool, injectT2IAdapters: Bool, injectAttentionKV: Bool,
+    injectIPAdapterLengths: [Int]
+  ) {
+    self.injectControls = injectControls
+    self.injectT2IAdapters = injectT2IAdapters
+    self.injectAttentionKV = injectAttentionKV
+    self.injectIPAdapterLengths = injectIPAdapterLengths
+  }
+}
+
 public protocol UNetProtocol {
   associatedtype FloatType: TensorNumeric & BinaryFloatingPoint
   init()
@@ -28,9 +44,8 @@ public protocol UNetProtocol {
   var modelAndWeightMapper: (Model, ModelWeightMapper)? { get }
   mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
-    injectAttentionKV: Bool,
-    injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
+    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters,
+    lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
@@ -168,9 +183,8 @@ extension UNetFromNNC {
   }
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
-    injectAttentionKV: Bool,
-    injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
+    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters,
+    lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
@@ -225,8 +239,10 @@ extension UNetFromNNC {
             batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
             startWidth: tiledWidth, startHeight: tiledHeight,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-            injectIPAdapterLengths: injectIPAdapterLengths, LoRAConfiguration: configuration
+            injectControls: injectControlsAndAdapters.injectControls,
+            injectT2IAdapters: injectControlsAndAdapters.injectT2IAdapters,
+            injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
+            LoRAConfiguration: configuration
           )
       } else {
         unet =
@@ -234,8 +250,10 @@ extension UNetFromNNC {
             batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
             startWidth: tiledWidth, startHeight: tiledHeight,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-            injectIPAdapterLengths: injectIPAdapterLengths, injectAttentionKV: injectAttentionKV
+            injectControls: injectControlsAndAdapters.injectControls,
+            injectT2IAdapters: injectControlsAndAdapters.injectT2IAdapters,
+            injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
+            injectAttentionKV: injectControlsAndAdapters.injectAttentionKV
           ).0
       }
     case .v2:
@@ -253,7 +271,7 @@ extension UNetFromNNC {
             batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
             startWidth: tiledWidth, startHeight: tiledHeight, upcastAttention: upcastAttention,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            injectControls: injectControls,
+            injectControls: injectControlsAndAdapters.injectControls,
             LoRAConfiguration: configuration
           )
       } else {
@@ -262,7 +280,7 @@ extension UNetFromNNC {
             batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
             startWidth: tiledWidth, startHeight: tiledHeight, upcastAttention: upcastAttention,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            injectControls: injectControls
+            injectControls: injectControlsAndAdapters.injectControls
           ).0
       }
     case .svdI2v:
@@ -311,10 +329,11 @@ extension UNetFromNNC {
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
             middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
             embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            injectIPAdapterLengths: injectIPAdapterLengths,
+            injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
             upcastAttention: upcastAttention ? ([:], false, [2: [0, 1, 2]]) : ([:], false, [:]),
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            injectControls: injectControls, LoRAConfiguration: configuration
+            injectControls: injectControlsAndAdapters.injectControls,
+            LoRAConfiguration: configuration
           )
       } else {
         (unet, _, unetWeightMapper) =
@@ -323,10 +342,11 @@ extension UNetFromNNC {
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
             middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
             embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            injectIPAdapterLengths: injectIPAdapterLengths,
+            injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
             upcastAttention: upcastAttention ? ([:], false, [2: [0, 1, 2]]) : ([:], false, [:]),
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            injectControls: injectControls, isTemporalMixEnabled: false, of: FloatType.self
+            injectControls: injectControlsAndAdapters.injectControls, isTemporalMixEnabled: false,
+            of: FloatType.self
           )
       }
     case .sdxlRefiner:
@@ -377,7 +397,7 @@ extension UNetFromNNC {
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [4, 4]],
             middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
             embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            injectIPAdapterLengths: injectIPAdapterLengths,
+            injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
             upcastAttention: ([:], false, [:]),
             usesFlashAttention: usesFlashAttention ? .scale1 : .none,
             injectControls: false, LoRAConfiguration: configuration
@@ -389,7 +409,7 @@ extension UNetFromNNC {
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [4, 4]],
             middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
             embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            injectIPAdapterLengths: injectIPAdapterLengths,
+            injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
             upcastAttention: ([:], false, [:]),
             usesFlashAttention: usesFlashAttention ? .scale1 : .none, injectControls: false,
             isTemporalMixEnabled: false, of: FloatType.self
@@ -484,14 +504,14 @@ extension UNetFromNNC {
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-          injectControls: injectControls,
+          injectControls: injectControlsAndAdapters.injectControls, injectIPAdapterLengths: [:],
           LoRAConfiguration: configuration)
       } else {
         (_, unet) = Flux1(
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-          injectControls: injectControls)
+          injectControls: injectControlsAndAdapters.injectControls, injectIPAdapterLengths: [:])
       }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
@@ -535,10 +555,10 @@ extension UNetFromNNC {
       inputs.append(timestep)
     }
     inputs.append(contentsOf: c)
-    if injectControls {
+    if injectControlsAndAdapters.injectControls {
       inputs.append(contentsOf: injectedControls)
     }
-    if injectT2IAdapters {
+    if injectControlsAndAdapters.injectT2IAdapters {
       inputs.append(contentsOf: injectedT2IAdapters)
     }
     if !injectedAttentionKVs.isEmpty {

@@ -49,9 +49,8 @@ extension UNetWrapper {
   }
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
-    injectAttentionKV: Bool,
-    injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
+    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters,
+    lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
@@ -64,9 +63,7 @@ extension UNetWrapper {
       if unetFromCoreML.compileModel(
         filePath: filePath, externalOnDemand: externalOnDemand, version: version,
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
-        injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-        injectAttentionKV: injectAttentionKV,
-        injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+        injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,
         isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT,
         timestep, c,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
@@ -80,9 +77,7 @@ extension UNetWrapper {
     let _ = unetFromNNC.compileModel(
       filePath: filePath, externalOnDemand: externalOnDemand, version: version,
       upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
-      injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-      injectAttentionKV: injectAttentionKV,
-      injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+      injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,
       isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT,
       timestep, c,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,

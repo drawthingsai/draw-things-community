@@ -562,8 +562,9 @@ extension ModelPreloader {
         let _ = unet.compileModel(
           filePath: modelPath, externalOnDemand: externalOnDemand,
           version: modelVersion, upcastAttention: upcastAttention, usesFlashAttention: useMFA,
-          injectControls: false, injectT2IAdapters: false, injectAttentionKV: false,
-          injectIPAdapterLengths: [], lora: lora,
+          injectControlsAndAdapters: InjectControlsAndAdapters(
+            injectControls: false, injectT2IAdapters: false, injectAttentionKV: false,
+            injectIPAdapterLengths: []), lora: lora,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           inputs: x, t, cArr, tokenLengthUncond: 77, tokenLengthCond: 77, extraProjection: nil,

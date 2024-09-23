@@ -188,6 +188,10 @@ public struct ImageGeneratorUtils {
         if hasCustom || shuffleCount > 0 {
           injectIPAdapterLengths.append((shuffleCount > 0 ? shuffleCount : 1) * 6)
         }
+      case .pulid:
+        if hasCustom || shuffleCount > 0 {
+          injectIPAdapterLengths.append((shuffleCount > 0 ? shuffleCount : 1) * 32)
+        }
       case .t2iadapter:
         switch modifier {
         case .canny, .mlsd, .tile, .blur, .gray, .lowquality:

@@ -31,6 +31,7 @@ public enum ControlType: String, Codable {
   case injectKV = "inject_kv"
   case ipadapterfaceidplus
   case controlnetunion
+  case pulid  // This is a variant of IPAdapter, but like we need to have IPAdapter Plus / Full / FaceID Plus, this is needed.
 }
 
 public enum ControlMode {
@@ -121,7 +122,7 @@ extension ControlModel {
       switch injected.model.type {
       case .controlnet, .controlnetlora, .controlnetunion, .t2iadapter, .injectKV:
         continue
-      case .ipadapterplus, .ipadapterfull, .ipadapterfaceidplus:
+      case .ipadapterplus, .ipadapterfull, .ipadapterfaceidplus, .pulid:
         var instanceInjectedIPAdapters = [DynamicGraph.Tensor<FloatType>]()
         for (hint, strength) in injected.hints {
           let newInjectedIPAdapters = injected.model(
@@ -177,7 +178,7 @@ extension ControlModel {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
       case .controlnet, .controlnetlora, .controlnetunion, .ipadapterplus, .ipadapterfull,
-        .ipadapterfaceidplus:
+        .ipadapterfaceidplus, .pulid:
         continue
       case .injectKV:
         for (hint, strength) in injected.hints {
@@ -259,7 +260,7 @@ extension ControlModel {
               }
             }
           }
-        case .ipadapterplus, .ipadapterfull, .t2iadapter, .injectKV, .ipadapterfaceidplus:
+        case .ipadapterplus, .ipadapterfull, .t2iadapter, .injectKV, .ipadapterfaceidplus, .pulid:
           continue
         }
       }
@@ -336,6 +337,8 @@ extension ControlModel {
         injectedIPAdapters += emptyIPAdapters(
           graph: graph, batchSize: batchSize, length: injected.hints.count, numTokens: 6,
           version: injected.model.version, usesFlashAttention: injected.model.usesFlashAttention)
+      case .pulid:
+        fatalError()
       case .t2iadapter:
         if injectedT2IAdapters.isEmpty {
           injectedT2IAdapters = emptyAdapters(
@@ -677,7 +680,7 @@ extension ControlModel {
         filePath: filePaths[1], version: imageEncoderVersion)
       let imageSize: Int
       switch imageEncoderVersion {
-      case .clipL14_336:
+      case .clipL14_336, .eva02L14_336:
         imageSize = 336
       case .openClipH14:
         imageSize = 224
@@ -685,7 +688,7 @@ extension ControlModel {
       let zeroEmbeds = graph.variable(
         .GPU(0), .NHWC(1, imageSize, imageSize, 3), of: FloatType.self)
       zeroEmbeds.full(0)
-      let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds])
+      let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds])[0]
       let resampler: Model
       if let ipAdapterConfig = ipAdapterConfig {
         resampler = Resampler(
@@ -824,7 +827,7 @@ extension ControlModel {
         filePath: filePaths[1], version: imageEncoderVersion)
       let zeroEmbeds = graph.variable(.GPU(0), .NHWC(1, 224, 224, 3), of: FloatType.self)
       zeroEmbeds.full(0)
-      let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds])
+      let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds])[0]
       let projModel: Model
       switch version {
       case .v1:
@@ -953,7 +956,7 @@ extension ControlModel {
       let images = faceExtractor.extract(inputs.map(\.hint))
       let imageEncoder = ImageEncoder<FloatType>(
         filePath: filePaths[1], version: imageEncoderVersion)
-      let imageEmbeds = imageEncoder.encode(images.map { $0.0 })
+      let imageEmbeds = imageEncoder.encode(images.map { $0.0 })[0]
       let faceEmbeds = graph.withNoGrad {
         let arcface = ArcFace(batchSize: 1, of: FloatType.self)
         arcface.compile(inputs: images[0].1)
@@ -1111,6 +1114,133 @@ extension ControlModel {
               .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
+          }
+          if $0.offset % 2 == 0 {
+            // This is for K. Note that after weighting, the formulation is slightly different than IP-Adapter training recipe. Basically, it reducies model's "certainty" around certain values.
+            return weight * $0.element
+          } else {
+            // This is a formulation to shift the mean but retain the variance.
+            if usesFlashAttention {
+              let v = $0.element
+              let mean = v.reduced(.mean, axis: [1])
+              return Functional.add(left: v, right: mean, rightScalar: weight - 1)
+            } else {
+              let v = $0.element
+              let mean = v.reduced(.mean, axis: [2])
+              return Functional.add(left: v, right: mean, rightScalar: weight - 1)
+            }
+          }
+        }
+      }
+    case .pulid:
+      let faceExtractor = FaceExtractor<FloatType>(
+        filePath: filePaths[2], imageEncoderVersion: imageEncoderVersion)
+      let images = faceExtractor.extract(inputs.map(\.hint))
+      let imageEncoder = ImageEncoder<FloatType>(
+        filePath: filePaths[1], version: imageEncoderVersion)
+      let imageEmbeds = imageEncoder.encode(images.map { $0.0 })
+      let faceEmbeds = graph.withNoGrad {
+        let arcface = ArcFace(batchSize: 1, of: FloatType.self)
+        arcface.compile(inputs: images[0].1)
+        graph.openStore(
+          filePaths[2], flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: filePaths[2])
+        ) {
+          $0.read(
+            "arcface", model: arcface,
+            codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+        }
+        return images.map {
+          arcface(inputs: $0.1)[0].as(of: FloatType.self)
+        }
+      }
+      let imagePromptEmbeds = graph.withNoGrad {
+        let resampler = PuLIDFormer(
+          FloatType.self,
+          width: 1024, outputDim: 2048, heads: 16, grid: 24, idQueries: 5, queries: 32, layers: 5,
+          depth: 2)
+        var idCondVit = imageEmbeds[0][0][0..<1, 0..<1, 0..<768].copied()
+        let idCondVitNorm = idCondVit.reduced(.norm2, axis: [2])
+        idCondVit = idCondVit .* (1 / idCondVitNorm)
+        let idCond = Functional.concat(axis: 2, faceEmbeds[0].reshaped(.HWC(1, 1, 512)), idCondVit)
+        let idVitHidden = Array(imageEmbeds[0][1...])
+        resampler.compile(inputs: [idCond] + idVitHidden)
+        graph.openStore(
+          filePaths[0], flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: filePaths[0])
+        ) {
+          $0.read(
+            "resampler", model: resampler,
+            codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+        }
+        let zeroFaceEmbed = graph.variable(like: faceEmbeds[0])
+        zeroFaceEmbed.full(0)
+        let zeroImageEmbed = imageEmbeds[0].map {
+          let zeroImageEmbed = graph.variable(like: $0)
+          zeroImageEmbed.full(0)
+          return zeroImageEmbed
+        }
+        return zip(faceEmbeds + [zeroFaceEmbed], imageEmbeds + [zeroImageEmbed]).map {
+          var idCondVit = $0.1[0][0..<1, 0..<1, 0..<768].copied()
+          let idCondVitNorm = idCondVit.reduced(.norm2, axis: [2])
+          if idCondVitNorm.toCPU()[0, 0, 0] > 1e-6 {
+            idCondVit = idCondVit .* (1 / idCondVitNorm)
+          }
+          let idCond = Functional.concat(axis: 2, $0.0.reshaped(.HWC(1, 1, 512)), idCondVit)
+          let idVitHidden = Array($0.1[1...])
+          return resampler(inputs: idCond, idVitHidden)[0].as(of: FloatType.self)
+        }
+      }
+      let batchedImagePromptEmbeds = (0..<inputs.count).map { i in
+        switch version {
+        case .flux1:
+          var imagePromptEmbed = graph.variable(.GPU(0), .HWC(2, 32, 2048), of: FloatType.self)
+          switch controlMode {
+          case .prompt:
+            // For prompt mode, don't increase contrast against negative.
+            imagePromptEmbed[0..<1, 0..<32, 0..<2048] = imagePromptEmbeds[i]
+          case .balanced, .control:
+            imagePromptEmbed[0..<1, 0..<32, 0..<2048] = imagePromptEmbeds[inputs.count]  // The zero prompt embed.
+          }
+          imagePromptEmbed[1..<2, 0..<32, 0..<2048] = imagePromptEmbeds[i]
+          return imagePromptEmbed
+        case .v1, .sdxlBase, .v2, .sd3, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b,
+          .svdI2v,
+          .wurstchenStageC, .wurstchenStageB:
+          fatalError()
+        }
+      }
+      // Redo imagePromptEmbeds to be batch of 2.
+      let pulidFixed: Model
+      switch version {
+      case .flux1:
+        pulidFixed = PuLIDFixed(
+          queries: 32, double: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18],
+          single: [0, 4, 8, 12, 16, 20, 24, 28, 32, 36],
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+      case .v1, .v2, .sdxlBase, .sd3, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b,
+        .svdI2v,
+        .wurstchenStageC, .wurstchenStageB:
+        fatalError()
+      }
+      pulidFixed.compile(inputs: batchedImagePromptEmbeds[0])
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) {
+        $0.read("pulid", model: pulidFixed, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+      }
+      let kvs = batchedImagePromptEmbeds.map {
+        pulidFixed(inputs: $0).map { $0.as(of: FloatType.self) }
+      }
+      return zip(kvs, inputs).map { (kvs, input) in
+        guard input.weight != 1 || controlMode != .prompt else { return kvs }
+        return kvs.enumerated().map {
+          let weight: Float
+          // This logic doesn't quite work for FaceID, only enable it for control mode.
+          switch controlMode {
+          case .balanced, .prompt, .control:
+            weight = input.weight
           }
           if $0.offset % 2 == 0 {
             // This is for K. Note that after weighting, the formulation is slightly different than IP-Adapter training recipe. Basically, it reducies model's "certainty" around certain values.
@@ -1562,7 +1692,7 @@ extension ControlModel {
           }
         }
       }
-    case .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV, .ipadapterfaceidplus:
+    case .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV, .ipadapterfaceidplus, .pulid:
       fatalError()
     }
     return (vector.map({ [$0] }) ?? [])
@@ -1698,7 +1828,7 @@ extension ControlModel {
       ).toGPU(0)
       return [graph.variable(rot)] + conditions
     case .controlnetlora, .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV,
-      .ipadapterfaceidplus:
+      .ipadapterfaceidplus, .pulid:
       fatalError()
     }
   }
@@ -1772,6 +1902,8 @@ extension ControlModel {
         return Self.emptyIPAdapters(
           graph: graph, batchSize: batchSize, length: 1, numTokens: 6, version: version,
           usesFlashAttention: usesFlashAttention)
+      case .pulid:
+        fatalError()
       case .t2iadapter:
         return Self.emptyAdapters(graph: graph, startWidth: startWidth, startHeight: startHeight)
       case .injectKV:
@@ -1806,7 +1938,7 @@ extension ControlModel {
           return x
 
         }
-      case .ipadapterplus, .ipadapterfull, .ipadapterfaceidplus:
+      case .ipadapterplus, .ipadapterfull, .ipadapterfaceidplus, .pulid:
         return hint.map {
           let shape = $0.shape
           guard shape[0] != batchSize else { return $0 }

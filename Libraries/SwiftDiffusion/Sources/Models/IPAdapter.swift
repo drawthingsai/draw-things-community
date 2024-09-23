@@ -337,3 +337,54 @@ func FaceResampler(
   out = latents + normOut(out)
   return Model([IDEmbeds, x], [out])
 }
+
+private func PuLIDFormerMapping(prefix: String, channels: Int, outputChannels: Int) -> Model {
+  let x = Input()
+  let layer0 = Dense(count: channels, name: "\(prefix).0")
+  var out = layer0(x)
+  let layer1 = LayerNorm(epsilon: 1e-5, axis: [1], name: "\(prefix).1")
+  out = layer1(out)
+  let layer2 = LeakyReLU(negativeSlope: 0.01)
+  out = layer2(out)
+  let layer3 = Dense(count: channels, name: "\(prefix).3")
+  out = layer3(out)
+  let layer4 = LayerNorm(epsilon: 1e-5, axis: [1], name: "\(prefix).4")
+  out = layer4(out)
+  let layer5 = LeakyReLU(negativeSlope: 0.01)
+  out = layer5(out)
+  let layer6 = Dense(count: outputChannels, name: "\(prefix).6")
+  out = layer6(out)
+  return Model([x], [out])
+}
+
+func PuLIDFormer<T: TensorNumeric & BinaryFloatingPoint>(
+  _ dataType: T.Type,
+  width: Int, outputDim: Int, heads: Int, grid: Int, idQueries: Int, queries: Int, layers: Int,
+  depth: Int
+) -> Model {
+  let x = Input()
+  let y = (0..<layers).map { _ in Input() }
+  let latents = Parameter<T>(.GPU(0), .HWC(1, queries, width), name: "latents")
+  let idEmbeddingMapping = PuLIDFormerMapping(
+    prefix: "id_embedding_mapping", channels: 1024, outputChannels: 1024 * idQueries)
+  var out = idEmbeddingMapping(x).reshaped([1, idQueries, 1024])
+  let idFeature = out
+  out = Functional.concat(axis: 1, latents, out)
+  for i in 0..<layers {
+    let mapping = PuLIDFormerMapping(prefix: "mapping_\(i)", channels: 1024, outputChannels: 1024)
+    let vitFeature = mapping(y[i]).reshaped([1, grid * grid + 1, width])
+    let ctxFeature = Functional.concat(axis: 1, idFeature, vitFeature)
+    for j in 0..<depth {
+      let layer = ResamplerLayer(
+        prefix: "layers.\(i * depth + j)", k: width / heads, h: heads,
+        queryDim: width, b: 1, t: (grid * grid + 1 + idQueries, queries + idQueries)
+      )
+      out = layer(ctxFeature, out)
+    }
+  }
+  let projOut = Dense(count: outputDim, noBias: true, name: "proj_out")
+  out = projOut(
+    out.reshaped([1, queries, width], strides: [(queries + idQueries) * width, width, 1])
+      .contiguous())
+  return Model([x] + y, [out])
+}

@@ -30,9 +30,8 @@ extension UNetFromCoreML {
   public var modelAndWeightMapper: (Model, ModelWeightMapper)? { nil }
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControls: Bool, injectT2IAdapters: Bool,
-    injectAttentionKV: Bool,
-    injectIPAdapterLengths: [Int], lora: [LoRAConfiguration],
+    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters,
+    lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
@@ -44,8 +43,10 @@ extension UNetFromCoreML {
       // We cannot handle upcast attention, yet.
       self.version = version
       let c = c[0]
-      guard version != .kandinsky21, upcastAttention == false, injectControls == false,
-        injectT2IAdapters == false, injectIPAdapterLengths.isEmpty,
+      guard version != .kandinsky21, upcastAttention == false,
+        injectControlsAndAdapters.injectControls == false,
+        injectControlsAndAdapters.injectT2IAdapters == false,
+        injectControlsAndAdapters.injectIPAdapterLengths.isEmpty,
         CoreMLModelManager.isCoreMLSupported.load(ordering: .acquiring),
         tokenLengthUncond == tokenLengthCond, !tiledDiffusion.isEnabled
       else { return false }

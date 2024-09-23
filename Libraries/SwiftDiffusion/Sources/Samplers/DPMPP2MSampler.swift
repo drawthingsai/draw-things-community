@@ -289,6 +289,9 @@ extension DPMPP2MSampler: Sampler {
     }
     var unet = existingUNets[0] ?? UNet()
     var controlNets = [Model?](repeating: nil, count: injectedControls.count)
+    let injectControlsAndAdapters = InjectControlsAndAdapters(
+      injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+      injectAttentionKV: injectAttentionKV, injectIPAdapterLengths: injectIPAdapterLengths)
     if existingUNets[0] == nil {
       let firstTimestep =
         discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1
@@ -308,9 +311,7 @@ extension DPMPP2MSampler: Sampler {
       let _ = unet.compileModel(
         filePath: filePath, externalOnDemand: externalOnDemand, version: version,
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
-        injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-        injectAttentionKV: injectAttentionKV,
-        injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+        injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,
         isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
         inputs: xIn, t,
         UNetExtractConditions(
@@ -465,9 +466,8 @@ extension DPMPP2MSampler: Sampler {
           let _ = unet.compileModel(
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
             version: refiner.version, upcastAttention: upcastAttention,
-            usesFlashAttention: usesFlashAttention, injectControls: injectControls,
-            injectT2IAdapters: injectT2IAdapters, injectAttentionKV: injectAttentionKV,
-            injectIPAdapterLengths: injectIPAdapterLengths,
+            usesFlashAttention: usesFlashAttention,
+            injectControlsAndAdapters: injectControlsAndAdapters,
             lora: lora, isQuantizedModel: refiner.isQuantizedModel,
             canRunLoRASeparately: canRunLoRASeparately,
             inputs: xIn, t,

@@ -78,7 +78,7 @@ extension FaceExtractor {
     precondition(input.shape[3] == 3)
     let imageSize: Int
     switch imageEncoderVersion {
-    case .clipL14_336:
+    case .clipL14_336, .eva02L14_336:
       imageSize = 336
     case .openClipH14:
       imageSize = 224

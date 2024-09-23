@@ -425,7 +425,7 @@ private func SingleTransformerBlock(
 
 public func Flux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel, injectControls: Bool
+  usesFlashAttention: FlashAttentionLevel, injectControls: Bool, injectIPAdapterLengths: [Int: Int]
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let contextIn = Input()
@@ -859,7 +859,7 @@ private func LoRASingleTransformerBlock(
 
 public func LoRAFlux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel, injectControls: Bool,
+  usesFlashAttention: FlashAttentionLevel, injectControls: Bool, injectIPAdapterLengths: [Int: Int],
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()

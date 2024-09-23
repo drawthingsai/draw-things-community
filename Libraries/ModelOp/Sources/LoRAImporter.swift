@@ -427,7 +427,7 @@ public enum LoRAImporter {
       case .flux1:
         (unetMapper, unet) = Flux1(
           batchSize: 1, tokenLength: 256, height: 64, width: 64, channels: 3072, layers: (19, 38),
-          usesFlashAttention: .scaleMerged, injectControls: false)
+          usesFlashAttention: .scaleMerged, injectControls: false, injectIPAdapterLengths: [:])
         (unetFixedMapper, unetFixed) = Flux1Fixed(
           batchSize: (1, 1), channels: 3072, layers: (19, 38), guidanceEmbed: true)
       case .auraflow:

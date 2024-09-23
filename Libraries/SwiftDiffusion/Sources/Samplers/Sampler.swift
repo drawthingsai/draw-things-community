@@ -24,6 +24,7 @@ public enum TextEncoderVersion: String, Codable {
 public enum ImageEncoderVersion: String, Codable {
   case clipL14_336 = "clip_l14_336"
   case openClipH14 = "open_clip_h14"
+  case eva02L14_336 = "eva02_l14_336"
 }
 
 public enum AlternativeDecoderVersion: String, Codable {

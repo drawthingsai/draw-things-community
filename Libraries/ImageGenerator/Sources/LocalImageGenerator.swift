@@ -1503,7 +1503,7 @@ extension LocalImageGenerator {
       precondition(input.shape[3] == 3)
       let imageSize: Int
       switch imageEncoderVersion {
-      case .clipL14_336:
+      case .clipL14_336, .eva02L14_336:
         imageSize = 336
       case .openClipH14:
         imageSize = 224
@@ -1948,7 +1948,7 @@ extension LocalImageGenerator {
           inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
-      case .ipadapterfaceidplus:
+      case .ipadapterfaceidplus, .pulid:
         var shuffles = shuffles
         if shuffles.isEmpty {
           guard let custom = custom else { return nil }
