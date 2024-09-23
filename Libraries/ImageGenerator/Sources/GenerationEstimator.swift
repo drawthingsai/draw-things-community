@@ -1,6 +1,5 @@
 import DataModels
 import Foundation
-import ImageGenerator
 
 public enum GenerationEstimator {
   // This is a value from 0 to 1, estimating progress made so far.
