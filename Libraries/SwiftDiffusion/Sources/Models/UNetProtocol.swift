@@ -947,7 +947,15 @@ extension UNetFromNNC {
         }
         c = newC
       case .flux1:
-        c.append(contentsOf: injectedIPAdapters)
+        let injectIPAdapters = injectedIPAdapters.count / 40
+        var newC = c
+        for i in stride(from: 0, to: 40, by: 2) {
+          for j in 0..<injectIPAdapters {
+            newC.append(injectedIPAdapters[i + j * 40])  // ip_k
+            newC.append(injectedIPAdapters[i + 1 + j * 40])  // ip_v
+          }
+        }
+        c = newC
       case .v2, .sd3, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()

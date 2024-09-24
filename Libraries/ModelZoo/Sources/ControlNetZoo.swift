@@ -240,14 +240,6 @@ public struct ControlNetZoo: DownloadZoo {
       file: "ip_adapter_full_face_sd_v1.x_open_clip_h14_f16.ckpt",
       modifier: .shuffle, version: .v1, type: .ipadapterfull,
       imageEncoder: "open_clip_vit_h14_vision_model_f16.ckpt"),
-    Specification(
-      name: "PuLID (FLUX.1 [dev])",
-      file: "pulid_0.9_eva02_clip_l14_336_f16.ckpt",
-      modifier: .shuffle, version: .flux1, type: .pulid,
-      imageEncoder: "eva02_clip_l14_336_f16.ckpt",
-      preprocessor: "arcface_f16.ckpt", imageEncoderVersion: .eva02L14_336,
-      ipAdapterConfig: IPAdapterConfig(
-        inputDim: 1024, queryDim: 1024, outputDim: 2048, headDim: 64, numHeads: 16, grid: 24)),
   ]
 
   private static var specificationMapping: [String: Specification] = {

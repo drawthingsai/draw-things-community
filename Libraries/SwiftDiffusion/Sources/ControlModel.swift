@@ -137,7 +137,7 @@ extension ControlModel {
           } else {
             instanceInjectedIPAdapters = zip(instanceInjectedIPAdapters, newInjectedIPAdapters).map
             {
-              if usesFlashAttention {
+              if usesFlashAttention && injected.model.type != .pulid {
                 return Concat(axis: 1)($0, $1)
               } else {
                 return Concat(axis: 2)($0, $1)
@@ -1920,7 +1920,7 @@ extension ControlModel {
       case .pulid:
         return Self.emptyIPAdapters(
           graph: graph, batchSize: batchSize, length: 1, numTokens: 32, version: version,
-          usesFlashAttention: usesFlashAttention)
+          usesFlashAttention: false)
       case .t2iadapter:
         return Self.emptyAdapters(graph: graph, startWidth: startWidth, startHeight: startHeight)
       case .injectKV:
