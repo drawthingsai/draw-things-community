@@ -30,7 +30,7 @@ extension UNetFromCoreML {
   public var modelAndWeightMapper: (Model, ModelWeightMapper)? { nil }
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters,
+    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>,
     lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,

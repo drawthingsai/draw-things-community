@@ -289,7 +289,8 @@ extension DDIMSampler: Sampler {
     var controlNets = [Model?](repeating: nil, count: injectedControls.count)
     let injectControlsAndAdapters = InjectControlsAndAdapters(
       injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-      injectAttentionKV: injectAttentionKV, injectIPAdapterLengths: injectIPAdapterLengths)
+      injectAttentionKV: injectAttentionKV, injectIPAdapterLengths: injectIPAdapterLengths,
+      injectControlModels: injectedControls.map { $0.model })
     if existingUNets[0] == nil {
       let firstTimestep =
         discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1

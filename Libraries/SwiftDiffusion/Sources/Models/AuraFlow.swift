@@ -25,7 +25,7 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -
 
 private func JointTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  usesFlashAtttention: FlashAttentionLevel
+  usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -62,7 +62,7 @@ private func JointTransformerBlock(
   var queries = Functional.concat(axis: 1, contextQ, xQ)
   // Now run attention.
   var out: Model.IO
-  switch usesFlashAtttention {
+  switch usesFlashAttention {
   case .none:
     keys = keys.reshaped([b, t + hw, h, k]).transposed(1, 2)
     queries = ((1.0 / Float(k).squareRoot()) * queries).reshaped([b, t + hw, h, k])
@@ -180,7 +180,7 @@ private func JointTransformerBlock(
 
 private func SingleTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  usesFlashAtttention: FlashAttentionLevel
+  usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let xChunks = (0..<6).map { _ in Input() }
@@ -201,7 +201,7 @@ private func SingleTransformerBlock(
   var queries = xQ
   // Now run attention.
   var out: Model.IO
-  switch usesFlashAtttention {
+  switch usesFlashAttention {
   case .none:
     keys = keys.reshaped([b, t + hw, h, k]).transposed(1, 2)
     queries = ((1.0 / Float(k).squareRoot()) * queries).reshaped([b, t + hw, h, k])
@@ -314,7 +314,7 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
     let (mapper, block) = JointTransformerBlock(
       prefix: "joint_transformer_blocks.\(i)", k: 256, h: channels / 256, b: batchSize,
       t: tokenLength + 8,
-      hw: h * w, contextBlockPreOnly: false, usesFlashAtttention: usesFlashAttention)
+      hw: h * w, contextBlockPreOnly: false, usesFlashAttention: usesFlashAttention)
     let blockOut = block([context, out] + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
@@ -328,7 +328,7 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
       prefix: "single_transformer_blocks.\(i)", k: 256, h: channels / 256, b: batchSize,
       t: tokenLength + 8,
       hw: h * w,
-      contextBlockPreOnly: i == layers.1 - 1, usesFlashAtttention: usesFlashAttention)
+      contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
     out = block([out] + xChunks)
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)

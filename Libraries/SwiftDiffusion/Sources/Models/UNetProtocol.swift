@@ -19,19 +19,21 @@ public struct InjectedControlsAndAdapters<FloatType: TensorNumeric & BinaryFloat
   }
 }
 
-public struct InjectControlsAndAdapters {
+public struct InjectControlsAndAdapters<T: TensorNumeric & BinaryFloatingPoint> {
   public var injectControls: Bool
   public var injectT2IAdapters: Bool
   public var injectAttentionKV: Bool
   public var injectIPAdapterLengths: [Int]
+  public var injectControlModels: [ControlModel<T>]
   public init(
     injectControls: Bool, injectT2IAdapters: Bool, injectAttentionKV: Bool,
-    injectIPAdapterLengths: [Int]
+    injectIPAdapterLengths: [Int], injectControlModels: [ControlModel<T>]
   ) {
     self.injectControls = injectControls
     self.injectT2IAdapters = injectT2IAdapters
     self.injectAttentionKV = injectAttentionKV
     self.injectIPAdapterLengths = injectIPAdapterLengths
+    self.injectControlModels = injectControlModels
   }
 }
 
@@ -44,7 +46,7 @@ public protocol UNetProtocol {
   var modelAndWeightMapper: (Model, ModelWeightMapper)? { get }
   mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters,
+    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>,
     lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
@@ -183,7 +185,7 @@ extension UNetFromNNC {
   }
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters,
+    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>,
     lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
@@ -495,6 +497,13 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
+      var injectIPAdapterLengths = [Int: [Int]]()
+      for i in [0, 2, 4, 6, 8, 10, 12, 14, 16, 18] {
+        injectIPAdapterLengths[i] = injectControlsAndAdapters.injectIPAdapterLengths
+      }
+      for i in [0, 4, 8, 12, 16, 20, 24, 28, 32, 36] {
+        injectIPAdapterLengths[19 + i] = injectControlsAndAdapters.injectIPAdapterLengths
+      }
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
@@ -504,14 +513,16 @@ extension UNetFromNNC {
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-          injectControls: injectControlsAndAdapters.injectControls, injectIPAdapterLengths: [:],
+          injectControls: injectControlsAndAdapters.injectControls,
+          injectIPAdapterLengths: injectIPAdapterLengths,
           LoRAConfiguration: configuration)
       } else {
         (_, unet) = Flux1(
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-          injectControls: injectControlsAndAdapters.injectControls, injectIPAdapterLengths: [:])
+          injectControls: injectControlsAndAdapters.injectControls,
+          injectIPAdapterLengths: injectIPAdapterLengths)
       }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
@@ -543,7 +554,9 @@ extension UNetFromNNC {
           }
         }
         c = newC
-      case .v2, .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+      case .flux1:
+        c.append(contentsOf: injectedIPAdapters)
+      case .v2, .sd3, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       }
@@ -636,24 +649,51 @@ extension UNetFromNNC {
               fatalError()
             }
           }()
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
-            store.read(modelKey, model: unet, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
-              name, dataType, format, shape in
-              return loader.concatenateLoRA(
-                graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                store: store, dataType: dataType, format: format, shape: shape)
+          ControlModelLoader<FloatType>.openStore(
+            graph, injectControlModels: injectControlsAndAdapters.injectControlModels,
+            version: version
+          ) { controlModelLoader in
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read(modelKey, model: unet, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, format, shape in
+                if let result = controlModelLoader.loadMergedWeight(name: name) {
+                  return result
+                }
+                return loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                  store: store, dataType: dataType, format: format, shape: shape)
+              }
             }
           }
         } else {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
-            store.read(modelKey, model: unet, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
-              name, _, _, shape in
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+          ControlModelLoader<FloatType>.openStore(
+            graph, injectControlModels: injectControlsAndAdapters.injectControlModels,
+            version: version
+          ) { controlModelLoader in
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read(modelKey, model: unet, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, _, _, shape in
+                if let result = controlModelLoader.loadMergedWeight(name: name) {
+                  return result
+                }
+                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              }
             }
           }
         }
       } else {
-        store.read(modelKey, model: unet, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        ControlModelLoader<FloatType>.openStore(
+          graph, injectControlModels: injectControlsAndAdapters.injectControlModels,
+          version: version
+        ) { controlModelLoader in
+          store.read(modelKey, model: unet, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+            name, _, _, _ in
+            if let result = controlModelLoader.loadMergedWeight(name: name) {
+              return result
+            }
+            return .continue(name)
+          }
+        }
       }
       if let timeEmbed = timeEmbed {
         store.read("time_embed", model: timeEmbed, codec: [.q6p, .q8p, .ezm7, .externalData])
@@ -906,7 +946,9 @@ extension UNetFromNNC {
           }
         }
         c = newC
-      case .v2, .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+      case .flux1:
+        c.append(contentsOf: injectedIPAdapters)
+      case .v2, .sd3, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       }

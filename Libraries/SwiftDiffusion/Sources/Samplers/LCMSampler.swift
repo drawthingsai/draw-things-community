@@ -240,7 +240,8 @@ extension LCMSampler: Sampler {
     var timeEmbeddingSize = version == .kandinsky21 || version == .sdxlRefiner ? 384 : 320
     let injectControlsAndAdapters = InjectControlsAndAdapters(
       injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-      injectAttentionKV: injectAttentionKV, injectIPAdapterLengths: injectIPAdapterLengths)
+      injectAttentionKV: injectAttentionKV, injectIPAdapterLengths: injectIPAdapterLengths,
+      injectControlModels: injectedControls.map { $0.model })
     if existingUNets[0] == nil {
       let firstTimestep =
         discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1

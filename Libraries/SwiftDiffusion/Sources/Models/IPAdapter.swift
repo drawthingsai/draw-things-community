@@ -8,7 +8,7 @@ private func PerceiverAttention(
   let outX = norm1(x)
   let c = Input()
   let norm2 = LayerNorm(epsilon: 1e-5, axis: [2])
-  let outC = norm2(c)
+  let outC = norm2(c).to(.Float16)
   let outXC = Functional.concat(axis: 1, outX, outC)
   let tokeys = Dense(count: k * h, noBias: true)
   let toqueries = Dense(count: k * h, noBias: true)
@@ -33,12 +33,12 @@ func ResamplerLayer(prefix: String, k: Int, h: Int, queryDim: Int, b: Int, t: (I
   let c = Input()
   let attention = PerceiverAttention(
     prefix: prefix + ".0", k: k, h: h, queryDim: queryDim, b: b, t: t)
-  var out = c + attention(x, c).reshaped([b, t.1, queryDim])
+  var out = c + attention(x, c).reshaped([b, t.1, queryDim]).to(of: c)
   let layerNorm = LayerNorm(epsilon: 1e-5, axis: [2])
   let fc1 = Dense(count: queryDim * 4, noBias: true)
   let gelu = GELU()
   let fc2 = Dense(count: queryDim, noBias: true)
-  out = out + fc2(gelu(fc1(layerNorm(out))))
+  out = out + fc2(gelu(fc1(layerNorm(out).to(.Float16)))).to(of: out)
   return Model([x, c], [out])
 }
 
@@ -342,13 +342,13 @@ private func PuLIDFormerMapping(prefix: String, channels: Int, outputChannels: I
   let x = Input()
   let layer0 = Dense(count: channels, name: "\(prefix).0")
   var out = layer0(x)
-  let layer1 = LayerNorm(epsilon: 1e-5, axis: [1], name: "\(prefix).1")
+  let layer1 = LayerNorm(epsilon: 1e-5, axis: [2], name: "\(prefix).1")
   out = layer1(out)
   let layer2 = LeakyReLU(negativeSlope: 0.01)
   out = layer2(out)
   let layer3 = Dense(count: channels, name: "\(prefix).3")
   out = layer3(out)
-  let layer4 = LayerNorm(epsilon: 1e-5, axis: [1], name: "\(prefix).4")
+  let layer4 = LayerNorm(epsilon: 1e-5, axis: [2], name: "\(prefix).4")
   out = layer4(out)
   let layer5 = LeakyReLU(negativeSlope: 0.01)
   out = layer5(out)
@@ -369,7 +369,7 @@ func PuLIDFormer<T: TensorNumeric & BinaryFloatingPoint>(
     prefix: "id_embedding_mapping", channels: 1024, outputChannels: 1024 * idQueries)
   var out = idEmbeddingMapping(x).reshaped([1, idQueries, 1024])
   let idFeature = out
-  out = Functional.concat(axis: 1, latents, out)
+  out = Functional.concat(axis: 1, latents, out).to(.Float32)
   for i in 0..<layers {
     let mapping = PuLIDFormerMapping(prefix: "mapping_\(i)", channels: 1024, outputChannels: 1024)
     let vitFeature = mapping(y[i]).reshaped([1, grid * grid + 1, width])

@@ -29,7 +29,7 @@ private func MLP(hiddenSize: Int, intermediateSize: Int, name: String) -> (Model
 
 private func JointTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  usesFlashAtttention: FlashAttentionLevel
+  usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -58,7 +58,7 @@ private func JointTransformerBlock(
   var queries = Functional.concat(axis: 1, contextQ, xQ)
   // Now run attention.
   var out: Model.IO
-  switch usesFlashAtttention {
+  switch usesFlashAttention {
   case .none:
     keys = keys.reshaped([b, t + hw, h, k]).transposed(1, 2)
     queries = ((1.0 / Float(k).squareRoot()) * queries).reshaped([b, t + hw, h, k])
@@ -240,7 +240,7 @@ public func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
       prefix: ("diffusion_model.joint_blocks.\(i)", "transformer_blocks.\(i)"), k: 64,
       h: channels / 64, b: batchSize, t: t,
       hw: h * w,
-      contextBlockPreOnly: contextBlockPreOnly, usesFlashAtttention: usesFlashAttention)
+      contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention)
     let blockOut = block([context, out] + contextChunks + xChunks)
     if i == layers - 1 {
       out = blockOut
@@ -300,7 +300,7 @@ private func LoRAMLP(
 
 private func LoRAJointTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  usesFlashAtttention: FlashAttentionLevel, configuration: LoRANetworkConfiguration
+  usesFlashAttention: FlashAttentionLevel, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -329,7 +329,7 @@ private func LoRAJointTransformerBlock(
   var queries = Functional.concat(axis: 1, contextQ, xQ)
   // Now run attention.
   var out: Model.IO
-  switch usesFlashAtttention {
+  switch usesFlashAttention {
   case .none:
     keys = keys.reshaped([b, t + hw, h, k]).transposed(1, 2)
     queries = ((1.0 / Float(k).squareRoot()) * queries).reshaped([b, t + hw, h, k])
@@ -513,7 +513,7 @@ public func LoRAMMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
     let (mapper, block) = LoRAJointTransformerBlock(
       prefix: ("diffusion_model.joint_blocks.\(i)", "transformer_blocks.\(i)"), k: 64,
       h: channels / 64, b: batchSize, t: t, hw: h * w,
-      contextBlockPreOnly: contextBlockPreOnly, usesFlashAtttention: usesFlashAttention,
+      contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       configuration: LoRAConfiguration)
     let blockOut = block([context, out] + contextChunks + xChunks)
     if i == layers - 1 {

@@ -29,14 +29,14 @@ public func Eva02RotaryPositionEmbedding(height: Int, width: Int, tokenLength: I
     for x in 0..<width {
       let i = y * width + x + tokenLength
       for k in 0..<(dim0 / 2) {
-        let theta = 0 * scaleFactor / pow(10_000, Double(k) * 2 / Double(dim0))
+        let theta = Double(y) * scaleFactor / pow(10_000, Double(k) * 2 / Double(dim0))
         let sintheta = sin(theta)
         let costheta = cos(theta)
         rotTensor[0, i, 0, k * 2] = Float(costheta)
         rotTensor[0, i, 0, k * 2 + 1] = Float(sintheta)
       }
       for k in 0..<(dim1 / 2) {
-        let theta = Double(y) * scaleFactor / pow(10_000, Double(k) * 2 / Double(dim1))
+        let theta = Double(x) * scaleFactor / pow(10_000, Double(k) * 2 / Double(dim1))
         let sintheta = sin(theta)
         let costheta = cos(theta)
         rotTensor[0, i, 0, (k + (dim0 / 2)) * 2] = Float(costheta)
@@ -55,9 +55,9 @@ private func EvaSelfAttention(prefix: String, k: Int, h: Int, b: Int, t: Int) ->
   let tovalues = Dense(count: k * h, name: "v")
   var keys = tokeys(x).reshaped([b, t, h, k])
   var queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, t, h, k])
-  queries = Functional.cmul(left: queries, right: rot).permuted(0, 2, 1, 3)
-  keys = Functional.cmul(left: keys, right: rot).permuted(0, 2, 1, 3)
-  let values = tovalues(x).reshaped([b, t, h, k]).permuted(0, 2, 1, 3)
+  queries = Functional.cmul(left: queries, right: rot).transposed(1, 2)
+  keys = Functional.cmul(left: keys, right: rot).transposed(1, 2)
+  let values = tovalues(x).reshaped([b, t, h, k]).transposed(1, 2)
   var dot = Matmul(transposeB: (2, 3))(queries, keys)
   dot = dot.reshaped([b * h * t, t])
   dot = dot.softmax()
@@ -99,9 +99,9 @@ public func Eva02VisionTransformer<T: TensorNumeric>(
     groups: 1, filters: width, filterSize: [14, 14], hint: Hint(stride: [14, 14]),
     format: .OIHW, name: "patch_embed")
   var out = conv1(x).reshaped([batchSize, grid * grid, width])
-  let classEmbedding = Parameter<T>(.GPU(0), .CHW(1, 1, width), name: "cls_embed")
+  let classEmbedding = Parameter<T>(.GPU(0), .HWC(1, 1, width), name: "cls_embed")
   let positionalEmbedding = Parameter<T>(
-    .GPU(0), .CHW(1, grid * grid + 1, width), name: "pos_embed")
+    .GPU(0), .HWC(1, grid * grid + 1, width), name: "pos_embed")
   out = Functional.concat(axis: 1, classEmbedding, out)
   out = out + positionalEmbedding
   var outs = [Model.IO]()

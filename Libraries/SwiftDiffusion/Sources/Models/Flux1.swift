@@ -91,7 +91,7 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
 
 private func JointTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  upcast: Bool, usesFlashAtttention: FlashAttentionLevel
+  upcast: Bool, usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -131,7 +131,7 @@ private func JointTransformerBlock(
   keys = Functional.cmul(left: keys, right: rot)
   // Now run attention.
   var out: Model.IO
-  switch usesFlashAtttention {
+  switch usesFlashAttention {
   case .none:
     keys = keys.transposed(1, 2)
     queries = ((1.0 / Float(k).squareRoot()) * queries)
@@ -306,7 +306,7 @@ private func JointTransformerBlock(
 
 private func SingleTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  usesFlashAtttention: FlashAttentionLevel
+  usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
@@ -330,7 +330,7 @@ private func SingleTransformerBlock(
   keys = Functional.cmul(left: keys, right: rot)
   // Now run attention.
   var out: Model.IO
-  switch usesFlashAtttention {
+  switch usesFlashAttention {
   case .none:
     keys = keys.transposed(1, 2)
     queries = ((1.0 / Float(k).squareRoot()) * queries)
@@ -425,7 +425,8 @@ private func SingleTransformerBlock(
 
 public func Flux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel, injectControls: Bool, injectIPAdapterLengths: [Int: Int]
+  usesFlashAttention: FlashAttentionLevel, injectControls: Bool,
+  injectIPAdapterLengths: [Int: [Int]]
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let contextIn = Input()
@@ -438,6 +439,7 @@ public func Flux1(
   var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
   var adaLNChunks = [Input]()
   var injectedControls = [Input]()
+  var injectedIPAdapters = [Input]()
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
   for i in 0..<layers.0 {
@@ -447,7 +449,7 @@ public func Flux1(
       prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize, t: tokenLength,
       hw: h * w, contextBlockPreOnly: false, upcast: i > (layers.0 - 3),
-      usesFlashAtttention: usesFlashAttention
+      usesFlashAttention: usesFlashAttention
     )
     let blockOut = block([context, out, rot] + contextChunks + xChunks)
     context = blockOut[0]
@@ -460,6 +462,18 @@ public func Flux1(
       out = out + (injectedControlFP32 * scaleFactor)
       injectedControls.append(injectedControl)
     }
+    if let injectIPAdapterLengths = injectIPAdapterLengths[i] {
+      let image = out
+      for (j, injectIPAdapterLength) in injectIPAdapterLengths.enumerated() {
+        let ipKeys = Input()
+        let ipValues = Input()
+        let block = PuLIDCrossAttentionKeysAndValues(
+          prefix: "", name: "\(j).double_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
+          b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+        out = out + block(image, ipKeys, ipValues).to(of: out)
+        injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
+      }
+    }
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
@@ -469,7 +483,7 @@ public func Flux1(
     let (mapper, block) = SingleTransformerBlock(
       prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize, t: tokenLength,
-      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAtttention: usesFlashAttention)
+      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
     out = block([out, rot] + xChunks)
     if injectControls {
       let injectedControl = Input()
@@ -489,6 +503,38 @@ public func Flux1(
         out = Functional.concat(axis: 1, encoderHiddenStates, hiddenStates)
       }
       injectedControls.append(injectedControl)
+    }
+    if let injectIPAdapterLengths = injectIPAdapterLengths[i + layers.0] {
+      if i == layers.1 - 1 {
+        let image = out
+        for (j, injectIPAdapterLength) in injectIPAdapterLengths.enumerated() {
+          let ipKeys = Input()
+          let ipValues = Input()
+          let block = PuLIDCrossAttentionKeysAndValues(
+            prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
+            b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+          out = out + block(image, ipKeys, ipValues).to(of: out)
+          injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
+        }
+      } else {
+        let encoderHiddenStates = out.reshaped(
+          [batchSize, tokenLength, channels], offset: [0, 0, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        var hiddenStates = out.reshaped(
+          [batchSize, h * w, channels], offset: [0, tokenLength, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        let image = hiddenStates
+        for (j, injectIPAdapterLength) in injectIPAdapterLengths.enumerated() {
+          let ipKeys = Input()
+          let ipValues = Input()
+          let block = PuLIDCrossAttentionKeysAndValues(
+            prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
+            b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+          hiddenStates = hiddenStates + block(image, ipKeys, ipValues).to(of: hiddenStates)
+          injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
+        }
+        out = Functional.concat(axis: 1, encoderHiddenStates, hiddenStates)
+      }
     }
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
@@ -523,7 +569,9 @@ public func Flux1(
     }
     return mapping
   }
-  return (mapper, Model([x, rot, contextIn] + adaLNChunks + injectedControls, [out]))
+  return (
+    mapper, Model([x, rot, contextIn] + adaLNChunks + injectedIPAdapters + injectedControls, [out])
+  )
 }
 
 private func LoRAMLPEmbedder(channels: Int, configuration: LoRANetworkConfiguration, name: String)
@@ -564,7 +612,7 @@ private func LoRAFeedForward(
 
 private func LoRAJointTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  upcast: Bool, usesFlashAtttention: FlashAttentionLevel, layerIndex: Int,
+  upcast: Bool, usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
@@ -611,7 +659,7 @@ private func LoRAJointTransformerBlock(
   keys = Functional.cmul(left: keys, right: rot)
   // Now run attention.
   var out: Model.IO
-  switch usesFlashAtttention {
+  switch usesFlashAttention {
   case .none:
     keys = keys.transposed(1, 2)
     queries = ((1.0 / Float(k).squareRoot()) * queries)
@@ -752,7 +800,7 @@ private func LoRAJointTransformerBlock(
 
 private func LoRASingleTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  usesFlashAtttention: FlashAttentionLevel, layerIndex: Int, configuration: LoRANetworkConfiguration
+  usesFlashAttention: FlashAttentionLevel, layerIndex: Int, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
@@ -779,7 +827,7 @@ private func LoRASingleTransformerBlock(
   keys = Functional.cmul(left: keys, right: rot)
   // Now run attention.
   var out: Model.IO
-  switch usesFlashAtttention {
+  switch usesFlashAttention {
   case .none:
     keys = keys.transposed(1, 2)
     queries = ((1.0 / Float(k).squareRoot()) * queries)
@@ -859,7 +907,8 @@ private func LoRASingleTransformerBlock(
 
 public func LoRAFlux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel, injectControls: Bool, injectIPAdapterLengths: [Int: Int],
+  usesFlashAttention: FlashAttentionLevel, injectControls: Bool,
+  injectIPAdapterLengths: [Int: [Int]],
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -873,6 +922,7 @@ public func LoRAFlux1(
   var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
   var adaLNChunks = [Input]()
   var injectedControls = [Input]()
+  var injectedIPAdapters = [Input]()
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
   for i in 0..<layers.0 {
@@ -881,7 +931,7 @@ public func LoRAFlux1(
     let (mapper, block) = LoRAJointTransformerBlock(
       prefix: "double_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: tokenLength,
       hw: h * w, contextBlockPreOnly: false, upcast: i > 16,
-      usesFlashAtttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration
+      usesFlashAttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration
     )
     let blockOut = block([context, out, rot] + contextChunks + xChunks)
     context = blockOut[0]
@@ -894,6 +944,18 @@ public func LoRAFlux1(
       out = out + (injectedControlFP32 * scaleFactor)
       injectedControls.append(injectedControl)
     }
+    if let injectIPAdapterLengths = injectIPAdapterLengths[i] {
+      let image = out
+      for (j, injectIPAdapterLength) in injectIPAdapterLengths.enumerated() {
+        let ipKeys = Input()
+        let ipValues = Input()
+        let block = PuLIDCrossAttentionKeysAndValues(
+          prefix: "", name: "\(j).double_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
+          b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+        out = out + block(image, ipKeys, ipValues).to(of: out)
+        injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
+      }
+    }
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
@@ -902,7 +964,7 @@ public func LoRAFlux1(
     let xChunks = (0..<3).map { _ in Input() }
     let (mapper, block) = LoRASingleTransformerBlock(
       prefix: "single_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: tokenLength,
-      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAtttention: usesFlashAttention,
+      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention,
       layerIndex: i + layers.0, configuration: LoRAConfiguration)
     out = block([out, rot] + xChunks)
     if injectControls {
@@ -923,6 +985,38 @@ public func LoRAFlux1(
         out = Functional.concat(axis: 1, encoderHiddenStates, hiddenStates)
       }
       injectedControls.append(injectedControl)
+    }
+    if let injectIPAdapterLengths = injectIPAdapterLengths[i + layers.0] {
+      if i == layers.1 - 1 {
+        let image = out
+        for (j, injectIPAdapterLength) in injectIPAdapterLengths.enumerated() {
+          let ipKeys = Input()
+          let ipValues = Input()
+          let block = PuLIDCrossAttentionKeysAndValues(
+            prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
+            b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+          out = out + block(image, ipKeys, ipValues).to(of: out)
+          injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
+        }
+      } else {
+        let encoderHiddenStates = out.reshaped(
+          [batchSize, tokenLength, channels], offset: [0, 0, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        var hiddenStates = out.reshaped(
+          [batchSize, h * w, channels], offset: [0, tokenLength, 0],
+          strides: [(tokenLength + h * w) * channels, channels, 1])
+        let image = hiddenStates
+        for (j, injectIPAdapterLength) in injectIPAdapterLengths.enumerated() {
+          let ipKeys = Input()
+          let ipValues = Input()
+          let block = PuLIDCrossAttentionKeysAndValues(
+            prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
+            b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+          hiddenStates = hiddenStates + block(image, ipKeys, ipValues).to(of: hiddenStates)
+          injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
+        }
+        out = Functional.concat(axis: 1, encoderHiddenStates, hiddenStates)
+      }
     }
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
@@ -949,7 +1043,9 @@ public func LoRAFlux1(
     mapping["final_layer.linear.bias"] = [projOut.bias.name]
     return mapping
   }
-  return (mapper, Model([x, rot, contextIn] + adaLNChunks + injectedControls, [out]))
+  return (
+    mapper, Model([x, rot, contextIn] + adaLNChunks + injectedIPAdapters + injectedControls, [out])
+  )
 }
 
 private func JointTransformerBlockFixed(
@@ -1345,7 +1441,7 @@ public func ControlNetFlux1(
       prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize, t: tokenLength,
       hw: h * w, contextBlockPreOnly: false, upcast: i > (layers.0 - 3),
-      usesFlashAtttention: usesFlashAttention
+      usesFlashAttention: usesFlashAttention
     )
     let blockOut = block([context, out, rot] + contextChunks + xChunks)
     context = blockOut[0]
@@ -1366,7 +1462,7 @@ public func ControlNetFlux1(
     let (mapper, block) = SingleTransformerBlock(
       prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize, t: tokenLength,
-      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAtttention: usesFlashAttention)
+      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
     out = block([out, rot] + xChunks)
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)

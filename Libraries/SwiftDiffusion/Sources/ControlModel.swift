@@ -151,6 +151,13 @@ extension ControlModel {
     return injectedIPAdapters
   }
 
+  public static func loadMergedWeight(
+    name: String,
+    injectControlModels: [ControlModel<FloatType>], version: ModelVersion
+  ) -> DynamicGraph.Store.ModelReaderResult? {
+    return nil
+  }
+
   public static func injectedControlsAndAdapters(
     injecteds: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
@@ -338,7 +345,10 @@ extension ControlModel {
           graph: graph, batchSize: batchSize, length: injected.hints.count, numTokens: 6,
           version: injected.model.version, usesFlashAttention: injected.model.usesFlashAttention)
       case .pulid:
-        fatalError()
+        guard injected.hints.count > 0 else { continue }
+        injectedIPAdapters += emptyIPAdapters(
+          graph: graph, batchSize: batchSize, length: injected.hints.count, numTokens: 32,
+          version: injected.model.version, usesFlashAttention: injected.model.usesFlashAttention)
       case .t2iadapter:
         if injectedT2IAdapters.isEmpty {
           injectedT2IAdapters = emptyAdapters(
@@ -1159,11 +1169,16 @@ extension ControlModel {
           FloatType.self,
           width: 1024, outputDim: 2048, heads: 16, grid: 24, idQueries: 5, queries: 32, layers: 5,
           depth: 2)
-        var idCondVit = imageEmbeds[0][0][0..<1, 0..<1, 0..<768].copied()
-        let idCondVitNorm = idCondVit.reduced(.norm2, axis: [2])
-        idCondVit = idCondVit .* (1 / idCondVitNorm)
+        let embeds = imageEmbeds.map {
+          var idCondVit = $0[0][0..<1, 0..<1, 0..<768].copied()
+          let idCondVitNorm = idCondVit.reduced(.norm2, axis: [2])
+          idCondVit = idCondVit .* (1 / idCondVitNorm)
+          let idVitHidden = Array($0[1...])
+          return [idCondVit] + idVitHidden
+        }
+        let idCondVit = embeds[0][0]
+        let idVitHidden = Array(embeds[0][1...])
         let idCond = Functional.concat(axis: 2, faceEmbeds[0].reshaped(.HWC(1, 1, 512)), idCondVit)
-        let idVitHidden = Array(imageEmbeds[0][1...])
         resampler.compile(inputs: [idCond] + idVitHidden)
         graph.openStore(
           filePaths[0], flags: .readOnly,
@@ -1175,26 +1190,22 @@ extension ControlModel {
         }
         let zeroFaceEmbed = graph.variable(like: faceEmbeds[0])
         zeroFaceEmbed.full(0)
-        let zeroImageEmbed = imageEmbeds[0].map {
+        let zeroImageEmbed = embeds[0].map {
           let zeroImageEmbed = graph.variable(like: $0)
           zeroImageEmbed.full(0)
           return zeroImageEmbed
         }
-        return zip(faceEmbeds + [zeroFaceEmbed], imageEmbeds + [zeroImageEmbed]).map {
-          var idCondVit = $0.1[0][0..<1, 0..<1, 0..<768].copied()
-          let idCondVitNorm = idCondVit.reduced(.norm2, axis: [2])
-          if idCondVitNorm.toCPU()[0, 0, 0] > 1e-6 {
-            idCondVit = idCondVit .* (1 / idCondVitNorm)
-          }
+        return zip(faceEmbeds + [zeroFaceEmbed], embeds + [zeroImageEmbed]).map {
+          let idCondVit = $0.1[0]
           let idCond = Functional.concat(axis: 2, $0.0.reshaped(.HWC(1, 1, 512)), idCondVit)
           let idVitHidden = Array($0.1[1...])
-          return resampler(inputs: idCond, idVitHidden)[0].as(of: FloatType.self)
+          return resampler(inputs: idCond, idVitHidden)[0].as(of: Float.self)
         }
       }
       let batchedImagePromptEmbeds = (0..<inputs.count).map { i in
         switch version {
         case .flux1:
-          var imagePromptEmbed = graph.variable(.GPU(0), .HWC(2, 32, 2048), of: FloatType.self)
+          var imagePromptEmbed = graph.variable(.GPU(0), .HWC(2, 32, 2048), of: Float.self)
           switch controlMode {
           case .prompt:
             // For prompt mode, don't increase contrast against negative.
@@ -1205,8 +1216,7 @@ extension ControlModel {
           imagePromptEmbed[1..<2, 0..<32, 0..<2048] = imagePromptEmbeds[i]
           return imagePromptEmbed
         case .v1, .sdxlBase, .v2, .sd3, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b,
-          .svdI2v,
-          .wurstchenStageC, .wurstchenStageB:
+          .svdI2v, .wurstchenStageC, .wurstchenStageB:
           fatalError()
         }
       }
@@ -1215,9 +1225,10 @@ extension ControlModel {
       switch version {
       case .flux1:
         pulidFixed = PuLIDFixed(
+          batchSize: 2,
           queries: 32, double: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18],
           single: [0, 4, 8, 12, 16, 20, 24, 28, 32, 36],
-          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+          usesFlashAttention: .none)
       case .v1, .v2, .sdxlBase, .sd3, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b,
         .svdI2v,
         .wurstchenStageC, .wurstchenStageB:
@@ -1247,15 +1258,9 @@ extension ControlModel {
             return weight * $0.element
           } else {
             // This is a formulation to shift the mean but retain the variance.
-            if usesFlashAttention {
-              let v = $0.element
-              let mean = v.reduced(.mean, axis: [1])
-              return Functional.add(left: v, right: mean, rightScalar: weight - 1)
-            } else {
-              let v = $0.element
-              let mean = v.reduced(.mean, axis: [2])
-              return Functional.add(left: v, right: mean, rightScalar: weight - 1)
-            }
+            let v = $0.element
+            let mean = v.reduced(.mean, axis: [2])
+            return Functional.add(left: v, right: mean, rightScalar: weight - 1)
           }
         }
       }
@@ -1534,7 +1539,17 @@ extension ControlModel {
             graph.variable(.GPU(0), .NHWC(batchSize, 10, numTokens * length, 64)))
         }
       }
-    case .v2, .sd3, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
+    case .flux1:
+      if usesFlashAttention {
+        let emptyAdapter = graph.variable(
+          .GPU(0), .NHWC(batchSize, numTokens * length, 16, 128), of: FloatType.self)
+        emptyAdapters.append(contentsOf: Array(repeating: emptyAdapter, count: 40))
+      } else {
+        let emptyAdapter = graph.variable(
+          .GPU(0), .NHWC(batchSize, 16, numTokens * length, 128), of: FloatType.self)
+        emptyAdapters.append(contentsOf: Array(repeating: emptyAdapter, count: 40))
+      }
+    case .v2, .sd3, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
       .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
@@ -1903,7 +1918,9 @@ extension ControlModel {
           graph: graph, batchSize: batchSize, length: 1, numTokens: 6, version: version,
           usesFlashAttention: usesFlashAttention)
       case .pulid:
-        fatalError()
+        return Self.emptyIPAdapters(
+          graph: graph, batchSize: batchSize, length: 1, numTokens: 32, version: version,
+          usesFlashAttention: usesFlashAttention)
       case .t2iadapter:
         return Self.emptyAdapters(graph: graph, startWidth: startWidth, startHeight: startHeight)
       case .injectKV:
