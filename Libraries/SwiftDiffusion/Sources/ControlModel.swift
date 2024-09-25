@@ -698,7 +698,7 @@ extension ControlModel {
       let zeroEmbeds = graph.variable(
         .GPU(0), .NHWC(1, imageSize, imageSize, 3), of: FloatType.self)
       zeroEmbeds.full(0)
-      let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds])[0]
+      let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds]).map { $0[0] }
       let resampler: Model
       if let ipAdapterConfig = ipAdapterConfig {
         resampler = Resampler(
@@ -837,7 +837,7 @@ extension ControlModel {
         filePath: filePaths[1], version: imageEncoderVersion)
       let zeroEmbeds = graph.variable(.GPU(0), .NHWC(1, 224, 224, 3), of: FloatType.self)
       zeroEmbeds.full(0)
-      let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds])[0]
+      let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds]).map { $0[0] }
       let projModel: Model
       switch version {
       case .v1:
@@ -966,7 +966,7 @@ extension ControlModel {
       let images = faceExtractor.extract(inputs.map(\.hint))
       let imageEncoder = ImageEncoder<FloatType>(
         filePath: filePaths[1], version: imageEncoderVersion)
-      let imageEmbeds = imageEncoder.encode(images.map { $0.0 })[0]
+      let imageEmbeds = imageEncoder.encode(images.map { $0.0 }).map { $0[0] }
       let faceEmbeds = graph.withNoGrad {
         let arcface = ArcFace(batchSize: 1, of: FloatType.self)
         arcface.compile(inputs: images[0].1)
