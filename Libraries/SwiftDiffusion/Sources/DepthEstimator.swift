@@ -66,7 +66,10 @@ extension DepthEstimator {
         FloatType.self, gridX: gridX, gridY: gridY, width: 1024, layers: 24, heads: 16,
         batchSize: 1, intermediateLayers: [4, 11, 17, 23], usesFlashAttention: usesFlashAttention)
       vit.compile(inputs: input)
-      graph.openStore(filePaths.0, flags: .readOnly) {
+      graph.openStore(
+        filePaths.0, flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths.0)
+      ) {
         $0.read("vit", model: vit)
       }
       let outs = vit(inputs: input).map { $0.as(of: FloatType.self) }
@@ -80,7 +83,10 @@ extension DepthEstimator {
         .copied()
       let depthHead = DepthHead(gridX: gridX, gridY: gridY, paddingFinalConvLayer: true)
       depthHead.compile(inputs: x0, x1, x2, x3)
-      graph.openStore(filePaths.1, flags: .readOnly) {
+      graph.openStore(
+        filePaths.1, flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths.1)
+      ) {
         $0.read("depth_head", model: depthHead)
       }
       let out = depthHead(inputs: x0, x1, x2, x3)[0].as(of: FloatType.self)

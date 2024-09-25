@@ -21,7 +21,10 @@ extension ControlModel {
     rgbInputTensor = rgbInputTensor - rgbAdjust.toGPU(0)
     let hedModelVgg = HEDModel(inputWidth: width, inputHeight: height)
     hedModelVgg.compile(inputs: rgbInputTensor)
-    graph.openStore(modelFilePath, flags: .readOnly) {
+    graph.openStore(
+      modelFilePath, flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: modelFilePath)
+    ) {
       $0.read("hed_vgg", model: hedModelVgg)
     }
 
