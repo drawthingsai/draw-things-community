@@ -3,6 +3,21 @@ import Foundation
 
 public struct LoRAZoo: DownloadZoo {
   public struct Specification: Codable {
+    public struct WeightRange: Codable {
+      public var value: Float?
+      public var lowerBound: Float
+      public var upperBound: Float
+      public init(value: Float?, range: ClosedRange<Float>? = nil) {
+        self.value = value
+        if let range = range {
+          lowerBound = range.lowerBound
+          upperBound = range.upperBound
+        } else {
+          lowerBound = -1.5
+          upperBound = 2.5
+        }
+      }
+    }
     public var name: String
     public var file: String
     public var prefix: String
@@ -13,11 +28,13 @@ public struct LoRAZoo: DownloadZoo {
     public var deprecated: Bool? = nil
     public var alternativeDecoder: String? = nil
     public var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
+    public var weight: WeightRange? = nil
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       isConsistencyModel: Bool? = nil, isLoHa: Bool? = nil, modifier: SamplerModifier? = nil,
       deprecated: Bool? = nil, alternativeDecoder: String? = nil,
-      alternativeDecoderVersion: AlternativeDecoderVersion? = nil
+      alternativeDecoderVersion: AlternativeDecoderVersion? = nil,
+      weight: WeightRange? = nil
     ) {
       self.name = name
       self.file = file
@@ -29,6 +46,7 @@ public struct LoRAZoo: DownloadZoo {
       self.deprecated = deprecated
       self.alternativeDecoder = alternativeDecoder
       self.alternativeDecoderVersion = alternativeDecoderVersion
+      self.weight = weight
     }
   }
 
@@ -350,6 +368,13 @@ public struct LoRAZoo: DownloadZoo {
   public static func isConsistencyModelForModel(_ name: String) -> Bool {
     guard let specification = specificationMapping[name] else { return false }
     return specification.isConsistencyModel ?? false
+  }
+
+  public static func weightForModel(_ name: String) -> Specification.WeightRange {
+    guard let specification = specificationMapping[name] else { return .init(value: nil) }
+    let isConsistencyModel = specification.isConsistencyModel ?? false
+    let isInpainting = specification.modifier == .inpainting
+    return specification.weight ?? .init(value: isConsistencyModel || isInpainting ? 1.0 : nil)
   }
 
   public static func alternativeDecoderForModel(_ name: String) -> (

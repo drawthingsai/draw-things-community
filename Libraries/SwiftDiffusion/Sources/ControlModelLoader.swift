@@ -46,9 +46,11 @@ extension ControlModelLoader {
             graph, index: i + 1, injectControlModels: injectControlModels, stores: stores + [store],
             version: version, handler: handler)
         }
-        break
+        return
       }
     }
+    handler(ControlModelLoader(stores: stores))
+    return
   }
   public static func openStore(
     _ graph: DynamicGraph, injectControlModels: [ControlModel<FloatType>], version: ModelVersion,
