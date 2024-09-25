@@ -2261,9 +2261,9 @@ extension ControlModel {
         for i in 0..<startHeight {
           for j in 0..<startWidth {
             if cannyImg.pointee.data.u8[i * startWidth + j] == 0 {
-              y[0, i, j, 0] = -1
-              y[0, i, j, 1] = -1
-              y[0, i, j, 2] = -1
+              y[0, i, j, 0] = 0
+              y[0, i, j, 1] = 0
+              y[0, i, j, 2] = 0
             } else {
               y[0, i, j, 0] = 1
               y[0, i, j, 1] = 1
@@ -2275,9 +2275,9 @@ extension ControlModel {
         for i in 0..<startHeight {
           for j in 0..<startWidth {
             if cannyImg.pointee.data.u8[i * startWidth + j] == 0 {
-              y[0, i, j, 0] = 0
-              y[0, i, j, 1] = 0
-              y[0, i, j, 2] = 0
+              y[0, i, j, 0] = -1
+              y[0, i, j, 1] = -1
+              y[0, i, j, 2] = -1
             } else {
               y[0, i, j, 0] = 1
               y[0, i, j, 1] = 1
