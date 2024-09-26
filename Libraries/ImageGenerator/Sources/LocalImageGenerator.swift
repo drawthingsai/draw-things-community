@@ -1855,7 +1855,11 @@ extension LocalImageGenerator {
                 .nearest, widthScale: Float(startWidth * 8) / Float(shape[2]),
                 heightScale: Float(startHeight * 8) / Float(shape[1]))(inputMask)
             }
-            input = input .* inputMask + (inputMask - 1)
+            if type == .controlnetunion && version != .v1 {
+              input = input .* inputMask  // For Xinsir control union, there is no explicit -1.
+            } else {
+              input = input .* inputMask + (inputMask - 1)
+            }
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(inputs: [
             (hint: input, weight: 1)
