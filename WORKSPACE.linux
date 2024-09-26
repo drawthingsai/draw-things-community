@@ -58,11 +58,14 @@ http_archive(
 
 http_archive(
     name = "rules_xcodeproj",
-    sha256 = "bc8b1ae066b7333a151fd3a9ebee0d51d7779886bfb8cf9fc6e0f9d6c110fc83",
-    url = "https://github.com/MobileNativeFoundation/rules_xcodeproj/releases/download/1.10.1/release.tar.gz",
+    integrity = "sha256-b+AKGo9kJFkcN52bTraVuIu6hKlTEe/Y+LAHkhXs29o=",
+    url = "https://github.com/MobileNativeFoundation/rules_xcodeproj/releases/download/2.7.0/release.tar.gz",
 )
 
-load("@rules_xcodeproj//xcodeproj:repositories.bzl", "xcodeproj_rules_dependencies")
+load(
+    "@rules_xcodeproj//xcodeproj:repositories.bzl",
+    "xcodeproj_rules_dependencies",
+)
 
 xcodeproj_rules_dependencies()
 
@@ -137,7 +140,7 @@ git_repository(
     name = "swift-fickling",
     commit = "9d4773a9d48f34d697fec5c26cb4943582590d4a",
     remote = "https://github.com/liuliu/swift-fickling.git",
-    shallow_since = "1675031846 -0500",
+    shallow_since = "1727126290 -0700",
 )
 
 load("@swift-fickling//:deps.bzl", "swift_fickling_deps")
@@ -179,11 +182,13 @@ new_git_repository(
     shallow_since = "1645648674 -0600",
 )
 
+# Note that swift-fickling can actually determine what version of SwiftCollections we use
 new_git_repository(
     name = "SwiftCollections",
     build_file = "swift-collections.BUILD",
     commit = "9bf03ff58ce34478e66aaee630e491823326fd06",
     remote = "https://github.com/apple/swift-collections.git",
+    shallow_since = "1724118356 -0700",
 )
 
 new_git_repository(
@@ -333,5 +338,3 @@ new_git_repository(
     remote = "https://github.com/jpsim/Yams.git",
     shallow_since = "1682361496 -0400",
 )
-
-
