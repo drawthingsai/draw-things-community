@@ -1589,6 +1589,9 @@ extension ControlModel {
   ) -> [DynamicGraph.Tensor<FloatType>] {
     let graph = textEncoding[0].graph
     var textEncoding = textEncoding
+    let batchSize = textEncoding[0].shape[0]
+    var controlAddEmbedding: DynamicGraph.Tensor<FloatType>? = nil
+    var taskEmbedding: DynamicGraph.Tensor<FloatType>? = nil
     graph.openStore(
       filePaths[0], flags: .readOnly,
       externalStore: TensorData.externalStore(filePath: filePaths[0])
@@ -1601,8 +1604,59 @@ extension ControlModel {
           codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
         textEncoding = encoderHidProj(inputs: textEncoding[0]).map { $0.as(of: FloatType.self) }
       }
+      if let weight = $0.read(like: "__control_add_embed__[t-control_add_embed-0-0-0]") {
+        let controlAddEmbed = ControlAddEmbed(modelChannels: 320)
+        let controlType1 = Tensor<FloatType>(
+          from: timeEmbedding(timestep: 1, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000))
+        let controlType0 = Tensor<FloatType>(
+          from: timeEmbedding(timestep: 0, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000))
+        let numberOfControlTypes = weight.shape[1] / 256
+        var controlType: Int
+        switch modifier {
+        case .pose:
+          controlType = 0
+        case .depth:
+          controlType = 1
+        case .scribble, .softedge:
+          controlType = 2
+        case .canny, .lineart, .mlsd:
+          controlType = 3
+        case .normalbae:
+          controlType = 4
+        case .seg:
+          controlType = 5
+        case .tile, .blur, .lowquality, .shuffle, .gray, .custom, .color:
+          controlType = 6
+        case .inpaint, .ip2p:
+          controlType = 7
+        }
+        controlType = min(numberOfControlTypes - 1, controlType)
+        var controlTypeEncoded = Tensor<FloatType>(.CPU, .WC(1, numberOfControlTypes * 256))
+        for i in 0..<numberOfControlTypes {
+          if i != controlType {
+            controlTypeEncoded[0..<1, (i * 256)..<((i + 1) * 256)] = controlType0
+          } else {
+            controlTypeEncoded[0..<1, (i * 256)..<((i + 1) * 256)] = controlType1
+          }
+        }
+        let controlTypeEncodedTensor = graph.variable(controlTypeEncoded.toGPU(0))
+        controlAddEmbed.2.compile(inputs: controlTypeEncodedTensor)
+        $0.read(
+          "control_add_embed", model: controlAddEmbed.2,
+          codec: [.jit, .ezm7, .externalData, .q6p, .q8p])
+        controlAddEmbedding = controlAddEmbed.2(inputs: controlTypeEncodedTensor)[0].as(
+          of: FloatType.self)
+        let taskEmbeddings = graph.variable(
+          .GPU(0), .WC(numberOfControlTypes, 320), of: FloatType.self)
+        $0.read("task_embedding", variable: taskEmbeddings)
+        let singleTaskEmbedding = taskEmbeddings[controlType..<(controlType + 1), 0..<320].copied()
+        var batchTaskEmbedding = graph.variable(.GPU(0), .WC(batchSize, 320), of: FloatType.self)
+        for i in 0..<batchSize {
+          batchTaskEmbedding[i..<(i + 1), 0..<320] = singleTaskEmbedding
+        }
+        taskEmbedding = batchTaskEmbedding
+      }
     }
-    let batchSize = textEncoding[0].shape[0]
     let maxTokenLength = textEncoding[0].shape[1]
     var crossattn = graph.variable(
       textEncoding[0].kind, .HWC(batchSize, maxTokenLength, 2048), of: FloatType.self)
@@ -1632,7 +1686,7 @@ extension ControlModel {
     }
     let controlNetFixed: Model
     switch type {
-    case .controlnet:
+    case .controlnet, .controlnetunion:
       controlNetFixed =
         ControlNetXLFixed(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
@@ -1649,8 +1703,6 @@ extension ControlModel {
           "controlnet_fixed", model: controlNetFixed,
           codec: [.q6p, .q8p, .ezm7, .jit, .externalData])
       }
-    case .controlnetunion:
-      fatalError()
     case .controlnetlora:
       guard let weightMapper = mainUNetFixed.weightMapper else { return textEncoding }
       let rank = LoRALoader<FloatType>.rank(
@@ -1710,7 +1762,8 @@ extension ControlModel {
     case .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV, .ipadapterfaceidplus, .pulid:
       fatalError()
     }
-    return (vector.map({ [$0] }) ?? [])
+    return (vector.map({ [$0] }) ?? []) + (controlAddEmbedding.map { [$0] } ?? [])
+      + (taskEmbedding.map { [$0] } ?? [])
       + controlNetFixed(inputs: crossattn).map { $0.as(of: FloatType.self) }
   }
 
@@ -2077,6 +2130,7 @@ extension ControlModel {
               batchSize: batchSize, startWidth: startWidth, startHeight: startHeight,
               channels: [320, 640, 1280], embeddingLength: (tokenLengthUncond, tokenLengthCond),
               inputAttentionRes: inputAttentionRes, middleAttentionBlocks: middleAttentionBlocks,
+              union: type == .controlnetunion,
               usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
             ).0
           controlNetWeightMapper = nil

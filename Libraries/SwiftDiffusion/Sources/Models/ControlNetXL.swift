@@ -1,17 +1,109 @@
 import NNC
 
+public func ControlAddEmbed(modelChannels: Int) -> (Model, Model, Model) {
+  let x = Input()
+  let fc0 = Dense(count: modelChannels * 4)
+  var out = fc0(x).swish()
+  let fc2 = Dense(count: modelChannels * 4)
+  out = fc2(out)
+  return (fc0, fc2, Model([x], [out], name: "control_add_embed"))
+}
+
+private func SelfAttention(prefix: String, k: Int, h: Int, b: Int, t: Int) -> (
+  Model, Model, Model, Model, Model
+) {
+  let x = Input()
+  let tokeys = Dense(count: k * h, name: "\(prefix)_k")
+  let toqueries = Dense(count: k * h, name: "\(prefix)_q")
+  let tovalues = Dense(count: k * h, name: "\(prefix)_v")
+  let keys = tokeys(x).reshaped([b, t, h, k]).transposed(1, 2)
+  let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, t, h, k]).transposed(
+    1, 2)
+  let values = tovalues(x).reshaped([b, t, h, k]).transposed(1, 2)
+  var dot = Matmul(transposeB: (2, 3))(queries, keys)
+  dot = dot.reshaped([b * h * t, t])
+  dot = dot.softmax()
+  dot = dot.reshaped([b, h, t, t])
+  var out = dot * values
+  out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b, t, h * k])
+  let unifyheads = Dense(count: k * h, name: "\(prefix)_proj")
+  out = unifyheads(out)
+  return (toqueries, tokeys, tovalues, unifyheads, Model([x], [out]))
+}
+
+private func ResidualAttentionBlock(prefix: String, k: Int, h: Int, b: Int, t: Int) -> (
+  Model, ModelWeightMapper
+) {
+  let x = Input()
+  let ln1 = LayerNorm(epsilon: 1e-5, axis: [2], name: "\(prefix)_ln1")
+  let (toqueries, tokeys, tovalues, unifyheads, attn) = SelfAttention(
+    prefix: prefix, k: k, h: h, b: b, t: t)
+  var out = x + attn(ln1(x))
+  let ln2 = LayerNorm(epsilon: 1e-5, axis: [2], name: "\(prefix)_ln2")
+  let fc = Dense(count: k * h * 4, name: "\(prefix)_mlp_fc")
+  let proj = Dense(count: k * h, name: "\(prefix)_mlp_proj")
+  out = out + proj(QuickGELU()(fc(ln2(out))))
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = [String: ModelWeightElement]()
+    mapping["transformer_layes.0.ln_1.weight"] = [ln1.weight.name]
+    mapping["transformer_layes.0.ln_1.bias"] = [ln1.bias.name]
+    mapping["transformer_layes.0.attn.in_proj_weight"] = [
+      toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
+    ]
+    mapping["transformer_layes.0.attn.in_proj_bias"] = [
+      toqueries.bias.name, tokeys.bias.name, tovalues.bias.name,
+    ]
+    mapping["transformer_layes.0.attn.out_proj.weight"] = [unifyheads.weight.name]
+    mapping["transformer_layes.0.attn.out_proj.bias"] = [unifyheads.bias.name]
+    mapping["transformer_layes.0.ln_2.weight"] = [ln2.weight.name]
+    mapping["transformer_layes.0.ln_2.bias"] = [ln2.bias.name]
+    mapping["transformer_layes.0.mlp.c_fc.weight"] = [fc.weight.name]
+    mapping["transformer_layes.0.mlp.c_fc.bias"] = [fc.bias.name]
+    mapping["transformer_layes.0.mlp.c_proj.weight"] = [proj.weight.name]
+    mapping["transformer_layes.0.mlp.c_proj.bias"] = [proj.bias.name]
+    return mapping
+  }
+  return (Model([x], [out]), mapper)
+}
+
 func InputBlocks<FloatType: TensorNumeric & BinaryFloatingPoint>(
   channels: [Int], numRepeat: Int, numHeadChannels: Int, batchSize: Int, startHeight: Int,
   startWidth: Int, embeddingLength: (Int, Int), attentionRes: [Int: [Int]],
   injectIPAdapterLengths: [Int], upcastAttention: [Int: [Int]],
   usesFlashAttention: FlashAttentionLevel,
   isTemporalMixEnabled: Bool, x: Model.IO, hint: Model.IO, emb: Model.IO,
-  of: FloatType.Type = FloatType.self
+  taskEmbedding: Model.IO?, union: Bool, of: FloatType.Type = FloatType.self
 ) -> (PythonReader, ModelWeightMapper, [(Model.IO, Int)], Model.IO, [Input]) {
   let conv2d = Convolution(
     groups: 1, filters: channels[0], filterSize: [3, 3],
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
-  var out = conv2d(x) + hint
+  let sample = conv2d(x)
+  var out = sample + hint
+  let taskMapper: ModelWeightMapper?
+  if union, let taskEmbedding = taskEmbedding {
+    let hintMean =
+      hint.reduced(.mean, axis: [1, 2]).reshaped([1, 1, channels[0]])
+      + taskEmbedding.reshaped([batchSize, 1, channels[0]])
+    let sampleMean = sample.reduced(.mean, axis: [1, 2]).reshaped([batchSize, 1, channels[0]])
+    let spatialProj = Dense(count: channels[0])
+    var x = Functional.concat(axis: 1, hintMean, sampleMean)
+    let transformer = ResidualAttentionBlock(
+      prefix: "transformer_layers", k: channels[0] / 8, h: 8, b: batchSize, t: 2)
+    x = transformer.0(x)
+    out =
+      out
+      + spatialProj(
+        x.reshaped([batchSize, 1, channels[0]], strides: [2 * channels[0], channels[0], 1])
+          .contiguous().reshaped(.NHWC(batchSize, 1, 1, channels[0])))
+    taskMapper = { format in
+      var mapping = transformer.1(format)
+      mapping["spatial_ch_projs.weight"] = [spatialProj.weight.name]
+      mapping["spatial_ch_projs.bias"] = [spatialProj.bias.name]
+      return mapping
+    }
+  } else {
+    taskMapper = nil
+  }
   var layerStart = 1
   var height = startHeight
   var width = startWidth
@@ -123,6 +215,9 @@ func InputBlocks<FloatType: TensorNumeric & BinaryFloatingPoint>(
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
+    if let taskMapper = taskMapper {
+      mapping.merge(taskMapper(format)) { v, _ in v }
+    }
     return mapping
   }
   return (reader, mapper, passLayers, out, kvs)
@@ -131,7 +226,7 @@ func InputBlocks<FloatType: TensorNumeric & BinaryFloatingPoint>(
 public func ControlNetXL(
   batchSize: Int, startWidth: Int, startHeight: Int, channels: [Int], embeddingLength: (Int, Int),
   inputAttentionRes: KeyValuePairs<Int, [Int]>, middleAttentionBlocks: Int,
-  usesFlashAttention: FlashAttentionLevel
+  union: Bool, usesFlashAttention: FlashAttentionLevel
 ) -> (Model, PythonReader, ModelWeightMapper) {
   let x = Input()
   let hint = Input()
@@ -141,14 +236,20 @@ public func ControlNetXL(
     uniqueKeysWithValues: inputAttentionRes.map { ($0.key, $0.value) })
   let (timeFc0, timeFc2, timeEmbed) = TimeEmbed(modelChannels: channels[0])
   let (labelFc0, labelFc2, labelEmbed) = LabelEmbed(modelChannels: channels[0])
-  let emb = timeEmbed(t_emb) + labelEmbed(y)
+  var emb = timeEmbed(t_emb) + labelEmbed(y)
+  let controlEmb: Input? = union ? Input() : nil
+  let taskEmbedding: Input? = union ? Input() : nil
+  if let controlEmb = controlEmb {
+    emb = emb + controlEmb
+  }
   let middleBlockSizeMult = 1 << (channels.count - 1)
   let (inputReader, inputMapper, inputs, inputBlocks, inputKVs) = InputBlocks(
     channels: channels, numRepeat: 2, numHeadChannels: 64, batchSize: batchSize,
     startHeight: startHeight, startWidth: startWidth, embeddingLength: embeddingLength,
     attentionRes: inputAttentionRes, injectIPAdapterLengths: [],
     upcastAttention: [:], usesFlashAttention: usesFlashAttention,
-    isTemporalMixEnabled: false, x: x, hint: hint, emb: emb, of: FloatType.self)
+    isTemporalMixEnabled: false, x: x, hint: hint, emb: emb, taskEmbedding: taskEmbedding,
+    union: union, of: FloatType.self)
   var out = inputBlocks
   let (middleReader, middleMapper, middleBlock, middleKVs) = MiddleBlock(
     prefix: "model.control_model",
@@ -279,7 +380,11 @@ public func ControlNetXL(
     }
     return mapping
   }
-  return (Model([x, hint, t_emb, y] + inputKVs + middleKVs, outputs), reader, mapper)
+  return (
+    Model(
+      [x, hint, t_emb, y] + (controlEmb.map { [$0] } ?? []) + (taskEmbedding.map { [$0] } ?? [])
+        + inputKVs + middleKVs, outputs), reader, mapper
+  )
 }
 
 public func ControlNetXLFixed(
@@ -446,8 +551,7 @@ func LoRAInputBlocks(
 public func LoRAControlNetXL(
   batchSize: Int, startWidth: Int, startHeight: Int, channels: [Int], embeddingLength: (Int, Int),
   inputAttentionRes: KeyValuePairs<Int, [Int]>, middleAttentionBlocks: Int,
-  usesFlashAttention: FlashAttentionLevel,
-  LoRAConfiguration: LoRANetworkConfiguration
+  usesFlashAttention: FlashAttentionLevel, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (Model, ModelWeightMapper) {
   let x = Input()
   let hint = Input()

@@ -149,6 +149,19 @@ public final class ControlNetImporter {
     )
   }
 
+  private func ControlAddEmbed() -> (Model, ModelWeightMapper) {
+    let (fc1, fc2, model) = Diffusion.ControlAddEmbed(modelChannels: 320)
+    let mapper: ModelWeightMapper = { _ in
+      var mapping = [String: ModelWeightElement]()
+      mapping["control_add_embedding.linear_1.weight"] = [fc1.weight.name]
+      mapping["control_add_embedding.linear_1.bias"] = [fc1.bias.name]
+      mapping["control_add_embedding.linear_2.weight"] = [fc2.weight.name]
+      mapping["control_add_embedding.linear_2.bias"] = [fc2.bias.name]
+      return mapping
+    }
+    return (model, mapper)
+  }
+
   public func `import`(
     downloadedFile: String, name: String, filename: String, modifier: ControlHintType?,
     progress: @escaping (Float) -> Void
@@ -323,7 +336,7 @@ public final class ControlNetImporter {
         (controlNet, _, controlNetMapper) = ControlNetXL(
           batchSize: 2, startWidth: 64, startHeight: 64, channels: [320, 640, 1280],
           embeddingLength: (77, 77), inputAttentionRes: inputAttentionRes,
-          middleAttentionBlocks: middleAttentionBlocks, usesFlashAttention: .none)
+          middleAttentionBlocks: middleAttentionBlocks, union: true, usesFlashAttention: .none)
         if transformerBlocks.isEmpty || transformerBlocks.contains(where: { $0 > 0 }) {
           (controlNetFixed, _, controlNetFixedMapper) = ControlNetXLFixed(
             batchSize: 2, startHeight: 64, startWidth: 64, channels: [320, 640, 1280],
@@ -339,6 +352,7 @@ public final class ControlNetImporter {
       .wurstchenStageC, .wurstchenStageB:
       fatalError()
     }
+    var isControlUnion = false
 
     if let controlNetMapper = controlNetMapper {
       try graph.openStore(ModelZoo.filePathForModelDownloaded(filename)) { store in
@@ -356,7 +370,13 @@ public final class ControlNetImporter {
           } else {
             kvs = []
           }
-          let cArr = [vector] + kvs
+          var cArr = [vector]
+          if !isControlNetLoRA {
+            let controlEmb = graph.variable(.GPU(0), .WC(2, 1280), of: FloatType.self)
+            let taskEmbedding = graph.variable(.GPU(0), .WC(2, 320), of: FloatType.self)
+            cArr += [controlEmb, taskEmbedding]
+          }
+          cArr += kvs
           controlNet.compile(inputs: [x, hint, tembed] + cArr)
           if isDiffusersFormat {
             mapping = controlNetMapper(.diffusers)
@@ -393,6 +413,30 @@ public final class ControlNetImporter {
             try archive.with(encoderHidProjBiasDescriptor) { tensor in
               let tensor = Tensor<FloatType>(from: tensor)
               store.write("__encoder_hid_proj__[t-0-1]", tensor: tensor)
+            }
+          }
+          if stateDict["control_add_embedding.linear_1.weight"] != nil {
+            isControlUnion = true
+            let (controlAddEmbedding, controlAddEmbeddingMapper) = ControlAddEmbed()
+            let controlType = graph.variable(.GPU(0), .WC(2, 256 * 8), of: FloatType.self)
+            controlAddEmbedding.compile(inputs: controlType)
+            let mapping = controlAddEmbeddingMapper(.diffusers)
+            for (key, value) in mapping {
+              guard let tensorDescriptor = stateDict[key] else {
+                continue
+              }
+              try archive.with(tensorDescriptor) { tensor in
+                let tensor = Tensor<FloatType>(from: tensor)
+                for name in value {
+                  store.write("__control_add_embed__[\(name)]", tensor: tensor)
+                }
+              }
+            }
+          }
+          if let taskEmbedding = stateDict["task_embedding"] {
+            try archive.with(taskEmbedding) { tensor in
+              let tensor = Tensor<FloatType>(from: tensor)
+              store.write("task_embedding", tensor: tensor)
             }
           }
           for (key, value) in mapping {
@@ -503,6 +547,9 @@ public final class ControlNetImporter {
       }
       progress(1)
     }
-    return (transformerBlocks, modelVersion, isControlNetLoRA ? .controlnetlora : .controlnet)
+    return (
+      transformerBlocks, modelVersion,
+      isControlUnion ? .controlnetunion : (isControlNetLoRA ? .controlnetlora : .controlnet)
+    )
   }
 }
