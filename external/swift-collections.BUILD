@@ -1,11 +1,11 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
 swift_library(
-    name = "_CollectionsUtilities",
+    name = "InternalCollectionsUtilities",
     srcs = glob([
-        "Sources/_CollectionsUtilities/**/*.swift",
+        "Sources/InternalCollectionsUtilities/**/*.swift",
     ]),
-    module_name = "_CollectionsUtilities",
+    module_name = "InternalCollectionsUtilities",
 )
 
 swift_library(
@@ -15,7 +15,7 @@ swift_library(
     ]),
     module_name = "BitCollections",
     deps = [
-        ":_CollectionsUtilities",
+        ":InternalCollectionsUtilities",
     ],
 )
 
@@ -26,7 +26,7 @@ swift_library(
     ]),
     module_name = "DequeModule",
     deps = [
-        ":_CollectionsUtilities",
+        ":InternalCollectionsUtilities",
     ],
 )
 
@@ -37,7 +37,7 @@ swift_library(
     ]),
     module_name = "HeapModule",
     deps = [
-        ":_CollectionsUtilities",
+        ":InternalCollectionsUtilities",
     ],
 )
 
@@ -48,29 +48,18 @@ swift_library(
     ]),
     module_name = "OrderedCollections",
     deps = [
-        ":_CollectionsUtilities",
+        ":InternalCollectionsUtilities",
     ],
 )
 
 swift_library(
-    name = "PersistentCollections",
+    name = "HashTreeCollections",
     srcs = glob([
-        "Sources/PersistentCollections/**/*.swift",
+        "Sources/HashTreeCollections/**/*.swift",
     ]),
-    module_name = "PersistentCollections",
+    module_name = "HashTreeCollections",
     deps = [
-        ":_CollectionsUtilities",
-    ],
-)
-
-swift_library(
-    name = "SortedCollections",
-    srcs = glob([
-        "Sources/SortedCollections/**/*.swift",
-    ]),
-    module_name = "SortedCollections",
-    deps = [
-        ":_CollectionsUtilities",
+        ":InternalCollectionsUtilities",
     ],
 )
 
@@ -84,9 +73,8 @@ swift_library(
     deps = [
         ":BitCollections",
         ":DequeModule",
+        ":HashTreeCollections",
         ":HeapModule",
         ":OrderedCollections",
-        ":PersistentCollections",
-        ":SortedCollections",
     ],
 )

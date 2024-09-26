@@ -1,9 +1,25 @@
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
 config_setting(
     name = "macos_build",
     constraint_values = [
         "@platforms//os:osx",
+    ],
+)
+
+config_setting(
+    name = "ios_build",
+    constraint_values = [
+        "@platforms//os:ios",
+    ],
+)
+
+selects.config_setting_group(
+    name = "ios_or_macos_build",
+    match_any = [
+        ":macos_build",
+        ":ios_build",
     ],
 )
 
@@ -19,7 +35,7 @@ swift_library(
                ],
            ) +
            select({
-               ":macos_build": ["Sources/ImageConverter.swift"],
+               ":ios_or_macos_build": ["Sources/ImageConverter.swift"],
                "//conditions:default": [],
            }),
     module_name = "LocalImageGenerator",
@@ -27,21 +43,21 @@ swift_library(
     deps = [
         ":ImageGenerator",
         "//Libraries/DataModels",
+        "//Libraries/GRPC:GRPCModels",
+        "//Libraries/GRPC:GRPCServer",
         "//Libraries/ModelZoo",
         "//Libraries/Scripting:ScriptDataModels",
         "//Libraries/SwiftDiffusion",
-        "//Libraries/SwiftDiffusion:SwiftDiffusionPreprocessors",
         "//Libraries/SwiftDiffusion:SwiftDiffusionCoreMLModelManager",
+        "//Libraries/SwiftDiffusion:SwiftDiffusionPreprocessors",
         "//Libraries/SwiftDiffusion:SwiftDiffusionWrapper",
         "//Libraries/Upscaler",
-        "@ccv//lib:ccv",
-        "@s4nnc//nnc",
-        "//Libraries/GRPC:GRPCModels",
-        "//Libraries/GRPC:GRPCServer",
-        "@grpc-swift//:GRPC",
         "@SwiftLog//:Logging",
+        "@ccv//lib:ccv",
+        "@grpc-swift//:GRPC",
+        "@s4nnc//nnc",
     ] + select({
-        ":macos_build": [
+        ":ios_or_macos_build": [
             "//Libraries/FaceRestorer",
             "//Libraries/Scripting",
             "//Libraries/SwiftDiffusion:SwiftDiffusionCoreML",
