@@ -137,7 +137,7 @@ extension ControlModel {
           } else {
             instanceInjectedIPAdapters = zip(instanceInjectedIPAdapters, newInjectedIPAdapters).map
             {
-              if usesFlashAttention && injected.model.type != .pulid {
+              if usesFlashAttention {
                 return Concat(axis: 1)($0, $1)
               } else {
                 return Concat(axis: 2)($0, $1)
@@ -149,13 +149,6 @@ extension ControlModel {
       }
     }
     return injectedIPAdapters
-  }
-
-  public static func loadMergedWeight(
-    name: String,
-    injectControlModels: [ControlModel<FloatType>], version: ModelVersion
-  ) -> DynamicGraph.Store.ModelReaderResult? {
-    return nil
   }
 
   public static func injectedControlsAndAdapters(
@@ -1228,7 +1221,7 @@ extension ControlModel {
           batchSize: 2,
           queries: 32, double: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18],
           single: [0, 4, 8, 12, 16, 20, 24, 28, 32, 36],
-          usesFlashAttention: .none)
+          usesFlashAttention: usesFlashAttention ? .scale1 : .none)
       case .v1, .v2, .sdxlBase, .sd3, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b,
         .svdI2v,
         .wurstchenStageC, .wurstchenStageB:
@@ -1258,9 +1251,15 @@ extension ControlModel {
             return weight * $0.element
           } else {
             // This is a formulation to shift the mean but retain the variance.
-            let v = $0.element
-            let mean = v.reduced(.mean, axis: [2])
-            return Functional.add(left: v, right: mean, rightScalar: weight - 1)
+            if usesFlashAttention {
+              let v = $0.element
+              let mean = v.reduced(.mean, axis: [1])
+              return Functional.add(left: v, right: mean, rightScalar: weight - 1)
+            } else {
+              let v = $0.element
+              let mean = v.reduced(.mean, axis: [2])
+              return Functional.add(left: v, right: mean, rightScalar: weight - 1)
+            }
           }
         }
       }

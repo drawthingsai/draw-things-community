@@ -469,7 +469,8 @@ public func Flux1(
         let ipValues = Input()
         let block = PuLIDCrossAttentionKeysAndValues(
           prefix: "", name: "\(j).double_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
-          b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+          b: batchSize, t: (injectIPAdapterLength, h * w),
+          usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
         out = out + block(image, ipKeys, ipValues).to(of: out)
         injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
       }
@@ -512,7 +513,8 @@ public func Flux1(
           let ipValues = Input()
           let block = PuLIDCrossAttentionKeysAndValues(
             prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
-            b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+            b: batchSize, t: (injectIPAdapterLength, h * w),
+            usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
           out = out + block(image, ipKeys, ipValues).to(of: out)
           injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
         }
@@ -529,7 +531,8 @@ public func Flux1(
           let ipValues = Input()
           let block = PuLIDCrossAttentionKeysAndValues(
             prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
-            b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+            b: batchSize, t: (injectIPAdapterLength, h * w),
+            usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
           hiddenStates = hiddenStates + block(image, ipKeys, ipValues).to(of: hiddenStates)
           injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
         }
@@ -951,7 +954,8 @@ public func LoRAFlux1(
         let ipValues = Input()
         let block = PuLIDCrossAttentionKeysAndValues(
           prefix: "", name: "\(j).double_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
-          b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+          b: batchSize, t: (injectIPAdapterLength, h * w),
+          usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
         out = out + block(image, ipKeys, ipValues).to(of: out)
         injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
       }
@@ -994,7 +998,8 @@ public func LoRAFlux1(
           let ipValues = Input()
           let block = PuLIDCrossAttentionKeysAndValues(
             prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
-            b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+            b: batchSize, t: (injectIPAdapterLength, h * w),
+            usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
           out = out + block(image, ipKeys, ipValues).to(of: out)
           injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
         }
@@ -1011,7 +1016,8 @@ public func LoRAFlux1(
           let ipValues = Input()
           let block = PuLIDCrossAttentionKeysAndValues(
             prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
-            b: batchSize, t: (injectIPAdapterLength, h * w), usesFlashAttention: .none)
+            b: batchSize, t: (injectIPAdapterLength, h * w),
+            usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
           hiddenStates = hiddenStates + block(image, ipKeys, ipValues).to(of: hiddenStates)
           injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
         }
