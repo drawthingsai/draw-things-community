@@ -214,6 +214,13 @@ new_git_repository(
 )
 
 new_git_repository(
+    name = "SwiftCrypto",
+    build_file = "swift-crypto.BUILD",
+    remote = "https://github.com/apple/swift-crypto.git",
+    commit = "81bee98e706aee68d39ed5996db069ef2b313d62",
+)
+
+new_git_repository(
     name = "SwiftNIO",
     build_file = "swift-nio.BUILD",
     commit = "a16e2f54a25b2af217044e5168997009a505930f",

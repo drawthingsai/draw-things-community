@@ -6,6 +6,7 @@ import GRPCModels
 import GRPCServer
 import ImageGenerator
 import Logging
+import ModelZoo
 import NIO
 import NNC
 
@@ -157,4 +158,58 @@ public struct RemoteImageGenerator: ImageGenerator {
     return (tensors, 1)
 
   }
+
+  public func getServerModelInfoData(files: [String]) -> [(String, Data)] {
+    var modelFiles = [(String, Data)]()
+    let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+
+    defer {
+      try! group.syncShutdownGracefully()
+    }
+
+    var grpcConfiguration = GRPCChannelPool.Configuration.with(
+      target: .host(ip, port: port),
+      transportSecurity: .plaintext,
+      eventLoopGroup: group)
+    grpcConfiguration.maximumReceiveMessageLength = 16 * 1024 * 1024
+    let channel = try! GRPCChannelPool.with(configuration: grpcConfiguration)
+
+    defer {
+      try! channel.close().wait()
+    }
+
+    let client = ImageGeneratingServiceClient(channel: channel)
+
+    var request = GetModelMetadataRequest()
+    request.fileNames = files
+
+    // Send the request
+    let call = try! client.modelMetadata(
+      request,
+      handler: { response in
+
+        if !response.fileName.isEmpty {
+          logger.info("Received file \(response.fileName) ")
+          modelFiles.append((response.fileName, response.jsonFile))
+        }
+
+      })
+
+    call.status.whenComplete { result in
+      switch result {
+      case .success(let status):
+        logger.info("Stream completed with status: \(status)")
+      case .failure(let error):
+        logger.error("Stream failed with error: \(error)")
+      }
+    }
+
+    do {
+      try call.status.wait()
+    } catch {
+      logger.error("Failed to receive stream completion: \(error)")
+    }
+    return modelFiles
+  }
+
 }
