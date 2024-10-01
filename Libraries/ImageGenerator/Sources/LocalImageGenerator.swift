@@ -1866,9 +1866,28 @@ extension LocalImageGenerator {
               input = input .* inputMask + (inputMask - 1)
             }
           }
-          let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(inputs: [
+          var hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(inputs: [
             (hint: input, weight: 1)
           ]).map { ($0, control.weight) }
+          if version == .flux1 {
+            hints = hints.map {
+              return (
+                $0.0.map {
+                  guard let mask = mask else {
+                    return $0
+                  }
+                  let shape = $0.shape
+                  let maskShape = mask.shape
+                  var inputMask = graph.variable(mask.toGPU(0))
+                  inputMask = Upsample(
+                    .bilinear, widthScale: Float(shape[2]) / Float(maskShape[2]),
+                    heightScale: Float(shape[1]) / Float(maskShape[1]))(inputs: inputMask)[0].as(
+                      of: FloatType.self)
+                  return Functional.concat(axis: 3, $0, inputMask)
+                }, $0.1
+              )
+            }
+          }
           return (model: controlModel, hints: hints)
         case .ip2p:
           guard var input = image else { return nil }

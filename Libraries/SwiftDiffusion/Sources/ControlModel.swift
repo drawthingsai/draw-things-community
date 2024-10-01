@@ -1803,7 +1803,7 @@ extension ControlModel {
             filePaths[0], flags: .readOnly,
             externalStore: TensorData.externalStore(filePath: filePaths[0])
           ) {
-            return $0.read(like: "__dit__[t-guidance_embedder_0-0-1]") != nil
+            return $0.read(like: "__controlnet__[t-guidance_embedder_0-0-1]") != nil
           }).get()) ?? false
       let union = (type == .controlnetunion)
       let (_, controlNetFlux1Fixed) = ControlNetFlux1Fixed(
