@@ -23,10 +23,6 @@ public func xorshift(_ a: UInt32) -> UInt32 {
   return x
 }
 
-public protocol PoseDrawer {
-  func drawPose(_ pose: Tensor<Float>, startWidth: Int, startHeight: Int) -> Tensor<FloatType>?
-}
-
 public struct LocalImageGenerator: ImageGenerator {
   public let modelPreloader: ModelPreloader
   public var tokenizerV1: TextualInversionAttentionCLIPTokenizer
@@ -36,7 +32,6 @@ public struct LocalImageGenerator: ImageGenerator {
   public var tokenizerT5: SentencePieceTokenizer
   public var tokenizerPileT5: SentencePieceTokenizer
   public var tokenizerChatGLM3: SentencePieceTokenizer
-  let poseDrawer: PoseDrawer
   private let queue: DispatchQueue
   public init(
     queue: DispatchQueue, configurations: FetchedResult<GenerationConfiguration>,
@@ -46,8 +41,7 @@ public struct LocalImageGenerator: ImageGenerator {
     tokenizerKandinsky: SentencePieceTokenizer,
     tokenizerT5: SentencePieceTokenizer,
     tokenizerPileT5: SentencePieceTokenizer,
-    tokenizerChatGLM3: SentencePieceTokenizer,
-    poseDrawer: PoseDrawer
+    tokenizerChatGLM3: SentencePieceTokenizer
   ) {
     self.queue = queue
     self.tokenizerV1 = tokenizerV1
@@ -57,7 +51,6 @@ public struct LocalImageGenerator: ImageGenerator {
     self.tokenizerT5 = tokenizerT5
     self.tokenizerPileT5 = tokenizerPileT5
     self.tokenizerChatGLM3 = tokenizerChatGLM3
-    self.poseDrawer = poseDrawer
     modelPreloader = ModelPreloader(
       queue: queue, configurations: configurations, workspace: workspace)
   }
