@@ -156,8 +156,7 @@ public struct ImageGeneratorUtils {
           injectedControls +=
             hasHints.contains(modifier) || (isPreprocessorDownloaded && hasImage) ? 1 : 0
         case .color:
-          injectControls = injectControls || hasHints.contains(modifier) || hasImage
-          injectedControls += hasHints.contains(modifier) || hasImage ? 1 : 0
+          break  // Not supported. See generateInjectedControls.
         case .softedge:
           let isPreprocessorDownloaded =
             isPreprocessorDownloaded
