@@ -2271,9 +2271,7 @@ extension ControlModel {
         } else {
           let emptyControl = graph.variable(like: result[0])
           emptyControl.full(0)
-          for i in 0..<19 {
-            newResult.append(emptyControl)
-          }
+          newResult.append(contentsOf: Array(repeating: emptyControl, count: 19))
         }
         if transformerBlocks[1] > 0 {
           let singleIntervalControl = (38 + transformerBlocks[1] - 1) / transformerBlocks[1]
@@ -2283,9 +2281,7 @@ extension ControlModel {
         } else {
           let emptyControl = graph.variable(like: result[0])
           emptyControl.full(0)
-          for i in 0..<38 {
-            newResult.append(emptyControl)
-          }
+          newResult.append(contentsOf: Array(repeating: emptyControl, count: 38))
         }
         result = newResult
       }
