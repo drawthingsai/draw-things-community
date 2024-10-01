@@ -1647,7 +1647,7 @@ extension ControlModel {
           of: FloatType.self)
         let taskEmbeddings = graph.variable(
           .GPU(0), .WC(numberOfControlTypes, 320), of: FloatType.self)
-        $0.read("task_embedding", variable: taskEmbeddings)
+        $0.read("task_embedding", variable: taskEmbeddings, codec: [.externalData, .q8p, .ezm7])
         let singleTaskEmbedding = taskEmbeddings[controlType..<(controlType + 1), 0..<320].copied()
         var batchTaskEmbedding = graph.variable(.GPU(0), .WC(batchSize, 320), of: FloatType.self)
         for i in 0..<batchSize {
