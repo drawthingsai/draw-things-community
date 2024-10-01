@@ -1506,6 +1506,18 @@ public func ControlNetFlux1(
     case .generativeModels:
       mapping["img_in.weight"] = [xEmbedder.weight.name]
       mapping["img_in.bias"] = [xEmbedder.bias.name]
+      mapping["pos_embed_input.weight"] = [controlnetXEmbedder.weight.name]
+      mapping["pos_embed_input.bias"] = [controlnetXEmbedder.bias.name]
+      for i in 0..<layers.0 {
+        mapping["controlnet_blocks.\(i).linear.weight"] = [zeroConvs[i].weight.name]
+        mapping["controlnet_blocks.\(i).linear.bias"] = [zeroConvs[i].bias.name]
+      }
+      for i in 0..<layers.1 {
+        mapping["single_controlnet_blocks.\(i).linear.weight"] = [
+          zeroConvs[i + layers.0].weight.name
+        ]
+        mapping["single_controlnet_blocks.\(i).linear.bias"] = [zeroConvs[i + layers.0].bias.name]
+      }
     case .diffusers:
       mapping["x_embedder.weight"] = [xEmbedder.weight.name]
       mapping["x_embedder.bias"] = [xEmbedder.bias.name]
