@@ -602,10 +602,15 @@ extension LocalImageGenerator {
       })?.1.first?.0 as? Tensor<FloatType>
 
     let shuffles: [(Tensor<FloatType>, Float)] =
-      hints.first(where: { $0.0 == .shuffle })?.1 as! [(Tensor<FloatType>, Float)]
+      hints.first(where: { $0.0 == .shuffle })?.1 as? [(Tensor<FloatType>, Float)] ?? []
+
+    let poses: [(Tensor<FloatType>, Float)] =
+      hints.first(where: { $0.0 == .pose })?.1 as? [(Tensor<FloatType>, Float)] ?? []
 
     let hints: [ControlHintType: AnyTensor] = hints.reduce(into: [:]) { dict, hint in
-      if hint.0 != .depth, hint.0 != .custom, hint.0 != .shuffle, let tensor = hint.1.first?.0 {
+      if hint.0 != .depth, hint.0 != .custom, hint.0 != .shuffle, hint.0 != .pose,
+        let tensor = hint.1.first?.0
+      {
         dict[hint.0] = tensor
       }
     }
@@ -643,20 +648,20 @@ extension LocalImageGenerator {
     guard let image = image else {
       return generateTextOnly(
         nil, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
-        shuffles: shuffles,
+        shuffles: shuffles, poses: poses,
         text: text, negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
     }
     guard let mask = mask else {
       return generateImageOnly(
         image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
-        shuffles: shuffles, text: text,
+        shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
     }
     return generateImageWithMask(
       image, scaleFactor: scaleFactor, mask: mask, depth: depth, hints: hints, custom: custom,
-      shuffles: shuffles,
+      shuffles: shuffles, poses: poses,
       text: text, negativeText: negativeText, configuration: configuration,
       denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
   }
@@ -1551,7 +1556,8 @@ extension LocalImageGenerator {
   private func generateInjectedControls(
     graph: DynamicGraph, startHeight: Int, startWidth: Int, image: DynamicGraph.Tensor<FloatType>?,
     depth: DynamicGraph.Tensor<FloatType>?, hints: [ControlHintType: AnyTensor],
-    custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], mask: Tensor<FloatType>?,
+    custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], pose: Tensor<FloatType>?,
+    mask: Tensor<FloatType>?,
     controls: [Control], version: ModelVersion, tiledDiffusion: TiledConfiguration,
     usesFlashAttention: Bool, externalOnDemand: Bool, steps: Int, firstStage: FirstStage<FloatType>
   ) -> [(model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)])] {
@@ -1784,19 +1790,18 @@ extension LocalImageGenerator {
           ]).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .pose:
-          guard let pose = hints[.pose].map({ Tensor<Float>($0) }) else {
+          guard let pose = pose else {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(inputs: [
               (hint: rgb, weight: 1)
             ]).map { ($0, control.weight) }
             return (model: controlModel, hints: hints)
           }
-          guard
-            let rgb = poseDrawer.drawPose(pose, startWidth: startWidth, startHeight: startHeight)
-          else { return nil }
+
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(inputs: [
-            (hint: graph.variable(rgb.toGPU(0)), weight: 1)
+            (hint: graph.variable(pose.toGPU(0)), weight: 1)
           ]).map { ($0, control.weight) }
+          //          DynamicGraph.logLevel = .verbose
           return (model: controlModel, hints: hints)
         case .lineart:
           guard var rgb = customRGB(false) else { return nil }
@@ -2032,7 +2037,7 @@ extension LocalImageGenerator {
           ]).map { ($0, 1) }
           return (model: controlModel, hints: hints)
         case .pose:
-          guard let pose = hints[.pose].map({ Tensor<Float>($0) }) else {
+          guard let pose = pose else {
             guard let rgb = customRGB(true) else { return nil }
             let shape = rgb.shape
             let input = rgb.reshaped(
@@ -2044,11 +2049,8 @@ extension LocalImageGenerator {
             ]).map { ($0, 1) }
             return (model: controlModel, hints: hints)
           }
-          guard
-            let rgb = poseDrawer.drawPose(pose, startWidth: startWidth, startHeight: startHeight)
-          else { return nil }
-          let shape = rgb.shape
-          let input = graph.variable(rgb.toGPU(0)).reshaped(
+          let shape = pose.shape
+          let input = graph.variable(pose.toGPU(0)).reshaped(
             format: .NHWC, shape: [shape[0], startHeight, 8, startWidth, 8, 3]
           ).permuted(0, 1, 3, 5, 2, 4).copied().reshaped(
             .NHWC(shape[0], startHeight, startWidth, 64 * 3))
@@ -2218,7 +2220,7 @@ extension LocalImageGenerator {
   private func generateTextOnly(
     _ image: Tensor<FloatType>?, scaleFactor imageScaleFactor: Int,
     depth: Tensor<FloatType>?, hints: [ControlHintType: AnyTensor], custom: Tensor<FloatType>?,
-    shuffles: [(Tensor<FloatType>, Float)],
+    shuffles: [(Tensor<FloatType>, Float)], poses: [(Tensor<FloatType>, Float)],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
@@ -2358,7 +2360,10 @@ extension LocalImageGenerator {
     if let upscaler = configuration.upscaler, UpscalerZoo.isModelDownloaded(upscaler) {
       signposts.insert(.imageUpscaled)
     }
-    let hasHints = Set(hints.keys)
+    var hasHints = Set(hints.keys)
+    if !poses.isEmpty {
+      hasHints.insert(.pose)
+    }
     let (
       canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
       canInjectedControls
@@ -2366,7 +2371,8 @@ extension LocalImageGenerator {
       ImageGeneratorUtils.canInjectControls(
         hasImage: image != nil, hasDepth: depth != nil, hasHints: hasHints,
         hasCustom: custom != nil,
-        shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
+        shuffleCount: shuffles.count, controls: configuration.controls,
+        version: modelVersion)
     let isQuantizedModel = ModelZoo.isQuantizedModel(file)
     let is8BitModel = ModelZoo.is8BitModel(file)
     let canRunLoRASeparately = modelPreloader.canRunLoRASeparately
@@ -2670,7 +2676,8 @@ extension LocalImageGenerator {
       let injectedControls = generateInjectedControls(
         graph: graph, startHeight: firstPassStartHeight, startWidth: firstPassStartWidth,
         image: firstPassImage, depth: firstPassDepthImage, hints: hints, custom: custom,
-        shuffles: shuffles, mask: nil, controls: configuration.controls, version: modelVersion,
+        shuffles: shuffles, pose: poses.first?.0, mask: nil, controls: configuration.controls,
+        version: modelVersion,
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage)
 
@@ -2856,7 +2863,8 @@ extension LocalImageGenerator {
       ) =
         ImageGeneratorUtils.canInjectControls(
           hasImage: true, hasDepth: secondPassDepthImage != nil, hasHints: hasHints,
-          hasCustom: custom != nil, shuffleCount: shuffles.count, controls: configuration.controls,
+          hasCustom: custom != nil, shuffleCount: shuffles.count,
+          controls: configuration.controls,
           version: modelVersion)
       let secondPassControlExternalOnDemand = modelPreloader.externalOnDemand(
         version: modelVersion,
@@ -2868,10 +2876,12 @@ extension LocalImageGenerator {
           TensorData.makeExternalData(for: ModelZoo.filePathForModelDownloaded(file), graph: graph)
         }
       }
+
       let secondPassInjectedControls = generateInjectedControls(
         graph: graph, startHeight: startHeight, startWidth: startWidth,
         image: image ?? firstStageImage, depth: secondPassDepthImage, hints: hints, custom: custom,
-        shuffles: shuffles, mask: nil, controls: configuration.controls, version: modelVersion,
+        shuffles: shuffles, pose: poses.last?.0, mask: nil, controls: configuration.controls,
+        version: modelVersion,
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: secondPassControlExternalOnDemand, steps: sampling.steps,
         firstStage: firstStage)
@@ -3042,7 +3052,7 @@ extension LocalImageGenerator {
   private func generateImageOnly(
     _ image: Tensor<FloatType>, scaleFactor imageScaleFactor: Int, depth: Tensor<FloatType>?,
     hints: [ControlHintType: AnyTensor], custom: Tensor<FloatType>?,
-    shuffles: [(Tensor<FloatType>, Float)],
+    shuffles: [(Tensor<FloatType>, Float)], poses: [(Tensor<FloatType>, Float)],
     text: String,
     negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
@@ -3163,13 +3173,18 @@ extension LocalImageGenerator {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
+    var hasHints = Set(hints.keys)
+    if !poses.isEmpty {
+      hasHints.insert(.pose)
+    }
     let (
       canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
       canInjectedControls
     ) =
       ImageGeneratorUtils.canInjectControls(
-        hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
-        shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
+        hasImage: true, hasDepth: depth != nil, hasHints: hasHints, hasCustom: custom != nil,
+        shuffleCount: shuffles.count, controls: configuration.controls,
+        version: modelVersion)
     let isMemoryEfficient = DynamicGraph.memoryEfficient
     if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
       DynamicGraph.memoryEfficient = true
@@ -3267,7 +3282,7 @@ extension LocalImageGenerator {
     guard initTimestep.startStep > 0 || modelVersion == .svdI2v else {
       return generateTextOnly(
         image, scaleFactor: imageScaleFactor,
-        depth: depth, hints: hints, custom: custom, shuffles: shuffles,
+        depth: depth, hints: hints, custom: custom, shuffles: shuffles, poses: poses,
         text: text, negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
     }
@@ -3486,7 +3501,8 @@ extension LocalImageGenerator {
       let depth2Img = depthImage.map { downscaleDepthForDepth2Img($0) }
       let injectedControls = generateInjectedControls(
         graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
-        depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: nil,
+        depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
+        mask: nil,
         controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
         usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
         steps: sampling.steps, firstStage: firstStage)
@@ -3879,7 +3895,7 @@ extension LocalImageGenerator {
   private func generateImageWithMask(
     _ image: Tensor<FloatType>, scaleFactor: Int, mask: Tensor<UInt8>, depth: Tensor<FloatType>?,
     hints: [ControlHintType: AnyTensor], custom: Tensor<FloatType>?,
-    shuffles: [(Tensor<FloatType>, Float)],
+    shuffles: [(Tensor<FloatType>, Float)], poses: [(Tensor<FloatType>, Float)],
     text: String,
     negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
@@ -4064,7 +4080,7 @@ extension LocalImageGenerator {
     if !exists2 && alternativeDecoderVersion == .transparent {
       return generateImageOnly(
         image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
-        shuffles: shuffles, text: text,
+        shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
     }
@@ -4072,14 +4088,14 @@ extension LocalImageGenerator {
     if exists0 && !exists1 && !exists2 && !exists3 {
       return generateImageOnly(
         image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
-        shuffles: shuffles, text: text,
+        shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
     } else if !exists0 && exists1 && !exists2 && !exists3 {
       // If masked due to nothing only the whole page, run text generation only.
       return generateTextOnly(
         image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
-        shuffles: shuffles, text: text,
+        shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
     }
@@ -4105,7 +4121,8 @@ extension LocalImageGenerator {
       guard
         var result = generateImageWithMask2(
           image, scaleFactor: scaleFactor, imageNegMask2: imageNegMask3, mask2: mask3, depth: depth,
-          hints: hints, custom: custom, shuffles: shuffles, text: text, negativeText: negativeText,
+          hints: hints, custom: custom, shuffles: shuffles, poses: poses, text: text,
+          negativeText: negativeText,
           configuration: configuration, denoiserParameterization: denoiserParameterization,
           sampling: sampling, signposts: &signposts, feedback: feedback)
       else {
@@ -4137,7 +4154,7 @@ extension LocalImageGenerator {
           generateImageWithMask1AndMask2(
             image, scaleFactor: scaleFactor, imageNegMask1: imageNegMask2, imageNegMask2: nil,
             mask1: mask2, mask2: nil, depth: depth, hints: hints, custom: custom,
-            shuffles: shuffles, text: text,
+            shuffles: shuffles, poses: poses, text: text,
             negativeText: negativeText, configuration: configuration,
             denoiserParameterization: denoiserParameterization, sampling: sampling,
             signposts: &signposts, feedback: feedback)
@@ -4166,6 +4183,7 @@ extension LocalImageGenerator {
       var result = generateImageWithMask1AndMask2(
         image, scaleFactor: scaleFactor, imageNegMask1: imageNegMask2, imageNegMask2: imageNegMask3,
         mask1: mask2, mask2: mask3, depth: depth, hints: hints, custom: custom, shuffles: shuffles,
+        poses: poses,
         text: text,
         negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling,
@@ -4198,7 +4216,8 @@ extension LocalImageGenerator {
   private func generateImageWithMask2(
     _ image: Tensor<FloatType>, scaleFactor imageScaleFactor: Int, imageNegMask2: Tensor<FloatType>,
     mask2: Tensor<FloatType>, depth: Tensor<FloatType>?, hints: [ControlHintType: AnyTensor],
-    custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], text: String,
+    custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)],
+    poses: [(Tensor<FloatType>, Float)], text: String,
     negativeText: String,
     configuration: GenerationConfiguration, denoiserParameterization: Denoiser.Parameterization,
     sampling: Sampling, signposts: inout Set<ImageGeneratorSignpost>,
@@ -4319,13 +4338,18 @@ extension LocalImageGenerator {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
+    var hasHints = Set(hints.keys)
+    if !poses.isEmpty {
+      hasHints.insert(.pose)
+    }
     let (
       canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
       canInjectedControls
     ) =
       ImageGeneratorUtils.canInjectControls(
-        hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
-        shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
+        hasImage: true, hasDepth: depth != nil, hasHints: hasHints, hasCustom: custom != nil,
+        shuffleCount: shuffles.count, controls: configuration.controls,
+        version: modelVersion)
     let isMemoryEfficient = DynamicGraph.memoryEfficient
     if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
       DynamicGraph.memoryEfficient = true
@@ -4586,7 +4610,8 @@ extension LocalImageGenerator {
       }
       let injectedControls = generateInjectedControls(
         graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
-        depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: imageNegMask2,
+        depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
+        mask: imageNegMask2,
         controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
         usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
         steps: sampling.steps, firstStage: firstStage)
@@ -4846,7 +4871,7 @@ extension LocalImageGenerator {
     _ image: Tensor<FloatType>, scaleFactor imageScaleFactor: Int, imageNegMask1: Tensor<FloatType>,
     imageNegMask2: Tensor<FloatType>?, mask1: Tensor<FloatType>, mask2: Tensor<FloatType>?,
     depth: Tensor<FloatType>?, hints: [ControlHintType: AnyTensor], custom: Tensor<FloatType>?,
-    shuffles: [(Tensor<FloatType>, Float)],
+    shuffles: [(Tensor<FloatType>, Float)], poses: [(Tensor<FloatType>, Float)],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
     signposts: inout Set<ImageGeneratorSignpost>,
@@ -4967,13 +4992,18 @@ extension LocalImageGenerator {
         DynamicGraph.flags.insert(.disableMFAGEMM)
       }
     }
+    var hasHints = Set(hints.keys)
+    if !poses.isEmpty {
+      hasHints.insert(.pose)
+    }
     let (
       canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
       canInjectedControls
     ) =
       ImageGeneratorUtils.canInjectControls(
-        hasImage: true, hasDepth: depth != nil, hasHints: Set(hints.keys), hasCustom: custom != nil,
-        shuffleCount: shuffles.count, controls: configuration.controls, version: modelVersion)
+        hasImage: true, hasDepth: depth != nil, hasHints: hasHints, hasCustom: custom != nil,
+        shuffleCount: shuffles.count, controls: configuration.controls,
+        version: modelVersion)
     let isMemoryEfficient = DynamicGraph.memoryEfficient
     if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
       DynamicGraph.memoryEfficient = true
@@ -5283,7 +5313,8 @@ extension LocalImageGenerator {
       }
       var injectedControls = generateInjectedControls(
         graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
-        depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: imageNegMask1,
+        depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
+        mask: imageNegMask1,
         controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
         usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
         steps: sampling.steps, firstStage: firstStage)
@@ -5382,7 +5413,8 @@ extension LocalImageGenerator {
           }()
         injectedControls = generateInjectedControls(
           graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
-          depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, mask: imageNegMask2,
+          depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
+          mask: imageNegMask2,
           controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
           usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
           steps: sampling.steps, firstStage: firstStage

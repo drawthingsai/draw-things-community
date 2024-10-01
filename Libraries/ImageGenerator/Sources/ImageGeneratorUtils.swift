@@ -200,7 +200,8 @@ public struct ImageGeneratorUtils {
           injectT2IAdapters =
             injectT2IAdapters || (hasImage && Self.isDepthModelAvailable) || hasDepth
         case .pose:
-          injectT2IAdapters = injectT2IAdapters || hasHints.contains(modifier) || hasCustom
+          injectT2IAdapters =
+            injectT2IAdapters || hasHints.contains(modifier) || hasCustom
         case .scribble:
           injectT2IAdapters = injectT2IAdapters || hasHints.contains(modifier)
         case .color:
