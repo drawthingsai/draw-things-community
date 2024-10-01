@@ -58,7 +58,7 @@ public final class ControlNetImporter {
       prefix: "model.control_model", attn: "attn", upTo: 19, keys: keys)
     let singleControls = Self.numberOfSingleTransformerBlocks(
       prefix: "model.control_model", attn: "attn", upTo: 38, keys: keys)
-    guard doubleControls > 0 && singleControls > 0 else {
+    guard doubleControls > 0 || singleControls > 0 else {
       throw UnpickleError.tensorNotFound
     }
     let union = keys.contains { $0.hasSuffix("controlnet_mode_embedder.weight") }

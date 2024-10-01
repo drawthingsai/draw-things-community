@@ -1254,9 +1254,10 @@ public func Flux1FixedOutputShapes(
   var outs = [TensorShape]()
   outs.append(TensorShape([batchSize.0, 256, channels]))
   for i in 0..<layers.0 {
+    let contextBlockPreOnly = i == layers.0 - 1 && layers.1 == 0
     let outputShapes = JointTransformerBlockFixedOutputShapes(
       prefix: "double_blocks.\(i)", batchSize: batchSize.1, k: 128, h: channels / 128,
-      contextBlockPreOnly: false)
+      contextBlockPreOnly: contextBlockPreOnly)
     outs.append(contentsOf: outputShapes)
   }
   for i in 0..<layers.1 {
@@ -1441,17 +1442,22 @@ public func ControlNetFlux1(
   var zeroConvs = [Dense]()
   var outs = [Model.IO]()
   for i in 0..<layers.0 {
-    let contextChunks = (0..<6).map { _ in Input() }
+    let contextBlockPreOnly = i == layers.0 - 1 && layers.1 == 0
+    let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = JointTransformerBlock(
       prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize, t: tokenLength,
-      hw: h * w, contextBlockPreOnly: false, upcast: i > (layers.0 - 3),
+      hw: h * w, contextBlockPreOnly: contextBlockPreOnly, upcast: i > (layers.0 - 3),
       usesFlashAttention: usesFlashAttention
     )
     let blockOut = block([context, out, rot] + contextChunks + xChunks)
-    context = blockOut[0]
-    out = blockOut[1]
+    if contextBlockPreOnly {
+      out = blockOut
+    } else {
+      context = blockOut[0]
+      out = blockOut[1]
+    }
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
     let zeroConv = Dense(count: channels, name: "zero_conv")
@@ -1462,7 +1468,9 @@ public func ControlNetFlux1(
     outs.append(zeroConv((out * scaleFactor).to(of: controlnetX)))
     zeroConvs.append(zeroConv)
   }
-  out = Functional.concat(axis: 1, context, out)
+  if layers.1 > 0 {
+    out = Functional.concat(axis: 1, context, out)
+  }
   for i in 0..<layers.1 {
     let xChunks = (0..<3).map { _ in Input() }
     let (mapper, block) = SingleTransformerBlock(
@@ -1568,9 +1576,10 @@ public func ControlNetFlux1Fixed<FloatType: TensorNumeric & BinaryFloatingPoint>
   let c = vec.reshaped([batchSize.1, 1, channels]).swish()
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
+    let contextBlockPreOnly = i == layers.0 - 1 && layers.1 == 0
     let (mapper, block) = JointTransformerBlockFixed(
       prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
-      contextBlockPreOnly: false)
+      contextBlockPreOnly: contextBlockPreOnly)
     let blockOut = block(c)
     mappers.append(mapper)
     outs.append(blockOut)

@@ -516,7 +516,7 @@ public func LoRAMMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       configuration: LoRAConfiguration)
     let blockOut = block([context, out] + contextChunks + xChunks)
-    if i == layers - 1 {
+    if contextBlockPreOnly {
       out = blockOut
     } else {
       context = blockOut[0]

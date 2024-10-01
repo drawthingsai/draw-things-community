@@ -2263,13 +2263,29 @@ extension ControlModel {
     case .flux1:
       if transformerBlocks[0] != 19 || transformerBlocks[1] != 38 {
         var newResult = [DynamicGraph.Tensor<FloatType>]()
-        let doubleIntervalControl = (19 + transformerBlocks[0] - 1) / transformerBlocks[0]
-        for i in 0..<19 {
-          newResult.append(result[i / doubleIntervalControl])
+        if transformerBlocks[0] > 0 {
+          let doubleIntervalControl = (19 + transformerBlocks[0] - 1) / transformerBlocks[0]
+          for i in 0..<19 {
+            newResult.append(result[i / doubleIntervalControl])
+          }
+        } else {
+          let emptyControl = graph.variable(like: result[0])
+          emptyControl.full(0)
+          for i in 0..<19 {
+            newResult.append(emptyControl)
+          }
         }
-        let singleIntervalControl = (38 + transformerBlocks[1] - 1) / transformerBlocks[1]
-        for i in 0..<38 {
-          newResult.append(result[i / singleIntervalControl + transformerBlocks[0]])
+        if transformerBlocks[1] > 0 {
+          let singleIntervalControl = (38 + transformerBlocks[1] - 1) / transformerBlocks[1]
+          for i in 0..<38 {
+            newResult.append(result[i / singleIntervalControl + transformerBlocks[0]])
+          }
+        } else {
+          let emptyControl = graph.variable(like: result[0])
+          emptyControl.full(0)
+          for i in 0..<38 {
+            newResult.append(emptyControl)
+          }
         }
         result = newResult
       }
