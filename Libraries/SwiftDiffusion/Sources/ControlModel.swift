@@ -1972,7 +1972,7 @@ extension ControlModel {
       case .pulid:
         return Self.emptyIPAdapters(
           graph: graph, batchSize: batchSize, length: 1, numTokens: 32, version: version,
-          usesFlashAttention: false)
+          usesFlashAttention: usesFlashAttention)
       case .t2iadapter:
         return Self.emptyAdapters(graph: graph, startWidth: startWidth, startHeight: startHeight)
       case .injectKV:
