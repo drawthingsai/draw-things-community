@@ -622,6 +622,7 @@ extension ScriptExecutor: JSInterop {
       self.delegate?.logJavascript(
         title: "Shared.js", script: Self.SharedScript, index: 0)
       let firstSessionId = ScriptExecutionSession.sessionId()
+      var scriptRuntimes = ScriptZoo.scriptRuntime
       for (i, script) in self.scripts.enumerated() {
         let session =
           i == 0
@@ -633,12 +634,36 @@ extension ScriptExecutor: JSInterop {
         self.delegate?.evaluateScriptBegan(sessionId: session.sessionId)
         self.delegate?.logJavascript(
           title: (script.file as NSString).lastPathComponent, script: script.script, index: i + 1)
+        let began = Date()
+        var runtime = scriptRuntimes[script.file]?[Self.deviceIdentifier()] ?? 0
         self.context?.evaluateScript(
           """
           (function (){
           \(script.script)
           })();
           """)
+        if runtime == 0 {
+          runtime = (runtime + Date().timeIntervalSince(began)) / 2
+        } else {
+          // no previous runtime
+          runtime = Date().timeIntervalSince(began)
+        }
+        // write runtime -- not thread safe lol
+        if scriptRuntimes[script.file] != nil {
+          scriptRuntimes[script.file]?[Self.deviceIdentifier()] = runtime
+        } else {
+          scriptRuntimes[script.file] = [Self.deviceIdentifier(): runtime]
+        }
+        let fileManager = FileManager.default
+        let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+        let runtimeUrl = urls.first!
+        let networkUrl = runtimeUrl.appendingPathComponent("net")
+        try? fileManager.createDirectory(at: networkUrl, withIntermediateDirectories: true)
+        try? fileManager.removeItem(at: networkUrl.appendingPathComponent("script_runtime.json"))
+        if let data = try? JSONEncoder().encode(scriptRuntimes) {
+          try? data.write(
+            to: networkUrl.appendingPathComponent("script_runtime.json"), options: [.atomic])
+        }
         self.delegate?.evaluateScriptEnded(
           session: session, models: self.models.sorted(), loras: self.loras.sorted(),
           controls: self.controls.sorted())
@@ -989,4 +1014,46 @@ extension ScriptExecutionSession {
     (ScriptExecutor.systemRandomNumberGenerator.next() & 0xffff_ffff_fff0_0000)
       | (UInt64(Date().timeIntervalSince1970) & 0xf_ffff)
   }
+}
+
+extension ScriptExecutor {
+  /// Gets the identifier from the system, such as "iPhone7,1".
+  public static func deviceIdentifier() -> String {
+    var systemInfo = utsname()
+    uname(&systemInfo)
+    let mirror = Mirror(reflecting: systemInfo.machine)
+
+    let identifier = mirror.children.reduce("") { identifier, element in
+      guard let value = element.value as? Int8, value != 0 else { return identifier }
+      return identifier + String(UnicodeScalar(UInt8(value)))
+    }
+    return identifier
+  }
+}
+
+extension ScriptZoo {
+  public static var scriptRuntime: [String: [String: TimeInterval]] {
+    return scriptRuntimeFromDisk()
+  }
+
+  private static func scriptRuntimeFromDisk() -> [String: [String: TimeInterval]] {
+    let fileManager = FileManager.default
+    let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+    let cacheUrl = urls.first!
+    let runtimeUrl = cacheUrl.appendingPathComponent("net").appendingPathComponent(
+      "script_runtime.json")
+    guard let jsonData = try? Data(contentsOf: runtimeUrl) else {
+      return [:]
+    }
+    let jsonDecoder = JSONDecoder()
+    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    guard
+      let jsonSpecifications = try? jsonDecoder.decode(
+        [String: [String: TimeInterval]].self, from: jsonData)
+    else {
+      return [:]
+    }
+    return jsonSpecifications
+  }
+
 }
