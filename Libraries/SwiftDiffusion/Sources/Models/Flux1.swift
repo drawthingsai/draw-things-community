@@ -1223,8 +1223,8 @@ public func Flux1Fixed(
       mapping["time_text_embed.text_embedder.linear_2.bias"] = [yMlp2.bias.name]
       mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
       mapping["context_embedder.bias"] = [contextEmbedder.bias.name]
-      mapping["norm_out.linear.weight"] = [shift.weight.name, scale.weight.name]
-      mapping["norm_out.linear.bias"] = [shift.bias.name, scale.bias.name]
+      mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
+      mapping["norm_out.linear.bias"] = [scale.bias.name, shift.bias.name]
     }
     return mapping
   }
