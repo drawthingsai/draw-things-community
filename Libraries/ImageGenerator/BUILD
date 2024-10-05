@@ -28,6 +28,7 @@ swift_library(
     srcs = glob(
                ["Sources/**/*.swift"],
                exclude = [
+                   "Sources/RemoteImageGenerator.swift",
                    "Sources/ImageConverter.swift",
                    "Sources/ImageGeneratorProtocol.swift",
                    "Sources/ImageGeneratorUtils.swift",
@@ -43,8 +44,6 @@ swift_library(
     deps = [
         ":ImageGenerator",
         "//Libraries/DataModels",
-        "//Libraries/GRPC:GRPCModels",
-        "//Libraries/GRPC:GRPCServer",
         "//Libraries/ModelZoo",
         "//Libraries/Scripting:ScriptDataModels",
         "//Libraries/SwiftDiffusion",
@@ -54,7 +53,6 @@ swift_library(
         "//Libraries/Upscaler",
         "@SwiftLog//:Logging",
         "@ccv//lib:ccv",
-        "@grpc-swift//:GRPC",
         "@s4nnc//nnc",
     ] + select({
         ":ios_or_macos_build": [
@@ -64,6 +62,19 @@ swift_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+swift_library(
+    name = "RemoteImageGenerator",
+    srcs = ["Sources/RemoteImageGenerator.swift"],
+    module_name = "RemoteImageGenerator",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ImageGenerator",
+        "//Libraries/GRPC:GRPCModels",
+        "//Libraries/GRPC:GRPCServer",
+        "@grpc-swift//:GRPC",
+    ],
 )
 
 swift_library(
@@ -79,7 +90,6 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         "//Libraries/DataModels",
-        "//Libraries/GRPC:GRPCModels",
         "//Libraries/ModelZoo",
         "//Libraries/SwiftDiffusion",
         "@ccv//lib:ccv",

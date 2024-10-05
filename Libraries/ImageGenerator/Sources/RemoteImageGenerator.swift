@@ -184,7 +184,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     request.fileNames = files
 
     // Send the request
-    let call = try! client.modelMetadata(
+    let call = client.modelMetadata(
       request,
       handler: { response in
 
@@ -205,7 +205,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     }
 
     do {
-      try call.status.wait()
+      let _ = try call.status.wait()
     } catch {
       logger.error("Failed to receive stream completion: \(error)")
     }

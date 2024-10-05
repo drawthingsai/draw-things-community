@@ -1,74 +1,8 @@
 import DataModels
 import Diffusion
 import Foundation
-import GRPCModels
 import ModelZoo
 import NNC
-
-extension ImageGeneratorSignpost {
-  public init(from signpostProto: ImageGeneratingSignpostProto, step: Int) {
-    switch signpostProto {
-    case ImageGeneratingSignpostProto.textEncoded:
-      self = .textEncoded
-    case ImageGeneratingSignpostProto.imageEncoded:
-      self = .imageEncoded
-    case ImageGeneratingSignpostProto.sampling:
-      self = .sampling(step)
-    case ImageGeneratingSignpostProto.imageDecoded:
-      self = .imageDecoded
-    case ImageGeneratingSignpostProto.secondPassImageEncoded:
-      self = .secondPassImageEncoded
-    case ImageGeneratingSignpostProto.secondPassSampling:
-      self = .secondPassSampling(step)
-    case ImageGeneratingSignpostProto.secondPassImageDecoded:
-      self = .secondPassImageDecoded
-    case ImageGeneratingSignpostProto.faceRestored:
-      self = .faceRestored
-    case ImageGeneratingSignpostProto.imageUpscaled:
-      self = .imageUpscaled
-    case ImageGeneratingSignpostProto.UNRECOGNIZED:
-      fatalError()
-    }
-  }
-
-  public var step: Int32? {
-    switch self {
-
-    case ImageGeneratorSignpost.sampling(let step):
-      return Int32(step)
-    case ImageGeneratorSignpost.secondPassSampling(let step):
-      return Int32(step)
-    default:
-      return nil
-
-    }
-  }
-}
-
-extension ImageGeneratingSignpostProto {
-  public init(from signpost: ImageGeneratorSignpost) {
-    switch signpost {
-    case ImageGeneratorSignpost.textEncoded:
-      self = ImageGeneratingSignpostProto.textEncoded
-    case ImageGeneratorSignpost.imageEncoded:
-      self = ImageGeneratingSignpostProto.imageEncoded
-    case ImageGeneratorSignpost.sampling:
-      self = ImageGeneratingSignpostProto.sampling
-    case ImageGeneratorSignpost.imageDecoded:
-      self = ImageGeneratingSignpostProto.imageDecoded
-    case ImageGeneratorSignpost.secondPassImageEncoded:
-      self = ImageGeneratingSignpostProto.secondPassImageEncoded
-    case ImageGeneratorSignpost.secondPassSampling:
-      self = ImageGeneratingSignpostProto.secondPassSampling
-    case ImageGeneratorSignpost.secondPassImageDecoded:
-      self = ImageGeneratingSignpostProto.secondPassImageDecoded
-    case ImageGeneratorSignpost.faceRestored:
-      self = ImageGeneratingSignpostProto.faceRestored
-    case ImageGeneratorSignpost.imageUpscaled:
-      self = ImageGeneratingSignpostProto.imageUpscaled
-    }
-  }
-}
 
 public struct ImageGeneratorUtils {
 
