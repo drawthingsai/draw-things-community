@@ -25,3 +25,4 @@ Vendors/ZIPFoundation
 WORKSPACE.linux
 WORKSPACE.darwin
 SYNCLIST
+BUILD
