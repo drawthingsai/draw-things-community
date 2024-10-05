@@ -10,6 +10,7 @@ Libraries/DataModels
 Libraries/FaceRestorer
 Libraries/History
 Libraries/ImageGenerator
+Libraries/LocalImageGenerator
 Libraries/ModelOp
 Libraries/ModelZoo
 Libraries/SFMT
