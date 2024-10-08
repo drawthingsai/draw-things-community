@@ -27,7 +27,7 @@ func paddedTileStartAndEnd(iOfs: Int, length: Int, tileSize: Int, tileOverlap: I
     inputStartPad = 0
     inputEndPad = tileSize
     precondition(inputEndPad <= length)
-  } else if inputEndPad > length {
+  } else if inputEndPad >= length {
     inputEndPad = length
     inputStartPad = length - tileSize
     precondition(inputStartPad >= 0)
