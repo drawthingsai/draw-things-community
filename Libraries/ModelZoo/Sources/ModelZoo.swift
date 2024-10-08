@@ -932,62 +932,62 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public static func humanReadableNameForModel(_ name: String) -> String {
-    guard let specification = specificationMapping[name] else { return name }
+    guard let specification = specificationForModel(name) else { return name }
     return specification.name
   }
 
   public static func textPrefixForModel(_ name: String) -> String {
-    guard let specification = specificationMapping[name] else { return "" }
+    guard let specification = specificationForModel(name) else { return "" }
     return specification.prefix
   }
 
   public static func textEncoderForModel(_ name: String) -> String? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.textEncoder
   }
 
   public static func textEncoderVersionForModel(_ name: String) -> TextEncoderVersion? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.textEncoderVersion
   }
 
   public static func imageEncoderForModel(_ name: String) -> String? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.imageEncoder
   }
 
   public static func CLIPEncoderForModel(_ name: String) -> String? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.clipEncoder
   }
 
   public static func T5EncoderForModel(_ name: String) -> String? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.t5Encoder
   }
 
   public static func diffusionMappingForModel(_ name: String) -> String? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.diffusionMapping
   }
 
   public static func versionForModel(_ name: String) -> ModelVersion {
-    guard let specification = specificationMapping[name] else { return .v1 }
+    guard let specification = specificationForModel(name) else { return .v1 }
     return specification.version
   }
 
   public static func autoencoderForModel(_ name: String) -> String? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.autoencoder
   }
 
   public static func isModelDeprecated(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.deprecated ?? false
   }
 
   public static func objectiveForModel(_ name: String) -> Denoiser.Objective {
-    guard let specification = specificationMapping[name] else { return .epsilon }
+    guard let specification = specificationForModel(name) else { return .epsilon }
     if let objective = specification.objective {
       return objective
     }
@@ -1004,7 +1004,7 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public static func conditioningForModel(_ name: String) -> Denoiser.Conditioning {
-    guard let specification = specificationMapping[name] else { return .timestep }
+    guard let specification = specificationForModel(name) else { return .timestep }
     if let conditioning = specification.conditioning {
       return conditioning
     }
@@ -1018,7 +1018,7 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public static func noiseDiscretizationForModel(_ name: String) -> NoiseDiscretization {
-    guard let specification = specificationMapping[name] else {
+    guard let specification = specificationForModel(name) else {
       return .ddpm(
         .init(linearStart: 0.00085, linearEnd: 0.012, timesteps: 1_000, linspace: .linearWrtSigma))
     }
@@ -1045,7 +1045,7 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public static func paddedTextEncodingLengthForModel(_ name: String) -> Int {
-    guard let specification = specificationMapping[name] else { return 0 }
+    guard let specification = specificationForModel(name) else { return 0 }
     if let paddedTextEncodingLength = specification.paddedTextEncodingLength {
       return paddedTextEncodingLength
     }
@@ -1065,7 +1065,7 @@ public struct ModelZoo: DownloadZoo {
   public static func latentsScalingForModel(_ name: String) -> (
     mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?
   ) {
-    guard let specification = specificationMapping[name] else { return (nil, nil, 1, nil) }
+    guard let specification = specificationForModel(name) else { return (nil, nil, 1, nil) }
     if let mean = specification.latentsMean, let std = specification.latentsStd,
       let scalingFactor = specification.latentsScalingFactor
     {
@@ -1091,47 +1091,47 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public static func stageModelsForModel(_ name: String) -> [String] {
-    guard let specification = specificationMapping[name] else { return [] }
+    guard let specification = specificationForModel(name) else { return [] }
     return specification.stageModels ?? []
   }
 
   public static func isUpcastAttentionForModel(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.upcastAttention
   }
 
   public static func isHighPrecisionAutoencoderForModel(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.highPrecisionAutoencoder ?? false
   }
 
   public static func modifierForModel(_ name: String) -> SamplerModifier {
-    guard let specification = specificationMapping[name] else { return .none }
+    guard let specification = specificationForModel(name) else { return .none }
     return specification.modifier ?? .none
   }
 
   public static func isConsistencyModelForModel(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.isConsistencyModel ?? false
   }
 
   public static func guidanceEmbedForModel(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.guidanceEmbed ?? false
   }
 
   public static func defaultScaleForModel(_ name: String?) -> UInt16 {
-    guard let name = name, let specification = specificationMapping[name] else { return 8 }
+    guard let name = name, let specification = specificationForModel(name) else { return 8 }
     return specification.defaultScale
   }
 
   public static func hiresFixScaleForModel(_ name: String?) -> UInt16 {
-    guard let name = name, let specification = specificationMapping[name] else { return 8 }
+    guard let name = name, let specification = specificationForModel(name) else { return 8 }
     return specification.hiresFixScale ?? specification.defaultScale
   }
 
   public static func defaultRefinerForModel(_ name: String) -> String? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.defaultRefiner
   }
 

@@ -338,57 +338,57 @@ public struct ControlNetZoo: DownloadZoo {
   }
 
   public static func humanReadableNameForModel(_ name: String) -> String {
-    guard let specification = specificationMapping[name] else { return name }
+    guard let specification = specificationForModel(name) else { return name }
     return specification.name
   }
 
   public static func modifierForModel(_ name: String) -> ControlHintType? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.modifier
   }
 
   public static func versionForModel(_ name: String) -> ModelVersion {
-    guard let specification = specificationMapping[name] else { return .v1 }
+    guard let specification = specificationForModel(name) else { return .v1 }
     return specification.version
   }
 
   public static func imageEncoderForModel(_ name: String) -> String? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.imageEncoder
   }
 
   public static func imageEncoderVersionForModel(_ name: String) -> ImageEncoderVersion {
-    guard let specification = specificationMapping[name] else { return .openClipH14 }
+    guard let specification = specificationForModel(name) else { return .openClipH14 }
     return specification.imageEncoderVersion ?? .openClipH14
   }
 
   public static func IPAdapterConfigForModel(_ name: String) -> IPAdapterConfig? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.ipAdapterConfig
   }
 
   public static func autoencoderForModel(_ name: String) -> String? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.autoencoder
   }
 
   public static func preprocessorForModel(_ name: String) -> String? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     return specification.preprocessor
   }
 
   public static func typeForModel(_ name: String) -> ControlType {
-    guard let specification = specificationMapping[name] else { return .controlnet }
+    guard let specification = specificationForModel(name) else { return .controlnet }
     return specification.type
   }
 
   public static func globalAveragePoolingForModel(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.globalAveragePooling
   }
 
   public static func transformerBlocksForModel(_ name: String) -> [Int] {
-    guard let specification = specificationMapping[name] else { return [] }
+    guard let specification = specificationForModel(name) else { return [] }
     return specification.transformerBlocks ?? []
   }
 
@@ -441,7 +441,7 @@ public struct ControlNetZoo: DownloadZoo {
   }
 
   public static func isModelDeprecated(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.deprecated ?? false
   }
 

@@ -189,7 +189,7 @@ public struct TextualInversionZoo: DownloadZoo {
   }()
 
   public static func isModelDeprecated(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.deprecated ?? false
   }
 
@@ -247,7 +247,7 @@ public struct TextualInversionZoo: DownloadZoo {
   }
 
   public static func humanReadableNameForModel(_ name: String) -> String {
-    guard let specification = specificationMapping[name] else { return name }
+    guard let specification = specificationForModel(name) else { return name }
     return specification.name
   }
 
@@ -256,17 +256,17 @@ public struct TextualInversionZoo: DownloadZoo {
   }
 
   public static func keywordForModel(_ name: String) -> String {
-    guard let specification = specificationMapping[name] else { return "" }
+    guard let specification = specificationForModel(name) else { return "" }
     return specification.keyword
   }
 
   public static func tokenLengthForModel(_ name: String) -> Int {
-    guard let specification = specificationMapping[name] else { return 0 }
+    guard let specification = specificationForModel(name) else { return 0 }
     return specification.length
   }
 
   public static func versionForModel(_ name: String) -> ModelVersion {
-    guard let specification = specificationMapping[name] else { return .v1 }
+    guard let specification = specificationForModel(name) else { return .v1 }
     return specification.version
   }
 
@@ -285,7 +285,7 @@ public struct TextualInversionZoo: DownloadZoo {
   public static func embeddingForModel<FloatType: TensorNumeric>(
     _ name: String, graph: DynamicGraph, modifier: Modifier, of: FloatType.Type = FloatType.self
   ) -> Tensor<FloatType>? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     let version = specification.version
     let tokenLength = specification.length
     let count: Int

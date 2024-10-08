@@ -53,6 +53,10 @@ public struct UpscalerZoo: DownloadZoo {
     return mapping
   }()
 
+  public static func specificationForModel(_ name: String) -> Specification? {
+    return specificationMapping[name]
+  }
+
   public static func filePathForModelDownloaded(_ name: String) -> String {
     return ModelZoo.filePathForModelDownloaded(name)
   }
@@ -62,17 +66,17 @@ public struct UpscalerZoo: DownloadZoo {
   }
 
   public static func humanReadableNameForModel(_ name: String) -> String {
-    guard let specification = specificationMapping[name] else { return name }
+    guard let specification = specificationForModel(name) else { return name }
     return specification.name
   }
 
   public static func scaleFactorForModel(_ name: String) -> UpscaleFactor {
-    guard let specification = specificationMapping[name] else { return .x4 }
+    guard let specification = specificationForModel(name) else { return .x4 }
     return specification.scaleFactor
   }
 
   public static func numberOfBlocksForModel(_ name: String) -> Int {
-    guard let specification = specificationMapping[name] else { return 23 }
+    guard let specification = specificationForModel(name) else { return 23 }
     return specification.blocks
   }
 

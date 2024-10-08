@@ -3,7 +3,7 @@ import Foundation
 import NNC
 
 public struct TextGenerationZoo: DownloadZoo {
-  struct Specification: Codable {
+  public struct Specification: Codable {
     var name: String
     var file: String
   }
@@ -40,6 +40,10 @@ public struct TextGenerationZoo: DownloadZoo {
     return mapping
   }()
 
+  public static func specificationForModel(_ name: String) -> Specification? {
+    return specificationMapping[name]
+  }
+
   public static func filePathForModelDownloaded(_ name: String) -> String {
     return ModelZoo.filePathForModelDownloaded(name)
   }
@@ -49,7 +53,7 @@ public struct TextGenerationZoo: DownloadZoo {
   }
 
   public static func humanReadableNameForModel(_ name: String) -> String {
-    guard let specification = specificationMapping[name] else { return name }
+    guard let specification = specificationForModel(name) else { return name }
     return specification.name
   }
 

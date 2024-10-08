@@ -337,12 +337,12 @@ public struct LoRAZoo: DownloadZoo {
   }
 
   public static func isModelDeprecated(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.deprecated ?? false
   }
 
   public static func humanReadableNameForModel(_ name: String) -> String {
-    guard let specification = specificationMapping[name] else { return name }
+    guard let specification = specificationForModel(name) else { return name }
     return specification.name
   }
 
@@ -351,27 +351,27 @@ public struct LoRAZoo: DownloadZoo {
   }
 
   public static func textPrefixForModel(_ name: String) -> String {
-    guard let specification = specificationMapping[name] else { return "" }
+    guard let specification = specificationForModel(name) else { return "" }
     return specification.prefix
   }
 
   public static func versionForModel(_ name: String) -> ModelVersion {
-    guard let specification = specificationMapping[name] else { return .v1 }
+    guard let specification = specificationForModel(name) else { return .v1 }
     return specification.version
   }
 
   public static func modifierForModel(_ name: String) -> SamplerModifier {
-    guard let specification = specificationMapping[name] else { return .none }
+    guard let specification = specificationForModel(name) else { return .none }
     return specification.modifier ?? .none
   }
 
   public static func isConsistencyModelForModel(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.isConsistencyModel ?? false
   }
 
   public static func weightForModel(_ name: String) -> Specification.WeightRange {
-    guard let specification = specificationMapping[name] else { return .init(value: nil) }
+    guard let specification = specificationForModel(name) else { return .init(value: nil) }
     let isConsistencyModel = specification.isConsistencyModel ?? false
     let isInpainting = specification.modifier == .inpainting
     return specification.weight ?? .init(value: isConsistencyModel || isInpainting ? 1.0 : nil)
@@ -380,7 +380,7 @@ public struct LoRAZoo: DownloadZoo {
   public static func alternativeDecoderForModel(_ name: String) -> (
     String, AlternativeDecoderVersion
   )? {
-    guard let specification = specificationMapping[name] else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
     guard let alternativeDecoder = specification.alternativeDecoder,
       let alternativeDecoderVersion = specification.alternativeDecoderVersion
     else { return nil }
@@ -388,7 +388,7 @@ public struct LoRAZoo: DownloadZoo {
   }
 
   public static func isLoHaForModel(_ name: String) -> Bool {
-    guard let specification = specificationMapping[name] else { return false }
+    guard let specification = specificationForModel(name) else { return false }
     return specification.isLoHa ?? false
   }
 
