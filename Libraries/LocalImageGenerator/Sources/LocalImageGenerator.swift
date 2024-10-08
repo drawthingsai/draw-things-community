@@ -578,8 +578,7 @@ extension LocalImageGenerator {
   public func generate(
     _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],
-    text: String,
-    negativeText: String, configuration: GenerationConfiguration,
+    text: String, negativeText: String, configuration: GenerationConfiguration, keywords: [String],
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>]?, Int) {

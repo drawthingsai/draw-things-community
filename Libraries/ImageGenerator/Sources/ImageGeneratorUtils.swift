@@ -277,3 +277,39 @@ public struct ImageGeneratorUtils {
     return depthMapRawValue
   }
 }
+
+extension ImageGeneratorUtils {
+  public static func metadataOverride(_ configuration: GenerationConfiguration) -> (
+    models: [ModelZoo.Specification], loras: [LoRAZoo.Specification],
+    controlNets: [ControlNetZoo.Specification]
+  ) {
+    var models = [ModelZoo.Specification]()
+    func appendModel(_ model: String?) {
+      guard let model = model else { return }
+      guard let specification = ModelZoo.specificationForModel(model) else { return }
+      models.append(specification)
+      if let stageModels = specification.stageModels {
+        for stageModel in stageModels {
+          if let specification = ModelZoo.specificationForModel(stageModel) {
+            models.append(specification)
+          }
+        }
+      }
+    }
+    appendModel(configuration.model)
+    appendModel(configuration.refinerModel)
+    var loras = [LoRAZoo.Specification]()
+    for lora in configuration.loras {
+      guard let file = lora.file else { continue }
+      guard let specification = LoRAZoo.specificationForModel(file) else { continue }
+      loras.append(specification)
+    }
+    var controlNets = [ControlNetZoo.Specification]()
+    for control in configuration.controls {
+      guard let file = control.file else { continue }
+      guard let specification = ControlNetZoo.specificationForModel(file) else { continue }
+      controlNets.append(specification)
+    }
+    return (models, loras, controlNets)
+  }
+}
