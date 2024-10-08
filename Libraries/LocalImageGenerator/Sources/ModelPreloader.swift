@@ -332,7 +332,6 @@ public final class ModelPreloader {
 
 extension ModelPreloader {
   public func beginCoreMLGuard() -> Bool {
-    dispatchPrecondition(condition: .onQueue(queue))
     guard CoreMLModelManager.isCoreMLSupported.load(ordering: .acquiring) else { return false }
     workspace.dictionary["coreml_guard", Bool.self] = true
     workspace.dictionary.synchronize()
@@ -342,7 +341,6 @@ extension ModelPreloader {
     workspace.dictionary["coreml_guard", Bool.self] = nil
   }
   public func beginMFAGuard() -> Bool {
-    dispatchPrecondition(condition: .onQueue(queue))
     guard DeviceCapability.isMFAEnabled.load(ordering: .acquiring) else { return false }
     // For these devices, we are very confident it just works, hence, no need to disable MFA upon crash.
     guard !(DeviceCapability.isMFASupported && DeviceCapability.isMFACausalAttentionMaskSupported)

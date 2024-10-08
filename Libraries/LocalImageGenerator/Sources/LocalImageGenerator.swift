@@ -2237,7 +2237,6 @@ extension LocalImageGenerator {
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
       -> Bool
   ) -> ([Tensor<FloatType>]?, Int) {
-    dispatchPrecondition(condition: .onQueue(queue))
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
     defer {
       if coreMLGuard {
