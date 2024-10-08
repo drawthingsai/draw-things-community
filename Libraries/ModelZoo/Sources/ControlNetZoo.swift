@@ -325,7 +325,12 @@ public struct ControlNetZoo: DownloadZoo {
     return ModelZoo.isModelDownloaded(name)
   }
 
+  public static var overrideMapping: [String: Specification] = [:]
+
   public static func specificationForModel(_ name: String) -> Specification? {
+    if let override = overrideMapping[name] {
+      return override
+    }
     return specificationMapping[name]
   }
 

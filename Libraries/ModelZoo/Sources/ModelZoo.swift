@@ -853,7 +853,12 @@ public struct ModelZoo: DownloadZoo {
     return availableSpecifications.first { $0.name == name }
   }
 
+  public static var overrideMapping: [String: Specification] = [:]
+
   public static func specificationForModel(_ name: String) -> Specification? {
+    if let override = overrideMapping[name] {
+      return override
+    }
     return specificationMapping[name]
   }
 
