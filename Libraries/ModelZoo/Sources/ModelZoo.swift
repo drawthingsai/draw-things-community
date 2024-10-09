@@ -862,13 +862,10 @@ public struct ModelZoo: DownloadZoo {
     return specificationMapping[name]
   }
 
-  public static func filesToDownloadFrom(_ model: String, communitySpecifications: [Specification])
+  public static func filesToDownload(_ specification: Specification)
     -> [(name: String, subtitle: String, file: String, sha256: String?)]
   {
-    guard
-      let specification = ModelZoo.specificationForModel(model)
-        ?? (communitySpecifications.first { $0.file == model })
-    else { return [] }
+    let model = specification.file
     let name = specification.name
     let version = ModelZoo.humanReadableNameForVersion(specification.version)
     var models: [(name: String, subtitle: String, file: String, sha256: String?)] = [
