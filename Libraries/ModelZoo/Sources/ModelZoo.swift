@@ -862,6 +862,68 @@ public struct ModelZoo: DownloadZoo {
     return specificationMapping[name]
   }
 
+  public static func filesToDownloadFrom(_ model: String, communitySpecifications: [Specification])
+    -> [(name: String, subtitle: String, file: String, sha256: String?)]
+  {
+    guard
+      let specification = ModelZoo.specificationForModel(model)
+        ?? (communitySpecifications.first { $0.file == model })
+    else { return [] }
+    let name = specification.name
+    let version = ModelZoo.humanReadableNameForVersion(specification.version)
+    var models: [(name: String, subtitle: String, file: String, sha256: String?)] = [
+      (name: name, subtitle: version, file: model, sha256: nil)
+    ]
+    let textEncoder =
+      specification.textEncoder
+      ?? (specification.version == .v1 ? "clip_vit_l14_f16.ckpt" : "open_clip_vit_h14_f16.ckpt")
+    let autoencoder = specification.autoencoder ?? "vae_ft_mse_840000_f16.ckpt"
+    models.append((name: name, subtitle: version, file: textEncoder, sha256: nil))
+    models.append((name: name, subtitle: version, file: autoencoder, sha256: nil))
+    if let imageEncoder = specification.imageEncoder {
+      models.append((name: name, subtitle: version, file: imageEncoder, sha256: nil))
+    }
+    if let CLIPEncoder = specification.clipEncoder {
+      models.append((name: name, subtitle: version, file: CLIPEncoder, sha256: nil))
+    }
+    if let t5Encoder = specification.t5Encoder {
+      models.append((name: name, subtitle: version, file: t5Encoder, sha256: nil))
+    }
+    if let diffusionMapping = specification.diffusionMapping {
+      models.append((name: name, subtitle: version, file: diffusionMapping, sha256: nil))
+    }
+    for stageModel in (specification.stageModels ?? []) {
+      models.append((name: name, subtitle: version, file: stageModel, sha256: nil))
+    }
+    if let defaultRefiner = specification.defaultRefiner {
+      let name = ModelZoo.humanReadableNameForModel(defaultRefiner)
+      let version = ModelZoo.humanReadableNameForVersion(ModelZoo.versionForModel(defaultRefiner))
+      models.append((name: name, subtitle: version, file: defaultRefiner, sha256: nil))
+      if let textEncoder = ModelZoo.textEncoderForModel(defaultRefiner) {
+        models.append((name: name, subtitle: version, file: textEncoder, sha256: nil))
+      }
+      if let autoencoder = ModelZoo.autoencoderForModel(defaultRefiner) {
+        models.append((name: name, subtitle: version, file: autoencoder, sha256: nil))
+      }
+      if let imageEncoder = ModelZoo.imageEncoderForModel(defaultRefiner) {
+        models.append((name: name, subtitle: version, file: imageEncoder, sha256: nil))
+      }
+      if let CLIPEncoder = ModelZoo.CLIPEncoderForModel(defaultRefiner) {
+        models.append((name: name, subtitle: version, file: CLIPEncoder, sha256: nil))
+      }
+      if let T5Encoder = ModelZoo.T5EncoderForModel(defaultRefiner) {
+        models.append((name: name, subtitle: version, file: T5Encoder, sha256: nil))
+      }
+      if let diffusionMapping = ModelZoo.diffusionMappingForModel(defaultRefiner) {
+        models.append((name: name, subtitle: version, file: diffusionMapping, sha256: nil))
+      }
+      for stageModel in ModelZoo.stageModelsForModel(defaultRefiner) {
+        models.append((name: name, subtitle: version, file: stageModel, sha256: nil))
+      }
+    }
+    return models
+  }
+
   public static func internalFilePathForModelDownloaded(_ name: String) -> String {
     return filePathForOtherModelDownloaded(name)
   }

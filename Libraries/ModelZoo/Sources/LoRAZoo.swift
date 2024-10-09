@@ -355,6 +355,25 @@ public struct LoRAZoo: DownloadZoo {
     return specificationMapping[name]
   }
 
+  public static func filesToDownloadFrom(_ model: String, communitySpecifications: [Specification])
+    -> [(name: String, subtitle: String, file: String, sha256: String?)]
+  {
+    dispatchPrecondition(condition: .onQueue(.main))
+    guard
+      let specification = LoRAZoo.specificationForModel(model)
+        ?? (communitySpecifications.first { $0.file == model })
+    else { return [] }
+    let name = specification.name
+    let version = ModelZoo.humanReadableNameForVersion(specification.version)
+    var filesToDownload = [(name: String, subtitle: String, file: String, sha256: String?)]()
+    filesToDownload.append((name: name, subtitle: version, file: model, sha256: nil))
+    if let alternativeDecoder = specification.alternativeDecoder {
+      filesToDownload.append((name: name, subtitle: version, file: alternativeDecoder, sha256: nil))
+    }
+    filesToDownload = filesToDownload.filter { !LoRAZoo.isModelDownloaded($0.file) }
+    return filesToDownload
+  }
+
   public static func textPrefixForModel(_ name: String) -> String {
     guard let specification = specificationForModel(name) else { return "" }
     return specification.prefix

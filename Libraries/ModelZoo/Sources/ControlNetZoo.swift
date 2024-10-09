@@ -334,6 +334,44 @@ public struct ControlNetZoo: DownloadZoo {
     return specificationMapping[name]
   }
 
+  public static func filesToDownloadFrom(_ model: String, communitySpecifications: [Specification])
+    -> [(name: String, subtitle: String, file: String, sha256: String?)]
+  {
+    guard
+      let specification = ControlNetZoo.specificationForModel(model)
+        ?? (communitySpecifications.first { $0.file == model })
+    else { return [] }
+    var filesToDownload = [(name: String, subtitle: String, file: String, sha256: String?)]()
+    let name = specification.name
+    let version = ModelZoo.humanReadableNameForVersion(specification.version)
+    if !ControlNetZoo.isModelDownloaded(model) {
+      filesToDownload.append((name: name, subtitle: version, file: model, sha256: nil))
+    }
+    if let imageEncoder = specification.imageEncoder,
+      !ControlNetZoo.isModelDownloaded(imageEncoder)
+    {
+      filesToDownload.append((name: name, subtitle: version, file: imageEncoder, sha256: nil))
+    }
+    if let autoencoder = specification.autoencoder,
+      !ControlNetZoo.isModelDownloaded(autoencoder)
+    {
+      filesToDownload.append((name: name, subtitle: version, file: autoencoder, sha256: nil))
+    }
+    if let preprocessor = specification.preprocessor,
+      !ControlNetZoo.isModelDownloaded(preprocessor)
+    {
+      filesToDownload.append((name: name, subtitle: version, file: preprocessor, sha256: nil))
+    }
+    if specification.modifier == .depth {
+      let name = EverythingZoo.humanReadableNameForModel("depth_anything_v2.0_f16.ckpt")
+      if !EverythingZoo.isModelDownloaded("depth_anything_v2.0_f16.ckpt") {
+        filesToDownload.append(
+          (name: name, subtitle: "", file: "depth_anything_v2.0_f16.ckpt", sha256: nil))
+      }
+    }
+    return filesToDownload
+  }
+
   public static func isModelDownloaded(_ specification: Specification) -> Bool {
     // Make sure both the model and the image encoder is downloaded.
     return ModelZoo.isModelDownloaded(specification.file)
