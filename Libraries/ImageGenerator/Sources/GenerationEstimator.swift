@@ -177,10 +177,10 @@ public enum GenerationEstimator {
   }
 
   // This is a value from 0 to 1, estimating progress made so far.
-  public static func estimateProgressValue(
+  public static func estimateUpToDateDuration(
     from estimation: GenerationEstimation, signpost: ImageGeneratorSignpost,
     signposts: Set<ImageGeneratorSignpost>
-  ) -> Float {
+  ) -> (updatedDurationThisFar: TimeInterval, updatedEstimatedTotalDuration: TimeInterval) {
     var updatedEstimatedTotalDuration: TimeInterval = 0
     for signpost in signposts {
       switch signpost {
@@ -293,7 +293,7 @@ public enum GenerationEstimator {
     case .imageUpscaled:
       updatedDurationThisFar = updatedEstimatedTotalDuration
     }
-    return Float(updatedDurationThisFar / updatedEstimatedTotalDuration)
+    return (updatedDurationThisFar, updatedEstimatedTotalDuration)
   }
 }
 
