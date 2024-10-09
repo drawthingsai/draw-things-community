@@ -2,6 +2,180 @@ import DataModels
 import Foundation
 
 public enum GenerationEstimator {
+
+  public static func estimateTotalDuration(
+    _ estimation: GenerationEstimation, signposts: Set<ImageGeneratorSignpost>
+  ) -> TimeInterval {
+    var estimatedTotalDuration: TimeInterval = 0
+    for signpost in signposts {
+      switch signpost {
+      case .textEncoded:
+        estimatedTotalDuration += TimeInterval(estimation.textEncoded)
+      case .imageEncoded:
+        estimatedTotalDuration += TimeInterval(estimation.imageEncoded)
+      case .sampling(let steps):
+        estimatedTotalDuration += TimeInterval(estimation.samplingStep) * TimeInterval(steps)
+      case .imageDecoded:
+        estimatedTotalDuration += TimeInterval(estimation.imageDecoded)
+      case .secondPassImageEncoded:
+        estimatedTotalDuration += TimeInterval(estimation.secondPassImageEncoded)
+      case .secondPassSampling(let steps):
+        estimatedTotalDuration +=
+          TimeInterval(estimation.secondPassSamplingStep) * TimeInterval(steps)
+      case .secondPassImageDecoded:
+        estimatedTotalDuration += TimeInterval(estimation.secondPassImageDecoded)
+      case .faceRestored:
+        estimatedTotalDuration += TimeInterval(estimation.faceRestored)
+      case .imageUpscaled:
+        estimatedTotalDuration += TimeInterval(estimation.imageUpscaled)
+      }
+    }
+    return estimatedTotalDuration
+  }
+
+  public static func correct(
+    duration: TimeInterval,
+    estimation: inout GenerationEstimation, signpost: ImageGeneratorSignpost,
+    signposts: Set<ImageGeneratorSignpost>
+  ) {
+    switch signpost {
+    case .textEncoded:
+      estimation.textEncoded = Float(duration)
+    case .imageEncoded:
+      estimation.imageEncoded = Float(duration) - estimation.textEncoded
+    case .sampling(let step):
+      if step > 0 {
+        estimation.samplingStep =
+          (Float(duration) - estimation.textEncoded
+            - (signposts.contains(.imageEncoded) ? estimation.imageEncoded : 0)) / Float(step)
+      }
+    case .imageDecoded:
+      var timePassed: Float = 0
+      for signpost in signposts {
+        switch signpost {
+        case .textEncoded:
+          timePassed += estimation.textEncoded
+        case .imageEncoded:
+          timePassed += estimation.imageEncoded
+        case .sampling(let steps):
+          timePassed += estimation.samplingStep * Float(steps)
+        default:
+          break
+        }
+      }
+      estimation.imageDecoded = Float(duration) - timePassed
+    case .secondPassImageEncoded:
+      var timePassed: Float = 0
+      for signpost in signposts {
+        switch signpost {
+        case .textEncoded:
+          timePassed += estimation.textEncoded
+        case .imageEncoded:
+          timePassed += estimation.imageEncoded
+        case .sampling(let steps):
+          timePassed += estimation.samplingStep * Float(steps)
+        case .imageDecoded:
+          timePassed += estimation.imageDecoded
+        default:
+          break
+        }
+      }
+      estimation.secondPassImageEncoded = Float(duration) - timePassed
+    case .secondPassSampling(let step):
+      var timePassed: Float = 0
+      for signpost in signposts {
+        switch signpost {
+        case .textEncoded:
+          timePassed += estimation.textEncoded
+        case .imageEncoded:
+          timePassed += estimation.imageEncoded
+        case .sampling(let steps):
+          timePassed += estimation.samplingStep * Float(steps)
+        case .imageDecoded:
+          timePassed += estimation.imageDecoded
+        case .secondPassImageEncoded:
+          timePassed += estimation.secondPassImageEncoded
+        default:
+          break
+        }
+      }
+      if step > 0 {
+        estimation.secondPassSamplingStep = (Float(duration) - timePassed) / Float(step)
+      }
+    case .secondPassImageDecoded:
+      var timePassed: Float = 0
+      for signpost in signposts {
+        switch signpost {
+        case .textEncoded:
+          timePassed += estimation.textEncoded
+        case .imageEncoded:
+          timePassed += estimation.imageEncoded
+        case .sampling(let steps):
+          timePassed += estimation.samplingStep * Float(steps)
+        case .imageDecoded:
+          timePassed += estimation.imageDecoded
+        case .secondPassImageEncoded:
+          timePassed += estimation.secondPassImageEncoded
+        case .secondPassSampling(let steps):
+          timePassed += estimation.secondPassSamplingStep * Float(steps)
+        default:
+          break
+        }
+      }
+      estimation.secondPassImageDecoded = Float(duration) - timePassed
+    case .faceRestored:
+      guard signposts.contains(.imageUpscaled) else { return }
+      var timePassed: Float = 0
+      for signpost in signposts {
+        switch signpost {
+        case .textEncoded:
+          timePassed += estimation.textEncoded
+        case .imageEncoded:
+          timePassed += estimation.imageEncoded
+        case .sampling(let steps):
+          timePassed += estimation.samplingStep * Float(steps)
+        case .imageDecoded:
+          timePassed += estimation.imageDecoded
+        case .secondPassImageEncoded:
+          timePassed += estimation.secondPassImageEncoded
+        case .secondPassSampling(let steps):
+          timePassed += estimation.secondPassSamplingStep * Float(steps)
+        case .secondPassImageDecoded:
+          timePassed += estimation.secondPassImageDecoded
+        default:
+          break
+        }
+      }
+      estimation.faceRestored = Float(duration) - timePassed
+    case .imageUpscaled:
+      guard signposts.contains(.imageUpscaled) else { return }
+      var timePassed: Float = 0
+      for signpost in signposts {
+        switch signpost {
+        case .textEncoded:
+          timePassed += estimation.textEncoded
+        case .imageEncoded:
+          timePassed += estimation.imageEncoded
+        case .sampling(let steps):
+          timePassed += estimation.samplingStep * Float(steps)
+        case .imageDecoded:
+          timePassed += estimation.imageDecoded
+        case .secondPassImageEncoded:
+          timePassed += estimation.secondPassImageEncoded
+        case .secondPassSampling(let steps):
+          timePassed += estimation.secondPassSamplingStep * Float(steps)
+        case .secondPassImageDecoded:
+          timePassed += estimation.secondPassImageDecoded
+        case .faceRestored:
+          timePassed += estimation.faceRestored
+        default:
+          break
+        }
+      }
+      estimation.imageUpscaled = Float(duration) - timePassed
+    }
+  }
+
   // This is a value from 0 to 1, estimating progress made so far.
   public static func estimateProgressValue(
     from estimation: GenerationEstimation, signpost: ImageGeneratorSignpost,
