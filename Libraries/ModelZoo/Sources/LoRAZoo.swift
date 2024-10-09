@@ -366,7 +366,6 @@ public struct LoRAZoo: DownloadZoo {
     if let alternativeDecoder = specification.alternativeDecoder {
       filesToDownload.append((name: name, subtitle: version, file: alternativeDecoder, sha256: nil))
     }
-    filesToDownload = filesToDownload.filter { !LoRAZoo.isModelDownloaded($0.file) }
     return filesToDownload
   }
 
