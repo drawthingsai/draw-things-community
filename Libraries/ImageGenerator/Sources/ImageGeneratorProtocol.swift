@@ -15,6 +15,12 @@ public enum ImageGeneratorSignpost: Equatable & Hashable {
   case imageUpscaled
 }
 
+public enum ImageGeneratorDeviceType {
+  case phone
+  case tablet
+  case laptop
+}
+
 public protocol ImageGenerator {
 
   func generate(
