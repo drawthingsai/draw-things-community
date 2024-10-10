@@ -355,7 +355,9 @@ public struct LoRAZoo: DownloadZoo {
     return specificationMapping[name]
   }
 
-  public static func filesToDownload(_ specification: Specification)
+  public static func filesToDownload(
+    _ specification: Specification
+  )
     -> [(name: String, subtitle: String, file: String, sha256: String?)]
   {
     let model = specification.file

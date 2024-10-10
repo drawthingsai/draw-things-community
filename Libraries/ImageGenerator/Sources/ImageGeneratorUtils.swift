@@ -312,4 +312,63 @@ extension ImageGeneratorUtils {
     }
     return (models, loras, controlNets)
   }
+
+  public static func allModelFiles(_ configuration: GenerationConfiguration) -> [(
+    name: String, subtitle: String, file: String, fileUrl: URL
+  )] {
+
+    var allModelFiles = [(name: String, subtitle: String, file: String, fileUrl: URL)]()
+
+    if let model = configuration.model,
+      let specification = ModelZoo.specificationForModel(model)
+    {
+      let files = ModelZoo.filesToDownload(specification).map { (name, subtitle, file, _) in
+        return (
+          file, subtitle, file, URL(fileURLWithPath: ModelZoo.filePathForModelDownloaded(file))
+        )
+      }
+      allModelFiles.append(contentsOf: files)
+    }
+
+    if let refinerModel = configuration.refinerModel,
+      let specification = ModelZoo.specificationForModel(refinerModel)
+    {
+      let files = ModelZoo.filesToDownload(specification).map { (name, subtitle, file, _) in
+        return (
+          file, subtitle, file, URL(fileURLWithPath: ModelZoo.filePathForModelDownloaded(file))
+        )
+      }
+      allModelFiles.append(contentsOf: files)
+    }
+
+    for lora in configuration.loras {
+      if let model = lora.file,
+        let specification = LoRAZoo.specificationForModel(model)
+      {
+        let files = LoRAZoo.filesToDownload(specification).map {
+          (name, subtitle, file, _) in
+          return (
+            file, subtitle, file, URL(fileURLWithPath: LoRAZoo.filePathForModelDownloaded(file))
+          )
+        }
+        allModelFiles.append(contentsOf: files)
+      }
+    }
+
+    for control in configuration.controls {
+      if let model = control.file,
+        let specification = ControlNetZoo.specificationForModel(model)
+      {
+        let files = ControlNetZoo.filesToDownload(specification).map { (name, subtitle, file, _) in
+          return (
+            file, subtitle, file,
+            URL(fileURLWithPath: ControlNetZoo.filePathForModelDownloaded(file))
+          )
+        }
+        allModelFiles.append(contentsOf: files)
+      }
+    }
+    return allModelFiles
+  }
+
 }
