@@ -313,32 +313,30 @@ extension ImageGeneratorUtils {
     return (models, loras, controlNets)
   }
 
-  public static func allModelFiles(_ configuration: GenerationConfiguration) -> [(
-    name: String, subtitle: String, file: String, fileUrl: URL
-  )] {
+  public static func filesToDownload(_ configuration: GenerationConfiguration, keywords: [String])
+    -> [(
+      name: String, subtitle: String, file: String
+    )]
+  {
 
-    var allModelFiles = [(name: String, subtitle: String, file: String, fileUrl: URL)]()
+    var filesToDownload = [(name: String, subtitle: String, file: String)]()
 
     if let model = configuration.model,
       let specification = ModelZoo.specificationForModel(model)
     {
       let files = ModelZoo.filesToDownload(specification).map { (name, subtitle, file, _) in
-        return (
-          file, subtitle, file, URL(fileURLWithPath: ModelZoo.filePathForModelDownloaded(file))
-        )
+        (name, subtitle, file)
       }
-      allModelFiles.append(contentsOf: files)
+      filesToDownload.append(contentsOf: files)
     }
 
     if let refinerModel = configuration.refinerModel,
       let specification = ModelZoo.specificationForModel(refinerModel)
     {
       let files = ModelZoo.filesToDownload(specification).map { (name, subtitle, file, _) in
-        return (
-          file, subtitle, file, URL(fileURLWithPath: ModelZoo.filePathForModelDownloaded(file))
-        )
+        (name, subtitle, file)
       }
-      allModelFiles.append(contentsOf: files)
+      filesToDownload.append(contentsOf: files)
     }
 
     for lora in configuration.loras {
@@ -347,11 +345,9 @@ extension ImageGeneratorUtils {
       {
         let files = LoRAZoo.filesToDownload(specification).map {
           (name, subtitle, file, _) in
-          return (
-            file, subtitle, file, URL(fileURLWithPath: LoRAZoo.filePathForModelDownloaded(file))
-          )
+          (name, subtitle, file)
         }
-        allModelFiles.append(contentsOf: files)
+        filesToDownload.append(contentsOf: files)
       }
     }
 
@@ -359,16 +355,43 @@ extension ImageGeneratorUtils {
       if let model = control.file,
         let specification = ControlNetZoo.specificationForModel(model)
       {
-        let files = ControlNetZoo.filesToDownload(specification).map { (name, subtitle, file, _) in
-          return (
-            file, subtitle, file,
-            URL(fileURLWithPath: ControlNetZoo.filePathForModelDownloaded(file))
-          )
+        let files = ControlNetZoo.filesToDownload(specification).map {
+          (name, subtitle, file, _) in
+          (name, subtitle, file)
         }
-        allModelFiles.append(contentsOf: files)
+        filesToDownload.append(contentsOf: files)
       }
     }
-    return allModelFiles
+
+    for keyword in keywords {
+      guard
+        let specification = TextualInversionZoo.modelFromKeyword(keyword, potentials: []).flatMap({
+          TextualInversionZoo.specificationForModel($0)
+        })
+      else { continue }
+      filesToDownload.append(
+        (
+          specification.name, ModelZoo.humanReadableNameForVersion(specification.version),
+          specification.file
+        ))
+    }
+
+    if let upscaler = configuration.upscaler,
+      let specification = UpscalerZoo.specificationForModel(upscaler)
+    {
+      filesToDownload.append((specification.name, "Upscaler", specification.file))
+    }
+
+    if let faceRestoration = configuration.faceRestoration,
+      let specification = EverythingZoo.specificationForModel(faceRestoration)
+    {
+      filesToDownload.append((specification.name, "", specification.file))
+      if let parsenet = specification.parsenet {
+        filesToDownload.append((specification.name, "Face Restoration", parsenet))
+      }
+    }
+
+    return filesToDownload
   }
 
 }
