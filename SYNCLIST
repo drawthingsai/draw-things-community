@@ -7,11 +7,17 @@ Apps/LoRAConverter
 Apps/ModelConverter
 Apps/ModelQuantizer
 Libraries/DataModels
+Libraries/Exporter
 Libraries/FaceRestorer
 Libraries/History
 Libraries/ImageGenerator
 Libraries/ImageSegmentation
 Libraries/LocalImageGenerator
+Libraries/RemoteImageGenerator
+Libraries/GRPC
+Libraries/HTTPServer
+Libraries/HTTPAPIServer
+Libraries/Invocation
 Libraries/ModelOp
 Libraries/ModelZoo
 Libraries/SFMT
