@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+service ImageGenerationService {
+  rpc GenerateImage(ImageGenerationRequest) returns (stream ImageGenerationResponse);
+  rpc FilesExist(FileListRequest) returns (FileExistenceResponse);
+  rpc UploadFile(stream FileUploadRequest) returns (stream UploadResponse);
+  rpc Echo(EchoRequest) returns (EchoReply);
+}
+
+message EchoRequest {
+  string name = 1;
+}
+
+message EchoReply {
+  string message = 1;
+}
+
+message FileListRequest {
+  repeated string files = 1;
+}
+
+message FileExistenceResponse {
+  repeated string files = 1;
+  repeated bool existences = 2;
+}
+
+message MetadataOverride {
+  bytes models = 1;
+  bytes loras = 2;
+  bytes controlNets = 3;
+  bytes textualInversions = 4;
+}
+
+enum DeviceType {
+  PHONE = 0;
+  TABLET = 1;
+  LAPTOP = 2;
+}
+
+// parameters in this Request is exactly same as generate function in ImageGenerator
+message ImageGenerationRequest {
+  optional bytes image = 1;      // Image data as bytes
+  int32 scaleFactor = 2; 	 	
+  optional bytes mask = 3;       // Optional  Mask data as bytes
+  repeated HintProto hints = 4; 	 // List of hints
+  string prompt = 5;             // Optional prompt string
+  string negativePrompt = 6;     // Optional negative prompt string
+  bytes configuration = 7;       // Configuration data as bytes (FlatBuffer)
+  MetadataOverride override = 8; // Override the existing metadata on various Zoo objects.
+  repeated string keywords = 9; // Keywords send to the ImageGenerator, not useful for local generation.
+  string user = 10; // The name of the client.
+  DeviceType device = 11; // The type of the device uses.
+}
+
+message HintProto {
+  string hintType = 1;           	  // hintType enum (key)
+  repeated TensorAndWeight tensors = 2;   // Repeated list of tensors with associated float
+}
+
+// Message to store each tensor and its associated float score
+message TensorAndWeight {
+  bytes tensor = 1;                       // Tensor data as bytes (AnyTensor)
+  float weight = 2;                        // Associated float score for the tensor
+}
+
+message ImageGenerationSignpostProto {
+  message TextEncoded {
+  }
+  message ImageEncoded {
+  }
+  message Sampling {
+    int32 step = 1;
+  }
+  message ImageDecoded {
+  }
+  message SecondPassImageEncoded {
+  }
+  message SecondPassSampling {
+    int32 step = 1;
+  }
+  message SecondPassImageDecoded {
+  }
+  message FaceRestored {
+  }
+  message ImageUpscaled {
+  }
+  oneof signpost {
+    TextEncoded textEncoded = 1;
+	ImageEncoded imageEncoded = 2;
+	Sampling sampling = 3;
+	ImageDecoded imageDecoded = 4;
+	SecondPassImageEncoded secondPassImageEncoded = 5;
+	SecondPassSampling secondPassSampling = 6;
+	SecondPassImageDecoded secondPassImageDecoded = 7;
+	FaceRestored faceRestored = 8;
+	ImageUpscaled imageUpscaled = 9;
+  }
+}
+
+message ImageGenerationResponse {
+  repeated bytes generatedImages = 1;      // Generated image data as bytes
+  optional ImageGenerationSignpostProto currentSignpost = 2; // Single current signpost
+  repeated ImageGenerationSignpostProto signposts = 3; // Collection of signposts
+  optional bytes previewImage = 4;      // preview generating image data as bytes
+  optional int32 scaleFactor = 5; // The scale factor of the image.
+}
+
+message FileChunk {
+  bytes content = 1;
+  string filename = 2;
+  int64 offset = 3;
+}
+
+message InitUploadRequest {
+  string filename = 1;  // Name of the file to be uploaded.
+  bytes sha256 = 2;     // SHA-256 hash of the file.
+  int64 totalSize = 3;  // Total size of the file in bytes.
+}
+
+message UploadResponse {
+  bool chunkUploadSuccess = 1;
+  int64 receivedOffset = 2;
+  string message = 3;
+  string filename = 4;
+}
+
+// Union type for either an InitUploadRequest or FileChunk.
+message FileUploadRequest {
+  oneof request {
+    InitUploadRequest initRequest = 1;  // Initial upload request to sync SHA and filename.
+    FileChunk chunk = 2;                // File chunk data.
+  }
+}
