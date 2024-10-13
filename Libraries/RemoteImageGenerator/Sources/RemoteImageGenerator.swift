@@ -46,6 +46,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],
     text: String, negativeText: String, configuration: GenerationConfiguration, keywords: [String],
+    cancellation: @escaping (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
       -> Bool
   ) throws -> ([Tensor<FloatType>]?, Int) {
@@ -137,6 +138,9 @@ public struct RemoteImageGenerator: ImageGenerator {
       if response.hasScaleFactor {
         scaleFactor = Int(response.scaleFactor)
       }
+    }
+    cancellation {
+      callInstance.cancel(promise: nil)
     }
     call = callInstance
 

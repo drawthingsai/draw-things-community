@@ -252,7 +252,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         let (images, scaleFactor) = try self.imageGenerator.generate(
           image, scaleFactor: Int(request.scaleFactor), mask: mask, hints: hints,
           text: request.prompt, negativeText: request.negativePrompt, configuration: configuration,
-          keywords: request.keywords, feedback: progressUpdateHandler)
+          keywords: request.keywords, cancellation: { _ in }, feedback: progressUpdateHandler)
 
         let imageDatas =
           images?.compactMap { tensor in
