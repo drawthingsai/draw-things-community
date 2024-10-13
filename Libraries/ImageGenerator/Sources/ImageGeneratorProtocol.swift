@@ -22,7 +22,6 @@ public enum ImageGeneratorDeviceType {
 }
 
 public protocol ImageGenerator {
-
   func generate(
     _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],

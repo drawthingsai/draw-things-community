@@ -32,6 +32,7 @@ public struct RemoteImageGenerator: ImageGenerator {
   public let client: ImageGenerationClientWrapper
   public let name: String
   public let deviceType: ImageGeneratorDeviceType
+  private var fileExistsCall: UnaryCall<FileListRequest, FileExistenceResponse>? = nil
 
   public init(
     name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper
@@ -150,27 +151,5 @@ public struct RemoteImageGenerator: ImageGenerator {
     }
     let _ = try callInstance.status.wait()
     return (tensors, scaleFactor)
-
-  }
-
-  public func filesExists(
-    files: [String], callback: @escaping (Bool, [(String, Bool)]) -> Void
-  ) {
-    guard let client = client.client else {
-      callback(false, [])
-      return
-    }
-
-    var request = FileListRequest()
-    request.files = files
-    let _ = client.filesExist(request).response.always { result in
-      switch result {
-      case .success(let response):
-
-        callback(true, Array(zip(response.files, response.existences)))
-      case .failure(_):
-        callback(false, [])
-      }
-    }
   }
 }
