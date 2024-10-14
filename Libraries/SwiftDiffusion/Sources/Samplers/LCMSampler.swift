@@ -236,6 +236,9 @@ extension LCMSampler: Sampler {
       }
     }
     var unet = existingUNets[0] ?? UNet()
+    defer {
+      cancellation {}  // In this way, we are not holding the graph any more.
+    }
     cancellation {
       unet.cancel()
     }
@@ -395,6 +398,9 @@ extension LCMSampler: Sampler {
             indexOffset = i
           }
           unet = UNet()
+          cancellation {
+            unet.cancel()
+          }
           currentModelVersion = refiner.version
           timeEmbeddingSize =
             refiner.version == .kandinsky21 || refiner.version == .sdxlRefiner ? 384 : 320

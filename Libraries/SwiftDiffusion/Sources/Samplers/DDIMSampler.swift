@@ -286,6 +286,9 @@ extension DDIMSampler: Sampler {
       }
     }
     var unet = existingUNets[0] ?? UNet()
+    defer {
+      cancellation {}  // In this way, we are not holding the graph any more.
+    }
     cancellation {
       unet.cancel()
     }
@@ -431,6 +434,9 @@ extension DDIMSampler: Sampler {
             indexOffset = i
           }
           unet = UNet()
+          cancellation {
+            unet.cancel()
+          }
           currentModelVersion = refiner.version
           let firstTimestep =
             discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1

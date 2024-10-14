@@ -29,6 +29,7 @@ swift_library(
         "Sources/Server/GRPCFileUploader.swift",
         "Sources/Server/ImageGenerationClientWrapper.swift",
         "Sources/Server/ImageGenerationServiceImpl.swift",
+        "Sources/Server/ProtectedValue.swift",
     ] + select({
         ":ios_or_macos_build": [
             "Sources/Server/GRPCServerAdvertiser.swift",

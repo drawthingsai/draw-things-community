@@ -89,7 +89,7 @@ extension ImageGeneratorDeviceType {
 // Note that all these delegate callbacks will happen on main thread.
 public protocol ImageGenerationServiceDelegate: AnyObject {
   func didReceiveGenerationRequest(
-    cancelFlag: ManagedAtomic<Bool>, signposts: Set<ImageGeneratorSignpost>, user: String,
+    cancellation: @escaping () -> Void, signposts: Set<ImageGeneratorSignpost>, user: String,
     deviceType: ImageGeneratorDeviceType)
   func didUpdateGenerationProgress(
     signpost: ImageGeneratorSignpost, signposts: Set<ImageGeneratorSignpost>)
@@ -122,8 +122,16 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     let eventLoop = context.eventLoop
     let promise = eventLoop.makePromise(of: GRPCStatus.self)
     let cancelFlag = ManagedAtomic<Bool>(false)
-    context.closeFuture.whenComplete { _ in
+    var cancellation: ProtectedValue<() -> Void> = ProtectedValue {}
+    func cancel() {
       cancelFlag.store(true, ordering: .releasing)
+      cancellation.modify {
+        $0()
+        $0 = {}
+      }
+    }
+    context.closeFuture.whenComplete { _ in
+      cancel()
     }
     func isCancelled() -> Bool {
       return cancelFlag.load(ordering: .acquiring)
@@ -244,7 +252,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         let deviceType = ImageGeneratorDeviceType(from: request.device) ?? .laptop
         DispatchQueue.main.async {
           delegate.didReceiveGenerationRequest(
-            cancelFlag: cancelFlag, signposts: signposts, user: user, deviceType: deviceType)
+            cancellation: cancel, signposts: signposts, user: user, deviceType: deviceType)
         }
       }
       do {
@@ -252,7 +260,12 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         let (images, scaleFactor) = try self.imageGenerator.generate(
           image, scaleFactor: Int(request.scaleFactor), mask: mask, hints: hints,
           text: request.prompt, negativeText: request.negativePrompt, configuration: configuration,
-          keywords: request.keywords, cancellation: { _ in }, feedback: progressUpdateHandler)
+          keywords: request.keywords,
+          cancellation: { cancellationBlock in
+            cancellation.modify {
+              $0 = cancellationBlock
+            }
+          }, feedback: progressUpdateHandler)
 
         let imageDatas =
           images?.compactMap { tensor in
