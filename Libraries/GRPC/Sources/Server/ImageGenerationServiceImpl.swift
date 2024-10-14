@@ -122,12 +122,12 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     let eventLoop = context.eventLoop
     let promise = eventLoop.makePromise(of: GRPCStatus.self)
     let cancelFlag = ManagedAtomic<Bool>(false)
-    var cancellation: ProtectedValue<() -> Void> = ProtectedValue {}
+    var cancellation: ProtectedValue<(() -> Void)?> = ProtectedValue(nil)
     func cancel() {
       cancelFlag.store(true, ordering: .releasing)
       cancellation.modify {
-        $0()
-        $0 = {}
+        $0?()
+        $0 = nil
       }
     }
     context.closeFuture.whenComplete { _ in
