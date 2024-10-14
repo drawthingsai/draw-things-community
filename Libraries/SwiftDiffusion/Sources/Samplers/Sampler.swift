@@ -209,7 +209,7 @@ public protocol Sampler<FloatType, UNet> {
     negativeOriginalSize: (width: Int, height: Int), negativeAestheticScore: Float,
     zeroNegativePrompt: Bool, refiner: Refiner?, fpsId: Int, motionBucketId: Int, condAug: Float,
     startFrameCfg: Float, sharpness: Float, sampling: Sampling,
-    feedback: (Int, Tensor<FloatType>?) -> Bool
+    cancellation: (@escaping () -> Void) -> Void, feedback: (Int, Tensor<FloatType>?) -> Bool
   ) -> Result<SamplerOutput<FloatType, UNet>, Error>
 
   // For most, this is straightforward, just multiple the steps by the strength. But for Euler A

@@ -467,6 +467,10 @@ extension UNetFromCoreML {
   public func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType> {
     return x
   }
+
+  public func cancel() {
+    // Do nothing.
+  }
 }
 
 extension MLFeatureProvider {

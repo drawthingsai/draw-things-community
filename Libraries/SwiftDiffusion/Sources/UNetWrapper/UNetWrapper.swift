@@ -130,4 +130,8 @@ extension UNetWrapper {
     return unetFromNNC.decode(x)
 
   }
+
+  public func cancel() {
+    unetFromNNC.cancel()
+  }
 }

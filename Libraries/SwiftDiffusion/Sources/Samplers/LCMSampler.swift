@@ -80,7 +80,7 @@ extension LCMSampler: Sampler {
     negativeOriginalSize: (width: Int, height: Int), negativeAestheticScore: Float,
     zeroNegativePrompt: Bool, refiner: Refiner?, fpsId: Int, motionBucketId: Int, condAug: Float,
     startFrameCfg: Float, sharpness: Float, sampling: Sampling,
-    feedback: (Int, Tensor<FloatType>?) -> Bool
+    cancellation: (@escaping () -> Void) -> Void, feedback: (Int, Tensor<FloatType>?) -> Bool
   ) -> Result<SamplerOutput<FloatType, UNet>, Error> {
     guard endStep.integral > startStep.integral else {
       return .success(SamplerOutput(x: x_T, unets: [nil]))
@@ -236,6 +236,9 @@ extension LCMSampler: Sampler {
       }
     }
     var unet = existingUNets[0] ?? UNet()
+    cancellation {
+      unet.cancel()
+    }
     var controlNets = [Model?](repeating: nil, count: injectedControls.count)
     var timeEmbeddingSize = version == .kandinsky21 || version == .sdxlRefiner ? 384 : 320
     let injectControlsAndAdapters = InjectControlsAndAdapters(

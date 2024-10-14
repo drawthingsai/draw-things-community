@@ -579,7 +579,7 @@ extension LocalImageGenerator {
     _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],
     text: String, negativeText: String, configuration: GenerationConfiguration, keywords: [String],
-    cancellation: @escaping (@escaping () -> Void) -> Void,
+    cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>]?, Int) {
@@ -643,20 +643,23 @@ extension LocalImageGenerator {
         nil, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
         shuffles: shuffles, poses: poses,
         text: text, negativeText: negativeText, configuration: configuration,
-        denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
+        denoiserParameterization: denoiserParameterization, sampling: sampling,
+        cancellation: cancellation, feedback: feedback)
     }
     guard let mask = mask else {
       return generateImageOnly(
         image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
         shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
-        denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
+        denoiserParameterization: denoiserParameterization, sampling: sampling,
+        cancellation: cancellation, feedback: feedback)
     }
     return generateImageWithMask(
       image, scaleFactor: scaleFactor, mask: mask, depth: depth, hints: hints, custom: custom,
       shuffles: shuffles, poses: poses,
       text: text, negativeText: negativeText, configuration: configuration,
-      denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
+      denoiserParameterization: denoiserParameterization, sampling: sampling,
+      cancellation: cancellation, feedback: feedback)
   }
 }
 
@@ -2235,6 +2238,7 @@ extension LocalImageGenerator {
     shuffles: [(Tensor<FloatType>, Float)], poses: [(Tensor<FloatType>, Float)],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
+    cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
       -> Bool
   ) -> ([Tensor<FloatType>]?, Int) {
@@ -2715,7 +2719,7 @@ extension LocalImageGenerator {
               negativeAestheticScore: negativeAestheticScore,
               zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-              sharpness: sharpness, sampling: sampling
+              sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(step), signposts, tensor)
             }).get(), sampler: sampler, scale: firstPassScale, tokenLengthUncond: tokenLengthUncond,
@@ -2999,7 +3003,7 @@ extension LocalImageGenerator {
               negativeAestheticScore: negativeAestheticScore,
               zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-              sharpness: sharpness, sampling: secondPassSampling
+              sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.secondPassSampling(step), signposts, tensor)
             }).get(), sampler: secondPassSampler, scale: imageScale,
@@ -3067,6 +3071,7 @@ extension LocalImageGenerator {
     text: String,
     negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
+    cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>]?, Int) {
@@ -3295,7 +3300,8 @@ extension LocalImageGenerator {
         image, scaleFactor: imageScaleFactor,
         depth: depth, hints: hints, custom: custom, shuffles: shuffles, poses: poses,
         text: text, negativeText: negativeText, configuration: configuration,
-        denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
+        denoiserParameterization: denoiserParameterization, sampling: sampling,
+        cancellation: cancellation, feedback: feedback)
     }
     let batchSize = Int(configuration.batchSize)
     precondition(batchSize > 0)
@@ -3540,7 +3546,7 @@ extension LocalImageGenerator {
               negativeAestheticScore: negativeAestheticScore,
               zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-              sharpness: sharpness, sampling: sampling
+              sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(step), signposts, tensor)
             }).get(), sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
@@ -3652,7 +3658,7 @@ extension LocalImageGenerator {
                 negativeAestheticScore: negativeAestheticScore,
                 zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
                 motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-                sharpness: sharpness, sampling: secondPassSampling
+                sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
               ) { step, tensor in
                 feedback(.secondPassSampling(step), signposts, tensor)
               }).get(), sampler: secondPassSampler, scale: imageScale,
@@ -3910,6 +3916,7 @@ extension LocalImageGenerator {
     text: String,
     negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
+    cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>]?, Int) {
@@ -4093,7 +4100,8 @@ extension LocalImageGenerator {
         image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
         shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
-        denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
+        denoiserParameterization: denoiserParameterization, sampling: sampling,
+        cancellation: cancellation, feedback: feedback)
     }
     // If no sophisticated mask, nothing to be done.
     if exists0 && !exists1 && !exists2 && !exists3 {
@@ -4101,14 +4109,16 @@ extension LocalImageGenerator {
         image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
         shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
-        denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
+        denoiserParameterization: denoiserParameterization, sampling: sampling,
+        cancellation: cancellation, feedback: feedback)
     } else if !exists0 && exists1 && !exists2 && !exists3 {
       // If masked due to nothing only the whole page, run text generation only.
       return generateTextOnly(
         image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
         shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
-        denoiserParameterization: denoiserParameterization, sampling: sampling, feedback: feedback)
+        denoiserParameterization: denoiserParameterization, sampling: sampling,
+        cancellation: cancellation, feedback: feedback)
     }
     var signposts = Set<ImageGeneratorSignpost>()
     if let faceRestoration = configuration.faceRestoration,
@@ -4135,7 +4145,7 @@ extension LocalImageGenerator {
           hints: hints, custom: custom, shuffles: shuffles, poses: poses, text: text,
           negativeText: negativeText,
           configuration: configuration, denoiserParameterization: denoiserParameterization,
-          sampling: sampling, signposts: &signposts, feedback: feedback)
+          sampling: sampling, signposts: &signposts, cancellation: cancellation, feedback: feedback)
       else {
         return (nil, 1)
       }
@@ -4168,7 +4178,7 @@ extension LocalImageGenerator {
             shuffles: shuffles, poses: poses, text: text,
             negativeText: negativeText, configuration: configuration,
             denoiserParameterization: denoiserParameterization, sampling: sampling,
-            signposts: &signposts, feedback: feedback)
+            signposts: &signposts, cancellation: cancellation, feedback: feedback)
       else { return (nil, 1) }
       if configuration.strength == 0 && configuration.preserveOriginalAfterInpaint {
         let original = downscaleImage(image, scaleFactor: scaleFactor)
@@ -4194,11 +4204,10 @@ extension LocalImageGenerator {
       var result = generateImageWithMask1AndMask2(
         image, scaleFactor: scaleFactor, imageNegMask1: imageNegMask2, imageNegMask2: imageNegMask3,
         mask1: mask2, mask2: mask3, depth: depth, hints: hints, custom: custom, shuffles: shuffles,
-        poses: poses,
-        text: text,
+        poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling,
-        signposts: &signposts, feedback: feedback)
+        signposts: &signposts, cancellation: cancellation, feedback: feedback)
     else {
       return (nil, 1)
     }
@@ -4232,6 +4241,7 @@ extension LocalImageGenerator {
     negativeText: String,
     configuration: GenerationConfiguration, denoiserParameterization: Denoiser.Parameterization,
     sampling: Sampling, signposts: inout Set<ImageGeneratorSignpost>,
+    cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> [Tensor<FloatType>]? {
@@ -4700,7 +4710,7 @@ extension LocalImageGenerator {
               negativeAestheticScore: negativeAestheticScore,
               zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-              sharpness: sharpness, sampling: sampling
+              sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(step), signposts, tensor)
             }).get(), sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
@@ -4813,7 +4823,7 @@ extension LocalImageGenerator {
                 negativeAestheticScore: negativeAestheticScore,
                 zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
                 motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-                sharpness: sharpness, sampling: secondPassSampling
+                sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
               ) { step, tensor in
                 feedback(.secondPassSampling(step), signposts, tensor)
               }).get(), sampler: secondPassSampler, scale: imageScale,
@@ -4885,7 +4895,7 @@ extension LocalImageGenerator {
     shuffles: [(Tensor<FloatType>, Float)], poses: [(Tensor<FloatType>, Float)],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
-    signposts: inout Set<ImageGeneratorSignpost>,
+    signposts: inout Set<ImageGeneratorSignpost>, cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> [Tensor<FloatType>]? {
@@ -5363,7 +5373,8 @@ extension LocalImageGenerator {
           negativeOriginalSize: negativeOriginalSize,
           negativeAestheticScore: negativeAestheticScore, zeroNegativePrompt: zeroNegativePrompt,
           refiner: refiner, fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug,
-          startFrameCfg: startFrameCfg, sharpness: sharpness, sampling: sampling
+          startFrameCfg: startFrameCfg, sharpness: sharpness, sampling: sampling,
+          cancellation: cancellation
         ) { step, tensor in
           feedback(.sampling(step), signposts, tensor)
         }).get()
@@ -5454,7 +5465,7 @@ extension LocalImageGenerator {
               negativeAestheticScore: negativeAestheticScore,
               zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-              sharpness: sharpness, sampling: sampling
+              sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(initTimestep.roundedDownStartStep + step), signposts, tensor)
             }).get(), sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
@@ -5549,7 +5560,7 @@ extension LocalImageGenerator {
             negativeAestheticScore: negativeAestheticScore,
             zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
             motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-            sharpness: sharpness, sampling: secondPassSampling
+            sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
           ) { step, tensor in
             feedback(.secondPassSampling(step), signposts, tensor)
           }).get()
@@ -5620,7 +5631,7 @@ extension LocalImageGenerator {
                 negativeAestheticScore: negativeAestheticScore,
                 zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
                 motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-                sharpness: sharpness, sampling: secondPassSampling
+                sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
               ) { step, tensor in
                 feedback(.sampling(initTimestep.roundedDownStartStep + step), signposts, tensor)
               }).get(), sampler: secondPassSampler, scale: imageScale,

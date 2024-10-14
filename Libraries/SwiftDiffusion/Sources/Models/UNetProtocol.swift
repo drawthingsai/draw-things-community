@@ -75,6 +75,8 @@ public protocol UNetProtocol {
 
   func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType>
 
+  // This is for best-effort.
+  func cancel()
 }
 
 extension UNetProtocol {
@@ -989,5 +991,9 @@ extension UNetFromNNC {
       .wurstchenStageB:
       return x
     }
+  }
+
+  public func cancel() {
+    unet?.cancel()
   }
 }

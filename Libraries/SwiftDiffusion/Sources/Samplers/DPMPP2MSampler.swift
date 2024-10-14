@@ -75,7 +75,7 @@ extension DPMPP2MSampler: Sampler {
     negativeOriginalSize: (width: Int, height: Int), negativeAestheticScore: Float,
     zeroNegativePrompt: Bool, refiner: Refiner?, fpsId: Int, motionBucketId: Int, condAug: Float,
     startFrameCfg: Float, sharpness: Float, sampling: Sampling,
-    feedback: (Int, Tensor<FloatType>?) -> Bool
+    cancellation: (@escaping () -> Void) -> Void, feedback: (Int, Tensor<FloatType>?) -> Bool
   ) -> Result<SamplerOutput<FloatType, UNet>, Error> {
     guard endStep.integral > startStep.integral else {
       return .success(SamplerOutput(x: x_T, unets: [nil]))
@@ -288,6 +288,9 @@ extension DPMPP2MSampler: Sampler {
       }
     }
     var unet = existingUNets[0] ?? UNet()
+    cancellation {
+      unet.cancel()
+    }
     var controlNets = [Model?](repeating: nil, count: injectedControls.count)
     let injectControlsAndAdapters = InjectControlsAndAdapters(
       injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
