@@ -106,6 +106,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   public var interceptors: ImageGenerationServiceServerInterceptorFactoryProtocol? = nil
   private let logger = Logger(label: "com.draw-things.image-generation-service")
   public let usesBackupQueue = ManagedAtomic<Bool>(false)
+  public let responseCompression = ManagedAtomic<Bool>(false)
 
   public init(imageGenerator: ImageGenerator, queue: DispatchQueue, backupQueue: DispatchQueue) {
     self.imageGenerator = imageGenerator
@@ -138,6 +139,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     }
 
     let usesBackupQueue = usesBackupQueue.load(ordering: .acquiring)
+    let responseCompression = responseCompression.load(ordering: .acquiring)
     let queue = usesBackupQueue ? backupQueue : queue
     queue.async { [weak self] in
       guard let self = self else { return }
@@ -198,7 +200,8 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
               })
 
             if let previewTensor = previewTensor {
-              $0.previewImage = previewTensor.data(using: [.zip, .fpzip])
+              let codec: DynamicGraph.Store.Codec = responseCompression ? [.zip, .fpzip] : []
+              $0.previewImage = previewTensor.data(using: codec)
             }
           }
 
@@ -267,11 +270,10 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             }
           }, feedback: progressUpdateHandler)
 
+        let codec: DynamicGraph.Store.Codec = responseCompression ? [.zip, .fpzip] : []
         let imageDatas =
           images?.compactMap { tensor in
-            return tensor.data(using: [
-              DynamicGraph.Store.Codec.zip, DynamicGraph.Store.Codec.fpzip,
-            ])
+            return tensor.data(using: codec)
           } ?? []
         self.logger.info("Image processed")
 
