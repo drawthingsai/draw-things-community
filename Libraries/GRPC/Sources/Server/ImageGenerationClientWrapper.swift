@@ -1,20 +1,39 @@
+import Foundation
 import GRPC
 import GRPCModels
 import NIO
+import NIOSSL
 
 public final class ImageGenerationClientWrapper {
+  public enum Error: Swift.Error {
+    case invalidRootCA
+  }
+
   private var eventLoopGroup: EventLoopGroup? = nil
   private var channel: GRPCChannel? = nil
   public private(set) var client: ImageGenerationServiceNIOClient? = nil
 
   public init() {}
 
-  public func connect(host: String, port: Int) throws {
+  public func connect(host: String, port: Int, TLS: Bool) throws {
     try? eventLoopGroup?.syncShutdownGracefully()
     let eventLoopGroup = PlatformSupport.makeEventLoopGroup(loopCount: 1)
+    let transportSecurity: GRPCChannelPool.Configuration.TransportSecurity
+    if TLS {
+      guard let rootCA = Bundle.main.path(forResource: "root_ca", ofType: "crt") else {
+        throw ImageGenerationClientWrapper.Error.invalidRootCA
+      }
+      let certificate = try NIOSSLCertificate(file: rootCA, format: .pem)
+      transportSecurity = .tls(
+        .makeClientConfigurationBackedByNIOSSL(
+          trustRoots: .certificates([certificate]), certificateVerification: .noHostnameVerification
+        ))
+    } else {
+      transportSecurity = .plaintext
+    }
     var configuration = GRPCChannelPool.Configuration.with(
       target: .host(host, port: port),
-      transportSecurity: .plaintext,
+      transportSecurity: transportSecurity,
       eventLoopGroup: eventLoopGroup)
     configuration.maximumReceiveMessageLength = 1024 * 1024 * 1024
     let channel = try GRPCChannelPool.with(configuration: configuration)

@@ -22,10 +22,10 @@ public class GRPCServerAdvertiser {
     objCResponder.advertiser = self
   }
 
-  public func startAdvertising(port: Int32) {
+  public func startAdvertising(port: Int32, TLS: Bool) {
     let serviceType = "_dt-grpc._tcp."
     let serviceDomain = "local."
-
+    let name = TLS ? "\(name)_tls" : "\(name)_notls"
     let netService = NetService(domain: serviceDomain, type: serviceType, name: name, port: port)
     self.netService = netService
     netService.delegate = objCResponder

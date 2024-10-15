@@ -10,10 +10,12 @@ public class GRPCServiceBrowser {
     public let name: String
     public let host: String
     public let port: Int
-    public init(name: String, host: String, port: Int) {
+    public let TLS: Bool
+    public init(name: String, host: String, port: Int, TLS: Bool) {
       self.name = name
       self.host = host
       self.port = port
+      self.TLS = TLS
     }
   }
 
@@ -51,14 +53,31 @@ public class GRPCServiceBrowser {
     serviceBrowser.searchForServices(ofType: "_dt-grpc._tcp.", inDomain: "local.")
   }
 
+  private static func nameAndTLS(name serviceName: String) -> (name: String, TLS: Bool) {
+    let TLS: Bool
+    let name: String
+    if serviceName.hasSuffix("_notls") {
+      TLS = false
+      name = String(serviceName.prefix(upTo: serviceName.index(serviceName.endIndex, offsetBy: -6)))
+    } else if serviceName.hasSuffix("_tls") {
+      TLS = true
+      name = String(serviceName.prefix(upTo: serviceName.index(serviceName.endIndex, offsetBy: -4)))
+    } else {
+      TLS = false
+      name = serviceName
+    }
+    return (name: name, TLS: TLS)
+  }
+
   // NetServiceBrowserDelegate method
   public func netServiceBrowser(
     _ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool
   ) {
     dispatchPrecondition(condition: .onQueue(.main))
     discoveredServices.append(service)
+    let (name, TLS) = Self.nameAndTLS(name: service.name)
     discoveredDescriptors.append(
-      ServiceDescriptor(name: service.name, host: service.hostName ?? "", port: service.port))
+      ServiceDescriptor(name: name, host: service.hostName ?? "", port: service.port, TLS: TLS))
     service.delegate = objCResponder
     service.resolve(withTimeout: 5.0)
   }
@@ -81,7 +100,8 @@ public class GRPCServiceBrowser {
     dispatchPrecondition(condition: .onQueue(.main))
     if let addresses = sender.addresses, !addresses.isEmpty {
       if let hostname = sender.hostName, sender.port != 0 {
-        let descriptor = ServiceDescriptor(name: sender.name, host: hostname, port: sender.port)
+        let (name, TLS) = Self.nameAndTLS(name: sender.name)
+        let descriptor = ServiceDescriptor(name: name, host: hostname, port: sender.port, TLS: TLS)
         if let firstIndex = discoveredServices.firstIndex(where: { $0 == sender }) {
           discoveredDescriptors[firstIndex] = descriptor  // Update the descriptor.
         }

@@ -30,6 +30,9 @@ cc_library(
     ]),
     copts = [],
     includes = ["Sources/CNIOBoringSSLShims/include"],
+    local_defines = [
+        "_GNU_SOURCE",
+    ],
     tags = ["swift_module=CNIOBoringSSLShims"],
     visibility = ["//visibility:public"],
     deps = [":CNIOBoringSSL"],
@@ -45,10 +48,15 @@ cc_library(
     ]),
     hdrs = glob([
         "Sources/CNIOBoringSSL/include/**/*.h",
-        "Sources/CNIOBoringSSL/include/**/*.inc",
+        "Sources/CNIOBoringSSL/**/*.inc",
     ]),
     copts = [],
     includes = ["Sources/CNIOBoringSSL/include"],
+    local_defines = [
+        "_GNU_SOURCE",
+        "_POSIX_C_SOURCE=200112L",
+        "_DARWIN_C_SOURCE",
+    ],
     tags = ["swift_module=CNIOBoringSSL"],
     visibility = ["//visibility:public"],
     deps = [],
