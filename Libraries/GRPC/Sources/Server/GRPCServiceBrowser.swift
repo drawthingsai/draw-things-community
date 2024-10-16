@@ -10,8 +10,8 @@ public class GRPCServiceBrowser {
     public let name: String
     public let host: String
     public let port: Int
-    public let TLS: Bool
-    public init(name: String, host: String, port: Int, TLS: Bool) {
+    public let TLS: Bool?
+    public init(name: String, host: String, port: Int, TLS: Bool?) {
       self.name = name
       self.host = host
       self.port = port
@@ -53,8 +53,8 @@ public class GRPCServiceBrowser {
     serviceBrowser.searchForServices(ofType: "_dt-grpc._tcp.", inDomain: "local.")
   }
 
-  private static func nameAndTLS(name serviceName: String) -> (name: String, TLS: Bool) {
-    let TLS: Bool
+  private static func nameAndTLS(name serviceName: String) -> (name: String, TLS: Bool?) {
+    let TLS: Bool?
     let name: String
     if serviceName.hasSuffix("_notls") {
       TLS = false
@@ -63,7 +63,7 @@ public class GRPCServiceBrowser {
       TLS = true
       name = String(serviceName.prefix(upTo: serviceName.index(serviceName.endIndex, offsetBy: -4)))
     } else {
-      TLS = false
+      TLS = nil
       name = serviceName
     }
     return (name: name, TLS: TLS)
