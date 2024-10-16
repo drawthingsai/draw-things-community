@@ -7,10 +7,10 @@ public protocol GRPCServiceBrowserDelegate: AnyObject {
 
 public class GRPCServiceBrowser {
   public struct ServiceDescriptor: Equatable & Hashable {
-    public let name: String
-    public let host: String
-    public let port: Int
-    public let TLS: Bool?
+    public var name: String
+    public var host: String
+    public var port: Int
+    public var TLS: Bool?
     public init(name: String, host: String, port: Int, TLS: Bool?) {
       self.name = name
       self.host = host
