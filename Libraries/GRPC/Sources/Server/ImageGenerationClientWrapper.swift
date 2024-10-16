@@ -8,12 +8,14 @@ public final class ImageGenerationClientWrapper {
   public enum Error: Swift.Error {
     case invalidRootCA
   }
-
+  private var deviceName: String? = nil
   private var eventLoopGroup: EventLoopGroup? = nil
   private var channel: GRPCChannel? = nil
   public private(set) var client: ImageGenerationServiceNIOClient? = nil
 
-  public init() {}
+  public init(deviceName: String? = nil) {
+    self.deviceName = deviceName
+  }
 
   public func connect(host: String, port: Int, TLS: Bool) throws {
     try? eventLoopGroup?.syncShutdownGracefully()
@@ -66,7 +68,7 @@ public final class ImageGenerationClientWrapper {
     }
 
     var request = EchoRequest()
-    request.name = ""
+    request.name = deviceName ?? ""
     let _ = client.echo(request).response.always {
       switch $0 {
       case .success(_):
