@@ -471,6 +471,8 @@ extension UNetFromNNC {
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file })
+        configuration.keys = keys
         (_, unet) =
           LoRAMMDiT(
             batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
@@ -669,7 +671,10 @@ extension UNetFromNNC {
                   return ($0, $0)
                 })
             case .sd3Large:
-              fatalError()
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<38).map {
+                  return ($0, $0)
+                })
             case .auraflow:
               fatalError()
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:

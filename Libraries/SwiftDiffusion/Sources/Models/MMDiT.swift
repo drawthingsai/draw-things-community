@@ -492,7 +492,11 @@ private func LoRAJointTransformerBlock(
       contextOut = context + contextChunks[2] .* contextOut
     }
   }
-  xOut = x + xChunks[2] .* xOut
+  if upcast {
+    xOut = x + (xChunks[2] .* xOut).to(of: context)
+  } else {
+    xOut = x + xChunks[2] .* xOut
+  }
   // Attentions are now. Now run MLP.
   let contextFc1: Model?
   let contextFc2: Model?

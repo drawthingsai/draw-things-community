@@ -176,7 +176,11 @@ public enum LoRAImporter {
       stateDict[newKey.dropLast(9) + ".diff"] = stateDict[key]
     }
     let modelVersion: ModelVersion = try {
-      let isSD3 = stateDict.keys.contains {
+      let isSD3Large = stateDict.keys.contains {
+        $0.contains("joint_blocks_37_attn_")
+          || $0.contains("transformer_blocks_37_attn_")
+      }
+      let isSD3Medium = stateDict.keys.contains {
         $0.contains("joint_blocks_23_context_block_")
           || $0.contains("transformer_blocks_22_ff_context_")
       }
@@ -203,8 +207,8 @@ public enum LoRAImporter {
         // || $0.hasSuffix("encoder_layers_0_self_attn_k_proj.hada_w1_b")
       }
       // Only confident about these if there is no ambiguity. If there are, we will use force version value.
-      switch (isSDOrSDXL, isSD3, isPixArtSigmaXL, isFlux1) {
-      case (true, false, false, false):
+      switch (isSDOrSDXL, isSD3Medium, isSD3Large, isPixArtSigmaXL, isFlux1) {
+      case (true, false, false, false, false):
         if let tokey = stateDict.first(where: {
           $0.key.hasSuffix(
             "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -253,11 +257,13 @@ public enum LoRAImporter {
           }
           throw UnpickleError.tensorNotFound
         }
-      case (false, true, false, false):
+      case (false, true, false, false, false):
         return .sd3
-      case (false, false, true, false):
+      case (false, false, true, false, false):
+        return .sd3Large
+      case (false, false, false, true, false):
         return .pixart
-      case (false, false, false, true):
+      case (false, false, false, false, true):
         return .flux1
       default:
         if let forceVersion = forceVersion {
@@ -373,7 +379,8 @@ public enum LoRAImporter {
     }
     var UNetMappingFixed = ModelWeightMapping()
     if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
-      || modelVersion == .sd3 || modelVersion == .pixart || modelVersion == .flux1
+      || modelVersion == .sd3 || modelVersion == .sd3Large || modelVersion == .pixart
+      || modelVersion == .flux1
     {
       let unet: Model
       let unetFixed: Model
@@ -418,7 +425,10 @@ public enum LoRAImporter {
           upcast: false, qkNorm: false, usesFlashAttention: .none, of: FloatType.self)
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: 2, channels: 1536, layers: 24)
       case .sd3Large:
-        fatalError()
+        (unetMapper, unet) = MMDiT(
+          batchSize: 2, t: 77, height: 64, width: 64, channels: 2432, layers: 38,
+          upcast: true, qkNorm: true, usesFlashAttention: .none, of: FloatType.self)
+        (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: 2, channels: 2432, layers: 38)
       case .pixart:
         (unetMapper, unet) = PixArt(
           batchSize: 2, height: 64, width: 64, channels: 1152, layers: 28,
@@ -515,7 +525,7 @@ public enum LoRAImporter {
             ), graph.variable(.CPU, .HWC(2, 77, 4096), of: FloatType.self),
           ]
           tEmb = nil
-        case .sd3:
+        case .sd3, .sd3Large:
           isCfgEnabled = true
           isGuidanceEmbedEnabled = false
           crossattn = [
@@ -528,8 +538,6 @@ public enum LoRAImporter {
             ), graph.variable(.CPU, .HWC(2, 154, 4096), of: FloatType.self),
           ]
           tEmb = nil
-        case .sd3Large:
-          fatalError()
         case .flux1:
           isCfgEnabled = false
           isGuidanceEmbedEnabled = true
@@ -618,8 +626,8 @@ public enum LoRAImporter {
         }
         let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
         unet.compile(inputs: inputs)
-        if modelVersion == .ssd1b || modelVersion == .sd3 || modelVersion == .pixart
-          || modelVersion == .flux1
+        if modelVersion == .ssd1b || modelVersion == .sd3 || modelVersion == .sd3Large
+          || modelVersion == .pixart || modelVersion == .flux1
         {
           UNetMappingFixed = unetFixedMapper(.generativeModels)
           UNetMapping = unetMapper(.generativeModels)

@@ -1240,8 +1240,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 2 * 1_024 * 1_024 * 1_024
       case .sd3:
         return fileSize < 3 * 1_024 * 1_024 * 1_024
-      case .sd3Large:  // TODO: Placeholder.
-        return fileSize < 6 * 1_024 * 1_024 * 1_024
+      case .sd3Large:
+        return fileSize < 7 * 1_024 * 1_024 * 1_024
       case .auraflow:
         return fileSize < 6 * 1_024 * 1_024 * 1_024
       case .flux1:
@@ -1278,7 +1278,7 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 2 * 1_024 * 1_024 * 1_024
       case .sd3:
         return fileSize < 3 * 1_024 * 1_024 * 1_024
-      case .sd3Large:  // TODO: Placeholder.
+      case .sd3Large:
         return fileSize < 10 * 1_024 * 1_024 * 1_024
       case .auraflow:
         return fileSize < 10 * 1_024 * 1_024 * 1_024
