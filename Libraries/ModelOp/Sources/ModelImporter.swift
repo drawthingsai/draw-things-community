@@ -253,7 +253,7 @@ public final class ModelImporter {
         expectedTotalAccess += 388 + 196
       case .sdxlRefiner:
         expectedTotalAccess += 388
-      case .sd3, .pixart, .auraflow, .flux1:
+      case .sd3, .sd3Large, .pixart, .auraflow, .flux1:
         throw Error.noTextEncoder
       case .svdI2v:
         throw Error.noTextEncoder
@@ -327,7 +327,7 @@ public final class ModelImporter {
               intermediateSize: 5120, usesFlashAttention: false, outputPenultimate: true)
             filePath = ModelZoo.filePathForModelDownloaded(
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
-          case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+          case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB:
             fatalError()
           }
@@ -366,7 +366,8 @@ public final class ModelImporter {
               if $0.keys.count < 517 {
                 throw Error.tensorWritesFailed
               }
-            case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+            case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
+              .wurstchenStageC,
               .wurstchenStageB:
               fatalError()
             }
@@ -485,7 +486,7 @@ public final class ModelImporter {
     case .pixart:
       conditionalLength = 4096
       batchSize = 2
-    case .sd3:
+    case .sd3, .sd3Large:
       conditionalLength = 4096
       batchSize = 2
     case .auraflow:
@@ -514,7 +515,7 @@ public final class ModelImporter {
       let filePath = ModelZoo.filePathForModelDownloaded("\(self.modelName)_f16.ckpt")
       switch modelVersion {
       case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .pixart,
-        .sd3, .auraflow:
+        .sd3, .sd3Large, .auraflow:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false,
           isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false)
@@ -534,7 +535,7 @@ public final class ModelImporter {
           vectors = [graph.variable(.CPU, .WC(batchSize, 2560), of: FloatType.self)]
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
-        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .auraflow, .flux1:
+        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -672,6 +673,8 @@ public final class ModelImporter {
           usesFlashAttention: .none, of: FloatType.self)
         unetReader = nil
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 1536, layers: 24)
+      case .sd3Large:
+        fatalError()
       case .flux1:
         (unetMapper, unet) = Flux1(
           batchSize: batchSize, tokenLength: 256, height: 64, width: 64, channels: 3072,
@@ -730,6 +733,8 @@ public final class ModelImporter {
           ), graph.variable(.CPU, .HWC(batchSize, 154, 4096), of: FloatType.self),
         ]
         tEmb = nil
+      case .sd3Large:
+        fatalError()
       case .flux1:
         crossattn = [
           graph.variable(.CPU, .HWC(batchSize, 256, 4096), of: FloatType.self),
@@ -883,7 +888,7 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .sd3:
+          case .sd3, .sd3Large:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1000,6 +1005,8 @@ public final class ModelImporter {
           if $0.keys.count != 1157 {
             throw Error.tensorWritesFailed
           }
+        case .sd3Large:
+          fatalError()
         case .flux1:
           if $0.keys.count != 1732 && $0.keys.count != 1728 {
             throw Error.tensorWritesFailed

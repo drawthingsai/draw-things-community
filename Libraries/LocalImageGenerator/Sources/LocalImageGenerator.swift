@@ -110,7 +110,8 @@ extension LocalImageGenerator {
       samplingSigmas = [
         700.00, 54.5, 15.886, 7.977, 4.248, 1.789, 0.981, 0.403, 0.173, 0.034, 0.002,
       ]
-    case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB, .wurstchenStageC:
+    case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB,
+      .wurstchenStageC:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1094,7 +1095,7 @@ extension LocalImageGenerator {
       result.7 = tokenLengthUncond
       result.8 = tokenLengthCond
       return result
-    case .sd3:
+    case .sd3, .sd3Large:
       let tokenizerV2 = tokenizerXL
       var tokenizerV1 = tokenizerV1
       tokenizerV1.textualInversions = tokenizerV2.textualInversions
@@ -2146,7 +2147,7 @@ extension LocalImageGenerator {
       // This is only supported for SD v1, Stable Cascade, SDXL, SD3.
       switch version {
       case .ssd1b, .svdI2v, .v1, .v2, .sdxlBase, .sdxlRefiner, .wurstchenStageB, .wurstchenStageC,
-        .sd3:
+        .sd3, .sd3Large:
         c = c.map { c in
           guard tokenLength == c.shape[1], c.shape.count == 3 else { return c }
           let conditionalLength = c.shape[2]
@@ -2499,7 +2500,7 @@ extension LocalImageGenerator {
         (hiresFixEnabled ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
         * 8
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .flux1:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1:
         firstPassChannels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -2945,7 +2946,7 @@ extension LocalImageGenerator {
         )
         let channels: Int
         switch modelVersion {
-        case .wurstchenStageC, .sd3, .flux1:
+        case .wurstchenStageC, .sd3, .sd3Large, .flux1:
           channels = 16
         case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
           .wurstchenStageB:
@@ -3321,7 +3322,7 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .flux1:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -4424,7 +4425,7 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .flux1:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -5078,7 +5079,7 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .flux1:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:

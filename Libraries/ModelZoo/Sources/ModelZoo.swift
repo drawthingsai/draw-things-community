@@ -30,7 +30,9 @@ public struct ModelZoo: DownloadZoo {
     case .wurstchenStageC, .wurstchenStageB:
       return "Stable Cascade (Würstchen v3.0)"
     case .sd3:
-      return "Stable Diffusion 3"
+      return "Stable Diffusion 3 Medium"
+    case .sd3Large:
+      return "Stable Diffusion 3 Large"
     case .pixart:
       return "PixArt Sigma"
     case .auraflow:
@@ -1062,7 +1064,7 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .pixart:
       return .epsilon
-    case .sd3, .auraflow, .flux1:
+    case .sd3, .sd3Large, .auraflow, .flux1:
       return .u(conditionScale: 1000)
     }
   }
@@ -1074,7 +1076,7 @@ public struct ModelZoo: DownloadZoo {
     }
     switch specification.version {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1:
+      .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1:
       return .timestep
     case .svdI2v:
       return .noise
@@ -1103,7 +1105,7 @@ public struct ModelZoo: DownloadZoo {
       return .edm(.init(sigmaMax: 700.0))
     case .wurstchenStageC, .wurstchenStageB:
       return .edm(.init(sigmaMin: 0.01, sigmaMax: 99.995))
-    case .sd3, .auraflow, .flux1:
+    case .sd3, .sd3Large, .auraflow, .flux1:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
@@ -1115,7 +1117,7 @@ public struct ModelZoo: DownloadZoo {
     }
     switch specification.version {
     case .v1, .v2, .svdI2v, .ssd1b, .sdxlBase, .sdxlRefiner, .kandinsky21, .wurstchenStageB,
-      .wurstchenStageC, .sd3:
+      .wurstchenStageC, .sd3, .sd3Large:
       return 77
     case .pixart:
       return 0
@@ -1147,7 +1149,7 @@ public struct ModelZoo: DownloadZoo {
       return (nil, nil, 1, nil)
     case .wurstchenStageC, .wurstchenStageB:
       return (nil, nil, 2.32558139535, nil)
-    case .sd3:
+    case .sd3, .sd3Large:
       return (nil, nil, 1.5305, 0.0609)
     case .flux1:
       return (nil, nil, 0.3611, 0.11590)
@@ -1238,6 +1240,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 2 * 1_024 * 1_024 * 1_024
       case .sd3:
         return fileSize < 3 * 1_024 * 1_024 * 1_024
+      case .sd3Large:  // TODO: Placeholder.
+        return fileSize < 6 * 1_024 * 1_024 * 1_024
       case .auraflow:
         return fileSize < 6 * 1_024 * 1_024 * 1_024
       case .flux1:
@@ -1274,6 +1278,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 2 * 1_024 * 1_024 * 1_024
       case .sd3:
         return fileSize < 3 * 1_024 * 1_024 * 1_024
+      case .sd3Large:  // TODO: Placeholder.
+        return fileSize < 10 * 1_024 * 1_024 * 1_024
       case .auraflow:
         return fileSize < 10 * 1_024 * 1_024 * 1_024
       case .flux1:

@@ -484,7 +484,7 @@ extension ModelPreloader {
       conditionalLength = 1024
     case .sdxlBase, .sdxlRefiner, .ssd1b:
       conditionalLength = 1280
-    case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+    case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
       .wurstchenStageB:
       fatalError()
     }
@@ -687,7 +687,7 @@ extension ModelPreloader {
               outputPenultimate: true
             ).0
           textModelLoRAPrefix = "__te2"
-        case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+        case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
           .wurstchenStageB:
           fatalError()
         }
@@ -725,7 +725,8 @@ extension ModelPreloader {
                     } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
                       name = "__text_model__[t-258-1]"
                     }
-                  case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+                  case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
+                    .wurstchenStageC,
                     .wurstchenStageB:
                     fatalError()
                   }
@@ -765,7 +766,8 @@ extension ModelPreloader {
                   } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
                     name = "__text_model__[t-258-1]"
                   }
-                case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+                case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
+                  .wurstchenStageC,
                   .wurstchenStageB:
                   fatalError()
                 }
@@ -1058,7 +1060,8 @@ extension ModelPreloader {
           switch version {
           case .v1, .v2, .kandinsky21:
             return false
-          case .sd3, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageB,
+          case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
+            .wurstchenStageB,
             .wurstchenStageC, .svdI2v:
             return DeviceCapability.isLowPerformance
           }

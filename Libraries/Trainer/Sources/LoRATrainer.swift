@@ -75,7 +75,7 @@ public struct LoRATrainer {
           return "kandinsky_movq_f16.ckpt"
         case .wurstchenStageC, .wurstchenStageB:
           return "wurstchen_3.0_stage_a_hq_f16.ckpt"
-        case .sd3:
+        case .sd3, .sd3Large:
           return "sd3_vae_f16.ckpt"
         case .flux1:
           return "flux_1_vae_f16.ckpt"
@@ -97,7 +97,7 @@ public struct LoRATrainer {
           return "t5_xxl_encoder_q6p.ckpt"
         case .auraflow:
           return "pile_t5_xl_encoder_q8p.ckpt"
-        case .sd3, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
+        case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           return "open_clip_vit_bigg14_f16.ckpt"
         }
       })()
@@ -240,7 +240,7 @@ public struct LoRATrainer {
                 intermediateSize: 5120, usesFlashAttention: false, outputPenultimate: true
               ).0
             ]
-          case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+          case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB:
             fatalError()
           }
@@ -298,7 +298,8 @@ public struct LoRATrainer {
                 } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
                   name = "__text_model__[t-258-1]"
                 }
-              case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+              case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
+                .wurstchenStageC,
                 .wurstchenStageB:
                 fatalError()
               }
@@ -400,7 +401,7 @@ public struct LoRATrainer {
         switch version {
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1:
           $0.write("string_to_param", variable: embeddings[0])
-        case .sd3, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
+        case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           $0.write("string_to_param_clip_g", variable: embeddings[0])
           if embeddings.count > 1 {
             $0.write("string_to_param_clip_l", variable: embeddings[1])
@@ -449,7 +450,7 @@ public struct LoRATrainer {
         switch version {
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1:
           store.write("string_to_param", variable: embeddings[0])
-        case .sd3, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
+        case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           store.write("string_to_param_clip_g", variable: embeddings[0])
           if embeddings.count > 1 {
             store.write("string_to_param_clip_l", variable: embeddings[1])
@@ -463,7 +464,7 @@ public struct LoRATrainer {
           textModelMapping = LoRAMapping.CLIPTextModel
         case .v2:
           textModelMapping = LoRAMapping.OpenCLIPTextModel
-        case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+        case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
           .wurstchenStageB:
           fatalError()
         case .sdxlBase, .ssd1b, .sdxlRefiner:
@@ -532,7 +533,7 @@ public struct LoRATrainer {
       switch version {
       case .v1, .v2:
         UNetMapping = LoRAMapping.SDUNet
-      case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+      case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       case .ssd1b:
@@ -962,7 +963,7 @@ public struct LoRATrainer {
             LoRAConfiguration: configuration
           ).0
         unetLoRAMapping = LoRAMapping.SDUNetXLSSD1B
-      case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+      case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       }
@@ -1037,7 +1038,8 @@ public struct LoRATrainer {
               } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
                 name = "__text_model__[t-258-1]"
               }
-            case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+            case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
+              .wurstchenStageC,
               .wurstchenStageB:
               fatalError()
             }
@@ -1188,7 +1190,7 @@ public struct LoRATrainer {
         c = graph.variable(.GPU(0), .WC(1, 2816), of: FloatType.self)
       case .sdxlRefiner:
         c = graph.variable(.GPU(0), .WC(1, 2560), of: FloatType.self)
-      case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+      case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
       }
@@ -1334,7 +1336,7 @@ public struct LoRATrainer {
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1:
           embeddingName = ("string_to_param", "string_to_param")
           firstStd = 0.02
-        case .sd3, .sdxlBase, .ssd1b:
+        case .sd3, .sd3Large, .sdxlBase, .ssd1b:
           embeddingName = ("string_to_param_clip_g", "string_to_param_clip_l")
           firstStd = 0.01
         case .sdxlRefiner, .wurstchenStageC, .wurstchenStageB:
@@ -1578,7 +1580,8 @@ public struct LoRATrainer {
                 }
                 injectedEmbeddings.append(injectedEmbedding0)
                 injectedEmbeddings.append(injectedEmbedding1)
-              case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+              case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
+                .wurstchenStageC,
                 .wurstchenStageB:
                 fatalError()
               }
@@ -1699,7 +1702,8 @@ public struct LoRATrainer {
               } else {
                 kvs = []
               }
-            case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+            case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
+              .wurstchenStageC,
               .wurstchenStageB:
               fatalError()
             }
@@ -1754,7 +1758,8 @@ public struct LoRATrainer {
               } else {
                 kvs = []
               }
-            case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+            case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
+              .wurstchenStageC,
               .wurstchenStageB:
               fatalError()
             }

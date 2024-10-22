@@ -284,7 +284,7 @@ public enum LoRAImporter {
       textModelMapping1 = StableDiffusionMapping.OpenCLIPTextModelG
       textModelMapping1.merge(StableDiffusionMapping.OpenCLIPTextModelGTransformers) { v, _ in v }
       textModelMapping2 = [:]
-    case .sd3:
+    case .sd3, .sd3Large:
       // We don't support LoRA on text encoder for SD3 yet.
       textModelMapping1 = [:]
       textModelMapping2 = [:]
@@ -417,6 +417,8 @@ public enum LoRAImporter {
           batchSize: 2, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
           usesFlashAttention: .none, of: FloatType.self)
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: 2, channels: 1536, layers: 24)
+      case .sd3Large:
+        fatalError()
       case .pixart:
         (unetMapper, unet) = PixArt(
           batchSize: 2, height: 64, width: 64, channels: 1152, layers: 28,
@@ -461,7 +463,7 @@ public enum LoRAImporter {
         case .sdxlBase, .sdxlRefiner, .ssd1b:
           inputDim = 4
           conditionalLength = 1280
-        case .sd3:
+        case .sd3, .sd3Large:
           inputDim = 16
           conditionalLength = 4096
         case .pixart:
@@ -526,6 +528,8 @@ public enum LoRAImporter {
             ), graph.variable(.CPU, .HWC(2, 154, 4096), of: FloatType.self),
           ]
           tEmb = nil
+        case .sd3Large:
+          fatalError()
         case .flux1:
           isCfgEnabled = false
           isGuidanceEmbedEnabled = true
@@ -575,14 +579,14 @@ public enum LoRAImporter {
           vectors = [graph.variable(.CPU, .WC(2, 2560), of: FloatType.self)]
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
-        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .auraflow, .flux1:
+        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
         }
         switch modelVersion {
         case .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .wurstchenStageC, .wurstchenStageB, .pixart,
-          .sd3, .auraflow:
+          .sd3, .sd3Large, .auraflow:
           // These values doesn't matter, it won't affect the model shape, just the input vector.
           cArr =
             vectors
@@ -685,7 +689,7 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .sd3:
+      case .sd3, .sd3Large:
         if let tensorDescClipG = stateDict["clip_g"] {
           try archive.with(tensorDescClipG) {
             let tensor = Tensor<FloatType>(from: $0)
@@ -782,7 +786,7 @@ public enum LoRAImporter {
       case .wurstchenStageC, .wurstchenStageB:
         modelPrefix = "stage_c"
         modelPrefixFixed = "stage_c_fixed"
-      case .sd3, .pixart, .auraflow, .flux1:
+      case .sd3, .sd3Large, .pixart, .auraflow, .flux1:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

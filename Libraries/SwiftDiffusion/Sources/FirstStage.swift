@@ -75,7 +75,8 @@ extension FirstStage {
     }
     let zoomFactor: Int
     switch version {
-    case .v1, .v2, .sd3, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v,
+    case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
+      .svdI2v,
       .kandinsky21:
       zoomFactor = 8
     case .wurstchenStageB, .wurstchenStageC:
@@ -144,7 +145,7 @@ extension FirstStage {
       } else {
         outputChannels = 3
       }
-    case .sd3, .flux1:
+    case .sd3, .sd3Large, .flux1:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       decoder =
@@ -432,7 +433,7 @@ extension FirstStage {
         }
       }
       outputChannels = 8
-    case .sd3, .flux1:
+    case .sd3, .sd3Large, .flux1:
       startHeight = shape[1] / 8
       startWidth = shape[2] / 8
       scaleFactor = 8

@@ -27,9 +27,8 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
 extension UNetFixedEncoder {
   static func isFixedEncoderRequired(version: ModelVersion) -> Bool {
     switch version {
-    case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .pixart, .auraflow, .flux1,
-      .wurstchenStageC,
-      .wurstchenStageB:
+    case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
+      .wurstchenStageC, .wurstchenStageB:
       return true
     case .v1, .v2, .kandinsky21:
       return false
@@ -171,7 +170,7 @@ extension UNetFixedEncoder {
     case .wurstchenStageC, .wurstchenStageB:
       // We don't need other vectors for sampling.
       return []
-    case .sd3:
+    case .sd3, .sd3Large:
       return []
     case .pixart:
       return []
@@ -420,7 +419,7 @@ extension UNetFixedEncoder {
         store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
       }
       return (unetFixed(inputs: c, timeEmbeds).map { $0.as(of: FloatType.self) }, nil)
-    case .sd3:
+    case .sd3, .sd3Large:
       var c: DynamicGraph.Tensor<FloatType>
       var pooled: DynamicGraph.Tensor<FloatType>
       if textEncoding.count >= 4 {

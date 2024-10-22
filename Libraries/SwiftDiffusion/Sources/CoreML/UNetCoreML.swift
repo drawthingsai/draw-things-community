@@ -333,7 +333,8 @@ extension UNetFromCoreML {
         reduceMemory = CoreMLModelManager.reduceMemoryFor1x.load(ordering: .acquiring)
       case .v2:
         reduceMemory = CoreMLModelManager.reduceMemoryFor2x.load(ordering: .acquiring)
-      case .sd3, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v,
+      case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .svdI2v,
         .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
