@@ -29,7 +29,7 @@ private func MLP(hiddenSize: Int, intermediateSize: Int, name: String) -> (Model
 
 private func JointTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  qkNorm: Bool, usesFlashAttention: FlashAttentionLevel
+  upcast: Bool, qkNorm: Bool, usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -37,7 +37,9 @@ private func JointTransformerBlock(
     Input()
   }
   let contextNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var contextOut = contextChunks[1] .* contextNorm1(context) + contextChunks[0]
+  var contextOut =
+    contextChunks[1] .* (upcast ? contextNorm1(context).to(.Float16) : contextNorm1(context))
+    + contextChunks[0]
   let contextToKeys = Dense(count: k * h, name: "c_k")
   let contextToQueries = Dense(count: k * h, name: "c_q")
   let contextToValues = Dense(count: k * h, name: "c_v")
@@ -59,7 +61,7 @@ private func JointTransformerBlock(
   }
   let xChunks = (0..<6).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = xChunks[1] .* xNorm1(x) + xChunks[0]
+  var xOut = xChunks[1] .* (upcast ? xNorm1(x).to(.Float16) : xNorm1(x)) + xChunks[0]
   let xToKeys = Dense(count: k * h, name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
@@ -144,9 +146,17 @@ private func JointTransformerBlock(
   let xUnifyheads = Dense(count: k * h, name: "x_o")
   xOut = xUnifyheads(xOut)
   if !contextBlockPreOnly {
-    contextOut = context + contextChunks[2] .* contextOut
+    if upcast {
+      contextOut = context + (contextChunks[2] .* contextOut).to(of: context)
+    } else {
+      contextOut = context + contextChunks[2] .* contextOut
+    }
   }
-  xOut = x + xChunks[2] .* xOut
+  if upcast {
+    xOut = x + (xChunks[2] .* xOut).to(of: x)
+  } else {
+    xOut = x + xChunks[2] .* xOut
+  }
   // Attentions are now. Now run MLP.
   let contextFc1: Model?
   let contextFc2: Model?
@@ -155,15 +165,26 @@ private func JointTransformerBlock(
     (contextFc1, contextFc2, contextMlp) = MLP(
       hiddenSize: k * h, intermediateSize: k * h * 4, name: "c")
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-    contextOut = contextOut + contextChunks[5]
-      .* contextMlp(contextNorm2(contextOut) .* contextChunks[4] + contextChunks[3])
+    if upcast {
+      contextOut = contextOut + contextChunks[5].to(of: contextOut)
+        .* contextMlp(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])
+        .to(of: contextOut)
+    } else {
+      contextOut = contextOut + contextChunks[5]
+        .* contextMlp(contextNorm2(contextOut) .* contextChunks[4] + contextChunks[3])
+    }
   } else {
     contextFc1 = nil
     contextFc2 = nil
   }
   let (xFc1, xFc2, xMlp) = MLP(hiddenSize: k * h, intermediateSize: k * h * 4, name: "x")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  xOut = xOut + xChunks[5] .* xMlp(xNorm2(xOut) .* xChunks[4] + xChunks[3])
+  if upcast {
+    xOut = xOut + xChunks[5].to(of: xOut)
+      .* xMlp(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]).to(of: xOut)
+  } else {
+    xOut = xOut + xChunks[5] .* xMlp(xNorm2(xOut) .* xChunks[4] + xChunks[3])
+  }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     switch format {
@@ -253,7 +274,8 @@ private func JointTransformerBlock(
 
 public func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
   batchSize: Int, t: Int, height: Int, width: Int, channels: Int, layers: Int,
-  qkNorm: Bool, usesFlashAttention: FlashAttentionLevel, of: FloatType.Type = FloatType.self
+  upcast: Bool, qkNorm: Bool, usesFlashAttention: FlashAttentionLevel,
+  of: FloatType.Type = FloatType.self
 )
   -> (ModelWeightMapper, Model)
 {
@@ -274,15 +296,18 @@ public func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
   var adaLNChunks = [Input]()
   var mappers = [ModelWeightMapper]()
   var context: Model.IO = contextIn
+  if upcast {
+    out = out.to(.Float32)
+    context = context.to(.Float32)
+  }
   for i in 0..<layers {
     let contextBlockPreOnly = (i == layers - 1)
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = JointTransformerBlock(
       prefix: ("diffusion_model.joint_blocks.\(i)", "transformer_blocks.\(i)"), k: 64,
-      h: channels / 64, b: batchSize, t: t,
-      hw: h * w, contextBlockPreOnly: contextBlockPreOnly, qkNorm: qkNorm,
-      usesFlashAttention: usesFlashAttention)
+      h: channels / 64, b: batchSize, t: t, hw: h * w, contextBlockPreOnly: contextBlockPreOnly,
+      upcast: upcast, qkNorm: qkNorm, usesFlashAttention: usesFlashAttention)
     let blockOut = block([context, out] + contextChunks + xChunks)
     if i == layers - 1 {
       out = blockOut
@@ -297,7 +322,7 @@ public func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let shift = Input()
   let scale = Input()
   adaLNChunks.append(contentsOf: [shift, scale])
-  out = scale .* normFinal(out) + shift
+  out = scale .* (upcast ? normFinal(out).to(.Float16) : normFinal(out)) + shift
   let linear = Dense(count: 2 * 2 * 16, name: "linear")
   out = linear(out)
   // Unpatchify
@@ -342,7 +367,8 @@ private func LoRAMLP(
 
 private func LoRAJointTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  usesFlashAttention: FlashAttentionLevel, configuration: LoRANetworkConfiguration
+  upcast: Bool, qkNorm: Bool, usesFlashAttention: FlashAttentionLevel,
+  configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -350,22 +376,50 @@ private func LoRAJointTransformerBlock(
     Input()
   }
   let contextNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var contextOut = contextChunks[1] .* contextNorm1(context) + contextChunks[0]
+  var contextOut =
+    contextChunks[1] .* (upcast ? contextNorm1(context).to(.Float16) : contextNorm1(context))
+    + contextChunks[0]
   let contextToKeys = LoRADense(count: k * h, configuration: configuration, name: "c_k")
   let contextToQueries = LoRADense(count: k * h, configuration: configuration, name: "c_q")
   let contextToValues = LoRADense(count: k * h, configuration: configuration, name: "c_v")
-  let contextK = contextToKeys(contextOut)
-  let contextQ = contextToQueries(contextOut)
+  var contextK = contextToKeys(contextOut)
+  var contextQ = contextToQueries(contextOut)
   let contextV = contextToValues(contextOut)
+  let normAddedK: Model?
+  let normAddedQ: Model?
+  if qkNorm {
+    let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "c_norm_k")
+    contextK = normK(contextK.reshaped([b, t, h, k]))
+    let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "c_norm_q")
+    contextQ = normQ(contextQ.reshaped([b, t, h, k]))
+    normAddedK = normK
+    normAddedQ = normQ
+  } else {
+    normAddedK = nil
+    normAddedQ = nil
+  }
   let xChunks = (0..<6).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = xChunks[1] .* xNorm1(x) + xChunks[0]
+  var xOut = xChunks[1] .* (upcast ? xNorm1(x).to(.Float16) : xNorm1(x)) + xChunks[0]
   let xToKeys = LoRADense(count: k * h, configuration: configuration, name: "x_k")
   let xToQueries = LoRADense(count: k * h, configuration: configuration, name: "x_q")
   let xToValues = LoRADense(count: k * h, configuration: configuration, name: "x_v")
-  let xK = xToKeys(xOut)
-  let xQ = xToQueries(xOut)
+  var xK = xToKeys(xOut)
+  var xQ = xToQueries(xOut)
   let xV = xToValues(xOut)
+  let normK: Model?
+  let normQ: Model?
+  if qkNorm {
+    let lnK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
+    xK = lnK(xK.reshaped([b, hw, h, k]))
+    let lnQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_q")
+    xQ = lnQ(xQ.reshaped([b, hw, h, k]))
+    normK = lnK
+    normQ = lnQ
+  } else {
+    normK = nil
+    normQ = nil
+  }
   var keys = Functional.concat(axis: 1, contextK, xK)
   var values = Functional.concat(axis: 1, contextV, xV)
   var queries = Functional.concat(axis: 1, contextQ, xQ)
@@ -432,7 +486,11 @@ private func LoRAJointTransformerBlock(
   let xUnifyheads = LoRADense(count: k * h, configuration: configuration, name: "x_o")
   xOut = xUnifyheads(xOut)
   if !contextBlockPreOnly {
-    contextOut = context + contextChunks[2] .* contextOut
+    if upcast {
+      contextOut = context + (contextChunks[2] .* contextOut).to(of: context)
+    } else {
+      contextOut = context + contextChunks[2] .* contextOut
+    }
   }
   xOut = x + xChunks[2] .* xOut
   // Attentions are now. Now run MLP.
@@ -443,8 +501,14 @@ private func LoRAJointTransformerBlock(
     (contextFc1, contextFc2, contextMlp) = LoRAMLP(
       hiddenSize: k * h, intermediateSize: k * h * 4, configuration: configuration, name: "c")
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-    contextOut = contextOut + contextChunks[5]
-      .* contextMlp(contextNorm2(contextOut) .* contextChunks[4] + contextChunks[3])
+    if upcast {
+      contextOut = contextOut + contextChunks[5].to(of: contextOut)
+        .* contextMlp(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])
+        .to(of: contextOut)
+    } else {
+      contextOut = contextOut + contextChunks[5]
+        .* contextMlp(contextNorm2(contextOut) .* contextChunks[4] + contextChunks[3])
+    }
   } else {
     contextFc1 = nil
     contextFc2 = nil
@@ -452,7 +516,12 @@ private func LoRAJointTransformerBlock(
   let (xFc1, xFc2, xMlp) = LoRAMLP(
     hiddenSize: k * h, intermediateSize: k * h * 4, configuration: configuration, name: "x")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  xOut = xOut + xChunks[5] .* xMlp(xNorm2(xOut) .* xChunks[4] + xChunks[3])
+  if upcast {
+    xOut = xOut + xChunks[5].to(of: xOut)
+      .* xMlp(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]).to(of: xOut)
+  } else {
+    xOut = xOut + xChunks[5] .* xMlp(xNorm2(xOut) .* xChunks[4] + xChunks[3])
+  }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     switch format {
@@ -469,6 +538,14 @@ private func LoRAJointTransformerBlock(
       mapping["\(prefix.0).x_block.attn.qkv.bias"] = [
         xToQueries.bias.name, xToKeys.bias.name, xToValues.bias.name,
       ]
+      if let normAddedK = normAddedK, let normAddedQ = normAddedQ, let normK = normK,
+        let normQ = normQ
+      {
+        mapping["\(prefix.0).context_block.attn.ln_k.weight"] = [normAddedK.weight.name]
+        mapping["\(prefix.0).context_block.attn.ln_q.weight"] = [normAddedQ.weight.name]
+        mapping["\(prefix.0).x_block.attn.ln_k.weight"] = [normK.weight.name]
+        mapping["\(prefix.0).x_block.attn.ln_q.weight"] = [normQ.weight.name]
+      }
       if let contextUnifyheads = contextUnifyheads {
         mapping["\(prefix.0).context_block.attn.proj.weight"] = [contextUnifyheads.weight.name]
         mapping["\(prefix.0).context_block.attn.proj.bias"] = [contextUnifyheads.bias.name]
@@ -498,6 +575,14 @@ private func LoRAJointTransformerBlock(
       mapping["\(prefix.1).attn.to_k.bias"] = [xToKeys.bias.name]
       mapping["\(prefix.1).attn.to_v.weight"] = [xToValues.weight.name]
       mapping["\(prefix.1).attn.to_v.bias"] = [xToValues.bias.name]
+      if let normAddedK = normAddedK, let normAddedQ = normAddedQ, let normK = normK,
+        let normQ = normQ
+      {
+        mapping["\(prefix.1).attn.norm_added_k.weight"] = [normAddedK.weight.name]
+        mapping["\(prefix.1).attn.norm_added_q.weight"] = [normAddedQ.weight.name]
+        mapping["\(prefix.1).attn.norm_k.weight"] = [normK.weight.name]
+        mapping["\(prefix.1).attn.norm_q.weight"] = [normQ.weight.name]
+      }
       if let contextUnifyheads = contextUnifyheads {
         mapping["\(prefix.1).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
         mapping["\(prefix.1).attn.to_add_out.bias"] = [contextUnifyheads.bias.name]
@@ -526,8 +611,8 @@ private func LoRAJointTransformerBlock(
 
 public func LoRAMMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
   batchSize: Int, t: Int, height: Int, width: Int, channels: Int, layers: Int,
-  usesFlashAttention: FlashAttentionLevel, LoRAConfiguration: LoRANetworkConfiguration,
-  of: FloatType.Type = FloatType.self
+  upcast: Bool, qkNorm: Bool, usesFlashAttention: FlashAttentionLevel,
+  LoRAConfiguration: LoRANetworkConfiguration, of: FloatType.Type = FloatType.self
 )
   -> (ModelWeightMapper, Model)
 {
@@ -548,14 +633,18 @@ public func LoRAMMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
   var adaLNChunks = [Input]()
   var mappers = [ModelWeightMapper]()
   var context: Model.IO = contextIn
+  if upcast {
+    out = out.to(.Float32)
+    context = context.to(.Float32)
+  }
   for i in 0..<layers {
     let contextBlockPreOnly = (i == layers - 1)
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = LoRAJointTransformerBlock(
       prefix: ("diffusion_model.joint_blocks.\(i)", "transformer_blocks.\(i)"), k: 64,
-      h: channels / 64, b: batchSize, t: t, hw: h * w,
-      contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
+      h: channels / 64, b: batchSize, t: t, hw: h * w, contextBlockPreOnly: contextBlockPreOnly,
+      upcast: upcast, qkNorm: qkNorm, usesFlashAttention: usesFlashAttention,
       configuration: LoRAConfiguration)
     let blockOut = block([context, out] + contextChunks + xChunks)
     if contextBlockPreOnly {
@@ -571,7 +660,7 @@ public func LoRAMMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let shift = Input()
   let scale = Input()
   adaLNChunks.append(contentsOf: [shift, scale])
-  out = scale .* normFinal(out) + shift
+  out = scale .* (upcast ? normFinal(out).to(.Float16) : normFinal(out)) + shift
   let linear = LoRADense(count: 2 * 2 * 16, configuration: LoRAConfiguration, name: "linear")
   out = linear(out)
   // Unpatchify

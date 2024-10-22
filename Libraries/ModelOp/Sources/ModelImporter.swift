@@ -687,13 +687,13 @@ public final class ModelImporter {
       case .sd3:
         (unetMapper, unet) = MMDiT(
           batchSize: batchSize, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
-          qkNorm: false, usesFlashAttention: .none, of: FloatType.self)
+          upcast: false, qkNorm: false, usesFlashAttention: .none, of: FloatType.self)
         unetReader = nil
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 1536, layers: 24)
       case .sd3Large:
         (unetMapper, unet) = MMDiT(
           batchSize: batchSize, t: 77, height: 64, width: 64, channels: 2432, layers: 38,
-          qkNorm: true, usesFlashAttention: .none, of: FloatType.self)
+          upcast: true, qkNorm: true, usesFlashAttention: .none, of: FloatType.self)
         unetReader = nil
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 2432, layers: 38)
       case .flux1:

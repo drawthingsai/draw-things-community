@@ -1095,7 +1095,7 @@ extension LocalImageGenerator {
       result.7 = tokenLengthUncond
       result.8 = tokenLengthCond
       return result
-    case .sd3, .sd3Large:
+    case .sd3:
       let tokenizerV2 = tokenizerXL
       var tokenizerV1 = tokenizerV1
       tokenizerV1.textualInversions = tokenizerV2.textualInversions
@@ -1128,6 +1128,46 @@ extension LocalImageGenerator {
         let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
           graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
           paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials)
+        result.0 = result.0 + t5Tokens
+        result.2 = result.2 + t5EmbedMask
+        result.3 = result.3 + t5InjectedEmbeddings
+        // tokenLengthUncond / tokenLengthCond are used by causalAttentionMask, hence used by CLIP, not by T5. No need to update.
+      }
+      return result
+    case .sd3Large:
+      let tokenizerV2 = tokenizerXL
+      var tokenizerV1 = tokenizerV1
+      tokenizerV1.textualInversions = tokenizerV2.textualInversions
+      var result = tokenize(
+        graph: graph, tokenizer: tokenizerV2, text: openClipG ?? text, negativeText: negativeText,
+        paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
+      assert(result.7 >= 77 && result.8 >= 77)
+      let (
+        tokens, _, embedMask, injectedEmbeddings, _, _, _, tokenLengthUncond, tokenLengthCond, _, _
+      ) = tokenize(
+        graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials,
+        paddingLength: max(result.7, result.8))
+      result.0 = tokens + result.0
+      result.2 = embedMask + result.2
+      result.3 = injectedEmbeddings + result.3
+      if max(result.7, result.8) < max(tokenLengthUncond, tokenLengthCond) {
+        // We need to redo this for initial result from OpenCLIP G to make sure they are aligned.
+        result = tokenize(
+          graph: graph, tokenizer: tokenizerV2, text: openClipG ?? text, negativeText: negativeText,
+          paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials,
+          paddingLength: max(tokenLengthUncond, tokenLengthCond))
+        result.0 = tokens + result.0
+        result.2 = embedMask + result.2
+        result.3 = injectedEmbeddings + result.3
+      }
+      result.7 = tokenLengthUncond
+      result.8 = tokenLengthCond
+      if T5TextEncoder {
+        let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
+          graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
+          paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
+          maxLength: 256)
         result.0 = result.0 + t5Tokens
         result.2 = result.2 + t5EmbedMask
         result.3 = result.3 + t5InjectedEmbeddings

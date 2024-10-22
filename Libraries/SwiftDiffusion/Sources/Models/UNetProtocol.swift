@@ -451,14 +451,14 @@ extension UNetFromNNC {
         (_, unet) =
           LoRAMMDiT(
             batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 1536, layers: 24,
+            width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: false,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             LoRAConfiguration: configuration, of: FloatType.self)
       } else {
         (_, unet) =
           MMDiT(
             batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 1536, layers: 24, qkNorm: false,
+            width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: false,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
       }
     case .sd3Large:
@@ -474,14 +474,14 @@ extension UNetFromNNC {
         (_, unet) =
           LoRAMMDiT(
             batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 2432, layers: 38,
+            width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             LoRAConfiguration: configuration, of: FloatType.self)
       } else {
         (_, unet) =
           MMDiT(
             batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 2432, layers: 38, qkNorm: true,
+            width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
       }
     case .pixart:
