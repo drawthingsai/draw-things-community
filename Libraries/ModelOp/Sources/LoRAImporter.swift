@@ -415,7 +415,7 @@ public enum LoRAImporter {
       case .sd3:
         (unetMapper, unet) = MMDiT(
           batchSize: 2, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
-          usesFlashAttention: .none, of: FloatType.self)
+          qkNorm: false, usesFlashAttention: .none, of: FloatType.self)
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: 2, channels: 1536, layers: 24)
       case .sd3Large:
         fatalError()

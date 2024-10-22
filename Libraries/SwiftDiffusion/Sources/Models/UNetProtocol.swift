@@ -438,7 +438,7 @@ extension UNetFromNNC {
       (unet, _) = WurstchenStageB(
         batchSize: batchSize, cIn: 4, height: tiledHeight, width: tiledWidth,
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
-    case .sd3, .sd3Large:
+    case .sd3:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
       tiledHeight =
@@ -458,7 +458,30 @@ extension UNetFromNNC {
         (_, unet) =
           MMDiT(
             batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 1536, layers: 24,
+            width: tiledWidth, channels: 1536, layers: 24, qkNorm: false,
+            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
+      }
+    case .sd3Large:
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        (_, unet) =
+          LoRAMMDiT(
+            batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
+            width: tiledWidth, channels: 2432, layers: 38,
+            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+            LoRAConfiguration: configuration, of: FloatType.self)
+      } else {
+        (_, unet) =
+          MMDiT(
+            batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
+            width: tiledWidth, channels: 2432, layers: 38, qkNorm: true,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
       }
     case .pixart:

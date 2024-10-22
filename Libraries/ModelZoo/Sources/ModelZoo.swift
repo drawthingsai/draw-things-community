@@ -1391,7 +1391,7 @@ extension ModelZoo {
   public static func isResolutionDependentShiftAvailable(
     _ version: ModelVersion, isConsistencyModel: Bool
   ) -> Bool {
-    guard version == .flux1 || version == .sd3 else { return false }
+    guard version == .flux1 || version == .sd3 || version == .sd3Large else { return false }
     if isConsistencyModel {
       return false
     }

@@ -476,8 +476,18 @@ extension UNetFixedEncoder {
       // Load the unetFixed.
       precondition(timesteps.count > 0)
       let cBatchSize = c.shape[0]
-      let (_, unetFixed) = MMDiTFixed(
-        batchSize: cBatchSize * timesteps.count, channels: 1536, layers: 24)
+      let unetFixed: Model
+      switch version {
+      case .sd3:
+        (_, unetFixed) = MMDiTFixed(
+          batchSize: cBatchSize * timesteps.count, channels: 1536, layers: 24)
+      case .sd3Large:
+        (_, unetFixed) = MMDiTFixed(
+          batchSize: cBatchSize * timesteps.count, channels: 2432, layers: 38)
+      case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
+        .svdI2v, .wurstchenStageB, .wurstchenStageC:
+        fatalError()
+      }
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
       var pooleds = graph.variable(

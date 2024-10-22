@@ -112,14 +112,22 @@ public final class ModelImporter {
     }
     let isSvdI2v = stateDict.keys.contains { $0.contains("time_mixer") }
     var isWurstchenStageC = stateDict.keys.contains { $0.contains("clip_txt_mapper.") }
-    var isPixArtSigmaXL = stateDict.keys.contains {
-      ($0.contains("blocks.27.") || $0.contains("transformer_blocks.27."))
-        && !($0.contains("single_transformer_blocks.27.")) && !($0.contains("single_blocks.27."))
+    var isSD3Large = stateDict.keys.contains {
+      $0.contains("joint_blocks.37.context_block.")
+        || $0.contains("transformer_blocks.36.ff_context.")
     }
-    var isSD3 = stateDict.keys.contains {
-      $0.contains("joint_blocks.23.context_block.")
-        || $0.contains("transformer_blocks.22.ff_context.")
-    }
+    var isSD3Medium =
+      !isSD3Large
+      && stateDict.keys.contains {
+        ($0.contains("joint_blocks.23.context_block.")
+          || $0.contains("transformer_blocks.22.ff_context."))
+      }
+    var isPixArtSigmaXL =
+      !isSD3Large
+      && stateDict.keys.contains {
+        ($0.contains("blocks.27.") || $0.contains("transformer_blocks.27."))
+          && !($0.contains("single_transformer_blocks.27.")) && !($0.contains("single_blocks.27."))
+      }
     var isFlux1 = stateDict.keys.contains {
       $0.contains("double_blocks.18.img_attn.qkv.")
         || $0.contains("single_transformer_blocks.37.")
@@ -185,7 +193,8 @@ public final class ModelImporter {
       isDiffusersFormat = stateDict.keys.contains { $0.hasPrefix("mid_block.") }
       isWurstchenStageC = false
       isPixArtSigmaXL = false
-      isSD3 = false
+      isSD3Medium = false
+      isSD3Large = false
       isFlux1 = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
@@ -199,13 +208,21 @@ public final class ModelImporter {
       inputDim = 4
       expectedTotalAccess = 754
       isDiffusersFormat = stateDict.keys.contains { $0.contains("transformer_blocks.27.") }
-    } else if isSD3 {
+    } else if isSD3Medium {
       modelVersion = .sd3
       modifier = .none
       inputDim = 16
       expectedTotalAccess = 1157
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("transformer_blocks.22.ff_context.")
+      }
+    } else if isSD3Large {
+      modelVersion = .sd3Large
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 1981
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("transformer_blocks.36.ff_context.")
       }
     } else if isFlux1 {
       modelVersion = .flux1
@@ -670,11 +687,15 @@ public final class ModelImporter {
       case .sd3:
         (unetMapper, unet) = MMDiT(
           batchSize: batchSize, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
-          usesFlashAttention: .none, of: FloatType.self)
+          qkNorm: false, usesFlashAttention: .none, of: FloatType.self)
         unetReader = nil
         (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 1536, layers: 24)
       case .sd3Large:
-        fatalError()
+        (unetMapper, unet) = MMDiT(
+          batchSize: batchSize, t: 77, height: 64, width: 64, channels: 2432, layers: 38,
+          qkNorm: true, usesFlashAttention: .none, of: FloatType.self)
+        unetReader = nil
+        (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 2432, layers: 38)
       case .flux1:
         (unetMapper, unet) = Flux1(
           batchSize: batchSize, tokenLength: 256, height: 64, width: 64, channels: 3072,
@@ -722,7 +743,7 @@ public final class ModelImporter {
           ), graph.variable(.CPU, .HWC(batchSize, 77, 4096), of: FloatType.self),
         ]
         tEmb = nil
-      case .sd3:
+      case .sd3, .sd3Large:
         crossattn = [
           graph.variable(.CPU, .WC(batchSize, 2048), of: FloatType.self),
           graph.variable(
@@ -733,8 +754,6 @@ public final class ModelImporter {
           ), graph.variable(.CPU, .HWC(batchSize, 154, 4096), of: FloatType.self),
         ]
         tEmb = nil
-      case .sd3Large:
-        fatalError()
       case .flux1:
         crossattn = [
           graph.variable(.CPU, .HWC(batchSize, 256, 4096), of: FloatType.self),
@@ -778,7 +797,7 @@ public final class ModelImporter {
             stateDict[String(key.dropFirst(22))] = value
           }
         }
-      } else if modelVersion == .sd3 {
+      } else if modelVersion == .sd3 || modelVersion == .sd3Large {
         // Remove the model prefix.
         for (key, value) in stateDict {
           if key.hasPrefix("model.") {
@@ -1006,7 +1025,10 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .sd3Large:
-          fatalError()
+          print("keys \($0.keys.count)")
+          if $0.keys.count != 1981 {
+            throw Error.tensorWritesFailed
+          }
         case .flux1:
           if $0.keys.count != 1732 && $0.keys.count != 1728 {
             throw Error.tensorWritesFailed
