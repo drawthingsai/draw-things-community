@@ -81,6 +81,19 @@ struct Converter: ParsableCommand {
       if autoencoder == nil {
         autoencoder = "sd3_vae_f16.ckpt"
       }
+    case .sd3Large:
+      clipEncoder = fileNames.first {
+        $0.hasSuffix("_clip_vit_l14_f16.ckpt")
+      }
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_open_clip_vit_bigg14_f16.ckpt")
+      }
+      t5Encoder = fileNames.first {
+        $0.hasSuffix("_t5_xxl_encoder_f16.ckpt")
+      }
+      if autoencoder == nil {
+        autoencoder = "sd3_vae_f16.ckpt"
+      }
     case .pixart:
       textEncoder = fileNames.first {
         $0.hasSuffix("_t5_xxl_encoder_f16.ckpt")
