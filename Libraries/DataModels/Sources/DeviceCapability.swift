@@ -459,12 +459,8 @@ public struct DeviceCapability {
       else {
         return false
       }
-    case .sd3Large:  // TODO: This is a placeholder.
-      guard
-        (!isMaxPerformance
-          && !((isMacCatalystBuild() ? isHighPerformance : isMaxPerformance) && is8BitModel))
-          || force
-      else {
+    case .sd3Large:
+      guard (!isMaxPerformance && !(isHighPerformance && is8BitModel)) || force else {
         return false
       }
     case .sdxlBase, .sd3, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB:
