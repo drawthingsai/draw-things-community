@@ -110,7 +110,11 @@ public struct RemoteImageGenerator: ImageGenerator {
     let callInstance = client.generateImage(request) { response in
       if !response.generatedImages.isEmpty {
         let imageTensors = response.generatedImages.compactMap { generatedImageData in
-          return Tensor<FloatType>(data: generatedImageData, using: [.zip, .fpzip])
+          if let image = Tensor<FloatType>(data: generatedImageData, using: [.zip, .fpzip]) {
+            return Tensor<FloatType>(from: image)
+          } else {
+            return nil
+          }
         }
         logger.info("Received generated image data")
         tensors.append(contentsOf: imageTensors)
@@ -127,7 +131,7 @@ public struct RemoteImageGenerator: ImageGenerator {
           let tensor = Tensor<FloatType>(
             data: response.previewImage, using: [.zip, .fpzip])
         {
-          previewTensor = tensor
+          previewTensor = Tensor<FloatType>(from: tensor)  // This force to convert the tensor into existing type.
         }
         let isGenerating = feedback(currentSignpost, signpostsSet, previewTensor)
         if !isGenerating {

@@ -214,8 +214,12 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
           return true
         }
 
+      // Additional conversion if needed.
       let image: Tensor<FloatType>? =
-        request.hasImage ? Tensor<FloatType>(data: request.image, using: [.zip, .fpzip]) : nil
+        request.hasImage
+        ? Tensor<FloatType>(data: request.image, using: [.zip, .fpzip]).map {
+          Tensor<FloatType>(from: $0)
+        } : nil
       let mask: Tensor<UInt8>? =
         request.hasMask ? Tensor<UInt8>(data: request.mask, using: [.zip, .fpzip]) : nil
 
@@ -235,7 +239,8 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
               if let tensor = Tensor<FloatType>(
                 data: tensorAndWeight.tensor, using: [.zip, .fpzip])
               {
-                return (tensor, tensorAndWeight.weight)
+                // Additional conversion, if needed.
+                return (Tensor<FloatType>(from: tensor), tensorAndWeight.weight)
               }
               return nil
             }
