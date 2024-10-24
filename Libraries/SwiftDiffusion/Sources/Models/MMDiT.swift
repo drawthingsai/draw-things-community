@@ -354,20 +354,23 @@ public func MMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
 }
 
 private func LoRAMLP(
-  hiddenSize: Int, intermediateSize: Int, configuration: LoRANetworkConfiguration, name: String
+  hiddenSize: Int, intermediateSize: Int, configuration: LoRANetworkConfiguration, index: Int,
+  name: String
 ) -> (Model, Model, Model) {
   let x = Input()
-  let fc1 = LoRADense(count: intermediateSize, configuration: configuration, name: "\(name)_fc1")
+  let fc1 = LoRADense(
+    count: intermediateSize, configuration: configuration, index: index, name: "\(name)_fc1")
   var out = GELU(approximate: .tanh)(fc1(x))
   let fc2 = LoRADense(
-    count: hiddenSize, configuration: configuration, flags: [.Float32], name: "\(name)_fc2")
+    count: hiddenSize, configuration: configuration, flags: [.Float32], index: index,
+    name: "\(name)_fc2")
   out = fc2(out)
   return (fc1, fc2, Model([x], [out]))
 }
 
 private func LoRAJointTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  upcast: Bool, qkNorm: Bool, usesFlashAttention: FlashAttentionLevel,
+  upcast: Bool, qkNorm: Bool, usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
@@ -379,9 +382,12 @@ private func LoRAJointTransformerBlock(
   var contextOut =
     contextChunks[1] .* (upcast ? contextNorm1(context).to(.Float16) : contextNorm1(context))
     + contextChunks[0]
-  let contextToKeys = LoRADense(count: k * h, configuration: configuration, name: "c_k")
-  let contextToQueries = LoRADense(count: k * h, configuration: configuration, name: "c_q")
-  let contextToValues = LoRADense(count: k * h, configuration: configuration, name: "c_v")
+  let contextToKeys = LoRADense(
+    count: k * h, configuration: configuration, index: layerIndex, name: "c_k")
+  let contextToQueries = LoRADense(
+    count: k * h, configuration: configuration, index: layerIndex, name: "c_q")
+  let contextToValues = LoRADense(
+    count: k * h, configuration: configuration, index: layerIndex, name: "c_v")
   var contextK = contextToKeys(contextOut)
   var contextQ = contextToQueries(contextOut)
   let contextV = contextToValues(contextOut)
@@ -401,9 +407,12 @@ private func LoRAJointTransformerBlock(
   let xChunks = (0..<6).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xChunks[1] .* (upcast ? xNorm1(x).to(.Float16) : xNorm1(x)) + xChunks[0]
-  let xToKeys = LoRADense(count: k * h, configuration: configuration, name: "x_k")
-  let xToQueries = LoRADense(count: k * h, configuration: configuration, name: "x_q")
-  let xToValues = LoRADense(count: k * h, configuration: configuration, name: "x_v")
+  let xToKeys = LoRADense(
+    count: k * h, configuration: configuration, index: layerIndex, name: "x_k")
+  let xToQueries = LoRADense(
+    count: k * h, configuration: configuration, index: layerIndex, name: "x_q")
+  let xToValues = LoRADense(
+    count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
   var xK = xToKeys(xOut)
   var xQ = xToQueries(xOut)
   let xV = xToValues(xOut)
@@ -476,14 +485,16 @@ private func LoRAJointTransformerBlock(
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
     contextOut = out.reshaped([b, t, h * k], strides: [(t + hw) * h * k, h * k, 1])
-    let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "c_o")
+    let unifyheads = LoRADense(
+      count: k * h, configuration: configuration, index: layerIndex, name: "c_o")
     contextOut = unifyheads(contextOut)
     contextUnifyheads = unifyheads
   } else {
     contextUnifyheads = nil
   }
   xOut = out.reshaped([b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1])
-  let xUnifyheads = LoRADense(count: k * h, configuration: configuration, name: "x_o")
+  let xUnifyheads = LoRADense(
+    count: k * h, configuration: configuration, index: layerIndex, name: "x_o")
   xOut = xUnifyheads(xOut)
   if !contextBlockPreOnly {
     if upcast {
@@ -503,7 +514,8 @@ private func LoRAJointTransformerBlock(
   if !contextBlockPreOnly {
     let contextMlp: Model
     (contextFc1, contextFc2, contextMlp) = LoRAMLP(
-      hiddenSize: k * h, intermediateSize: k * h * 4, configuration: configuration, name: "c")
+      hiddenSize: k * h, intermediateSize: k * h * 4, configuration: configuration,
+      index: layerIndex, name: "c")
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
     if upcast {
       contextOut = contextOut + contextChunks[5].to(of: contextOut)
@@ -518,7 +530,8 @@ private func LoRAJointTransformerBlock(
     contextFc2 = nil
   }
   let (xFc1, xFc2, xMlp) = LoRAMLP(
-    hiddenSize: k * h, intermediateSize: k * h * 4, configuration: configuration, name: "x")
+    hiddenSize: k * h, intermediateSize: k * h * 4, configuration: configuration, index: layerIndex,
+    name: "x")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   if upcast {
     xOut = xOut + xChunks[5].to(of: xOut)
@@ -648,7 +661,7 @@ public func LoRAMMDiT<FloatType: TensorNumeric & BinaryFloatingPoint>(
     let (mapper, block) = LoRAJointTransformerBlock(
       prefix: ("diffusion_model.joint_blocks.\(i)", "transformer_blocks.\(i)"), k: 64,
       h: channels / 64, b: batchSize, t: t, hw: h * w, contextBlockPreOnly: contextBlockPreOnly,
-      upcast: upcast, qkNorm: qkNorm, usesFlashAttention: usesFlashAttention,
+      upcast: upcast, qkNorm: qkNorm, usesFlashAttention: usesFlashAttention, layerIndex: i,
       configuration: LoRAConfiguration)
     let blockOut = block([context, out] + contextChunks + xChunks)
     if contextBlockPreOnly {
