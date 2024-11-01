@@ -1,4 +1,5 @@
 import Foundation
+import Logging
 
 public protocol GRPCServiceBrowserDelegate: AnyObject {
   func didFindService(_: GRPCServiceBrowser.ServiceDescriptor)
@@ -23,6 +24,7 @@ public class GRPCServiceBrowser {
   private var discoveredServices = [NetService]()
   private var discoveredDescriptors = [ServiceDescriptor]()
   public weak var delegate: GRPCServiceBrowserDelegate?
+  let logger = Logger(label: "com.draw-things.grpc-service")
 
   private let objCResponder: ObjCResponder
 
@@ -112,6 +114,21 @@ public class GRPCServiceBrowser {
 
   public func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
     dispatchPrecondition(condition: .onQueue(.main))
-    print("Failed to resolve service: \(errorDict)")
+    logger.error("Failed to resolve service: \(errorDict)")
+    if let hostName = sender.hostName, sender.port != 0 {
+      let (_, TLS) = Self.nameAndTLS(name: sender.name)
+      if let (decodedHostname, ipAddress) = GRPCHostnameUtils.decodeGRPCHostname(
+        customizeHostname: hostName)
+      {
+        let descriptor = ServiceDescriptor(
+          name: decodedHostname, host: ipAddress, port: sender.port, TLS: TLS)
+        if let firstIndex = discoveredServices.firstIndex(where: { $0 == sender }) {
+          discoveredDescriptors[firstIndex] = descriptor
+          logger.info("fallback hostname: \(hostName) ipaddress:\(ipAddress)")
+        }
+      }
+
+    }
   }
+
 }

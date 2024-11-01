@@ -27,6 +27,7 @@ swift_library(
     name = "GRPCServer",
     srcs = [
         "Sources/Server/GRPCFileUploader.swift",
+        "Sources/Server/GRPCHostnameUtils.swift",
         "Sources/Server/ImageGenerationClientWrapper.swift",
         "Sources/Server/ImageGenerationServiceImpl.swift",
         "Sources/Server/ProtectedValue.swift",
@@ -65,4 +66,13 @@ swift_library(
         "//Libraries/DataModels",
         "@grpc-swift//:GRPC",
     ],
+)
+
+cc_library(
+    name = "C_DNSAdvertiser",
+    srcs = ["Sources/Server/Advertiser/dnssd_advertiser.c"],
+    hdrs = ["Sources/Server/Advertiser/dnssd_advertiser.h"],
+    linkopts = ["-lz"],
+    tags = ["swift_module=C_DNSAdvertiser"],
+    visibility = ["//visibility:public"],
 )

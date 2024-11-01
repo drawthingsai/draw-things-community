@@ -335,6 +335,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     -> NIOCore.EventLoopFuture<GRPCModels.EchoReply>
   {
     let response = EchoReply.with {
+      logger.info("Received echo from: \(request.name)")
       $0.message = "Hello, \(request.name)!"
     }
     return context.eventLoop.makeSucceededFuture(response)
