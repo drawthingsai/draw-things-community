@@ -6,16 +6,19 @@ public struct LoRANetworkConfiguration {
   public var highPrecision: Bool
   public var testing: Bool
   public var gradientCheckpointingFeedForward: Bool
+  public var gradientCheckpointingTransformerLayer: Bool
   public var keys: [String]?
   public init(
     rank: Int, scale: Float, highPrecision: Bool, testing: Bool = true,
-    gradientCheckpointingFeedForward: Bool = false, keys: [String]? = nil
+    gradientCheckpointingFeedForward: Bool = false,
+    gradientCheckpointingTransformerLayer: Bool = false, keys: [String]? = nil
   ) {
     self.rank = rank
     self.scale = scale
     self.highPrecision = highPrecision
     self.testing = testing
     self.gradientCheckpointingFeedForward = gradientCheckpointingFeedForward
+    self.gradientCheckpointingTransformerLayer = gradientCheckpointingTransformerLayer
     self.keys = keys
   }
 }

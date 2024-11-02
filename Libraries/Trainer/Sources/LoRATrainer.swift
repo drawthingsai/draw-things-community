@@ -28,6 +28,7 @@ public struct LoRATrainer {
   private struct ProcessedInput {
     var imagePath: String
     var tokens: [Int32]
+    var CLIPTokens: [Int32]
     var originalSize: (width: Int, height: Int)
     var cropTopLeft: (top: Int, left: Int)
     var targetSize: (width: Int, height: Int)
@@ -112,10 +113,180 @@ public struct LoRATrainer {
     case conditionalEncoding
   }
 
-  public func prepareDataset(
-    inputs: [Input], tokenizer: TextualInversionPoweredTokenizer & Tokenizer,
+  public func prepareDatasetForFlux1(
+    inputs: [Input], tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
     customEmbeddingLength: Int, progressHandler: (PrepareState, Int) -> Bool
   ) -> DataFrame? {
+    let latentsScaling = ModelZoo.latentsScalingForModel(model)
+    let firstStage = FirstStage<FloatType>(
+      filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
+      latentsScaling: latentsScaling, highPrecisionKeysAndValues: false,
+      highPrecisionFallback: true,
+      tiledDecoding: TiledConfiguration(
+        isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
+        tileOverlap: 0),
+      tiledDiffusion: TiledConfiguration(
+        isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
+        tileOverlap: 0),
+      externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
+      alternativeDecoderVersion: nil)
+    let graph = DynamicGraph()
+    let imageWidth = Int(scale.widthScale) * 64
+    let imageHeight = Int(scale.heightScale) * 64
+    var processedInputs = [ProcessedInput]()
+    var stopped = false
+    graph.openStore(session) { store in
+      // First, center crop and encode the image.
+      graph.withNoGrad {
+        var encoder: Model? = nil
+        for input in inputs {
+          guard
+            let (tensor, originalSize, cropTopLeft, targetSize) = imageLoader(
+              input.imageUrl, imageWidth, imageHeight)
+          else { continue }
+          // Keep this in the database.
+          let tuple = firstStage.encode(graph.constant(tensor.toGPU(0)), encoder: encoder)
+          let sample = tuple.0.rawValue.toCPU()
+          encoder = tuple.1
+          let imagePath = input.imageUrl.path
+          store.write(imagePath, tensor: sample)
+          let (_, CLIPTokens, _, _, _) = tokenizers[0].tokenize(
+            text: input.caption, truncation: true, maxLength: 77)
+          let (_, tokens, _, _, _) = tokenizers[1].tokenize(
+            text: input.caption, truncation: true, maxLength: 512)
+          // No embedding support.
+          processedInputs.append(
+            ProcessedInput(
+              imagePath: imagePath, tokens: tokens, CLIPTokens: CLIPTokens,
+              originalSize: originalSize,
+              cropTopLeft: cropTopLeft, targetSize: targetSize))
+          guard progressHandler(.imageEncoding, processedInputs.count) else {
+            stopped = true
+            break
+          }
+        }
+        guard !stopped else { return }
+        let zeros = graph.variable(
+          .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
+        zeros.full(0)
+        let latentZeros = firstStage.sample(zeros, encoder: encoder).1.copied().rawValue.toCPU()
+        store.write("latent_zeros", tensor: latentZeros)
+      }
+      graph.withNoGrad {
+        let textModel: [Model] = [
+          CLIPTextModel(
+            FloatType.self, injectEmbeddings: false,
+            vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 768,
+            numLayers: 12, numHeads: 12, batchSize: 1,
+            intermediateSize: 3072, usesFlashAttention: true, outputPenultimate: true
+          ).0,
+          T5ForConditionalGeneration(b: 1, t: 512, of: FloatType.self).1,
+        ]
+        let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
+        tokensTensor.full(0)
+        let tokensTensorGPU = tokensTensor.toGPU(0)
+        let positionTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
+        for i in 0..<77 {
+          positionTensor[i] = Int32(i)
+        }
+        let positionTensorGPU = positionTensor.toGPU(0)
+        let causalAttentionMask = graph.variable(.CPU, .NHWC(1, 1, 77, 77), of: FloatType.self)
+        causalAttentionMask.full(0)
+        for i in 0..<76 {
+          for j in (i + 1)..<77 {
+            causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+          }
+        }
+        let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
+        textModel[0].compile(inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)
+        if let CLIPEncoder = CLIPEncoder {
+          graph.openStore(
+            ModelZoo.filePathForModelDownloaded(CLIPEncoder), flags: .readOnly,
+            externalStore: TensorData.externalStore(
+              filePath: ModelZoo.filePathForModelDownloaded(CLIPEncoder))
+          ) {
+            $0.read(
+              "text_model", model: textModel[0],
+              codec: [.q6p, .q8p, .ezm7, .fpzip, .jit, .externalData]
+            )
+          }
+        }
+        for (index, input) in processedInputs.enumerated() {
+          for i in 0..<77 {
+            tokensTensor[i] = input.CLIPTokens[i]
+          }
+          let tokensTensorGPU = tokensTensor.toGPU(0)
+          let c = textModel[0](
+            inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU
+          ).map {
+            $0.as(of: FloatType.self)
+          }
+          var tokenEnd: Int? = nil
+          for i in 0..<77 {
+            if input.CLIPTokens[i] == 49407 && tokenEnd == nil {
+              tokenEnd = i
+            }
+          }
+          if let tokenEnd = tokenEnd {
+            store.write(
+              "cond_\(input.imagePath)",
+              tensor: c[1][tokenEnd..<(tokenEnd + 1), 0..<768].copied().rawValue.toCPU())
+          }
+          guard progressHandler(.conditionalEncoding, index + 1) else {
+            stopped = true
+            return
+          }
+        }
+        let relativePositionBuckets = relativePositionBuckets(
+          sequenceLength: 512, numBuckets: 32, maxDistance: 128)
+        let tokens2Tensor = graph.variable(.CPU, format: .NHWC, shape: [512], of: Int32.self)
+        tokens2Tensor.full(0)
+        let tokens2TensorGPU = tokens2Tensor.toGPU(0)
+        let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
+        textModel[1].compile(inputs: tokens2TensorGPU, relativePositionBucketsGPU)
+        graph.openStore(
+          ModelZoo.filePathForModelDownloaded(textEncoder), flags: .readOnly,
+          externalStore: TensorData.externalStore(
+            filePath: ModelZoo.filePathForModelDownloaded(textEncoder))
+        ) {
+          $0.read(
+            "text_model", model: textModel[1],
+            codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
+        }
+        for (index, input) in processedInputs.enumerated() {
+          for i in 0..<512 {
+            tokens2Tensor[i] = input.tokens[i]
+          }
+          let tokens2TensorGPU = tokens2Tensor.toGPU(0)
+          let c = textModel[1](inputs: tokens2TensorGPU, relativePositionBucketsGPU)[0].as(
+            of: FloatType.self
+          ).reshaped(.HWC(1, 512, 4096))
+          store.write("cond_te2_\(input.imagePath)", tensor: c.rawValue.toCPU())
+          guard progressHandler(.conditionalEncoding, index + 1) else {
+            stopped = true
+            return
+          }
+        }
+      }
+    }
+    if stopped {
+      return nil
+    }
+    var dataFrame = DataFrame(from: processedInputs)
+    dataFrame["imagePath"] = dataFrame["0", ProcessedInput.self].map(\.imagePath)
+    // No need to include tokens.
+    return dataFrame
+  }
+
+  public func prepareDataset(
+    inputs: [Input], tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
+    customEmbeddingLength: Int, progressHandler: (PrepareState, Int) -> Bool
+  ) -> DataFrame? {
+    guard let tokenizer = tokenizers.first, version != .flux1 else {
+      return prepareDatasetForFlux1(
+        inputs: inputs, tokenizers: tokenizers, customEmbeddingLength: customEmbeddingLength,
+        progressHandler: progressHandler)
+    }
     // Load each of them, resize, center crop
     // Use VAE to encode the image.
     let latentsScaling = ModelZoo.latentsScalingForModel(model)
@@ -168,7 +339,8 @@ public struct LoRATrainer {
           }
           processedInputs.append(
             ProcessedInput(
-              imagePath: imagePath, tokens: updatedTokens, originalSize: originalSize,
+              imagePath: imagePath, tokens: updatedTokens, CLIPTokens: [],
+              originalSize: originalSize,
               cropTopLeft: cropTopLeft, targetSize: targetSize))
           guard progressHandler(.imageEncoding, processedInputs.count) else {
             stopped = true
@@ -623,12 +795,254 @@ public struct LoRATrainer {
     return mask
   }
 
+  private func encodeFlux1Fixed(
+    graph: DynamicGraph,
+    batch: [(
+      textEncoding: Tensor<FloatType>, pooled: Tensor<FloatType>, timestep: Float, guidance: Float
+    )]
+  ) -> [Tensor<FloatType>] {
+    return graph.withNoGrad {
+      let filePath = ModelZoo.filePathForModelDownloaded(model)
+      let isGuidanceEmbedSupported =
+        (try?
+          (graph.openStore(
+            filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+          ) {
+            return $0.read(like: "__dit__[t-guidance_embedder_0-0-1]") != nil
+          }).get()) ?? false
+      let unetFixed = Flux1Fixed(
+        batchSize: (batch.count, batch.count), channels: 3072, layers: (19, 38),
+        guidanceEmbed: isGuidanceEmbedSupported
+      ).1
+      var timeEmbeds = graph.variable(
+        .GPU(0), .WC(batch.count, 256), of: FloatType.self)
+      var pooleds = graph.variable(
+        .GPU(0), .WC(batch.count, 768), of: FloatType.self)
+      var guidanceEmbeds: DynamicGraph.Tensor<FloatType>?
+      if isGuidanceEmbedSupported {
+        guidanceEmbeds = graph.variable(
+          .GPU(0), .WC(batch.count, 256), of: FloatType.self)
+      } else {
+        guidanceEmbeds = nil
+      }
+      var context = graph.variable(
+        .GPU(0), .HWC(batch.count, 512, 4096), of: FloatType.self)
+      for (i, item) in batch.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: item.timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
+        pooleds[i..<(i + 1), 0..<768] = graph.variable(item.pooled.toGPU(0))
+        context[i..<(i + 1), 0..<512, 0..<4096] = graph.variable(item.textEncoding.toGPU(0))
+        if var guidanceEmbeds = guidanceEmbeds {
+          let guidanceScale = item.guidance
+          let guidanceEmbed = graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: guidanceScale * 1_000, batchSize: 1, embeddingSize: 256,
+                maxPeriod: 10_000)
+            ).toGPU(0))
+          guidanceEmbeds[i..<(i + 1), 0..<256] = guidanceEmbed
+        }
+      }
+      unetFixed.compile(
+        inputs: [context, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? []))
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) {
+        $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+      }
+      return unetFixed(
+        inputs: context, [timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
+      ).map { $0.as(of: FloatType.self).rawValue }
+    }
+  }
+
+  private func trainFlux1(
+    graph: DynamicGraph, firstStage: FirstStage<FloatType>, sessionStore: DynamicGraph.Store,
+    resumingLoRAFile: (String, Int)?,
+    dataFrame: DataFrame, trainingSteps: Int, warmupSteps: Int, gradientAccumulationSteps: Int,
+    rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: Float, trainableKeys: [String],
+    shift: Float, noiseOffset: Float, denoisingTimesteps: ClosedRange<Int>,
+    memorySaver: MemorySaver,
+    progressHandler: (Int, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>]) -> Bool
+  ) {
+    guard unetLearningRate > 0 else {
+      return
+    }
+    var dataFrame = dataFrame
+    let configuration: LoRANetworkConfiguration
+    switch memorySaver {
+    case .minimal:
+      configuration = LoRANetworkConfiguration(
+        rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
+        gradientCheckpointingFeedForward: true, gradientCheckpointingTransformerLayer: true,
+        keys: trainableKeys)
+    case .balanced:
+      configuration = LoRANetworkConfiguration(
+        rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
+        gradientCheckpointingFeedForward: true, keys: trainableKeys)
+    case .speed, .turbo:
+      configuration = LoRANetworkConfiguration(
+        rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
+        keys: trainableKeys)
+    }
+    let latentsWidth = Int(scale.widthScale) * 8
+    let latentsHeight = Int(scale.heightScale) * 8
+    let dit = LoRAFlux1(
+      batchSize: 1, tokenLength: 512, height: latentsHeight, width: latentsWidth, channels: 3072,
+      layers: (19, 38), usesFlashAttention: .scaleMerged, injectControls: false,
+      injectIPAdapterLengths: [:], LoRAConfiguration: configuration
+    ).1
+    dit.maxConcurrency = .limit(1)
+    dit.memoryReduction = (memorySaver != .turbo)
+    let latents = graph.variable(
+      .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 16), of: FloatType.self)
+    let rotary = Tensor<FloatType>(
+      from: Flux1RotaryPositionEmbedding(
+        height: latentsHeight / 2, width: latentsWidth / 2, tokenLength: 512, channels: 128,
+        heads: 24)
+    ).toGPU(0)
+    let rotaryConstant = graph.constant(rotary)
+    let cArr =
+      [rotaryConstant]
+      + Flux1FixedOutputShapes(
+        batchSize: (1, 1), tokenLength: 512, channels: 3072, layers: (19, 38)
+      ).map {
+        graph.constant(.GPU(0), format: .NHWC, shape: $0, of: FloatType.self)
+      }
+    dit.compile(inputs: [latents] + cArr)
+    graph.openStore(
+      ModelZoo.filePathForModelDownloaded(model), flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: ModelZoo.filePathForModelDownloaded(model))
+    ) { store in
+      store.read("dit", model: dit, codec: [.jit, .q5p, .q6p, .q8p, .ezm7, .fpzip, .externalData]) {
+        name, dataType, format, shape in
+        if name.contains("lora_up") {
+          switch dataType {
+          case .Float16:
+            #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+              var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
+              tensor.withUnsafeMutableBytes {
+                let size = shape.reduce(MemoryLayout<Float16>.size, *)
+                memset($0.baseAddress, 0, size)
+              }
+              return .final(tensor)
+            #else
+              break
+            #endif
+          case .Float32:
+            var tensor = Tensor<Float32>(.CPU, format: format, shape: shape)
+            tensor.withUnsafeMutableBytes {
+              let size = shape.reduce(MemoryLayout<Float32>.size, *)
+              memset($0.baseAddress, 0, size)
+            }
+            return .final(tensor)
+          case .Float64, .Int32, .Int64, .UInt8:
+            fatalError()
+          }
+        }
+        return .continue(name)
+      }
+    }
+    var optimizer = AdamWOptimizer(
+      graph, rate: unetLearningRate, betas: (0.9, 0.999), decay: 0.001, epsilon: 1e-8)
+    optimizer.parameters = [dit.parameters]
+    var optimizers = [optimizer]
+    var scaler = GradScaler(scale: 32_768)
+    var i = 0
+    var stopped = false
+    var batchCount = 0
+    while i < trainingSteps && !stopped {
+      dataFrame.shuffle()
+      var batch = [
+        (
+          latents: Tensor<FloatType>, textEncoding: Tensor<FloatType>, pooled: Tensor<FloatType>,
+          timestep: Float, guidance: Float
+        )
+      ]()
+      for value in dataFrame["imagePath", String.self] {
+        let imagePath = value
+        guard let tensor = sessionStore.read(imagePath) else { continue }
+        let shape = tensor.shape
+        guard shape[1] == latentsHeight && shape[2] == latentsWidth else { continue }
+        guard
+          let textEncoding = sessionStore.read("cond_te2_\(imagePath)").map({
+            Tensor<FloatType>(from: $0)
+          }),
+          let pooled = sessionStore.read("pool_\(imagePath)").map({ Tensor<FloatType>(from: $0) })
+        else { continue }
+        let latents = graph.withNoGrad {
+          let parameters = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
+          let noise = graph.variable(
+            .CPU, .NHWC(1, latentsHeight, latentsWidth, 16), of: Float.self)
+          noise.randn(std: 1, mean: 0)
+          let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
+          return firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0.rawValue
+        }
+        var timestep: Double = Double.random(in: 0...1)
+        timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
+        batch.append((latents, textEncoding, pooled, Float(timestep), 3.5))
+        if batch.count == gradientAccumulationSteps * 10 {
+          let conditions = encodeFlux1Fixed(
+            graph: graph,
+            batch: batch.map {
+              ($0.textEncoding, $0.pooled, $0.timestep, $0.guidance)
+            })
+          for (j, item) in batch.enumerated() {
+            let (zt, target) = graph.withNoGrad {
+              let latents = graph.variable(item.latents)
+              let z1 = graph.variable(like: latents)
+              z1.randn()
+              let zt = Functional.add(
+                left: latents, right: z1, leftScalar: 1 - item.timestep, rightScalar: item.timestep)
+              return (zt, z1 - latents)
+            }
+            let condition1 = conditions.map {
+              let shape = $0.shape
+              return graph.constant($0[j..<(j + 1), 0..<shape[1], 0..<shape[2]])
+            }
+            let vtheta = dit(inputs: zt, [rotaryConstant] + condition1)[0].as(of: FloatType.self)
+            let d = target - vtheta
+            let loss = (d .* d).reduced(.mean, axis: [1, 2, 3])
+            scaler.scale(loss).backward(to: [zt])
+            let value = loss.toCPU()[0, 0, 0, 0]
+            print("loss \(value), scale \(scaler.scale), step \(i)")
+            batchCount += 1
+            if (i + 1) < warmupSteps {
+              optimizers[0].rate = unetLearningRate * (Float(i + 1) / Float(warmupSteps))
+            } else if (i + 1) == warmupSteps {
+              optimizers[0].rate = unetLearningRate
+            }
+            guard progressHandler(i + 1, Float(value), nil, nil, dit, []) else {
+              stopped = true
+              break
+            }
+            if batchCount == gradientAccumulationSteps {
+              // Update the LoRA.
+              scaler.step(&optimizers)
+              batchCount = 0
+            }
+            i += 1
+          }
+          if stopped {
+            break
+          }
+          batch = []
+        }
+      }
+    }
+  }
+
   public func train(
-    resumingLoRAFile: (String, Int)?, tokenizer: TextualInversionPoweredTokenizer & Tokenizer,
+    resumingLoRAFile: (String, Int)?, tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
     dataFrame: DataFrame, trainingSteps: Int, warmupSteps: Int, gradientAccumulationSteps: Int,
     rankOfLoRA: Int, scaleOfLoRA: Float, textModelLearningRate: Float, unetLearningRate: Float,
+    trainableKeys: [String],
     customEmbeddingLength: Int, customEmbeddingLearningRate: Float,
-    stopEmbeddingTrainingAtStep: Int,
+    stopEmbeddingTrainingAtStep: Int, shift: Float,
     noiseOffset: Float, denoisingTimesteps: ClosedRange<Int>, memorySaver: MemorySaver,
     progressHandler: (Int, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>]) -> Bool
   ) {
@@ -672,6 +1086,17 @@ public struct LoRATrainer {
       }
     }
     graph.openStore(session, flags: .readOnly) { sessionStore in
+      guard let tokenizer = tokenizers.first, version != .flux1 else {
+        trainFlux1(
+          graph: graph, firstStage: firstStage, sessionStore: sessionStore,
+          resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, trainingSteps: trainingSteps,
+          warmupSteps: warmupSteps, gradientAccumulationSteps: gradientAccumulationSteps,
+          rankOfLoRA: rankOfLoRA, scaleOfLoRA: scaleOfLoRA, unetLearningRate: unetLearningRate,
+          trainableKeys: trainableKeys, shift: shift, noiseOffset: noiseOffset,
+          denoisingTimesteps: denoisingTimesteps, memorySaver: memorySaver,
+          progressHandler: progressHandler)
+        return
+      }
       let positionTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
       for i in 0..<77 {
         positionTensor[i] = Int32(i)

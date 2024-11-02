@@ -1,60 +1,66 @@
 import Foundation
 import NNC
 
-public func Flux1RotaryPositionEmbedding(height: Int, width: Int, tokenLength: Int, channels: Int)
+public func Flux1RotaryPositionEmbedding(
+  height: Int, width: Int, tokenLength: Int, channels: Int, heads: Int = 1
+)
   -> Tensor<Float>
 {
-  var rotTensor = Tensor<Float>(.CPU, .NHWC(1, height * width + tokenLength, 1, channels))
+  var rotTensor = Tensor<Float>(.CPU, .NHWC(1, height * width + tokenLength, heads, channels))
   let dim0 = channels / 8
   let dim1 = channels * 7 / 16
   let dim2 = dim1
   assert(channels % 16 == 0)
   for i in 0..<tokenLength {
-    for k in 0..<(dim0 / 2) {
-      let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))
-      let sintheta = sin(theta)
-      let costheta = cos(theta)
-      rotTensor[0, i, 0, k * 2] = Float(costheta)
-      rotTensor[0, i, 0, k * 2 + 1] = Float(sintheta)
-    }
-    for k in 0..<(dim1 / 2) {
-      let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
-      let sintheta = sin(theta)
-      let costheta = cos(theta)
-      rotTensor[0, i, 0, (k + (dim0 / 2)) * 2] = Float(costheta)
-      rotTensor[0, i, 0, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
-    }
-    for k in 0..<(dim2 / 2) {
-      let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
-      let sintheta = sin(theta)
-      let costheta = cos(theta)
-      rotTensor[0, i, 0, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
-      rotTensor[0, i, 0, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+    for j in 0..<heads {
+      for k in 0..<(dim0 / 2) {
+        let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotTensor[0, i, j, k * 2] = Float(costheta)
+        rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
+      }
+      for k in 0..<(dim1 / 2) {
+        let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+        rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+      }
+      for k in 0..<(dim2 / 2) {
+        let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+        rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+      }
     }
   }
   for y in 0..<height {
     for x in 0..<width {
       let i = y * width + x + tokenLength
-      for k in 0..<(dim0 / 2) {
-        let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        rotTensor[0, i, 0, k * 2] = Float(costheta)
-        rotTensor[0, i, 0, k * 2 + 1] = Float(sintheta)
-      }
-      for k in 0..<(dim1 / 2) {
-        let theta = Double(y) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        rotTensor[0, i, 0, (k + (dim0 / 2)) * 2] = Float(costheta)
-        rotTensor[0, i, 0, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
-      }
-      for k in 0..<(dim2 / 2) {
-        let theta = Double(x) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        rotTensor[0, i, 0, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
-        rotTensor[0, i, 0, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+      for j in 0..<heads {
+        for k in 0..<(dim0 / 2) {
+          let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))
+          let sintheta = sin(theta)
+          let costheta = cos(theta)
+          rotTensor[0, i, j, k * 2] = Float(costheta)
+          rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
+        }
+        for k in 0..<(dim1 / 2) {
+          let theta = Double(y) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
+          let sintheta = sin(theta)
+          let costheta = cos(theta)
+          rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+          rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+        }
+        for k in 0..<(dim2 / 2) {
+          let theta = Double(x) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
+          let sintheta = sin(theta)
+          let costheta = cos(theta)
+          rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+          rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+        }
       }
     }
   }
@@ -1032,7 +1038,8 @@ public func LoRAFlux1(
   adaLNChunks.append(contentsOf: [shift, scale])
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = scale .* normFinal(out).to(.Float16) + shift
-  let projOut = LoRADense(count: 2 * 2 * 16, configuration: LoRAConfiguration, name: "linear")
+  let projOut = LoRADense(
+    count: 2 * 2 * 16, configuration: LoRAConfiguration, index: 0, name: "linear")
   out = projOut(out)
   // Unpatchify
   out = out.reshaped([batchSize, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([
@@ -1249,10 +1256,10 @@ private func SingleTransformerBlockFixedOutputShapes(
 }
 
 public func Flux1FixedOutputShapes(
-  batchSize: (Int, Int), channels: Int, layers: (Int, Int)
+  batchSize: (Int, Int), tokenLength: Int, channels: Int, layers: (Int, Int)
 ) -> [TensorShape] {
   var outs = [TensorShape]()
-  outs.append(TensorShape([batchSize.0, 256, channels]))
+  outs.append(TensorShape([batchSize.0, tokenLength, channels]))
   for i in 0..<layers.0 {
     let contextBlockPreOnly = i == layers.0 - 1 && layers.1 == 0
     let outputShapes = JointTransformerBlockFixedOutputShapes(
