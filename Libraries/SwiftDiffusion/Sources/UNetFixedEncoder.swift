@@ -619,11 +619,12 @@ extension UNetFixedEncoder {
         configuration.keys = keys
         (_, unetFixed) = LoRAFlux1Fixed(
           batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
-          LoRAConfiguration: configuration, guidanceEmbed: isGuidanceEmbedSupported)
+          LoRAConfiguration: configuration, contextPreloaded: true,
+          guidanceEmbed: isGuidanceEmbedSupported)
       } else {
         (_, unetFixed) = Flux1Fixed(
           batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
-          guidanceEmbed: isGuidanceEmbedSupported)
+          contextPreloaded: true, guidanceEmbed: isGuidanceEmbedSupported)
       }
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)

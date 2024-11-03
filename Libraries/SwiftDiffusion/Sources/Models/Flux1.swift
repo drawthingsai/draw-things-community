@@ -431,7 +431,7 @@ private func SingleTransformerBlock(
 
 public func Flux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel, injectControls: Bool,
+  usesFlashAttention: FlashAttentionLevel, contextPreloaded: Bool, injectControls: Bool,
   injectIPAdapterLengths: [Int: [Int]]
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -447,7 +447,16 @@ public func Flux1(
   var injectedControls = [Input]()
   var injectedIPAdapters = [Input]()
   var mappers = [ModelWeightMapper]()
-  var context = contextIn.to(.Float32)
+  let contextEmbedder: Model?
+  var context: Model.IO
+  if !contextPreloaded {
+    let embedder = Dense(count: channels, name: "context_embedder")
+    context = embedder(contextIn).to(.Float32)
+    contextEmbedder = embedder
+  } else {
+    context = contextIn.to(.Float32)
+    contextEmbedder = nil
+  }
   for i in 0..<layers.0 {
     let contextChunks = (0..<6).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
@@ -568,11 +577,19 @@ public func Flux1(
     case .generativeModels:
       mapping["img_in.weight"] = [xEmbedder.weight.name]
       mapping["img_in.bias"] = [xEmbedder.bias.name]
+      if let contextEmbedder = contextEmbedder {
+        mapping["txt_in.weight"] = [contextEmbedder.weight.name]
+        mapping["txt_in.bias"] = [contextEmbedder.bias.name]
+      }
       mapping["final_layer.linear.weight"] = [projOut.weight.name]
       mapping["final_layer.linear.bias"] = [projOut.bias.name]
     case .diffusers:
       mapping["x_embedder.weight"] = [xEmbedder.weight.name]
       mapping["x_embedder.bias"] = [xEmbedder.bias.name]
+      if let contextEmbedder = contextEmbedder {
+        mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
+        mapping["context_embedder.bias"] = [contextEmbedder.bias.name]
+      }
       mapping["proj_out.weight"] = [projOut.weight.name]
       mapping["proj_out.bias"] = [projOut.bias.name]
     }
@@ -916,9 +933,8 @@ private func LoRASingleTransformerBlock(
 
 public func LoRAFlux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel, injectControls: Bool,
-  injectIPAdapterLengths: [Int: [Int]],
-  LoRAConfiguration: LoRANetworkConfiguration
+  usesFlashAttention: FlashAttentionLevel, contextPreloaded: Bool, injectControls: Bool,
+  injectIPAdapterLengths: [Int: [Int]], LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let contextIn = Input()
@@ -933,7 +949,17 @@ public func LoRAFlux1(
   var injectedControls = [Input]()
   var injectedIPAdapters = [Input]()
   var mappers = [ModelWeightMapper]()
-  var context = contextIn.to(.Float32)
+  let contextEmbedder: Model?
+  var context: Model.IO
+  if !contextPreloaded {
+    let embedder = LoRADense(
+      count: channels, configuration: LoRAConfiguration, name: "context_embedder")
+    context = embedder(contextIn).to(.Float32)
+    contextEmbedder = embedder
+  } else {
+    context = contextIn.to(.Float32)
+    contextEmbedder = nil
+  }
   for i in 0..<layers.0 {
     let contextChunks = (0..<6).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
@@ -1052,6 +1078,10 @@ public func LoRAFlux1(
     }
     mapping["img_in.weight"] = [xEmbedder.weight.name]
     mapping["img_in.bias"] = [xEmbedder.bias.name]
+    if let contextEmbedder = contextEmbedder {
+      mapping["txt_in.weight"] = [contextEmbedder.weight.name]
+      mapping["txt_in.bias"] = [contextEmbedder.bias.name]
+    }
     mapping["final_layer.linear.weight"] = [projOut.weight.name]
     mapping["final_layer.linear.bias"] = [projOut.bias.name]
     return mapping
@@ -1140,11 +1170,11 @@ private func SingleTransformerBlockFixed(
 
 public func Flux1Fixed(
   batchSize: (Int, Int), channels: Int, layers: (Int, Int),
-  guidanceEmbed: Bool = false
+  contextPreloaded: Bool, guidanceEmbed: Bool = false
 ) -> (ModelWeightMapper, Model) {
   let timestep = Input()
   let y = Input()
-  let contextIn = Input()
+  let contextIn: Input?
   let guidance: Input?
   let (tMlp0, tMlp2, tEmbedder) = MLPEmbedder(channels: channels, name: "t")
   var vec = tEmbedder(timestep)
@@ -1165,9 +1195,18 @@ public func Flux1Fixed(
   let (yMlp0, yMlp2, yEmbedder) = MLPEmbedder(channels: channels, name: "vector")
   vec = vec + yEmbedder(y)
   var outs = [Model.IO]()
-  let contextEmbedder = Dense(count: channels, name: "context_embedder")
-  let context = contextEmbedder(contextIn)
-  outs.append(context)
+  let contextEmbedder: Model?
+  if contextPreloaded {
+    let cIn = Input()
+    let embedder = Dense(count: channels, name: "context_embedder")
+    let context = embedder(cIn)
+    outs.append(context)
+    contextIn = cIn
+    contextEmbedder = embedder
+  } else {
+    contextIn = nil
+    contextEmbedder = nil
+  }
   let c = vec.reshaped([batchSize.1, 1, channels]).swish()
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
@@ -1209,8 +1248,10 @@ public func Flux1Fixed(
       mapping["vector_in.in_layer.bias"] = [yMlp0.bias.name]
       mapping["vector_in.out_layer.weight"] = [yMlp2.weight.name]
       mapping["vector_in.out_layer.bias"] = [yMlp2.bias.name]
-      mapping["txt_in.weight"] = [contextEmbedder.weight.name]
-      mapping["txt_in.bias"] = [contextEmbedder.bias.name]
+      if let contextEmbedder = contextEmbedder {
+        mapping["txt_in.weight"] = [contextEmbedder.weight.name]
+        mapping["txt_in.bias"] = [contextEmbedder.bias.name]
+      }
       mapping["final_layer.adaLN_modulation.1.weight"] = [shift.weight.name, scale.weight.name]
       mapping["final_layer.adaLN_modulation.1.bias"] = [shift.bias.name, scale.bias.name]
     case .diffusers:
@@ -1228,14 +1269,19 @@ public func Flux1Fixed(
       mapping["time_text_embed.text_embedder.linear_1.bias"] = [yMlp0.bias.name]
       mapping["time_text_embed.text_embedder.linear_2.weight"] = [yMlp2.weight.name]
       mapping["time_text_embed.text_embedder.linear_2.bias"] = [yMlp2.bias.name]
-      mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
-      mapping["context_embedder.bias"] = [contextEmbedder.bias.name]
+      if let contextEmbedder = contextEmbedder {
+        mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
+        mapping["context_embedder.bias"] = [contextEmbedder.bias.name]
+      }
       mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
       mapping["norm_out.linear.bias"] = [scale.bias.name, shift.bias.name]
     }
     return mapping
   }
-  return (mapper, Model([contextIn, timestep, y] + (guidance.map { [$0] } ?? []), outs))
+  return (
+    mapper,
+    Model((contextIn.map { [$0] } ?? []) + [timestep, y] + (guidance.map { [$0] } ?? []), outs)
+  )
 }
 
 private func JointTransformerBlockFixedOutputShapes(
@@ -1340,11 +1386,11 @@ private func LoRASingleTransformerBlockFixed(
 public func LoRAFlux1Fixed(
   batchSize: (Int, Int), channels: Int, layers: (Int, Int),
   LoRAConfiguration: LoRANetworkConfiguration,
-  guidanceEmbed: Bool = false
+  contextPreloaded: Bool, guidanceEmbed: Bool = false
 ) -> (ModelWeightMapper, Model) {
   let timestep = Input()
   let y = Input()
-  let contextIn = Input()
+  let contextIn: Input?
   let guidance: Input?
   let (tMlp0, tMlp2, tEmbedder) = LoRAMLPEmbedder(
     channels: channels, configuration: LoRAConfiguration, name: "t")
@@ -1368,10 +1414,19 @@ public func LoRAFlux1Fixed(
     channels: channels, configuration: LoRAConfiguration, name: "vector")
   vec = vec + yEmbedder(y)
   var outs = [Model.IO]()
-  let contextEmbedder = LoRADense(
-    count: channels, configuration: LoRAConfiguration, name: "context_embedder")
-  let context = contextEmbedder(contextIn)
-  outs.append(context)
+  let contextEmbedder: Model?
+  if contextPreloaded {
+    let cIn = Input()
+    let embedder = LoRADense(
+      count: channels, configuration: LoRAConfiguration, name: "context_embedder")
+    let context = embedder(cIn)
+    outs.append(context)
+    contextIn = cIn
+    contextEmbedder = embedder
+  } else {
+    contextIn = nil
+    contextEmbedder = nil
+  }
   let c = vec.reshaped([batchSize.1, 1, channels]).swish()
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
@@ -1412,13 +1467,18 @@ public func LoRAFlux1Fixed(
     mapping["vector_in.in_layer.bias"] = [yMlp0.bias.name]
     mapping["vector_in.out_layer.weight"] = [yMlp2.weight.name]
     mapping["vector_in.out_layer.bias"] = [yMlp2.bias.name]
-    mapping["txt_in.weight"] = [contextEmbedder.weight.name]
-    mapping["txt_in.bias"] = [contextEmbedder.bias.name]
+    if let contextEmbedder = contextEmbedder {
+      mapping["txt_in.weight"] = [contextEmbedder.weight.name]
+      mapping["txt_in.bias"] = [contextEmbedder.bias.name]
+    }
     mapping["final_layer.adaLN_modulation.1.weight"] = [shift.weight.name, scale.weight.name]
     mapping["final_layer.adaLN_modulation.1.bias"] = [shift.bias.name, scale.bias.name]
     return mapping
   }
-  return (mapper, Model([contextIn, timestep, y] + (guidance.map { [$0] } ?? []), outs))
+  return (
+    mapper,
+    Model((contextIn.map { [$0] } ?? []) + [timestep, y] + (guidance.map { [$0] } ?? []), outs)
+  )
 }
 
 public func ControlNetFlux1(

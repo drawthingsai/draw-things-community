@@ -540,6 +540,7 @@ extension UNetFromNNC {
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+          contextPreloaded: true,
           injectControls: injectControlsAndAdapters.injectControls,
           injectIPAdapterLengths: injectIPAdapterLengths,
           LoRAConfiguration: configuration)
@@ -548,6 +549,7 @@ extension UNetFromNNC {
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+          contextPreloaded: true,
           injectControls: injectControlsAndAdapters.injectControls,
           injectIPAdapterLengths: injectIPAdapterLengths)
       }

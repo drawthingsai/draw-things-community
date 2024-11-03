@@ -439,9 +439,11 @@ public enum LoRAImporter {
       case .flux1:
         (unetMapper, unet) = Flux1(
           batchSize: 1, tokenLength: 256, height: 64, width: 64, channels: 3072, layers: (19, 38),
-          usesFlashAttention: .scaleMerged, injectControls: false, injectIPAdapterLengths: [:])
+          usesFlashAttention: .scaleMerged, contextPreloaded: true, injectControls: false,
+          injectIPAdapterLengths: [:])
         (unetFixedMapper, unetFixed) = Flux1Fixed(
-          batchSize: (1, 1), channels: 3072, layers: (19, 38), guidanceEmbed: true)
+          batchSize: (1, 1), channels: 3072, layers: (19, 38), contextPreloaded: true,
+          guidanceEmbed: true)
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:

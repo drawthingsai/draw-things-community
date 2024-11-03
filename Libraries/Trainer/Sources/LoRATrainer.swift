@@ -798,7 +798,7 @@ public struct LoRATrainer {
   private func encodeFlux1Fixed(
     graph: DynamicGraph,
     batch: [(
-      textEncoding: Tensor<FloatType>, pooled: Tensor<FloatType>, timestep: Float, guidance: Float
+      pooled: Tensor<FloatType>, timestep: Float, guidance: Float
     )]
   ) -> [Tensor<FloatType>] {
     return graph.withNoGrad {
@@ -812,7 +812,7 @@ public struct LoRATrainer {
           }).get()) ?? false
       let unetFixed = Flux1Fixed(
         batchSize: (batch.count, batch.count), channels: 3072, layers: (19, 38),
-        guidanceEmbed: isGuidanceEmbedSupported
+        contextPreloaded: false, guidanceEmbed: isGuidanceEmbedSupported
       ).1
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(batch.count, 256), of: FloatType.self)
@@ -825,8 +825,6 @@ public struct LoRATrainer {
       } else {
         guidanceEmbeds = nil
       }
-      var context = graph.variable(
-        .GPU(0), .HWC(batch.count, 512, 4096), of: FloatType.self)
       for (i, item) in batch.enumerated() {
         let timeEmbed = graph.variable(
           Tensor<FloatType>(
@@ -835,7 +833,6 @@ public struct LoRATrainer {
           ).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
         pooleds[i..<(i + 1), 0..<768] = graph.variable(item.pooled.toGPU(0))
-        context[i..<(i + 1), 0..<512, 0..<4096] = graph.variable(item.textEncoding.toGPU(0))
         if var guidanceEmbeds = guidanceEmbeds {
           let guidanceScale = item.guidance
           let guidanceEmbed = graph.variable(
@@ -848,14 +845,14 @@ public struct LoRATrainer {
         }
       }
       unetFixed.compile(
-        inputs: [context, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? []))
+        inputs: [timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? []))
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) {
         $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
       }
       return unetFixed(
-        inputs: context, [timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
+        inputs: timeEmbeds, [pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
       ).map { $0.as(of: FloatType.self).rawValue }
     }
   }
@@ -893,8 +890,8 @@ public struct LoRATrainer {
     let latentsHeight = Int(scale.heightScale) * 8
     let dit = LoRAFlux1(
       batchSize: 1, tokenLength: 512, height: latentsHeight, width: latentsWidth, channels: 3072,
-      layers: (19, 38), usesFlashAttention: .scaleMerged, injectControls: false,
-      injectIPAdapterLengths: [:], LoRAConfiguration: configuration
+      layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: false,
+      injectControls: false, injectIPAdapterLengths: [:], LoRAConfiguration: configuration
     ).1
     dit.maxConcurrency = .limit(1)
     dit.memoryReduction = (memorySaver != .turbo)
@@ -989,7 +986,7 @@ public struct LoRATrainer {
           let conditions = encodeFlux1Fixed(
             graph: graph,
             batch: batch.map {
-              ($0.textEncoding, $0.pooled, $0.timestep, $0.guidance)
+              ($0.pooled, $0.timestep, $0.guidance)
             })
           for (j, item) in batch.enumerated() {
             let (zt, target) = graph.withNoGrad {
@@ -1000,11 +997,13 @@ public struct LoRATrainer {
                 left: latents, right: z1, leftScalar: 1 - item.timestep, rightScalar: item.timestep)
               return (zt, z1 - latents)
             }
+            let context = graph.constant(item.textEncoding)
             let condition1 = conditions.map {
               let shape = $0.shape
               return graph.constant($0[j..<(j + 1), 0..<shape[1], 0..<shape[2]])
             }
-            let vtheta = dit(inputs: zt, [rotaryConstant] + condition1)[0].as(of: FloatType.self)
+            let vtheta = dit(inputs: zt, [rotaryConstant, context] + condition1)[0].as(
+              of: FloatType.self)
             let d = target - vtheta
             let loss = (d .* d).reduced(.mean, axis: [1, 2, 3])
             scaler.scale(loss).backward(to: [zt])
