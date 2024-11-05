@@ -996,7 +996,7 @@ public struct LoRATrainer {
     var batchCount = 0
     var batch = [
       (
-        latents: Tensor<FloatType>, textEncoding: Tensor<FloatType>, pooled: Tensor<FloatType>,
+        imagePath: String, pooled: Tensor<FloatType>,
         timestep: Float, guidance: Float
       )
     ]()
@@ -1004,44 +1004,47 @@ public struct LoRATrainer {
       dataFrame.shuffle()
       for value in dataFrame["imagePath", String.self] {
         let imagePath = value
-        guard let tensor = sessionStore.read(imagePath) else { continue }
+        guard let tensor = sessionStore.read(like: imagePath) else { continue }
         let shape = tensor.shape
         guard shape[1] == latentsHeight && shape[2] == latentsWidth && shape[3] == 32 else {
           continue
         }
         guard
-          let textEncoding = sessionStore.read("cond_te2_\(imagePath)").map({
-            Tensor<FloatType>(from: $0)
-          }),
+          let _ = sessionStore.read(like: "cond_te2_\(imagePath)"),
           let pooled = sessionStore.read("cond_\(imagePath)").map({ Tensor<FloatType>(from: $0) })
         else { continue }
-        let latents = graph.withNoGrad {
-          let parameters = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
-          let noise = graph.variable(
-            .CPU, .NHWC(1, latentsHeight, latentsWidth, 16), of: Float.self)
-          noise.randn(std: 1, mean: 0)
-          let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
-          return firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0.rawValue
-        }
-        var timestep: Double = Double.random(in: 0...1)
+        var timestep: Double = Double.random(
+          in: (Double(denoisingTimesteps.lowerBound) / 1000)...(Double(
+            denoisingTimesteps.upperBound) / 1000))
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
-        batch.append((latents, textEncoding, pooled, Float(timestep), 3.5))
-        if batch.count == gradientAccumulationSteps * 10 {
+        batch.append((imagePath, pooled, Float(timestep), 3.5))
+        if batch.count == 32 {
           let conditions = encodeFlux1Fixed(
             graph: graph,
             batch: batch.map {
               ($0.pooled, $0.timestep, $0.guidance)
             })
           for (j, item) in batch.enumerated() {
+            guard let tensor = sessionStore.read(item.imagePath) else { continue }
+            guard
+              let textEncoding = sessionStore.read("cond_te2_\(item.imagePath)").map({
+                Tensor<FloatType>(from: $0)
+              })
+            else { continue }
             let (zt, target) = graph.withNoGrad {
-              let latents = graph.variable(item.latents)
+              let parameters = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
+              let noise = graph.variable(
+                .CPU, .NHWC(1, latentsHeight, latentsWidth, 16), of: Float.self)
+              noise.randn(std: 1, mean: 0)
+              let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
+              let latents = firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0
               let z1 = graph.variable(like: latents)
               z1.randn()
               let zt = Functional.add(
                 left: latents, right: z1, leftScalar: 1 - item.timestep, rightScalar: item.timestep)
               return (zt, z1 - latents)
             }
-            let context = graph.constant(item.textEncoding.toGPU(0))
+            let context = graph.constant(textEncoding.toGPU(0))
             let condition1 = conditions.map {
               let shape = $0.shape
               return graph.constant($0[j..<(j + 1), 0..<shape[1], 0..<shape[2]].copied())
