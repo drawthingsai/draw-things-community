@@ -388,9 +388,9 @@ private func SingleTransformerBlock(
     )
   }
   let xUnifyheads = Dense(count: k * h, noBias: true, name: "x_o")
-  let xLinear1 = Dense(count: k * h * 4, name: "x_linear1")
-  let xOutProjection = Dense(count: k * h, flags: [.Float32], name: "x_out_proj")
-  out = xUnifyheads(out) + xOutProjection(xLinear1(xOut).GELU(approximate: .tanh))
+  let (xLinear1, xOutProjection, xFF) = FeedForward(
+    hiddenSize: k * h, intermediateSize: k * h * 4, upcast: false, name: "x")
+  out = xUnifyheads(out) + xFF(xOut)
   out = xIn + (xChunks[2] .* out).to(of: xIn)
   let mapper: ModelWeightMapper = { format in
     var mapping: ModelWeightMapping = [:]
@@ -722,10 +722,12 @@ private func LoRAJointTransformerBlock(
     queries = (1.0 / Float(k).squareRoot()) * queries
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+    scaledDotProductAttention.gradientCheckpointing = false
   case .scaleMerged:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+    scaledDotProductAttention.gradientCheckpointing = false
   }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
@@ -764,6 +766,9 @@ private func LoRAJointTransformerBlock(
         .* contextFF(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3]))
         .to(of: contextOut)
     }
+    if configuration.gradientCheckpointingFeedForward {
+      contextFF.gradientCheckpointing = true
+    }
   } else {
     contextLinear1 = nil
     contextOutProjection = nil
@@ -778,6 +783,9 @@ private func LoRAJointTransformerBlock(
   } else {
     xOut =
       xOut + (xChunks[5] .* xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3])).to(of: xOut)
+  }
+  if configuration.gradientCheckpointingFeedForward {
+    xFF.gradientCheckpointing = true
   }
   let mapper: ModelWeightMapper = { _ in
     var mapping: ModelWeightMapping = [:]
@@ -890,10 +898,12 @@ private func LoRASingleTransformerBlock(
     queries = (1.0 / Float(k).squareRoot()) * queries
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+    scaledDotProductAttention.gradientCheckpointing = false
   case .scaleMerged:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+    scaledDotProductAttention.gradientCheckpointing = false
   }
   var xIn: Model.IO = x
   if contextBlockPreOnly {
@@ -906,12 +916,13 @@ private func LoRASingleTransformerBlock(
   }
   let xUnifyheads = LoRADense(
     count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_o")
-  let xLinear1 = LoRADense(
-    count: k * h * 4, configuration: configuration, index: layerIndex, name: "x_linear1")
-  let xOutProjection = LoRADense(
-    count: k * h, configuration: configuration, flags: [.Float32], index: layerIndex,
-    name: "x_out_proj")
-  out = xUnifyheads(out) + xOutProjection(xLinear1(xOut).GELU(approximate: .tanh))
+  let (xLinear1, xOutProjection, xFF) = LoRAFeedForward(
+    hiddenSize: k * h, intermediateSize: k * h * 4, upcast: false, configuration: configuration,
+    index: layerIndex, name: "x")
+  out = xUnifyheads(out) + xFF(xOut)
+  if configuration.gradientCheckpointingFeedForward {
+    xFF.gradientCheckpointing = true
+  }
   out = xIn + (xChunks[2] .* out).to(of: xIn)
   let mapper: ModelWeightMapper = { _ in
     var mapping: ModelWeightMapping = [:]
@@ -971,6 +982,9 @@ public func LoRAFlux1(
     let blockOut = block([context, out, rot] + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
+    if LoRAConfiguration.gradientCheckpointingTransformerLayer {
+      block.gradientCheckpointing = true
+    }
     if injectControls {
       let injectedControl = Input()
       let injectedControlFP32 = injectedControl.to(.Float32)
@@ -1003,6 +1017,9 @@ public func LoRAFlux1(
       hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention,
       layerIndex: i + layers.0, configuration: LoRAConfiguration)
     out = block([out, rot] + xChunks)
+    if LoRAConfiguration.gradientCheckpointingTransformerLayer {
+      block.gradientCheckpointing = true
+    }
     if injectControls {
       let injectedControl = Input()
       let injectedControlFP32 = injectedControl.to(.Float32)
@@ -1087,7 +1104,10 @@ public func LoRAFlux1(
     return mapping
   }
   return (
-    mapper, Model([x, rot, contextIn] + adaLNChunks + injectedIPAdapters + injectedControls, [out])
+    mapper,
+    Model(
+      [x, rot, contextIn] + adaLNChunks + injectedIPAdapters + injectedControls, [out],
+      trainable: false)
   )
 }
 
@@ -1302,10 +1322,12 @@ private func SingleTransformerBlockFixedOutputShapes(
 }
 
 public func Flux1FixedOutputShapes(
-  batchSize: (Int, Int), tokenLength: Int, channels: Int, layers: (Int, Int)
+  batchSize: (Int, Int), tokenLength: Int, channels: Int, layers: (Int, Int), contextPreloaded: Bool
 ) -> [TensorShape] {
   var outs = [TensorShape]()
-  outs.append(TensorShape([batchSize.0, tokenLength, channels]))
+  if contextPreloaded {
+    outs.append(TensorShape([batchSize.0, tokenLength, channels]))
+  }
   for i in 0..<layers.0 {
     let contextBlockPreOnly = i == layers.0 - 1 && layers.1 == 0
     let outputShapes = JointTransformerBlockFixedOutputShapes(

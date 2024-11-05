@@ -701,28 +701,69 @@ public struct LoRATrainer {
           return .continue(updatedName)
         }
       }
+      let modelName: String
       let UNetMapping: [Int: Int]
       switch version {
       case .v1, .v2:
         UNetMapping = LoRAMapping.SDUNet
-      case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB:
+        modelName = "unet"
+      case .sd3:
+        UNetMapping = [Int: Int](
+          uniqueKeysWithValues: (0..<24).map {
+            return ($0, $0)
+          })
+        modelName = "dit"
+      case .pixart:
+        UNetMapping = [Int: Int](
+          uniqueKeysWithValues: (0..<28).map {
+            return ($0, $0)
+          })
+        modelName = "dit"
+      case .flux1:
+        UNetMapping = [Int: Int](
+          uniqueKeysWithValues: (0..<(19 + 38)).map {
+            return ($0, $0)
+          })
+        modelName = "dit"
+      case .sd3Large:
+        UNetMapping = [Int: Int](
+          uniqueKeysWithValues: (0..<38).map {
+            return ($0, $0)
+          })
+        modelName = "dit"
+      case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       case .ssd1b:
         UNetMapping = LoRAMapping.SDUNetXLSSD1B
+        modelName = "unet"
       case .sdxlBase:
         UNetMapping = LoRAMapping.SDUNetXLBase
+        modelName = "unet"
       case .sdxlRefiner:
         UNetMapping = LoRAMapping.SDUNetXLRefiner
+        modelName = "unet"
       }
-      store.write("unet", model: unet) { name, tensor in
+      store.write(modelName, model: unet) { name, tensor in
         guard name.contains("lora") else { return .skip }
         let components = name.split(separator: "-")
         guard components.count >= 3, let index = Int(components[2]),
           let originalIndex = UNetMapping[index]
         else { return .skip }
         let isUp = name.contains("lora_up")
-        let updatedName = "\(components[0])-\(originalIndex)-0]" + (isUp ? "__up__" : "__down__")
+        var infix = components[1].replacingOccurrences(of: "lora_up", with: "")
+          .replacingOccurrences(
+            of: "lora_down", with: "")
+        // In case infix has _, remove them.
+        if infix.hasSuffix("_") {
+          infix = String(infix.prefix(upTo: infix.index(before: infix.endIndex)))
+        }
+        let originalPrefix: String
+        if infix.isEmpty {
+          originalPrefix = "\(components[0])-\(originalIndex)-0]"
+        } else {
+          originalPrefix = "\(components[0])-\(infix)-\(originalIndex)-0]"
+        }
+        let updatedName = originalPrefix + (isUp ? "__up__" : "__down__")
         if scaleOfLoRA != 1 && !isUp {
           let tensor = graph.withNoGrad {
             (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
@@ -829,7 +870,7 @@ public struct LoRATrainer {
         let timeEmbed = graph.variable(
           Tensor<FloatType>(
             from: timeEmbedding(
-              timestep: item.timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+              timestep: item.timestep * 1_000, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
           ).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
         pooleds[i..<(i + 1), 0..<768] = graph.variable(item.pooled.toGPU(0))
@@ -904,9 +945,10 @@ public struct LoRATrainer {
     ).toGPU(0)
     let rotaryConstant = graph.constant(rotary)
     let cArr =
-      [rotaryConstant]
+      [rotaryConstant] + [graph.constant(.GPU(0), .HWC(1, 512, 4096), of: FloatType.self)]
       + Flux1FixedOutputShapes(
-        batchSize: (1, 1), tokenLength: 512, channels: 3072, layers: (19, 38)
+        batchSize: (1, 1), tokenLength: 512, channels: 3072, layers: (19, 38),
+        contextPreloaded: false
       ).map {
         graph.constant(.GPU(0), format: .NHWC, shape: $0, of: FloatType.self)
       }
@@ -952,24 +994,26 @@ public struct LoRATrainer {
     var i = 0
     var stopped = false
     var batchCount = 0
+    var batch = [
+      (
+        latents: Tensor<FloatType>, textEncoding: Tensor<FloatType>, pooled: Tensor<FloatType>,
+        timestep: Float, guidance: Float
+      )
+    ]()
     while i < trainingSteps && !stopped {
       dataFrame.shuffle()
-      var batch = [
-        (
-          latents: Tensor<FloatType>, textEncoding: Tensor<FloatType>, pooled: Tensor<FloatType>,
-          timestep: Float, guidance: Float
-        )
-      ]()
       for value in dataFrame["imagePath", String.self] {
         let imagePath = value
         guard let tensor = sessionStore.read(imagePath) else { continue }
         let shape = tensor.shape
-        guard shape[1] == latentsHeight && shape[2] == latentsWidth else { continue }
+        guard shape[1] == latentsHeight && shape[2] == latentsWidth && shape[3] == 32 else {
+          continue
+        }
         guard
           let textEncoding = sessionStore.read("cond_te2_\(imagePath)").map({
             Tensor<FloatType>(from: $0)
           }),
-          let pooled = sessionStore.read("pool_\(imagePath)").map({ Tensor<FloatType>(from: $0) })
+          let pooled = sessionStore.read("cond_\(imagePath)").map({ Tensor<FloatType>(from: $0) })
         else { continue }
         let latents = graph.withNoGrad {
           let parameters = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
@@ -997,10 +1041,10 @@ public struct LoRATrainer {
                 left: latents, right: z1, leftScalar: 1 - item.timestep, rightScalar: item.timestep)
               return (zt, z1 - latents)
             }
-            let context = graph.constant(item.textEncoding)
+            let context = graph.constant(item.textEncoding.toGPU(0))
             let condition1 = conditions.map {
               let shape = $0.shape
-              return graph.constant($0[j..<(j + 1), 0..<shape[1], 0..<shape[2]])
+              return graph.constant($0[j..<(j + 1), 0..<shape[1], 0..<shape[2]].copied())
             }
             let vtheta = dit(inputs: zt, [rotaryConstant, context] + condition1)[0].as(
               of: FloatType.self)

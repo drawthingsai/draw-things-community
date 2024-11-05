@@ -82,7 +82,8 @@ public final class ControlNetImporter {
     controlNetFixed.compile(inputs: crossattn)
     let controlNetFixedMapping = controlNetFixedMapper(.diffusers)
     let flux1FixedOutputShapes = Flux1FixedOutputShapes(
-      batchSize: (1, 1), tokenLength: 256, channels: 3072, layers: (doubleControls, singleControls))
+      batchSize: (1, 1), tokenLength: 256, channels: 3072, layers: (doubleControls, singleControls),
+      contextPreloaded: true)
     let cArr =
       [
         graph.variable(

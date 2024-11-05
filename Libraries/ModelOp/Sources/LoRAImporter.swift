@@ -619,7 +619,8 @@ public enum LoRAImporter {
                     height: 32, width: 32, tokenLength: 256, channels: 128)))
             ]
             + Flux1FixedOutputShapes(
-              batchSize: (1, 1), tokenLength: 256, channels: 3072, layers: (19, 38)
+              batchSize: (1, 1), tokenLength: 256, channels: 3072, layers: (19, 38),
+              contextPreloaded: true
             ).map {
               graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
             }
