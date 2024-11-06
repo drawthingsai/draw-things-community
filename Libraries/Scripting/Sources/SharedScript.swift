@@ -485,6 +485,9 @@ extension ScriptExecutor {
         slider(value, valueType, minValue, maxValue, title) {
           return {"type": "slider", "title": title, "valueType": valueType, "value": value, "minValue": minValue, "maxValue": maxValue};
         },
+        doubleSlider(value, valueType, minValue, maxValue, title) {
+          return {"type": "doubleSlider", "title": title, "valueType": valueType, "value": [value[0], value[1]], "minValue": minValue, "maxValue": maxValue};
+        },
         textField(value, placeholder, multiline, height) {
           return {"type": "textField", "value": value, "placeholder": placeholder, "height": height, "multiline": multiline};
         },
