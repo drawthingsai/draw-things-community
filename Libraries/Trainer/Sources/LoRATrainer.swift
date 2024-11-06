@@ -598,7 +598,16 @@ public struct LoRATrainer {
           return .continue(name)
         }
       }
-      $0.write("unet", model: unet) { name, _ in
+      let modelName: String
+      switch version {
+      case .v1, .v2, .ssd1b, .sdxlBase, .sdxlRefiner:
+        modelName = "unet"
+      case .sd3, .pixart, .flux1, .sd3Large:
+        modelName = "dit"
+      case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        fatalError()
+      }
+      $0.write(modelName, model: unet) { name, _ in
         guard name.contains("[i-") || name.contains("lora") else {
           return .skip
         }
@@ -788,7 +797,20 @@ public struct LoRATrainer {
       originalIndex = index
     }
     let isUp = name.contains("lora_up")
-    return "\(components[0])-\(originalIndex)-0]" + (isUp ? "__up__" : "__down__")
+    var infix = components[1].replacingOccurrences(of: "lora_up", with: "")
+      .replacingOccurrences(
+        of: "lora_down", with: "")
+    // In case infix has _, remove them.
+    if infix.hasSuffix("_") {
+      infix = String(infix.prefix(upTo: infix.index(before: infix.endIndex)))
+    }
+    let originalPrefix: String
+    if infix.isEmpty {
+      originalPrefix = "\(components[0])-\(originalIndex)-0]"
+    } else {
+      originalPrefix = "\(components[0])-\(infix)-\(originalIndex)-0]"
+    }
+    return originalPrefix + (isUp ? "__up__" : "__down__")
   }
 
   // This is heavily based on https://github.com/thuanz123/realfill/blob/main/train_realfill.py
@@ -959,6 +981,23 @@ public struct LoRATrainer {
     ) { store in
       store.read("dit", model: dit, codec: [.jit, .q5p, .q6p, .q8p, .ezm7, .fpzip, .externalData]) {
         name, dataType, format, shape in
+        if resumeIfPossible && (name.contains("[i-") || name.contains("lora")) {
+          if let resumingLoRAFile = resumingLoRAFile?.0, name.contains("lora") {
+            if let tensor = try?
+              (graph.openStore(
+                LoRAZoo.filePathForModelDownloaded(resumingLoRAFile), flags: .readOnly
+              ) {
+                return $0.read(
+                  originalLoRA(name: name, LoRAMapping: nil),
+                  codec: [.q8p, .ezm7, .fpzip, .externalData])
+              }).get()
+            {
+              return .final(Tensor<Float>(from: tensor).toCPU())
+            }
+          } else if let tensor = sessionStore.read(name) {
+            return .final(Tensor<Float>(tensor).toCPU())
+          }
+        }
         if name.contains("lora_up") {
           switch dataType {
           case .Float16:
@@ -991,7 +1030,17 @@ public struct LoRATrainer {
     optimizer.parameters = [dit.parameters]
     var optimizers = [optimizer]
     var scaler = GradScaler(scale: 32_768)
-    var i = 0
+    var i: Int
+    if resumeIfPossible {
+      if let resumingStep = resumingLoRAFile?.1 {
+        i = resumingStep
+      } else {
+        let stepTensor = sessionStore.read("current_step").flatMap { Tensor<Int32>(from: $0) }
+        i = stepTensor.map { max(Int($0[0]), 0) } ?? 0
+      }
+    } else {
+      i = 0
+    }
     var stopped = false
     var batchCount = 0
     var batch = [
