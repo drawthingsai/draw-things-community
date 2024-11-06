@@ -903,8 +903,8 @@ public struct LoRATrainer {
     resumingLoRAFile: (String, Int)?,
     dataFrame: DataFrame, trainingSteps: Int, warmupSteps: Int, gradientAccumulationSteps: Int,
     rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: Float, trainableKeys: [String],
-    shift: Float, noiseOffset: Float, denoisingTimesteps: ClosedRange<Int>,
-    memorySaver: MemorySaver,
+    shift: Float, noiseOffset: Float, guidanceEmbed: ClosedRange<Float>,
+    denoisingTimesteps: ClosedRange<Int>, memorySaver: MemorySaver,
     progressHandler: (Int, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>]) -> Bool
   ) {
     guard unetLearningRate > 0 else {
@@ -1014,10 +1014,11 @@ public struct LoRATrainer {
           let pooled = sessionStore.read("cond_\(imagePath)").map({ Tensor<FloatType>(from: $0) })
         else { continue }
         var timestep: Double = Double.random(
-          in: (Double(denoisingTimesteps.lowerBound) / 1000)...(Double(
-            denoisingTimesteps.upperBound) / 1000))
+          in: (Double(denoisingTimesteps.lowerBound) / 999)...(Double(
+            denoisingTimesteps.upperBound) / 999))
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
-        batch.append((imagePath, pooled, Float(timestep), 3.5))
+        let guidanceEmbed = Float.random(in: guidanceEmbed)
+        batch.append((imagePath, pooled, Float(timestep), guidanceEmbed))
         if batch.count == 32 {
           let conditions = encodeFlux1Fixed(
             graph: graph,
@@ -1089,7 +1090,8 @@ public struct LoRATrainer {
     trainableKeys: [String],
     customEmbeddingLength: Int, customEmbeddingLearningRate: Float,
     stopEmbeddingTrainingAtStep: Int, shift: Float,
-    noiseOffset: Float, denoisingTimesteps: ClosedRange<Int>, memorySaver: MemorySaver,
+    noiseOffset: Float, guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
+    memorySaver: MemorySaver,
     progressHandler: (Int, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>]) -> Bool
   ) {
     let graph = DynamicGraph()
@@ -1139,7 +1141,8 @@ public struct LoRATrainer {
           warmupSteps: warmupSteps, gradientAccumulationSteps: gradientAccumulationSteps,
           rankOfLoRA: rankOfLoRA, scaleOfLoRA: scaleOfLoRA, unetLearningRate: unetLearningRate,
           trainableKeys: trainableKeys, shift: shift, noiseOffset: noiseOffset,
-          denoisingTimesteps: denoisingTimesteps, memorySaver: memorySaver,
+          guidanceEmbed: guidanceEmbed, denoisingTimesteps: denoisingTimesteps,
+          memorySaver: memorySaver,
           progressHandler: progressHandler)
         return
       }
