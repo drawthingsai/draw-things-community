@@ -62,10 +62,13 @@ public final class ModelImporter {
     public var hasEncoderHidProj: Bool
     public var hasGuidanceEmbed: Bool
     public var numberOfTensors: Int
+    public var qkNorm: Bool
+    public var dualAttentionLayers: [Int]
     public init(
       version: ModelVersion, archive: TensorArchive, stateDict: [String: TensorDescriptor],
       modifier: SamplerModifier, inputChannels: Int, isDiffusersFormat: Bool,
-      hasEncoderHidProj: Bool, hasGuidanceEmbed: Bool, numberOfTensors: Int
+      hasEncoderHidProj: Bool, hasGuidanceEmbed: Bool, qkNorm: Bool, dualAttentionLayers: [Int],
+      numberOfTensors: Int
     ) {
       self.version = version
       self.archive = archive
@@ -75,6 +78,8 @@ public final class ModelImporter {
       self.isDiffusersFormat = isDiffusersFormat
       self.hasEncoderHidProj = hasEncoderHidProj
       self.hasGuidanceEmbed = hasGuidanceEmbed
+      self.qkNorm = qkNorm
+      self.dualAttentionLayers = dualAttentionLayers
       self.numberOfTensors = numberOfTensors
     }
   }
@@ -235,15 +240,26 @@ public final class ModelImporter {
     } else {
       throw UnpickleError.tensorNotFound
     }
-    let hasEncoderHidProj = stateDict.keys.contains { $0 == "encoder_hid_proj.weight" }
-    let hasGuidanceEmbed = stateDict.keys.contains {
+    let keys = stateDict.keys
+    let hasEncoderHidProj = keys.contains { $0 == "encoder_hid_proj.weight" }
+    let hasGuidanceEmbed = keys.contains {
       $0.contains(".guidance_embedder.") || $0.contains("guidance_in.")
+    }
+    let qkNorm = keys.contains {
+      $0.contains(".ln_k.") || $0.contains(".ln_q.") || $0.contains(".norm_k.")
+        || $0.contains(".norm_q.")
+    }
+    let dualAttentionLayers = (0..<38).filter { i in
+      keys.contains {
+        $0.contains(".\(i).x_block.attn2.") || $0.contains("_blocks.\(i).attn2.")
+      }
     }
     return InspectionResult(
       version: modelVersion, archive: archive, stateDict: stateDict, modifier: modifier,
       inputChannels: inputDim, isDiffusersFormat: isDiffusersFormat,
       hasEncoderHidProj: hasEncoderHidProj, hasGuidanceEmbed: hasGuidanceEmbed,
-      numberOfTensors: expectedTotalAccess)
+      qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers, numberOfTensors: expectedTotalAccess
+    )
   }
 
   private func internalImport(versionCheck: @escaping (ModelVersion) -> Void) throws -> (
@@ -257,6 +273,8 @@ public final class ModelImporter {
     let inputDim = inspectionResult.inputChannels
     let isDiffusersFormat = inspectionResult.isDiffusersFormat
     let hasEncoderHidProj = inspectionResult.hasEncoderHidProj
+    let qkNorm = inspectionResult.qkNorm
+    let dualAttentionLayers = inspectionResult.dualAttentionLayers
     expectedTotalAccess = inspectionResult.numberOfTensors
     versionCheck(modelVersion)
     progress?(0.05)
@@ -534,7 +552,8 @@ public final class ModelImporter {
       case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .pixart,
         .sd3, .sd3Large, .auraflow:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
-          filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false,
+          filePath: "", version: modelVersion, dualAttentionLayers: dualAttentionLayers,
+          usesFlashAttention: false, zeroNegativePrompt: false,
           isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false)
         cArr.insert(
           graph.variable(.CPU, .HWC(batchSize, 77, 768), of: FloatType.self),
@@ -688,15 +707,20 @@ public final class ModelImporter {
       case .sd3:
         (unetMapper, unet) = MMDiT(
           batchSize: batchSize, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
-          upcast: false, qkNorm: false, usesFlashAttention: .none, of: FloatType.self)
+          upcast: false, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+          posEmbedMaxSize: 192, usesFlashAttention: .none, of: FloatType.self)
         unetReader = nil
-        (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 1536, layers: 24)
+        (unetFixedMapper, unetFixed) = MMDiTFixed(
+          batchSize: batchSize, channels: 1536, layers: 24, dualAttentionLayers: dualAttentionLayers
+        )
       case .sd3Large:
         (unetMapper, unet) = MMDiT(
           batchSize: batchSize, t: 77, height: 64, width: 64, channels: 2432, layers: 38,
-          upcast: true, qkNorm: true, usesFlashAttention: .none, of: FloatType.self)
+          upcast: true, qkNorm: true, dualAttentionLayers: [], posEmbedMaxSize: 192,
+          usesFlashAttention: .none, of: FloatType.self)
         unetReader = nil
-        (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: batchSize, channels: 2432, layers: 38)
+        (unetFixedMapper, unetFixed) = MMDiTFixed(
+          batchSize: batchSize, channels: 2432, layers: 38, dualAttentionLayers: [])
       case .flux1:
         (unetMapper, unet) = Flux1(
           batchSize: batchSize, tokenLength: 256, height: 64, width: 64, channels: 3072,
@@ -1023,7 +1047,9 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .sd3:
-          if $0.keys.count != 1157 {
+          if $0.keys.count != 1157 + (qkNorm ? 24 * 4 : 0) + dualAttentionLayers.count
+            * (4 * 2 + 2 + 3 * 2)
+          {
             throw Error.tensorWritesFailed
           }
         case .sd3Large:

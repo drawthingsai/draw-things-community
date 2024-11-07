@@ -49,6 +49,14 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public struct Specification: Codable {
+    public struct MMDiT: Codable {
+      public var qkNorm: Bool
+      public var dualAttentionLayers: [Int]
+      public init(qkNorm: Bool, dualAttentionLayers: [Int]) {
+        self.qkNorm = qkNorm
+        self.dualAttentionLayers = dualAttentionLayers
+      }
+    }
     public var name: String
     public var file: String
     public var prefix: String
@@ -77,6 +85,7 @@ public struct ModelZoo: DownloadZoo {
     public var guidanceEmbed: Bool?
     public var paddedTextEncodingLength: Int?
     public var hiresFixScale: UInt16?
+    public var mmdit: MMDiT?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -89,7 +98,7 @@ public struct ModelZoo: DownloadZoo {
       noiseDiscretization: NoiseDiscretization? = nil, latentsMean: [Float]? = nil,
       latentsStd: [Float]? = nil, latentsScalingFactor: Float? = nil, stageModels: [String]? = nil,
       textEncoderVersion: TextEncoderVersion? = nil, guidanceEmbed: Bool? = nil,
-      paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil
+      paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil
     ) {
       self.name = name
       self.file = file
@@ -119,6 +128,7 @@ public struct ModelZoo: DownloadZoo {
       self.guidanceEmbed = guidanceEmbed
       self.paddedTextEncodingLength = paddedTextEncodingLength
       self.hiresFixScale = hiresFixScale
+      self.mmdit = mmdit
     }
     fileprivate var predictV: Bool? = nil
   }
@@ -1159,6 +1169,11 @@ public struct ModelZoo: DownloadZoo {
   public static func stageModelsForModel(_ name: String) -> [String] {
     guard let specification = specificationForModel(name) else { return [] }
     return specification.stageModels ?? []
+  }
+
+  public static func MMDiTForModel(_ name: String) -> Specification.MMDiT? {
+    guard let specification = specificationForModel(name) else { return nil }
+    return specification.mmdit
   }
 
   public static func isUpcastAttentionForModel(_ name: String) -> Bool {

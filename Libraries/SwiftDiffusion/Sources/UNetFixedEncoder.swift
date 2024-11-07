@@ -5,17 +5,20 @@ import NNC
 public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePath: String
   public let version: ModelVersion
+  public let dualAttentionLayers: [Int]
   public let usesFlashAttention: Bool
   public let zeroNegativePrompt: Bool
   public let isQuantizedModel: Bool
   public let canRunLoRASeparately: Bool
   public let externalOnDemand: Bool
   public init(
-    filePath: String, version: ModelVersion, usesFlashAttention: Bool, zeroNegativePrompt: Bool,
-    isQuantizedModel: Bool, canRunLoRASeparately: Bool, externalOnDemand: Bool
+    filePath: String, version: ModelVersion, dualAttentionLayers: [Int], usesFlashAttention: Bool,
+    zeroNegativePrompt: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
+    externalOnDemand: Bool
   ) {
     self.filePath = filePath
     self.version = version
+    self.dualAttentionLayers = dualAttentionLayers
     self.usesFlashAttention = usesFlashAttention
     self.zeroNegativePrompt = zeroNegativePrompt
     self.isQuantizedModel = isQuantizedModel
@@ -480,10 +483,12 @@ extension UNetFixedEncoder {
       switch version {
       case .sd3:
         (_, unetFixed) = MMDiTFixed(
-          batchSize: cBatchSize * timesteps.count, channels: 1536, layers: 24)
+          batchSize: cBatchSize * timesteps.count, channels: 1536, layers: 24,
+          dualAttentionLayers: dualAttentionLayers)
       case .sd3Large:
         (_, unetFixed) = MMDiTFixed(
-          batchSize: cBatchSize * timesteps.count, channels: 2432, layers: 38)
+          batchSize: cBatchSize * timesteps.count, channels: 2432, layers: 38,
+          dualAttentionLayers: [])
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC:
         fatalError()

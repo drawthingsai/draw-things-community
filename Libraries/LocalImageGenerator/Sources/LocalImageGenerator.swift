@@ -59,7 +59,8 @@ public struct LocalImageGenerator: ImageGenerator {
 extension LocalImageGenerator {
   public static func sampler<FloatType: TensorNumeric & BinaryFloatingPoint>(
     from type: SamplerType, isCfgEnabled: Bool, filePath: String, modifier: SamplerModifier,
-    version: ModelVersion, usesFlashAttention: Bool, objective: Denoiser.Objective,
+    version: ModelVersion, qkNorm: Bool, dualAttentionLayers: [Int], usesFlashAttention: Bool,
+    objective: Denoiser.Objective,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool, injectT2IAdapters: Bool,
     injectAttentionKV: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration], isGuidanceEmbedEnabled: Bool,
@@ -119,7 +120,8 @@ extension LocalImageGenerator {
       switch type {
       case .dPMPP2MKarras, .DPMPP2MAYS, .dPMPP2MTrailing:
         return DPMPP2MSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -132,7 +134,8 @@ extension LocalImageGenerator {
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .eulerA, .eulerASubstep, .eulerATrailing, .eulerAAYS:
         return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -145,7 +148,8 @@ extension LocalImageGenerator {
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .DDIM, .dDIMTrailing:
         return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -158,7 +162,8 @@ extension LocalImageGenerator {
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .PLMS:
         return PLMSSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -171,7 +176,8 @@ extension LocalImageGenerator {
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .dPMPPSDEKarras, .dPMPPSDESubstep, .dPMPPSDETrailing, .DPMPPSDEAYS:
         return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -184,7 +190,8 @@ extension LocalImageGenerator {
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .uniPC:
         return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -197,7 +204,8 @@ extension LocalImageGenerator {
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .LCM:
         return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -209,7 +217,8 @@ extension LocalImageGenerator {
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .TCD:
         return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -225,7 +234,8 @@ extension LocalImageGenerator {
     switch type {
     case .dPMPP2MKarras:
       return DPMPP2MSampler<FloatType, UNetWrapper<FloatType>, Denoiser.KarrasDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -241,7 +251,8 @@ extension LocalImageGenerator {
         return DPMPP2MSampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -257,7 +268,8 @@ extension LocalImageGenerator {
         return DPMPP2MSampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -273,7 +285,8 @@ extension LocalImageGenerator {
         return DPMPP2MSampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -288,7 +301,8 @@ extension LocalImageGenerator {
       }
     case .dPMPP2MTrailing:
       return DPMPP2MSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -302,7 +316,8 @@ extension LocalImageGenerator {
           parameterization, objective: objective, timestepSpacing: .trailing))
     case .eulerA:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -315,7 +330,8 @@ extension LocalImageGenerator {
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .eulerATrailing:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -332,7 +348,8 @@ extension LocalImageGenerator {
         return EulerASampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -348,7 +365,8 @@ extension LocalImageGenerator {
         return EulerASampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -364,7 +382,8 @@ extension LocalImageGenerator {
         return EulerASampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -379,7 +398,8 @@ extension LocalImageGenerator {
       }
     case .DDIM:
       return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -393,7 +413,8 @@ extension LocalImageGenerator {
           parameterization, objective: objective, timestepSpacing: .leading))
     case .dDIMTrailing:
       return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -407,7 +428,8 @@ extension LocalImageGenerator {
           parameterization, objective: objective, timestepSpacing: .trailing))
     case .PLMS:
       return PLMSSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -421,7 +443,8 @@ extension LocalImageGenerator {
           parameterization, objective: objective, timestepSpacing: .leading))
     case .dPMPPSDEKarras:
       return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.KarrasDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -434,7 +457,8 @@ extension LocalImageGenerator {
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective))
     case .dPMPPSDETrailing:
       return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -451,7 +475,8 @@ extension LocalImageGenerator {
         return DPMPPSDESampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -467,7 +492,8 @@ extension LocalImageGenerator {
         return DPMPPSDESampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -483,7 +509,8 @@ extension LocalImageGenerator {
         return DPMPPSDESampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version,
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
           injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -498,7 +525,8 @@ extension LocalImageGenerator {
       }
     case .uniPC:
       return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -511,7 +539,8 @@ extension LocalImageGenerator {
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .LCM:
       return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -523,7 +552,8 @@ extension LocalImageGenerator {
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .TCD:
       return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -536,7 +566,8 @@ extension LocalImageGenerator {
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .eulerASubstep:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearManualDiscretization>(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -552,7 +583,8 @@ extension LocalImageGenerator {
       return DPMPPSDESampler<
         FloatType, UNetWrapper<FloatType>, Denoiser.LinearManualDiscretization
       >(
-        filePath: filePath, modifier: modifier, version: version,
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -2430,6 +2462,8 @@ extension LocalImageGenerator {
         shuffleCount: shuffles.count, controls: configuration.controls,
         version: modelVersion)
     let isQuantizedModel = ModelZoo.isQuantizedModel(file)
+    let (qkNorm, dualAttentionLayers) =
+      ModelZoo.MMDiTForModel(file).map { return ($0.qkNorm, $0.dualAttentionLayers) } ?? (false, [])
     let is8BitModel = ModelZoo.is8BitModel(file)
     let canRunLoRASeparately = modelPreloader.canRunLoRASeparately
     let externalOnDemand = modelPreloader.externalOnDemand(
@@ -2508,7 +2542,8 @@ extension LocalImageGenerator {
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
-      version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
+      version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+      usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
       injectT2IAdapters: canInjectT2IAdapters, injectAttentionKV: canInjectAttentionKVs,
@@ -2954,7 +2989,8 @@ extension LocalImageGenerator {
       let secondPassSampler = LocalImageGenerator.sampler(
         from: configuration.sampler, isCfgEnabled: isCfgEnabled,
         filePath: secondPassModelFilePath, modifier: modifier,
-        version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
+        version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+        usesFlashAttention: isMFAEnabled,
         objective: modelObjective,
         upcastAttention: modelUpcastAttention,
         externalOnDemand: externalOnDemand,
@@ -3140,6 +3176,8 @@ extension LocalImageGenerator {
       file = ModelZoo.defaultSpecification.file
     }
     let modelVersion = ModelZoo.versionForModel(file)
+    let (qkNorm, dualAttentionLayers) =
+      ModelZoo.MMDiTForModel(file).map { return ($0.qkNorm, $0.dualAttentionLayers) } ?? (false, [])
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
@@ -3324,7 +3362,8 @@ extension LocalImageGenerator {
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
-      version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
+      version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+      usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
       injectT2IAdapters: canInjectT2IAdapters, injectAttentionKV: canInjectAttentionKVs,
@@ -3639,7 +3678,8 @@ extension LocalImageGenerator {
         let secondPassSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
-          version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
+          version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+          usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
           upcastAttention: modelUpcastAttention,
           externalOnDemand: externalOnDemand,
@@ -4310,6 +4350,8 @@ extension LocalImageGenerator {
       file = ModelZoo.defaultSpecification.file
     }
     let modelVersion = ModelZoo.versionForModel(file)
+    let (qkNorm, dualAttentionLayers) =
+      ModelZoo.MMDiTForModel(file).map { return ($0.qkNorm, $0.dualAttentionLayers) } ?? (false, [])
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
@@ -4523,7 +4565,8 @@ extension LocalImageGenerator {
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
-      version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
+      version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+      usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
       injectT2IAdapters: canInjectT2IAdapters, injectAttentionKV: canInjectAttentionKVs,
@@ -4794,7 +4837,8 @@ extension LocalImageGenerator {
         let secondPassSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
-          version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
+          version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+          usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
           upcastAttention: modelUpcastAttention,
           externalOnDemand: externalOnDemand,
@@ -4964,6 +5008,8 @@ extension LocalImageGenerator {
       file = ModelZoo.defaultSpecification.file
     }
     let modelVersion = ModelZoo.versionForModel(file)
+    let (qkNorm, dualAttentionLayers) =
+      ModelZoo.MMDiTForModel(file).map { return ($0.qkNorm, $0.dualAttentionLayers) } ?? (false, [])
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
@@ -5177,7 +5223,8 @@ extension LocalImageGenerator {
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
-      version: modelVersion, usesFlashAttention: isMFAEnabled, objective: modelObjective,
+      version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+      usesFlashAttention: isMFAEnabled, objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
       injectT2IAdapters: canInjectT2IAdapters, injectAttentionKV: canInjectAttentionKVs,
@@ -5546,7 +5593,8 @@ extension LocalImageGenerator {
         let secondPassSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
-          version: secondPassModelVersion, usesFlashAttention: isMFAEnabled,
+          version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+          usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
           upcastAttention: modelUpcastAttention,
           externalOnDemand: externalOnDemand,

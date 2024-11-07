@@ -9,6 +9,8 @@ where UNet.FloatType == FloatType {
   public let filePath: String
   public let modifier: SamplerModifier
   public let version: ModelVersion
+  public let qkNorm: Bool
+  public let dualAttentionLayers: [Int]
   public let usesFlashAttention: Bool
   public let upcastAttention: Bool
   public let externalOnDemand: Bool
@@ -26,7 +28,8 @@ where UNet.FloatType == FloatType {
   public let tiledDiffusion: TiledConfiguration
   private let discretization: Discretization
   public init(
-    filePath: String, modifier: SamplerModifier, version: ModelVersion, usesFlashAttention: Bool,
+    filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
+    dualAttentionLayers: [Int], usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
@@ -38,6 +41,8 @@ where UNet.FloatType == FloatType {
     self.filePath = filePath
     self.modifier = modifier
     self.version = version
+    self.qkNorm = qkNorm
+    self.dualAttentionLayers = dualAttentionLayers
     self.usesFlashAttention = usesFlashAttention
     self.upcastAttention = upcastAttention
     self.externalOnDemand = externalOnDemand
@@ -221,7 +226,8 @@ extension DDIMSampler: Sampler {
     }
     let oldC = c
     let fixedEncoder = UNetFixedEncoder<FloatType>(
-      filePath: filePath, version: version, usesFlashAttention: usesFlashAttention,
+      filePath: filePath, version: version, dualAttentionLayers: dualAttentionLayers,
+      usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
       canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
@@ -314,7 +320,8 @@ extension DDIMSampler: Sampler {
         newC = c
       }
       let _ = unet.compileModel(
-        filePath: filePath, externalOnDemand: externalOnDemand, version: version,
+        filePath: filePath, externalOnDemand: externalOnDemand, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers,
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
         injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,
         isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
@@ -410,6 +417,7 @@ extension DDIMSampler: Sampler {
           unets = [nil]
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
+            dualAttentionLayers: dualAttentionLayers,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
             isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
             externalOnDemand: externalOnDemand)
@@ -456,7 +464,8 @@ extension DDIMSampler: Sampler {
           }
           let _ = unet.compileModel(
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
-            version: refiner.version, upcastAttention: upcastAttention,
+            version: refiner.version, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+            upcastAttention: upcastAttention,
             usesFlashAttention: usesFlashAttention,
             injectControlsAndAdapters: injectControlsAndAdapters,
             lora: lora, isQuantizedModel: refiner.isQuantizedModel,

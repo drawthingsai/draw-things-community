@@ -2169,7 +2169,7 @@ public struct LoRATrainer {
                   ).reshaped(.HWC(1, 77, 768))
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
-                filePath: "", version: version, usesFlashAttention: true,
+                filePath: "", version: version, dualAttentionLayers: [], usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)
               c =
@@ -2210,7 +2210,8 @@ public struct LoRATrainer {
                   textEncoding[1][(tokenEnd)..<(tokenEnd + 1), 0..<embeddingSize.0] * textProjection
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
-                filePath: "", version: .sdxlRefiner, usesFlashAttention: true,
+                filePath: "", version: .sdxlRefiner, dualAttentionLayers: [],
+                usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)
               c =
@@ -2242,7 +2243,7 @@ public struct LoRATrainer {
                 let pooled = sessionStore.read("pool_\(imagePath)")
               else { continue }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
-                filePath: "", version: version, usesFlashAttention: true,
+                filePath: "", version: version, dualAttentionLayers: [], usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)
               c =
@@ -2265,7 +2266,8 @@ public struct LoRATrainer {
             case .sdxlRefiner:
               guard let pooled = sessionStore.read("pool_\(imagePath)") else { continue }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
-                filePath: "", version: .sdxlRefiner, usesFlashAttention: true,
+                filePath: "", version: .sdxlRefiner, dualAttentionLayers: [],
+                usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)
               c =

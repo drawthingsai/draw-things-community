@@ -422,13 +422,17 @@ public enum LoRAImporter {
       case .sd3:
         (unetMapper, unet) = MMDiT(
           batchSize: 2, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
-          upcast: false, qkNorm: false, usesFlashAttention: .none, of: FloatType.self)
-        (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: 2, channels: 1536, layers: 24)
+          upcast: false, qkNorm: false, dualAttentionLayers: [], posEmbedMaxSize: 192,
+          usesFlashAttention: .none, of: FloatType.self)
+        (unetFixedMapper, unetFixed) = MMDiTFixed(
+          batchSize: 2, channels: 1536, layers: 24, dualAttentionLayers: [])
       case .sd3Large:
         (unetMapper, unet) = MMDiT(
           batchSize: 2, t: 77, height: 64, width: 64, channels: 2432, layers: 38,
-          upcast: true, qkNorm: true, usesFlashAttention: .none, of: FloatType.self)
-        (unetFixedMapper, unetFixed) = MMDiTFixed(batchSize: 2, channels: 2432, layers: 38)
+          upcast: true, qkNorm: true, dualAttentionLayers: [], posEmbedMaxSize: 192,
+          usesFlashAttention: .none, of: FloatType.self)
+        (unetFixedMapper, unetFixed) = MMDiTFixed(
+          batchSize: 2, channels: 2432, layers: 38, dualAttentionLayers: [])
       case .pixart:
         (unetMapper, unet) = PixArt(
           batchSize: 2, height: 64, width: 64, channels: 1152, layers: 28,
@@ -575,7 +579,8 @@ public enum LoRAImporter {
             graph.variable(.CPU, .WC(isCfgEnabled ? 2 : 1, 1280), of: FloatType.self))
         }
         let fixedEncoder = UNetFixedEncoder<FloatType>(
-          filePath: "", version: modelVersion, usesFlashAttention: false, zeroNegativePrompt: false,
+          filePath: "", version: modelVersion, dualAttentionLayers: [], usesFlashAttention: false,
+          zeroNegativePrompt: false,
           isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false)
         for c in cArr {
           c.full(0)

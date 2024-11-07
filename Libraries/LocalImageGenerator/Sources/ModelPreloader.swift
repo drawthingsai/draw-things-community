@@ -456,6 +456,10 @@ extension ModelPreloader {
     else { return }
     let modelPath = ModelZoo.filePathForModelDownloaded(modelFile)
     let modelVersion = ModelZoo.versionForModel(modelFile)
+    let (qkNorm, dualAttentionLayers) =
+      ModelZoo.MMDiTForModel(modelFile).map { return ($0.qkNorm, $0.dualAttentionLayers) } ?? (
+        false, []
+      )
     let isQuantizedModel = ModelZoo.isQuantizedModel(modelFile)
     let canRunLoRASeparately = canRunLoRASeparately
     let upcastAttention = ModelZoo.isUpcastAttentionForModel(modelFile)
@@ -529,7 +533,8 @@ extension ModelPreloader {
         var cArr = [c]
         if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
-            filePath: modelPath, version: modelVersion, usesFlashAttention: useMFA,
+            filePath: modelPath, version: modelVersion, dualAttentionLayers: [],
+            usesFlashAttention: useMFA,
             zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
             externalOnDemand: false)
           cArr.insert(
@@ -559,7 +564,8 @@ extension ModelPreloader {
         }
         let _ = unet.compileModel(
           filePath: modelPath, externalOnDemand: externalOnDemand,
-          version: modelVersion, upcastAttention: upcastAttention, usesFlashAttention: useMFA,
+          version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+          upcastAttention: upcastAttention, usesFlashAttention: useMFA,
           injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>(
             injectControls: false, injectT2IAdapters: false, injectAttentionKV: false,
             injectIPAdapterLengths: [], injectControlModels: []), lora: lora,

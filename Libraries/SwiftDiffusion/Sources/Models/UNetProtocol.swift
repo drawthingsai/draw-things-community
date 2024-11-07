@@ -45,7 +45,8 @@ public protocol UNetProtocol {
   var version: ModelVersion { get }
   var modelAndWeightMapper: (Model, ModelWeightMapper)? { get }
   mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
+    filePath: String, externalOnDemand: Bool, version: ModelVersion, qkNorm: Bool,
+    dualAttentionLayers: [Int], upcastAttention: Bool,
     usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>,
     lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
@@ -186,7 +187,8 @@ extension UNetFromNNC {
     return (unet, unetWeightMapper)
   }
   public mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, version: ModelVersion, upcastAttention: Bool,
+    filePath: String, externalOnDemand: Bool, version: ModelVersion, qkNorm: Bool,
+    dualAttentionLayers: [Int], upcastAttention: Bool,
     usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>,
     lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
@@ -439,6 +441,13 @@ extension UNetFromNNC {
         batchSize: batchSize, cIn: 4, height: tiledHeight, width: tiledWidth,
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
     case .sd3:
+      var posEmbedMaxSize = 192
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) {
+        guard let shape = $0.read(like: "__dit__[t-pos_embed-0-0]")?.shape else { return }
+        posEmbedMaxSize = Int(Double(shape.reduce(1, *) / 1536).squareRoot().rounded())
+      }
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
       tiledHeight =
@@ -451,14 +460,16 @@ extension UNetFromNNC {
         (_, unet) =
           LoRAMMDiT(
             batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: false,
+            width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: qkNorm,
+            dualAttentionLayers: dualAttentionLayers, posEmbedMaxSize: posEmbedMaxSize,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             LoRAConfiguration: configuration, of: FloatType.self)
       } else {
         (_, unet) =
           MMDiT(
             batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: false,
+            width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: qkNorm,
+            dualAttentionLayers: dualAttentionLayers, posEmbedMaxSize: posEmbedMaxSize,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
       }
     case .sd3Large:
@@ -477,6 +488,7 @@ extension UNetFromNNC {
           LoRAMMDiT(
             batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
             width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
+            dualAttentionLayers: [], posEmbedMaxSize: 192,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             LoRAConfiguration: configuration, of: FloatType.self)
       } else {
@@ -484,6 +496,7 @@ extension UNetFromNNC {
           MMDiT(
             batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
             width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
+            dualAttentionLayers: [], posEmbedMaxSize: 192,
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
       }
     case .pixart:
