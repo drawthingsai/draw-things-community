@@ -1,3 +1,14 @@
+enum LoRATrainableLayer: byte {
+  LatentsEmbedder,
+  ContextEmbedder,
+  ProjectOut,
+  Qkv,
+  QkvContext,
+  Out,
+  OutContext,
+  FeedForward,
+  FeedForwardContext,
+}
 
 table LoRATrainingConfiguration {
   id: long (primary);
@@ -26,6 +37,12 @@ table LoRATrainingConfiguration {
   custom_embedding_learning_rate: float = 0.05;
   custom_embedding_length: uint = 4;
   stop_embedding_training_at_step: uint = 500;
+  trainable_layers: [LoRATrainableLayer];
+  layer_indices: [uint];
+  shift: float = 1.0;
+  resolution_dependent_shift: bool;
+  guidance_embed_lower_bound: float = 1.5;
+  guidance_embed_upper_bound: float = 3.5;
 }
 
 root_type LoRATrainingConfiguration;

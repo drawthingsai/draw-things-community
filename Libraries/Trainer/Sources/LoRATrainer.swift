@@ -1066,7 +1066,7 @@ public struct LoRATrainer {
           in: (Double(denoisingTimesteps.lowerBound) / 999)...(Double(
             denoisingTimesteps.upperBound) / 999))
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
-        let guidanceEmbed = Float.random(in: guidanceEmbed)
+        let guidanceEmbed = (Float.random(in: guidanceEmbed) * 10).rounded() / 10
         batch.append((imagePath, pooled, Float(timestep), guidanceEmbed))
         if batch.count == 32 {
           let conditions = encodeFlux1Fixed(
@@ -1105,7 +1105,7 @@ public struct LoRATrainer {
             let loss = (d .* d).reduced(.mean, axis: [1, 2, 3])
             scaler.scale(loss).backward(to: [zt])
             let value = loss.toCPU()[0, 0, 0, 0]
-            print("loss \(value), scale \(scaler.scale), step \(i)")
+            print("loss \(value), scale \(scaler.scale), step \(i), timestep \(timestep)")
             batchCount += 1
             if (i + 1) < warmupSteps {
               optimizers[0].rate = unetLearningRate * (Float(i + 1) / Float(warmupSteps))
