@@ -1105,7 +1105,7 @@ public struct LoRATrainer {
             let loss = (d .* d).reduced(.mean, axis: [1, 2, 3])
             scaler.scale(loss).backward(to: [zt])
             let value = loss.toCPU()[0, 0, 0, 0]
-            print("loss \(value), scale \(scaler.scale), step \(i), timestep \(timestep)")
+            print("loss \(value), scale \(scaler.scale), step \(i), timestep \(item.timestep)")
             batchCount += 1
             if (i + 1) < warmupSteps {
               optimizers[0].rate = unetLearningRate * (Float(i + 1) / Float(warmupSteps))
