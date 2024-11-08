@@ -954,12 +954,12 @@ public struct LoRATrainer {
     let dit = LoRAFlux1(
       batchSize: 1, tokenLength: 512, height: latentsHeight, width: latentsWidth, channels: 3072,
       layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: false,
-      injectControls: false, injectIPAdapterLengths: [:], LoRAConfiguration: configuration
+      injectControls: false, injectIPAdapterLengths: [:], LoRAConfiguration: configuration, useConvolutionForPatchify: false
     ).1
     dit.maxConcurrency = .limit(1)
     dit.memoryReduction = (memorySaver != .turbo)
     let latents = graph.variable(
-      .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 16), of: FloatType.self)
+      .GPU(0), .HWC(1, (latentsHeight / 2) * (latentsWidth / 2), 16 * 2 * 2), of: FloatType.self)
     let rotary = Tensor<FloatType>(
       from: Flux1RotaryPositionEmbedding(
         height: latentsHeight / 2, width: latentsWidth / 2, tokenLength: 512, channels: 128,
@@ -1087,7 +1087,10 @@ public struct LoRATrainer {
                 .CPU, .NHWC(1, latentsHeight, latentsWidth, 16), of: Float.self)
               noise.randn(std: 1, mean: 0)
               let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
-              let latents = firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0
+              var latents = firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0
+              latents = latents.reshaped(format: .NHWC, shape: [1, latentsHeight / 2, 2, latentsWidth / 2, 2, 16]).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(format: .NHWC, shape: [
+                1, (latentsHeight / 2) * (latentsWidth / 2), 16 * 2 * 2,
+              ])
               let z1 = graph.variable(like: latents)
               z1.randn()
               let zt = Functional.add(
@@ -1102,9 +1105,9 @@ public struct LoRATrainer {
             let vtheta = dit(inputs: zt, [rotaryConstant, context] + condition1)[0].as(
               of: FloatType.self)
             let d = target - vtheta
-            let loss = (d .* d).reduced(.mean, axis: [1, 2, 3])
+            let loss = (d .* d).reduced(.mean, axis: [1, 2])
             scaler.scale(loss).backward(to: [zt])
-            let value = loss.toCPU()[0, 0, 0, 0]
+            let value = loss.toCPU()[0, 0, 0]
             print("loss \(value), scale \(scaler.scale), step \(i), timestep \(item.timestep)")
             batchCount += 1
             if (i + 1) < warmupSteps {

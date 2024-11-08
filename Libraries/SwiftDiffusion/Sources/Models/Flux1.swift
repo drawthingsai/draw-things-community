@@ -945,17 +945,24 @@ private func LoRASingleTransformerBlock(
 public func LoRAFlux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
   usesFlashAttention: FlashAttentionLevel, contextPreloaded: Bool, injectControls: Bool,
-  injectIPAdapterLengths: [Int: [Int]], LoRAConfiguration: LoRANetworkConfiguration
+  injectIPAdapterLengths: [Int: [Int]], LoRAConfiguration: LoRANetworkConfiguration, useConvolutionForPatchify: Bool = true
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let contextIn = Input()
   let rot = Input()
   let h = height / 2
   let w = width / 2
-  let xEmbedder = LoRAConvolution(
-    groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
-    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+  let xEmbedder: Model
+  var out: Model.IO
+  if useConvolutionForPatchify {
+    xEmbedder = LoRAConvolution(
+      groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
+      hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+    out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+  } else {
+    xEmbedder = LoRADense(count: channels, configuration: LoRAConfiguration, name: "x_embedder")
+    out = xEmbedder(x).to(.Float32)
+  }
   var adaLNChunks = [Input]()
   var injectedControls = [Input]()
   var injectedIPAdapters = [Input]()
@@ -1085,9 +1092,11 @@ public func LoRAFlux1(
     count: 2 * 2 * 16, configuration: LoRAConfiguration, index: 0, name: "linear")
   out = projOut(out)
   // Unpatchify
-  out = out.reshaped([batchSize, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([
-    batchSize, h * 2, w * 2, 16,
-  ])
+  if useConvolutionForPatchify {
+    out = out.reshaped([batchSize, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([
+      batchSize, h * 2, w * 2, 16,
+    ])
+  }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     for mapper in mappers {
