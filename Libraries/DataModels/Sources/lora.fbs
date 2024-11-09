@@ -41,8 +41,8 @@ table LoRATrainingConfiguration {
   layer_indices: [uint];
   shift: float = 1.0;
   resolution_dependent_shift: bool;
-  guidance_embed_lower_bound: float = 1.5;
-  guidance_embed_upper_bound: float = 3.5;
+  guidance_embed_lower_bound: float = 2.5;
+  guidance_embed_upper_bound: float = 4.0;
 }
 
 root_type LoRATrainingConfiguration;
