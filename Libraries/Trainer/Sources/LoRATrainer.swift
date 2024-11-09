@@ -932,6 +932,11 @@ public struct LoRATrainer {
     guard unetLearningRate > 0 else {
       return
     }
+    let queueWatermark = DynamicGraph.queueWatermark
+    DynamicGraph.queueWatermark = DeviceCapability.isM3OrLater ? 8 : 2
+    defer {
+      DynamicGraph.queueWatermark = queueWatermark
+    }
     var dataFrame = dataFrame
     let configuration: LoRANetworkConfiguration
     switch memorySaver {
@@ -954,7 +959,8 @@ public struct LoRATrainer {
     let dit = LoRAFlux1(
       batchSize: 1, tokenLength: 512, height: latentsHeight, width: latentsWidth, channels: 3072,
       layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: false,
-      injectControls: false, injectIPAdapterLengths: [:], LoRAConfiguration: configuration, useConvolutionForPatchify: false
+      injectControls: false, injectIPAdapterLengths: [:], LoRAConfiguration: configuration,
+      useConvolutionForPatchify: false
     ).1
     dit.maxConcurrency = .limit(1)
     dit.memoryReduction = (memorySaver != .turbo)
@@ -1088,9 +1094,13 @@ public struct LoRATrainer {
               noise.randn(std: 1, mean: 0)
               let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
               var latents = firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0
-              latents = latents.reshaped(format: .NHWC, shape: [1, latentsHeight / 2, 2, latentsWidth / 2, 2, 16]).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(format: .NHWC, shape: [
-                1, (latentsHeight / 2) * (latentsWidth / 2), 16 * 2 * 2,
-              ])
+              latents = latents.reshaped(
+                format: .NHWC, shape: [1, latentsHeight / 2, 2, latentsWidth / 2, 2, 16]
+              ).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
+                format: .NHWC,
+                shape: [
+                  1, (latentsHeight / 2) * (latentsWidth / 2), 16 * 2 * 2,
+                ])
               let z1 = graph.variable(like: latents)
               z1.randn()
               let zt = Functional.add(
@@ -1125,11 +1135,17 @@ public struct LoRATrainer {
               batchCount = 0
             }
             i += 1
+            if i >= trainingSteps {
+              break
+            }
           }
           if stopped {
             break
           }
           batch = []
+          if i >= trainingSteps {
+            break
+          }
         }
       }
     }

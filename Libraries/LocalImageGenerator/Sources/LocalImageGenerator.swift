@@ -2530,13 +2530,13 @@ extension LocalImageGenerator {
         isConsistencyModel: ModelZoo.isConsistencyModelForModel($0))
     }
     let hiresFixStrength = configuration.hiresFixStrength
-    let isMemoryEfficient = DynamicGraph.memoryEfficient
+    let queueWatermark = DynamicGraph.queueWatermark
     if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
-      DynamicGraph.memoryEfficient = true
+      DynamicGraph.queueWatermark = 8
     }
     defer {
       if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
-        DynamicGraph.memoryEfficient = isMemoryEfficient
+        DynamicGraph.queueWatermark = queueWatermark
       }
     }
     let sampler = LocalImageGenerator.sampler(
@@ -3280,13 +3280,13 @@ extension LocalImageGenerator {
         hasImage: true, hasDepth: depth != nil, hasHints: hasHints, hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls,
         version: modelVersion)
-    let isMemoryEfficient = DynamicGraph.memoryEfficient
+    let queueWatermark = DynamicGraph.queueWatermark
     if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
-      DynamicGraph.memoryEfficient = true
+      DynamicGraph.queueWatermark = 8
     }
     defer {
       if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
-        DynamicGraph.memoryEfficient = isMemoryEfficient
+        DynamicGraph.queueWatermark = queueWatermark
       }
     }
     let textGuidanceScale = configuration.guidanceScale
@@ -4454,13 +4454,13 @@ extension LocalImageGenerator {
         hasImage: true, hasDepth: depth != nil, hasHints: hasHints, hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls,
         version: modelVersion)
-    let isMemoryEfficient = DynamicGraph.memoryEfficient
+    let queueWatermark = DynamicGraph.queueWatermark
     if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
-      DynamicGraph.memoryEfficient = true
+      DynamicGraph.queueWatermark = 8
     }
     defer {
       if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
-        DynamicGraph.memoryEfficient = isMemoryEfficient
+        DynamicGraph.queueWatermark = queueWatermark
       }
     }
     let batchSize = Int(configuration.batchSize)
@@ -5112,13 +5112,13 @@ extension LocalImageGenerator {
         hasImage: true, hasDepth: depth != nil, hasHints: hasHints, hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls,
         version: modelVersion)
-    let isMemoryEfficient = DynamicGraph.memoryEfficient
+    let queueWatermark = DynamicGraph.queueWatermark
     if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
-      DynamicGraph.memoryEfficient = true
+      DynamicGraph.queueWatermark = 8
     }
     defer {
       if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
-        DynamicGraph.memoryEfficient = isMemoryEfficient
+        DynamicGraph.queueWatermark = queueWatermark
       }
     }
     let batchSize = Int(configuration.batchSize)

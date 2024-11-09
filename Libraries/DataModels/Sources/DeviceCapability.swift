@@ -86,6 +86,19 @@ public struct DeviceCapability {
       return false
     #endif
   }()
+  public static let isM3OrLater: Bool = {
+    #if arch(i386) || arch(x86_64) || !canImport(Metal)
+      return false
+    #else
+      if #available(iOS 16, macOS 13, macCatalyst 16, *) {
+        if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple9) {
+          return true
+        }
+        return false
+      }
+      return false
+    #endif
+  }()
   public static let isMFAGEMMFaster: Bool = {
     #if arch(i386) || arch(x86_64) || !canImport(Metal)
       return false

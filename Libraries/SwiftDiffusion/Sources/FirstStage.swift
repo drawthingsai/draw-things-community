@@ -64,13 +64,13 @@ extension FirstStage {
     }
     let decoder: Model
     var transparentDecoder: Model? = nil
-    let isMemoryEfficient = DynamicGraph.memoryEfficient
+    let queueWatermark = DynamicGraph.queueWatermark
     if version == .kandinsky21 {
-      DynamicGraph.memoryEfficient = true
+      DynamicGraph.queueWatermark = 8
     }
     defer {
       if version == .kandinsky21 {
-        DynamicGraph.memoryEfficient = isMemoryEfficient
+        DynamicGraph.queueWatermark = queueWatermark
       }
     }
     let zoomFactor: Int
