@@ -933,7 +933,7 @@ public struct LoRATrainer {
       return
     }
     let queueWatermark = DynamicGraph.queueWatermark
-    DynamicGraph.queueWatermark = DeviceCapability.isM3OrLater ? 8 : 2
+    DynamicGraph.queueWatermark = 2
     defer {
       DynamicGraph.queueWatermark = queueWatermark
     }
