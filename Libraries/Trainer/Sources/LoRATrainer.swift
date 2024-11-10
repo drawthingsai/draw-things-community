@@ -920,6 +920,11 @@ public struct LoRATrainer {
     }
   }
 
+  public enum TrainingState {
+    case compile
+    case step(Int)
+  }
+
   private func trainFlux1(
     graph: DynamicGraph, firstStage: FirstStage<FloatType>, sessionStore: DynamicGraph.Store,
     resumingLoRAFile: (String, Int)?,
@@ -927,13 +932,14 @@ public struct LoRATrainer {
     rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: Float, trainableKeys: [String],
     shift: Float, noiseOffset: Float, guidanceEmbed: ClosedRange<Float>,
     denoisingTimesteps: ClosedRange<Int>, memorySaver: MemorySaver,
-    progressHandler: (Int, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>]) -> Bool
+    progressHandler: (TrainingState, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>])
+      -> Bool
   ) {
     guard unetLearningRate > 0 else {
       return
     }
     let queueWatermark = DynamicGraph.queueWatermark
-    DynamicGraph.queueWatermark = 2
+    DynamicGraph.queueWatermark = min(2, queueWatermark)
     defer {
       DynamicGraph.queueWatermark = queueWatermark
     }
@@ -980,6 +986,9 @@ public struct LoRATrainer {
       ).map {
         graph.constant(.GPU(0), format: .NHWC, shape: $0, of: FloatType.self)
       }
+    guard progressHandler(.compile, 0, nil, nil, dit, []) else {
+      return
+    }
     dit.compile(inputs: [latents] + cArr)
     graph.openStore(
       ModelZoo.filePathForModelDownloaded(model), flags: .readOnly,
@@ -1114,6 +1123,9 @@ public struct LoRATrainer {
             }
             let vtheta = dit(inputs: zt, [rotaryConstant, context] + condition1)[0].as(
               of: FloatType.self)
+            if i == 0 {
+              let _ = progressHandler(.step(0), 0, nil, nil, dit, [])
+            }
             let d = target - vtheta
             let loss = (d .* d).reduced(.mean, axis: [1, 2])
             scaler.scale(loss).backward(to: [zt])
@@ -1125,7 +1137,7 @@ public struct LoRATrainer {
             } else if (i + 1) == warmupSteps {
               optimizers[0].rate = unetLearningRate
             }
-            guard progressHandler(i + 1, Float(value), nil, nil, dit, []) else {
+            guard progressHandler(.step(i + 1), Float(value), nil, nil, dit, []) else {
               stopped = true
               break
             }
@@ -1160,7 +1172,8 @@ public struct LoRATrainer {
     stopEmbeddingTrainingAtStep: Int, shift: Float,
     noiseOffset: Float, guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
     memorySaver: MemorySaver,
-    progressHandler: (Int, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>]) -> Bool
+    progressHandler: (TrainingState, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>])
+      -> Bool
   ) {
     let graph = DynamicGraph()
     // To make sure we triggered a clean-up so there are just a little bit more RAM available.
@@ -1743,6 +1756,10 @@ public struct LoRATrainer {
       case .balanced, .turbo:  // For Balanced, we only do gradient checkpointing.
         unet.memoryReduction = false
       }
+      guard progressHandler(.compile, 0, cotrainTextModel ? textModel : nil, unetFixed, unet, [])
+      else {
+        return
+      }
       unet.compile(inputs: [latents, graph.variable(Tensor<FloatType>(from: ts)), c] + kvs)
       graph.openStore(
         ModelZoo.filePathForModelDownloaded(model), flags: .readOnly,
@@ -2310,6 +2327,10 @@ public struct LoRATrainer {
             condTokensTensorGPU = nil
           }
           let et = unet(inputs: noisyLatents, [t, c] + kvs)[0].as(of: FloatType.self)
+          if i == 0 {
+            let _ = progressHandler(
+              .step(0), 0, cotrainTextModel ? textModel : nil, unetFixed, unet, [])
+          }
           let d = et - noiseGPU
           let loss = snrWeight * (d .* d).reduced(.mean, axis: [1, 2, 3])
           if let condTokensTensorGPU = condTokensTensorGPU {
@@ -2388,7 +2409,7 @@ public struct LoRATrainer {
               cotrainCustomEmbeddingStopped = true
               if optimizers.isEmpty {
                 let _ = progressHandler(
-                  i + 1, Float(value), cotrainTextModel ? textModel : nil, unetFixed, unet,
+                  .step(i + 1), Float(value), cotrainTextModel ? textModel : nil, unetFixed, unet,
                   customEmbeddings
                 )
                 break
@@ -2398,7 +2419,8 @@ public struct LoRATrainer {
           i += 1
           guard
             progressHandler(
-              i, Float(value), cotrainTextModel ? textModel : nil, unetFixed, unet, customEmbeddings
+              .step(i), Float(value), cotrainTextModel ? textModel : nil, unetFixed, unet,
+              customEmbeddings
             )
           else {
             stopped = true
