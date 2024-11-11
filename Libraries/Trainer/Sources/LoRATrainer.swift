@@ -939,7 +939,9 @@ public struct LoRATrainer {
       return
     }
     let queueWatermark = DynamicGraph.queueWatermark
-    DynamicGraph.queueWatermark = min(2, queueWatermark)
+    if #unavailable(iOS 18.0, macOS 15.0) {  // It seems that for OS lower than 18 / 15, there are some MPSGraph synchronization issue that is solved under 18 / 15.
+      DynamicGraph.queueWatermark = min(2, queueWatermark)
+    }
     defer {
       DynamicGraph.queueWatermark = queueWatermark
     }

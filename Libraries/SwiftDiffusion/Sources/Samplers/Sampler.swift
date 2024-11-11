@@ -68,12 +68,23 @@ public struct SamplerOutput<FloatType: TensorNumeric & BinaryFloatingPoint, UNet
 
 public func isNaN<T: TensorNumeric & BinaryFloatingPoint>(_ x: Tensor<T>) -> Bool {
   let shape = x.shape
-  for b in 0..<shape[0] {
-    for i in 0..<shape[1] {
-      for j in 0..<shape[2] {
-        for k in 0..<shape[3] {
-          if x[b, i, j, k].isNaN {
-            return true
+  if shape.count == 2 {
+    for b in 0..<shape[0] {
+      for i in 0..<shape[1] {
+        if x[b, i].isNaN {
+          print("at \(b) \(i)")
+          return true
+        }
+      }
+    }
+  } else {
+    for b in 0..<shape[0] {
+      for i in 0..<shape[1] {
+        for j in 0..<shape[2] {
+          for k in 0..<shape[3] {
+            if x[b, i, j, k].isNaN {
+              return true
+            }
           }
         }
       }
