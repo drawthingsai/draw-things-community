@@ -1,3 +1,4 @@
+import Foundation
 import SentencePiece
 
 public struct SentencePieceTokenizer: Tokenizer {
@@ -7,9 +8,9 @@ public struct SentencePieceTokenizer: Tokenizer {
   private let sentencePiece: SentencePiece
   private let tokenShift: Int32
   private let internalEndToken: Int32?
-  public init(file: String, startToken: Int32?, endToken: Int32?, tokenShift: Int32) {
+  public init(data: Data, startToken: Int32?, endToken: Int32?, tokenShift: Int32) {
     vocabulary = [:]
-    sentencePiece = SentencePiece(file: file)
+    sentencePiece = SentencePiece(data: data)
     self.startToken = startToken
     self.internalEndToken = endToken
     self.tokenShift = tokenShift
