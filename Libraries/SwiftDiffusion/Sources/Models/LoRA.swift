@@ -47,12 +47,14 @@ public func LoRAConvolution(
       return conv2d
     }
   }
+  let downKey = index.map { "\(name)_lora_down-\($0)" } ?? "\(name)_lora_down"
+  let upKey = index.map { "\(name)_lora_up-\($0)" } ?? "\(name)_lora_up"
   let conv2dDown = Convolution(
     groups: groups, filters: configuration.rank, filterSize: filterSize, noBias: true, hint: hint,
-    format: format, trainable: true, name: name.isEmpty ? "lora_down" : "\(name)_lora_down")
+    format: format, trainable: true, name: name.isEmpty ? "lora_down" : downKey)
   let conv2dUp = Convolution(
     groups: groups, filters: filters, filterSize: [1, 1], noBias: true, hint: Hint(stride: [1, 1]),
-    format: format, trainable: true, name: name.isEmpty ? "lora_up" : "\(name)_lora_up")
+    format: format, trainable: true, name: name.isEmpty ? "lora_up" : upKey)
   var out = conv2d(x)
   if configuration.scale != 1 {
     out =
@@ -90,11 +92,13 @@ public func LoRADense(
       return dense
     }
   }
+  let downKey = index.map { "\(name)_lora_down-\($0)" } ?? "\(name)_lora_down"
+  let upKey = index.map { "\(name)_lora_up-\($0)" } ?? "\(name)_lora_up"
   let denseDown = Dense(
     count: configuration.rank, noBias: true, trainable: true,
-    name: name.isEmpty ? "lora_down" : "\(name)_lora_down")
+    name: name.isEmpty ? "lora_down" : downKey)
   let denseUp = Dense(
-    count: count, noBias: true, trainable: true, name: name.isEmpty ? "lora_up" : "\(name)_lora_up")
+    count: count, noBias: true, trainable: true, name: name.isEmpty ? "lora_up" : upKey)
   var out = dense(x)
   if configuration.scale != 1 {
     out =
