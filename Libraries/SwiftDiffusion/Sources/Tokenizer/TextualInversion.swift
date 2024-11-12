@@ -1,3 +1,5 @@
+import Foundation
+
 public struct TextualInversionAttentionCLIPTokenizer {
   // Will use an attention CLIP tokenizer underneath.
   private var multiLineAttention: MultiLineAttentionCLIPTokenizer
@@ -12,7 +14,7 @@ public struct TextualInversionAttentionCLIPTokenizer {
   }
   public var endToken: Int32 { multiLineAttention.endToken }
   public var unknownToken: Int32 { multiLineAttention.unknownToken }
-  public init(vocabulary: String, merges: String, textualInversions: [String]) {
+  public init(vocabulary: Data, merges: Data, textualInversions: [String]) {
     multiLineAttention = MultiLineAttentionCLIPTokenizer(vocabulary: vocabulary, merges: merges)
     self.textualInversions = textualInversions
     var textualInversionMapping = [String: Int]()

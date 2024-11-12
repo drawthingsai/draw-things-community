@@ -72,7 +72,6 @@ public func isNaN<T: TensorNumeric & BinaryFloatingPoint>(_ x: Tensor<T>) -> Boo
     for b in 0..<shape[0] {
       for i in 0..<shape[1] {
         if x[b, i].isNaN {
-          print("at \(b) \(i)")
           return true
         }
       }

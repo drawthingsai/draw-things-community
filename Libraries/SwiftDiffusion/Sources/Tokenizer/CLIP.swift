@@ -16,16 +16,15 @@ public struct CLIPTokenizer {
   public let endToken: Int32
   let tiToken: Int32
   let tokenMapping: [Int32: String]
-  public init(vocabulary: String, merges: String) {
-    let vocabJSONData = try! Data(contentsOf: URL(fileURLWithPath: vocabulary))
+  public init(vocabulary: Data, merges: Data) {
     let decoder = JSONDecoder()
-    self.vocabulary = try! decoder.decode([String: Int32].self, from: vocabJSONData)
+    self.vocabulary = try! decoder.decode([String: Int32].self, from: vocabulary)
     var tokenMapping = [Int32: String]()
     for (key, value) in self.vocabulary {
       tokenMapping[value] = key
     }
     self.tokenMapping = tokenMapping
-    let bpeMerges = (try! String(contentsOf: URL(fileURLWithPath: merges), encoding: .utf8))
+    let bpeMerges = (String(data: merges, encoding: .utf8) ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\n")[
         1..<(49152 - 256 - 2 + 1)]
     var bpeRanks = [Pair: Int]()

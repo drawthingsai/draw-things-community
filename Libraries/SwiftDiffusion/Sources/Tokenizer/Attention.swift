@@ -1,9 +1,11 @@
+import Foundation
+
 public struct AttentionCLIPTokenizer {
   // Will use a CLIP tokenizer underneath.
   private var CLIP: CLIPTokenizer
   public var endToken: Int32 { CLIP.endToken }
   public var unknownToken: Int32 { CLIP.unknownToken }
-  public init(vocabulary: String, merges: String) {
+  public init(vocabulary: Data, merges: Data) {
     CLIP = CLIPTokenizer(vocabulary: vocabulary, merges: merges)
   }
 }
