@@ -38,9 +38,9 @@ public func LoRAConvolution(
   if let keys = configuration.keys {
     let key: String
     if let index = index {
-      key = "\(name)-\(index)"
+      key = "\(name)-\(index)-"
     } else {
-      key = name
+      key = "\(name)-"
     }
     // If cannot find existing key that matches the prefix, return vanilla convolution.
     if !keys.contains(where: { $0.hasPrefix(key) }) {
@@ -83,9 +83,9 @@ public func LoRADense(
   if let keys = configuration.keys {
     let key: String
     if let index = index {
-      key = "\(name)-\(index)"
+      key = "\(name)-\(index)-"
     } else {
-      key = name
+      key = "\(name)-"
     }
     // If cannot find existing key that matches the prefix, return vanilla dense layer.
     if !keys.contains(where: { $0.hasPrefix(key) }) {
