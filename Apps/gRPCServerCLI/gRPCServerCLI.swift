@@ -1,5 +1,4 @@
 import ArgumentParser
-import C_DNSAdvertiser
 import BinaryResources
 import DataModels
 import Dflat
@@ -68,38 +67,16 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
 }
 
 #if os(Linux)
-func getLocalHostName() -> String? {
-  let maxLength = Int(HOST_NAME_MAX) + 1
-  var buffer = [CChar](repeating: 0, count: maxLength)
+  private func localhost() -> String? {
+    let maxLength = Int(HOST_NAME_MAX) + 1
+    var buffer = [CChar](repeating: 0, count: maxLength)
 
-  if gethostname(&buffer, maxLength) == 0 {
-    return String(cString: buffer)
-  } else {
-    return nil
+    if gethostname(&buffer, maxLength) == 0 {
+      return String(cString: buffer)
+    } else {
+      return nil
+    }
   }
-}
-
-// Publish the gRPC service socket with Bonjour protocol
-private func publishService(port: Int32) {
-  guard let cString = get_current_ip_address() else {
-    print("Could not determine IP address.")
-    return
-  }
-  let ipAddress = String(cString: cString)
-  print("Current IP Address: \(ipAddress)")
-
-  print("Publishing gRPC service on port \(port)")
-  if var hostName = getLocalHostName() {
-    hostName = hostName + ".local"
-    let broadcastHostname = GRPCHostnameUtils.customizeGRPCHostname(
-      hostname: hostName, ip: ipAddress)
-    print("Server Hostname: \(hostName)")
-    send_mdns_packet(broadcastHostname, ipAddress)
-    advertise(broadcastHostname, 3819)
-  } else {
-    print("Could not retrieve hostname. You may need to connect to server manually.")
-  }
-}
 #endif
 
 @main
@@ -111,24 +88,27 @@ struct gRPCServerCLI: ParsableCommand {
 
   @Option(name: .shortAndLong, help: "The name you exposes in the local network.")
   var name: String = {
-#if os(Linux)
-#else
-    if let handle = dlopen(
-      "/System/Library/Frameworks/SystemConfiguration.framework/SystemConfiguration", RTLD_LAZY)
-    {
-      defer {
-        dlclose(handle)
+    #if os(Linux)
+      if let localhost = localhost() {
+        return localhost
       }
-      if let sym = dlsym(handle, "SCDynamicStoreCopyComputerName") {
-        let SCDynamicStoreCopyComputerName = unsafeBitCast(
-          sym,
-          to: (@convention(c) (OpaquePointer?, UnsafeMutablePointer<Unmanaged<CFString>?>?) ->
-            Unmanaged<CFString>?).self)
-        let name = SCDynamicStoreCopyComputerName(nil, nil)?.takeRetainedValue() as String? ?? ""
-        return name
+    #else
+      if let handle = dlopen(
+        "/System/Library/Frameworks/SystemConfiguration.framework/SystemConfiguration", RTLD_LAZY)
+      {
+        defer {
+          dlclose(handle)
+        }
+        if let sym = dlsym(handle, "SCDynamicStoreCopyComputerName") {
+          let SCDynamicStoreCopyComputerName = unsafeBitCast(
+            sym,
+            to: (@convention(c) (OpaquePointer?, UnsafeMutablePointer<Unmanaged<CFString>?>?) ->
+              Unmanaged<CFString>?).self)
+          let name = SCDynamicStoreCopyComputerName(nil, nil)?.takeRetainedValue() as String? ?? ""
+          return name
+        }
       }
-    }
-#endif
+    #endif
     return "Unknown Computer"
   }()
 
@@ -188,12 +168,8 @@ struct gRPCServerCLI: ParsableCommand {
     } else {
       print("Server started, but port is unknown")
     }
-#if os(Linux)
-    publishService(port: Int32(port))
-#else
     let advertiser: GRPCServerAdvertiser = GRPCServerAdvertiser(name: name)
     advertiser.startAdvertising(port: Int32(port), TLS: TLS)
-#endif
     // Block the current thread until the server closes
     try server.onClose.wait()
   }

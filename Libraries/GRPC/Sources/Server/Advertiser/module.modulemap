@@ -1,4 +1,0 @@
-module C_DNSAdvertiser {
-    header "dnssd_advertiser.h"
-    export *
-}

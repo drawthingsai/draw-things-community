@@ -32,7 +32,7 @@ void encode_dns_name(char *buffer, const char *name) {
 }
 
 // Send mDNS packet
-void advertise(const char *host_name, uint16_t host_port) {
+void advertise(const char *service_name, const char *service_domain, const char *host_name, uint16_t host_port, uint32_t ttl_param) {
     int sockfd;
     struct sockaddr_in addr;
     char packet[512];
@@ -48,8 +48,8 @@ void advertise(const char *host_name, uint16_t host_port) {
     // Multicast address for mDNS
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("224.0.0.251");  // mDNS multicast address
-    addr.sin_port = htons(5353);
+    addr.sin_addr.s_addr = inet_addr(MDNS_MULTICAST_ADDR);  // mDNS multicast address
+    addr.sin_port = htons(MDNS_PORT);
 
     // DNS Header
     uint16_t transaction_id = 0;
@@ -67,19 +67,26 @@ void advertise(const char *host_name, uint16_t host_port) {
     memcpy(packet + pos, &additional, sizeof(additional)); pos += 2;
 
     // PTR Record (_grpc._tcp.local -> DrawThings._grpc._tcp.local)
-    encode_dns_name(packet + pos, "_dt-grpc._tcp.local"); pos += strlen(packet + pos) + 1;
+    encode_dns_name(packet + pos, service_domain); pos += strlen(packet + pos) + 1;
     uint16_t type_ptr = htons(12);  // PTR record
     uint16_t class_in = htons(0x8001);  // IN class + Cache flush
-    uint32_t ttl = htonl(120);  // Time to live (2 minutes)
-    uint16_t rdlength = htons(strlen("DrawThings._dt-grpc._tcp.local") + 2);
+    uint32_t ttl = htonl(ttl_param);  // Time to live (2 minutes)
+    size_t service_name_len = strlen(service_name);
+    size_t service_domain_len = strlen(service_domain);
+    uint16_t rdlength = htons(service_name_len + 1 + service_domain_len + 2);
     memcpy(packet + pos, &type_ptr, sizeof(type_ptr)); pos += 2;
     memcpy(packet + pos, &class_in, sizeof(class_in)); pos += 2;
     memcpy(packet + pos, &ttl, sizeof(ttl)); pos += 4;
     memcpy(packet + pos, &rdlength, sizeof(rdlength)); pos += 2;
-    encode_dns_name(packet + pos, "DrawThings._dt-grpc._tcp.local"); pos += strlen(packet + pos) + 1;
+	char dns_name[service_name_len + 1 + service_domain_len + 1];
+	memcpy(dns_name, service_name, service_name_len);
+	dns_name[service_name_len] = '.';
+	memcpy(dns_name + service_name_len + 1, service_domain, service_domain_len);
+	dns_name[service_name_len + 1 +  service_domain_len] = 0;
+    encode_dns_name(packet + pos, dns_name); pos += strlen(packet + pos) + 1;
 
     // SRV Record (DrawThings._dt-grpc._tcp.local -> Port 3819)
-    encode_dns_name(packet + pos, "DrawThings._dt-grpc._tcp.local"); pos += strlen(packet + pos) + 1;
+    encode_dns_name(packet + pos, dns_name); pos += strlen(packet + pos) + 1;
     uint16_t type_srv = htons(33);  // SRV record
     uint16_t srv_class_in = htons(0x8001);  // IN class + Cache flush
     uint16_t priority = htons(0);
@@ -97,7 +104,7 @@ void advertise(const char *host_name, uint16_t host_port) {
 
 
     // TXT Record (for service info)
-    encode_dns_name(packet + pos, "DrawThings._dt-grpc._tcp.local"); pos += strlen(packet + pos) + 1;
+    encode_dns_name(packet + pos, dns_name); pos += strlen(packet + pos) + 1;
     uint16_t type_txt = htons(16);  // TXT record
     uint16_t txt_class_in = htons(0x8001);  // IN class + Cache flush
     uint16_t txt_rdlength = htons(5);  // Length of the text (e.g., "txtvers=1")
