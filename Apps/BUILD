@@ -50,7 +50,6 @@ swift_binary(
     deps = [
         "//Libraries/BinaryResources",
         "//Libraries/DataModels",
-        "//Libraries/GRPC:C_DNSAdvertiser",
         "//Libraries/GRPC:GRPCModels",
         "//Libraries/GRPC:GRPCServer",
         "//Libraries/ImageGenerator",
