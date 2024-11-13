@@ -9,7 +9,6 @@ import GRPCModels
 import GRPCServer
 import ImageGenerator
 import LocalImageGenerator
-import Localization
 import Logging
 import ModelZoo
 import NIO
