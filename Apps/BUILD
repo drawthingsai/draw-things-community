@@ -55,7 +55,6 @@ swift_binary(
         "//Libraries/GRPC:GRPCServer",
         "//Libraries/ImageGenerator",
         "//Libraries/LocalImageGenerator",
-        "//Libraries/Localization",
         "//Libraries/SwiftDiffusion",
         "//Libraries/Utils",
         "@SwiftArgumentParser//:ArgumentParser",
