@@ -29,6 +29,7 @@ Libraries/Trainer
 Libraries/Upscaler
 Libraries/Utils
 Scripts/
+Tools/
 Vendors/ZIPFoundation
 WORKSPACE.linux
 WORKSPACE.darwin
