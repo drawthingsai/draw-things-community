@@ -6,6 +6,7 @@ Apps/EmbeddingConverter
 Apps/LoRAConverter
 Apps/ModelConverter
 Apps/ModelQuantizer
+Apps/gRPCServerCLI
 Libraries/DataModels
 Libraries/Exporter
 Libraries/FaceRestorer
@@ -15,6 +16,7 @@ Libraries/ImageSegmentation
 Libraries/LocalImageGenerator
 Libraries/RemoteImageGenerator
 Libraries/GRPC
+Libraries/BinaryResources
 Libraries/HTTPServer
 Libraries/HTTPAPIServer
 Libraries/Invocation
