@@ -42,3 +42,23 @@ swift_binary(
         "@s4nnc//nnc",
     ],
 )
+
+swift_binary(
+    name = "gRPCServerCLI",
+    srcs = glob(["gRPCServerCLI/gRPCServerCLI.swift"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//Libraries/BinaryResources",
+        "//Libraries/DataModels",
+        "//Libraries/GRPC:C_DNSAdvertiser",
+        "//Libraries/GRPC:GRPCModels",
+        "//Libraries/GRPC:GRPCServer",
+        "//Libraries/ImageGenerator",
+        "//Libraries/LocalImageGenerator",
+        "//Libraries/Localization",
+        "//Libraries/SwiftDiffusion",
+        "//Libraries/Utils",
+        "@SwiftArgumentParser//:ArgumentParser",
+        "@grpc-swift//:GRPC",
+    ],
+)
