@@ -172,5 +172,6 @@ struct gRPCServerCLI: ParsableCommand {
     advertiser.startAdvertising(port: Int32(port), TLS: TLS)
     // Block the current thread until the server closes
     try server.onClose.wait()
+    advertiser.stopAdvertising()
   }
 }
