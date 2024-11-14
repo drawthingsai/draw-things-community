@@ -4,6 +4,7 @@ import Foundation
 import ModelZoo
 import NNC
 import SFMT
+import TensorBoard
 
 public struct LoRATrainer {
 

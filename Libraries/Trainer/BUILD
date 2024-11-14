@@ -12,5 +12,6 @@ swift_library(
         "//Libraries/SwiftDiffusion",
         "@dflat//:SQLiteDflat",
         "@s4nnc//nnc",
+        "@s4nnc//tensorboard",
     ],
 )

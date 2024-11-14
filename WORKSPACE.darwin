@@ -102,9 +102,9 @@ dflat_deps()
 
 git_repository(
     name = "s4nnc",
-    commit = "67de13219ede3a53c1c27281f644edc8b40ab955",
+    commit = "3aa53baa72683ec68d109c729e762a37c17354eb",
     remote = "https://github.com/liuliu/s4nnc.git",
-    shallow_since = "1731362734 -0500",
+    shallow_since = "1731617730 -0500",
 )
 
 load("@s4nnc//:deps.bzl", "s4nnc_deps")
@@ -194,9 +194,9 @@ new_git_repository(
 new_git_repository(
     name = "SwiftSystem",
     build_file = "swift-system.BUILD",
-    commit = "dae787c1998f57b62ee9b1393bcb40684d206e44",
+    commit = "fbd61a676d79cbde05cd4fda3cc46e94d6b8f0eb",
     remote = "https://github.com/apple/swift-system.git",
-    shallow_since = "1710897818 -0700",
+    shallow_since = "1729316385 -0700",
 )
 
 new_git_repository(
@@ -204,6 +204,7 @@ new_git_repository(
     build_file = "swift-protobuf.BUILD",
     commit = "d57a5aecf24a25b32ec4a74be2f5d0a995a47c4b",
     remote = "https://github.com/apple/swift-protobuf.git",
+    shallow_since = "1720448759 -0400",
 )
 
 new_git_repository(
