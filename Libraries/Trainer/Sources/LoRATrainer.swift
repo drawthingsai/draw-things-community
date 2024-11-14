@@ -7,6 +7,11 @@ import SFMT
 
 public struct LoRATrainer {
 
+  public enum WeightsMemoryManagement: Int {
+    case cached = 0
+    case justInTime
+  }
+
   public enum MemorySaver: Int {
     case minimal = 0
     case balanced
@@ -860,6 +865,7 @@ public struct LoRATrainer {
 
   private func encodeFlux1Fixed(
     graph: DynamicGraph,
+    externalData: DynamicGraph.Store.Codec,
     batch: [(
       pooled: Tensor<FloatType>, timestep: Float, guidance: Float
     )]
@@ -912,7 +918,7 @@ public struct LoRATrainer {
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) {
-        $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+        $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
       }
       return unetFixed(
         inputs: timeEmbeds, [pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
@@ -932,6 +938,7 @@ public struct LoRATrainer {
     rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: Float, trainableKeys: [String],
     shift: Float, noiseOffset: Float, guidanceEmbed: ClosedRange<Float>,
     denoisingTimesteps: ClosedRange<Int>, memorySaver: MemorySaver,
+    weightsMemory: WeightsMemoryManagement,
     progressHandler: (TrainingState, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>])
       -> Bool
   ) {
@@ -992,11 +999,13 @@ public struct LoRATrainer {
       return
     }
     dit.compile(inputs: [latents] + cArr)
+    let externalData: DynamicGraph.Store.Codec =
+      weightsMemory == .justInTime ? .externalOnDemand : .externalData
     graph.openStore(
       ModelZoo.filePathForModelDownloaded(model), flags: .readOnly,
       externalStore: TensorData.externalStore(filePath: ModelZoo.filePathForModelDownloaded(model))
     ) { store in
-      store.read("dit", model: dit, codec: [.jit, .q5p, .q6p, .q8p, .ezm7, .fpzip, .externalData]) {
+      store.read("dit", model: dit, codec: [.jit, .q5p, .q6p, .q8p, .ezm7, .fpzip, externalData]) {
         name, dataType, format, shape in
         if resumeIfPossible && (name.contains("[i-") || name.contains("lora")) {
           if let resumingLoRAFile = resumingLoRAFile?.0, name.contains("lora") {
@@ -1087,7 +1096,7 @@ public struct LoRATrainer {
         batch.append((imagePath, pooled, Float(timestep), guidanceEmbed))
         if batch.count == 32 {
           let conditions = encodeFlux1Fixed(
-            graph: graph,
+            graph: graph, externalData: externalData,
             batch: batch.map {
               ($0.pooled, $0.timestep, $0.guidance)
             })
@@ -1173,7 +1182,7 @@ public struct LoRATrainer {
     customEmbeddingLength: Int, customEmbeddingLearningRate: Float,
     stopEmbeddingTrainingAtStep: Int, shift: Float,
     noiseOffset: Float, guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
-    memorySaver: MemorySaver,
+    memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
     progressHandler: (TrainingState, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>])
       -> Bool
   ) {
@@ -1225,7 +1234,7 @@ public struct LoRATrainer {
           rankOfLoRA: rankOfLoRA, scaleOfLoRA: scaleOfLoRA, unetLearningRate: unetLearningRate,
           trainableKeys: trainableKeys, shift: shift, noiseOffset: noiseOffset,
           guidanceEmbed: guidanceEmbed, denoisingTimesteps: denoisingTimesteps,
-          memorySaver: memorySaver,
+          memorySaver: memorySaver, weightsMemory: weightsMemory,
           progressHandler: progressHandler)
         return
       }
@@ -1524,6 +1533,8 @@ public struct LoRATrainer {
         .wurstchenStageB:
         fatalError()
       }
+      let externalData: DynamicGraph.Store.Codec =
+        weightsMemory == .justInTime ? .externalOnDemand : .externalData
       var textProjection: DynamicGraph.Tensor<FloatType>? = nil
       if cotrainTextModel || cotrainCustomEmbedding {
         if version == .sdxlBase || version == .sdxlRefiner || version == .ssd1b {
@@ -1551,10 +1562,12 @@ public struct LoRATrainer {
         ) {
           store in
           if let textProjection = textProjection {
-            store.read("text_projection", variable: textProjection)
+            store.read(
+              "text_projection", variable: textProjection, codec: [.q6p, .q8p, .ezm7, .fpzip])
           }
           store.read(
-            "text_model", model: textModel[0], codec: [.q6p, .q8p, .ezm7, .fpzip, .externalData]
+            "text_model", model: textModel[0],
+            codec: [.jit, .q6p, .q8p, .ezm7, .fpzip, externalData]
           ) {
             name, dataType, format, shape in
             if resumeIfPossible && (name.contains("[i-") || name.contains("lora")) {
@@ -1646,7 +1659,8 @@ public struct LoRATrainer {
           ) {
             store in
             store.read(
-              "text_model", model: textModel[1], codec: [.q6p, .q8p, .ezm7, .fpzip, .externalData]
+              "text_model", model: textModel[1],
+              codec: [.jit, .q6p, .q8p, .ezm7, .fpzip, externalData]
             ) {
               name, dataType, format, shape in
               if resumeIfPossible && (name.contains("[i-") || name.contains("lora")) {
@@ -1770,7 +1784,7 @@ public struct LoRATrainer {
       ) { store in
         if let unetFixed = unetFixed {
           store.read(
-            "unet_fixed", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .fpzip, .externalData]
+            "unet_fixed", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, .fpzip, externalData]
           ) {
             name, dataType, format, shape in
             if resumeIfPossible && (name.contains("[i-") || name.contains("lora")) {
@@ -1817,7 +1831,7 @@ public struct LoRATrainer {
             return .continue(name)
           }
         }
-        store.read("unet", model: unet, codec: [.jit, .q6p, .q8p, .ezm7, .fpzip, .externalData]) {
+        store.read("unet", model: unet, codec: [.jit, .q6p, .q8p, .ezm7, .fpzip, externalData]) {
           name, dataType, format, shape in
           if resumeIfPossible && (name.contains("[i-") || name.contains("lora")) {
             if let resumingLoRAFile = resumingLoRAFile?.0, name.contains("lora") {
