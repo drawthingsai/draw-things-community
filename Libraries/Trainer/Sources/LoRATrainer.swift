@@ -41,6 +41,7 @@ public struct LoRATrainer {
 
   public let version: ModelVersion
   private let model: String
+  private let paddedTextEncodingLength: Int
   private let scale: DeviceCapability.Scale
   private let cotrainTextModel: Bool
   private let cotrainCustomEmbedding: Bool
@@ -108,6 +109,7 @@ public struct LoRATrainer {
         }
       })()
     CLIPEncoder = ModelZoo.CLIPEncoderForModel(model)
+    paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(model)
     self.version = version
     self.session = session
     self.resumeIfPossible = resumeIfPossible
@@ -158,7 +160,7 @@ public struct LoRATrainer {
           let (_, CLIPTokens, _, _, _) = tokenizers[0].tokenize(
             text: input.caption, truncation: true, maxLength: 77)
           let (_, tokens, _, _, _) = tokenizers[1].tokenize(
-            text: input.caption, truncation: true, maxLength: 512)
+            text: input.caption, truncation: true, maxLength: paddedTextEncodingLength)
           // No embedding support.
           processedInputs.append(
             ProcessedInput(
@@ -185,7 +187,7 @@ public struct LoRATrainer {
             numLayers: 12, numHeads: 12, batchSize: 1,
             intermediateSize: 3072, usesFlashAttention: true, outputPenultimate: true
           ).0,
-          T5ForConditionalGeneration(b: 1, t: 512, of: FloatType.self).1,
+          T5ForConditionalGeneration(b: 1, t: paddedTextEncodingLength, of: FloatType.self).1,
         ]
         let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
         tokensTensor.full(0)
@@ -243,8 +245,9 @@ public struct LoRATrainer {
           }
         }
         let relativePositionBuckets = relativePositionBuckets(
-          sequenceLength: 512, numBuckets: 32, maxDistance: 128)
-        let tokens2Tensor = graph.variable(.CPU, format: .NHWC, shape: [512], of: Int32.self)
+          sequenceLength: paddedTextEncodingLength, numBuckets: 32, maxDistance: 128)
+        let tokens2Tensor = graph.variable(
+          .CPU, format: .NHWC, shape: [paddedTextEncodingLength], of: Int32.self)
         tokens2Tensor.full(0)
         let tokens2TensorGPU = tokens2Tensor.toGPU(0)
         let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
@@ -259,13 +262,13 @@ public struct LoRATrainer {
             codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
         }
         for (index, input) in processedInputs.enumerated() {
-          for i in 0..<512 {
+          for i in 0..<paddedTextEncodingLength {
             tokens2Tensor[i] = input.tokens[i]
           }
           let tokens2TensorGPU = tokens2Tensor.toGPU(0)
           let c = textModel[1](inputs: tokens2TensorGPU, relativePositionBucketsGPU)[0].as(
             of: FloatType.self
-          ).reshaped(.HWC(1, 512, 4096))
+          ).reshaped(.HWC(1, paddedTextEncodingLength, 4096))
           store.write("cond_te2_\(input.imagePath)", tensor: c.rawValue.toCPU())
           guard progressHandler(.conditionalEncoding, index + 1) else {
             stopped = true
@@ -972,7 +975,8 @@ public struct LoRATrainer {
     let latentsWidth = Int(scale.widthScale) * 8
     let latentsHeight = Int(scale.heightScale) * 8
     let dit = LoRAFlux1(
-      batchSize: 1, tokenLength: 512, height: latentsHeight, width: latentsWidth, channels: 3072,
+      batchSize: 1, tokenLength: paddedTextEncodingLength, height: latentsHeight,
+      width: latentsWidth, channels: 3072,
       layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: false,
       injectControls: false, injectIPAdapterLengths: [:], LoRAConfiguration: configuration,
       useConvolutionForPatchify: false
@@ -983,14 +987,17 @@ public struct LoRATrainer {
       .GPU(0), .HWC(1, (latentsHeight / 2) * (latentsWidth / 2), 16 * 2 * 2), of: FloatType.self)
     let rotary = Tensor<FloatType>(
       from: Flux1RotaryPositionEmbedding(
-        height: latentsHeight / 2, width: latentsWidth / 2, tokenLength: 512, channels: 128,
+        height: latentsHeight / 2, width: latentsWidth / 2, tokenLength: paddedTextEncodingLength,
+        channels: 128,
         heads: 24)
     ).toGPU(0)
     let rotaryConstant = graph.constant(rotary)
     let cArr =
-      [rotaryConstant] + [graph.constant(.GPU(0), .HWC(1, 512, 4096), of: FloatType.self)]
+      [rotaryConstant] + [
+        graph.constant(.GPU(0), .HWC(1, paddedTextEncodingLength, 4096), of: FloatType.self)
+      ]
       + Flux1FixedOutputShapes(
-        batchSize: (1, 1), tokenLength: 512, channels: 3072, layers: (19, 38),
+        batchSize: (1, 1), tokenLength: paddedTextEncodingLength, channels: 3072, layers: (19, 38),
         contextPreloaded: false
       ).map {
         graph.constant(.GPU(0), format: .NHWC, shape: $0, of: FloatType.self)
