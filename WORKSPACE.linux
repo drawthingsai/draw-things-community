@@ -391,8 +391,8 @@ load("@rules_oci//oci:pull.bzl", "oci_pull")
 
 oci_pull(
     name = "cuda_swift_base",
-    digest = "sha256:8da324bcf206a0b516da244b661f35b1f3ce8adc86f62838c9a2f632afe4ffa3",
-    image = "docker.io/weiyan117/12.6.2-cudnn-runtime-ubuntu22.04-swift5.10", 
+    digest = "sha256:ff77a7f1952b613b2482eb09875ac91752d1a542d7d7dbf8f9a921ccc7f3e50a",
+    image = "docker.io/drawthingsai/12.6.2-cudnn-runtime-ubuntu22.04-swift5.10", 
 )
 
 http_archive(
