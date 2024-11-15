@@ -386,6 +386,8 @@ public enum LoRAImporter {
       let unetFixed: Model
       let unetMapper: ModelWeightMapper
       let unetFixedMapper: ModelWeightMapper
+      var qkNorm = false
+      var dualAttentionLayers = [Int]()
       switch modelVersion {
       case .sdxlBase:
         UNetMapping = StableDiffusionMapping.UNetXLBase
@@ -420,12 +422,35 @@ public enum LoRAImporter {
           middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
           usesFlashAttention: .none, isTemporalMixEnabled: false)
       case .sd3:
+        qkNorm = keys.contains {
+          ($0.contains(".ln_k.") || $0.contains(".ln_q.") || $0.contains(".norm_k.")
+            || $0.contains(".norm_q."))
+            || ($0.contains("_ln_k_") || $0.contains("_ln_q_") || $0.contains("_norm_k_")
+              || $0.contains("_norm_q_"))
+        }
+        dualAttentionLayers = (0..<38).filter { i in
+          if let key = keys.first(where: {
+            ($0.contains("_\(i)_x_block_adaLN_modulation_1")
+              || $0.contains(".\(i).x_block.adaLN_modulation_1")
+              || $0.contains("_\(i)_norm1_linear") || $0.contains(".\(i).norm1.linear"))
+              && $0.contains("lora_up")
+          }),
+            let value = stateDict[key]
+          {
+            return value.shape[0] == 1536 * 9
+          }
+          return keys.contains {
+            ($0.contains(".\(i).x_block.attn2.") || $0.contains("_blocks.\(i).attn2."))
+              || ($0.contains("_\(i)_x_block_attn2_") || $0.contains("_blocks_\(i)_attn2_"))
+          }
+        }
         (unetMapper, unet) = MMDiT(
           batchSize: 2, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
-          upcast: false, qkNorm: false, dualAttentionLayers: [], posEmbedMaxSize: 192,
+          upcast: false, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+          posEmbedMaxSize: 192 /* This value doesn't matter */,
           usesFlashAttention: .none, of: FloatType.self)
         (unetFixedMapper, unetFixed) = MMDiTFixed(
-          batchSize: 2, channels: 1536, layers: 24, dualAttentionLayers: [])
+          batchSize: 2, channels: 1536, layers: 24, dualAttentionLayers: dualAttentionLayers)
       case .sd3Large:
         (unetMapper, unet) = MMDiT(
           batchSize: 2, t: 77, height: 64, width: 64, channels: 2432, layers: 38,
@@ -579,9 +604,10 @@ public enum LoRAImporter {
             graph.variable(.CPU, .WC(isCfgEnabled ? 2 : 1, 1280), of: FloatType.self))
         }
         let fixedEncoder = UNetFixedEncoder<FloatType>(
-          filePath: "", version: modelVersion, dualAttentionLayers: [], usesFlashAttention: false,
-          zeroNegativePrompt: false,
-          isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false)
+          filePath: "", version: modelVersion, dualAttentionLayers: dualAttentionLayers,
+          usesFlashAttention: false,
+          zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
+          externalOnDemand: false)
         for c in cArr {
           c.full(0)
         }
