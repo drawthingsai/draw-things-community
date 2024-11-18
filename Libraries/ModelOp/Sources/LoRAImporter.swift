@@ -6,6 +6,321 @@ import NNC
 import ZIPFoundation
 
 public enum LoRAImporter {
+  public static func modelWeightsMapping(
+    by version: ModelVersion, qkNorm: Bool, dualAttentionLayers: [Int]
+  ) -> (ModelWeightMapping, ModelWeightMapping) {
+    let graph = DynamicGraph()
+    var UNetMapping = ModelWeightMapping()
+    var UNetMappingFixed = ModelWeightMapping()
+    guard version != .v1 && version != .v2 else {
+      // Legacy compatibility.
+      UNetMapping = StableDiffusionMapping.UNet
+      let UNetMappingKeys = UNetMapping.keys
+      for key in UNetMappingKeys {
+        var diffusersKey = key
+        let value = UNetMapping[key]
+        for name in DiffusersMapping.UNetPartials {
+          if key.contains(name.0) {
+            diffusersKey = key.replacingOccurrences(of: name.0, with: name.1)
+            break
+          }
+        }
+        if diffusersKey.contains(".resnets.") {
+          for name in DiffusersMapping.ResNetsPartials {
+            if diffusersKey.contains(name.0) {
+              diffusersKey = diffusersKey.replacingOccurrences(of: name.0, with: name.1)
+              break
+            }
+          }
+        }
+        let parts = key.components(separatedBy: ".")
+        UNetMapping[
+          parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+          value
+        if diffusersKey != key {
+          let diffusersParts = diffusersKey.components(separatedBy: ".")
+          UNetMapping[
+            diffusersParts[2..<(diffusersParts.count - 1)].joined(separator: "_") + "."
+              + diffusersParts[diffusersParts.count - 1]] = value
+        }
+      }
+      return (UNetMappingFixed, UNetMapping)
+    }
+    let unet: Model
+    let unetFixed: Model
+    let unetMapper: ModelWeightMapper
+    let unetFixedMapper: ModelWeightMapper
+    switch version {
+    case .sdxlBase:
+      UNetMapping = StableDiffusionMapping.UNetXLBase
+      UNetMappingFixed = StableDiffusionMapping.UNetXLBaseFixed
+      (unet, _, unetMapper) = UNetXL(
+        batchSize: 2, startHeight: 64, startWidth: 64,
+        channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
+        middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
+        embeddingLength: (77, 77), injectIPAdapterLengths: [],
+        upcastAttention: ([:], false, [:]), usesFlashAttention: .none, injectControls: false,
+        isTemporalMixEnabled: false, of: FloatType.self)
+      (unetFixed, _, unetFixedMapper) = UNetXLFixed(
+        batchSize: 2, startHeight: 64, startWidth: 64, channels: [320, 640, 1280],
+        embeddingLength: (77, 77), inputAttentionRes: [2: [2, 2], 4: [10, 10]],
+        middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
+        usesFlashAttention: .none, isTemporalMixEnabled: false)
+    case .sdxlRefiner:
+      UNetMapping = StableDiffusionMapping.UNetXLRefiner
+      UNetMappingFixed = StableDiffusionMapping.UNetXLRefinerFixed
+      (unet, _, unetMapper) =
+        UNetXL(
+          batchSize: 2, startHeight: 64, startWidth: 64,
+          channels: [384, 768, 1536, 1536], inputAttentionRes: [2: [4, 4], 4: [4, 4]],
+          middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
+          embeddingLength: (77, 77), injectIPAdapterLengths: [],
+          upcastAttention: ([:], false, [:]), usesFlashAttention: .none, injectControls: false,
+          isTemporalMixEnabled: false, of: FloatType.self
+        )
+      (unetFixed, _, unetFixedMapper) = UNetXLFixed(
+        batchSize: 2, startHeight: 64, startWidth: 64, channels: [384, 768, 1536, 1536],
+        embeddingLength: (77, 77), inputAttentionRes: [2: [4, 4], 4: [4, 4]],
+        middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
+        usesFlashAttention: .none, isTemporalMixEnabled: false)
+    case .sd3:
+      (unetMapper, unet) = MMDiT(
+        batchSize: 2, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
+        upcast: false, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+        posEmbedMaxSize: 192 /* This value doesn't matter */,
+        usesFlashAttention: .none, of: FloatType.self)
+      (unetFixedMapper, unetFixed) = MMDiTFixed(
+        batchSize: 2, channels: 1536, layers: 24, dualAttentionLayers: dualAttentionLayers)
+    case .sd3Large:
+      (unetMapper, unet) = MMDiT(
+        batchSize: 2, t: 77, height: 64, width: 64, channels: 2432, layers: 38,
+        upcast: true, qkNorm: true, dualAttentionLayers: [], posEmbedMaxSize: 192,
+        usesFlashAttention: .none, of: FloatType.self)
+      (unetFixedMapper, unetFixed) = MMDiTFixed(
+        batchSize: 2, channels: 2432, layers: 38, dualAttentionLayers: [])
+    case .pixart:
+      (unetMapper, unet) = PixArt(
+        batchSize: 2, height: 64, width: 64, channels: 1152, layers: 28,
+        tokenLength: (77, 77), usesFlashAttention: false, of: FloatType.self)
+      (unetFixedMapper, unetFixed) = PixArtFixed(
+        batchSize: 2, channels: 1152, layers: 28, tokenLength: (77, 77),
+        usesFlashAttention: false, of: FloatType.self)
+    case .flux1:
+      (unetMapper, unet) = Flux1(
+        batchSize: 1, tokenLength: 256, height: 64, width: 64, channels: 3072, layers: (19, 38),
+        usesFlashAttention: .scaleMerged, contextPreloaded: true, injectControls: false,
+        injectIPAdapterLengths: [:])
+      (unetFixedMapper, unetFixed) = Flux1Fixed(
+        batchSize: (1, 1), channels: 3072, layers: (19, 38), contextPreloaded: true,
+        guidanceEmbed: true)
+    case .auraflow:
+      fatalError()
+    case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      fatalError()
+    case .ssd1b:
+      (unet, _, unetMapper) = UNetXL(
+        batchSize: 2, startHeight: 64, startWidth: 64,
+        channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [4, 4]],
+        middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
+        embeddingLength: (77, 77), injectIPAdapterLengths: [],
+        upcastAttention: ([:], false, [:]), usesFlashAttention: .none, injectControls: false,
+        isTemporalMixEnabled: false, of: FloatType.self)
+      (unetFixed, _, unetFixedMapper) = UNetXLFixed(
+        batchSize: 2, startHeight: 64, startWidth: 64, channels: [320, 640, 1280],
+        embeddingLength: (77, 77), inputAttentionRes: [2: [2, 2], 4: [4, 4]],
+        middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
+        usesFlashAttention: .none, isTemporalMixEnabled: false)
+    }
+    return graph.withNoGrad {
+      let inputDim: Int
+      let conditionalLength: Int
+      switch version {
+      case .v1:
+        inputDim = 4
+        conditionalLength = 768
+      case .v2:
+        inputDim = 4
+        conditionalLength = 1024
+      case .sdxlBase, .sdxlRefiner, .ssd1b:
+        inputDim = 4
+        conditionalLength = 1280
+      case .sd3, .sd3Large:
+        inputDim = 16
+        conditionalLength = 4096
+      case .pixart:
+        inputDim = 4
+        conditionalLength = 4096
+      case .auraflow:
+        inputDim = 4
+        conditionalLength = 2048
+      case .flux1:
+        inputDim = 16
+        conditionalLength = 4096
+      case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        fatalError()
+      }
+      let crossattn: [DynamicGraph.Tensor<FloatType>]
+      let tEmb: DynamicGraph.Tensor<FloatType>?
+      let isCfgEnabled: Bool
+      let isGuidanceEmbedEnabled: Bool
+      switch version {
+      case .sdxlBase, .ssd1b:
+        isCfgEnabled = true
+        isGuidanceEmbedEnabled = false
+        crossattn = [graph.variable(.CPU, .HWC(2, 77, 2048), of: FloatType.self)]
+        tEmb = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: 981, batchSize: 2, embeddingSize: 320,
+              maxPeriod: 10_000)
+          ))
+      case .sdxlRefiner:
+        isCfgEnabled = true
+        isGuidanceEmbedEnabled = false
+        crossattn = [graph.variable(.CPU, .HWC(2, 77, 1280), of: FloatType.self)]
+        tEmb = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: 981, batchSize: 2, embeddingSize: 384,
+              maxPeriod: 10_000)
+          ))
+      case .pixart:
+        isCfgEnabled = true
+        isGuidanceEmbedEnabled = false
+        crossattn = [
+          graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: 1000, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+            ).reshaped(.HWC(1, 1, 256))
+          ), graph.variable(.CPU, .HWC(2, 77, 4096), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .sd3, .sd3Large:
+        isCfgEnabled = true
+        isGuidanceEmbedEnabled = false
+        crossattn = [
+          graph.variable(.CPU, .WC(2, 2048), of: FloatType.self),
+          graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: 1000, batchSize: 2, embeddingSize: 256, maxPeriod: 10_000)
+            ).reshaped(.WC(2, 256))
+          ), graph.variable(.CPU, .HWC(2, 154, 4096), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .flux1:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = true
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 256, 4096), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 768), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .auraflow:
+        fatalError()
+      case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        fatalError()
+      }
+      unetFixed.compile(inputs: crossattn)
+      let xTensor = graph.variable(
+        .CPU, .NHWC(isCfgEnabled ? 2 : 1, 64, 64, inputDim), of: FloatType.self)
+      var cArr: [DynamicGraph.Tensor<FloatType>]
+      if version == .flux1 {  // This logic should be switch and for auraflow too.
+        cArr = [
+          graph.variable(.CPU, .HWC(1, 256, 4096), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 768), of: FloatType.self),
+        ]
+      } else {
+        let cTensor = graph.variable(
+          .CPU, .HWC(isCfgEnabled ? 2 : 1, 77, conditionalLength), of: FloatType.self)
+        cArr = [cTensor]
+        cArr.insert(
+          graph.variable(.CPU, .HWC(isCfgEnabled ? 2 : 1, 77, 768), of: FloatType.self),
+          at: 0)
+        cArr.append(
+          graph.variable(.CPU, .WC(isCfgEnabled ? 2 : 1, 1280), of: FloatType.self))
+      }
+      let fixedEncoder = UNetFixedEncoder<FloatType>(
+        filePath: "", version: version, dualAttentionLayers: dualAttentionLayers,
+        usesFlashAttention: false,
+        zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
+        externalOnDemand: false)
+      for c in cArr {
+        c.full(0)
+      }
+      // These values doesn't matter, it won't affect the model shape, just the input vector.
+      let vectors: [DynamicGraph.Tensor<FloatType>]
+      switch version {
+      case .sdxlBase, .ssd1b:
+        vectors = [graph.variable(.CPU, .WC(2, 2816), of: FloatType.self)]
+      case .sdxlRefiner:
+        vectors = [graph.variable(.CPU, .WC(2, 2560), of: FloatType.self)]
+      case .svdI2v:
+        vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
+      case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1:
+        vectors = []
+      case .kandinsky21, .v1, .v2:
+        fatalError()
+      }
+      switch version {
+      case .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .wurstchenStageC, .wurstchenStageB, .pixart,
+        .sd3, .sd3Large, .auraflow:
+        // These values doesn't matter, it won't affect the model shape, just the input vector.
+        cArr =
+          vectors
+          + fixedEncoder.encode(
+            isCfgEnabled: isCfgEnabled, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
+            isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+            textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0],
+            batchSize: isCfgEnabled ? 2 : 1, startHeight: 64,
+            startWidth: 64,
+            tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
+            tiledDiffusion: TiledConfiguration(
+              isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0)
+          ).0.map({ $0.toCPU() })
+      case .flux1:
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: Flux1RotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 256, channels: 128)))
+          ]
+          + Flux1FixedOutputShapes(
+            batchSize: (1, 1), tokenLength: 256, channels: 3072, layers: (19, 38),
+            contextPreloaded: true
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
+      case .kandinsky21, .v1, .v2:
+        fatalError()
+      }
+      let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
+      unet.compile(inputs: inputs)
+      // Otherwise we use our fixed dictionary.
+      if version != .sdxlBase && version != .sdxlRefiner {
+        UNetMappingFixed = unetFixedMapper(.generativeModels)
+        UNetMapping = unetMapper(.generativeModels)
+        for (key, value) in UNetMappingFixed {
+          guard !key.hasPrefix("diffusion_model.") else { continue }
+          UNetMappingFixed["diffusion_model.\(key)"] = value
+        }
+        for (key, value) in UNetMapping {
+          guard !key.hasPrefix("diffusion_model.") else { continue }
+          UNetMapping["diffusion_model.\(key)"] = value
+        }
+      }
+      let diffusersUNetMappingFixed = unetFixedMapper(.diffusers)
+      let diffusersUNetMapping = unetMapper(.diffusers)
+      UNetMappingFixed.merge(diffusersUNetMappingFixed) { v, _ in v }
+      UNetMapping.merge(diffusersUNetMapping) { v, _ in v }
+      return (UNetMappingFixed, UNetMapping)
+    }
+  }
+
   private static func isDiagonal(_ tensor: Tensor<FloatType>, count: Int) -> Bool {
     // Check if this tensor is diagonal. If it is, marking it and prepare to slice the corresponding lora_down.weight.
     // First, check if the shape is right.
@@ -82,36 +397,6 @@ public enum LoRAImporter {
       }
     } else {
       throw UnpickleError.dataNotFound
-    }
-    // Prepare UNet mapping.
-    var UNetMapping = StableDiffusionMapping.UNet
-    let UNetMappingKeys = UNetMapping.keys
-    for key in UNetMappingKeys {
-      var diffusersKey = key
-      let value = UNetMapping[key]
-      for name in DiffusersMapping.UNetPartials {
-        if key.contains(name.0) {
-          diffusersKey = key.replacingOccurrences(of: name.0, with: name.1)
-          break
-        }
-      }
-      if diffusersKey.contains(".resnets.") {
-        for name in DiffusersMapping.ResNetsPartials {
-          if diffusersKey.contains(name.0) {
-            diffusersKey = diffusersKey.replacingOccurrences(of: name.0, with: name.1)
-            break
-          }
-        }
-      }
-      let parts = key.components(separatedBy: ".")
-      UNetMapping[
-        parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] = value
-      if diffusersKey != key {
-        let diffusersParts = diffusersKey.components(separatedBy: ".")
-        UNetMapping[
-          diffusersParts[2..<(diffusersParts.count - 1)].joined(separator: "_") + "."
-            + diffusersParts[diffusersParts.count - 1]] = value
-      }
     }
     let keys = stateDict.keys
     // Fix for one LoRA formulation (commonly found in LyCORIS)
@@ -377,343 +662,65 @@ public enum LoRAImporter {
           value
       }
     }
-    var UNetMappingFixed = ModelWeightMapping()
-    if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b
-      || modelVersion == .sd3 || modelVersion == .sd3Large || modelVersion == .pixart
-      || modelVersion == .flux1
-    {
-      let unet: Model
-      let unetFixed: Model
-      let unetMapper: ModelWeightMapper
-      let unetFixedMapper: ModelWeightMapper
-      var qkNorm = false
-      var dualAttentionLayers = [Int]()
-      switch modelVersion {
-      case .sdxlBase:
-        UNetMapping = StableDiffusionMapping.UNetXLBase
-        UNetMappingFixed = StableDiffusionMapping.UNetXLBaseFixed
-        (unet, _, unetMapper) = UNetXL(
-          batchSize: 2, startHeight: 64, startWidth: 64,
-          channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
-          middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
-          embeddingLength: (77, 77), injectIPAdapterLengths: [],
-          upcastAttention: ([:], false, [:]), usesFlashAttention: .none, injectControls: false,
-          isTemporalMixEnabled: false, of: FloatType.self)
-        (unetFixed, _, unetFixedMapper) = UNetXLFixed(
-          batchSize: 2, startHeight: 64, startWidth: 64, channels: [320, 640, 1280],
-          embeddingLength: (77, 77), inputAttentionRes: [2: [2, 2], 4: [10, 10]],
-          middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
-          usesFlashAttention: .none, isTemporalMixEnabled: false)
-      case .sdxlRefiner:
-        UNetMapping = StableDiffusionMapping.UNetXLRefiner
-        UNetMappingFixed = StableDiffusionMapping.UNetXLRefinerFixed
-        (unet, _, unetMapper) =
-          UNetXL(
-            batchSize: 2, startHeight: 64, startWidth: 64,
-            channels: [384, 768, 1536, 1536], inputAttentionRes: [2: [4, 4], 4: [4, 4]],
-            middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
-            embeddingLength: (77, 77), injectIPAdapterLengths: [],
-            upcastAttention: ([:], false, [:]), usesFlashAttention: .none, injectControls: false,
-            isTemporalMixEnabled: false, of: FloatType.self
-          )
-        (unetFixed, _, unetFixedMapper) = UNetXLFixed(
-          batchSize: 2, startHeight: 64, startWidth: 64, channels: [384, 768, 1536, 1536],
-          embeddingLength: (77, 77), inputAttentionRes: [2: [4, 4], 4: [4, 4]],
-          middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
-          usesFlashAttention: .none, isTemporalMixEnabled: false)
-      case .sd3:
-        qkNorm = keys.contains {
-          ($0.contains(".ln_k.") || $0.contains(".ln_q.") || $0.contains(".norm_k.")
-            || $0.contains(".norm_q."))
-            || ($0.contains("_ln_k_") || $0.contains("_ln_q_") || $0.contains("_norm_k_")
-              || $0.contains("_norm_q_"))
-        }
-        dualAttentionLayers = (0..<38).filter { i in
-          if let key = keys.first(where: {
-            ($0.contains("_\(i)_x_block_adaLN_modulation_1")
-              || $0.contains(".\(i).x_block.adaLN_modulation_1")
-              || $0.contains("_\(i)_norm1_linear") || $0.contains(".\(i).norm1.linear"))
-              && $0.contains("lora_up")
-          }),
-            let value = stateDict[key]
-          {
-            return value.shape[0] == 1536 * 9
-          }
-          return keys.contains {
-            ($0.contains(".\(i).x_block.attn2.") || $0.contains("_blocks.\(i).attn2."))
-              || ($0.contains("_\(i)_x_block_attn2_") || $0.contains("_blocks_\(i)_attn2_"))
-          }
-        }
-        (unetMapper, unet) = MMDiT(
-          batchSize: 2, t: 77, height: 64, width: 64, channels: 1536, layers: 24,
-          upcast: false, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
-          posEmbedMaxSize: 192 /* This value doesn't matter */,
-          usesFlashAttention: .none, of: FloatType.self)
-        (unetFixedMapper, unetFixed) = MMDiTFixed(
-          batchSize: 2, channels: 1536, layers: 24, dualAttentionLayers: dualAttentionLayers)
-      case .sd3Large:
-        (unetMapper, unet) = MMDiT(
-          batchSize: 2, t: 77, height: 64, width: 64, channels: 2432, layers: 38,
-          upcast: true, qkNorm: true, dualAttentionLayers: [], posEmbedMaxSize: 192,
-          usesFlashAttention: .none, of: FloatType.self)
-        (unetFixedMapper, unetFixed) = MMDiTFixed(
-          batchSize: 2, channels: 2432, layers: 38, dualAttentionLayers: [])
-      case .pixart:
-        (unetMapper, unet) = PixArt(
-          batchSize: 2, height: 64, width: 64, channels: 1152, layers: 28,
-          tokenLength: (77, 77), usesFlashAttention: false, of: FloatType.self)
-        (unetFixedMapper, unetFixed) = PixArtFixed(
-          batchSize: 2, channels: 1152, layers: 28, tokenLength: (77, 77),
-          usesFlashAttention: false, of: FloatType.self)
-      case .flux1:
-        (unetMapper, unet) = Flux1(
-          batchSize: 1, tokenLength: 256, height: 64, width: 64, channels: 3072, layers: (19, 38),
-          usesFlashAttention: .scaleMerged, contextPreloaded: true, injectControls: false,
-          injectIPAdapterLengths: [:])
-        (unetFixedMapper, unetFixed) = Flux1Fixed(
-          batchSize: (1, 1), channels: 3072, layers: (19, 38), contextPreloaded: true,
-          guidanceEmbed: true)
-      case .auraflow:
-        fatalError()
-      case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
-        fatalError()
-      case .ssd1b:
-        (unet, _, unetMapper) = UNetXL(
-          batchSize: 2, startHeight: 64, startWidth: 64,
-          channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [4, 4]],
-          middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
-          embeddingLength: (77, 77), injectIPAdapterLengths: [],
-          upcastAttention: ([:], false, [:]), usesFlashAttention: .none, injectControls: false,
-          isTemporalMixEnabled: false, of: FloatType.self)
-        (unetFixed, _, unetFixedMapper) = UNetXLFixed(
-          batchSize: 2, startHeight: 64, startWidth: 64, channels: [320, 640, 1280],
-          embeddingLength: (77, 77), inputAttentionRes: [2: [2, 2], 4: [4, 4]],
-          middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
-          usesFlashAttention: .none, isTemporalMixEnabled: false)
+    let qkNorm = keys.contains {
+      ($0.contains(".ln_k.") || $0.contains(".ln_q.") || $0.contains(".norm_k.")
+        || $0.contains(".norm_q."))
+        || ($0.contains("_ln_k_") || $0.contains("_ln_q_") || $0.contains("_norm_k_")
+          || $0.contains("_norm_q_"))
+    }
+    let dualAttentionLayers = (0..<38).filter { i in
+      if let key = keys.first(where: {
+        ($0.contains("_\(i)_x_block_adaLN_modulation_1")
+          || $0.contains(".\(i).x_block.adaLN_modulation_1")
+          || $0.contains("_\(i)_norm1_linear") || $0.contains(".\(i).norm1.linear"))
+          && $0.contains("lora_up")
+      }),
+        let value = stateDict[key]
+      {
+        return value.shape[0] == 1536 * 9
       }
-      graph.withNoGrad {
-        let inputDim: Int
-        let conditionalLength: Int
-        switch modelVersion {
-        case .v1:
-          inputDim = 4
-          conditionalLength = 768
-        case .v2:
-          inputDim = 4
-          conditionalLength = 1024
-        case .sdxlBase, .sdxlRefiner, .ssd1b:
-          inputDim = 4
-          conditionalLength = 1280
-        case .sd3, .sd3Large:
-          inputDim = 16
-          conditionalLength = 4096
-        case .pixart:
-          inputDim = 4
-          conditionalLength = 4096
-        case .auraflow:
-          inputDim = 4
-          conditionalLength = 2048
-        case .flux1:
-          inputDim = 16
-          conditionalLength = 4096
-        case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
-          fatalError()
-        }
-        let crossattn: [DynamicGraph.Tensor<FloatType>]
-        let tEmb: DynamicGraph.Tensor<FloatType>?
-        let isCfgEnabled: Bool
-        let isGuidanceEmbedEnabled: Bool
-        switch modelVersion {
-        case .sdxlBase, .ssd1b:
-          isCfgEnabled = true
-          isGuidanceEmbedEnabled = false
-          crossattn = [graph.variable(.CPU, .HWC(2, 77, 2048), of: FloatType.self)]
-          tEmb = graph.variable(
-            Tensor<FloatType>(
-              from: timeEmbedding(
-                timestep: 981, batchSize: 2, embeddingSize: 320,
-                maxPeriod: 10_000)
-            ))
-        case .sdxlRefiner:
-          isCfgEnabled = true
-          isGuidanceEmbedEnabled = false
-          crossattn = [graph.variable(.CPU, .HWC(2, 77, 1280), of: FloatType.self)]
-          tEmb = graph.variable(
-            Tensor<FloatType>(
-              from: timeEmbedding(
-                timestep: 981, batchSize: 2, embeddingSize: 384,
-                maxPeriod: 10_000)
-            ))
-        case .pixart:
-          isCfgEnabled = true
-          isGuidanceEmbedEnabled = false
-          crossattn = [
-            graph.variable(
-              Tensor<FloatType>(
-                from: timeEmbedding(
-                  timestep: 1000, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
-              ).reshaped(.HWC(1, 1, 256))
-            ), graph.variable(.CPU, .HWC(2, 77, 4096), of: FloatType.self),
-          ]
-          tEmb = nil
-        case .sd3, .sd3Large:
-          isCfgEnabled = true
-          isGuidanceEmbedEnabled = false
-          crossattn = [
-            graph.variable(.CPU, .WC(2, 2048), of: FloatType.self),
-            graph.variable(
-              Tensor<FloatType>(
-                from: timeEmbedding(
-                  timestep: 1000, batchSize: 2, embeddingSize: 256, maxPeriod: 10_000)
-              ).reshaped(.WC(2, 256))
-            ), graph.variable(.CPU, .HWC(2, 154, 4096), of: FloatType.self),
-          ]
-          tEmb = nil
-        case .flux1:
-          isCfgEnabled = false
-          isGuidanceEmbedEnabled = true
-          crossattn = [
-            graph.variable(.CPU, .HWC(1, 256, 4096), of: FloatType.self),
-            graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
-            graph.variable(.CPU, .WC(1, 768), of: FloatType.self),
-            graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
-          ]
-          tEmb = nil
-        case .auraflow:
-          fatalError()
-        case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
-          fatalError()
-        }
-        unetFixed.compile(inputs: crossattn)
-        let xTensor = graph.variable(
-          .CPU, .NHWC(isCfgEnabled ? 2 : 1, 64, 64, inputDim), of: FloatType.self)
-        var cArr: [DynamicGraph.Tensor<FloatType>]
-        if modelVersion == .flux1 {  // This logic should be switch and for auraflow too.
-          cArr = [
-            graph.variable(.CPU, .HWC(1, 256, 4096), of: FloatType.self),
-            graph.variable(.CPU, .WC(1, 768), of: FloatType.self),
-          ]
-        } else {
-          let cTensor = graph.variable(
-            .CPU, .HWC(isCfgEnabled ? 2 : 1, 77, conditionalLength), of: FloatType.self)
-          cArr = [cTensor]
-          cArr.insert(
-            graph.variable(.CPU, .HWC(isCfgEnabled ? 2 : 1, 77, 768), of: FloatType.self),
-            at: 0)
-          cArr.append(
-            graph.variable(.CPU, .WC(isCfgEnabled ? 2 : 1, 1280), of: FloatType.self))
-        }
-        let fixedEncoder = UNetFixedEncoder<FloatType>(
-          filePath: "", version: modelVersion, dualAttentionLayers: dualAttentionLayers,
-          usesFlashAttention: false,
-          zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
-          externalOnDemand: false)
-        for c in cArr {
-          c.full(0)
-        }
-        // These values doesn't matter, it won't affect the model shape, just the input vector.
-        let vectors: [DynamicGraph.Tensor<FloatType>]
-        switch modelVersion {
-        case .sdxlBase, .ssd1b:
-          vectors = [graph.variable(.CPU, .WC(2, 2816), of: FloatType.self)]
-        case .sdxlRefiner:
-          vectors = [graph.variable(.CPU, .WC(2, 2560), of: FloatType.self)]
-        case .svdI2v:
-          vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
-        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1:
-          vectors = []
-        case .kandinsky21, .v1, .v2:
-          fatalError()
-        }
-        switch modelVersion {
-        case .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .wurstchenStageC, .wurstchenStageB, .pixart,
-          .sd3, .sd3Large, .auraflow:
-          // These values doesn't matter, it won't affect the model shape, just the input vector.
-          cArr =
-            vectors
-            + fixedEncoder.encode(
-              isCfgEnabled: isCfgEnabled, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
-              isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
-              textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0],
-              batchSize: isCfgEnabled ? 2 : 1, startHeight: 64,
-              startWidth: 64,
-              tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
-              tiledDiffusion: TiledConfiguration(
-                isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0)
-            ).0.map({ $0.toCPU() })
-        case .flux1:
-          cArr =
-            [
-              graph.variable(
-                Tensor<FloatType>(
-                  from: Flux1RotaryPositionEmbedding(
-                    height: 32, width: 32, tokenLength: 256, channels: 128)))
-            ]
-            + Flux1FixedOutputShapes(
-              batchSize: (1, 1), tokenLength: 256, channels: 3072, layers: (19, 38),
-              contextPreloaded: true
-            ).map {
-              graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
-            }
-        case .kandinsky21, .v1, .v2:
-          fatalError()
-        }
-        let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
-        unet.compile(inputs: inputs)
-        if modelVersion == .ssd1b || modelVersion == .sd3 || modelVersion == .sd3Large
-          || modelVersion == .pixart || modelVersion == .flux1
-        {
-          UNetMappingFixed = unetFixedMapper(.generativeModels)
-          UNetMapping = unetMapper(.generativeModels)
-          for (key, value) in UNetMappingFixed {
-            guard !key.hasPrefix("diffusion_model.") else { continue }
-            UNetMappingFixed["diffusion_model.\(key)"] = value
-          }
-          for (key, value) in UNetMapping {
-            guard !key.hasPrefix("diffusion_model.") else { continue }
-            UNetMapping["diffusion_model.\(key)"] = value
-          }
-        }
-        let diffusersUNetMappingFixed = unetFixedMapper(.diffusers)
-        let diffusersUNetMapping = unetMapper(.diffusers)
-        UNetMappingFixed.merge(diffusersUNetMappingFixed) { v, _ in v }
-        UNetMapping.merge(diffusersUNetMapping) { v, _ in v }
+      return keys.contains {
+        ($0.contains(".\(i).x_block.attn2.") || $0.contains("_blocks.\(i).attn2."))
+          || ($0.contains("_\(i)_x_block_attn2_") || $0.contains("_blocks_\(i)_attn2_"))
       }
-      let UNetMappingKeys = UNetMapping.keys
-      for key in UNetMappingKeys {
-        let value = UNetMapping[key]
-        let parts = key.components(separatedBy: ".")
-        if parts[0] == "model" {
-          UNetMapping[
-            parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-            value
-        } else if parts[0] == "diffusion_model" {
-          UNetMapping[
-            parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-            value
-        } else {
-          UNetMapping[
-            parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-            value
-        }
+    }
+    // Prepare UNet mapping.
+    var (UNetMappingFixed, UNetMapping) = modelWeightsMapping(
+      by: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers)
+    let UNetMappingKeys = UNetMapping.keys
+    for key in UNetMappingKeys {
+      let value = UNetMapping[key]
+      let parts = key.components(separatedBy: ".")
+      if parts[0] == "model" {
+        UNetMapping[
+          parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+          value
+      } else if parts[0] == "diffusion_model" {
+        UNetMapping[
+          parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+          value
+      } else {
+        UNetMapping[
+          parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+          value
       }
-      let UNetMappingFixedKeys = UNetMappingFixed.keys
-      for key in UNetMappingFixedKeys {
-        let value = UNetMappingFixed[key]
-        let parts = key.components(separatedBy: ".")
-        if parts[0] == "model" {
-          UNetMappingFixed[
-            parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-            value
-        } else if parts[0] == "diffusion_model" {
-          UNetMappingFixed[
-            parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-            value
-        } else {
-          UNetMappingFixed[
-            parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-            value
-        }
+    }
+    let UNetMappingFixedKeys = UNetMappingFixed.keys
+    for key in UNetMappingFixedKeys {
+      let value = UNetMappingFixed[key]
+      let parts = key.components(separatedBy: ".")
+      if parts[0] == "model" {
+        UNetMappingFixed[
+          parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+          value
+      } else if parts[0] == "diffusion_model" {
+        UNetMappingFixed[
+          parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+          value
+      } else {
+        UNetMappingFixed[
+          parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+          value
       }
     }
     var didImportTIEmbedding = false
