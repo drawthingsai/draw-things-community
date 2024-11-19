@@ -102,7 +102,7 @@ extension ModelWeightElement {
             }
           }
         case .I:
-          if isDiagonalUp {
+          if isDiagonalDown {
             let jCount = shape[1] / self.count
             for (i, name) in self.enumerated() {
               store.write(
@@ -121,62 +121,91 @@ extension ModelWeightElement {
         }
       }
     case .I:
-      if self.count > 1 && (self.format == .I || isDiagonalUp) {
+      if self.count > 1 {
         let shape = tensor.shape
-        if self.format == .I {
-          if let offsets = offsets {
-            for (i, name) in self.enumerated() {
-              if shape.count > 1 {
+        switch self.format {
+        case .I:
+          if isDiagonalDown {
+            let iCount = shape[0] / self.count
+            if let offsets = offsets {
+              for (i, name) in self.enumerated() {
                 store.write(
                   renamer(name),
                   tensor: tensor[
-                    0..<shape[0],
+                    (i * iCount)..<((i + 1) * iCount),
                     offsets[i]..<(i < offsets.count - 1 ? offsets[i + 1] : shape[1])
                   ].copied())
-              } else {
+              }
+            } else {
+              let count = shape[1] / self.count
+              for (i, name) in self.enumerated() {
                 store.write(
                   renamer(name),
-                  tensor: tensor[
-                    offsets[i]..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0])
-                  ].copied())
+                  tensor: tensor[(i * iCount)..<((i + 1) * iCount), (i * count)..<((i + 1) * count)]
+                    .copied())
               }
             }
           } else {
-            let count = shape.count > 1 ? shape[1] / self.count : shape[0] / self.count
-            for (i, name) in self.enumerated() {
-              if shape.count > 1 {
+            if let offsets = offsets {
+              for (i, name) in self.enumerated() {
+                if shape.count > 1 {
+                  store.write(
+                    renamer(name),
+                    tensor: tensor[
+                      0..<shape[0],
+                      offsets[i]..<(i < offsets.count - 1 ? offsets[i + 1] : shape[1])
+                    ].copied())
+                } else {
+                  store.write(
+                    renamer(name),
+                    tensor: tensor[
+                      offsets[i]..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0])
+                    ].copied())
+                }
+              }
+            } else {
+              let count = shape.count > 1 ? shape[1] / self.count : shape[0] / self.count
+              for (i, name) in self.enumerated() {
+                if shape.count > 1 {
+                  store.write(
+                    renamer(name),
+                    tensor: tensor[0..<shape[0], (i * count)..<((i + 1) * count)].copied())
+                } else {
+                  store.write(
+                    renamer(name),
+                    tensor: tensor[(i * count)..<((i + 1) * count)].copied())
+                }
+              }
+            }
+          }
+        case .O:
+          if isDiagonalUp {
+            let count = shape[0] / self.count
+            if shape.count == 2 {
+              for (i, name) in self.enumerated() {
                 store.write(
                   renamer(name),
-                  tensor: tensor[0..<shape[0], (i * count)..<((i + 1) * count)].copied())
-              } else {
+                  tensor: tensor[(i * count)..<((i + 1) * count), 0..<shape[1]].copied())
+              }
+            } else if shape.count == 4 {
+              for (i, name) in self.enumerated() {
+                store.write(
+                  renamer(name),
+                  tensor: tensor[
+                    (i * count)..<((i + 1) * count), 0..<shape[1], 0..<shape[2],
+                    0..<shape[3]
+                  ].copied())
+              }
+            } else {
+              for (i, name) in self.enumerated() {
                 store.write(
                   renamer(name),
                   tensor: tensor[(i * count)..<((i + 1) * count)].copied())
               }
             }
-          }
-        } else {
-          let count = shape[0] / self.count
-          if shape.count == 2 {
-            for (i, name) in self.enumerated() {
-              store.write(
-                renamer(name),
-                tensor: tensor[(i * count)..<((i + 1) * count), 0..<shape[1]].copied())
-            }
-          } else if shape.count == 4 {
-            for (i, name) in self.enumerated() {
-              store.write(
-                renamer(name),
-                tensor: tensor[
-                  (i * count)..<((i + 1) * count), 0..<shape[1], 0..<shape[2],
-                  0..<shape[3]
-                ].copied())
-            }
           } else {
-            for (i, name) in self.enumerated() {
-              store.write(
-                renamer(name),
-                tensor: tensor[(i * count)..<((i + 1) * count)].copied())
+            for name in self {
+              store.write(renamer(name), tensor: tensor)
             }
           }
         }

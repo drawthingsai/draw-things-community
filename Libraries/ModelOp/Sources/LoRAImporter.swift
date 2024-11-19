@@ -325,6 +325,7 @@ public enum LoRAImporter {
   {
     // Check if this tensor is diagonal. If it is, marking it and prepare to slice the corresponding lora_down.weight.
     // First, check if the shape is right.
+    guard weights.format == .O else { return false }
     let shape = tensor.shape
     var isDiagonal = false
     if shape.count == 2 && (shape[1] % weights.count) == 0 {
@@ -342,6 +343,52 @@ public enum LoRAImporter {
           let offDiagTensor = tensor[
             startOffset..<endOffset,
             (j * inputShape1)..<((j + 1) * inputShape1)
+          ].copied()
+          isDiagonal = offDiagTensor.withUnsafeBytes {
+            guard let ptr = $0.baseAddress else { return false }
+            let val = ptr.assumingMemoryBound(to: UInt8.self)
+            for k in 0..<$0.count {
+              if val[k] != 0 {
+                return false
+              }
+            }
+            return true
+          }
+          if !isDiagonal {
+            break
+          }
+        }
+        if !isDiagonal {
+          break
+        }
+      }
+    }
+    return isDiagonal
+  }
+
+  private static func isDiagonalDown(_ tensor: Tensor<FloatType>, weights: ModelWeightElement)
+    -> Bool
+  {
+    // Check if this tensor is diagonal. If it is, marking it and prepare to slice the corresponding lora_down.weight.
+    // First, check if the shape is right.
+    guard weights.format == .I else { return false }
+    let shape = tensor.shape
+    var isDiagonal = false
+    if shape.count == 2 && (shape[1] % weights.count) == 0 {
+      let inputShape0 = shape[0] / weights.count
+      let estimatedInputShape1 = shape[1] / weights.count
+      isDiagonal = true
+      for i in 0..<weights.count {
+        for j in 0..<weights.count {
+          // Now, only diag should have any value.
+          guard i != j else { continue }
+          let startOffset = weights.offsets?[j] ?? j * estimatedInputShape1
+          let endOffset =
+            j < weights.count - 1
+            ? (weights.offsets?[j + 1] ?? (j + 1) * estimatedInputShape1) : shape[1]
+          let offDiagTensor = tensor[
+            (i * inputShape0)..<((i + 1) * inputShape0),
+            startOffset..<endOffset
           ].copied()
           isDiagonal = offDiagTensor.withUnsafeBytes {
             guard let ptr = $0.baseAddress else { return false }
@@ -844,6 +891,7 @@ public enum LoRAImporter {
       try store.withTransaction {
         let total = stateDict.count
         var diagonalUpMatrixKeys = Set<String>()
+        var diagonalDownsForRedefine = [(String, String, ModelWeightElement)]()
         for (i, (key, descriptor)) in stateDict.enumerated() {
           let parts = key.components(separatedBy: "_")
           guard parts.count > 2 else { continue }
@@ -1093,6 +1141,14 @@ public enum LoRAImporter {
             if key.hasSuffix("down.weight") {
               try archive.with(descriptor) {
                 var tensor = Tensor<FloatType>(from: $0)
+                let isDiagonalDown = Self.isDiagonalDown(tensor, weights: unetParams)
+                if isDiagonalDown {
+                  diagonalDownsForRedefine.append(
+                    (
+                      String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -16))), modelPrefix,
+                      unetParams
+                    ))
+                }
                 if scaleFactor != 1 {
                   tensor = Tensor<FloatType>(
                     from: (Float(scaleFactor.squareRoot())
@@ -1102,7 +1158,7 @@ public enum LoRAImporter {
                 unetParams.write(
                   to: store, tensor: tensor, format: .I,
                   isDiagonalUp: diagonalUpMatrixKeys.contains(newKey),
-                  isDiagonalDown: false
+                  isDiagonalDown: isDiagonalDown
                 ) {
                   return "__\(modelPrefix)__[\($0)]__down__"
                 }
@@ -1157,6 +1213,14 @@ public enum LoRAImporter {
             if key.hasSuffix("down.weight") {
               try archive.with(descriptor) {
                 var tensor = Tensor<FloatType>(from: $0)
+                let isDiagonalDown = Self.isDiagonalDown(tensor, weights: unetParams)
+                if isDiagonalDown {
+                  diagonalDownsForRedefine.append(
+                    (
+                      String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -16))),
+                      modelPrefixFixed, unetParams
+                    ))
+                }
                 if scaleFactor != 1 {
                   tensor = Tensor<FloatType>(
                     from: (Float(scaleFactor.squareRoot())
@@ -1166,7 +1230,7 @@ public enum LoRAImporter {
                 unetParams.write(
                   to: store, tensor: tensor, format: .I,
                   isDiagonalUp: diagonalUpMatrixKeys.contains(newKey),
-                  isDiagonalDown: false
+                  isDiagonalDown: isDiagonalDown
                 ) {
                   return "__\(modelPrefixFixed)__[\($0)]__down__"
                 }
@@ -1256,6 +1320,41 @@ public enum LoRAImporter {
             }
           }
           progress(Float(i + total + 1) / Float(total * 2))
+        }
+        for diagonalDownForRedefine in diagonalDownsForRedefine {
+          guard let descriptor = stateDict[diagonalDownForRedefine.0 + "lora_up.weight"] else {
+            continue
+          }
+          let scalar = try stateDict[
+            diagonalDownForRedefine.0 + "alpha"
+          ].map {
+            return try archive.with($0) {
+              return Tensor<Float32>(from: $0)[0]
+            }
+          }
+          try archive.with(descriptor) {
+            var tensor = Tensor<FloatType>(from: $0)
+            let loraDim = Float(tensor.shape[1])
+            let unetParams = diagonalDownForRedefine.2
+            if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
+              tensor = Tensor<FloatType>(
+                from: (Float(Double(scalar / loraDim) * scaleFactor.squareRoot())
+                  * graph.variable(Tensor<Float>(from: tensor)))
+                  .rawValue)
+            } else if scaleFactor != 1 {
+              tensor = Tensor<FloatType>(
+                from: (Float(scaleFactor.squareRoot())
+                  * graph.variable(Tensor<Float>(from: tensor)))
+                  .rawValue)
+            }
+            let prefix = diagonalDownForRedefine.1
+            unetParams.write(
+              to: store, tensor: tensor, format: .O, isDiagonalUp: false,
+              isDiagonalDown: true
+            ) {
+              "__\(prefix)__[\($0)]__up__"
+            }
+          }
         }
       }
     }
