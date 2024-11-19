@@ -918,7 +918,9 @@ public enum LoRAImporter {
               }
               isLoHa = true
             }
-          } else if let (_, unetParams) = Self.findKeysAndValues(UNetMappingFixed, keys: newKeys) {
+          } else if let (newKey, unetParams) = Self.findKeysAndValues(
+            UNetMappingFixed, keys: newKeys)
+          {
             if key.hasSuffix("up.weight") {
               let scalar = try stateDict[
                 String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -14))) + "alpha"
@@ -930,6 +932,8 @@ public enum LoRAImporter {
               try archive.with(descriptor) {
                 var tensor = Tensor<FloatType>(from: $0)
                 let loraDim = Float(tensor.shape[1])
+                let isDiagonal =
+                  unetParams.count > 1 ? Self.isDiagonal(tensor, count: unetParams.count) : false
                 if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
                   tensor = Tensor<FloatType>(
                     from: (Float(Double(scalar / loraDim) * scaleFactor.squareRoot())
@@ -941,7 +945,10 @@ public enum LoRAImporter {
                       * graph.variable(Tensor<Float>(from: tensor)))
                       .rawValue)
                 }
-                unetParams.write(to: store, tensor: tensor, format: .O, isDiagonal: false) {
+                if isDiagonal {
+                  diagonalMatrixKeys.insert(newKey)
+                }
+                unetParams.write(to: store, tensor: tensor, format: .O, isDiagonal: isDiagonal) {
                   "__\(modelPrefixFixed)__[\($0)]__up__"
                 }
               }
