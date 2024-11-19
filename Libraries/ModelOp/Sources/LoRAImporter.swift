@@ -321,7 +321,8 @@ public enum LoRAImporter {
     }
   }
 
-  private static func isDiagonal(_ tensor: Tensor<FloatType>, weights: ModelWeightElement) -> Bool {
+  private static func isDiagonalUp(_ tensor: Tensor<FloatType>, weights: ModelWeightElement) -> Bool
+  {
     // Check if this tensor is diagonal. If it is, marking it and prepare to slice the corresponding lora_down.weight.
     // First, check if the shape is right.
     let shape = tensor.shape
@@ -869,7 +870,7 @@ public enum LoRAImporter {
                 var tensor = Tensor<FloatType>(from: $0)
                 let loraDim = Float(tensor.shape[1])
                 let isDiagonalUp =
-                  unetParams.count > 1 ? Self.isDiagonal(tensor, weights: unetParams) : false
+                  unetParams.count > 1 ? Self.isDiagonalUp(tensor, weights: unetParams) : false
                 if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
                   tensor = Tensor<FloatType>(
                     from: (Float(Double(scalar / loraDim) * scaleFactor.squareRoot())
@@ -939,7 +940,7 @@ public enum LoRAImporter {
                 var tensor = Tensor<FloatType>(from: $0)
                 let loraDim = Float(tensor.shape[1])
                 let isDiagonalUp =
-                  unetParams.count > 1 ? Self.isDiagonal(tensor, weights: unetParams) : false
+                  unetParams.count > 1 ? Self.isDiagonalUp(tensor, weights: unetParams) : false
                 if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
                   tensor = Tensor<FloatType>(
                     from: (Float(Double(scalar / loraDim) * scaleFactor.squareRoot())
