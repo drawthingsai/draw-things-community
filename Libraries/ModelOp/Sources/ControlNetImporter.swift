@@ -117,7 +117,10 @@ public final class ControlNetImporter {
               return Tensor<FloatType>(from: f32.scaled(by: 1.0 / 8).rawValue)
             }()
             if value.count > 1 {
-              value.write(to: store, tensor: tensor, format: value.format, isDiagonal: false) {
+              value.write(
+                to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
+                isDiagonalDown: false
+              ) {
                 return "__controlnet__[\($0)]"
               }
             } else if let name = value.first {
@@ -133,7 +136,10 @@ public final class ControlNetImporter {
           try archive.with(tensorDescriptor) { tensor in
             let tensor = Tensor<FloatType>(from: tensor)
             if value.count > 1 {
-              value.write(to: store, tensor: tensor, format: value.format, isDiagonal: false) {
+              value.write(
+                to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
+                isDiagonalDown: false
+              ) {
                 return "__controlnet__[\($0)]"
               }
             } else if let name = value.first {

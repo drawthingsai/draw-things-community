@@ -321,25 +321,26 @@ public enum LoRAImporter {
     }
   }
 
-  private static func isDiagonal(_ tensor: Tensor<FloatType>, count: Int) -> Bool {
+  private static func isDiagonal(_ tensor: Tensor<FloatType>, weights: ModelWeightElement) -> Bool {
     // Check if this tensor is diagonal. If it is, marking it and prepare to slice the corresponding lora_down.weight.
     // First, check if the shape is right.
     let shape = tensor.shape
     var isDiagonal = false
-    if shape.count == 2 && (shape[0] % count) == 0
-      && (shape[1] % count) == 0
-    {
-      let subShape: TensorShape = [
-        shape[0] / count, shape[1] / count,
-      ]
+    if shape.count == 2 && (shape[1] % weights.count) == 0 {
+      let estimatedInputShape0 = shape[0] / weights.count
+      let inputShape1 = shape[1] / weights.count
       isDiagonal = true
-      for i in 0..<count {
-        for j in 0..<count {
+      for i in 0..<weights.count {
+        let startOffset = weights.offsets?[i] ?? i * estimatedInputShape0
+        let endOffset =
+          i < weights.count - 1
+          ? (weights.offsets?[i + 1] ?? (i + 1) * estimatedInputShape0) : shape[0]
+        for j in 0..<weights.count {
           // Now, only diag should have any value.
           guard i != j else { continue }
           let offDiagTensor = tensor[
-            (i * subShape[0])..<((i + 1) * subShape[0]),
-            (j * subShape[1])..<((j + 1) * subShape[1])
+            startOffset..<endOffset,
+            (j * inputShape1)..<((j + 1) * inputShape1)
           ].copied()
           isDiagonal = offDiagTensor.withUnsafeBytes {
             guard let ptr = $0.baseAddress else { return false }
@@ -841,7 +842,7 @@ public enum LoRAImporter {
       }
       try store.withTransaction {
         let total = stateDict.count
-        var diagonalMatrixKeys = Set<String>()
+        var diagonalUpMatrixKeys = Set<String>()
         for (i, (key, descriptor)) in stateDict.enumerated() {
           let parts = key.components(separatedBy: "_")
           guard parts.count > 2 else { continue }
@@ -867,8 +868,8 @@ public enum LoRAImporter {
               try archive.with(descriptor) {
                 var tensor = Tensor<FloatType>(from: $0)
                 let loraDim = Float(tensor.shape[1])
-                let isDiagonal =
-                  unetParams.count > 1 ? Self.isDiagonal(tensor, count: unetParams.count) : false
+                let isDiagonalUp =
+                  unetParams.count > 1 ? Self.isDiagonal(tensor, weights: unetParams) : false
                 if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
                   tensor = Tensor<FloatType>(
                     from: (Float(Double(scalar / loraDim) * scaleFactor.squareRoot())
@@ -880,10 +881,13 @@ public enum LoRAImporter {
                       * graph.variable(Tensor<Float>(from: tensor)))
                       .rawValue)
                 }
-                if isDiagonal {
-                  diagonalMatrixKeys.insert(newKey)
+                if isDiagonalUp {
+                  diagonalUpMatrixKeys.insert(newKey)
                 }
-                unetParams.write(to: store, tensor: tensor, format: .O, isDiagonal: isDiagonal) {
+                unetParams.write(
+                  to: store, tensor: tensor, format: .O, isDiagonalUp: isDiagonalUp,
+                  isDiagonalDown: false
+                ) {
                   "__\(modelPrefix)__[\($0)]__up__"
                 }
               }
@@ -912,7 +916,9 @@ public enum LoRAImporter {
                       * graph.variable(Tensor<Float>(from: tensor)))
                       .rawValue)
                 }
-                unetParams.write(to: store, tensor: tensor, format: .O, isDiagonal: false) {
+                unetParams.write(
+                  to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
+                ) {
                   "__\(modelPrefix)__[\($0)]__\(wSuffix)__"
                 }
               }
@@ -932,8 +938,8 @@ public enum LoRAImporter {
               try archive.with(descriptor) {
                 var tensor = Tensor<FloatType>(from: $0)
                 let loraDim = Float(tensor.shape[1])
-                let isDiagonal =
-                  unetParams.count > 1 ? Self.isDiagonal(tensor, count: unetParams.count) : false
+                let isDiagonalUp =
+                  unetParams.count > 1 ? Self.isDiagonal(tensor, weights: unetParams) : false
                 if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
                   tensor = Tensor<FloatType>(
                     from: (Float(Double(scalar / loraDim) * scaleFactor.squareRoot())
@@ -945,10 +951,13 @@ public enum LoRAImporter {
                       * graph.variable(Tensor<Float>(from: tensor)))
                       .rawValue)
                 }
-                if isDiagonal {
-                  diagonalMatrixKeys.insert(newKey)
+                if isDiagonalUp {
+                  diagonalUpMatrixKeys.insert(newKey)
                 }
-                unetParams.write(to: store, tensor: tensor, format: .O, isDiagonal: isDiagonal) {
+                unetParams.write(
+                  to: store, tensor: tensor, format: .O, isDiagonalUp: isDiagonalUp,
+                  isDiagonalDown: false
+                ) {
                   "__\(modelPrefixFixed)__[\($0)]__up__"
                 }
               }
@@ -977,7 +986,9 @@ public enum LoRAImporter {
                       * graph.variable(Tensor<Float>(from: tensor)))
                       .rawValue)
                 }
-                unetParams.write(to: store, tensor: tensor, format: .O, isDiagonal: false) {
+                unetParams.write(
+                  to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
+                ) {
                   "__\(modelPrefixFixed)__[\($0)]__\(wSuffix)__"
                 }
               }
@@ -1089,7 +1100,8 @@ public enum LoRAImporter {
                 }
                 unetParams.write(
                   to: store, tensor: tensor, format: .I,
-                  isDiagonal: diagonalMatrixKeys.contains(newKey)
+                  isDiagonalUp: diagonalUpMatrixKeys.contains(newKey),
+                  isDiagonalDown: false
                 ) {
                   return "__\(modelPrefix)__[\($0)]__down__"
                 }
@@ -1152,7 +1164,8 @@ public enum LoRAImporter {
                 }
                 unetParams.write(
                   to: store, tensor: tensor, format: .I,
-                  isDiagonal: diagonalMatrixKeys.contains(newKey)
+                  isDiagonalUp: diagonalUpMatrixKeys.contains(newKey),
+                  isDiagonalDown: false
                 ) {
                   return "__\(modelPrefixFixed)__[\($0)]__down__"
                 }

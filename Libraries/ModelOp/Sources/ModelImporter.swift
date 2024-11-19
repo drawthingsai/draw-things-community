@@ -976,7 +976,10 @@ public final class ModelImporter {
               try archive.with(tensorDescriptor) { tensor in
                 if value.count > 1 {
                   let tensor = Tensor<FloatType>(from: tensor)
-                  value.write(to: store, tensor: tensor, format: value.format, isDiagonal: false) {
+                  value.write(
+                    to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
+                    isDiagonalDown: false
+                  ) {
                     let _ = interrupt()
                     return "__\(modelPrefix)__[\($0)]"
                   }
@@ -1002,7 +1005,10 @@ public final class ModelImporter {
               try archive.with(tensorDescriptor) { tensor in
                 let tensor = Tensor<FloatType>(from: tensor)
                 if value.count > 1 {
-                  value.write(to: store, tensor: tensor, format: value.format, isDiagonal: false) {
+                  value.write(
+                    to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
+                    isDiagonalDown: false
+                  ) {
                     let _ = interrupt()
                     return "__\(modelPrefixFixed)__[\($0)]"
                   }
