@@ -94,6 +94,7 @@ public struct RemoteImageGenerator: ImageGenerator {
       contents[hash] = data
     }
 
+    // TODO: can check if hints is referenced from configuration to decide whether to send it or not.
     for (hintType, hintTensors) in hints {
       if !hintTensors.isEmpty {
         request.hints.append(
@@ -111,6 +112,18 @@ public struct RemoteImageGenerator: ImageGenerator {
             }
           })
       }
+    }
+    // If this is txt2img, there is not controlnet, no modifier, not inpainting.
+    let modifier: SamplerModifier =
+      configuration.model.map {
+        ImageGeneratorUtils.modifierForModel($0, LoRAs: configuration.loras.compactMap(\.file))
+      } ?? .none
+    let isInpainting = ImageGeneratorUtils.isInpainting(for: mask, configuration: configuration)
+    if configuration.strength == 1 && configuration.controls.isEmpty && modifier == .none
+      && !isInpainting
+    {
+      // Don't need to send any data. This is a small optimization and this logic can be fragile.
+      contents.removeAll()
     }
     request.contents = Array(contents.values)
 

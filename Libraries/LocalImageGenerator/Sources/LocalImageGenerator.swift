@@ -2331,7 +2331,7 @@ extension LocalImageGenerator {
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
-    var modifier = ModelPreloader.modifierForModel(
+    var modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
     if modifier == .depth && depth == nil {
       // Revert to default file.
@@ -3168,7 +3168,7 @@ extension LocalImageGenerator {
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
-    var modifier = ModelPreloader.modifierForModel(
+    var modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
     if modifier == .depth && depth == nil {
       // Revert to default file.
@@ -4342,7 +4342,7 @@ extension LocalImageGenerator {
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
-    var modifier = ModelPreloader.modifierForModel(
+    var modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
     if modifier == .depth && depth == nil {
       // Revert to default file.
@@ -5000,7 +5000,7 @@ extension LocalImageGenerator {
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
-    var modifier = ModelPreloader.modifierForModel(
+    var modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
     if modifier == .depth && depth == nil {
       // Revert to default file.

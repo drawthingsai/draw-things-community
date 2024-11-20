@@ -815,7 +815,7 @@ public enum ImageConverter {
         }
         let model = configuration.model ?? ModelZoo.defaultSpecification.file
         let modelVersion = ModelZoo.versionForModel(model)
-        let modifier = ModelPreloader.modifierForModel(
+        let modifier = ImageGeneratorUtils.modifierForModel(
           model, LoRAs: configuration.loras.compactMap(\.file))
         let seedMode: String
         switch configuration.seedMode {

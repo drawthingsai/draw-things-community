@@ -150,6 +150,20 @@ public struct ImageGeneratorUtils {
     )
   }
 
+  public static func modifierForModel(_ file: String, LoRAs: [String]) -> SamplerModifier {
+    let modifier = ModelZoo.modifierForModel(file)
+    guard modifier == .none else {
+      return modifier
+    }
+    for name in LoRAs {
+      let modifier = LoRAZoo.modifierForModel(name)
+      if modifier != .none {
+        return modifier
+      }
+    }
+    return .none
+  }
+
   public static func isInpainting(
     for binaryMask: Tensor<UInt8>?, configuration: GenerationConfiguration
   ) -> Bool {
