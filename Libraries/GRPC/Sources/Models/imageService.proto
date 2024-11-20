@@ -39,9 +39,9 @@ enum DeviceType {
 
 // parameters in this Request is exactly same as generate function in ImageGenerator
 message ImageGenerationRequest {
-  optional bytes image = 1;      // Image data as bytes
+  optional bytes image = 1;      // Image data as sha256 content.
   int32 scaleFactor = 2; 	 	
-  optional bytes mask = 3;       // Optional  Mask data as bytes
+  optional bytes mask = 3;       // Optional  Mask data as sha256 content.
   repeated HintProto hints = 4; 	 // List of hints
   string prompt = 5;             // Optional prompt string
   string negativePrompt = 6;     // Optional negative prompt string
@@ -50,6 +50,7 @@ message ImageGenerationRequest {
   repeated string keywords = 9; // Keywords send to the ImageGenerator, not useful for local generation.
   string user = 10; // The name of the client.
   DeviceType device = 11; // The type of the device uses.
+  repeated bytes contents = 12; // The image data as array of bytes. It is addressed by its sha256 content. This is modeled as content-addressable storage.
 }
 
 message HintProto {
@@ -59,7 +60,7 @@ message HintProto {
 
 // Message to store each tensor and its associated float score
 message TensorAndWeight {
-  bytes tensor = 1;                       // Tensor data as bytes (AnyTensor)
+  bytes tensor = 1;                       // Tensor data as sha256 to the content.
   float weight = 2;                        // Associated float score for the tensor
 }
 

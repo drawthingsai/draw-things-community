@@ -133,7 +133,7 @@ public struct ImageGenerationRequest: @unchecked Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Image data as bytes
+  /// Image data as sha256 content.
   public var image: Data {
     get {return _image ?? Data()}
     set {_image = newValue}
@@ -145,7 +145,7 @@ public struct ImageGenerationRequest: @unchecked Sendable {
 
   public var scaleFactor: Int32 = 0
 
-  /// Optional  Mask data as bytes
+  /// Optional  Mask data as sha256 content.
   public var mask: Data {
     get {return _mask ?? Data()}
     set {_mask = newValue}
@@ -186,6 +186,9 @@ public struct ImageGenerationRequest: @unchecked Sendable {
   /// The type of the device uses.
   public var device: DeviceType = .phone
 
+  /// The image data as array of bytes. It is addressed by its sha256 content. This is modeled as content-addressable storage.
+  public var contents: [Data] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -217,7 +220,7 @@ public struct TensorAndWeight: @unchecked Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Tensor data as bytes (AnyTensor)
+  /// Tensor data as sha256 to the content.
   public var tensor: Data = Data()
 
   /// Associated float score for the tensor
@@ -769,6 +772,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     9: .same(proto: "keywords"),
     10: .same(proto: "user"),
     11: .same(proto: "device"),
+    12: .same(proto: "contents"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -788,6 +792,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
       case 9: try { try decoder.decodeRepeatedStringField(value: &self.keywords) }()
       case 10: try { try decoder.decodeSingularStringField(value: &self.user) }()
       case 11: try { try decoder.decodeSingularEnumField(value: &self.device) }()
+      case 12: try { try decoder.decodeRepeatedBytesField(value: &self.contents) }()
       default: break
       }
     }
@@ -831,6 +836,9 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     if self.device != .phone {
       try visitor.visitSingularEnumField(value: self.device, fieldNumber: 11)
     }
+    if !self.contents.isEmpty {
+      try visitor.visitRepeatedBytesField(value: self.contents, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -846,6 +854,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     if lhs.keywords != rhs.keywords {return false}
     if lhs.user != rhs.user {return false}
     if lhs.device != rhs.device {return false}
+    if lhs.contents != rhs.contents {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
