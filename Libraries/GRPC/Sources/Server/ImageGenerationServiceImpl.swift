@@ -214,14 +214,26 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
           return true
         }
 
+      var contents = [Data: Data]()
+      for content in request.contents {
+        let hash = Data(SHA256.hash(data: content))
+        contents[hash] = content
+      }
+
+      func unwrapData(_ data: Data) -> Data {
+        guard data.count == 32 else { return data }
+        // If it is 32-byte, that is sha256, unwrap.
+        return contents[data] ?? Data()
+      }
       // Additional conversion if needed.
       let image: Tensor<FloatType>? =
         request.hasImage
-        ? Tensor<FloatType>(data: request.image, using: [.zip, .fpzip]).map {
+        ? Tensor<FloatType>(data: unwrapData(request.image), using: [.zip, .fpzip]).map {
           Tensor<FloatType>(from: $0)
         } : nil
       let mask: Tensor<UInt8>? =
-        request.hasMask ? Tensor<UInt8>(data: request.mask, using: [.zip, .fpzip]) : nil
+        request.hasMask
+        ? Tensor<UInt8>(data: unwrapData(request.mask), using: [.zip, .fpzip]) : nil
 
       var hints = [(ControlHintType, [(AnyTensor, Float)])]()
       for hintProto in request.hints {
@@ -230,14 +242,14 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
           if hintType == .scribble {
             if let tensorData = hintProto.tensors.first?.tensor,
               let score = hintProto.tensors.first?.weight,
-              let hintTensor = Tensor<UInt8>(data: tensorData, using: [.zip, .fpzip])
+              let hintTensor = Tensor<UInt8>(data: unwrapData(tensorData), using: [.zip, .fpzip])
             {
               hints.append((hintType, [(hintTensor, score)]))
             }
           } else {
             let tensors = hintProto.tensors.compactMap { tensorAndWeight in
               if let tensor = Tensor<FloatType>(
-                data: tensorAndWeight.tensor, using: [.zip, .fpzip])
+                data: unwrapData(tensorAndWeight.tensor), using: [.zip, .fpzip])
               {
                 // Additional conversion, if needed.
                 return (Tensor<FloatType>(from: tensor), tensorAndWeight.weight)
@@ -485,9 +497,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   {
     do {
       let fileData = try Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe)
-      let computedHash = SHA256.hash(data: fileData).withUnsafeBytes {
-        return Data(bytes: $0.baseAddress!, count: $0.count)
-      }
+      let computedHash = Data(SHA256.hash(data: fileData))
       self.logger.info("expectedHash: \(expectedHash.map { String(format: "%02x", $0) }.joined())")
       self.logger.info("computedHash: \(computedHash.map { String(format: "%02x", $0) }.joined())")
       if computedHash != expectedHash {

@@ -101,9 +101,7 @@ public struct GRPCFileUploader {
 
     callInstance.eventLoop.execute {
       // Send message and compute SHA-256 off the main thread to the event loop queue.
-      let fileHash = SHA256.hash(data: fileData).withUnsafeBytes {
-        return Data(bytes: $0.baseAddress!, count: $0.count)
-      }
+      let fileHash = Data(SHA256.hash(data: fileData))
       let hexString = fileHash.map { String(format: "%02x", $0) }.joined()
       logger.info("file hash \(hexString)")
       // 1. Send the InitUploadRequest with filename, hash, and total file size

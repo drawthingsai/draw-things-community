@@ -1,3 +1,4 @@
+import Crypto
 import DataModels
 import Diffusion
 import Foundation
@@ -9,6 +10,7 @@ import Logging
 import ModelZoo
 import NIO
 import NNC
+import OrderedCollections
 
 public enum RemoteImageGeneratorError: Error {
   case notConnected
@@ -76,13 +78,20 @@ public struct RemoteImageGenerator: ImageGenerator {
     request.keywords = keywords
     request.user = name
     request.device = DeviceType(from: deviceType)
+    var contents = OrderedDictionary<Data, Data>()
 
     if let image = image {
-      request.image = image.data(using: [.zip, .fpzip])
+      let data = image.data(using: [.zip, .fpzip])
+      let hash = Data(SHA256.hash(data: data))
+      request.image = hash
+      contents[hash] = data
     }
 
     if let mask = mask {
-      request.mask = mask.data(using: [.zip, .fpzip])
+      let data = mask.data(using: [.zip, .fpzip])
+      let hash = Data(SHA256.hash(data: data))
+      request.mask = hash
+      contents[hash] = data
     }
 
     for (hintType, hintTensors) in hints {
@@ -92,14 +101,18 @@ public struct RemoteImageGenerator: ImageGenerator {
             $0.hintType = hintType.rawValue
             $0.tensors = hintTensors.map { tensor, weight in
               return TensorAndWeight.with {
-                $0.tensor = ImageGeneratorUtils.convertTensorToData(
+                let data = ImageGeneratorUtils.convertTensorToData(
                   tensor: tensor, using: [.zip, .fpzip])
+                let hash = Data(SHA256.hash(data: data))
+                $0.tensor = hash
+                contents[hash] = data
                 $0.weight = weight
               }
             }
           })
       }
     }
+    request.contents = Array(contents.values)
 
     // Send the request
     // handler is running on event group thread
