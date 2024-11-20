@@ -74,7 +74,9 @@ public struct DeviceCapability {
     #endif
   }()
   public static let isMFASupported: Bool = {
-    #if arch(i386) || arch(x86_64) || !canImport(Metal)
+    #if !canImport(Metal)
+      return true
+    #elseif arch(i386) || arch(x86_64)
       return false
     #else
       if #available(iOS 16, macOS 13, macCatalyst 16, *) {
