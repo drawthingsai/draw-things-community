@@ -120,8 +120,14 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Disable TLS for the connection.")
   var noTLS = false
 
+  @Flag(help: "Disable FlashAttention.")
+  var noFlashAttention = false
+
   mutating func run() throws {
     ModelZoo.externalUrl = URL(fileURLWithPath: modelsDirectory)
+    if noFlashAttention {
+      DeviceCapability.isMFAEnabled.store(false, ordering: .releasing)
+    }
     try self.runAndBlock(name: name, address: address, port: port, TLS: !noTLS)
   }
 
