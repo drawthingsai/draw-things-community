@@ -35,6 +35,7 @@ swift_library(
     srcs = [
         "Sources/Server/GRPCFileUploader.swift",
         "Sources/Server/GRPCHostnameUtils.swift",
+        "Sources/Server/GRPCJWTTokenDecoder.swift",
         "Sources/Server/GRPCServerAdvertiser.swift",
         "Sources/Server/ImageGenerationClientWrapper.swift",
         "Sources/Server/ImageGenerationServiceImpl.swift",

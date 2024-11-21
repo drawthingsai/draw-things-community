@@ -69,6 +69,7 @@ public final class ImageGenerationClientWrapper {
 
     var request = EchoRequest()
     request.name = deviceName ?? ""
+
     let _ = client.echo(request).response.always {
       switch $0 {
       case .success(_):
