@@ -48,10 +48,6 @@ public struct ModelZoo: DownloadZoo {
     case rf(Denoiser.Parameterization.RF)
   }
 
-  public enum BreakingChange: String, Codable {
-    case v1_20241121_0 = "1.20241121.0"
-  }
-
   public struct Specification: Codable {
     public struct MMDiT: Codable {
       public var qkNorm: Bool
@@ -90,7 +86,6 @@ public struct ModelZoo: DownloadZoo {
     public var paddedTextEncodingLength: Int?
     public var hiresFixScale: UInt16?
     public var mmdit: MMDiT?
-    public var breakingChange: BreakingChange?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -103,8 +98,7 @@ public struct ModelZoo: DownloadZoo {
       noiseDiscretization: NoiseDiscretization? = nil, latentsMean: [Float]? = nil,
       latentsStd: [Float]? = nil, latentsScalingFactor: Float? = nil, stageModels: [String]? = nil,
       textEncoderVersion: TextEncoderVersion? = nil, guidanceEmbed: Bool? = nil,
-      paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil,
-      breakingChange: BreakingChange? = nil
+      paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil
     ) {
       self.name = name
       self.file = file
@@ -135,7 +129,6 @@ public struct ModelZoo: DownloadZoo {
       self.paddedTextEncodingLength = paddedTextEncodingLength
       self.hiresFixScale = hiresFixScale
       self.mmdit = mmdit
-      self.breakingChange = breakingChange
     }
     fileprivate var predictV: Bool? = nil
   }
