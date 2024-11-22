@@ -147,8 +147,9 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             let loraMid = store.read(
               originalPrefix + "__mid__", codec: [.q6p, .q8p, .ezm7, .externalData])
           else {
-            tensor[oldRank..<(oldRank + newRank), 0..<tensorShape[1]] =
-              formattedTensor[0..<newRank, 0..<tensorShape[1]].toCPU()
+            let shape1 = min(tensorShape[1], formattedTensor.shape[1])
+            tensor[oldRank..<(oldRank + newRank), 0..<shape1] =
+              formattedTensor[0..<newRank, 0..<shape1].toCPU()
             continue
           }
           let down = graph.variable(
@@ -162,8 +163,9 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             .NCHW(midDown.shape[0], mid.shape[0], mid.shape[2], mid.shape[3])
           ).transposed(0, 1)
           midDown = midDown.reshaped(.NC(midDown.shape[0], midDown.shape[1...].reduce(1, *)))
-          tensor[oldRank..<(oldRank + newRank), 0..<tensorShape[1]] = midDown[
-            0..<newRank, 0..<tensorShape[1]
+          let shape1 = min(tensorShape[1], midDown.shape[1])
+          tensor[oldRank..<(oldRank + newRank), 0..<shape1] = midDown[
+            0..<newRank, 0..<shape1
           ].rawValue.toCPU()
         }
       } else {
@@ -179,9 +181,10 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             let loraMid = store.read(
               originalPrefix + "__mid__", codec: [.q6p, .q8p, .ezm7, .externalData])
           else {
-            tensor[oldRank..<(oldRank + newRank), 0..<tensorShape[1]] =
+            let shape1 = min(tensorShape[1], formattedTensor.shape[1])
+            tensor[oldRank..<(oldRank + newRank), 0..<shape1] =
               (sqrtWeightDown
-              * graph.variable(formattedTensor[0..<newRank, 0..<tensorShape[1]].toGPU(0)))
+              * graph.variable(formattedTensor[0..<newRank, 0..<shape1].toGPU(0)))
               .rawValue.toCPU()
             continue
           }
@@ -196,8 +199,9 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             .NCHW(midDown.shape[0], mid.shape[0], mid.shape[2], mid.shape[3])
           ).transposed(0, 1)
           midDown = midDown.reshaped(.NC(midDown.shape[0], midDown.shape[1...].reduce(1, *)))
-          tensor[oldRank..<(oldRank + newRank), 0..<tensorShape[1]] =
-            (sqrtWeightDown * midDown[0..<newRank, 0..<tensorShape[1]]).rawValue.toCPU()
+          let shape1 = min(tensorShape[1], midDown.shape[1])
+          tensor[oldRank..<(oldRank + newRank), 0..<shape1] =
+            (sqrtWeightDown * midDown[0..<newRank, 0..<shape1]).rawValue.toCPU()
         }
       }
     }
