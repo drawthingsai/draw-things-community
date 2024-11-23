@@ -1,6 +1,8 @@
 import Foundation
 import NNC
 
+private let LoRALoaderShapeMismatchKeys: Set<String> = Set(["__dit__[t-x_embedder-0-0]"])
+
 public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private static func _openStore(
     _ graph: DynamicGraph, lora: [LoRAConfiguration], index: Int,
@@ -284,6 +286,36 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     }
   }
 
+  private func shapeMismatch(
+    _ graph: DynamicGraph, name: String, store: DynamicGraph.Store, shape: TensorShape
+  ) -> DynamicGraph.Store.ModelReaderResult {
+    guard LoRALoaderShapeMismatchKeys.contains(name) else { return .continue(name) }
+    // Check the shape.
+    guard let originalShape = store.read(like: name)?.shape else { return .continue(name) }
+    // Check if the shape match or not, in case it doesn't match, we need to return.
+    guard originalShape[1] != shape[1] && originalShape.reduce(1, *) != shape.reduce(1, *) else {
+      return .continue(name)
+    }
+    guard
+      let original =
+        (store.read(name, codec: [.q6p, .q8p, .ezm7, .externalData]).map {
+          Tensor<FloatType>(from: $0)
+        })
+    else {
+      return .continue(name)
+    }
+    let originalShape1 = originalShape[1...].reduce(1, *)
+    let shape1 = shape[1...].reduce(1, *)
+    var tensor = Tensor<FloatType>(.CPU, .NC(shape[0], shape1))
+    tensor.withUnsafeMutableBytes {
+      let size = shape.reduce(MemoryLayout<FloatType>.size, *)
+      memset($0.baseAddress!, 0, size)
+    }
+    let otherShape1 = min(shape1, originalShape1)
+    tensor[0..<shape[0], 0..<otherShape1] = original[0..<shape[0], 0..<otherShape1]
+    return .final(tensor)
+  }
+
   public func mergeLoRA(
     _ graph: DynamicGraph, name: String, store: DynamicGraph.Store, shape: TensorShape,
     prefix: String = "", filesRequireMerge: Set<String>? = nil
@@ -291,7 +323,9 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     -> DynamicGraph.Store.ModelReaderResult
   {
     // If filesRequireMerge is provided and it is not empty, we need to merge, otherwise we don't need to merge anything.
-    guard !(filesRequireMerge?.isEmpty ?? false) else { return .continue(name) }
+    guard !(filesRequireMerge?.isEmpty ?? false) else {
+      return shapeMismatch(graph, name: name, store: store, shape: shape)
+    }
     guard
       keys.contains(where: {
         $0.contains(prefix + name + "__up__") && $0.contains(prefix + name + "__down__")
@@ -299,7 +333,9 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             && $0.contains(prefix + name + "__w2_a__") && $0.contains(prefix + name + "__w2_b__"))
           || $0.contains(prefix + name)
       })
-    else { return .continue(name) }
+    else {
+      return shapeMismatch(graph, name: name, store: store, shape: shape)
+    }
     // No need to read the original yet. This helps in case we don't have LoRA, we can still load original 8-bit weights.
     var original: DynamicGraph.Tensor<FloatType>? = nil
     let mainStore = store
