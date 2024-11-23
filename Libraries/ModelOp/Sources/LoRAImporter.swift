@@ -452,7 +452,7 @@ public enum LoRAImporter {
     for key in keys {
       guard key.hasSuffix(".lora_A.weight") || key.hasSuffix(".lora_B.weight") else { continue }
       var components = key.components(separatedBy: ".")
-      guard components.count > 3 else { continue }
+      guard components.count >= 3 else { continue }
       if components[1] == "base_model" {
         components.remove(at: 1)
       }
@@ -471,7 +471,7 @@ public enum LoRAImporter {
     for key in keys {
       guard key.hasSuffix(".lora.up.weight") || key.hasSuffix(".lora.down.weight") else { continue }
       var components = key.components(separatedBy: ".")
-      guard components.count > 4 else { continue }
+      guard components.count >= 4 else { continue }
       if components[1] == "base_model" {
         components.remove(at: 1)
       }
