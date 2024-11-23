@@ -8,7 +8,7 @@ public final class ImageGenerationClientWrapper {
   public enum Error: Swift.Error {
     case invalidRootCA
   }
-  private var deviceName: String? = nil
+  public var deviceName: String? = nil
   private var eventLoopGroup: EventLoopGroup? = nil
   private var channel: GRPCChannel? = nil
   public private(set) var client: ImageGenerationServiceNIOClient? = nil

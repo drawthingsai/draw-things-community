@@ -1,4 +1,4 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_library")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_library", "swift_test")
 load("@bazel_skylib//lib:selects.bzl", "selects")
 
 config_setting(
@@ -25,24 +25,24 @@ selects.config_setting_group(
 
 cc_library(
     name = "C_DNSAdvertiser",
-    srcs = ["Sources/Server/Advertiser/dnssd_advertiser.c"],
-    hdrs = ["Sources/Server/Advertiser/dnssd_advertiser.h"],
+    srcs = ["Advertiser/Sources/dnssd_advertiser.c"],
+    hdrs = ["Advertiser/Sources/dnssd_advertiser.h"],
     tags = ["swift_module=C_DNSAdvertiser"],
 )
 
 swift_library(
     name = "GRPCServer",
     srcs = [
-        "Sources/Server/GRPCFileUploader.swift",
-        "Sources/Server/GRPCHostnameUtils.swift",
-        "Sources/Server/GRPCJWTTokenDecoder.swift",
-        "Sources/Server/GRPCServerAdvertiser.swift",
-        "Sources/Server/ImageGenerationClientWrapper.swift",
-        "Sources/Server/ImageGenerationServiceImpl.swift",
-        "Sources/Server/ProtectedValue.swift",
+        "Server/Sources/GRPCFileUploader.swift",
+        "Server/Sources/GRPCHostnameUtils.swift",
+        "Server/Sources/GRPCJWTTokenDecoder.swift",
+        "Server/Sources/GRPCServerAdvertiser.swift",
+        "Server/Sources/ImageGenerationClientWrapper.swift",
+        "Server/Sources/ImageGenerationServiceImpl.swift",
+        "Server/Sources/ProtectedValue.swift",
     ] + select({
         ":ios_or_macos_build": [
-            "Sources/Server/GRPCServiceBrowser.swift",
+            "Server/Sources/GRPCServiceBrowser.swift",
         ],
         "//conditions:default": [
         ],
@@ -74,7 +74,7 @@ swift_library(
 
 swift_library(
     name = "GRPCModels",
-    srcs = glob(["Sources/Models/*.swift"]),
+    srcs = glob(["Models/Sources/*.swift"]),
     module_name = "GRPCModels",
     visibility = ["//visibility:public"],
     deps = [
