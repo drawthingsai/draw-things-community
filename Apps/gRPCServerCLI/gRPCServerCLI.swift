@@ -117,6 +117,9 @@ struct gRPCServerCLI: ParsableCommand {
   @Option(name: .shortAndLong, help: "The port in your local network that you want to expose.")
   var port: Int = 7859
 
+  @Option(name: .shortAndLong, help: "The GPU to use for image generation.")
+  var gpu: Int = 0
+
   @Flag(help: "Disable TLS for the connection.")
   var noTLS = false
 
@@ -127,6 +130,9 @@ struct gRPCServerCLI: ParsableCommand {
     ModelZoo.externalUrl = URL(fileURLWithPath: modelsDirectory)
     if noFlashAttention {
       DeviceCapability.isMFAEnabled.store(false, ordering: .releasing)
+    }
+    if gpu > 0 && gpu < DeviceKind.GPUs.count {
+      DeviceKind.GPUs.permute(gpu)
     }
     try self.runAndBlock(name: name, address: address, port: port, TLS: !noTLS)
   }
