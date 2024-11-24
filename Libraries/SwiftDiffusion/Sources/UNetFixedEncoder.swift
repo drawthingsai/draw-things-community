@@ -189,7 +189,10 @@ extension UNetFixedEncoder {
     isCfgEnabled: Bool, textGuidanceScale: Float, guidanceEmbed: Float,
     isGuidanceEmbedEnabled: Bool, textEncoding: [DynamicGraph.Tensor<FloatType>],
     timesteps: [Float], batchSize: Int, startHeight: Int, startWidth: Int, tokenLengthUncond: Int,
-    tokenLengthCond: Int, lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration
+    tokenLengthCond: Int, lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration,
+    injectedControls: [(
+      model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
+    )]
   ) -> ([DynamicGraph.Tensor<FloatType>], ModelWeightMapper?) {
     let graph = textEncoding[0].graph
     let lora = lora.filter { $0.version == version }
@@ -571,6 +574,9 @@ extension UNetFixedEncoder {
         nil
       )
     case .flux1:
+      let textEncoding = ControlModel<FloatType>.modifyTextEncoding(
+        textEncoding: textEncoding, isCfgEnabled: isCfgEnabled, batchSize: batchSize,
+        injecteds: injectedControls)
       let c0 = textEncoding[0]
       var pooled = textEncoding[1]
       let cBatchSize = c0.shape[0]

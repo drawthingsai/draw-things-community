@@ -544,13 +544,14 @@ extension UNetFromNNC {
       for i in [0, 4, 8, 12, 16, 20, 24, 28, 32, 36] {
         injectIPAdapterLengths[19 + i] = injectControlsAndAdapters.injectIPAdapterLengths
       }
+      let tokenLength = c[1].shape[1]
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file })
         configuration.keys = keys
         (_, unet) = LoRAFlux1(
-          batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
+          batchSize: batchSize, tokenLength: tokenLength,
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
           contextPreloaded: true,
@@ -559,7 +560,7 @@ extension UNetFromNNC {
           LoRAConfiguration: configuration)
       } else {
         (_, unet) = Flux1(
-          batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
+          batchSize: batchSize, tokenLength: tokenLength,
           height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
           contextPreloaded: true,

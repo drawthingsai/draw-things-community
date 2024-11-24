@@ -7,7 +7,7 @@ import ZIPFoundation
 
 public enum LoRAImporter {
   public static func modelWeightsMapping(
-    by version: ModelVersion, qkNorm: Bool, dualAttentionLayers: [Int]
+    by version: ModelVersion, qkNorm: Bool, dualAttentionLayers: [Int], format: [ModelWeightFormat]
   ) -> (ModelWeightMapping, ModelWeightMapping) {
     let graph = DynamicGraph()
     var UNetMapping = ModelWeightMapping()
@@ -16,32 +16,26 @@ public enum LoRAImporter {
       // Legacy compatibility.
       UNetMapping = StableDiffusionMapping.UNet
       let UNetMappingKeys = UNetMapping.keys
-      for key in UNetMappingKeys {
-        var diffusersKey = key
-        let value = UNetMapping[key]
-        for name in DiffusersMapping.UNetPartials {
-          if key.contains(name.0) {
-            diffusersKey = key.replacingOccurrences(of: name.0, with: name.1)
-            break
-          }
-        }
-        if diffusersKey.contains(".resnets.") {
-          for name in DiffusersMapping.ResNetsPartials {
-            if diffusersKey.contains(name.0) {
-              diffusersKey = diffusersKey.replacingOccurrences(of: name.0, with: name.1)
+      if format.contains(.diffusers) {
+        for key in UNetMappingKeys {
+          var diffusersKey = key
+          for name in DiffusersMapping.UNetPartials {
+            if key.contains(name.0) {
+              diffusersKey = key.replacingOccurrences(of: name.0, with: name.1)
               break
             }
           }
-        }
-        let parts = key.components(separatedBy: ".")
-        UNetMapping[
-          parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-          value
-        if diffusersKey != key {
-          let diffusersParts = diffusersKey.components(separatedBy: ".")
-          UNetMapping[
-            diffusersParts[2..<(diffusersParts.count - 1)].joined(separator: "_") + "."
-              + diffusersParts[diffusersParts.count - 1]] = value
+          if diffusersKey.contains(".resnets.") {
+            for name in DiffusersMapping.ResNetsPartials {
+              if diffusersKey.contains(name.0) {
+                diffusersKey = diffusersKey.replacingOccurrences(of: name.0, with: name.1)
+                break
+              }
+            }
+          }
+          if diffusersKey != key {
+            UNetMapping[diffusersKey] = UNetMapping[key]
+          }
         }
       }
       return (UNetMappingFixed, UNetMapping)
@@ -279,7 +273,8 @@ public enum LoRAImporter {
             startWidth: 64,
             tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
             tiledDiffusion: TiledConfiguration(
-              isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0)
+              isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
+            injectedControls: []
           ).0.map({ $0.toCPU() })
       case .flux1:
         cArr =
@@ -302,21 +297,37 @@ public enum LoRAImporter {
       unet.compile(inputs: inputs)
       // Otherwise we use our fixed dictionary.
       if version != .sdxlBase && version != .sdxlRefiner {
-        UNetMappingFixed = unetFixedMapper(.generativeModels)
-        UNetMapping = unetMapper(.generativeModels)
-        for (key, value) in UNetMappingFixed {
-          guard !key.hasPrefix("diffusion_model.") else { continue }
+        let mappingFixed = unetFixedMapper(.generativeModels)
+        let mapping = unetMapper(.generativeModels)
+        UNetMappingFixed = [:]
+        for (key, value) in mappingFixed {
+          guard !key.hasPrefix("diffusion_model.") else {
+            UNetMappingFixed[key] = value
+            continue
+          }
           UNetMappingFixed["diffusion_model.\(key)"] = value
         }
-        for (key, value) in UNetMapping {
-          guard !key.hasPrefix("diffusion_model.") else { continue }
+        UNetMapping = [:]
+        for (key, value) in mapping {
+          guard !key.hasPrefix("diffusion_model.") else {
+            UNetMapping[key] = value
+            continue
+          }
           UNetMapping["diffusion_model.\(key)"] = value
         }
       }
-      let diffusersUNetMappingFixed = unetFixedMapper(.diffusers)
-      let diffusersUNetMapping = unetMapper(.diffusers)
-      UNetMappingFixed.merge(diffusersUNetMappingFixed) { v, _ in v }
-      UNetMapping.merge(diffusersUNetMapping) { v, _ in v }
+      if format.contains(.diffusers) {
+        let diffusersUNetMappingFixed = unetFixedMapper(.diffusers)
+        let diffusersUNetMapping = unetMapper(.diffusers)
+        if !format.contains(.generativeModels) {
+          // Remove generativeModels ones.
+          UNetMappingFixed = diffusersUNetMappingFixed
+          UNetMapping = diffusersUNetMapping
+        } else {
+          UNetMappingFixed.merge(diffusersUNetMappingFixed) { v, _ in v }
+          UNetMapping.merge(diffusersUNetMapping) { v, _ in v }
+        }
+      }
       return (UNetMappingFixed, UNetMapping)
     }
   }
@@ -735,23 +746,35 @@ public enum LoRAImporter {
     }
     // Prepare UNet mapping.
     var (UNetMappingFixed, UNetMapping) = modelWeightsMapping(
-      by: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers)
+      by: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+      format: [.diffusers, .generativeModels])
     let UNetMappingKeys = UNetMapping.keys
     for key in UNetMappingKeys {
       let value = UNetMapping[key]
       let parts = key.components(separatedBy: ".")
       if parts[0] == "model" {
-        UNetMapping[
-          parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-          value
+        if parts.count > 3 {
+          UNetMapping[
+            parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+            value
+        }
+        if parts.count > 2 {
+          UNetMapping[
+            parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+            value
+        }
       } else if parts[0] == "diffusion_model" {
-        UNetMapping[
-          parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-          value
+        if parts.count > 2 {
+          UNetMapping[
+            parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+            value
+        }
       } else {
-        UNetMapping[
-          parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-          value
+        if parts.count > 1 {
+          UNetMapping[
+            parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+            value
+        }
       }
     }
     let UNetMappingFixedKeys = UNetMappingFixed.keys
@@ -759,17 +782,28 @@ public enum LoRAImporter {
       let value = UNetMappingFixed[key]
       let parts = key.components(separatedBy: ".")
       if parts[0] == "model" {
-        UNetMappingFixed[
-          parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-          value
+        if parts.count > 3 {
+          UNetMappingFixed[
+            parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+            value
+        }
+        if parts.count > 2 {
+          UNetMappingFixed[
+            parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+            value
+        }
       } else if parts[0] == "diffusion_model" {
-        UNetMappingFixed[
-          parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-          value
+        if parts.count > 2 {
+          UNetMappingFixed[
+            parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+            value
+        }
       } else {
-        UNetMappingFixed[
-          parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
-          value
+        if parts.count > 1 {
+          UNetMappingFixed[
+            parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+            value
+        }
       }
     }
     var didImportTIEmbedding = false

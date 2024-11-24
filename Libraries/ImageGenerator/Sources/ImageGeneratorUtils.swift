@@ -46,14 +46,14 @@ public struct ImageGeneratorUtils {
     shuffleCount: Int, controls: [Control], version: ModelVersion
   ) -> (
     injectControls: Bool, injectT2IAdapters: Bool, injectAttentionKVs: Bool,
-    injectIPAdapterLengths: [Int],
-    injectedControls: Int
+    injectPrompts: Bool, injectIPAdapterLengths: [Int], injectedControls: Int
   ) {
     var injectControls = false
     var injectT2IAdapters = false
+    var injectAttentionKVs = false
+    var injectPrompts = false
     var injectIPAdapterLengths = [Int]()
     var injectedControls = 0
-    var injectAttentionKVs = false
     for control in controls {
       guard let file = control.file, let specification = ControlNetZoo.specificationForModel(file),
         ControlNetZoo.isModelDownloaded(specification)
@@ -125,6 +125,10 @@ public struct ImageGeneratorUtils {
         if hasCustom || shuffleCount > 0 {
           injectIPAdapterLengths.append((shuffleCount > 0 ? shuffleCount : 1) * 32)
         }
+      case .redux:
+        if hasCustom || shuffleCount > 0 {
+          injectPrompts = true
+        }
       case .t2iadapter:
         switch modifier {
         case .canny, .mlsd, .tile, .blur, .gray, .lowquality:
@@ -145,7 +149,7 @@ public struct ImageGeneratorUtils {
       }
     }
     return (
-      injectControls, injectT2IAdapters, injectAttentionKVs, injectIPAdapterLengths,
+      injectControls, injectT2IAdapters, injectAttentionKVs, injectPrompts, injectIPAdapterLengths,
       injectedControls
     )
   }

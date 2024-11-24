@@ -495,7 +495,7 @@ extension ModelPreloader {
     let cfgChannels: Int
     let numberOfChannels: Int
     switch modelModifier {
-    case .depth:
+    case .depth, .canny:
       cfgChannels = 2
       numberOfChannels = 5
     case .inpainting:
@@ -559,7 +559,7 @@ extension ModelPreloader {
               isGuidanceEmbedEnabled: false,
               textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
-              tiledDiffusion: tiledDiffusion
+              tiledDiffusion: tiledDiffusion, injectedControls: []
             ).0  // No need to pass lora, one off use.
         }
         let _ = unet.compileModel(

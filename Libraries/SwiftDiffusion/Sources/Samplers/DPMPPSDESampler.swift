@@ -65,8 +65,7 @@ where UNet.FloatType == FloatType {
 extension DPMPPSDESampler: Sampler {
   public func sample(
     _ x_T: DynamicGraph.Tensor<FloatType>, unets existingUNets: [UNet?],
-    sample: DynamicGraph.Tensor<FloatType>?, maskedImage: DynamicGraph.Tensor<FloatType>?,
-    depthImage: DynamicGraph.Tensor<FloatType>?,
+    sample: DynamicGraph.Tensor<FloatType>?, conditionImage: DynamicGraph.Tensor<FloatType>?,
     mask: DynamicGraph.Tensor<FloatType>?, negMask: DynamicGraph.Tensor<FloatType>?,
     conditioning c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
@@ -103,12 +102,9 @@ extension DPMPPSDESampler: Sampler {
       inChannels = channels * 2
     } else {
       switch modifier {
-      case .inpainting:
+      case .inpainting, .depth, .canny:
         cfgChannels = isCfgEnabled ? 2 : 1
-        inChannels = channels * 2 + 1
-      case .depth:
-        cfgChannels = isCfgEnabled ? 2 : 1
-        inChannels = channels + 1
+        inChannels = channels + (conditionImage?.shape[3] ?? 0)
       case .editing:
         cfgChannels = 3
         inChannels = channels * 2
@@ -127,25 +123,21 @@ extension DPMPPSDESampler: Sampler {
       of: FloatType.self
     )
     switch modifier {
-    case .inpainting:
-      let maskedImage = maskedImage!
-      let mask = mask!
-      for i in 0..<batchSize {
-        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + 1)] = mask
-        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, (channels + 1)..<(channels * 2 + 1)] =
-          maskedImage
-        if isCfgEnabled {
-          xIn[
-            (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
-            channels..<(channels + 1)] = mask
-          xIn[
-            (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
-            (channels + 1)..<(channels * 2 + 1)] =
-            maskedImage
+    case .inpainting, .depth, .canny:
+      if let conditionImage = conditionImage {
+        let shape = conditionImage.shape
+        for i in 0..<batchSize {
+          xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + shape[3])] =
+            conditionImage
+          if isCfgEnabled {
+            xIn[
+              (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
+              channels..<(channels + shape[3])] = conditionImage
+          }
         }
       }
     case .editing:
-      let maskedImage = maskedImage!
+      let maskedImage = conditionImage!
       for i in 0..<batchSize {
         xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels * 2)] = maskedImage
         xIn[
@@ -165,19 +157,8 @@ extension DPMPPSDESampler: Sampler {
       c0[0..<(batchSize * 2), 0..<oldC.shape[1], 0..<oldC.shape[2]] = oldC
       c0[(batchSize * 2)..<(batchSize * 3), 0..<oldC.shape[1], 0..<oldC.shape[2]] =
         oldC[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]]
-    case .depth:
-      let depthImage = depthImage!
-      for i in 0..<batchSize {
-        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + 1)] = depthImage
-        if isCfgEnabled {
-          xIn[
-            (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
-            channels..<(channels + 1)] =
-            depthImage
-        }
-      }
     case .double:
-      let maskedImage = maskedImage!
+      let maskedImage = conditionImage!
       let maskedImageChannels = maskedImage.shape[3]
       for i in 0..<batchSize {
         xIn[
@@ -267,7 +248,8 @@ extension DPMPPSDESampler: Sampler {
         guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
-        tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion)
+        tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
+        injectedControls: injectedControls)
       c = vector + encodings
       injectedControlsC = injectedControls.map {
         $0.model.encode(
@@ -349,7 +331,7 @@ extension DPMPPSDESampler: Sampler {
           Float(i) * (textGuidanceScale - startFrameCfg) / Float(batchSize - 1) + startFrameCfg)
       }
       textGuidanceVector = scaleCPU.toGPU(0)
-      let maskedImage = maskedImage!
+      let maskedImage = conditionImage!
       var frames = graph.variable(
         .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
       for i in 0..<batchSize {
@@ -459,7 +441,8 @@ extension DPMPPSDESampler: Sampler {
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
-                tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion
+                tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
+                injectedControls: injectedControls
               ).0
             indexOffset = i
           }

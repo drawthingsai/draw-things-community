@@ -268,7 +268,7 @@ public final class ModelImporter {
     let inspectionResult = try inspect()
     var archive = inspectionResult.archive
     var stateDict = inspectionResult.stateDict
-    let modifier = inspectionResult.modifier
+    var modifier = inspectionResult.modifier
     let modelVersion = inspectionResult.version
     let inputDim = inspectionResult.inputChannels
     let isDiffusersFormat = inspectionResult.isDiffusersFormat
@@ -586,7 +586,8 @@ public final class ModelImporter {
             startHeight: 64, startWidth: 64,
             tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
             tiledDiffusion: TiledConfiguration(
-              isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0)
+              isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
+            injectedControls: []
           ).0.map({ $0.toCPU() })
         if modelVersion == .svdI2v {
           // Only take the first half (positive part).
@@ -984,7 +985,18 @@ public final class ModelImporter {
                     return "__\(modelPrefix)__[\($0)]"
                   }
                 } else if let name = value.first {
-                  if name.contains("time_mixer") {
+                  // For FLUX.1 model, we can inspect x_embedder for whether it is a inpainting, depth, or canny.
+                  if name == "t-x_embedder-0-0" && modelVersion == .flux1 {
+                    let tensor = Tensor<FloatType>(from: tensor)
+                    let shape = tensor.shape
+                    if shape[1] == 384 {
+                      // This is an inpainting model.
+                      modifier = .inpainting
+                    } else if shape[1] == 128 {
+                      modifier = .depth  // We cannot differentiate depth or canny, assuming it is depth.
+                    }
+                    store.write("__\(modelPrefix)__[\(name)]", tensor: tensor)
+                  } else if name.contains("time_mixer") {
                     var f32Tensor = Tensor<Float>(from: tensor)
                     // Apply sigmoid transformation.
                     f32Tensor[0] = 1.0 / (1.0 + expf(-f32Tensor[0]))

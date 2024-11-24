@@ -32,6 +32,7 @@ public enum ControlType: String, Codable {
   case ipadapterfaceidplus
   case controlnetunion
   case pulid  // This is a variant of IPAdapter, but like we need to have IPAdapter Plus / Full / FaceID Plus, this is needed.
+  case redux  // This is different from IPAdapter as it directly integrate into prompt.
 }
 
 public enum ControlMode {
@@ -120,7 +121,7 @@ extension ControlModel {
     for (i, injected) in injecteds.enumerated() {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
-      case .controlnet, .controlnetlora, .controlnetunion, .t2iadapter, .injectKV:
+      case .controlnet, .controlnetlora, .controlnetunion, .t2iadapter, .injectKV, .redux:
         continue
       case .ipadapterplus, .ipadapterfull, .ipadapterfaceidplus, .pulid:
         var instanceInjectedIPAdapters = [DynamicGraph.Tensor<FloatType>]()
@@ -178,7 +179,7 @@ extension ControlModel {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
       case .controlnet, .controlnetlora, .controlnetunion, .ipadapterplus, .ipadapterfull,
-        .ipadapterfaceidplus, .pulid:
+        .ipadapterfaceidplus, .pulid, .redux:
         continue
       case .injectKV:
         for (hint, strength) in injected.hints {
@@ -260,12 +261,64 @@ extension ControlModel {
               }
             }
           }
-        case .ipadapterplus, .ipadapterfull, .t2iadapter, .injectKV, .ipadapterfaceidplus, .pulid:
+        case .ipadapterplus, .ipadapterfull, .t2iadapter, .injectKV, .ipadapterfaceidplus, .pulid,
+          .redux:
           continue
         }
       }
       return (injectedControls, injectedT2IAdapters, injectedKVs)
     }
+  }
+
+  public static func modifyTextEncoding(
+    textEncoding: [DynamicGraph.Tensor<FloatType>], isCfgEnabled: Bool, batchSize: Int,
+    injecteds: [(
+      model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
+    )]
+  ) -> [DynamicGraph.Tensor<FloatType>] {
+    // Currently, this is only useful for FLUX.1.
+    let c0 = textEncoding[0]
+    // Collect all image embeds from injecteds.
+    let imageEmbeds: [DynamicGraph.Tensor<FloatType>] = injecteds.flatMap {
+      switch $0.model.type {
+      case .redux:
+        return $0.hints.flatMap(\.0)
+      case .controlnet, .controlnetlora, .controlnetunion, .injectKV, .ipadapterfaceidplus,
+        .ipadapterfull, .ipadapterplus, .pulid, .t2iadapter:
+        return []
+      }
+    }
+    guard !imageEmbeds.isEmpty else { return textEncoding }
+    let cBatchSize = c0.shape[0]
+    let t5Length = c0.shape[1]
+    let totalLength = t5Length + imageEmbeds.reduce(0) { $0 + $1.shape[1] }
+    let graph = c0.graph
+    var c = graph.variable(.GPU(0), .HWC(cBatchSize, totalLength, 4096), of: FloatType.self)
+    c[0..<cBatchSize, 0..<t5Length, 0..<4096] = c0
+    var lengthStart = t5Length
+    if isCfgEnabled {
+      for imageEmbed in imageEmbeds {
+        let shape = imageEmbed.shape
+        for i in 0..<batchSize {
+          c[
+            (i + batchSize)..<(i + batchSize + 1), lengthStart..<(lengthStart + shape[1]), 0..<4096] =
+            imageEmbed[0..<1, 0..<shape[1], 0..<4096]
+          c[i..<(i + 1), lengthStart..<(lengthStart + shape[1]), 0..<4096] =
+            imageEmbed[1..<2, 0..<shape[1], 0..<4096]
+        }
+        lengthStart += shape[1]
+      }
+    } else {
+      for imageEmbed in imageEmbeds {
+        let shape = imageEmbed.shape
+        for i in 0..<cBatchSize {
+          c[i..<(i + 1), lengthStart..<(lengthStart + shape[1]), 0..<4096] =
+            imageEmbed[1..<2, 0..<shape[1], 0..<4096]
+        }
+        lengthStart += shape[1]
+      }
+    }
+    return [c] + textEncoding[1...]
   }
 
   private struct TypeAndFilePaths: Equatable & Hashable {
@@ -352,6 +405,8 @@ extension ControlModel {
           injectedKVs = emptyInjectKV(
             graph: graph, batchSize: batchSize, startWidth: tiledWidth, startHeight: tiledHeight)
         }
+      case .redux:
+        continue
       }
     }
     return InjectedControlsAndAdapters(
@@ -683,6 +738,8 @@ extension ControlModel {
         filePath: filePaths[1], version: imageEncoderVersion)
       let imageSize: Int
       switch imageEncoderVersion {
+      case .siglipL27_384:
+        imageSize = 378
       case .clipL14_336, .eva02L14_336:
         imageSize = 336
       case .openClipH14:
@@ -1275,6 +1332,55 @@ extension ControlModel {
           }
         }
       }
+    case .redux:
+      let imageEncoder = ImageEncoder<FloatType>(
+        filePath: filePaths[1], version: imageEncoderVersion)
+      let imageSize: Int
+      switch imageEncoderVersion {
+      case .clipL14_336, .eva02L14_336:
+        imageSize = 336
+      case .openClipH14:
+        imageSize = 224
+      case .siglipL27_384:
+        imageSize = 378
+      }
+      let zeroEmbeds = graph.variable(
+        .GPU(0), .NHWC(1, imageSize, imageSize, 3), of: FloatType.self)
+      zeroEmbeds.full(0)
+      let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds]).map { $0[0] }
+      func Redux(channels: Int) -> Model {
+        let x = Input()
+        let reduxUp = Dense(count: channels * 3)
+        let reduxDown = Dense(count: channels)
+        let out = reduxDown(reduxUp(x).swish())
+        return Model([x], [out])
+      }
+      let redux = Redux(channels: 4096)
+      redux.compile(inputs: imageEmbeds[0])
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) {
+        $0.read("redux", model: redux, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+      }
+      let imagePromptEmbeds = imageEmbeds.map {
+        redux(inputs: $0)[0].as(of: FloatType.self)
+      }
+      let batchedImagePromptEmbeds = (0..<inputs.count).map { i in
+        var imagePromptEmbed = graph.variable(.GPU(0), .HWC(2, 729, 4096), of: FloatType.self)
+        switch controlMode {
+        case .control:
+          imagePromptEmbed[0..<1, 0..<729, 0..<4096] = imagePromptEmbeds[inputs.count]  // The zero prompt embed for negative.
+        case .balanced, .prompt:  // For balanced / prompt, to decrease contrast, use the same embed for both positive / negative.
+          imagePromptEmbed[0..<1, 0..<729, 0..<4096] = imagePromptEmbeds[i]  // The positive prompt embed for negative.
+        }
+        imagePromptEmbed[1..<2, 0..<729, 0..<4096] = imagePromptEmbeds[i]
+        return imagePromptEmbed
+      }
+      return zip(batchedImagePromptEmbeds, inputs).map { (imagePromptEmbed, input) in
+        guard input.weight != 1 else { return [imagePromptEmbed] }
+        return [input.weight * imagePromptEmbed]
+      }
     case .t2iadapter:
       // For T2I-Adapter, we go all the way.
       let adapter: Model
@@ -1770,7 +1876,8 @@ extension ControlModel {
           }
         }
       }
-    case .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV, .ipadapterfaceidplus, .pulid:
+    case .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV, .ipadapterfaceidplus, .pulid,
+      .redux:
       fatalError()
     }
     return (vector.map({ [$0] }) ?? []) + (controlAddEmbedding.map { [$0] } ?? [])
@@ -1907,7 +2014,7 @@ extension ControlModel {
       ).toGPU(0)
       return [graph.variable(rot)] + conditions
     case .controlnetlora, .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV,
-      .ipadapterfaceidplus, .pulid:
+      .ipadapterfaceidplus, .pulid, .redux:
       fatalError()
     }
   }
@@ -1990,6 +2097,8 @@ extension ControlModel {
       case .injectKV:
         return Self.emptyInjectKV(
           graph: graph, batchSize: batchSize, startWidth: startWidth, startHeight: startHeight)
+      case .redux:
+        return []
       }
     }
     guard type == .controlnet || type == .controlnetlora || type == .controlnetunion else {
@@ -2053,6 +2162,8 @@ extension ControlModel {
             return x
           }
         }
+      case .redux:
+        fatalError()
       case .t2iadapter:
         guard controlMode == .control && isCfgEnabled else { return hint }
         return hint.map {

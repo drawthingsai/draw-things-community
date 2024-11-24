@@ -8,10 +8,12 @@ public struct LoRANetworkConfiguration {
   public var gradientCheckpointingFeedForward: Bool
   public var gradientCheckpointingTransformerLayer: Bool
   public var keys: [String]?
+  public var orthonormalDown: Bool
   public init(
     rank: Int, scale: Float, highPrecision: Bool, testing: Bool = true,
     gradientCheckpointingFeedForward: Bool = false,
-    gradientCheckpointingTransformerLayer: Bool = false, keys: [String]? = nil
+    gradientCheckpointingTransformerLayer: Bool = false, keys: [String]? = nil,
+    orthonormalDown: Bool = false
   ) {
     self.rank = rank
     self.scale = scale
@@ -20,6 +22,7 @@ public struct LoRANetworkConfiguration {
     self.gradientCheckpointingFeedForward = gradientCheckpointingFeedForward
     self.gradientCheckpointingTransformerLayer = gradientCheckpointingTransformerLayer
     self.keys = keys
+    self.orthonormalDown = orthonormalDown
   }
 }
 
@@ -51,22 +54,29 @@ public func LoRAConvolution(
   let upKey = index.map { "\(name)_lora_up-\($0)" } ?? "\(name)_lora_up"
   let conv2dDown = Convolution(
     groups: groups, filters: configuration.rank, filterSize: filterSize, noBias: true, hint: hint,
-    format: format, trainable: true, name: name.isEmpty ? "lora_down" : downKey)
+    format: format, trainable: configuration.orthonormalDown ? false : true,
+    name: name.isEmpty ? "lora_down" : downKey)
   let conv2dUp = Convolution(
     groups: groups, filters: filters, filterSize: [1, 1], noBias: true, hint: Hint(stride: [1, 1]),
     format: format, trainable: true, name: name.isEmpty ? "lora_up" : upKey)
   var out = conv2d(x)
+  let downX: Model.IO
+  if configuration.highPrecision {
+    downX = conv2dDown(x.to(.Float32))
+  } else {
+    downX = conv2dDown(x)
+  }
   if configuration.scale != 1 {
     out =
       out
       + (configuration.highPrecision
-        ? conv2dUp(configuration.scale * conv2dDown(x.to(.Float32))).to(of: x)
-        : conv2dUp(configuration.scale * conv2dDown(x)))
+        ? conv2dUp(configuration.scale * downX).to(of: x)
+        : conv2dUp(configuration.scale * downX))
   } else {
     out =
       out
       + (configuration.highPrecision
-        ? conv2dUp(conv2dDown(x.to(.Float32))).to(of: x) : conv2dUp(conv2dDown(x)))
+        ? conv2dUp(downX).to(of: x) : conv2dUp(downX))
   }
   return Model([x], [out])
 }
@@ -95,22 +105,29 @@ public func LoRADense(
   let downKey = index.map { "\(name)_lora_down-\($0)" } ?? "\(name)_lora_down"
   let upKey = index.map { "\(name)_lora_up-\($0)" } ?? "\(name)_lora_up"
   let denseDown = Dense(
-    count: configuration.rank, noBias: true, trainable: true,
+    count: configuration.rank, noBias: true,
+    trainable: configuration.orthonormalDown ? false : true,
     name: name.isEmpty ? "lora_down" : downKey)
   let denseUp = Dense(
     count: count, noBias: true, trainable: true, name: name.isEmpty ? "lora_up" : upKey)
   var out = dense(x)
+  let downX: Model.IO
+  if configuration.highPrecision {
+    downX = denseDown(x.to(.Float32))
+  } else {
+    downX = denseDown(x)
+  }
   if configuration.scale != 1 {
     out =
       out
       + (configuration.highPrecision
-        ? denseUp(configuration.scale * denseDown(x.to(.Float32))).to(of: x)
-        : denseUp(configuration.scale * denseDown(x)))
+        ? denseUp(configuration.scale * downX).to(of: x)
+        : denseUp(configuration.scale * downX))
   } else {
     out =
       out
       + (configuration.highPrecision
-        ? denseUp(denseDown(x.to(.Float32))).to(of: x) : denseUp(denseDown(x)))
+        ? denseUp(downX).to(of: x) : denseUp(downX))
   }
   return Model([x], [out])
 }

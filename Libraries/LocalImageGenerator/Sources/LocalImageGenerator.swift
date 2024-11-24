@@ -1258,12 +1258,6 @@ extension LocalImageGenerator {
     }
   }
 
-  private func downscaleDepthForDepth2Img(_ depth: DynamicGraph.Tensor<FloatType>)
-    -> DynamicGraph.Tensor<FloatType>
-  {
-    return Functional.averagePool(depth, filterSize: [8, 8], hint: Hint(stride: [8, 8]))
-  }
-
   private func downscaleImageAndToGPU(_ image: DynamicGraph.Tensor<FloatType>, scaleFactor: Int)
     -> DynamicGraph.Tensor<FloatType>
   {
@@ -1577,21 +1571,39 @@ extension LocalImageGenerator {
       precondition(input.shape[3] == 3)
       let imageSize: Int
       switch imageEncoderVersion {
+      case .siglipL27_384:
+        imageSize = 378
       case .clipL14_336, .eva02L14_336:
         imageSize = 336
       case .openClipH14:
         imageSize = 224
       }
-      if inputHeight != imageSize || inputWidth != imageSize {
-        rgbResults.append(
-          (
-            (Upsample(
-              .bilinear, widthScale: Float(imageSize) / Float(inputWidth),
-              heightScale: Float(imageSize) / Float(inputHeight))(input) - mean) .* invStd,
-            strength
-          ))
-      } else {
-        rgbResults.append(((input - mean) .* invStd, strength))
+      switch imageEncoderVersion {
+      case .siglipL27_384:
+        // siglip normalizes with simply 0.5, 0.5, hence in the range of -1, 1.
+        if inputHeight != imageSize || inputWidth != imageSize {
+          rgbResults.append(
+            (
+              Upsample(
+                .bilinear, widthScale: Float(imageSize) / Float(inputWidth),
+                heightScale: Float(imageSize) / Float(inputHeight))(input),
+              strength
+            ))
+        } else {
+          rgbResults.append((input, strength))
+        }
+      case .clipL14_336, .eva02L14_336, .openClipH14:
+        if inputHeight != imageSize || inputWidth != imageSize {
+          rgbResults.append(
+            (
+              (Upsample(
+                .bilinear, widthScale: Float(imageSize) / Float(inputWidth),
+                heightScale: Float(imageSize) / Float(inputHeight))(input) - mean) .* invStd,
+              strength
+            ))
+        } else {
+          rgbResults.append(((input - mean) .* invStd, strength))
+        }
       }
     }
     return rgbResults
@@ -1688,7 +1700,7 @@ extension LocalImageGenerator {
         globalAveragePooling: globalAveragePooling, transformerBlocks: transformerBlocks,
         targetBlocks: control.targetBlocks, imageEncoderVersion: imageEncoderVersion,
         ipAdapterConfig: ipAdapterConfig, firstStage: version == .flux1 ? firstStage : nil)  // TODO: temporary holder, we need a new setting to know whether to reuse the image encoder from first stage or something else.
-      let customRGB: (Bool) -> DynamicGraph.Tensor<FloatType>? = { convert in
+      func customRGB(_ convert: Bool) -> DynamicGraph.Tensor<FloatType>? {
         custom.map({
           let input = graph.variable(Tensor<FloatType>($0).toGPU(0))
           let inputHeight = input.shape[1]
@@ -2033,7 +2045,7 @@ extension LocalImageGenerator {
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
 
-      case .ipadapterplus, .ipadapterfull:
+      case .ipadapterplus, .ipadapterfull, .redux:
         var shuffles = shuffles
         if shuffles.isEmpty {
           guard let custom = custom else { return nil }
@@ -2305,6 +2317,109 @@ extension LocalImageGenerator {
     return (c, extraProjection)
   }
 
+  private func encodeImageCond(
+    image: DynamicGraph.Tensor<FloatType>?, depth: DynamicGraph.Tensor<FloatType>?,
+    custom: DynamicGraph.Tensor<FloatType>?, modifier: SamplerModifier, version: ModelVersion,
+    firstStage: FirstStage<FloatType>, usesFlashAttention: Bool
+  ) -> DynamicGraph.Tensor<FloatType>? {
+    switch modifier {
+    case .depth:
+      guard
+        let depth = depth
+          ?? (image.flatMap {
+            guard ImageGeneratorUtils.isDepthModelAvailable else { return nil }
+            let graph = $0.graph
+            let shape = $0.shape
+            return graph.variable(
+              ImageGeneratorUtils.extractDepthMap(
+                $0, imageWidth: shape[2], imageHeight: shape[1],
+                usesFlashAttention: usesFlashAttention
+              )
+              .toGPU(0))
+          })
+      else { return nil }
+      switch version {
+      case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
+        return Functional.averagePool(depth, filterSize: [8, 8], hint: Hint(stride: [8, 8]))
+      case .flux1:
+        let graph = depth.graph
+        let shape = depth.shape
+        var depthRGB = graph.variable(
+          .GPU(0), .NHWC(shape[0], shape[1], shape[2], 3), of: FloatType.self)
+        depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] = depth
+        depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 1..<2] = depth
+        depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = depth
+        let encodedDepth = firstStage.encode(depthRGB, encoder: nil).0
+        let encodedShape = encodedDepth.shape
+        return firstStage.scale(
+          encodedDepth[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied())
+      }
+    case .canny:
+      switch version {
+      case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
+        return nil
+      case .flux1:
+        guard
+          let cannyRGB = {
+            guard let image = image else {
+              return custom
+            }
+            let graph = image.graph
+            return graph.variable(
+              ControlModel<FloatType>.canny(image.rawValue.toCPU(), adjustRGB: false).toGPU(0))
+          }()
+        else { return nil }
+        let encodedCanny = firstStage.encode(cannyRGB, encoder: nil).0
+        let encodedShape = encodedCanny.shape
+        return firstStage.scale(
+          encodedCanny[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied())
+      }
+    case .double, .editing, .inpainting, .none:
+      return nil
+    }
+  }
+
+  private func concatMaskWithMaskedImage(
+    version: ModelVersion, encodedImage: DynamicGraph.Tensor<FloatType>,
+    encodedMask: DynamicGraph.Tensor<FloatType>, imageNegMask: DynamicGraph.Tensor<FloatType>?
+  ) -> DynamicGraph.Tensor<FloatType> {
+    let graph = encodedImage.graph
+    switch version {
+    case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+      .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
+      let shape = encodedImage.shape
+      let maskShape = encodedMask.shape
+      var result = graph.variable(
+        encodedImage.kind, format: encodedImage.format,
+        shape: [shape[0], shape[1], shape[2], shape[3] + maskShape[3]], of: FloatType.self)
+      result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<maskShape[3]] = encodedMask
+      result[0..<shape[0], 0..<shape[1], 0..<shape[2], maskShape[3]..<(maskShape[3] + shape[3])] =
+        encodedImage
+      return result
+    case .flux1:
+      let shape = encodedImage.shape
+      var result = graph.variable(
+        encodedImage.kind, format: encodedImage.format,
+        shape: [shape[0], shape[1], shape[2], 64 + shape[3]], of: FloatType.self)
+      result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] = encodedImage
+      guard let imageNegMask = imageNegMask else {
+        for i in 0..<64 {
+          result[0..<shape[0], 0..<shape[1], 0..<shape[2], (i + shape[3])..<(i + shape[3] + 1)] =
+            encodedMask
+        }
+        return result
+      }
+      let imageShuffledMask = (1 - imageNegMask).reshaped(
+        format: .NHWC, shape: [shape[0], shape[1], 8, shape[2], 8]
+      ).permuted(0, 1, 3, 2, 4).contiguous().reshaped(.NHWC(shape[0], shape[1], shape[2], 64))
+      result[0..<shape[0], 0..<shape[1], 0..<shape[2], shape[3]..<(shape[3] + 64)] =
+        imageShuffledMask
+      return result
+    }
+  }
+
   private func generateTextOnly(
     _ image: Tensor<FloatType>?, scaleFactor imageScaleFactor: Int,
     depth: Tensor<FloatType>?, hints: [ControlHintType: AnyTensor], custom: Tensor<FloatType>?,
@@ -2327,17 +2442,12 @@ extension LocalImageGenerator {
         modelPreloader.endMFAGuard()
       }
     }
-    var file =
+    let file =
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
-    var modifier = ImageGeneratorUtils.modifierForModel(
+    let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
-    if modifier == .depth && depth == nil {
-      // Revert to default file.
-      modifier = .none
-      file = ModelZoo.defaultSpecification.file
-    }
     let modelVersion = ModelZoo.versionForModel(file)
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     // generateTextOnly cannot handle I2v model.
@@ -2453,7 +2563,7 @@ extension LocalImageGenerator {
       hasHints.insert(.pose)
     }
     let (
-      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
+      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, _, injectIPAdapterLengths,
       canInjectedControls
     ) =
       ImageGeneratorUtils.canInjectControls(
@@ -2692,7 +2802,8 @@ extension LocalImageGenerator {
         downscaleImageAndToGPU(graph.variable($0), scaleFactor: imageScaleFactor)
       }
       var firstPassImage: DynamicGraph.Tensor<FloatType>? = nil
-      if modifier == .inpainting || modifier == .editing || modifier == .double || canInjectControls
+      if modifier == .inpainting || modifier == .editing || modifier == .double
+        || modifier == .depth || modifier == .canny || canInjectControls
         || canInjectT2IAdapters || !injectIPAdapterLengths.isEmpty
       {
         // TODO: This needs to be properly handled for Wurstchen (i.e. using EfficientNet to encode image).
@@ -2735,13 +2846,18 @@ extension LocalImageGenerator {
           scale: firstPassScale)
         if modifier == .inpainting {
           maskedImage = firstStage.scale(
-            encodedImage[0..<1, 0..<firstPassStartHeight, 0..<firstPassStartWidth, 0..<4].copied())
+            encodedImage[
+              0..<1, 0..<firstPassStartHeight, 0..<firstPassStartWidth, 0..<firstPassChannels
+            ].copied())
           mask = graph.variable(
             .GPU(0), .NHWC(1, firstPassStartHeight, firstPassStartWidth, 1), of: FloatType.self)
           mask?.full(1)
+          maskedImage = concatMaskWithMaskedImage(
+            version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
+          )
         } else {
           maskedImage = encodedImage[
-            0..<1, 0..<firstPassStartHeight, 0..<firstPassStartWidth, 0..<4
+            0..<1, 0..<firstPassStartHeight, 0..<firstPassStartWidth, 0..<firstPassChannels
           ].copied()
         }
         guard feedback(.imageEncoded, signposts, nil) else { return (nil, 1) }
@@ -2762,7 +2878,22 @@ extension LocalImageGenerator {
           .bilinear, widthScale: Float(firstPassStartHeight * 8) / Float(depthHeight),
           heightScale: Float(firstPassStartWidth * 8) / Float(depthWidth))($0)
       }
-      let firstPassDepth2Img = firstPassDepthImage.map { downscaleDepthForDepth2Img($0) }
+      let customImage = custom.map { graph.variable($0.toGPU(0)) }
+      let firstPassCustomImage = customImage.map {
+        let customHeight = $0.shape[1]
+        let customWidth = $0.shape[2]
+        guard customHeight != firstPassStartHeight * 8 || customWidth != firstPassStartWidth * 8
+        else {
+          return $0
+        }
+        return Upsample(
+          .bilinear, widthScale: Float(firstPassStartHeight * 8) / Float(customHeight),
+          heightScale: Float(firstPassStartWidth * 8) / Float(customWidth))($0)
+      }
+      let firstPassImageCond = encodeImageCond(
+        image: firstPassImage, depth: firstPassDepthImage, custom: firstPassCustomImage,
+        modifier: modifier, version: modelVersion, firstStage: firstStage,
+        usesFlashAttention: isMFAEnabled)
 
       let injectedControls = generateInjectedControls(
         graph: graph, startHeight: firstPassStartHeight, startWidth: firstPassStartWidth,
@@ -2780,7 +2911,7 @@ extension LocalImageGenerator {
               unets: modelPreloader.retrieveUNet(
                 sampler: sampler, scale: firstPassScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond), sample: nil,
-              maskedImage: maskedImage, depthImage: firstPassDepth2Img,
+              conditionImage: maskedImage ?? firstPassImageCond,
               mask: mask, negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
@@ -2929,11 +3060,15 @@ extension LocalImageGenerator {
         )
         if modifier == .inpainting {
           maskedImage = firstStage.scale(
-            encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<4].copied())
+            encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<firstPassChannels].copied())
           mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
           mask?.full(1)
+          maskedImage = concatMaskWithMaskedImage(
+            version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
+          )
         } else {
-          maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<4].copied()
+          maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<firstPassChannels]
+            .copied()
         }
       }
       guard feedback(.secondPassImageEncoded, signposts, nil) else { return (nil, 1) }
@@ -2947,9 +3082,22 @@ extension LocalImageGenerator {
           .bilinear, widthScale: Float(startHeight * 8) / Float(depthHeight),
           heightScale: Float(startWidth * 8) / Float(depthWidth))($0)
       }
-      let secondPassDepth2Img = secondPassDepthImage.map { downscaleDepthForDepth2Img($0) }
+      let secondPassCustomImage = customImage.map {
+        let customHeight = $0.shape[1]
+        let customWidth = $0.shape[2]
+        guard customHeight != startHeight * 8 || customWidth != startWidth * 8 else {
+          return $0
+        }
+        return Upsample(
+          .bilinear, widthScale: Float(startHeight * 8) / Float(customHeight),
+          heightScale: Float(startWidth * 8) / Float(customWidth))($0)
+      }
+      let secondPassImageCond = encodeImageCond(
+        image: image, depth: secondPassDepthImage, custom: secondPassCustomImage,
+        modifier: modifier, version: modelVersion, firstStage: firstStage,
+        usesFlashAttention: isMFAEnabled)
       let (
-        canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
+        canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, _, injectIPAdapterLengths,
         canInjectedControls
       ) =
         ImageGeneratorUtils.canInjectControls(
@@ -3064,7 +3212,7 @@ extension LocalImageGenerator {
               unets: modelPreloader.retrieveUNet(
                 sampler: secondPassSampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond),
-              sample: nil, maskedImage: maskedImage, depthImage: secondPassDepth2Img, mask: mask,
+              sample: nil, conditionImage: maskedImage ?? secondPassImageCond, mask: mask,
               negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: secondPassInjectedControls,
@@ -3164,17 +3312,12 @@ extension LocalImageGenerator {
         modelPreloader.endMFAGuard()
       }
     }
-    var file =
+    let file =
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
-    var modifier = ImageGeneratorUtils.modifierForModel(
+    let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
-    if modifier == .depth && depth == nil {
-      // Revert to default file.
-      modifier = .none
-      file = ModelZoo.defaultSpecification.file
-    }
     let modelVersion = ModelZoo.versionForModel(file)
     let (qkNorm, dualAttentionLayers) =
       ModelZoo.MMDiTForModel(file).map { return ($0.qkNorm, $0.dualAttentionLayers) } ?? (false, [])
@@ -3273,7 +3416,7 @@ extension LocalImageGenerator {
       hasHints.insert(.pose)
     }
     let (
-      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
+      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, _, injectIPAdapterLengths,
       canInjectedControls
     ) =
       ImageGeneratorUtils.canInjectControls(
@@ -3561,6 +3704,8 @@ extension LocalImageGenerator {
           encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
         mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
         mask?.full(1)
+        maskedImage = concatMaskWithMaskedImage(
+          version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil)
       } else if modifier == .editing || modelVersion == .svdI2v {
         maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
       }
@@ -3595,7 +3740,20 @@ extension LocalImageGenerator {
           .bilinear, widthScale: Float(startHeight * 8) / Float(depthHeight),
           heightScale: Float(startWidth * 8) / Float(depthWidth))(depthImage)
       }
-      let depth2Img = depthImage.map { downscaleDepthForDepth2Img($0) }
+      let customImage = custom.map {
+        let customImage = graph.variable($0.toGPU(0))
+        let customHeight = customImage.shape[1]
+        let customWidth = customImage.shape[2]
+        guard customHeight != startHeight * 8 || customWidth != startWidth * 8 else {
+          return customImage
+        }
+        return Upsample(
+          .bilinear, widthScale: Float(startHeight * 8) / Float(customHeight),
+          heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
+      }
+      let imageCond = encodeImageCond(
+        image: firstPassImage, depth: depthImage, custom: customImage, modifier: modifier,
+        version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       let injectedControls = generateInjectedControls(
         graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
@@ -3611,7 +3769,7 @@ extension LocalImageGenerator {
               unets: modelPreloader.retrieveUNet(
                 sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond), sample: nil,
-              maskedImage: maskedImage, depthImage: depth2Img,
+              conditionImage: maskedImage ?? imageCond,
               mask: mask, negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
@@ -3668,6 +3826,9 @@ extension LocalImageGenerator {
             encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
           mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
           mask?.full(1)
+          maskedImage = concatMaskWithMaskedImage(
+            version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
+          )
         } else if modifier == .editing || modelVersion == .svdI2v {
           maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
         }
@@ -3721,7 +3882,7 @@ extension LocalImageGenerator {
                   sampler: secondPassSampler, scale: imageScale,
                   tokenLengthUncond: tokenLengthUncond,
                   tokenLengthCond: tokenLengthCond),
-                sample: nil, maskedImage: maskedImage, depthImage: nil, mask: mask,
+                sample: nil, conditionImage: maskedImage, mask: mask,
                 negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
                 injectedControls: [],  // TODO: Support injectedControls for this.
@@ -4338,17 +4499,12 @@ extension LocalImageGenerator {
         modelPreloader.endMFAGuard()
       }
     }
-    var file =
+    let file =
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
-    var modifier = ImageGeneratorUtils.modifierForModel(
+    let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
-    if modifier == .depth && depth == nil {
-      // Revert to default file.
-      modifier = .none
-      file = ModelZoo.defaultSpecification.file
-    }
     let modelVersion = ModelZoo.versionForModel(file)
     let (qkNorm, dualAttentionLayers) =
       ModelZoo.MMDiTForModel(file).map { return ($0.qkNorm, $0.dualAttentionLayers) } ?? (false, [])
@@ -4447,7 +4603,7 @@ extension LocalImageGenerator {
       hasHints.insert(.pose)
     }
     let (
-      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
+      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, _, injectIPAdapterLengths,
       canInjectedControls
     ) =
       ImageGeneratorUtils.canInjectControls(
@@ -4770,7 +4926,31 @@ extension LocalImageGenerator {
       } else {
         x_T = noise
       }
-      let depth2Img = depthImage.map { downscaleDepthForDepth2Img($0) }
+      let customImage = custom.map {
+        let customImage = graph.variable($0.toGPU(0))
+        let customHeight = customImage.shape[1]
+        let customWidth = customImage.shape[2]
+        guard customHeight != startHeight * 8 || customWidth != startWidth * 8 else {
+          return customImage
+        }
+        return Upsample(
+          .bilinear, widthScale: Float(startHeight * 8) / Float(customHeight),
+          heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
+      }
+      let imageCond = encodeImageCond(
+        image: image, depth: depthImage, custom: customImage, modifier: modifier,
+        version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
+      var initMaskMaybe: DynamicGraph.Tensor<FloatType>? = initMask
+      var initNegMaskMaybe: DynamicGraph.Tensor<FloatType>? = initNegMask
+      if modifier == .inpainting {
+        maskedImage = concatMaskWithMaskedImage(
+          version: modelVersion, encodedImage: maskedImage!, encodedMask: initMask,
+          imageNegMask: graph.variable(imageNegMask2.toGPU(0)))
+        if !configuration.preserveOriginalAfterInpaint {
+          initMaskMaybe = nil
+          initNegMaskMaybe = nil
+        }
+      }
       guard
         var x =
           try? modelPreloader.consumeUNet(
@@ -4779,7 +4959,8 @@ extension LocalImageGenerator {
               unets: modelPreloader.retrieveUNet(
                 sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond), sample: sample,
-              maskedImage: maskedImage, depthImage: depth2Img, mask: initMask, negMask: initNegMask,
+              conditionImage: maskedImage ?? imageCond, mask: initMaskMaybe,
+              negMask: initNegMaskMaybe,
               conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
@@ -4890,7 +5071,7 @@ extension LocalImageGenerator {
                   sampler: secondPassSampler, scale: imageScale,
                   tokenLengthUncond: tokenLengthUncond,
                   tokenLengthCond: tokenLengthCond),
-                sample: sample, maskedImage: nil, depthImage: nil, mask: initMask,
+                sample: sample, conditionImage: nil, mask: initMask,
                 negMask: initNegMask, conditioning: c, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
                 injectedControls: [],  // TODO: Support injectedControls for this.
@@ -4996,17 +5177,12 @@ extension LocalImageGenerator {
         modelPreloader.endMFAGuard()
       }
     }
-    var file =
+    let file =
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
-    var modifier = ImageGeneratorUtils.modifierForModel(
+    let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
-    if modifier == .depth && depth == nil {
-      // Revert to default file.
-      modifier = .none
-      file = ModelZoo.defaultSpecification.file
-    }
     let modelVersion = ModelZoo.versionForModel(file)
     let (qkNorm, dualAttentionLayers) =
       ModelZoo.MMDiTForModel(file).map { return ($0.qkNorm, $0.dualAttentionLayers) } ?? (false, [])
@@ -5105,7 +5281,7 @@ extension LocalImageGenerator {
       hasHints.insert(.pose)
     }
     let (
-      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths,
+      canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, _, injectIPAdapterLengths,
       canInjectedControls
     ) =
       ImageGeneratorUtils.canInjectControls(
@@ -5441,7 +5617,31 @@ extension LocalImageGenerator {
         graph: graph, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth, channels: channels, seed: configuration.seed,
         seedMode: configuration.seedMode)
-      let depth2Img = depthImage.map { downscaleDepthForDepth2Img($0) }
+      let customImage = custom.map {
+        let customImage = graph.variable($0.toGPU(0))
+        let customHeight = customImage.shape[1]
+        let customWidth = customImage.shape[2]
+        guard customHeight != startHeight * 8 || customWidth != startWidth * 8 else {
+          return customImage
+        }
+        return Upsample(
+          .bilinear, widthScale: Float(startHeight * 8) / Float(customHeight),
+          heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
+      }
+      let imageCond = encodeImageCond(
+        image: image, depth: depthImage, custom: customImage, modifier: modifier,
+        version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
+      var initMask1Maybe: DynamicGraph.Tensor<FloatType>? = initMask1
+      var initNegMaskMaybe: DynamicGraph.Tensor<FloatType>? = initNegMask
+      if modifier == .inpainting {
+        maskedImage1 = concatMaskWithMaskedImage(
+          version: modelVersion, encodedImage: maskedImage1!, encodedMask: initMask1,
+          imageNegMask: graph.variable(imageNegMask1.toGPU(0)))
+        if configuration.preserveOriginalAfterInpaint {
+          initMask1Maybe = nil
+          initNegMaskMaybe = nil
+        }
+      }
       var intermediateResult =
         try?
         (sampler.sample(
@@ -5449,7 +5649,8 @@ extension LocalImageGenerator {
           unets: modelPreloader.retrieveUNet(
             sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond), sample: sample,
-          maskedImage: maskedImage1, depthImage: depth2Img, mask: initMask1, negMask: initNegMask,
+          conditionImage: maskedImage1 ?? imageCond, mask: initMask1Maybe,
+          negMask: initNegMaskMaybe,
           conditioning: c, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           extraProjection: extraProjection, injectedControls: injectedControls,
           textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
@@ -5530,13 +5731,25 @@ extension LocalImageGenerator {
           steps: sampling.steps, firstStage: firstStage
         )
       }
+      var initMask2Maybe: DynamicGraph.Tensor<FloatType>? = initMask2
+      var initNegMask2Maybe: DynamicGraph.Tensor<FloatType>? = initNegMask2
+      if modifier == .inpainting {
+        maskedImage2 = concatMaskWithMaskedImage(
+          version: modelVersion, encodedImage: maskedImage2!, encodedMask: initMask2!,
+          imageNegMask: imageNegMask2.map { graph.variable($0.toGPU(0)) })
+        if !configuration.preserveOriginalAfterInpaint {
+          initMask2Maybe = nil
+          initNegMask2Maybe = nil
+        }
+      }
       guard
         var x =
           try? modelPreloader.consumeUNet(
             (sampler.sample(
               x_T, unets: intermediateResult?.unets ?? [nil], sample: sample,
-              maskedImage: maskedImage2,
-              depthImage: depth2Img, mask: initMask2, negMask: initNegMask2, conditioning: c,
+              conditionImage: maskedImage2 ?? imageCond, mask: initMask2Maybe,
+              negMask: initNegMask2Maybe,
+              conditioning: c,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
               extraProjection: extraProjection, injectedControls: injectedControls,
               textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
@@ -5633,7 +5846,7 @@ extension LocalImageGenerator {
             unets: modelPreloader.retrieveUNet(
               sampler: secondPassSampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond),
-            sample: sample, maskedImage: nil, depthImage: nil, mask: initMask1,
+            sample: sample, conditionImage: nil, mask: initMask1,
             negMask: initNegMask, conditioning: c, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
             injectedControls: [],  // TODO: Support injectedControls for this.
@@ -5702,8 +5915,8 @@ extension LocalImageGenerator {
             try? modelPreloader.consumeUNet(
               (secondPassSampler.sample(
                 x_T, unets: intermediateResult?.unets ?? [nil], sample: sample,
-                maskedImage: maskedImage2,
-                depthImage: depth2Img, mask: initMask2, negMask: initNegMask2, conditioning: c,
+                conditionImage: maskedImage2 ?? imageCond, mask: initMask2, negMask: initNegMask2,
+                conditioning: c,
                 tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
                 extraProjection: extraProjection, injectedControls: injectedControls,
                 textGuidanceScale: secondPassTextGuidance, imageGuidanceScale: imageGuidanceScale,

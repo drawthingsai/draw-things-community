@@ -64,8 +64,7 @@ where UNet.FloatType == FloatType {
 extension TCDSampler: Sampler {
   public func sample(
     _ x_T: DynamicGraph.Tensor<FloatType>, unets existingUNets: [UNet?],
-    sample: DynamicGraph.Tensor<FloatType>?, maskedImage: DynamicGraph.Tensor<FloatType>?,
-    depthImage: DynamicGraph.Tensor<FloatType>?,
+    sample: DynamicGraph.Tensor<FloatType>?, conditionImage: DynamicGraph.Tensor<FloatType>?,
     mask: DynamicGraph.Tensor<FloatType>?, negMask: DynamicGraph.Tensor<FloatType>?,
     conditioning c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
@@ -95,10 +94,8 @@ extension TCDSampler: Sampler {
       inChannels = channels * 2
     } else {
       switch modifier {
-      case .inpainting:
-        inChannels = channels * 2 + 1
-      case .depth:
-        inChannels = channels + 1
+      case .inpainting, .depth, .canny:
+        inChannels = channels + (conditionImage?.shape[3] ?? 0)
       case .editing:
         inChannels = channels * 2
       case .double:
@@ -113,26 +110,20 @@ extension TCDSampler: Sampler {
       of: FloatType.self
     )
     switch modifier {
-    case .inpainting:
-      let maskedImage = maskedImage!
-      let mask = mask!
+    case .inpainting, .depth, .canny:
+      let maskedImage = conditionImage!
+      let shape = maskedImage.shape
       for i in 0..<batchSize {
-        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + 1)] = mask
-        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, (channels + 1)..<(channels * 2 + 1)] =
+        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + shape[3])] =
           maskedImage
       }
     case .editing:
-      let maskedImage = maskedImage!
+      let maskedImage = conditionImage!
       for i in 0..<batchSize {
         xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels * 2)] = maskedImage
       }
-    case .depth:
-      let depthImage = depthImage!
-      for i in 0..<batchSize {
-        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + 1)] = depthImage
-      }
     case .double:
-      let maskedImage = maskedImage!
+      let maskedImage = conditionImage!
       let maskedImageChannels = maskedImage.shape[3]
       for i in 0..<batchSize {
         xIn[
@@ -213,7 +204,7 @@ extension TCDSampler: Sampler {
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
-        tiledDiffusion: tiledDiffusion)
+        tiledDiffusion: tiledDiffusion, injectedControls: injectedControls)
       c = vector + encodings
       injectedControlsC = injectedControls.map {
         $0.model.encode(
@@ -294,7 +285,7 @@ extension TCDSampler: Sampler {
     var indexOffset = startStep.integral
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       if version == .svdI2v {
-        let maskedImage = maskedImage!
+        let maskedImage = conditionImage!
         var frames = graph.variable(
           .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
         for i in 0..<batchSize {
@@ -371,7 +362,8 @@ extension TCDSampler: Sampler {
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
-                tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion
+                tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
+                injectedControls: injectedControls
               ).0
             indexOffset = i
           }

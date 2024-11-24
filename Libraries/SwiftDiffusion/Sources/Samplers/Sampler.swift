@@ -26,6 +26,7 @@ public enum ImageEncoderVersion: String, Codable {
   case clipL14_336 = "clip_l14_336"
   case openClipH14 = "open_clip_h14"
   case eva02L14_336 = "eva02_l14_336"
+  case siglipL27_384 = "siglip_l27_384"
 }
 
 public enum AlternativeDecoderVersion: String, Codable {
@@ -38,6 +39,7 @@ public enum SamplerModifier: String, Codable {
   case depth = "depth"
   case editing = "editing"
   case double = "double"
+  case canny = "canny"
 }
 
 public struct LoRAConfiguration: Equatable {
@@ -200,13 +202,14 @@ public protocol Sampler<FloatType, UNet> {
   var injectControls: Bool { get }
   var injectT2IAdapters: Bool { get }
   var injectIPAdapterLengths: [Int] { get }
+  var injectAttentionKV: Bool { get }
   var lora: [LoRAConfiguration] { get }
   var tiledDiffusion: TiledConfiguration { get }
   var isGuidanceEmbedEnabled: Bool { get }
 
   func sample(
     _ x_T: DynamicGraph.Tensor<FloatType>, unets: [UNet?], sample: DynamicGraph.Tensor<FloatType>?,
-    maskedImage: DynamicGraph.Tensor<FloatType>?, depthImage: DynamicGraph.Tensor<FloatType>?,
+    conditionImage: DynamicGraph.Tensor<FloatType>?,
     mask: DynamicGraph.Tensor<FloatType>?, negMask: DynamicGraph.Tensor<FloatType>?,
     conditioning c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,

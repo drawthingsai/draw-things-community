@@ -1003,13 +1003,14 @@ public enum ImageConverter {
           }
         }
         let (
-          canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, injectIPAdapterLengths, _
+          canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, canInjectPrompts,
+          injectIPAdapterLengths, _
         ) =
           ImageGeneratorUtils.canInjectControls(
             hasImage: true, hasDepth: true, hasHints: Set([.scribble, .pose, .color]),
             hasCustom: true, shuffleCount: 1,
             controls: configuration.controls, version: modelVersion)
-        if canInjectControls || canInjectT2IAdapters || canInjectAttentionKVs
+        if canInjectControls || canInjectT2IAdapters || canInjectAttentionKVs || canInjectPrompts
           || !injectIPAdapterLengths.isEmpty
         {
           let controls:

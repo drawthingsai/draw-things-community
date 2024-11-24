@@ -31,7 +31,7 @@ public struct LoRATrainer {
     }
   }
 
-  private struct ProcessedInput {
+  public struct ProcessedInput {
     var imagePath: String
     var tokens: [Int32]
     var CLIPTokens: [Int32]
@@ -56,14 +56,17 @@ public struct LoRATrainer {
     (URL, Int, Int) -> (
       Tensor<FloatType>, (width: Int, height: Int), (top: Int, left: Int), (width: Int, height: Int)
     )?
+  private let summaryWriter: SummaryWriter?
 
   public init(
+    tensorBoard: String?,
     model: String, scale: DeviceCapability.Scale, cotrainTextModel: Bool,
     cotrainCustomEmbedding: Bool, clipSkip: Int, session: String, resumeIfPossible: Bool,
     imageLoader: @escaping (URL, Int, Int) -> (
       Tensor<FloatType>, (width: Int, height: Int), (top: Int, left: Int), (width: Int, height: Int)
     )?
   ) {  // The model identifier.
+    summaryWriter = tensorBoard.map { SummaryWriter(logDirectory: $0) }
     self.model = model
     self.scale = scale
     self.cotrainTextModel = cotrainTextModel
@@ -124,7 +127,7 @@ public struct LoRATrainer {
   public func prepareDatasetForFlux1(
     inputs: [Input], tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
     customEmbeddingLength: Int, progressHandler: (PrepareState, Int) -> Bool
-  ) -> DataFrame? {
+  ) -> (DataFrame, ProcessedInput)? {
     let latentsScaling = ModelZoo.latentsScalingForModel(model)
     let firstStage = FirstStage<FloatType>(
       filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
@@ -142,6 +145,13 @@ public struct LoRATrainer {
     let imageWidth = Int(scale.widthScale) * 64
     let imageHeight = Int(scale.heightScale) * 64
     var processedInputs = [ProcessedInput]()
+    let (_, zeroCLIPTokens, _, _, _) = tokenizers[0].tokenize(
+      text: "", truncation: true, maxLength: 77)
+    let (_, zeroTokens, _, _, _) = tokenizers[1].tokenize(
+      text: "", truncation: true, maxLength: paddedTextEncodingLength)
+    let zeroCaptionInput = ProcessedInput(
+      imagePath: "", tokens: zeroTokens, CLIPTokens: zeroCLIPTokens, originalSize: (0, 0),
+      cropTopLeft: (0, 0), targetSize: (0, 0))
     var stopped = false
     graph.openStore(session) { store in
       // First, center crop and encode the image.
@@ -219,7 +229,7 @@ public struct LoRATrainer {
             )
           }
         }
-        for (index, input) in processedInputs.enumerated() {
+        for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
           for i in 0..<77 {
             tokensTensor[i] = input.CLIPTokens[i]
           }
@@ -240,7 +250,7 @@ public struct LoRATrainer {
               "cond_\(input.imagePath)",
               tensor: c[1][tokenEnd..<(tokenEnd + 1), 0..<768].copied().rawValue.toCPU())
           }
-          guard progressHandler(.conditionalEncoding, index + 1) else {
+          guard progressHandler(.conditionalEncoding, index) else {
             stopped = true
             return
           }
@@ -262,7 +272,7 @@ public struct LoRATrainer {
             "text_model", model: textModel[1],
             codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
         }
-        for (index, input) in processedInputs.enumerated() {
+        for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
           for i in 0..<paddedTextEncodingLength {
             tokens2Tensor[i] = input.tokens[i]
           }
@@ -271,7 +281,7 @@ public struct LoRATrainer {
             of: FloatType.self
           ).reshaped(.HWC(1, paddedTextEncodingLength, 4096))
           store.write("cond_te2_\(input.imagePath)", tensor: c.rawValue.toCPU())
-          guard progressHandler(.conditionalEncoding, index + 1) else {
+          guard progressHandler(.conditionalEncoding, index) else {
             stopped = true
             return
           }
@@ -284,13 +294,13 @@ public struct LoRATrainer {
     var dataFrame = DataFrame(from: processedInputs)
     dataFrame["imagePath"] = dataFrame["0", ProcessedInput.self].map(\.imagePath)
     // No need to include tokens.
-    return dataFrame
+    return (dataFrame, zeroCaptionInput)
   }
 
   public func prepareDataset(
     inputs: [Input], tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
     customEmbeddingLength: Int, progressHandler: (PrepareState, Int) -> Bool
-  ) -> DataFrame? {
+  ) -> (DataFrame, ProcessedInput)? {
     guard let tokenizer = tokenizers.first, version != .flux1 else {
       return prepareDatasetForFlux1(
         inputs: inputs, tokenizers: tokenizers, customEmbeddingLength: customEmbeddingLength,
@@ -315,6 +325,11 @@ public struct LoRATrainer {
     let imageWidth = Int(scale.widthScale) * 64
     let imageHeight = Int(scale.heightScale) * 64
     var processedInputs = [ProcessedInput]()
+    let (_, zeroTokens, _, _, _) = tokenizer.tokenize(
+      text: "", truncation: true, maxLength: 77)
+    let zeroCaptionInput = ProcessedInput(
+      imagePath: "", tokens: zeroTokens, CLIPTokens: [], originalSize: (0, 0), cropTopLeft: (0, 0),
+      targetSize: (0, 0))
     var stopped = false
     graph.openStore(session) { store in
       // First, center crop and encode the image.
@@ -490,7 +505,7 @@ public struct LoRATrainer {
               store.read("text_projection", variable: textProjection)
             }
           }
-          for (index, input) in processedInputs.enumerated() {
+          for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
             for i in 0..<77 {
               tokensTensor[i] = input.tokens[i]
             }
@@ -517,7 +532,7 @@ public struct LoRATrainer {
               }
               store.write("pool_\(input.imagePath)", tensor: pooled.rawValue.toCPU())
             }
-            guard progressHandler(.conditionalEncoding, index + 1) else {
+            guard progressHandler(.conditionalEncoding, index) else {
               stopped = true
               return
             }
@@ -545,7 +560,7 @@ public struct LoRATrainer {
                 return .continue(name)
               }
             }
-            for (index, input) in processedInputs.enumerated() {
+            for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
               for i in 0..<77 {
                 tokensTensor[i] = input.tokens[i]
               }
@@ -554,7 +569,7 @@ public struct LoRATrainer {
                 inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)[0]
                 .as(of: FloatType.self).reshaped(.HWC(1, 77, 768))
               store.write("cond_te2_\(input.imagePath)", tensor: c.rawValue.toCPU())
-              guard progressHandler(.conditionalEncoding, index + 1) else {
+              guard progressHandler(.conditionalEncoding, index) else {
                 stopped = true
                 return
               }
@@ -569,7 +584,7 @@ public struct LoRATrainer {
     var dataFrame = DataFrame(from: processedInputs)
     dataFrame["imagePath"] = dataFrame["0", ProcessedInput.self].map(\.imagePath)
     dataFrame["tokens"] = dataFrame["0", ProcessedInput.self].map(\.tokens)
-    return dataFrame
+    return (dataFrame, zeroCaptionInput)
   }
 
   public func saveSession(
@@ -630,7 +645,7 @@ public struct LoRATrainer {
 
   public func saveAsLoRA(
     textModel: [Model]?, unetFixed: Model?, unet: Model, embeddings: [DynamicGraph.Tensor<Float>],
-    scaleOfLoRA: Float, name: String
+    scaleOfLoRA: Float, name: String, step: Int
   ) {
     let graph = embeddings.first?.graph ?? DynamicGraph()
     graph.openStore(LoRAZoo.filePathForModelDownloaded(name)) { store in
@@ -791,6 +806,12 @@ public struct LoRATrainer {
         }
         return .continue(updatedName)
       }
+      if let summaryWriter = summaryWriter {
+        summaryWriter.addParameters(
+          "lora_up", unet.parameters.filter(where: { $0.contains("lora_up") }), step: step)
+        summaryWriter.addParameters(
+          "lora_down", unet.parameters.filter(where: { $0.contains("lora_down") }), step: step)
+      }
     }
   }
 
@@ -935,18 +956,44 @@ public struct LoRATrainer {
     case step(Int)
   }
 
+  private static func randomOrthonormalMatrix<FloatType: TensorNumeric & BinaryFloatingPoint>(
+    graph: DynamicGraph, M: Int, N: Int, of: FloatType.Type = FloatType.self
+  ) -> Tensor<FloatType> {
+    return graph.withNoGrad {
+      let A = graph.variable(.GPU(0), .WC(M, N), of: Float.self)
+      var Q = (0..<M).map { _ in graph.variable(.GPU(0), .WC(1, N), of: Float.self) }
+      A.randn()
+      Q.forEach { $0.full(0) }
+      var O = graph.variable(.GPU(0), .WC(M, N), of: Float.self)
+      for i in 0..<M {
+        var v = A[i..<(i + 1), 0..<N].copied()
+        for j in 0..<i {
+          let proj =
+            Functional.matmul(left: A[i..<(i + 1), 0..<N], right: Q[j], rightTranspose: (0, 1))
+            .* Q[j]
+          v = v - proj
+        }
+        let norm = v.reduced(.norm2, axis: [0, 1])
+        Q[i] = (1 / norm) .* v
+        O[i..<(i + 1), 0..<N] = Q[i]
+      }
+      return Tensor<FloatType>(from: O.rawValue).toCPU()
+    }
+  }
+
   private func trainFlux1(
     graph: DynamicGraph, firstStage: FirstStage<FloatType>, sessionStore: DynamicGraph.Store,
     resumingLoRAFile: (String, Int)?,
     dataFrame: DataFrame, trainingSteps: Int, warmupSteps: Int, gradientAccumulationSteps: Int,
-    rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: Float, trainableKeys: [String],
+    rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: ClosedRange<Float>,
+    stepsBetweenRestarts: Int, trainableKeys: [String],
     shift: Float, noiseOffset: Float, guidanceEmbed: ClosedRange<Float>,
-    denoisingTimesteps: ClosedRange<Int>, memorySaver: MemorySaver,
-    weightsMemory: WeightsMemoryManagement,
+    denoisingTimesteps: ClosedRange<Int>, captionDropoutRate: Float, orthonormalLoRADown: Bool,
+    memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
     progressHandler: (TrainingState, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>])
       -> Bool
   ) {
-    guard unetLearningRate > 0 else {
+    guard unetLearningRate.upperBound > 0 else {
       return
     }
     let queueWatermark = DynamicGraph.queueWatermark
@@ -963,15 +1010,16 @@ public struct LoRATrainer {
       configuration = LoRANetworkConfiguration(
         rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
         gradientCheckpointingFeedForward: true, gradientCheckpointingTransformerLayer: true,
-        keys: trainableKeys)
+        keys: trainableKeys, orthonormalDown: orthonormalLoRADown)
     case .balanced:
       configuration = LoRANetworkConfiguration(
         rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
-        gradientCheckpointingFeedForward: true, keys: trainableKeys)
+        gradientCheckpointingFeedForward: true, keys: trainableKeys,
+        orthonormalDown: orthonormalLoRADown)
     case .speed, .turbo:
       configuration = LoRANetworkConfiguration(
         rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
-        keys: trainableKeys)
+        keys: trainableKeys, orthonormalDown: orthonormalLoRADown)
     }
     let latentsWidth = Int(scale.widthScale) * 8
     let latentsHeight = Int(scale.heightScale) * 8
@@ -1055,12 +1103,29 @@ public struct LoRATrainer {
           case .Float64, .Int32, .Int64, .UInt8:
             fatalError()
           }
+        } else if orthonormalLoRADown && name.contains("lora_down") {
+          switch dataType {
+          case .Float16:
+            #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+              let tensor = Self.randomOrthonormalMatrix(
+                graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *), of: Float16.self)
+              return .final(tensor)
+            #else
+              break
+            #endif
+          case .Float32:
+            let tensor = Self.randomOrthonormalMatrix(
+              graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *), of: Float32.self)
+            return .final(tensor)
+          case .Float64, .Int32, .Int64, .UInt8:
+            fatalError()
+          }
         }
         return .continue(name)
       }
     }
     var optimizer = AdamWOptimizer(
-      graph, rate: unetLearningRate, betas: (0.9, 0.999), decay: 0.001, epsilon: 1e-8)
+      graph, rate: unetLearningRate.upperBound, betas: (0.9, 0.999), decay: 0.001, epsilon: 1e-8)
     optimizer.parameters = [dit.parameters]
     var optimizers = [optimizer]
     var scaler = GradScaler(scale: 32_768)
@@ -1080,7 +1145,7 @@ public struct LoRATrainer {
     var batch = [
       (
         imagePath: String, pooled: Tensor<FloatType>,
-        timestep: Float, guidance: Float
+        timestep: Float, guidance: Float, captionDropout: Bool
       )
     ]()
     while i < trainingSteps && !stopped {
@@ -1092,16 +1157,20 @@ public struct LoRATrainer {
         guard shape[1] == latentsHeight && shape[2] == latentsWidth && shape[3] == 32 else {
           continue
         }
+        let captionDropout = Float.random(in: 0...1) < captionDropoutRate
+        let textEncodingPath = captionDropout ? "" : imagePath
         guard
-          let _ = sessionStore.read(like: "cond_te2_\(imagePath)"),
-          let pooled = sessionStore.read("cond_\(imagePath)").map({ Tensor<FloatType>(from: $0) })
+          let _ = sessionStore.read(like: "cond_te2_\(textEncodingPath)"),
+          let pooled = sessionStore.read("cond_\(textEncodingPath)").map({
+            Tensor<FloatType>(from: $0)
+          })
         else { continue }
         var timestep: Double = Double.random(
           in: (Double(denoisingTimesteps.lowerBound) / 999)...(Double(
             denoisingTimesteps.upperBound) / 999))
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         let guidanceEmbed = (Float.random(in: guidanceEmbed) * 10).rounded() / 10
-        batch.append((imagePath, pooled, Float(timestep), guidanceEmbed))
+        batch.append((imagePath, pooled, Float(timestep), guidanceEmbed, captionDropout))
         if batch.count == 32 {
           let conditions = encodeFlux1Fixed(
             graph: graph, externalData: externalData,
@@ -1110,8 +1179,9 @@ public struct LoRATrainer {
             })
           for (j, item) in batch.enumerated() {
             guard let tensor = sessionStore.read(item.imagePath) else { continue }
+            let textEncodingPath = item.captionDropout ? "" : item.imagePath
             guard
-              let textEncoding = sessionStore.read("cond_te2_\(item.imagePath)").map({
+              let textEncoding = sessionStore.read("cond_te2_\(textEncodingPath)").map({
                 Tensor<FloatType>(from: $0)
               })
             else { continue }
@@ -1151,10 +1221,27 @@ public struct LoRATrainer {
             let value = loss.toCPU()[0, 0, 0]
             print("loss \(value), scale \(scaler.scale), step \(i), timestep \(item.timestep)")
             batchCount += 1
+            let learningRate: Float
+            if stepsBetweenRestarts > 1 {
+              learningRate =
+                unetLearningRate.lowerBound + 0.5
+                * (unetLearningRate.upperBound - unetLearningRate.lowerBound)
+                * (1
+                  + cos(
+                    (Float(i % (stepsBetweenRestarts - 1)) / Float(stepsBetweenRestarts - 1)) * .pi))
+            } else {
+              learningRate = unetLearningRate.upperBound
+            }
             if (i + 1) < warmupSteps {
-              optimizers[0].rate = unetLearningRate * (Float(i + 1) / Float(warmupSteps))
-            } else if (i + 1) == warmupSteps {
-              optimizers[0].rate = unetLearningRate
+              optimizers[0].rate = learningRate * (Float(i + 1) / Float(warmupSteps))
+            } else {
+              optimizers[0].rate = learningRate
+            }
+            if let summaryWriter = summaryWriter {
+              summaryWriter.addScalar("loss", value, step: i)
+              summaryWriter.addScalar("scale", scaler.scale, step: i)
+              summaryWriter.addScalar("timestep", item.timestep, step: i)
+              summaryWriter.addScalar("learning_rate", optimizers[0].rate, step: i)
             }
             guard progressHandler(.step(i + 1), Float(value), nil, nil, dit, []) else {
               stopped = true
@@ -1184,12 +1271,15 @@ public struct LoRATrainer {
 
   public func train(
     resumingLoRAFile: (String, Int)?, tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
-    dataFrame: DataFrame, trainingSteps: Int, warmupSteps: Int, gradientAccumulationSteps: Int,
-    rankOfLoRA: Int, scaleOfLoRA: Float, textModelLearningRate: Float, unetLearningRate: Float,
-    trainableKeys: [String],
+    dataFrame: DataFrame, zeroCaption: ProcessedInput, trainingSteps: Int, warmupSteps: Int,
+    gradientAccumulationSteps: Int,
+    rankOfLoRA: Int, scaleOfLoRA: Float, textModelLearningRate: Float,
+    unetLearningRate: ClosedRange<Float>,
+    stepsBetweenRestarts: Int, trainableKeys: [String],
     customEmbeddingLength: Int, customEmbeddingLearningRate: Float,
     stopEmbeddingTrainingAtStep: Int, shift: Float,
     noiseOffset: Float, guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
+    captionDropoutRate: Float, orthonormalLoRADown: Bool,
     memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
     progressHandler: (TrainingState, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>])
       -> Bool
@@ -1214,7 +1304,7 @@ public struct LoRATrainer {
       alternativeDecoderVersion: nil)
     graph.maxConcurrency = .limit(1)
     var dataFrame = dataFrame
-    let cotrainUNet = unetLearningRate > 0
+    let cotrainUNet = unetLearningRate.upperBound > 0
     let cotrainTextModel = cotrainTextModel && textModelLearningRate > 0
     if version == .v2 || version == .sdxlBase || version == .sdxlRefiner || version == .sd3
       || version == .pixart
@@ -1240,10 +1330,11 @@ public struct LoRATrainer {
           resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, trainingSteps: trainingSteps,
           warmupSteps: warmupSteps, gradientAccumulationSteps: gradientAccumulationSteps,
           rankOfLoRA: rankOfLoRA, scaleOfLoRA: scaleOfLoRA, unetLearningRate: unetLearningRate,
-          trainableKeys: trainableKeys, shift: shift, noiseOffset: noiseOffset,
-          guidanceEmbed: guidanceEmbed, denoisingTimesteps: denoisingTimesteps,
-          memorySaver: memorySaver, weightsMemory: weightsMemory,
-          progressHandler: progressHandler)
+          stepsBetweenRestarts: stepsBetweenRestarts, trainableKeys: trainableKeys, shift: shift,
+          noiseOffset: noiseOffset, guidanceEmbed: guidanceEmbed,
+          denoisingTimesteps: denoisingTimesteps, captionDropoutRate: captionDropoutRate,
+          orthonormalLoRADown: orthonormalLoRADown, memorySaver: memorySaver,
+          weightsMemory: weightsMemory, progressHandler: progressHandler)
         return
       }
       let positionTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
@@ -1266,10 +1357,11 @@ public struct LoRATrainer {
       case .minimal, .balanced:
         LoRAConfiguration = LoRANetworkConfiguration(
           rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
-          gradientCheckpointingFeedForward: true)
+          gradientCheckpointingFeedForward: true, orthonormalDown: orthonormalLoRADown)
       case .speed, .turbo:
         LoRAConfiguration = LoRANetworkConfiguration(
-          rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false)
+          rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
+          orthonormalDown: orthonormalLoRADown)
       }
       let textModel: [Model]
       let textLoRAMapping: [[Int: Int]]
@@ -1644,6 +1736,25 @@ public struct LoRATrainer {
               case .Float64, .Int32, .Int64, .UInt8:
                 fatalError()
               }
+            } else if orthonormalLoRADown && name.contains("lora_down") {
+              switch dataType {
+              case .Float16:
+                #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+                  let tensor = Self.randomOrthonormalMatrix(
+                    graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),
+                    of: Float16.self)
+                  return .final(tensor)
+                #else
+                  break
+                #endif
+              case .Float32:
+                let tensor = Self.randomOrthonormalMatrix(
+                  graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),
+                  of: Float32.self)
+                return .final(tensor)
+              case .Float64, .Int32, .Int64, .UInt8:
+                fatalError()
+              }
             }
             return .continue(name)
           }
@@ -1718,6 +1829,25 @@ public struct LoRATrainer {
                 case .Float64, .Int32, .Int64, .UInt8:
                   fatalError()
                 }
+              } else if orthonormalLoRADown && name.contains("lora_down") {
+                switch dataType {
+                case .Float16:
+                  #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+                    let tensor = Self.randomOrthonormalMatrix(
+                      graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),
+                      of: Float16.self)
+                    return .final(tensor)
+                  #else
+                    break
+                  #endif
+                case .Float32:
+                  let tensor = Self.randomOrthonormalMatrix(
+                    graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),
+                    of: Float32.self)
+                  return .final(tensor)
+                case .Float64, .Int32, .Int64, .UInt8:
+                  fatalError()
+                }
               }
               return .continue(name)
             }
@@ -1753,7 +1883,7 @@ public struct LoRATrainer {
       case .editing, .double:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentHeight, latentWidth, 8), of: FloatType.self)
-      case .depth:
+      case .depth, .canny:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentHeight, latentWidth, 5), of: FloatType.self)
       case .none:
@@ -1835,6 +1965,25 @@ public struct LoRATrainer {
               case .Float64, .Int32, .Int64, .UInt8:
                 fatalError()
               }
+            } else if orthonormalLoRADown && name.contains("lora_down") {
+              switch dataType {
+              case .Float16:
+                #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+                  let tensor = Self.randomOrthonormalMatrix(
+                    graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),
+                    of: Float16.self)
+                  return .final(tensor)
+                #else
+                  break
+                #endif
+              case .Float32:
+                let tensor = Self.randomOrthonormalMatrix(
+                  graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),
+                  of: Float32.self)
+                return .final(tensor)
+              case .Float64, .Int32, .Int64, .UInt8:
+                fatalError()
+              }
             }
             return .continue(name)
           }
@@ -1881,6 +2030,24 @@ public struct LoRATrainer {
             case .Float64, .Int32, .Int64, .UInt8:
               fatalError()
             }
+          } else if orthonormalLoRADown && name.contains("lora_down") {
+            switch dataType {
+            case .Float16:
+              #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+                let tensor = Self.randomOrthonormalMatrix(
+                  graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),
+                  of: Float16.self)
+                return .final(tensor)
+              #else
+                break
+              #endif
+            case .Float32:
+              let tensor = Self.randomOrthonormalMatrix(
+                graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *), of: Float32.self)
+              return .final(tensor)
+            case .Float64, .Int32, .Int64, .UInt8:
+              fatalError()
+            }
           }
           return .continue(name)
         }
@@ -1899,7 +2066,8 @@ public struct LoRATrainer {
       var optimizers = [AdamWOptimizer]()
       if cotrainUNet {
         var unetOptimizer = AdamWOptimizer(
-          graph, rate: unetLearningRate, betas: (0.9, 0.999), decay: 0.001, epsilon: 1e-8)
+          graph, rate: unetLearningRate.upperBound, betas: (0.9, 0.999), decay: 0.001, epsilon: 1e-8
+        )
         unetOptimizer.parameters = [unet.parameters]
         optimizers.append(unetOptimizer)
       }
@@ -2029,13 +2197,17 @@ public struct LoRATrainer {
         dataFrame.shuffle()
         for value in dataFrame["0", "imagePath", "tokens"] {
           guard let input = value[0] as? ProcessedInput, let imagePath = value[1] as? String,
-            let tokens = value[2] as? [Int32]
+            var tokens = value[2] as? [Int32]
           else {
             continue
           }
           guard let tensor = sessionStore.read(imagePath) else { continue }
           let shape = tensor.shape
           guard shape[1] == latentHeight && shape[2] == latentWidth else { continue }
+          let captionDropout = Float.random(in: 0...1) < captionDropoutRate
+          if captionDropout {
+            tokens = zeroCaption.tokens
+          }
           let (latents, _) = graph.withNoGrad {
             let parameters = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
             let noise = graph.variable(.CPU, .NHWC(1, latentHeight, latentWidth, 4), of: Float.self)
@@ -2293,14 +2465,15 @@ public struct LoRATrainer {
             }
             condTokensTensorGPU = tokensTensorGPU
           } else {
-            guard let tensor = sessionStore.read("cond_\(imagePath)") else { continue }
+            let textEncodingPath = captionDropout ? "" : imagePath
+            guard let tensor = sessionStore.read("cond_\(textEncodingPath)") else { continue }
             switch version {
             case .v1, .v2:
               c = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
               kvs = []
             case .sdxlBase, .ssd1b:
-              guard let te2 = sessionStore.read("cond_te2_\(imagePath)"),
-                let pooled = sessionStore.read("pool_\(imagePath)")
+              guard let te2 = sessionStore.read("cond_te2_\(textEncodingPath)"),
+                let pooled = sessionStore.read("pool_\(textEncodingPath)")
               else { continue }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: version, dualAttentionLayers: [], usesFlashAttention: true,
@@ -2324,7 +2497,7 @@ public struct LoRATrainer {
                 kvs = []
               }
             case .sdxlRefiner:
-              guard let pooled = sessionStore.read("pool_\(imagePath)") else { continue }
+              guard let pooled = sessionStore.read("pool_\(textEncodingPath)") else { continue }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: .sdxlRefiner, dualAttentionLayers: [],
                 usesFlashAttention: true,
@@ -2369,9 +2542,20 @@ public struct LoRATrainer {
           let value = loss.toCPU()[0, 0, 0, 0]
           print("loss \(value), scale \(scaler.scale), step \(i)")
           batchCount += 1
+          let learningRate: Float
+          if stepsBetweenRestarts > 1 {
+            learningRate =
+              unetLearningRate.lowerBound + 0.5
+              * (unetLearningRate.upperBound - unetLearningRate.lowerBound)
+              * (1
+                + cos(
+                  (Float(i % (stepsBetweenRestarts - 1)) / Float(stepsBetweenRestarts - 1)) * .pi))
+          } else {
+            learningRate = unetLearningRate.upperBound
+          }
           if (i + 1) < warmupSteps {
             if cotrainUNet {
-              optimizers[0].rate = unetLearningRate * (Float(i + 1) / Float(warmupSteps))
+              optimizers[0].rate = learningRate * (Float(i + 1) / Float(warmupSteps))
               if optimizers.count > 1 {
                 if cotrainTextModel {
                   optimizers[1].rate = textModelLearningRate * (Float(i + 1) / Float(warmupSteps))
@@ -2396,9 +2580,9 @@ public struct LoRATrainer {
                   customEmbeddingLearningRate * (Float(i + 1) / Float(warmupSteps))
               }
             }
-          } else if (i + 1) == warmupSteps {
+          } else {
             if cotrainUNet {
-              optimizers[0].rate = unetLearningRate
+              optimizers[0].rate = learningRate
               if optimizers.count > 1 {
                 if cotrainTextModel {
                   optimizers[1].rate = textModelLearningRate
@@ -2417,6 +2601,34 @@ public struct LoRATrainer {
               }
               if optimizers.count > 1 {
                 optimizers[1].rate = customEmbeddingLearningRate
+              }
+            }
+          }
+          if let summaryWriter = summaryWriter {
+            summaryWriter.addScalar("loss", value, step: i)
+            summaryWriter.addScalar("scale", scaler.scale, step: i)
+            summaryWriter.addScalar("timestep", Float(timestep), step: i)
+            if cotrainUNet {
+              summaryWriter.addScalar("unet_learning_rate", optimizers[0].rate, step: i)
+              if optimizers.count > 1 {
+                if cotrainTextModel {
+                  summaryWriter.addScalar("text_model_learning_rate", optimizers[1].rate, step: i)
+                } else {
+                  summaryWriter.addScalar(
+                    "text_embedding_learning_rate", optimizers[1].rate, step: i)
+                }
+              }
+              if optimizers.count > 2 {
+                summaryWriter.addScalar("text_embedding_learning_rate", optimizers[2].rate, step: i)
+              }
+            } else {
+              if cotrainTextModel {
+                summaryWriter.addScalar("text_model_learning_rate", optimizers[0].rate, step: i)
+              } else {
+                summaryWriter.addScalar("text_embedding_learning_rate", optimizers[0].rate, step: i)
+              }
+              if optimizers.count > 1 {
+                summaryWriter.addScalar("text_embedding_learning_rate", optimizers[1].rate, step: i)
               }
             }
           }
