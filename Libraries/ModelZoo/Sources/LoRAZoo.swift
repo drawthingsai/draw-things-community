@@ -125,19 +125,19 @@ public struct LoRAZoo: DownloadZoo {
       prefix: "", version: .sdxlRefiner, isConsistencyModel: true),
     Specification(
       name: "Fooocus Inpaint v2.6", file: "fooocus_inpaint_v2.6_lora_f16.ckpt",
-      prefix: "", version: .sdxlBase, modifier: .inpainting),
+      prefix: "", version: .sdxlBase, modifier: .inpainting, weight: .init(value: 1)),
     Specification(
       name: "Fooocus Inpaint v2.6 (8-bit)", file: "fooocus_inpaint_v2.6_lora_q8p.ckpt",
-      prefix: "", version: .sdxlBase, modifier: .inpainting),
+      prefix: "", version: .sdxlBase, modifier: .inpainting, weight: .init(value: 1)),
     Specification(
       name: "Transparent Image (Attention Injection)",
       file: "layer_xl_transparent_attn_v1.0_lora_f16.ckpt",
       prefix: "", version: .sdxlBase, alternativeDecoder: "transparent_vae_decoder_v1.0_f16.ckpt",
-      alternativeDecoderVersion: .transparent),
+      alternativeDecoderVersion: .transparent, weight: .init(value: 1)),
     Specification(
       name: "Foreground to Blending",
       file: "layer_xl_fg2ble_v1.0_lora_f16.ckpt",
-      prefix: "", version: .sdxlBase, modifier: .inpainting),
+      prefix: "", version: .sdxlBase, modifier: .inpainting, weight: .init(value: 1)),
     Specification(
       name: "LCM SSD 1B (Segmind)", file: "lcm_ssd_1b_lora_f16.ckpt",
       prefix: "", version: .ssd1b, isConsistencyModel: true, deprecated: true),
