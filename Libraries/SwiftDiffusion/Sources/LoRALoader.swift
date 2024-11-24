@@ -222,24 +222,36 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
         })
     else { return nil }
     let originalShape = original.shape
-    guard originalShape[1] != shape[1] && originalShape.reduce(1, *) != shape.reduce(1, *) else {
+    let shape123 = shape[1...].reduce(1, *)
+    guard originalShape[1] != shape[1] && originalShape.reduce(1, *) != shape[0] * shape123 else {
       return original
     }
-    assert(
-      originalShape[0] == shape[0] && originalShape[2] == shape[2] && originalShape[3] == shape[3])
-    var blank = graph.variable(
-      .GPU(0), .NCHW(originalShape[0], shape[1], originalShape[2], originalShape[3]),
-      of: FloatType.self)
-    if shape[1] > originalShape[1] {
-      blank.full(0)
-      blank[
-        0..<originalShape[0], 0..<originalShape[1], 0..<originalShape[2], 0..<originalShape[3]] =
-        original
+    assert(originalShape[0] == shape[0])
+    let shape1 = originalShape.count > 2 ? shape123 / originalShape[2...].reduce(1, *) : shape123
+    if originalShape.count == 4 {
+      var blank = graph.variable(
+        .GPU(0), .NCHW(originalShape[0], shape1, originalShape[2], originalShape[3]),
+        of: FloatType.self)
+      if shape[1] > originalShape[1] {
+        blank.full(0)
+        blank[
+          0..<originalShape[0], 0..<originalShape[1], 0..<originalShape[2], 0..<originalShape[3]] =
+          original
+      } else {
+        blank[0..<originalShape[0], 0..<shape1, 0..<originalShape[2], 0..<originalShape[3]] =
+          original[0..<originalShape[0], 0..<shape1, 0..<originalShape[2], 0..<originalShape[3]]
+      }
+      return blank
     } else {
-      blank[0..<originalShape[0], 0..<shape[1], 0..<originalShape[2], 0..<originalShape[3]] =
-        original[0..<originalShape[0], 0..<shape[1], 0..<originalShape[2], 0..<originalShape[3]]
+      var blank = graph.variable(.GPU(0), .NC(originalShape[0], shape1), of: FloatType.self)
+      if shape1 > originalShape[1] {
+        blank.full(0)
+        blank[0..<originalShape[0], 0..<originalShape[1]] = original
+      } else {
+        blank[0..<originalShape[0], 0..<shape1] = original[0..<originalShape[0], 0..<shape1]
+      }
+      return blank
     }
-    return blank
   }
 
   private func addWeight(
