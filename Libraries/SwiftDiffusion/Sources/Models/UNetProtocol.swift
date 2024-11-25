@@ -782,7 +782,8 @@ extension UNetFromNNC {
         var finalEncoding = graph.variable(
           $0.1.kind, .NHWC(shape[0], h * w + tokenLength, 1, shape[3]), of: FloatType.self)
         finalEncoding[0..<shape[0], 0..<tokenLength, 0..<1, 0..<shape[3]] = tokenEncoding
-        finalEncoding[0..<shape[0], tokenLength..<(h * w), 0..<1, 0..<shape[3]] = sliceEncoding
+        finalEncoding[0..<shape[0], tokenLength..<(tokenLength + h * w), 0..<1, 0..<shape[3]] =
+          sliceEncoding
         return finalEncoding
       }
       let shape = $0.1.shape
@@ -898,6 +899,8 @@ extension UNetFromNNC {
             controlNets: &controlNets))
       }
     }
+    let graph = xT.graph
+    graph.joined()
     let etRawValues = et.map { $0.rawValue.toCPU() }
     let channels = etRawValues[0].shape[3]
     var etRaw = Tensor<FloatType>(.CPU, .NHWC(shape[0], startHeight, startWidth, channels))
@@ -935,7 +938,6 @@ extension UNetFromNNC {
         }
       }
     }
-    let graph = xT.graph
     return graph.variable(etRaw.toGPU(0))
   }
 
