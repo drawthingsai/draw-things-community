@@ -1,4 +1,4 @@
-enum LoRATrainableLayer: byte {
+enum LoRATrainableLayer: byte (codable) {
   LatentsEmbedder,
   ContextEmbedder,
   ProjectOut,
@@ -10,7 +10,7 @@ enum LoRATrainableLayer: byte {
   FeedForwardContext,
 }
 
-table LoRATrainingConfiguration {
+table LoRATrainingConfiguration (codable) {
   id: long (primary);
   name: string;
   start_width: ushort;

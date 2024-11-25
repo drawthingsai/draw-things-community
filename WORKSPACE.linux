@@ -111,9 +111,9 @@ bazel_features_deps()
 
 git_repository(
     name = "dflat",
-    commit = "65334e3804e58a3669337bc40eab6673205a43e4",
+    commit = "d5163e740d2dddac546b2528aeee971b8720fa27",
     remote = "https://github.com/liuliu/dflat.git",
-    shallow_since = "1721326459 -0400",
+    shallow_since = "1732569849 -0500",
 )
 
 load("@dflat//:deps.bzl", "dflat_deps")
@@ -122,9 +122,9 @@ dflat_deps()
 
 git_repository(
     name = "s4nnc",
-    commit = "de3eaba4333b0cbc63f4e341eb21df4a4a85eb4f",
+    commit = "1780804c5e41e7b4b3dcbed22db0e6e71113a889",
     remote = "https://github.com/liuliu/s4nnc.git",
-    shallow_since = "1732124504 -0500",
+    shallow_since = "1732572120 -0500",
 )
 
 load("@s4nnc//:deps.bzl", "s4nnc_deps")
