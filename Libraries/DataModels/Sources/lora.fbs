@@ -47,6 +47,7 @@ table LoRATrainingConfiguration (codable) {
   steps_between_restarts: uint = 200;
   caption_dropout_rate: float = 0;
   orthonormal_lora_down: bool = false;
+  max_text_length: uint = 512;
 }
 
 root_type LoRATrainingConfiguration;

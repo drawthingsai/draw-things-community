@@ -61,7 +61,8 @@ public struct LoRATrainer {
   public init(
     tensorBoard: String?,
     model: String, scale: DeviceCapability.Scale, cotrainTextModel: Bool,
-    cotrainCustomEmbedding: Bool, clipSkip: Int, session: String, resumeIfPossible: Bool,
+    cotrainCustomEmbedding: Bool, clipSkip: Int, maxTextLength: Int, session: String,
+    resumeIfPossible: Bool,
     imageLoader: @escaping (URL, Int, Int) -> (
       Tensor<FloatType>, (width: Int, height: Int), (top: Int, left: Int), (width: Int, height: Int)
     )?
@@ -113,7 +114,7 @@ public struct LoRATrainer {
         }
       })()
     CLIPEncoder = ModelZoo.CLIPEncoderForModel(model)
-    paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(model)
+    paddedTextEncodingLength = min(maxTextLength, ModelZoo.paddedTextEncodingLengthForModel(model))
     self.version = version
     self.session = session
     self.resumeIfPossible = resumeIfPossible
@@ -844,15 +845,16 @@ public struct LoRATrainer {
   }
 
   // This is heavily based on https://github.com/thuanz123/realfill/blob/main/train_realfill.py
-  private func makeMask(resolution: (width: Int, height: Int), times: Int = 30) -> Tensor<FloatType>
-  {
+  private func makeMask<T: RandomNumberGenerator>(
+    resolution: (width: Int, height: Int), times: Int = 30, using generator: inout T
+  ) -> Tensor<FloatType> {
     var mask = Tensor<FloatType>(.CPU, .NHWC(1, resolution.height, resolution.width, 1))
     for y in 0..<resolution.height {
       for x in 0..<resolution.width {
         mask[0, y, x, 0] = 1
       }
     }
-    var sfmt = SFMT(seed: UInt64.random(in: 0...UInt64.max))
+    var sfmt = SFMT(seed: UInt64.random(in: UInt64.min...UInt64.max, using: &generator))
     // 1 out of 10 chance to mask out everything.
     if Int.random(in: 0..<10, using: &sfmt) == 0 {
       return mask
@@ -986,7 +988,7 @@ public struct LoRATrainer {
     resumingLoRAFile: (String, Int)?,
     dataFrame: DataFrame, trainingSteps: Int, warmupSteps: Int, gradientAccumulationSteps: Int,
     rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: ClosedRange<Float>,
-    stepsBetweenRestarts: Int, trainableKeys: [String],
+    stepsBetweenRestarts: Int, seed: UInt32, trainableKeys: [String],
     shift: Float, noiseOffset: Float, guidanceEmbed: ClosedRange<Float>,
     denoisingTimesteps: ClosedRange<Int>, captionDropoutRate: Float, orthonormalLoRADown: Bool,
     memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
@@ -1003,6 +1005,7 @@ public struct LoRATrainer {
     defer {
       DynamicGraph.queueWatermark = queueWatermark
     }
+    DynamicGraph.setSeed(seed)
     var dataFrame = dataFrame
     let configuration: LoRANetworkConfiguration
     switch memorySaver {
@@ -1148,6 +1151,7 @@ public struct LoRATrainer {
         timestep: Float, guidance: Float, captionDropout: Bool
       )
     ]()
+    var sfmt = SFMT(seed: UInt64(seed))
     while i < trainingSteps && !stopped {
       dataFrame.shuffle()
       for value in dataFrame["imagePath", String.self] {
@@ -1157,7 +1161,7 @@ public struct LoRATrainer {
         guard shape[1] == latentsHeight && shape[2] == latentsWidth && shape[3] == 32 else {
           continue
         }
-        let captionDropout = Float.random(in: 0...1) < captionDropoutRate
+        let captionDropout = Float.random(in: 0...1, using: &sfmt) < captionDropoutRate
         let textEncodingPath = captionDropout ? "" : imagePath
         guard
           let _ = sessionStore.read(like: "cond_te2_\(textEncodingPath)"),
@@ -1167,9 +1171,9 @@ public struct LoRATrainer {
         else { continue }
         var timestep: Double = Double.random(
           in: (Double(denoisingTimesteps.lowerBound) / 999)...(Double(
-            denoisingTimesteps.upperBound) / 999))
+            denoisingTimesteps.upperBound) / 999), using: &sfmt)
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
-        let guidanceEmbed = (Float.random(in: guidanceEmbed) * 10).rounded() / 10
+        let guidanceEmbed = (Float.random(in: guidanceEmbed, using: &sfmt) * 10).rounded() / 10
         batch.append((imagePath, pooled, Float(timestep), guidanceEmbed, captionDropout))
         if batch.count == 32 {
           let conditions = encodeFlux1Fixed(
@@ -1275,7 +1279,7 @@ public struct LoRATrainer {
     gradientAccumulationSteps: Int,
     rankOfLoRA: Int, scaleOfLoRA: Float, textModelLearningRate: Float,
     unetLearningRate: ClosedRange<Float>,
-    stepsBetweenRestarts: Int, trainableKeys: [String],
+    stepsBetweenRestarts: Int, seed: UInt32, trainableKeys: [String],
     customEmbeddingLength: Int, customEmbeddingLearningRate: Float,
     stopEmbeddingTrainingAtStep: Int, shift: Float,
     noiseOffset: Float, guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
@@ -1330,13 +1334,15 @@ public struct LoRATrainer {
           resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, trainingSteps: trainingSteps,
           warmupSteps: warmupSteps, gradientAccumulationSteps: gradientAccumulationSteps,
           rankOfLoRA: rankOfLoRA, scaleOfLoRA: scaleOfLoRA, unetLearningRate: unetLearningRate,
-          stepsBetweenRestarts: stepsBetweenRestarts, trainableKeys: trainableKeys, shift: shift,
+          stepsBetweenRestarts: stepsBetweenRestarts, seed: seed, trainableKeys: trainableKeys,
+          shift: shift,
           noiseOffset: noiseOffset, guidanceEmbed: guidanceEmbed,
           denoisingTimesteps: denoisingTimesteps, captionDropoutRate: captionDropoutRate,
           orthonormalLoRADown: orthonormalLoRADown, memorySaver: memorySaver,
           weightsMemory: weightsMemory, progressHandler: progressHandler)
         return
       }
+      DynamicGraph.setSeed(seed)
       let positionTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
       for i in 0..<77 {
         positionTensor[i] = Int32(i)
@@ -2193,6 +2199,7 @@ public struct LoRATrainer {
       } else {
         latentZeros = nil
       }
+      var sfmt = SFMT(seed: UInt64(seed))
       while i < trainingSteps && !stopped && !optimizers.isEmpty {
         dataFrame.shuffle()
         for value in dataFrame["0", "imagePath", "tokens"] {
@@ -2204,7 +2211,7 @@ public struct LoRATrainer {
           guard let tensor = sessionStore.read(imagePath) else { continue }
           let shape = tensor.shape
           guard shape[1] == latentHeight && shape[2] == latentWidth else { continue }
-          let captionDropout = Float.random(in: 0...1) < captionDropoutRate
+          let captionDropout = Float.random(in: 0...1, using: &sfmt) < captionDropoutRate
           if captionDropout {
             tokens = zeroCaption.tokens
           }
@@ -2225,7 +2232,7 @@ public struct LoRATrainer {
             }
             return DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
           }
-          let timestep = Int.random(in: denoisingTimesteps)
+          let timestep = Int.random(in: denoisingTimesteps, using: &sfmt)
           let sqrtAlphasCumprod = Float(alphasCumprod[timestep].squareRoot())
           let sqrtOneMinusAlphasCumprod = Float((1 - alphasCumprod[timestep]).squareRoot())
           let snr = alphasCumprod[timestep] / (1 - alphasCumprod[timestep])
@@ -2242,7 +2249,8 @@ public struct LoRATrainer {
             noisyLatentsPlusMaskAndImage[0..<1, 0..<latentHeight, 0..<latentWidth, 0..<4] =
               noisyLatents
             let mask = graph.variable(
-              makeMask(resolution: (width: latentWidth, height: latentHeight)).toGPU(0))
+              makeMask(resolution: (width: latentWidth, height: latentHeight), using: &sfmt).toGPU(
+                0))
             noisyLatentsPlusMaskAndImage[0..<1, 0..<latentHeight, 0..<latentWidth, 4..<5] = mask
             // This is an approximation. The mask should be applied at image space, but that means we need to keep VAE in RAM. This allows us to mask out and fill in some zero latents (zero in image space).
             var conditioningImage = (1 - mask) .* latents
