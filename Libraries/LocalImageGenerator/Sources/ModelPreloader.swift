@@ -944,8 +944,10 @@ extension ModelPreloader {
 
   func updateUseMFA(_ value: Bool?) {
     dispatchPrecondition(condition: .onQueue(queue))
+    if let value = value {
+      DeviceCapability.isMFAEnabled.store(value, ordering: .releasing)
+    }
     let useMFA = value ?? DeviceCapability.isMFASupported
-    DeviceCapability.isMFAEnabled.store(useMFA, ordering: .releasing)
     guard self.useMFA != nil && self.useMFA != useMFA else {
       self.useMFA = useMFA
       return
