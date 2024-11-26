@@ -37,6 +37,7 @@ extension SCHPMaskGenerator {
 
     let atrResult = {
       let schpAtr = SCHP(numClasses: 18, originSize: 512)
+      schpAtr.maxConcurrency = .limit(4)
       schpAtr.compile(inputs: inputTensor)
       graph.openStore(atrModelPath, flags: .readOnly) {
         $0.read("schp", model: schpAtr)
@@ -53,6 +54,7 @@ extension SCHPMaskGenerator {
       originalHeight: originalHeight, originalWidth: originalWidth, graph: graph)
     let lipResult = {
       let schpLip = SCHP(numClasses: 20, originSize: 473)
+      schpLip.maxConcurrency = .limit(4)
       schpLip.compile(inputs: lipInputTensor)
       graph.openStore(lipModelPath, flags: .readOnly) {
         $0.read("schp", model: schpLip)

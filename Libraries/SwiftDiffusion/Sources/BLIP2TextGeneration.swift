@@ -43,6 +43,7 @@ extension BLIP2TextGeneration {
         let tokensTensor = graph.variable(.GPU(0), format: .NHWC, shape: [4], of: Int32.self)
         let positionsTensor = graph.variable(.GPU(0), format: .NHWC, shape: [36], of: Int32.self)
         let causalAttentionMask = graph.variable(.GPU(0), .NHWC(1, 1, 96, 96), of: T.self)
+        opt.maxConcurrency = .limit(4)
         opt.compile(
           (cachedTokenLength: 0, tokenLength: 36),
           inputs: [embedding, tokensTensor, positionsTensor, causalAttentionMask] + kvs)

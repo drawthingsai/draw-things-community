@@ -249,6 +249,7 @@ extension UNetFixedEncoder {
       if zeroNegativePrompt && isCfgEnabled && (version == .sdxlBase || version == .ssd1b) {
         crossattn[0..<(batchSize / 2), 0..<maxTokenLength, 0..<2048].full(0)
       }
+      unetBaseFixed.maxConcurrency = .limit(4)
       unetBaseFixed.compile(inputs: crossattn)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -280,6 +281,7 @@ extension UNetFixedEncoder {
         outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, isTemporalMixEnabled: false
       )
+      unetRefinerFixed.maxConcurrency = .limit(4)
       unetRefinerFixed.compile(inputs: textEncoding[1])
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -322,6 +324,7 @@ extension UNetFixedEncoder {
         isTemporalMixEnabled: true
       )
       let crossattn = textEncoding[0].reshaped(.HWC(1, 1, 1024))
+      unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [crossattn] + numFramesEmb)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -373,6 +376,7 @@ extension UNetFixedEncoder {
         batchSize: cBatchSize, channels: 1152, layers: 28,
         tokenLength: (tokenLengthUncond, tokenLengthCond),
         usesFlashAttention: usesFlashAttention, of: FloatType.self)
+      unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: timeEmbeds, c)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -418,6 +422,7 @@ extension UNetFixedEncoder {
           ).toGPU(0))
         timeEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = timeEmbed
       }
+      unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: c, timeEmbeds)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -509,6 +514,7 @@ extension UNetFixedEncoder {
         timeEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = timeEmbed
         pooleds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<2048] = pooled
       }
+      unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: c, timeEmbeds, pooleds)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -534,6 +540,7 @@ extension UNetFixedEncoder {
       let (stageCFixed, _) = WurstchenStageCFixed(
         batchSize: batchSize, t: (tokenLengthUncond + 8, tokenLengthCond + 8),
         usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+      stageCFixed.maxConcurrency = .limit(4)
       stageCFixed.compile(
         inputs: textEncoding[0], textEncoding[1].reshaped(.HWC(batchSize, 1, 1280)), emptyImage)
       graph.openStore(
@@ -667,6 +674,7 @@ extension UNetFixedEncoder {
           guidanceEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = guidanceEmbed
         }
       }
+      unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? []))
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -729,6 +737,7 @@ extension UNetFixedEncoder {
       let pixels = graph.variable(
         .GPU(0), .NHWC(cfgChannelsAndBatchSize, 8, 8, 3), of: FloatType.self)
       pixels.full(0)
+      stageBFixed.maxConcurrency = .limit(4)
       stageBFixed.compile(
         inputs: effnet, pixels, textEncoding[1].reshaped(.HWC(cfgChannelsAndBatchSize, 1, 1280)))
       graph.openStore(

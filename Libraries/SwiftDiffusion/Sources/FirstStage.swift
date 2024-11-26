@@ -105,6 +105,7 @@ extension FirstStage {
           usesFlashAttention: false, paddingFinalConvLayer: true
         ).0
       if existingDecoder == nil {
+        decoder.maxConcurrency = .limit(4)
         if highPrecision {
           decoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
@@ -122,6 +123,7 @@ extension FirstStage {
         let decoder = TransparentVAEDecoder(
           startHeight: startHeight * 8, startWidth: startWidth * 8,
           usesFlashAttention: alternativeUsesFlashAttention ? .scaleMerged : .none)
+        decoder.maxConcurrency = .limit(4)
         if highPrecision {
           let pixels = graph.variable(
             .GPU(0), .NHWC(1, startHeight * 8, startWidth * 8, 3), of: Float.self)
@@ -157,6 +159,7 @@ extension FirstStage {
           quantLayer: false
         ).0
       if existingDecoder == nil {
+        decoder.maxConcurrency = .limit(4)
         if highPrecision {
           decoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
@@ -180,6 +183,7 @@ extension FirstStage {
           zChannels: 4, channels: 128, channelMult: [1, 2, 2, 4], numResBlocks: 2,
           startHeight: startHeight, startWidth: startWidth, attnResolutions: Set([32]))
       if existingDecoder == nil {
+        decoder.maxConcurrency = .limit(4)
         if highPrecision {
           decoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
@@ -201,6 +205,7 @@ extension FirstStage {
         existingDecoder
         ?? WurstchenStageADecoder(batchSize: 1, height: startHeight * 2, width: startWidth * 2).0
       if existingDecoder == nil {
+        decoder.maxConcurrency = .limit(4)
         if highPrecision {
           decoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
@@ -418,6 +423,7 @@ extension FirstStage {
           startHeight: tiledHeight, usesFlashAttention: false
         ).0
       if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
         if highPrecision {
           encoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
@@ -451,6 +457,7 @@ extension FirstStage {
         ).0
       // Don't use FP32 for SD3 / FLUX.1 encoding pass.
       if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
         if highPrecision {
           encoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
@@ -482,6 +489,7 @@ extension FirstStage {
           zChannels: 4, channels: 128, channelMult: [1, 2, 2, 4], numResBlocks: 2,
           startHeight: tiledHeight * 8, startWidth: tiledWidth * 8, attnResolutions: Set([32]))
       if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
         encoder.compile(inputs: x[0..<1, 0..<(tiledHeight * 8), 0..<(tiledWidth * 8), 0..<shape[3]])
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -499,6 +507,7 @@ extension FirstStage {
       tileOverlap = 0
       encoder = existingEncoder ?? EfficientNetEncoder()
       if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
         encoder.compile(inputs: x[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]])
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -533,6 +542,7 @@ extension FirstStage {
       tileOverlap = tiledDiffusion.tileOverlap * 16
       encoder = existingEncoder ?? WurstchenStageAEncoder(batchSize: 1).0
       if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
         encoder.compile(inputs: x[0..<1, 0..<(tiledHeight * 4), 0..<(tiledWidth * 4), 0..<shape[3]])
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)

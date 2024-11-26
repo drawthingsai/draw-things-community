@@ -65,6 +65,7 @@ extension DepthEstimator {
       let vit = DinoVisionTransformer(
         FloatType.self, gridX: gridX, gridY: gridY, width: 1024, layers: 24, heads: 16,
         batchSize: 1, intermediateLayers: [4, 11, 17, 23], usesFlashAttention: usesFlashAttention)
+      vit.maxConcurrency = .limit(4)
       vit.compile(inputs: input)
       graph.openStore(
         filePaths.0, flags: .readOnly,
@@ -82,6 +83,7 @@ extension DepthEstimator {
       let x3 = outs[3][1..<(gridX * gridY + 1), 0..<1024].reshaped(.NHWC(1, gridY, gridX, 1024))
         .copied()
       let depthHead = DepthHead(gridX: gridX, gridY: gridY, paddingFinalConvLayer: true)
+      depthHead.maxConcurrency = .limit(4)
       depthHead.compile(inputs: x0, x1, x2, x3)
       graph.openStore(
         filePaths.1, flags: .readOnly,

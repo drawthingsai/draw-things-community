@@ -20,6 +20,7 @@ extension ControlModel {
     rgbAdjust[0, 0, 0, 2] = 122.67891434
     rgbInputTensor = rgbInputTensor - rgbAdjust.toGPU(0)
     let hedModelVgg = HEDModel(inputWidth: width, inputHeight: height)
+    hedModelVgg.maxConcurrency = .limit(4)
     hedModelVgg.compile(inputs: rgbInputTensor)
     graph.openStore(
       modelFilePath, flags: .readOnly,

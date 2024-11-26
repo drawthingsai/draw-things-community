@@ -620,6 +620,7 @@ extension UNetFromNNC {
     if !injectedAttentionKVs.isEmpty {
       inputs.append(contentsOf: injectedAttentionKVs)
     }
+    unet.maxConcurrency = .limit(4)
     let tileOverlap = min(
       min(
         tiledDiffusion.tileOverlap * tileScaleFactor,
@@ -747,6 +748,7 @@ extension UNetFromNNC {
         store.read("time_embed", model: timeEmbed, codec: [.q6p, .q8p, .ezm7, .externalData])
       }
       if let previewer = previewer {
+        previewer.maxConcurrency = .limit(4)
         previewer.compile(inputs: xT)
         store.read("previewer", model: previewer, codec: [.q6p, .q8p, .ezm7, .externalData])
       }

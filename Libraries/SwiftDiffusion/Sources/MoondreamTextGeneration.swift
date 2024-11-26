@@ -118,6 +118,7 @@ extension MoondreamTextGeneration {
       var sinthetaTensorGPU = DynamicGraph.Tensor<T>(from: sinthetaTensor).toGPU(0)
       var currentKvs = kvs.map { $0.reshaped(.NHWC(1, seqLen, 32, 64)) }
       if existingPhi == nil {
+        phi.maxConcurrency = .limit(4)
         phi.compile(
           (cachedTokenLength: 0, tokenLength: seqLen),
           inputs: [inputEmb, costhetaTensorGPU, sinthetaTensorGPU, causalAttentionMaskGPU]

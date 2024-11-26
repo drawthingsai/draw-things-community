@@ -345,12 +345,14 @@ extension FaceRestorer {
     }
     let parsenet = parsenet ?? ParseNet()
     if !hasRestoreFormer {
+      restoreFormer.maxConcurrency = .limit(4)
       restoreFormer.compile(inputs: x, embedding)
       graph.openStore(filePath, flags: .readOnly) {
         $0.read("restoreformer", model: restoreFormer)
       }
     }
     if !hasParseNet {
+      parsenet.maxConcurrency = .limit(4)
       parsenet.compile(inputs: x)
       graph.openStore(parseFilePath, flags: .readOnly) {
         $0.read("parsenet", model: parsenet)

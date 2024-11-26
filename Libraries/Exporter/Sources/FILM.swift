@@ -330,6 +330,7 @@ func buildFeaturePyramid<FloatType: TensorNumeric & BinaryFloatingPoint>(
     subPyramidExtractorModel = presetSubPyramidExtractorModel
   } else {
     subPyramidExtractorModel = generateSubPyramidExtractorModel()
+    subPyramidExtractorModel.maxConcurrency = .limit(4)
     subPyramidExtractorModel.compile(inputs: imagePyramids)
     graph.openStore(
       filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -433,6 +434,7 @@ func generateFILMIntermediateImage<FloatType: TensorNumeric & BinaryFloatingPoin
       fusion = presetFusion
     } else {
       fusion = Fusion()
+      fusion.maxConcurrency = .limit(4)
       fusion.compile(inputs: alignedPyramid)
       graph.openStore(
         modelPath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: modelPath)

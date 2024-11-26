@@ -45,6 +45,7 @@ extension CLIPModelWithProjection {
         numLayers: 12, numHeads: 12, batchSize: 1, intermediateSize: 3072,
         usesFlashAttention: true
       ).0
+      textModel.maxConcurrency = .limit(4)
       textModel.compile(inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)
       graph.openStore(
         filePaths[0], flags: .readOnly,
@@ -105,6 +106,7 @@ extension CLIPModelWithProjection {
       }
       let vit = CLIPVisionTransformer(
         FloatType.self, grid: 16, width: 1024, layers: 24, heads: 16, batchSize: 1)
+      vit.maxConcurrency = .limit(4)
       vit.compile(inputs: imageTensorsGPU)
       let visualProj = graph.variable(.GPU(0), .NC(1024, 768), of: FloatType.self)
       let textProj = graph.variable(.GPU(0), .NC(768, 768), of: FloatType.self)

@@ -28,6 +28,7 @@ extension BLIP2Encode {
           T.self, grid: 26, width: 1408, MLP: 6144, layers: 39, heads: 16, batchSize: 1,
           usesFlashAttention: usesFlashAttention)
       if existingVit == nil {
+        vit.maxConcurrency = .limit(4)
         vit.compile(inputs: x)
         graph.openStore(
           filePaths[0], flags: .readOnly,
@@ -62,6 +63,7 @@ extension BLIP2Encode {
           layers: 12, heads: 12, batchSize: 1, crossAttentionFreq: 2,
           usesFlashAttention: usesFlashAttention)
       if existingQformer == nil || existingQueryTokens == nil {
+        qformer.maxConcurrency = .limit(4)
         qformer.compile(inputs: queryTokens, out)
         graph.openStore(
           filePaths[1], flags: .readOnly,

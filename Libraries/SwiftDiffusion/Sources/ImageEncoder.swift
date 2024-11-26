@@ -45,6 +45,7 @@ extension ImageEncoder {
         otherInputs = [graph.variable(Tensor<FloatType>(from: rotTensor).toGPU(0))]
         modelKey = "vision_model"
       }
+      vit.maxConcurrency = .limit(4)
       vit.compile(inputs: [x[0]] + otherInputs)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)

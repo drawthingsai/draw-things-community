@@ -139,6 +139,7 @@ extension FaceExtractor {
     return graph.withNoGrad {
       let retinaFace = RetinaFace(batchSize: 1)
       let images = resize(x)
+      retinaFace.maxConcurrency = .limit(4)
       retinaFace.compile(inputs: images[0].0)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)

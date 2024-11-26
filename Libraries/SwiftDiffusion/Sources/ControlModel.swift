@@ -480,6 +480,7 @@ extension ControlModel {
       // For ControlNet, we only compute hint.
       let outputChannels = 320
       let hintNet = HintNet(channels: outputChannels).0
+      hintNet.maxConcurrency = .limit(4)
       if tiledDiffusionIsEnabled {
         hintNet.compile(
           inputs: inputs[0].hint[0..<shape[0], 0..<tiledHeight, 0..<tiledWidth, 0..<shape[3]])
@@ -598,6 +599,7 @@ extension ControlModel {
           } else {
             input = x
           }
+          encoder.maxConcurrency = .limit(4)
           encoder.compile(inputs: input)
           let vaeFilePath = filePaths[2]
           graph.openStore(
@@ -641,6 +643,7 @@ extension ControlModel {
           let vit = CLIPVisionTransformer(
             FloatType.self, grid: 16, width: 1024, layers: 24, heads: 16, batchSize: 1
           )
+          vit.maxConcurrency = .limit(4)
           vit.compile(inputs: imageTensorsGPU)
           let visualProj = graph.variable(.GPU(0), .NC(1024, 768), of: FloatType.self)
           graph.openStore(
@@ -709,6 +712,7 @@ extension ControlModel {
         var inputs = [DynamicGraph.Tensor<FloatType>]()
         inputs.append(t)
         inputs.append(contentsOf: newC)
+        garmUnet.maxConcurrency = .limit(4)
         garmUnet.compile(inputs: [xIn] + inputs)
         graph.openStore(
           filePaths[0], flags: .readOnly,
@@ -771,6 +775,7 @@ extension ControlModel {
           fatalError()
         }
       }
+      resampler.maxConcurrency = .limit(4)
       resampler.compile(inputs: imageEmbeds[0])
       graph.openStore(
         filePaths[0], flags: .readOnly,
@@ -817,6 +822,7 @@ extension ControlModel {
         .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
+      unetIPFixed.maxConcurrency = .limit(4)
       unetIPFixed.compile(inputs: batchedImagePromptEmbeds[0])
       graph.openStore(
         filePaths[0], flags: .readOnly,
@@ -948,6 +954,7 @@ extension ControlModel {
         .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
+      unetIPFixed.maxConcurrency = .limit(4)
       unetIPFixed.compile(inputs: batchedImagePromptEmbeds[0])
       graph.openStore(
         filePaths[0], flags: .readOnly,
@@ -1026,6 +1033,7 @@ extension ControlModel {
       let imageEmbeds = imageEncoder.encode(images.map { $0.0 }).map { $0[0] }
       let faceEmbeds = graph.withNoGrad {
         let arcface = ArcFace(batchSize: 1, of: FloatType.self)
+        arcface.maxConcurrency = .limit(4)
         arcface.compile(inputs: images[0].1)
         graph.openStore(
           filePaths[2], flags: .readOnly,
@@ -1052,6 +1060,7 @@ extension ControlModel {
             width: 4096, IDEmbedDim: 512, outputDim: 4096, heads: 64,
             grid: 24, queries: 6, layers: 4, batchSize: 1)
         }
+        resampler.maxConcurrency = .limit(4)
         resampler.compile(inputs: faceEmbeds[0], imageEmbeds[0])
         graph.openStore(
           filePaths[0], flags: .readOnly,
@@ -1132,6 +1141,7 @@ extension ControlModel {
         .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
+      unetIPFixed.maxConcurrency = .limit(4)
       unetIPFixed.compile(inputs: batchedImagePromptEmbeds[0])
       graph.openStore(
         filePaths[0], flags: .readOnly,
@@ -1211,6 +1221,7 @@ extension ControlModel {
       let imageEmbeds = imageEncoder.encode(images.map { $0.0 })
       let faceEmbeds = graph.withNoGrad {
         let arcface = ArcFace(batchSize: 1, of: FloatType.self)
+        arcface.maxConcurrency = .limit(4)
         arcface.compile(inputs: images[0].1)
         graph.openStore(
           filePaths[2], flags: .readOnly,
@@ -1239,6 +1250,7 @@ extension ControlModel {
         let idCondVit = embeds[0][0]
         let idVitHidden = Array(embeds[0][1...])
         let idCond = Functional.concat(axis: 2, faceEmbeds[0].reshaped(.HWC(1, 1, 512)), idCondVit)
+        resampler.maxConcurrency = .limit(4)
         resampler.compile(inputs: [idCond] + idVitHidden)
         graph.openStore(
           filePaths[0], flags: .readOnly,
@@ -1389,6 +1401,7 @@ extension ControlModel {
       } else {
         adapter = Adapter(channels: [320, 640, 1280, 1280], numRepeat: 2)
       }
+      adapter.maxConcurrency = .limit(4)
       // Hint is already in input size, not in image size.
       let shape = inputs[0].hint.shape
       let startHeight = shape[1]
@@ -1811,6 +1824,7 @@ extension ControlModel {
           inputAttentionRes: inputAttentionRes, middleAttentionBlocks: middleAttentionBlocks,
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
         ).0
+      controlNetFixed.maxConcurrency = .limit(4)
       controlNetFixed.compile(inputs: crossattn)
       graph.openStore(
         filePaths[0], flags: .readOnly,
@@ -1835,6 +1849,7 @@ extension ControlModel {
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
           LoRAConfiguration: configuration
         )
+      controlNetFixed.maxConcurrency = .limit(4)
       controlNetFixed.compile(inputs: crossattn)
       let unetFixedMapping = Self.flattenWeightMapping(weightMapper)
       let reversedControlNetFixedMapping = Self.reversed(
@@ -1984,6 +1999,7 @@ extension ControlModel {
         }
         return graph.variable(mode.toGPU(0))
       }()
+      controlNetFlux1Fixed.maxConcurrency = .limit(4)
       controlNetFlux1Fixed.compile(
         inputs: (controlMode.map { [$0] } ?? []) + [c, timeEmbeds, pooleds]
           + (guidanceEmbeds.map { [$0] } ?? []))
@@ -2289,6 +2305,7 @@ extension ControlModel {
         inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad)
     }
     if existingControlNet == nil {
+      controlNet.maxConcurrency = .limit(4)
       if tiledDiffusionIsEnabled {
         let shape = hint[0].shape
         controlNet.compile(

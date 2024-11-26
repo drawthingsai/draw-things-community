@@ -146,6 +146,7 @@ extension MoondreamEncode {
         }
       }
       if existingVit == nil {
+        vit.maxConcurrency = .limit(4)
         vit.compile(inputs: input)
         graph.openStore(
           filePaths[0], flags: .readOnly,

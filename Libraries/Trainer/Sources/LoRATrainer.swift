@@ -217,6 +217,7 @@ public struct LoRATrainer {
           }
         }
         let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
+        textModel[0].maxConcurrency = .limit(4)
         textModel[0].compile(inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)
         if let CLIPEncoder = CLIPEncoder {
           graph.openStore(
@@ -263,6 +264,7 @@ public struct LoRATrainer {
         tokens2Tensor.full(0)
         let tokens2TensorGPU = tokens2Tensor.toGPU(0)
         let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
+        textModel[1].maxConcurrency = .limit(4)
         textModel[1].compile(inputs: tokens2TensorGPU, relativePositionBucketsGPU)
         graph.openStore(
           ModelZoo.filePathForModelDownloaded(textEncoder), flags: .readOnly,
@@ -457,6 +459,7 @@ public struct LoRATrainer {
             }
           }
           let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
+          textModel[0].maxConcurrency = .limit(4)
           textModel[0].compile(inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)
           let textProjection: DynamicGraph.Tensor<FloatType>?
           if version == .sdxlBase || version == .sdxlRefiner {
@@ -539,6 +542,7 @@ public struct LoRATrainer {
             }
           }
           if textModel.count > 1, let CLIPEncoder = CLIPEncoder {
+            textModel[1].maxConcurrency = .limit(4)
             textModel[1].compile(inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)
             graph.openStore(
               ModelZoo.filePathForModelDownloaded(CLIPEncoder), flags: .readOnly,
@@ -940,6 +944,7 @@ public struct LoRATrainer {
           guidanceEmbeds[i..<(i + 1), 0..<256] = guidanceEmbed
         }
       }
+      unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(
         inputs: [timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? []))
       graph.openStore(

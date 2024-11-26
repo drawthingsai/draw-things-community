@@ -126,6 +126,7 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
         .NCHW(
           1, inputShape[1], min(tileSize + 2 * overlapping, height),
           min(tileSize + 2 * overlapping, width)))
+      rrdbnet.maxConcurrency = .limit(4)
       rrdbnet.compile(inputs: z)
       graph.openStore(filePath, flags: .readOnly) {
         switch nativeScaleFactor {
