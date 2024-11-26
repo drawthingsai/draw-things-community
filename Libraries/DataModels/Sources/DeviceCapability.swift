@@ -275,9 +275,11 @@ public struct DeviceCapability {
     }
     if DeviceCapability.isHighPerformance {
       scales.append(Scale(widthScale: 12, heightScale: 12))
+      scales.append(Scale(widthScale: 15, heightScale: 15))
     }
     if DeviceCapability.isMaxPerformance {
       scales.append(Scale(widthScale: 16, heightScale: 16))
+      scales.append(Scale(widthScale: 20, heightScale: 20))
     }
     return scales
   }
@@ -294,6 +296,9 @@ public struct DeviceCapability {
     }
     if DeviceCapability.isHighPerformance {
       scales.append(Scale(widthScale: 16, heightScale: 16))
+    }
+    if DeviceCapability.isMaxPerformance {
+      scales.append(Scale(widthScale: 20, heightScale: 20))
     }
     return scales
   }

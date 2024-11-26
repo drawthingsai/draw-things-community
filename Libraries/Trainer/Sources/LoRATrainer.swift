@@ -52,6 +52,7 @@ public struct LoRATrainer {
   private let CLIPEncoder: String?
   private let session: String
   private let resumeIfPossible: Bool
+  private let imageInspector: (URL) -> (width: Int, height: Int)?
   private let imageLoader:
     (URL, Int, Int) -> (
       Tensor<FloatType>, (width: Int, height: Int), (top: Int, left: Int), (width: Int, height: Int)
@@ -63,6 +64,7 @@ public struct LoRATrainer {
     model: String, scale: DeviceCapability.Scale, cotrainTextModel: Bool,
     cotrainCustomEmbedding: Bool, clipSkip: Int, maxTextLength: Int, session: String,
     resumeIfPossible: Bool,
+    imageInspector: @escaping (URL) -> (width: Int, height: Int)?,
     imageLoader: @escaping (URL, Int, Int) -> (
       Tensor<FloatType>, (width: Int, height: Int), (top: Int, left: Int), (width: Int, height: Int)
     )?
@@ -73,6 +75,7 @@ public struct LoRATrainer {
     self.cotrainTextModel = cotrainTextModel
     self.cotrainCustomEmbedding = cotrainCustomEmbedding
     self.clipSkip = clipSkip
+    self.imageInspector = imageInspector
     self.imageLoader = imageLoader
     let version = ModelZoo.versionForModel(model)
     autoencoder =
