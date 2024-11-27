@@ -1093,21 +1093,30 @@ public struct LoRATrainer {
       var width: Int
       var tokenLength: Int
     }
-    private var rotaryEmbeddings = [Size: DynamicGraph.Tensor<FloatType>]()
+    private var rotaryEmbeddings = [Size: Tensor<FloatType>]()
     mutating func Flux1RotaryPositionEmbedding(
       graph: DynamicGraph, height: Int, width: Int, tokenLength: Int
     ) -> DynamicGraph.Tensor<FloatType> {
+      // Only save rotary for one head, and generate full rotary embedding on-the-fly.
+      // This way, it is 24x smaller to save, more comfortable for cases you have a few multi-scales and a few different aspect ratios (such that 200MiB RAM would be enough to save ~200 different rotary embeddings).
       let size = Size(height: height, width: width, tokenLength: tokenLength)
       if let embedding = rotaryEmbeddings[size] {
-        return embedding
+        var fullRotary = Tensor<FloatType>(.GPU(0), .NHWC(1, height * width + tokenLength, 24, 128))
+        for i in 0..<24 {
+          fullRotary[0..<1, 0..<(height * width + tokenLength), i..<(i + 1), 0..<128] = embedding
+        }
+        return graph.constant(embedding)
       }
       let rotary = Tensor<FloatType>(
         from: Diffusion.Flux1RotaryPositionEmbedding(
-          height: height, width: width, tokenLength: tokenLength, channels: 128, heads: 24)
+          height: height, width: width, tokenLength: tokenLength, channels: 128, heads: 1)
       ).toGPU(0)
-      let rotaryConstant = graph.constant(rotary)
-      rotaryEmbeddings[size] = rotaryConstant
-      return rotaryConstant
+      rotaryEmbeddings[size] = rotary
+      var fullRotary = Tensor<FloatType>(.GPU(0), .NHWC(1, height * width + tokenLength, 24, 128))
+      for i in 0..<24 {
+        fullRotary[0..<1, 0..<(height * width + tokenLength), i..<(i + 1), 0..<128] = rotary
+      }
+      return graph.constant(fullRotary)
     }
   }
 
