@@ -48,6 +48,7 @@ table LoRATrainingConfiguration (codable) {
   caption_dropout_rate: float = 0;
   orthonormal_lora_down: bool = false;
   max_text_length: uint = 512;
+  use_image_aspect_ratio: bool = false;
 }
 
 root_type LoRATrainingConfiguration;

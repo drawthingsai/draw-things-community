@@ -44,6 +44,7 @@ public struct LoRATrainer {
   private let model: String
   private let paddedTextEncodingLength: Int
   private let scale: DeviceCapability.Scale
+  private let useImageAspectRatio: Bool
   private let cotrainTextModel: Bool
   private let cotrainCustomEmbedding: Bool
   private let clipSkip: Int
@@ -60,8 +61,8 @@ public struct LoRATrainer {
   private let summaryWriter: SummaryWriter?
 
   public init(
-    tensorBoard: String?,
-    model: String, scale: DeviceCapability.Scale, cotrainTextModel: Bool,
+    tensorBoard: String?, comment: String,
+    model: String, scale: DeviceCapability.Scale, useImageAspectRatio: Bool, cotrainTextModel: Bool,
     cotrainCustomEmbedding: Bool, clipSkip: Int, maxTextLength: Int, session: String,
     resumeIfPossible: Bool,
     imageInspector: @escaping (URL) -> (width: Int, height: Int)?,
@@ -69,9 +70,10 @@ public struct LoRATrainer {
       Tensor<FloatType>, (width: Int, height: Int), (top: Int, left: Int), (width: Int, height: Int)
     )?
   ) {  // The model identifier.
-    summaryWriter = tensorBoard.map { SummaryWriter(logDirectory: $0) }
+    summaryWriter = tensorBoard.map { SummaryWriter(logDirectory: $0, comment: comment) }
     self.model = model
     self.scale = scale
+    self.useImageAspectRatio = useImageAspectRatio
     self.cotrainTextModel = cotrainTextModel
     self.cotrainCustomEmbedding = cotrainCustomEmbedding
     self.clipSkip = clipSkip
@@ -195,9 +197,16 @@ public struct LoRATrainer {
           guard let originalSize = imageInspector(input.imageUrl),
             originalSize.width > 0 && originalSize.height > 0
           else { continue }
-          let imageSize = Self.sizeThatFits(size: originalSize, scale: scale)
-          let imageWidth = imageSize.width * 64
-          let imageHeight = imageSize.height * 64
+          let imageWidth: Int
+          let imageHeight: Int
+          if useImageAspectRatio {
+            let imageSize = Self.sizeThatFits(size: originalSize, scale: scale)
+            imageWidth = imageSize.width * 64
+            imageHeight = imageSize.height * 64
+          } else {
+            imageWidth = Int(scale.widthScale) * 64
+            imageHeight = Int(scale.heightScale) * 64
+          }
           guard
             let (tensor, originalSize, cropTopLeft, targetSize) = imageLoader(
               input.imageUrl, imageWidth, imageHeight)
