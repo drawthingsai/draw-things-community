@@ -128,6 +128,36 @@ public struct LoRATrainer {
     case conditionalEncoding
   }
 
+  private static func sizeThatFits(size: (width: Int, height: Int), scale: DeviceCapability.Scale)
+    -> (width: Int, height: Int)
+  {
+    let aspectRatio = Double(size.width) / Double(size.height)
+    // Set width / height to around 1.5M pixels.
+    let imageWidth = (Double(scale.widthScale) * Double(scale.heightScale) * aspectRatio)
+      .squareRoot()
+    let imageHeight = (Double(scale.widthScale) * Double(scale.heightScale) / aspectRatio)
+      .squareRoot()
+    let roundedWidth = Int(imageWidth.rounded())
+    let roundedHeight = Int(imageHeight.rounded())
+    // If the width * height still fits into scale, we can return now.
+    if roundedWidth * roundedHeight <= Int(scale.widthScale) * Int(scale.heightScale) {
+      return (width: roundedWidth, height: roundedHeight)
+    }
+    let roundedDownWidth = Int(imageWidth.rounded(.down))
+    let roundedDownHeight = Int(imageHeight.rounded(.down))
+    // Otherwise, see which one is closer to the rounded value, and see use rounded down for the other would meet the goal.
+    if abs(imageWidth - Double(roundedWidth)) < abs(imageHeight - Double(roundedHeight)) {
+      if roundedWidth * roundedDownHeight <= Int(scale.widthScale) * Int(scale.heightScale) {
+        return (width: roundedWidth, height: roundedDownHeight)
+      }
+    } else {
+      if roundedDownWidth * roundedHeight <= Int(scale.widthScale) * Int(scale.heightScale) {
+        return (width: roundedDownWidth, height: roundedHeight)
+      }
+    }
+    return (width: roundedDownWidth, height: roundedDownHeight)  // This is guranteed to be smaller than scale.width * scale.height.
+  }
+
   public func prepareDatasetForFlux1(
     inputs: [Input], tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
     customEmbeddingLength: Int, progressHandler: (PrepareState, Int) -> Bool
@@ -146,8 +176,6 @@ public struct LoRATrainer {
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
       alternativeDecoderVersion: nil)
     let graph = DynamicGraph()
-    let imageWidth = Int(scale.widthScale) * 64
-    let imageHeight = Int(scale.heightScale) * 64
     var processedInputs = [ProcessedInput]()
     let (_, zeroCLIPTokens, _, _, _) = tokenizers[0].tokenize(
       text: "", truncation: true, maxLength: 77)
@@ -160,12 +188,25 @@ public struct LoRATrainer {
     graph.openStore(session) { store in
       // First, center crop and encode the image.
       graph.withNoGrad {
+        var previousImageWidth: Int? = nil
+        var previousImageHeight: Int? = nil
         var encoder: Model? = nil
         for input in inputs {
+          guard let originalSize = imageInspector(input.imageUrl),
+            originalSize.width > 0 && originalSize.height > 0
+          else { continue }
+          let imageSize = Self.sizeThatFits(size: originalSize, scale: scale)
+          let imageWidth = imageSize.width * 64
+          let imageHeight = imageSize.height * 64
           guard
             let (tensor, originalSize, cropTopLeft, targetSize) = imageLoader(
               input.imageUrl, imageWidth, imageHeight)
           else { continue }
+          if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
+            encoder = nil  // Reload encoder.
+          }
+          previousImageWidth = imageWidth
+          previousImageHeight = imageHeight
           // Keep this in the database.
           let tuple = firstStage.encode(graph.constant(tensor.toGPU(0)), encoder: encoder)
           let sample = tuple.0.rawValue.toCPU()
@@ -180,17 +221,21 @@ public struct LoRATrainer {
           processedInputs.append(
             ProcessedInput(
               imagePath: imagePath, tokens: tokens, CLIPTokens: CLIPTokens,
-              originalSize: originalSize,
-              cropTopLeft: cropTopLeft, targetSize: targetSize))
+              originalSize: originalSize, cropTopLeft: cropTopLeft, targetSize: targetSize))
           guard progressHandler(.imageEncoding, processedInputs.count) else {
             stopped = true
             break
           }
         }
         guard !stopped else { return }
+        let imageWidth = Int(scale.widthScale) * 64
+        let imageHeight = Int(scale.heightScale) * 64
         let zeros = graph.variable(
           .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
         zeros.full(0)
+        if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
+          encoder = nil  // Reload encoder.
+        }
         let latentZeros = firstStage.sample(zeros, encoder: encoder).1.copied().rawValue.toCPU()
         store.write("latent_zeros", tensor: latentZeros)
       }
@@ -596,7 +641,8 @@ public struct LoRATrainer {
   }
 
   public func saveSession(
-    textModel: [Model]?, unetFixed: Model?, unet: Model, embeddings: [DynamicGraph.Tensor<Float>],
+    textModel: [Model]?, unetFixed: Model?, unet: AnyModel,
+    embeddings: [DynamicGraph.Tensor<Float>],
     step: Int
   ) {
     let graph = embeddings.first?.graph ?? DynamicGraph()
@@ -652,7 +698,8 @@ public struct LoRATrainer {
   }
 
   public func saveAsLoRA(
-    textModel: [Model]?, unetFixed: Model?, unet: Model, embeddings: [DynamicGraph.Tensor<Float>],
+    textModel: [Model]?, unetFixed: Model?, unet: AnyModel,
+    embeddings: [DynamicGraph.Tensor<Float>],
     scaleOfLoRA: Float, name: String, step: Int
   ) {
     let graph = embeddings.first?.graph ?? DynamicGraph()
@@ -991,6 +1038,30 @@ public struct LoRATrainer {
     }
   }
 
+  struct CachedRotaryPositionEmbedder {
+    private struct Size: Equatable, Hashable {
+      var height: Int
+      var width: Int
+      var tokenLength: Int
+    }
+    private var rotaryEmbeddings = [Size: DynamicGraph.Tensor<FloatType>]()
+    mutating func Flux1RotaryPositionEmbedding(
+      graph: DynamicGraph, height: Int, width: Int, tokenLength: Int
+    ) -> DynamicGraph.Tensor<FloatType> {
+      let size = Size(height: height, width: width, tokenLength: tokenLength)
+      if let embedding = rotaryEmbeddings[size] {
+        return embedding
+      }
+      let rotary = Tensor<FloatType>(
+        from: Diffusion.Flux1RotaryPositionEmbedding(
+          height: height, width: width, tokenLength: tokenLength, channels: 128, heads: 24)
+      ).toGPU(0)
+      let rotaryConstant = graph.constant(rotary)
+      rotaryEmbeddings[size] = rotaryConstant
+      return rotaryConstant
+    }
+  }
+
   private func trainFlux1(
     graph: DynamicGraph, firstStage: FirstStage<FloatType>, sessionStore: DynamicGraph.Store,
     resumingLoRAFile: (String, Int)?,
@@ -1000,7 +1071,9 @@ public struct LoRATrainer {
     shift: Float, noiseOffset: Float, guidanceEmbed: ClosedRange<Float>,
     denoisingTimesteps: ClosedRange<Int>, captionDropoutRate: Float, orthonormalLoRADown: Bool,
     memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
-    progressHandler: (TrainingState, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>])
+    progressHandler: (
+      TrainingState, Float, [Model]?, Model?, AnyModel, [DynamicGraph.Tensor<Float>]
+    )
       -> Bool
   ) {
     guard unetLearningRate.upperBound > 0 else {
@@ -1034,24 +1107,23 @@ public struct LoRATrainer {
     }
     let latentsWidth = Int(scale.widthScale) * 8
     let latentsHeight = Int(scale.heightScale) * 8
-    let dit = LoRAFlux1(
-      batchSize: 1, tokenLength: paddedTextEncodingLength, height: latentsHeight,
-      width: latentsWidth, channels: 3072,
-      layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: false,
-      injectControls: false, injectIPAdapterLengths: [:], LoRAConfiguration: configuration,
-      useConvolutionForPatchify: false
-    ).1
+    let dit: ModelBuilder<(width: Int, height: Int)> = ModelBuilder { size, values in
+      return LoRAFlux1(
+        batchSize: 1, tokenLength: paddedTextEncodingLength, height: size.height,
+        width: size.width, channels: 3072,
+        layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: false,
+        injectControls: false, injectIPAdapterLengths: [:], LoRAConfiguration: configuration,
+        useConvolutionForPatchify: false
+      ).1
+    }
     dit.maxConcurrency = .limit(1)
     dit.memoryReduction = (memorySaver != .turbo)
     let latents = graph.variable(
       .GPU(0), .HWC(1, (latentsHeight / 2) * (latentsWidth / 2), 16 * 2 * 2), of: FloatType.self)
-    let rotary = Tensor<FloatType>(
-      from: Flux1RotaryPositionEmbedding(
-        height: latentsHeight / 2, width: latentsWidth / 2, tokenLength: paddedTextEncodingLength,
-        channels: 128,
-        heads: 24)
-    ).toGPU(0)
-    let rotaryConstant = graph.constant(rotary)
+    var cachedRotaryPositionEmbedder = CachedRotaryPositionEmbedder()
+    let rotaryConstant = cachedRotaryPositionEmbedder.Flux1RotaryPositionEmbedding(
+      graph: graph, height: latentsHeight / 2, width: latentsWidth / 2,
+      tokenLength: paddedTextEncodingLength)
     let cArr =
       [rotaryConstant] + [
         graph.constant(.GPU(0), .HWC(1, paddedTextEncodingLength, 4096), of: FloatType.self)
@@ -1065,7 +1137,7 @@ public struct LoRATrainer {
     guard progressHandler(.compile, 0, nil, nil, dit, []) else {
       return
     }
-    dit.compile(inputs: [latents] + cArr)
+    dit.compile((width: latentsWidth, height: latentsHeight), inputs: [latents] + cArr)
     let externalData: DynamicGraph.Store.Codec =
       weightsMemory == .justInTime ? .externalOnDemand : .externalData
     graph.openStore(
@@ -1166,7 +1238,7 @@ public struct LoRATrainer {
         let imagePath = value
         guard let tensor = sessionStore.read(like: imagePath) else { continue }
         let shape = tensor.shape
-        guard shape[1] == latentsHeight && shape[2] == latentsWidth && shape[3] == 32 else {
+        guard shape[3] == 32 else {
           continue
         }
         let captionDropout = Float.random(in: 0...1, using: &sfmt) < captionDropoutRate
@@ -1197,6 +1269,8 @@ public struct LoRATrainer {
                 Tensor<FloatType>(from: $0)
               })
             else { continue }
+            let latentsHeight = tensor.shape[1]
+            let latentsWidth = tensor.shape[2]
             let (zt, target) = graph.withNoGrad {
               let parameters = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
               let noise = graph.variable(
@@ -1217,13 +1291,18 @@ public struct LoRATrainer {
                 left: latents, right: z1, leftScalar: 1 - item.timestep, rightScalar: item.timestep)
               return (zt, z1 - latents)
             }
+            let rotaryConstant = cachedRotaryPositionEmbedder.Flux1RotaryPositionEmbedding(
+              graph: graph, height: latentsHeight / 2, width: latentsWidth / 2,
+              tokenLength: paddedTextEncodingLength)
             let context = graph.constant(textEncoding.toGPU(0))
             let condition1 = conditions.map {
               let shape = $0.shape
               return graph.constant($0[j..<(j + 1), 0..<shape[1], 0..<shape[2]].copied())
             }
-            let vtheta = dit(inputs: zt, [rotaryConstant, context] + condition1)[0].as(
-              of: FloatType.self)
+            let vtheta = dit(
+              (width: latentsWidth, height: latentsHeight), inputs: zt,
+              [rotaryConstant, context] + condition1)[0].as(
+                of: FloatType.self)
             if i == 0 {
               let _ = progressHandler(.step(0), 0, nil, nil, dit, [])
             }
@@ -1293,7 +1372,9 @@ public struct LoRATrainer {
     noiseOffset: Float, guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
     captionDropoutRate: Float, orthonormalLoRADown: Bool,
     memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
-    progressHandler: (TrainingState, Float, [Model]?, Model?, Model, [DynamicGraph.Tensor<Float>])
+    progressHandler: (
+      TrainingState, Float, [Model]?, Model?, AnyModel, [DynamicGraph.Tensor<Float>]
+    )
       -> Bool
   ) {
     let graph = DynamicGraph()
