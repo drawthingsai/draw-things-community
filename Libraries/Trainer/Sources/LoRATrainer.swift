@@ -63,7 +63,7 @@ public struct LoRATrainer {
 
   public init(
     tensorBoard: String?, comment: String,
-    model: String, scale: DeviceCapability.Scale, additionalSacales: [DeviceCapability.Scale],
+    model: String, scale: DeviceCapability.Scale, additionalScales: [DeviceCapability.Scale],
     useImageAspectRatio: Bool, cotrainTextModel: Bool,
     cotrainCustomEmbedding: Bool, clipSkip: Int, maxTextLength: Int, session: String,
     resumeIfPossible: Bool,
@@ -74,8 +74,18 @@ public struct LoRATrainer {
   ) {  // The model identifier.
     summaryWriter = tensorBoard.map { SummaryWriter(logDirectory: $0, comment: comment) }
     self.model = model
+    var scale = scale
+    for additionalScale in additionalScales {
+      if additionalScale.widthScale * additionalScale.heightScale > scale.widthScale
+        * scale.heightScale
+      {
+        scale = additionalScale
+      }
+    }
     self.scale = scale
-    self.additionalScales = additionalSacales
+    self.additionalScales = additionalScales.filter {  // Only retains the scale that is smaller than the scale we selected.
+      return $0.widthScale * $0.heightScale < scale.widthScale * scale.heightScale
+    }
     self.useImageAspectRatio = useImageAspectRatio
     self.cotrainTextModel = cotrainTextModel
     self.cotrainCustomEmbedding = cotrainCustomEmbedding
