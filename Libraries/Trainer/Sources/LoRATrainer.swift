@@ -284,8 +284,14 @@ public struct LoRATrainer {
               encoder = tuple.1
               let imagePath = input.imageUrl.path
               store.write(imagePath + ":\(i)", tensor: sample)
+              guard progressHandler(.imageEncoding, processedInputs.count) else {
+                stopped = true
+                break
+              }
             }
+            guard !stopped else { break }
           }
+          guard !stopped else { return }
         }
       }
       graph.withNoGrad {
