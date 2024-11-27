@@ -44,6 +44,7 @@ public struct LoRATrainer {
   private let model: String
   private let paddedTextEncodingLength: Int
   private let scale: DeviceCapability.Scale
+  private let additionalScales: [DeviceCapability.Scale]
   private let useImageAspectRatio: Bool
   private let cotrainTextModel: Bool
   private let cotrainCustomEmbedding: Bool
@@ -62,7 +63,8 @@ public struct LoRATrainer {
 
   public init(
     tensorBoard: String?, comment: String,
-    model: String, scale: DeviceCapability.Scale, useImageAspectRatio: Bool, cotrainTextModel: Bool,
+    model: String, scale: DeviceCapability.Scale, additionalSacales: [DeviceCapability.Scale],
+    useImageAspectRatio: Bool, cotrainTextModel: Bool,
     cotrainCustomEmbedding: Bool, clipSkip: Int, maxTextLength: Int, session: String,
     resumeIfPossible: Bool,
     imageInspector: @escaping (URL) -> (width: Int, height: Int)?,
@@ -73,6 +75,7 @@ public struct LoRATrainer {
     summaryWriter = tensorBoard.map { SummaryWriter(logDirectory: $0, comment: comment) }
     self.model = model
     self.scale = scale
+    self.additionalScales = additionalSacales
     self.useImageAspectRatio = useImageAspectRatio
     self.cotrainTextModel = cotrainTextModel
     self.cotrainCustomEmbedding = cotrainCustomEmbedding
@@ -247,6 +250,33 @@ public struct LoRATrainer {
         }
         let latentZeros = firstStage.sample(zeros, encoder: encoder).1.copied().rawValue.toCPU()
         store.write("latent_zeros", tensor: latentZeros)
+        if useImageAspectRatio && !additionalScales.isEmpty {
+          for (i, scale) in additionalScales.enumerated() {
+            for input in inputs {
+              guard let originalSize = imageInspector(input.imageUrl),
+                originalSize.width > 0 && originalSize.height > 0
+              else { continue }
+              let imageSize = Self.sizeThatFits(size: originalSize, scale: scale)
+              let imageWidth = imageSize.width * 64
+              let imageHeight = imageSize.height * 64
+              guard
+                let (tensor, originalSize, cropTopLeft, targetSize) = imageLoader(
+                  input.imageUrl, imageWidth, imageHeight)
+              else { continue }
+              if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
+                encoder = nil  // Reload encoder.
+              }
+              previousImageWidth = imageWidth
+              previousImageHeight = imageHeight
+              // Keep this in the database.
+              let tuple = firstStage.encode(graph.constant(tensor.toGPU(0)), encoder: encoder)
+              let sample = tuple.0.rawValue.toCPU()
+              encoder = tuple.1
+              let imagePath = input.imageUrl.path
+              store.write(imagePath + ":\(i)", tensor: sample)
+            }
+          }
+        }
       }
       graph.withNoGrad {
         let textModel: [Model] = [
@@ -1236,7 +1266,7 @@ public struct LoRATrainer {
     var batchCount = 0
     var batch = [
       (
-        imagePath: String, pooled: Tensor<FloatType>,
+        loadedImagePath: String, textEncodingPath: String, pooled: Tensor<FloatType>,
         timestep: Float, guidance: Float, captionDropout: Bool
       )
     ]()
@@ -1245,7 +1275,19 @@ public struct LoRATrainer {
       dataFrame.shuffle()
       for value in dataFrame["imagePath", String.self] {
         let imagePath = value
-        guard let tensor = sessionStore.read(like: imagePath) else { continue }
+        let loadedImagePath: String
+        if useImageAspectRatio && !additionalScales.isEmpty {
+          // See if we need to use the original scale or additional scales.
+          let select = Int.random(in: 0...additionalScales.count, using: &sfmt)
+          if select == 0 {
+            loadedImagePath = imagePath
+          } else {
+            loadedImagePath = imagePath + ":\(select - 1)"
+          }
+        } else {
+          loadedImagePath = imagePath
+        }
+        guard let tensor = sessionStore.read(like: loadedImagePath) else { continue }
         let shape = tensor.shape
         guard shape[3] == 32 else {
           continue
@@ -1263,7 +1305,11 @@ public struct LoRATrainer {
             denoisingTimesteps.upperBound) / 999), using: &sfmt)
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         let guidanceEmbed = (Float.random(in: guidanceEmbed, using: &sfmt) * 10).rounded() / 10
-        batch.append((imagePath, pooled, Float(timestep), guidanceEmbed, captionDropout))
+        batch.append(
+          (
+            loadedImagePath, textEncodingPath, pooled, Float(timestep), guidanceEmbed,
+            captionDropout
+          ))
         if batch.count == 32 {
           let conditions = encodeFlux1Fixed(
             graph: graph, externalData: externalData,
@@ -1271,8 +1317,8 @@ public struct LoRATrainer {
               ($0.pooled, $0.timestep, $0.guidance)
             })
           for (j, item) in batch.enumerated() {
-            guard let tensor = sessionStore.read(item.imagePath) else { continue }
-            let textEncodingPath = item.captionDropout ? "" : item.imagePath
+            guard let tensor = sessionStore.read(item.loadedImagePath) else { continue }
+            let textEncodingPath = item.textEncodingPath
             guard
               let textEncoding = sessionStore.read("cond_te2_\(textEncodingPath)").map({
                 Tensor<FloatType>(from: $0)

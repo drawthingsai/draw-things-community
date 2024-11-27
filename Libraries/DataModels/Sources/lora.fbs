@@ -49,6 +49,7 @@ table LoRATrainingConfiguration (codable) {
   orthonormal_lora_down: bool = false;
   max_text_length: uint = 512;
   use_image_aspect_ratio: bool = false;
+  additional_scales: [ushort];
 }
 
 root_type LoRATrainingConfiguration;
