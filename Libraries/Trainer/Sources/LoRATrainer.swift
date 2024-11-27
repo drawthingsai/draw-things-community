@@ -270,7 +270,7 @@ public struct LoRATrainer {
               let imageWidth = imageSize.width * 64
               let imageHeight = imageSize.height * 64
               guard
-                let (tensor, originalSize, cropTopLeft, targetSize) = imageLoader(
+                let (tensor, _, _, _) = imageLoader(
                   input.imageUrl, imageWidth, imageHeight)
               else { continue }
               if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
