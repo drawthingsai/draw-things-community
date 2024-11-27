@@ -1107,7 +1107,8 @@ public struct LoRATrainer {
     dataFrame: DataFrame, trainingSteps: Int, warmupSteps: Int, gradientAccumulationSteps: Int,
     rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: ClosedRange<Float>,
     stepsBetweenRestarts: Int, seed: UInt32, trainableKeys: [String],
-    shift: Float, noiseOffset: Float, guidanceEmbed: ClosedRange<Float>,
+    resolutionDependentShift: Bool, shift: Float, noiseOffset: Float,
+    guidanceEmbed: ClosedRange<Float>,
     denoisingTimesteps: ClosedRange<Int>, captionDropoutRate: Float, orthonormalLoRADown: Bool,
     memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
     progressHandler: (
@@ -1289,6 +1290,8 @@ public struct LoRATrainer {
         }
         guard let tensor = sessionStore.read(like: loadedImagePath) else { continue }
         let shape = tensor.shape
+        let latentsHeight = tensor.shape[1]
+        let latentsWidth = tensor.shape[2]
         guard shape[3] == 32 else {
           continue
         }
@@ -1303,6 +1306,11 @@ public struct LoRATrainer {
         var timestep: Double = Double.random(
           in: (Double(denoisingTimesteps.lowerBound) / 999)...(Double(
             denoisingTimesteps.upperBound) / 999), using: &sfmt)
+        var shift = shift
+        if resolutionDependentShift {
+          shift = Float(
+            ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
+        }
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         let guidanceEmbed = (Float.random(in: guidanceEmbed, using: &sfmt) * 10).rounded() / 10
         batch.append(
@@ -1423,7 +1431,7 @@ public struct LoRATrainer {
     unetLearningRate: ClosedRange<Float>,
     stepsBetweenRestarts: Int, seed: UInt32, trainableKeys: [String],
     customEmbeddingLength: Int, customEmbeddingLearningRate: Float,
-    stopEmbeddingTrainingAtStep: Int, shift: Float,
+    stopEmbeddingTrainingAtStep: Int, resolutionDependentShift: Bool, shift: Float,
     noiseOffset: Float, guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
     captionDropoutRate: Float, orthonormalLoRADown: Bool,
     memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
@@ -1479,7 +1487,7 @@ public struct LoRATrainer {
           warmupSteps: warmupSteps, gradientAccumulationSteps: gradientAccumulationSteps,
           rankOfLoRA: rankOfLoRA, scaleOfLoRA: scaleOfLoRA, unetLearningRate: unetLearningRate,
           stepsBetweenRestarts: stepsBetweenRestarts, seed: seed, trainableKeys: trainableKeys,
-          shift: shift,
+          resolutionDependentShift: resolutionDependentShift, shift: shift,
           noiseOffset: noiseOffset, guidanceEmbed: guidanceEmbed,
           denoisingTimesteps: denoisingTimesteps, captionDropoutRate: captionDropoutRate,
           orthonormalLoRADown: orthonormalLoRADown, memorySaver: memorySaver,
