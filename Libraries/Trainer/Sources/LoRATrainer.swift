@@ -1111,7 +1111,7 @@ public struct LoRATrainer {
         for i in 0..<24 {
           fullRotary[0..<1, 0..<(height * width + tokenLength), i..<(i + 1), 0..<128] = embedding
         }
-        return graph.constant(embedding)
+        return graph.constant(fullRotary)
       }
       let rotary = Tensor<FloatType>(
         from: Diffusion.Flux1RotaryPositionEmbedding(
