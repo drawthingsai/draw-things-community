@@ -232,7 +232,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
       var blank = graph.variable(
         .GPU(0), .NCHW(originalShape[0], shape1, originalShape[2], originalShape[3]),
         of: FloatType.self)
-      if shape[1] > originalShape[1] {
+      if shape1 > originalShape[1] {
         blank.full(0)
         blank[
           0..<originalShape[0], 0..<originalShape[1], 0..<originalShape[2], 0..<originalShape[3]] =
