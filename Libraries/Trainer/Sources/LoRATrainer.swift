@@ -38,6 +38,7 @@ public struct LoRATrainer {
     var originalSize: (width: Int, height: Int)
     var cropTopLeft: (top: Int, left: Int)
     var targetSize: (width: Int, height: Int)
+    var loadedImagePath: String
   }
 
   public let version: ModelVersion
@@ -198,7 +199,7 @@ public struct LoRATrainer {
       text: "", truncation: true, maxLength: paddedTextEncodingLength)
     let zeroCaptionInput = ProcessedInput(
       imagePath: "", tokens: zeroTokens, CLIPTokens: zeroCLIPTokens, originalSize: (0, 0),
-      cropTopLeft: (0, 0), targetSize: (0, 0))
+      cropTopLeft: (0, 0), targetSize: (0, 0), loadedImagePath: "")
     var stopped = false
     graph.openStore(session) { store in
       // First, center crop and encode the image.
@@ -243,7 +244,8 @@ public struct LoRATrainer {
           processedInputs.append(
             ProcessedInput(
               imagePath: imagePath, tokens: tokens, CLIPTokens: CLIPTokens,
-              originalSize: originalSize, cropTopLeft: cropTopLeft, targetSize: targetSize))
+              originalSize: originalSize, cropTopLeft: cropTopLeft, targetSize: targetSize,
+              loadedImagePath: imagePath))
           guard progressHandler(.imageEncoding, processedInputs.count) else {
             stopped = true
             break
@@ -261,6 +263,10 @@ public struct LoRATrainer {
         let latentZeros = firstStage.sample(zeros, encoder: encoder).1.copied().rawValue.toCPU()
         store.write("latent_zeros", tensor: latentZeros)
         if useImageAspectRatio && !additionalScales.isEmpty {
+          var inputMap = [String: ProcessedInput]()
+          for input in processedInputs {
+            inputMap[input.imagePath] = input
+          }
           for (i, scale) in additionalScales.enumerated() {
             for input in inputs {
               guard let originalSize = imageInspector(input.imageUrl),
@@ -284,6 +290,10 @@ public struct LoRATrainer {
               encoder = tuple.1
               let imagePath = input.imageUrl.path
               store.write(imagePath + ":\(i)", tensor: sample)
+              if var processedInput = inputMap[imagePath] {
+                processedInput.loadedImagePath = imagePath + ":\(i)"
+                processedInputs.append(processedInput)
+              }
               guard progressHandler(.imageEncoding, processedInputs.count) else {
                 stopped = true
                 break
@@ -335,6 +345,7 @@ public struct LoRATrainer {
           }
         }
         for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
+          guard input.imagePath == input.loadedImagePath else { continue }
           for i in 0..<77 {
             tokensTensor[i] = input.CLIPTokens[i]
           }
@@ -379,6 +390,7 @@ public struct LoRATrainer {
             codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
         }
         for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
+          guard input.imagePath == input.loadedImagePath else { continue }
           for i in 0..<paddedTextEncodingLength {
             tokens2Tensor[i] = input.tokens[i]
           }
@@ -435,7 +447,7 @@ public struct LoRATrainer {
       text: "", truncation: true, maxLength: 77)
     let zeroCaptionInput = ProcessedInput(
       imagePath: "", tokens: zeroTokens, CLIPTokens: [], originalSize: (0, 0), cropTopLeft: (0, 0),
-      targetSize: (0, 0))
+      targetSize: (0, 0), loadedImagePath: "")
     var stopped = false
     graph.openStore(session) { store in
       // First, center crop and encode the image.
@@ -489,7 +501,7 @@ public struct LoRATrainer {
             ProcessedInput(
               imagePath: imagePath, tokens: updatedTokens, CLIPTokens: [],
               originalSize: originalSize,
-              cropTopLeft: cropTopLeft, targetSize: targetSize))
+              cropTopLeft: cropTopLeft, targetSize: targetSize, loadedImagePath: imagePath))
           guard progressHandler(.imageEncoding, processedInputs.count) else {
             stopped = true
             break
@@ -502,6 +514,10 @@ public struct LoRATrainer {
         let latentZeros = firstStage.sample(zeros, encoder: encoder).1.copied().rawValue.toCPU()
         store.write("latent_zeros", tensor: latentZeros)
         if useImageAspectRatio && !additionalScales.isEmpty {
+          var inputMap = [String: ProcessedInput]()
+          for input in processedInputs {
+            inputMap[input.imagePath] = input
+          }
           for (i, scale) in additionalScales.enumerated() {
             for input in inputs {
               guard let originalSize = imageInspector(input.imageUrl),
@@ -511,7 +527,7 @@ public struct LoRATrainer {
               let imageWidth = imageSize.width * 64
               let imageHeight = imageSize.height * 64
               guard
-                let (tensor, _, _, _) = imageLoader(
+                let (tensor, originalSize, cropTopLeft, targetSize) = imageLoader(
                   input.imageUrl, imageWidth, imageHeight)
               else { continue }
               if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
@@ -525,6 +541,13 @@ public struct LoRATrainer {
               encoder = tuple.1
               let imagePath = input.imageUrl.path
               store.write(imagePath + ":\(i)", tensor: sample)
+              if var processedInput = inputMap[imagePath] {
+                processedInput.originalSize = originalSize
+                processedInput.cropTopLeft = cropTopLeft
+                processedInput.targetSize = targetSize
+                processedInput.loadedImagePath = imagePath + ":\(i)"
+                processedInputs.append(processedInput)
+              }
               guard progressHandler(.imageEncoding, processedInputs.count) else {
                 stopped = true
                 break
@@ -664,6 +687,7 @@ public struct LoRATrainer {
             }
           }
           for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
+            guard input.imagePath == input.loadedImagePath else { continue }
             for i in 0..<77 {
               tokensTensor[i] = input.tokens[i]
             }
@@ -720,6 +744,7 @@ public struct LoRATrainer {
               }
             }
             for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
+              guard input.imagePath == input.loadedImagePath else { continue }
               for i in 0..<77 {
                 tokensTensor[i] = input.tokens[i]
               }
@@ -1355,20 +1380,11 @@ public struct LoRATrainer {
     }
     while i < trainingSteps && !stopped {
       dataFrame.shuffle()
-      for value in dataFrame["imagePath", String.self] {
-        let imagePath = value
-        let loadedImagePath: String
-        if useImageAspectRatio && !additionalScales.isEmpty {
-          // See if we need to use the original scale or additional scales.
-          let select = Int.random(in: 0...additionalScales.count, using: &sfmt)
-          if select == 0 {
-            loadedImagePath = imagePath
-          } else {
-            loadedImagePath = imagePath + ":\(select - 1)"
-          }
-        } else {
-          loadedImagePath = imagePath
+      for value in dataFrame["0", "imagePath"] {
+        guard let input = value[0] as? ProcessedInput, let imagePath = value[1] as? String else {
+          continue
         }
+        let loadedImagePath = input.loadedImagePath
         guard let tensor = sessionStore.read(like: loadedImagePath) else { continue }
         let shape = tensor.shape
         let latentsHeight = tensor.shape[1]
@@ -2459,18 +2475,7 @@ public struct LoRATrainer {
           else {
             continue
           }
-          let loadedImagePath: String
-          if useImageAspectRatio && !additionalScales.isEmpty {
-            // See if we need to use the original scale or additional scales.
-            let select = Int.random(in: 0...additionalScales.count, using: &sfmt)
-            if select == 0 {
-              loadedImagePath = imagePath
-            } else {
-              loadedImagePath = imagePath + ":\(select - 1)"
-            }
-          } else {
-            loadedImagePath = imagePath
-          }
+          let loadedImagePath = input.loadedImagePath
           guard let tensor = sessionStore.read(loadedImagePath) else { continue }
           let shape = tensor.shape
           let latentsHeight = shape[1]
