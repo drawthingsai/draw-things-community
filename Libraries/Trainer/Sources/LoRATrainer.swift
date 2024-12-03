@@ -440,12 +440,30 @@ public struct LoRATrainer {
     graph.openStore(session) { store in
       // First, center crop and encode the image.
       graph.withNoGrad {
+        var previousImageWidth: Int? = nil
+        var previousImageHeight: Int? = nil
         var encoder: Model? = nil
         for input in inputs {
+          guard let originalSize = imageInspector(input.imageUrl),
+            originalSize.width > 0 && originalSize.height > 0
+          else { continue }
+          let imageWidth: Int
+          let imageHeight: Int
+          if useImageAspectRatio {
+            let imageSize = Self.sizeThatFits(size: originalSize, scale: scale)
+            imageWidth = imageSize.width * 64
+            imageHeight = imageSize.height * 64
+          } else {
+            imageWidth = Int(scale.widthScale) * 64
+            imageHeight = Int(scale.heightScale) * 64
+          }
           guard
             let (tensor, originalSize, cropTopLeft, targetSize) = imageLoader(
               input.imageUrl, imageWidth, imageHeight)
           else { continue }
+          if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
+            encoder = nil  // Reload encoder.
+          }
           // Keep this in the database.
           let tuple = firstStage.encode(graph.constant(tensor.toGPU(0)), encoder: encoder)
           let sample = tuple.0.rawValue.toCPU()
@@ -483,6 +501,39 @@ public struct LoRATrainer {
         zeros.full(0)
         let latentZeros = firstStage.sample(zeros, encoder: encoder).1.copied().rawValue.toCPU()
         store.write("latent_zeros", tensor: latentZeros)
+        if useImageAspectRatio && !additionalScales.isEmpty {
+          for (i, scale) in additionalScales.enumerated() {
+            for input in inputs {
+              guard let originalSize = imageInspector(input.imageUrl),
+                originalSize.width > 0 && originalSize.height > 0
+              else { continue }
+              let imageSize = Self.sizeThatFits(size: originalSize, scale: scale)
+              let imageWidth = imageSize.width * 64
+              let imageHeight = imageSize.height * 64
+              guard
+                let (tensor, _, _, _) = imageLoader(
+                  input.imageUrl, imageWidth, imageHeight)
+              else { continue }
+              if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
+                encoder = nil  // Reload encoder.
+              }
+              previousImageWidth = imageWidth
+              previousImageHeight = imageHeight
+              // Keep this in the database.
+              let tuple = firstStage.encode(graph.constant(tensor.toGPU(0)), encoder: encoder)
+              let sample = tuple.0.rawValue.toCPU()
+              encoder = tuple.1
+              let imagePath = input.imageUrl.path
+              store.write(imagePath + ":\(i)", tensor: sample)
+              guard progressHandler(.imageEncoding, processedInputs.count) else {
+                stopped = true
+                break
+              }
+            }
+            guard !stopped else { break }
+          }
+          guard !stopped else { return }
+        }
       }
       if stopped {
         return
@@ -1172,7 +1223,7 @@ public struct LoRATrainer {
     }
     let latentsWidth = Int(scale.widthScale) * 8
     let latentsHeight = Int(scale.heightScale) * 8
-    let dit: ModelBuilder<(width: Int, height: Int)> = ModelBuilder { size, values in
+    let dit: ModelBuilder<(width: Int, height: Int)> = ModelBuilder { size, _ in
       return LoRAFlux1(
         batchSize: 1, tokenLength: paddedTextEncodingLength, height: size.height,
         width: size.width, channels: 3072,
@@ -1400,7 +1451,9 @@ public struct LoRATrainer {
             let loss = (d .* d).reduced(.mean, axis: [1, 2])
             scaler.scale(loss).backward(to: [zt])
             let value = loss.toCPU()[0, 0, 0]
-            print("loss \(value), scale \(scaler.scale), step \(i), timestep \(item.timestep)")
+            print(
+              "loss \(value), scale \(scaler.scale), step \(i), timestep \(item.timestep), image \(latentsWidth)x\(latentsHeight)"
+            )
             batchCount += 1
             let learningRate: Float
             if stepsBetweenRestarts > 1 {
@@ -1534,8 +1587,8 @@ public struct LoRATrainer {
           causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
         }
       }
-      let latentWidth = Int(scale.widthScale) * 8
-      let latentHeight = Int(scale.heightScale) * 8
+      let latentsWidth = Int(scale.widthScale) * 8
+      let latentsHeight = Int(scale.heightScale) * 8
       let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
       let LoRAConfiguration: LoRANetworkConfiguration
       switch memorySaver {
@@ -1551,7 +1604,7 @@ public struct LoRATrainer {
       let textModel: [Model]
       let textLoRAMapping: [[Int: Int]]
       let unetFixed: Model?
-      let unet: Model
+      let unet: ModelBuilder<(width: Int, height: Int)>
       let unetLoRAMapping: [Int: Int]
       let embeddingSize: (Int, Int)
       let timeEmbeddingSize: Int
@@ -1587,12 +1640,14 @@ public struct LoRATrainer {
         if !cotrainUNet {
           configuration.rank = 0
         }
-        unet = LoRAUNet(
-          batchSize: 1, embeddingLength: (77, 77), startWidth: latentWidth,
-          startHeight: latentHeight,
-          usesFlashAttention: isMFAEnabled ? .scaleMerged : .none, injectControls: false,
-          injectT2IAdapters: false,
-          injectIPAdapterLengths: [], LoRAConfiguration: configuration)
+        unet = ModelBuilder { size, _ in
+          return LoRAUNet(
+            batchSize: 1, embeddingLength: (77, 77), startWidth: size.width,
+            startHeight: size.height,
+            usesFlashAttention: isMFAEnabled ? .scaleMerged : .none, injectControls: false,
+            injectT2IAdapters: false,
+            injectIPAdapterLengths: [], LoRAConfiguration: configuration)
+        }
         unetLoRAMapping = LoRAMapping.SDUNet
       case .v2:
         embeddingSize = (1024, 1024)
@@ -1625,12 +1680,14 @@ public struct LoRATrainer {
         if !cotrainUNet {
           configuration.rank = 0
         }
-        unet = LoRAUNetv2(
-          batchSize: 1, embeddingLength: (77, 77), startWidth: latentWidth,
-          startHeight: latentHeight,
-          upcastAttention: false, usesFlashAttention: isMFAEnabled ? .scaleMerged : .none,
-          injectControls: false,
-          LoRAConfiguration: configuration)
+        unet = ModelBuilder { size, _ in
+          return LoRAUNetv2(
+            batchSize: 1, embeddingLength: (77, 77), startWidth: size.width,
+            startHeight: size.height,
+            upcastAttention: false, usesFlashAttention: isMFAEnabled ? .scaleMerged : .none,
+            injectControls: false,
+            LoRAConfiguration: configuration)
+        }
         unetLoRAMapping = LoRAMapping.SDUNet
       case .sdxlBase:
         embeddingSize = (1280, 768)
@@ -1682,14 +1739,14 @@ public struct LoRATrainer {
           configuration.rank = 0
         }
         unetFixed = LoRAUNetXLFixed(
-          batchSize: 1, startHeight: latentHeight, startWidth: latentWidth,
+          batchSize: 1, startHeight: latentsHeight, startWidth: latentsWidth,
           channels: [320, 640, 1280], embeddingLength: (77, 77),
           inputAttentionRes: [2: [2, 2], 4: [10, 10]], middleAttentionBlocks: 10,
           outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
           usesFlashAttention: isMFAEnabled ? .scaleMerged : .none, LoRAConfiguration: configuration)
-        unet =
-          LoRAUNetXL(
-            batchSize: 1, startHeight: latentHeight, startWidth: latentWidth,
+        unet = ModelBuilder { size, _ in
+          return LoRAUNetXL(
+            batchSize: 1, startHeight: size.height, startWidth: size.width,
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
             middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
             embeddingLength: (77, 77), injectIPAdapterLengths: [],
@@ -1697,6 +1754,7 @@ public struct LoRATrainer {
             usesFlashAttention: isMFAEnabled ? .scaleMerged : .none,
             injectControls: false, LoRAConfiguration: configuration
           ).0
+        }
         unetLoRAMapping = LoRAMapping.SDUNetXLBase
       case .sdxlRefiner:
         embeddingSize = (1280, 1280)
@@ -1731,15 +1789,15 @@ public struct LoRATrainer {
           configuration.rank = 0
         }
         unetFixed = LoRAUNetXLFixed(
-          batchSize: 1, startHeight: latentHeight, startWidth: latentWidth,
+          batchSize: 1, startHeight: latentsHeight, startWidth: latentsWidth,
           channels: [384, 768, 1536, 1536], embeddingLength: (77, 77),
           inputAttentionRes: [2: [4, 4], 4: [4, 4]], middleAttentionBlocks: 4,
           outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
           usesFlashAttention: isMFAEnabled ? .scaleMerged : .none,
           LoRAConfiguration: configuration)
-        unet =
-          LoRAUNetXL(
-            batchSize: 1, startHeight: latentHeight, startWidth: latentWidth,
+        unet = ModelBuilder { size, _ in
+          return LoRAUNetXL(
+            batchSize: 1, startHeight: size.height, startWidth: size.width,
             channels: [384, 768, 1536, 1536], inputAttentionRes: [2: [4, 4], 4: [4, 4]],
             middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
             embeddingLength: (77, 77), injectIPAdapterLengths: [],
@@ -1747,6 +1805,7 @@ public struct LoRATrainer {
             usesFlashAttention: isMFAEnabled ? .scaleMerged : .none,
             injectControls: false, LoRAConfiguration: configuration
           ).0
+        }
         unetLoRAMapping = LoRAMapping.SDUNetXLRefiner
       case .ssd1b:
         embeddingSize = (1280, 768)
@@ -1798,14 +1857,14 @@ public struct LoRATrainer {
           configuration.rank = 0
         }
         unetFixed = LoRAUNetXLFixed(
-          batchSize: 1, startHeight: latentHeight, startWidth: latentWidth,
+          batchSize: 1, startHeight: latentsHeight, startWidth: latentsWidth,
           channels: [320, 640, 1280], embeddingLength: (77, 77),
           inputAttentionRes: [2: [2, 2], 4: [4, 4]], middleAttentionBlocks: 0,
           outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
           usesFlashAttention: isMFAEnabled ? .scale1 : .none, LoRAConfiguration: configuration)
-        unet =
-          LoRAUNetXL(
-            batchSize: 1, startHeight: latentHeight, startWidth: latentWidth,
+        unet = ModelBuilder { size, _ in
+          return LoRAUNetXL(
+            batchSize: 1, startHeight: size.height, startWidth: size.width,
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [4, 4]],
             middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
             embeddingLength: (77, 77), injectIPAdapterLengths: [],
@@ -1813,6 +1872,7 @@ public struct LoRATrainer {
             injectControls: false,
             LoRAConfiguration: configuration
           ).0
+        }
         unetLoRAMapping = LoRAMapping.SDUNetXLSSD1B
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
@@ -2064,16 +2124,16 @@ public struct LoRATrainer {
       switch modifier {
       case .inpainting:
         latents = graph.variable(
-          .GPU(0), .NHWC(1, latentHeight, latentWidth, 9), of: FloatType.self)
+          .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 9), of: FloatType.self)
       case .editing, .double:
         latents = graph.variable(
-          .GPU(0), .NHWC(1, latentHeight, latentWidth, 8), of: FloatType.self)
+          .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 8), of: FloatType.self)
       case .depth, .canny:
         latents = graph.variable(
-          .GPU(0), .NHWC(1, latentHeight, latentWidth, 5), of: FloatType.self)
+          .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 5), of: FloatType.self)
       case .none:
         latents = graph.variable(
-          .GPU(0), .NHWC(1, latentHeight, latentWidth, 4), of: FloatType.self)
+          .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 4), of: FloatType.self)
       }
       latents.full(0)
       let c: DynamicGraph.Tensor<FloatType>
@@ -2099,7 +2159,9 @@ public struct LoRATrainer {
       else {
         return
       }
-      unet.compile(inputs: [latents, graph.variable(Tensor<FloatType>(from: ts)), c] + kvs)
+      unet.compile(
+        (width: latentsWidth, height: latentsHeight),
+        inputs: [latents, graph.variable(Tensor<FloatType>(from: ts)), c] + kvs)
       graph.openStore(
         ModelZoo.filePathForModelDownloaded(model), flags: .readOnly,
         externalStore: TensorData.externalStore(
@@ -2379,6 +2441,16 @@ public struct LoRATrainer {
         latentZeros = nil
       }
       var sfmt = SFMT(seed: UInt64(seed))
+      // Do a dry-run to allocate everything properly. This will make sure we allocate largest RAM so no reallocation later.
+      let _ = unet(
+        (width: latentsWidth, height: latentsHeight), inputs: latents,
+        [graph.variable(Tensor<FloatType>(from: ts)), c] + kvs)
+      guard
+        progressHandler(
+          .step(0), 0, cotrainTextModel ? textModel : nil, unetFixed, unet, [])
+      else {
+        return
+      }
       while i < trainingSteps && !stopped && !optimizers.isEmpty {
         dataFrame.shuffle()
         for value in dataFrame["0", "imagePath", "tokens"] {
@@ -2387,22 +2459,37 @@ public struct LoRATrainer {
           else {
             continue
           }
-          guard let tensor = sessionStore.read(imagePath) else { continue }
+          let loadedImagePath: String
+          if useImageAspectRatio && !additionalScales.isEmpty {
+            // See if we need to use the original scale or additional scales.
+            let select = Int.random(in: 0...additionalScales.count, using: &sfmt)
+            if select == 0 {
+              loadedImagePath = imagePath
+            } else {
+              loadedImagePath = imagePath + ":\(select - 1)"
+            }
+          } else {
+            loadedImagePath = imagePath
+          }
+          guard let tensor = sessionStore.read(loadedImagePath) else { continue }
           let shape = tensor.shape
-          guard shape[1] == latentHeight && shape[2] == latentWidth else { continue }
+          let latentsHeight = shape[1]
+          let latentsWidth = shape[2]
           let captionDropout = Float.random(in: 0...1, using: &sfmt) < captionDropoutRate
           if captionDropout {
             tokens = zeroCaption.tokens
           }
           let (latents, _) = graph.withNoGrad {
             let parameters = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
-            let noise = graph.variable(.CPU, .NHWC(1, latentHeight, latentWidth, 4), of: Float.self)
+            let noise = graph.variable(
+              .CPU, .NHWC(1, latentsHeight, latentsWidth, 4), of: Float.self)
             noise.randn(std: 1, mean: 0)
             let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
             return firstStage.sampleFromDistribution(parameters, noise: noiseGPU)
           }
           let noiseGPU = graph.withNoGrad {
-            var noise = graph.variable(.CPU, .NHWC(1, latentHeight, latentWidth, 4), of: Float.self)
+            var noise = graph.variable(
+              .CPU, .NHWC(1, latentsHeight, latentsWidth, 4), of: Float.self)
             noise.randn(std: 1, mean: 0)
             if noiseOffset > 0 {
               let offsetNoise = graph.variable(.CPU, .NHWC(1, 1, 1, 1), of: Float.self)
@@ -2423,20 +2510,21 @@ public struct LoRATrainer {
               return noisyLatents
             }
             var noisyLatentsPlusMaskAndImage = graph.variable(
-              .GPU(0), .NHWC(1, latentHeight, latentWidth, 9), of: FloatType.self)
+              .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 9), of: FloatType.self)
             // Need to do more in case of inpainting model.
-            noisyLatentsPlusMaskAndImage[0..<1, 0..<latentHeight, 0..<latentWidth, 0..<4] =
+            noisyLatentsPlusMaskAndImage[0..<1, 0..<latentsHeight, 0..<latentsWidth, 0..<4] =
               noisyLatents
             let mask = graph.variable(
-              makeMask(resolution: (width: latentWidth, height: latentHeight), using: &sfmt).toGPU(
-                0))
-            noisyLatentsPlusMaskAndImage[0..<1, 0..<latentHeight, 0..<latentWidth, 4..<5] = mask
+              makeMask(resolution: (width: latentsWidth, height: latentsHeight), using: &sfmt)
+                .toGPU(
+                  0))
+            noisyLatentsPlusMaskAndImage[0..<1, 0..<latentsHeight, 0..<latentsWidth, 4..<5] = mask
             // This is an approximation. The mask should be applied at image space, but that means we need to keep VAE in RAM. This allows us to mask out and fill in some zero latents (zero in image space).
             var conditioningImage = (1 - mask) .* latents
             if let latentZeros = latentZeros {
               conditioningImage = conditioningImage + (mask .* latentZeros)
             }
-            noisyLatentsPlusMaskAndImage[0..<1, 0..<latentHeight, 0..<latentWidth, 5..<9] =
+            noisyLatentsPlusMaskAndImage[0..<1, 0..<latentsHeight, 0..<latentsWidth, 5..<9] =
               conditioningImage
             return noisyLatentsPlusMaskAndImage
           }
@@ -2710,11 +2798,9 @@ public struct LoRATrainer {
             }
             condTokensTensorGPU = nil
           }
-          let et = unet(inputs: noisyLatents, [t, c] + kvs)[0].as(of: FloatType.self)
-          if i == 0 {
-            let _ = progressHandler(
-              .step(0), 0, cotrainTextModel ? textModel : nil, unetFixed, unet, [])
-          }
+          let et = unet(
+            (width: latentsWidth, height: latentsHeight), inputs: noisyLatents, [t, c] + kvs)[0].as(
+              of: FloatType.self)
           let d = et - noiseGPU
           let loss = snrWeight * (d .* d).reduced(.mean, axis: [1, 2, 3])
           if let condTokensTensorGPU = condTokensTensorGPU {
@@ -2727,7 +2813,9 @@ public struct LoRATrainer {
             scaler.scale(loss).backward(to: [noisyLatents])
           }
           let value = loss.toCPU()[0, 0, 0, 0]
-          print("loss \(value), scale \(scaler.scale), step \(i)")
+          print(
+            "loss \(value), scale \(scaler.scale), step \(i), image \(latentsWidth)x\(latentsHeight)"
+          )
           batchCount += 1
           let learningRate: Float
           if stepsBetweenRestarts > 1 {
