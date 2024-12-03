@@ -1297,6 +1297,11 @@ public struct LoRATrainer {
       )
     ]()
     var sfmt = SFMT(seed: UInt64(seed))
+    // Do a dry-run to allocate everything properly. This will make sure we allocate largest RAM so no reallocation later.
+    let _ = dit((width: latentsWidth, height: latentsHeight), inputs: latents, cArr)
+    guard progressHandler(.step(0), 0, nil, nil, dit, []) else {
+      return
+    }
     while i < trainingSteps && !stopped {
       dataFrame.shuffle()
       for value in dataFrame["imagePath", String.self] {
@@ -1391,9 +1396,6 @@ public struct LoRATrainer {
               (width: latentsWidth, height: latentsHeight), inputs: zt,
               [rotaryConstant, context] + condition1)[0].as(
                 of: FloatType.self)
-            if i == 0 {
-              let _ = progressHandler(.step(0), 0, nil, nil, dit, [])
-            }
             let d = target - vtheta
             let loss = (d .* d).reduced(.mean, axis: [1, 2])
             scaler.scale(loss).backward(to: [zt])
