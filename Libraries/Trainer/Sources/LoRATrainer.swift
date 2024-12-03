@@ -1491,6 +1491,8 @@ public struct LoRATrainer {
               summaryWriter.addScalar("loss", value, step: i)
               summaryWriter.addScalar("scale", scaler.scale, step: i)
               summaryWriter.addScalar("timestep", item.timestep, step: i)
+              summaryWriter.addScalar("latents_width", Float(latentsWidth), step: i)
+              summaryWriter.addScalar("latents_height", Float(latentsHeight), step: i)
               summaryWriter.addScalar("learning_rate", optimizers[0].rate, step: i)
             }
             guard progressHandler(.step(i + 1), Float(value), nil, nil, dit, []) else {
@@ -2888,6 +2890,8 @@ public struct LoRATrainer {
             summaryWriter.addScalar("loss", value, step: i)
             summaryWriter.addScalar("scale", scaler.scale, step: i)
             summaryWriter.addScalar("timestep", Float(timestep), step: i)
+            summaryWriter.addScalar("latents_width", Float(latentsWidth), step: i)
+            summaryWriter.addScalar("latents_height", Float(latentsHeight), step: i)
             if cotrainUNet {
               summaryWriter.addScalar("unet_learning_rate", optimizers[0].rate, step: i)
               if optimizers.count > 1 {
