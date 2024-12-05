@@ -53,7 +53,6 @@ swift_library(
     ] + select({
         ":ios_or_macos_build": [
             "//Libraries/FaceRestorer",
-            "//Libraries/Scripting",
             "//Libraries/SwiftDiffusion:SwiftDiffusionCoreML",
         ],
         "//conditions:default": [],

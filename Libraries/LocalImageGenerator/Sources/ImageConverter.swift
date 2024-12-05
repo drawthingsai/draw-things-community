@@ -6,7 +6,6 @@ import ImageIO
 import ModelZoo
 import NNC
 import ScriptDataModels
-import Scripting
 import UniformTypeIdentifiers
 
 #if canImport(UIKit)
