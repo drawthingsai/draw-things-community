@@ -3,6 +3,7 @@
 .swift-format.json
 external/
 Apps/EmbeddingConverter
+Apps/Linux
 Apps/LoRAConverter
 Apps/ModelConverter
 Apps/ModelQuantizer
