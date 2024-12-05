@@ -1,4 +1,5 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_library")
+load("@build_bazel_rules_apple//apple:macos.bzl", "macos_command_line_application")
 
 swift_binary(
     name = "ModelConverter",
@@ -43,10 +44,9 @@ swift_binary(
     ],
 )
 
-swift_binary(
-    name = "gRPCServerCLI",
+swift_library(
+    name = "gRPCServerCLILib",
     srcs = glob(["gRPCServerCLI/gRPCServerCLI.swift"]),
-    visibility = ["//visibility:public"],
     deps = [
         "//Libraries/BinaryResources",
         "//Libraries/DataModels",
@@ -58,5 +58,24 @@ swift_binary(
         "//Libraries/Utils",
         "@SwiftArgumentParser//:ArgumentParser",
         "@grpc-swift//:GRPC",
+    ],
+)
+
+swift_binary(
+    name = "gRPCServerCLI",
+    srcs = [],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":gRPCServerCLILib",
+    ],
+)
+
+macos_command_line_application(
+    name = "gRPCServerCLI-macOS",
+    bundle_id = "com.liuliu.draw-things-grpc-server-cli",
+    minimum_os_version = "13.0",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":gRPCServerCLILib",
     ],
 )
