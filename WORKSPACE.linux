@@ -143,13 +143,13 @@ ccv_setting(
     name = "local_config_ccv",
     have_cblas = True,
     have_cudnn = True,
-    have_fftw3 = True,
-    have_gsl = True,
+    have_fftw3 = False,
+    have_gsl = False,
     have_libjpeg = True,
     have_libpng = True,
     have_nccl = False,
     use_dispatch = True,
-    use_openmp = True,
+    use_openmp = False,
     have_pthread = True,
 )
 
@@ -392,8 +392,7 @@ load("@rules_oci//oci:pull.bzl", "oci_pull")
 
 oci_pull(
     name = "cuda12.4.1_swift5.10.1_ubuntu22.04",
-    tag = "cuda12.4.1-cudnn-runtime-ubuntu22.04-swift5.10.1",
-    reproducible = False,
+    digest = "sha256:126ace26c6f41a5308e05729a482ca2b696503551d477e89bce4e7563a634832",
     image = "docker.io/drawthingsai/cuda-swift",
 )
 

@@ -25,8 +25,8 @@ oci_tarball(
 )
 
 oci_push(
-    name = "push_gRPCServerCLI_server",
+    name = "push_gRPCServerCLI_image",
     image = ":gRPCServerCLI_image",
     remote_tags = ["latest"],
-    repository = "docker.io/drawthingsai/grpc-server",  # adjust to your org/repo
+    repository = "docker.io/drawthingsai/draw-things-grpc-server-cli",
 )
