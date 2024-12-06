@@ -12,7 +12,7 @@ pkg_tar(
 
 oci_image(
     name = "gRPCServerCLI_image",
-    base = "@cuda12.4.1_swift5.10_ubuntu22.04",
+    base = "@cuda12.4.1_swift5.10.1_ubuntu22.04",
     tars = [
         ":gRPCServerCLI_layer",
     ],
@@ -21,7 +21,7 @@ oci_image(
 oci_tarball(
     name = "gRPCServerCLI_tar",
     image = ":gRPCServerCLI_image",
-    repo_tags = ["draw-things:gRPCServerCLI"],
+    repo_tags = ["draw-things-grpc-server-cli:latest"],
 )
 
 oci_push(

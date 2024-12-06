@@ -5,7 +5,6 @@ FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS builder
 RUN apt-get update && apt-get install -y \
     tar \
     curl \
-    libomp5 \
     libfftw3-3 \
     libatlas3-base \
     libblas3 \
@@ -15,13 +14,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Swift
-RUN curl -O https://download.swift.org/swift-5.10-release/ubuntu2204/swift-5.10-RELEASE/swift-5.10-RELEASE-ubuntu22.04.tar.gz \
-    && tar xzf swift-5.10-RELEASE-ubuntu22.04.tar.gz \
-    && rm swift-5.10-RELEASE-ubuntu22.04.tar.gz \
-    && mv swift-5.10-RELEASE-ubuntu22.04 /usr/local/swift
+RUN curl -O https://download.swift.org/swift-5.10.1-release/ubuntu2204/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu22.04.tar.gz \
+    && tar xzf swift-5.10.1-RELEASE-ubuntu22.04.tar.gz \
+    && rm swift-5.10.1-RELEASE-ubuntu22.04.tar.gz \
+    && mv swift-5.10.1-RELEASE-ubuntu22.04 /usr/local/swift
 
 # Add Swift to PATH permanently
 ENV PATH="/usr/local/swift/usr/bin:${PATH}"
 ENV SWIFT_PATH="/usr/share/swift/usr/bin"
 ENV LD_LIBRARY_PATH="/usr/lib/llvm-14/lib/:/usr/local/swift/usr/lib:/usr/local/swift/usr/lib/swift/linux/:${LD_LIBRARY_PATH}"
-RUN ln -s /usr/lib/x86_64-linux-gnu/libomp.so.5 /usr/lib/x86_64-linux-gnu/libomp.so
+COPY libomp.so /usr/lib/x86_64-linux-gnu/libomp.so
