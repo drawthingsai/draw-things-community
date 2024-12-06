@@ -421,8 +421,8 @@ func LoRASelfAttention(
     } else {
       queries = toqueries(x).reshaped([b, hw, h, k]).identity().identity()
     }
-    var keys = tokeys(x).reshaped([b, hw, h, k]).identity()
-    var values = tovalues(x).reshaped([b, hw, h, k])
+    let keys = tokeys(x).reshaped([b, hw, h, k]).identity()
+    let values = tovalues(x).reshaped([b, hw, h, k])
     let scaledDotProductAttention: ScaledDotProductAttention
     if usesFlashAttention == .scale1 {
       scaledDotProductAttention = ScaledDotProductAttention(
@@ -503,9 +503,9 @@ func LoRACrossAttention(
   if usesFlashAttention == .scale1 || usesFlashAttention == .scaleMerged {
     if b == 1 || t.0 == t.1 {
       let t = t.0
-      var queries = toqueries(x).reshaped([b, hw, h, k]).identity().identity()
-      var keys = tokeys(c).reshaped([b, t, h, k]).identity()
-      var values = tovalues(c).reshaped([b, t, h, k])
+      let queries = toqueries(x).reshaped([b, hw, h, k]).identity().identity()
+      let keys = tokeys(c).reshaped([b, t, h, k]).identity()
+      let values = tovalues(c).reshaped([b, t, h, k])
       if injectIPAdapterLengths.count > 0 {
         let scaledDotProductAttention = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16])
