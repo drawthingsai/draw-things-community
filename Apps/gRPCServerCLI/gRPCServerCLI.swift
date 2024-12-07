@@ -134,6 +134,9 @@ struct gRPCServerCLI: ParsableCommand {
   var debug = false
 
   mutating func run() throws {
+    if debug {
+      DynamicGraph.logLevel = .verbose
+    }
 
     let fileManager = FileManager.default
     var isDirectory: ObjCBool = false
