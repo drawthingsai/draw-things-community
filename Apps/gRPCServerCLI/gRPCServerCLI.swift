@@ -78,6 +78,10 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
   }
 #endif
 
+enum gRPCServerCLIrror: Error {
+  case invalidModelPath
+}
+
 @main
 struct gRPCServerCLI: ParsableCommand {
   static let configuration: CommandConfiguration = CommandConfiguration(
@@ -126,7 +130,22 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Disable FlashAttention.")
   var noFlashAttention = false
 
+  @Flag(help: "Debug flag for the verbose model inference logging.")
+  var debug = false
+
   mutating func run() throws {
+
+    let fileManager = FileManager.default
+    var isDirectory: ObjCBool = false
+    let exists = fileManager.fileExists(
+      atPath: URL(fileURLWithPath: modelsDirectory).path, isDirectory: &isDirectory)
+
+    if exists && isDirectory.boolValue {
+      print("Models Path check PASS")
+    } else {
+      throw gRPCServerCLIrror.invalidModelPath
+    }
+
     ModelZoo.externalUrl = URL(fileURLWithPath: modelsDirectory)
     if noFlashAttention {
       DeviceCapability.isMFAEnabled.store(false, ordering: .releasing)
