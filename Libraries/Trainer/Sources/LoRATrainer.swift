@@ -864,12 +864,8 @@ public struct LoRATrainer {
         store.write((textModel.count > 1 ? "te2__" : "") + "text_model", model: textModel[0]) {
           name, tensor in
           guard name.contains("lora") else { return .skip }
-          let components = name.split(separator: "-")
-          guard components.count >= 3, let index = Int(components[2]),
-            let originalIndex = textModelMapping[index]
-          else { return .skip }
           let isUp = name.contains("lora_up")
-          let updatedName = "\(components[0])-\(originalIndex)-0]" + (isUp ? "__up__" : "__down__")
+          let updatedName = originalLoRA(name: name, LoRAMapping: textModelMapping)
           if scaleOfLoRA != 1 && !isUp {
             let tensor = graph.withNoGrad {
               (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
@@ -883,13 +879,8 @@ public struct LoRATrainer {
           let textModelMapping = LoRAMapping.CLIPTextModel
           store.write("text_model", model: textModel[1]) { name, tensor in
             guard name.contains("lora") else { return .skip }
-            let components = name.split(separator: "-")
-            guard components.count >= 3, let index = Int(components[2]),
-              let originalIndex = textModelMapping[index]
-            else { return .skip }
             let isUp = name.contains("lora_up")
-            let updatedName =
-              "\(components[0])-\(originalIndex)-0]" + (isUp ? "__up__" : "__down__")
+            let updatedName = originalLoRA(name: name, LoRAMapping: textModelMapping)
             if scaleOfLoRA != 1 && !isUp {
               let tensor = graph.withNoGrad {
                 (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
@@ -904,12 +895,9 @@ public struct LoRATrainer {
       if let unetFixed = unetFixed {
         store.write("unet_fixed", model: unetFixed) { name, tensor in
           guard name.contains("lora") else { return .skip }
-          let components = name.split(separator: "-")
-          // Every parameter in unetFixed is trainable.
-          guard components.count >= 3, let originalIndex = Int(components[2])
-          else { return .skip }
           let isUp = name.contains("lora_up")
-          let updatedName = "\(components[0])-\(originalIndex)-0]" + (isUp ? "__up__" : "__down__")
+          // Every parameter in unetFixed is trainable.
+          let updatedName = originalLoRA(name: name, LoRAMapping: nil)
           if scaleOfLoRA != 1 && !isUp {
             let tensor = graph.withNoGrad {
               (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
@@ -964,25 +952,8 @@ public struct LoRATrainer {
       }
       store.write(modelName, model: unet) { name, tensor in
         guard name.contains("lora") else { return .skip }
-        let components = name.split(separator: "-")
-        guard components.count >= 3, let index = Int(components[2]),
-          let originalIndex = UNetMapping[index]
-        else { return .skip }
         let isUp = name.contains("lora_up")
-        var infix = components[1].replacingOccurrences(of: "lora_up", with: "")
-          .replacingOccurrences(
-            of: "lora_down", with: "")
-        // In case infix has _, remove them.
-        if infix.hasSuffix("_") {
-          infix = String(infix.prefix(upTo: infix.index(before: infix.endIndex)))
-        }
-        let originalPrefix: String
-        if infix.isEmpty {
-          originalPrefix = "\(components[0])-\(originalIndex)-0]"
-        } else {
-          originalPrefix = "\(components[0])-\(infix)-\(originalIndex)-0]"
-        }
-        let updatedName = originalPrefix + (isUp ? "__up__" : "__down__")
+        let updatedName = originalLoRA(name: name, LoRAMapping: UNetMapping)
         if scaleOfLoRA != 1 && !isUp {
           let tensor = graph.withNoGrad {
             (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
@@ -992,12 +963,12 @@ public struct LoRATrainer {
         }
         return .continue(updatedName)
       }
-      if let summaryWriter = summaryWriter {
-        summaryWriter.addParameters(
-          "lora_up", unet.parameters.filter(where: { $0.contains("lora_up") }), step: step)
-        summaryWriter.addParameters(
-          "lora_down", unet.parameters.filter(where: { $0.contains("lora_down") }), step: step)
-      }
+    }
+    if let summaryWriter = summaryWriter {
+      summaryWriter.addParameters(
+        "lora_up", unet.parameters.filter(where: { $0.contains("lora_up") }), step: step)
+      summaryWriter.addParameters(
+        "lora_down", unet.parameters.filter(where: { $0.contains("lora_down") }), step: step)
     }
   }
 
