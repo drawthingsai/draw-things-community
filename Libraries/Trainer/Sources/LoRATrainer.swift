@@ -979,12 +979,10 @@ public struct LoRATrainer {
     rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: ClosedRange<Float>,
     stepsBetweenRestarts: Int, seed: UInt32, trainableKeys: [String],
     resolutionDependentShift: Bool, shift: Float, noiseOffset: Float,
-    guidanceEmbed: ClosedRange<Float>,
-    denoisingTimesteps: ClosedRange<Int>, captionDropoutRate: Float, orthonormalLoRADown: Bool,
+    guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
+    captionDropoutRate: Float, orthonormalLoRADown: Bool, powerEMA: ClosedRange<Float>?,
     memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
-    progressHandler: (
-      TrainingState, Float, LoRATrainerCheckpoint
-    )
+    progressHandler: (TrainingState, Float, LoRATrainerCheckpoint)
       -> Bool
   ) {
     guard unetLearningRate.upperBound > 0 else {
@@ -1307,7 +1305,7 @@ public struct LoRATrainer {
     customEmbeddingLength: Int, customEmbeddingLearningRate: Float,
     stopEmbeddingTrainingAtStep: Int, resolutionDependentShift: Bool, shift: Float,
     noiseOffset: Float, guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
-    captionDropoutRate: Float, orthonormalLoRADown: Bool,
+    captionDropoutRate: Float, orthonormalLoRADown: Bool, powerEMA: ClosedRange<Float>?,
     memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
     progressHandler: (
       TrainingState, Float, LoRATrainerCheckpoint
@@ -1364,7 +1362,7 @@ public struct LoRATrainer {
           resolutionDependentShift: resolutionDependentShift, shift: shift,
           noiseOffset: noiseOffset, guidanceEmbed: guidanceEmbed,
           denoisingTimesteps: denoisingTimesteps, captionDropoutRate: captionDropoutRate,
-          orthonormalLoRADown: orthonormalLoRADown, memorySaver: memorySaver,
+          orthonormalLoRADown: orthonormalLoRADown, powerEMA: powerEMA, memorySaver: memorySaver,
           weightsMemory: weightsMemory, progressHandler: progressHandler)
         return
       }
