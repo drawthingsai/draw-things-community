@@ -1331,14 +1331,14 @@ public struct LoRATrainer {
               scaler.step(&optimizers)
               batchCount = 0
               if let gammas = gammas, let optimizer = optimizers.first {  // If we need to compute ema.
-                let loraUps = dit.parameters.filter(where: { $0.contains("lora_up") })
-                let loraDowns = dit.parameters.filter(where: { $0.contains("lora_down") })
-                let parameters = loraUps + loraDowns
                 let betaLowerBound = Float(
                   pow((1 - 1 / Double(optimizer.step)), gammas.lowerBound + 1))
                 let betaUpperBound = Float(
                   pow((1 - 1 / Double(optimizer.step)), gammas.upperBound + 1))
                 graph.withNoGrad {
+                  let loraUps = dit.parameters.filter(where: { $0.contains("lora_up") })
+                  let loraDowns = dit.parameters.filter(where: { $0.contains("lora_down") })
+                  let parameters = loraUps + loraDowns
                   for parameter in parameters {
                     let name = parameter.name
                     let value = parameter.copied(Float.self).toGPU(0)
@@ -1364,11 +1364,12 @@ public struct LoRATrainer {
                 }
               }
             }
+            i += 1
             guard
               progressHandler(
-                .step(i + 1), Float(value),
+                .step(i), Float(value),
                 LoRATrainerCheckpoint(
-                  version: version, unet: dit, step: i + 1,
+                  version: version, unet: dit, step: i,
                   exponentialMovingAverageLowerBound:
                     LoRATrainerCheckpoint.ExponentialMovingAverage(
                       textModel1: [:], textModel2: [:], unetFixed: [:],
@@ -1381,7 +1382,6 @@ public struct LoRATrainer {
               stopped = true
               break
             }
-            i += 1
             if i >= trainingSteps {
               break
             }
@@ -2365,6 +2365,18 @@ public struct LoRATrainer {
       else {
         return
       }
+      var textModel1EMALowerBoundWeights = [String: Tensor<Float>]()
+      var textModel1EMAUpperBoundWeights = [String: Tensor<Float>]()
+      var textModel2EMALowerBoundWeights = [String: Tensor<Float>]()
+      var textModel2EMAUpperBoundWeights = [String: Tensor<Float>]()
+      var unetFixedEMALowerBoundWeights = [String: Tensor<Float>]()
+      var unetFixedEMAUpperBoundWeights = [String: Tensor<Float>]()
+      var unetEMALowerBoundWeights = [String: Tensor<Float>]()
+      var unetEMAUpperBoundWeights = [String: Tensor<Float>]()
+      var textEmbedding1LowerBound: Tensor<Float>? = nil
+      var textEmbedding1UpperBound: Tensor<Float>? = nil
+      var textEmbedding2LowerBound: Tensor<Float>? = nil
+      var textEmbedding2UpperBound: Tensor<Float>? = nil
       while i < trainingSteps && !stopped && !optimizers.isEmpty {
         dataFrame.shuffle()
         for value in dataFrame["0", "imagePath", "tokens"] {
@@ -2816,6 +2828,109 @@ public struct LoRATrainer {
             // Update the LoRA.
             scaler.step(&optimizers)
             batchCount = 0
+            if let gammas = gammas, let optimizer = optimizers.first {  // If we need to compute ema.
+              let betaLowerBound = Float(
+                pow((1 - 1 / Double(optimizer.step)), gammas.lowerBound + 1))
+              let betaUpperBound = Float(
+                pow((1 - 1 / Double(optimizer.step)), gammas.upperBound + 1))
+              graph.withNoGrad {
+                func computeEMA(
+                  _ model: AnyModel, emaLowerBoundWeights: inout [String: Tensor<Float>],
+                  emaUpperBoundWeights: inout [String: Tensor<Float>]
+                ) {
+                  let loraUps = model.parameters.filter(where: { $0.contains("lora_up") })
+                  let loraDowns = model.parameters.filter(where: { $0.contains("lora_down") })
+                  let parameters = loraUps + loraDowns
+                  for parameter in parameters {
+                    let name = parameter.name
+                    let value = parameter.copied(Float.self).toGPU(0)
+                    if let oldEma1 = emaLowerBoundWeights[name],
+                      let oldEma2 = emaUpperBoundWeights[name]
+                    {
+                      let value = graph.variable(value)
+                      emaLowerBoundWeights[name] =
+                        Functional.add(
+                          left: graph.variable(oldEma1), right: value, leftScalar: betaLowerBound,
+                          rightScalar: 1 - betaLowerBound
+                        ).rawValue
+                      emaUpperBoundWeights[name] =
+                        Functional.add(
+                          left: graph.variable(oldEma2), right: value, leftScalar: betaUpperBound,
+                          rightScalar: 1 - betaUpperBound
+                        ).rawValue
+                    } else {
+                      emaLowerBoundWeights[name] = value
+                      emaUpperBoundWeights[name] = value
+                    }
+                  }
+                }
+                if cotrainUNet {
+                  computeEMA(
+                    unet, emaLowerBoundWeights: &unetEMALowerBoundWeights,
+                    emaUpperBoundWeights: &unetEMAUpperBoundWeights)
+                  if let unetFixed = unetFixed {
+                    computeEMA(
+                      unetFixed, emaLowerBoundWeights: &unetFixedEMALowerBoundWeights,
+                      emaUpperBoundWeights: &unetFixedEMAUpperBoundWeights)
+                  }
+                }
+                if cotrainTextModel, let textModel1 = textModel.first {
+                  computeEMA(
+                    textModel1, emaLowerBoundWeights: &textModel1EMALowerBoundWeights,
+                    emaUpperBoundWeights: &textModel1EMAUpperBoundWeights)
+                  if textModel.count > 1 {
+                    let textModel2 = textModel[1]
+                    computeEMA(
+                      textModel2, emaLowerBoundWeights: &textModel2EMALowerBoundWeights,
+                      emaUpperBoundWeights: &textModel2EMAUpperBoundWeights)
+                  }
+                }
+                if cotrainCustomEmbedding && !cotrainCustomEmbeddingStopped,
+                  let textEmbedding1 = customEmbeddings.first
+                {
+                  if let oldEma1 = textEmbedding1LowerBound, let oldEma2 = textEmbedding1UpperBound
+                  {
+                    textEmbedding1LowerBound =
+                      Functional.add(
+                        left: graph.variable(oldEma1), right: textEmbedding1,
+                        leftScalar: betaLowerBound,
+                        rightScalar: 1 - betaLowerBound
+                      ).rawValue
+                    textEmbedding1UpperBound =
+                      Functional.add(
+                        left: graph.variable(oldEma2), right: textEmbedding1,
+                        leftScalar: betaUpperBound,
+                        rightScalar: 1 - betaUpperBound
+                      ).rawValue
+                  } else {
+                    textEmbedding1LowerBound = textEmbedding1.rawValue
+                    textEmbedding1UpperBound = textEmbedding1LowerBound
+                  }
+                  if customEmbeddings.count > 1 {
+                    let textEmbedding2 = customEmbeddings[1]
+                    if let oldEma1 = textEmbedding2LowerBound,
+                      let oldEma2 = textEmbedding2UpperBound
+                    {
+                      textEmbedding2LowerBound =
+                        Functional.add(
+                          left: graph.variable(oldEma1), right: textEmbedding2,
+                          leftScalar: betaLowerBound,
+                          rightScalar: 1 - betaLowerBound
+                        ).rawValue
+                      textEmbedding2UpperBound =
+                        Functional.add(
+                          left: graph.variable(oldEma2), right: textEmbedding2,
+                          leftScalar: betaUpperBound,
+                          rightScalar: 1 - betaUpperBound
+                        ).rawValue
+                    } else {
+                      textEmbedding2LowerBound = textEmbedding2.rawValue
+                      textEmbedding2UpperBound = textEmbedding2LowerBound
+                    }
+                  }
+                }
+              }
+            }
             if cotrainCustomEmbedding && !cotrainCustomEmbeddingStopped
               && i + 1 >= stopEmbeddingTrainingAtStep
             {
@@ -2831,7 +2946,21 @@ public struct LoRATrainer {
                     textModel2: cotrainTextModel && textModel.count > 1 ? textModel[1] : nil,
                     unetFixed: unetFixed, unet: unet, textEmbedding1: customEmbeddings.first,
                     textEmbedding2: customEmbeddings.count > 1 ? customEmbeddings[1] : nil,
-                    step: i + 1))
+                    step: i + 1,
+                    exponentialMovingAverageLowerBound:
+                      LoRATrainerCheckpoint.ExponentialMovingAverage(
+                        textModel1: textModel1EMALowerBoundWeights,
+                        textModel2: textModel2EMALowerBoundWeights,
+                        unetFixed: unetFixedEMALowerBoundWeights, unet: unetEMALowerBoundWeights,
+                        textEmbedding1: textEmbedding1LowerBound,
+                        textEmbedding2: textEmbedding2LowerBound),
+                    exponentialMovingAverageUpperBound:
+                      LoRATrainerCheckpoint.ExponentialMovingAverage(
+                        textModel1: textModel1EMAUpperBoundWeights,
+                        textModel2: textModel2EMAUpperBoundWeights,
+                        unetFixed: unetFixedEMAUpperBoundWeights, unet: unetEMAUpperBoundWeights,
+                        textEmbedding1: textEmbedding1UpperBound,
+                        textEmbedding2: textEmbedding2UpperBound)))
                 break
               }
             }
@@ -2844,7 +2973,19 @@ public struct LoRATrainer {
                 version: version, textModel1: cotrainTextModel ? textModel.first : nil,
                 textModel2: cotrainTextModel && textModel.count > 1 ? textModel[1] : nil,
                 unetFixed: unetFixed, unet: unet, textEmbedding1: customEmbeddings.first,
-                textEmbedding2: customEmbeddings.count > 1 ? customEmbeddings[1] : nil, step: i))
+                textEmbedding2: customEmbeddings.count > 1 ? customEmbeddings[1] : nil, step: i,
+                exponentialMovingAverageLowerBound: LoRATrainerCheckpoint.ExponentialMovingAverage(
+                  textModel1: textModel1EMALowerBoundWeights,
+                  textModel2: textModel2EMALowerBoundWeights,
+                  unetFixed: unetFixedEMALowerBoundWeights, unet: unetEMALowerBoundWeights,
+                  textEmbedding1: textEmbedding1LowerBound, textEmbedding2: textEmbedding2LowerBound
+                ),
+                exponentialMovingAverageUpperBound: LoRATrainerCheckpoint.ExponentialMovingAverage(
+                  textModel1: textModel1EMAUpperBoundWeights,
+                  textModel2: textModel2EMAUpperBoundWeights,
+                  unetFixed: unetFixedEMAUpperBoundWeights, unet: unetEMAUpperBoundWeights,
+                  textEmbedding1: textEmbedding1UpperBound, textEmbedding2: textEmbedding2UpperBound
+                )))
           else {
             stopped = true
             break
