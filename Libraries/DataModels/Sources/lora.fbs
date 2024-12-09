@@ -50,6 +50,8 @@ table LoRATrainingConfiguration (codable) {
   max_text_length: uint = 512;
   use_image_aspect_ratio: bool = false;
   additional_scales: [ushort];
+  power_ema_lower_bound: float = 0;
+  power_ema_upper_bound: float = 0;
 }
 
 root_type LoRATrainingConfiguration;
