@@ -42,6 +42,8 @@ public struct LoRATrainer {
   }
 
   public let version: ModelVersion
+  public let session: String
+  public let summaryWriter: SummaryWriter?
   private let model: String
   private let paddedTextEncodingLength: Int
   private let scale: DeviceCapability.Scale
@@ -53,14 +55,12 @@ public struct LoRATrainer {
   private let autoencoder: String
   private let textEncoder: String
   private let CLIPEncoder: String?
-  private let session: String
   private let resumeIfPossible: Bool
   private let imageInspector: (URL) -> (width: Int, height: Int)?
   private let imageLoader:
     (URL, Int, Int) -> (
       Tensor<FloatType>, (width: Int, height: Int), (top: Int, left: Int), (width: Int, height: Int)
     )?
-  private let summaryWriter: SummaryWriter?
 
   public init(
     tensorBoard: String?, comment: String,
@@ -771,207 +771,6 @@ public struct LoRATrainer {
     return (dataFrame, zeroCaptionInput)
   }
 
-  public func saveSession(
-    textModel: [Model]?, unetFixed: Model?, unet: AnyModel,
-    embeddings: [DynamicGraph.Tensor<Float>],
-    step: Int
-  ) {
-    let graph = embeddings.first?.graph ?? DynamicGraph()
-    graph.openStore(session) {
-      if !embeddings.isEmpty {
-        switch version {
-        case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1:
-          $0.write("string_to_param", variable: embeddings[0])
-        case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
-          $0.write("string_to_param_clip_g", variable: embeddings[0])
-          if embeddings.count > 1 {
-            $0.write("string_to_param_clip_l", variable: embeddings[1])
-          }
-        }
-      }
-      if let textModel = textModel {
-        for (i, textModel) in textModel.enumerated() {
-          $0.write("te\(i)__text_model", model: textModel) { name, _ in
-            guard name.contains("[i-") || name.contains("lora") else {
-              return .skip
-            }
-            return .continue(name)
-          }
-        }
-      }
-      if let unetFixed = unetFixed {
-        $0.write("unet_fixed", model: unetFixed) { name, _ in
-          guard name.contains("[i-") || name.contains("lora") else {
-            return .skip
-          }
-          return .continue(name)
-        }
-      }
-      let modelName: String
-      switch version {
-      case .v1, .v2, .ssd1b, .sdxlBase, .sdxlRefiner:
-        modelName = "unet"
-      case .sd3, .pixart, .flux1, .sd3Large:
-        modelName = "dit"
-      case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
-        fatalError()
-      }
-      $0.write(modelName, model: unet) { name, _ in
-        guard name.contains("[i-") || name.contains("lora") else {
-          return .skip
-        }
-        return .continue(name)
-      }
-      var stepTensor = Tensor<Int32>(.CPU, .C(1))
-      stepTensor[0] = Int32(step)
-      $0.write("current_step", tensor: stepTensor)
-    }
-  }
-
-  public func saveAsLoRA(
-    textModel: [Model]?, unetFixed: Model?, unet: AnyModel,
-    embeddings: [DynamicGraph.Tensor<Float>],
-    scaleOfLoRA: Float, name: String, step: Int
-  ) {
-    let graph = embeddings.first?.graph ?? DynamicGraph()
-    graph.openStore(LoRAZoo.filePathForModelDownloaded(name)) { store in
-      // Remove all values first.
-      store.removeAll()
-      if !embeddings.isEmpty {
-        switch version {
-        case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1:
-          store.write("string_to_param", variable: embeddings[0])
-        case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
-          store.write("string_to_param_clip_g", variable: embeddings[0])
-          if embeddings.count > 1 {
-            store.write("string_to_param_clip_l", variable: embeddings[1])
-          }
-        }
-      }
-      if cotrainTextModel, let textModel = textModel {
-        let textModelMapping: [Int: Int]
-        switch version {
-        case .v1:
-          textModelMapping = LoRAMapping.CLIPTextModel
-        case .v2:
-          textModelMapping = LoRAMapping.OpenCLIPTextModel
-        case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-          .wurstchenStageB:
-          fatalError()
-        case .sdxlBase, .ssd1b, .sdxlRefiner:
-          textModelMapping = LoRAMapping.OpenCLIPTextModelG
-        }
-        store.write((textModel.count > 1 ? "te2__" : "") + "text_model", model: textModel[0]) {
-          name, tensor in
-          guard name.contains("lora") else { return .skip }
-          let isUp = name.contains("lora_up")
-          let updatedName = Self.originalLoRA(name: name, LoRAMapping: textModelMapping)
-          if scaleOfLoRA != 1 && !isUp {
-            let tensor = graph.withNoGrad {
-              (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
-            }
-            store.write(updatedName, tensor: tensor)
-            return .skip
-          }
-          return .continue(updatedName)
-        }
-        if textModel.count > 1 {
-          let textModelMapping = LoRAMapping.CLIPTextModel
-          store.write("text_model", model: textModel[1]) { name, tensor in
-            guard name.contains("lora") else { return .skip }
-            let isUp = name.contains("lora_up")
-            let updatedName = Self.originalLoRA(name: name, LoRAMapping: textModelMapping)
-            if scaleOfLoRA != 1 && !isUp {
-              let tensor = graph.withNoGrad {
-                (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
-              }
-              store.write(updatedName, tensor: tensor)
-              return .skip
-            }
-            return .continue(updatedName)
-          }
-        }
-      }
-      if let unetFixed = unetFixed {
-        store.write("unet_fixed", model: unetFixed) { name, tensor in
-          guard name.contains("lora") else { return .skip }
-          let isUp = name.contains("lora_up")
-          // Every parameter in unetFixed is trainable.
-          let updatedName = Self.originalLoRA(name: name, LoRAMapping: nil)
-          if scaleOfLoRA != 1 && !isUp {
-            let tensor = graph.withNoGrad {
-              (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
-            }
-            store.write(updatedName, tensor: tensor)
-            return .skip
-          }
-          return .continue(updatedName)
-        }
-      }
-      let modelName: String
-      let UNetMapping: [Int: Int]
-      switch version {
-      case .v1, .v2:
-        UNetMapping = LoRAMapping.SDUNet
-        modelName = "unet"
-      case .sd3:
-        UNetMapping = [Int: Int](
-          uniqueKeysWithValues: (0..<24).map {
-            return ($0, $0)
-          })
-        modelName = "dit"
-      case .pixart:
-        UNetMapping = [Int: Int](
-          uniqueKeysWithValues: (0..<28).map {
-            return ($0, $0)
-          })
-        modelName = "dit"
-      case .flux1:
-        UNetMapping = [Int: Int](
-          uniqueKeysWithValues: (0..<(19 + 38)).map {
-            return ($0, $0)
-          })
-        modelName = "dit"
-      case .sd3Large:
-        UNetMapping = [Int: Int](
-          uniqueKeysWithValues: (0..<38).map {
-            return ($0, $0)
-          })
-        modelName = "dit"
-      case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
-        fatalError()
-      case .ssd1b:
-        UNetMapping = LoRAMapping.SDUNetXLSSD1B
-        modelName = "unet"
-      case .sdxlBase:
-        UNetMapping = LoRAMapping.SDUNetXLBase
-        modelName = "unet"
-      case .sdxlRefiner:
-        UNetMapping = LoRAMapping.SDUNetXLRefiner
-        modelName = "unet"
-      }
-      store.write(modelName, model: unet) { name, tensor in
-        guard name.contains("lora") else { return .skip }
-        let isUp = name.contains("lora_up")
-        let updatedName = Self.originalLoRA(name: name, LoRAMapping: UNetMapping)
-        if scaleOfLoRA != 1 && !isUp {
-          let tensor = graph.withNoGrad {
-            (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
-          }
-          store.write(updatedName, tensor: tensor)
-          return .skip
-        }
-        return .continue(updatedName)
-      }
-    }
-    if let summaryWriter = summaryWriter {
-      summaryWriter.addParameters(
-        "lora_up", unet.parameters.filter(where: { $0.contains("lora_up") }), step: step)
-      summaryWriter.addParameters(
-        "lora_down", unet.parameters.filter(where: { $0.contains("lora_down") }), step: step)
-    }
-  }
-
   public static func originalLoRA(name: String, LoRAMapping: [Int: Int]?) -> String {
     let components = name.split(separator: "-")
     guard components.count >= 3, let index = Int(components[2])
@@ -1184,7 +983,7 @@ public struct LoRATrainer {
     denoisingTimesteps: ClosedRange<Int>, captionDropoutRate: Float, orthonormalLoRADown: Bool,
     memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
     progressHandler: (
-      TrainingState, Float, [Model]?, Model?, AnyModel, [DynamicGraph.Tensor<Float>]
+      TrainingState, Float, LoRATrainerCheckpoint
     )
       -> Bool
   ) {
@@ -1246,7 +1045,8 @@ public struct LoRATrainer {
       ).map {
         graph.constant(.GPU(0), format: .NHWC, shape: $0, of: FloatType.self)
       }
-    guard progressHandler(.compile, 0, nil, nil, dit, []) else {
+    guard progressHandler(.compile, 0, LoRATrainerCheckpoint(version: version, unet: dit, step: 0))
+    else {
       return
     }
     dit.compile((width: latentsWidth, height: latentsHeight), inputs: [latents] + cArr)
@@ -1346,7 +1146,8 @@ public struct LoRATrainer {
     var sfmt = SFMT(seed: UInt64(seed))
     // Do a dry-run to allocate everything properly. This will make sure we allocate largest RAM so no reallocation later.
     let _ = dit((width: latentsWidth, height: latentsHeight), inputs: latents, cArr)
-    guard progressHandler(.step(0), 0, nil, nil, dit, []) else {
+    guard progressHandler(.step(0), 0, LoRATrainerCheckpoint(version: version, unet: dit, step: 0))
+    else {
       return
     }
     while i < trainingSteps && !stopped {
@@ -1466,7 +1267,11 @@ public struct LoRATrainer {
               summaryWriter.addScalar("latents_height", Float(latentsHeight), step: i)
               summaryWriter.addScalar("learning_rate", optimizers[0].rate, step: i)
             }
-            guard progressHandler(.step(i + 1), Float(value), nil, nil, dit, []) else {
+            guard
+              progressHandler(
+                .step(i + 1), Float(value),
+                LoRATrainerCheckpoint(version: version, unet: dit, step: i + 1))
+            else {
               stopped = true
               break
             }
@@ -1505,7 +1310,7 @@ public struct LoRATrainer {
     captionDropoutRate: Float, orthonormalLoRADown: Bool,
     memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
     progressHandler: (
-      TrainingState, Float, [Model]?, Model?, AnyModel, [DynamicGraph.Tensor<Float>]
+      TrainingState, Float, LoRATrainerCheckpoint
     )
       -> Bool
   ) {
@@ -2144,7 +1949,13 @@ public struct LoRATrainer {
       case .balanced, .turbo:  // For Balanced, we only do gradient checkpointing.
         unet.memoryReduction = false
       }
-      guard progressHandler(.compile, 0, cotrainTextModel ? textModel : nil, unetFixed, unet, [])
+      guard
+        progressHandler(
+          .compile, 0,
+          LoRATrainerCheckpoint(
+            version: version, textModel1: cotrainTextModel ? textModel.first : nil,
+            textModel2: cotrainTextModel && textModel.count > 1 ? textModel[1] : nil,
+            unetFixed: unetFixed, unet: unet, step: 0))
       else {
         return
       }
@@ -2436,7 +2247,11 @@ public struct LoRATrainer {
         [graph.variable(Tensor<FloatType>(from: ts)), c] + kvs)
       guard
         progressHandler(
-          .step(0), 0, cotrainTextModel ? textModel : nil, unetFixed, unet, [])
+          .step(0), 0,
+          LoRATrainerCheckpoint(
+            version: version, textModel1: cotrainTextModel ? textModel.first : nil,
+            textModel2: cotrainTextModel && textModel.count > 1 ? textModel[1] : nil,
+            unetFixed: unetFixed, unet: unet, step: 0))
       else {
         return
       }
@@ -2900,9 +2715,13 @@ public struct LoRATrainer {
               cotrainCustomEmbeddingStopped = true
               if optimizers.isEmpty {
                 let _ = progressHandler(
-                  .step(i + 1), Float(value), cotrainTextModel ? textModel : nil, unetFixed, unet,
-                  customEmbeddings
-                )
+                  .step(i + 1), Float(value),
+                  LoRATrainerCheckpoint(
+                    version: version, textModel1: cotrainTextModel ? textModel.first : nil,
+                    textModel2: cotrainTextModel && textModel.count > 1 ? textModel[1] : nil,
+                    unetFixed: unetFixed, unet: unet, textEmbedding1: customEmbeddings.first,
+                    textEmbedding2: customEmbeddings.count > 1 ? customEmbeddings[1] : nil,
+                    step: i + 1))
                 break
               }
             }
@@ -2910,9 +2729,12 @@ public struct LoRATrainer {
           i += 1
           guard
             progressHandler(
-              .step(i), Float(value), cotrainTextModel ? textModel : nil, unetFixed, unet,
-              customEmbeddings
-            )
+              .step(i), Float(value),
+              LoRATrainerCheckpoint(
+                version: version, textModel1: cotrainTextModel ? textModel.first : nil,
+                textModel2: cotrainTextModel && textModel.count > 1 ? textModel[1] : nil,
+                unetFixed: unetFixed, unet: unet, textEmbedding1: customEmbeddings.first,
+                textEmbedding2: customEmbeddings.count > 1 ? customEmbeddings[1] : nil, step: i))
           else {
             stopped = true
             break

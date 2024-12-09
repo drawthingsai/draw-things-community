@@ -1,5 +1,6 @@
 import Diffusion
 import NNC
+import TensorBoard
 
 public struct LoRATrainerCheckpoint {
   public var version: ModelVersion
@@ -386,5 +387,12 @@ extension LoRATrainerCheckpoint {
         store.write(updatedName, variable: tensor)
       }
     }
+  }
+
+  public func write(to summaryWriter: SummaryWriter) {
+    summaryWriter.addParameters(
+      "lora_up", unet.parameters.filter(where: { $0.contains("lora_up") }), step: step)
+    summaryWriter.addParameters(
+      "lora_down", unet.parameters.filter(where: { $0.contains("lora_down") }), step: step)
   }
 }
