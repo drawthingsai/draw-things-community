@@ -12,18 +12,18 @@ public struct LoRATrainerCheckpoint {
   public var textEmbedding2: DynamicGraph.Tensor<Float>?
   public var step: Int
   public struct ExponentialMovingAverage {
-    public var textModel1: [String: DynamicGraph.Tensor<Float>]
-    public var textModel2: [String: DynamicGraph.Tensor<Float>]
-    public var unetFixed: [String: DynamicGraph.Tensor<Float>]
-    public var unet: [String: DynamicGraph.Tensor<Float>]
-    public var textEmbedding1: DynamicGraph.Tensor<Float>?
-    public var textEmbedding2: DynamicGraph.Tensor<Float>?
+    public var textModel1: [String: Tensor<Float>]
+    public var textModel2: [String: Tensor<Float>]
+    public var unetFixed: [String: Tensor<Float>]
+    public var unet: [String: Tensor<Float>]
+    public var textEmbedding1: Tensor<Float>?
+    public var textEmbedding2: Tensor<Float>?
     public init(
-      textModel1: [String: DynamicGraph.Tensor<Float>],
-      textModel2: [String: DynamicGraph.Tensor<Float>],
-      unetFixed: [String: DynamicGraph.Tensor<Float>], unet: [String: DynamicGraph.Tensor<Float>],
-      textEmbedding1: DynamicGraph.Tensor<Float>? = nil,
-      textEmbedding2: DynamicGraph.Tensor<Float>? = nil
+      textModel1: [String: Tensor<Float>],
+      textModel2: [String: Tensor<Float>],
+      unetFixed: [String: Tensor<Float>], unet: [String: Tensor<Float>],
+      textEmbedding1: Tensor<Float>? = nil,
+      textEmbedding2: Tensor<Float>? = nil
     ) {
       self.textModel1 = textModel1
       self.textModel2 = textModel2
@@ -248,18 +248,18 @@ extension LoRATrainerCheckpoint {
   public func makeLoRA(
     _ exponentialMovingAverage: ExponentialMovingAverage, to filePath: String, scale: Float
   ) {
-    let graph = exponentialMovingAverage.textEmbedding1?.graph ?? DynamicGraph()
+    let graph = DynamicGraph()
     graph.openStore(filePath) { store in
       // Remove all values first.
       store.removeAll()
       if let textEmbedding1 = exponentialMovingAverage.textEmbedding1 {
         switch version {
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1:
-          store.write("string_to_param", variable: textEmbedding1)
+          store.write("string_to_param", tensor: textEmbedding1)
         case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
-          store.write("string_to_param_clip_g", variable: textEmbedding1)
+          store.write("string_to_param_clip_g", tensor: textEmbedding1)
           if let textEmbedding2 = exponentialMovingAverage.textEmbedding2 {
-            store.write("string_to_param_clip_l", variable: textEmbedding2)
+            store.write("string_to_param_clip_l", tensor: textEmbedding2)
           }
         }
       }
@@ -285,12 +285,12 @@ extension LoRATrainerCheckpoint {
             + LoRATrainer.originalLoRA(name: name, LoRAMapping: textModelMapping)
           if scale != 1 && !isUp {
             let tensor = graph.withNoGrad {
-              (scale * tensor).rawValue
+              (scale * graph.variable(tensor)).rawValue
             }
             store.write(updatedName, tensor: tensor)
             continue
           }
-          store.write(updatedName, variable: tensor)
+          store.write(updatedName, tensor: tensor)
         }
       }
       if !exponentialMovingAverage.textModel2.isEmpty {
@@ -304,12 +304,12 @@ extension LoRATrainerCheckpoint {
             + LoRATrainer.originalLoRA(name: name, LoRAMapping: textModelMapping)
           if scale != 1 && !isUp {
             let tensor = graph.withNoGrad {
-              (scale * tensor).rawValue
+              (scale * graph.variable(tensor)).rawValue
             }
             store.write(updatedName, tensor: tensor)
             continue
           }
-          store.write(updatedName, variable: tensor)
+          store.write(updatedName, tensor: tensor)
         }
       }
       if !exponentialMovingAverage.unetFixed.isEmpty {
@@ -322,12 +322,12 @@ extension LoRATrainerCheckpoint {
             "__\(modelName)__[" + LoRATrainer.originalLoRA(name: name, LoRAMapping: nil)
           if scale != 1 && !isUp {
             let tensor = graph.withNoGrad {
-              (scale * tensor).rawValue
+              (scale * graph.variable(tensor)).rawValue
             }
             store.write(updatedName, tensor: tensor)
             continue
           }
-          store.write(updatedName, variable: tensor)
+          store.write(updatedName, tensor: tensor)
         }
       }
       let modelName: String
@@ -379,12 +379,12 @@ extension LoRATrainerCheckpoint {
           "__\(modelName)__[" + LoRATrainer.originalLoRA(name: name, LoRAMapping: UNetMapping)
         if scale != 1 && !isUp {
           let tensor = graph.withNoGrad {
-            (scale * tensor).rawValue
+            (scale * graph.variable(tensor)).rawValue
           }
           store.write(updatedName, tensor: tensor)
           continue
         }
-        store.write(updatedName, variable: tensor)
+        store.write(updatedName, tensor: tensor)
       }
     }
   }

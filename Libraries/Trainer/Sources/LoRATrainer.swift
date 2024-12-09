@@ -939,6 +939,56 @@ public struct LoRATrainer {
     }
   }
 
+  // Using Newton method to compute gamma based on https://arxiv.org/pdf/2312.02696v1 where
+  // theta_rel = (gamma + 1)^(1/2)*(gamma + 2)^(-1)*(gamma + 3)^(-0.5)
+  // theta_rel is the width (std), and gamma is the gamma for power function EMA.
+  private static func powerFunctionExponentialMovingAverageFromWidthToGamma(
+    _ y: Double, tolerance: Double = 1e-10, maxIterations: Int = 100
+  ) -> Double? {
+    // Validate input
+    guard 0 < y && y <= 1 else {
+      return nil
+    }
+    // Main function evaluation
+    func evaluate(_ x: Double) -> Double {
+      (x + 1).squareRoot() / (x + 2) / (x + 3).squareRoot()
+    }
+
+    // Derivative evaluation
+    func derivative(_ x: Double) -> Double {
+      let term1 = 0.5 / (x + 1).squareRoot() / (x + 2) / (x + 3).squareRoot()
+      let term2 = -1 * (x + 1).squareRoot() / ((x + 2) * (x + 2)) / (x + 3).squareRoot()
+      let term3 = -0.5 * (x + 1).squareRoot() / (x + 2) / (x + 3) / (x + 3).squareRoot()
+      return term1 + term2 + term3
+    }
+
+    var x = 1.0  // Initial guess
+
+    for _ in 0..<maxIterations {
+      let fx = evaluate(x) - y
+      let dx = derivative(x)
+
+      // Check if we're close enough to the solution
+      if abs(fx) < tolerance {
+        return x
+      }
+
+      // Check if derivative is too small
+      guard abs(dx) >= 1e-10 else {
+        return nil
+      }
+
+      // Newton's method step
+      x = x - fx / dx
+
+      // Reset if x goes negative (invalid domain)
+      if x < 0 {
+        x = 0.1
+      }
+    }
+    return nil
+  }
+
   struct CachedRotaryPositionEmbedder {
     private struct Size: Equatable, Hashable {
       var height: Int
@@ -987,6 +1037,15 @@ public struct LoRATrainer {
   ) {
     guard unetLearningRate.upperBound > 0 else {
       return
+    }
+    let gammas: (lowerBound: Double, upperBound: Double)? = powerEMA.flatMap {
+      guard
+        let gammaLowerBound = Self.powerFunctionExponentialMovingAverageFromWidthToGamma(
+          Double($0.lowerBound)),
+        let gammaUpperBound = Self.powerFunctionExponentialMovingAverageFromWidthToGamma(
+          Double($0.upperBound))
+      else { return nil }
+      return (lowerBound: gammaLowerBound, upperBound: gammaUpperBound)
     }
     let queueWatermark = DynamicGraph.queueWatermark
     if #unavailable(iOS 18.0, macOS 15.0) {  // It seems that for OS lower than 18 / 15, there are some MPSGraph synchronization issue that is solved under 18 / 15.
@@ -1148,6 +1207,8 @@ public struct LoRATrainer {
     else {
       return
     }
+    var ditEMALowerBoundWeights = [String: Tensor<Float>]()
+    var ditEMAUpperBoundWeights = [String: Tensor<Float>]()
     while i < trainingSteps && !stopped {
       dataFrame.shuffle()
       for value in dataFrame["0", "imagePath"] {
@@ -1265,18 +1326,60 @@ public struct LoRATrainer {
               summaryWriter.addScalar("latents_height", Float(latentsHeight), step: i)
               summaryWriter.addScalar("learning_rate", optimizers[0].rate, step: i)
             }
-            guard
-              progressHandler(
-                .step(i + 1), Float(value),
-                LoRATrainerCheckpoint(version: version, unet: dit, step: i + 1))
-            else {
-              stopped = true
-              break
-            }
             if batchCount == gradientAccumulationSteps {
               // Update the LoRA.
               scaler.step(&optimizers)
               batchCount = 0
+              if let gammas = gammas, let optimizer = optimizers.first {  // If we need to compute ema.
+                let loraUps = dit.parameters.filter(where: { $0.contains("lora_up") })
+                let loraDowns = dit.parameters.filter(where: { $0.contains("lora_down") })
+                let parameters = loraUps + loraDowns
+                let betaLowerBound = Float(
+                  pow((1 - 1 / Double(optimizer.step)), gammas.lowerBound + 1))
+                let betaUpperBound = Float(
+                  pow((1 - 1 / Double(optimizer.step)), gammas.upperBound + 1))
+                graph.withNoGrad {
+                  for parameter in parameters {
+                    let name = parameter.name
+                    let value = parameter.copied(Float.self).toGPU(0)
+                    if let oldEma1 = ditEMALowerBoundWeights[name],
+                      let oldEma2 = ditEMAUpperBoundWeights[name]
+                    {
+                      let value = graph.variable(value)
+                      ditEMALowerBoundWeights[name] =
+                        Functional.add(
+                          left: graph.variable(oldEma1), right: value, leftScalar: betaLowerBound,
+                          rightScalar: 1 - betaLowerBound
+                        ).rawValue
+                      ditEMAUpperBoundWeights[name] =
+                        Functional.add(
+                          left: graph.variable(oldEma2), right: value, leftScalar: betaUpperBound,
+                          rightScalar: 1 - betaUpperBound
+                        ).rawValue
+                    } else {
+                      ditEMALowerBoundWeights[name] = value
+                      ditEMAUpperBoundWeights[name] = value
+                    }
+                  }
+                }
+              }
+            }
+            guard
+              progressHandler(
+                .step(i + 1), Float(value),
+                LoRATrainerCheckpoint(
+                  version: version, unet: dit, step: i + 1,
+                  exponentialMovingAverageLowerBound:
+                    LoRATrainerCheckpoint.ExponentialMovingAverage(
+                      textModel1: [:], textModel2: [:], unetFixed: [:],
+                      unet: ditEMALowerBoundWeights),
+                  exponentialMovingAverageUpperBound:
+                    LoRATrainerCheckpoint.ExponentialMovingAverage(
+                      textModel1: [:], textModel2: [:], unetFixed: [:],
+                      unet: ditEMAUpperBoundWeights)))
+            else {
+              stopped = true
+              break
             }
             i += 1
             if i >= trainingSteps {
@@ -1365,6 +1468,15 @@ public struct LoRATrainer {
           orthonormalLoRADown: orthonormalLoRADown, powerEMA: powerEMA, memorySaver: memorySaver,
           weightsMemory: weightsMemory, progressHandler: progressHandler)
         return
+      }
+      let gammas: (lowerBound: Double, upperBound: Double)? = powerEMA.flatMap {
+        guard
+          let gammaLowerBound = Self.powerFunctionExponentialMovingAverageFromWidthToGamma(
+            Double($0.lowerBound)),
+          let gammaUpperBound = Self.powerFunctionExponentialMovingAverageFromWidthToGamma(
+            Double($0.upperBound))
+        else { return nil }
+        return (lowerBound: gammaLowerBound, upperBound: gammaUpperBound)
       }
       DynamicGraph.setSeed(seed)
       let positionTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
