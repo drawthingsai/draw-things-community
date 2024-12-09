@@ -865,7 +865,7 @@ public struct LoRATrainer {
           name, tensor in
           guard name.contains("lora") else { return .skip }
           let isUp = name.contains("lora_up")
-          let updatedName = originalLoRA(name: name, LoRAMapping: textModelMapping)
+          let updatedName = Self.originalLoRA(name: name, LoRAMapping: textModelMapping)
           if scaleOfLoRA != 1 && !isUp {
             let tensor = graph.withNoGrad {
               (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
@@ -880,7 +880,7 @@ public struct LoRATrainer {
           store.write("text_model", model: textModel[1]) { name, tensor in
             guard name.contains("lora") else { return .skip }
             let isUp = name.contains("lora_up")
-            let updatedName = originalLoRA(name: name, LoRAMapping: textModelMapping)
+            let updatedName = Self.originalLoRA(name: name, LoRAMapping: textModelMapping)
             if scaleOfLoRA != 1 && !isUp {
               let tensor = graph.withNoGrad {
                 (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
@@ -897,7 +897,7 @@ public struct LoRATrainer {
           guard name.contains("lora") else { return .skip }
           let isUp = name.contains("lora_up")
           // Every parameter in unetFixed is trainable.
-          let updatedName = originalLoRA(name: name, LoRAMapping: nil)
+          let updatedName = Self.originalLoRA(name: name, LoRAMapping: nil)
           if scaleOfLoRA != 1 && !isUp {
             let tensor = graph.withNoGrad {
               (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
@@ -953,7 +953,7 @@ public struct LoRATrainer {
       store.write(modelName, model: unet) { name, tensor in
         guard name.contains("lora") else { return .skip }
         let isUp = name.contains("lora_up")
-        let updatedName = originalLoRA(name: name, LoRAMapping: UNetMapping)
+        let updatedName = Self.originalLoRA(name: name, LoRAMapping: UNetMapping)
         if scaleOfLoRA != 1 && !isUp {
           let tensor = graph.withNoGrad {
             (scaleOfLoRA * graph.variable(Tensor<Float>(from: tensor))).rawValue
@@ -972,7 +972,7 @@ public struct LoRATrainer {
     }
   }
 
-  public func originalLoRA(name: String, LoRAMapping: [Int: Int]?) -> String {
+  public static func originalLoRA(name: String, LoRAMapping: [Int: Int]?) -> String {
     let components = name.split(separator: "-")
     guard components.count >= 3, let index = Int(components[2])
     else { return name }
@@ -1265,7 +1265,7 @@ public struct LoRATrainer {
                 LoRAZoo.filePathForModelDownloaded(resumingLoRAFile), flags: .readOnly
               ) {
                 return $0.read(
-                  originalLoRA(name: name, LoRAMapping: nil),
+                  Self.originalLoRA(name: name, LoRAMapping: nil),
                   codec: [.q8p, .ezm7, .fpzip, .externalData])
               }).get()
             {
@@ -1911,7 +1911,7 @@ public struct LoRATrainer {
                     LoRAZoo.filePathForModelDownloaded(resumingLoRAFile), flags: .readOnly
                   ) {
                     return $0.read(
-                      originalLoRA(name: name, LoRAMapping: textLoRAMapping[0]),
+                      Self.originalLoRA(name: name, LoRAMapping: textLoRAMapping[0]),
                       codec: [.q8p, .ezm7, .fpzip, .externalData])
                   }).get()
                 {
@@ -2023,7 +2023,7 @@ public struct LoRATrainer {
                       LoRAZoo.filePathForModelDownloaded(resumingLoRAFile), flags: .readOnly
                     ) {
                       return $0.read(
-                        originalLoRA(name: name, LoRAMapping: textLoRAMapping[1]),
+                        Self.originalLoRA(name: name, LoRAMapping: textLoRAMapping[1]),
                         codec: [.q8p, .ezm7, .fpzip, .externalData])
                     }).get()
                   {
@@ -2168,7 +2168,7 @@ public struct LoRATrainer {
                     LoRAZoo.filePathForModelDownloaded(resumingLoRAFile), flags: .readOnly
                   ) {
                     return $0.read(
-                      originalLoRA(name: name, LoRAMapping: nil),
+                      Self.originalLoRA(name: name, LoRAMapping: nil),
                       codec: [.q8p, .ezm7, .fpzip, .externalData])
                   }).get()
                 {
@@ -2233,7 +2233,7 @@ public struct LoRATrainer {
                   LoRAZoo.filePathForModelDownloaded(resumingLoRAFile), flags: .readOnly
                 ) {
                   return $0.read(
-                    originalLoRA(name: name, LoRAMapping: unetLoRAMapping),
+                    Self.originalLoRA(name: name, LoRAMapping: unetLoRAMapping),
                     codec: [.q8p, .ezm7, .fpzip, .externalData])
                 }).get()
               {
