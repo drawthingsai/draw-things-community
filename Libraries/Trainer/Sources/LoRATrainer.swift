@@ -683,7 +683,9 @@ public struct LoRATrainer {
               return .continue(name)
             }
             if let textProjection = textProjection {
-              store.read("text_projection", variable: textProjection)
+              store.read(
+                "text_projection", variable: textProjection,
+                codec: [.q6p, .q8p, .ezm7, .fpzip, .externalData])
             }
           }
           for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
@@ -1812,7 +1814,8 @@ public struct LoRATrainer {
           store in
           if let textProjection = textProjection {
             store.read(
-              "text_projection", variable: textProjection, codec: [.q6p, .q8p, .ezm7, .fpzip])
+              "text_projection", variable: textProjection,
+              codec: [.q6p, .q8p, .ezm7, .fpzip, .externalData])
           }
           store.read(
             "text_model", model: textModel[0],
