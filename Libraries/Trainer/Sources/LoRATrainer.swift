@@ -42,6 +42,7 @@ public struct LoRATrainer {
   }
 
   public let version: ModelVersion
+  public let textEncoderVersion: TextEncoderVersion?
   public let session: String
   public let summaryWriter: SummaryWriter?
   private let model: String
@@ -88,12 +89,14 @@ public struct LoRATrainer {
       return $0.widthScale * $0.heightScale < scale.widthScale * scale.heightScale
     }
     self.useImageAspectRatio = useImageAspectRatio
-    self.cotrainTextModel = cotrainTextModel
-    self.cotrainCustomEmbedding = cotrainCustomEmbedding
+    let version = ModelZoo.versionForModel(model)
+    let textEncoderVersion = ModelZoo.textEncoderVersionForModel(model)
+    // Cannot co-train a model if text encoder is available.
+    self.cotrainTextModel = textEncoderVersion == nil ? cotrainTextModel : false
+    self.cotrainCustomEmbedding = textEncoderVersion == nil ? cotrainCustomEmbedding : false
     self.clipSkip = clipSkip
     self.imageInspector = imageInspector
     self.imageLoader = imageLoader
-    let version = ModelZoo.versionForModel(model)
     autoencoder =
       ModelZoo.autoencoderForModel(model)
       ?? ({
@@ -135,6 +138,7 @@ public struct LoRATrainer {
     CLIPEncoder = ModelZoo.CLIPEncoderForModel(model)
     paddedTextEncodingLength = min(maxTextLength, ModelZoo.paddedTextEncodingLengthForModel(model))
     self.version = version
+    self.textEncoderVersion = textEncoderVersion
     self.session = session
     self.resumeIfPossible = resumeIfPossible
   }
@@ -415,6 +419,306 @@ public struct LoRATrainer {
     return (dataFrame, zeroCaptionInput)
   }
 
+  public func prepareKolorsTextEncodings(
+    graph: DynamicGraph, store: DynamicGraph.Store, zeroCaptionInput: ProcessedInput,
+    processedInputs: [ProcessedInput], progressHandler: (PrepareState, Int) -> Bool
+  ) -> Bool {
+    return graph.withNoGrad {
+      var rightAlignedTokens = Tensor<Int32>(.CPU, format: .NHWC, shape: [256])
+      let causalAttentionMask = graph.variable(
+        .CPU, .NHWC(1, 1, 256, 256), of: FloatType.self)
+      let rotaryEmbedding = GLMRotaryEmbedding(sequenceLength: 256, of: FloatType.self)
+      var rightAlignedRotaryEmbedding = Tensor<FloatType>(.CPU, .NHWC(1, 256, 1, 128))
+      let textModel = GLMTransformer(
+        FloatType.self, vocabularySize: 65_024, width: 4_096, tokenLength: 256,
+        layers: 29 - min(max(clipSkip - 1, 1), 27), MLP: 13_696, heads: 32, batchSize: 1,
+        outputPenultimate: true, applyFinalNorm: false, usesFlashAttention: true
+      ).0
+      textModel.maxConcurrency = .limit(4)
+      let rightAlignedTokensTensorGPU = graph.variable(rightAlignedTokens.toGPU(0))
+      let rightAlignedRotaryEmbeddingGPU = graph.variable(rightAlignedRotaryEmbedding.toGPU(0))
+      let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
+      textModel.compile(
+        inputs: rightAlignedTokensTensorGPU, rightAlignedRotaryEmbeddingGPU, causalAttentionMaskGPU)
+      graph.openStore(
+        ModelZoo.filePathForModelDownloaded(textEncoder), flags: .readOnly,
+        externalStore: TensorData.externalStore(
+          filePath: ModelZoo.filePathForModelDownloaded(textEncoder))
+      ) {
+        $0.read(
+          "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, .fpzip, .externalData]
+        )
+      }
+      let encoderHidProj = Dense(count: 2_048)
+      let textEncoding = graph.variable(.GPU(0), .HWC(1, 256, 4096), of: FloatType.self)
+      encoderHidProj.compile(inputs: textEncoding)
+      graph.openStore(
+        ModelZoo.filePathForModelDownloaded(model), flags: .readOnly,
+        externalStore: TensorData.externalStore(
+          filePath: ModelZoo.filePathForModelDownloaded(model))
+      ) {
+        $0.read(
+          "encoder_hid_proj", model: encoderHidProj,
+          codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+      }
+      for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
+        guard input.imagePath == input.loadedImagePath else { continue }
+        causalAttentionMask.full(0)
+        let lengthOfCond = input.tokens.count
+        for i in 0..<256 - lengthOfCond - 2 {
+          rightAlignedTokens[i] = 0
+        }
+        rightAlignedTokens[256 - lengthOfCond - 2] = 64_790
+        rightAlignedTokens[256 - lengthOfCond - 1] = 64_792
+        for i in (256 - lengthOfCond)..<256 {
+          rightAlignedTokens[i] = input.tokens[i - (256 - lengthOfCond)]
+        }
+        for i in (256 - lengthOfCond - 2)..<(256 - 1) {
+          for j in (i + 1)..<256 {
+            causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+          }
+        }
+        for i in (256 - lengthOfCond - 2)..<256 {
+          for j in 0..<(256 - lengthOfCond - 2) {
+            causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+          }
+        }
+        for i in 0..<(256 - lengthOfCond - 2) {
+          rightAlignedRotaryEmbedding[0..<1, i..<(i + 1), 0..<1, 0..<128] =
+            rotaryEmbedding[0..<1, 0..<1, 0..<1, 0..<128]
+        }
+        rightAlignedRotaryEmbedding[
+          0..<1, (256 - lengthOfCond - 2)..<256, 0..<1, 0..<128] =
+          rotaryEmbedding[0..<1, 0..<(lengthOfCond + 2), 0..<1, 0..<128]
+        let rightAlignedTokensTensorGPU = graph.variable(rightAlignedTokens.toGPU(0))
+        let rightAlignedRotaryEmbeddingGPU = graph.variable(rightAlignedRotaryEmbedding.toGPU(0))
+        let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
+        let c = textModel(
+          inputs: rightAlignedTokensTensorGPU, rightAlignedRotaryEmbeddingGPU,
+          causalAttentionMaskGPU
+        ).map {
+          $0.as(of: FloatType.self)
+        }
+        var textEncoding = c[0].reshaped(.HWC(1, 256, 4096))
+        textEncoding = encoderHidProj(inputs: textEncoding)[0].as(of: FloatType.self)
+        store.write(
+          "cond_\(input.imagePath)",
+          tensor: textEncoding.rawValue.toCPU())
+        let pooled = c[1][255..<256, 0..<4096].copied()
+        store.write("pool_\(input.imagePath)", tensor: pooled.rawValue.toCPU())
+        guard progressHandler(.conditionalEncoding, index) else {
+          return false
+        }
+      }
+      return true
+    }
+  }
+
+  public func prepareSDTextEncodings(
+    graph: DynamicGraph, store: DynamicGraph.Store, zeroCaptionInput: ProcessedInput,
+    processedInputs: [ProcessedInput], progressHandler: (PrepareState, Int) -> Bool
+  ) -> Bool {
+    return graph.withNoGrad {
+      let textModel: [Model]
+      let embeddingSize: Int
+      switch version {
+      case .v1:
+        embeddingSize = 768
+        textModel = [
+          CLIPTextModel(
+            FloatType.self, injectEmbeddings: false,
+            vocabularySize: 49408, maxLength: 77, maxTokenLength: 77,
+            embeddingSize: embeddingSize,
+            numLayers: 13 - min(max(clipSkip, 1), 12),
+            numHeads: 12, batchSize: 1, intermediateSize: 3072, usesFlashAttention: false
+          ).0
+        ]
+      case .v2:
+        embeddingSize = 1024
+        textModel = [
+          OpenCLIPTextModel(
+            FloatType.self, injectEmbeddings: false,
+            vocabularySize: 49408, maxLength: 77, maxTokenLength: 77,
+            embeddingSize: embeddingSize,
+            numLayers: 24 - min(max(clipSkip, 1), 23),
+            numHeads: 16, batchSize: 1, intermediateSize: 4096,
+            usesFlashAttention: false
+          ).0
+        ]
+      case .sdxlBase, .ssd1b:
+        embeddingSize = 1280
+        textModel = [
+          OpenCLIPTextModel(
+            FloatType.self, injectEmbeddings: false,
+            vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 1280,
+            numLayers: 32 - min(max(clipSkip - 1, 0), 30), numHeads: 20, batchSize: 1,
+            intermediateSize: 5120, usesFlashAttention: false, outputPenultimate: true
+          ).0,
+          CLIPTextModel(
+            FloatType.self, injectEmbeddings: false,
+            vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 768,
+            numLayers: 13 - min(max(clipSkip, 1), 12), numHeads: 12, batchSize: 1,
+            intermediateSize: 3072, usesFlashAttention: false, noFinalLayerNorm: true
+          ).0,
+        ]
+      case .sdxlRefiner:
+        embeddingSize = 1280
+        textModel = [
+          OpenCLIPTextModel(
+            FloatType.self, injectEmbeddings: false,
+            vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 1280,
+            numLayers: 32 - min(max(clipSkip - 1, 0), 30), numHeads: 20, batchSize: 1,
+            intermediateSize: 5120, usesFlashAttention: false, outputPenultimate: true
+          ).0
+        ]
+      case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+        .wurstchenStageB:
+        fatalError()
+      }
+      let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
+      tokensTensor.full(0)
+      let tokensTensorGPU = tokensTensor.toGPU(0)
+      let positionTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
+      for i in 0..<77 {
+        positionTensor[i] = Int32(i)
+      }
+      let positionTensorGPU = positionTensor.toGPU(0)
+      let causalAttentionMask = graph.variable(.CPU, .NHWC(1, 1, 77, 77), of: FloatType.self)
+      causalAttentionMask.full(0)
+      for i in 0..<76 {
+        for j in (i + 1)..<77 {
+          causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+        }
+      }
+      let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
+      textModel[0].maxConcurrency = .limit(4)
+      textModel[0].compile(inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)
+      let textProjection: DynamicGraph.Tensor<FloatType>?
+      if version == .sdxlBase || version == .sdxlRefiner {
+        textProjection = graph.constant(.GPU(0), .WC(1280, 1280), of: FloatType.self)
+      } else {
+        textProjection = nil
+      }
+      graph.openStore(
+        ModelZoo.filePathForModelDownloaded(textEncoder), flags: .readOnly,
+        externalStore: TensorData.externalStore(
+          filePath: ModelZoo.filePathForModelDownloaded(textEncoder))
+      ) {
+        store in
+        store.read(
+          "text_model", model: textModel[0],
+          codec: [.jit, .q6p, .q8p, .ezm7, .fpzip, .externalData]
+        ) {
+          name, dataType, format, shape in
+          // Need to handle clip skip.
+          var name = name
+          switch version {
+          case .v1:
+            if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
+              name = "__text_model__[t-98-0]"
+            } else if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-1]" {
+              name = "__text_model__[t-98-1]"
+            }
+          case .v2:
+            if name == "__text_model__[t-\(186 - (min(clipSkip, 23) - 1) * 8)-0]" {
+              name = "__text_model__[t-186-0]"
+            } else if name == "__text_model__[t-\(186 - (min(clipSkip, 23) - 1) * 8)-1]" {
+              name = "__text_model__[t-186-1]"
+            }
+          case .sdxlBase, .sdxlRefiner, .ssd1b:
+            if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-0]" {
+              name = "__text_model__[t-258-0]"
+            } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
+              name = "__text_model__[t-258-1]"
+            }
+          case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
+            .wurstchenStageC,
+            .wurstchenStageB:
+            fatalError()
+          }
+          return .continue(name)
+        }
+        if let textProjection = textProjection {
+          store.read(
+            "text_projection", variable: textProjection,
+            codec: [.q6p, .q8p, .ezm7, .fpzip, .externalData])
+        }
+      }
+      for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
+        guard input.imagePath == input.loadedImagePath else { continue }
+        for i in 0..<77 {
+          tokensTensor[i] = input.tokens[i]
+        }
+        let tokensTensorGPU = tokensTensor.toGPU(0)
+        let c = textModel[0](
+          inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU
+        ).map {
+          $0.as(of: FloatType.self)
+        }
+        store.write(
+          "cond_\(input.imagePath)",
+          tensor: c[0].reshaped(.HWC(1, 77, embeddingSize)).rawValue.toCPU())
+        if c.count > 1, let textProjection = textProjection {
+          var pooled = graph.variable(.GPU(0), .WC(1, embeddingSize), of: FloatType.self)
+          var tokenEnd: Int? = nil
+          for i in 0..<77 {
+            if input.tokens[i] == 49407 && tokenEnd == nil {
+              tokenEnd = i
+            }
+          }
+          if let tokenEnd = tokenEnd {
+            pooled[0..<1, 0..<embeddingSize] =
+              c[1][(tokenEnd)..<(tokenEnd + 1), 0..<embeddingSize] * textProjection
+          }
+          store.write("pool_\(input.imagePath)", tensor: pooled.rawValue.toCPU())
+        }
+        guard progressHandler(.conditionalEncoding, index) else {
+          return false
+        }
+      }
+      if textModel.count > 1, let CLIPEncoder = CLIPEncoder {
+        textModel[1].maxConcurrency = .limit(4)
+        textModel[1].compile(inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)
+        graph.openStore(
+          ModelZoo.filePathForModelDownloaded(CLIPEncoder), flags: .readOnly,
+          externalStore: TensorData.externalStore(
+            filePath: ModelZoo.filePathForModelDownloaded(CLIPEncoder))
+        ) {
+          store in
+          store.read(
+            "text_model", model: textModel[1],
+            codec: [.jit, .q6p, .q8p, .ezm7, .fpzip, .externalData]
+          ) {
+            name, dataType, format, shape in
+            // Need to handle clip skip.
+            var name = name
+            if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
+              name = "__text_model__[t-98-0]"
+            } else if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-1]" {
+              name = "__text_model__[t-98-1]"
+            }
+            return .continue(name)
+          }
+        }
+        for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
+          guard input.imagePath == input.loadedImagePath else { continue }
+          for i in 0..<77 {
+            tokensTensor[i] = input.tokens[i]
+          }
+          let tokensTensorGPU = tokensTensor.toGPU(0)
+          let c = textModel[1](
+            inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)[0]
+            .as(of: FloatType.self).reshaped(.HWC(1, 77, 768))
+          store.write("cond_te2_\(input.imagePath)", tensor: c.rawValue.toCPU())
+          guard progressHandler(.conditionalEncoding, index) else {
+            return false
+          }
+        }
+      }
+      return true
+    }
+  }
+
   public func prepareDataset(
     inputs: [Input], tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
     customEmbeddingLength: Int, progressHandler: (PrepareState, Int) -> Bool
@@ -443,8 +747,18 @@ public struct LoRATrainer {
     let imageWidth = Int(scale.widthScale) * 64
     let imageHeight = Int(scale.heightScale) * 64
     var processedInputs = [ProcessedInput]()
+    let tokenMaxLength: Int
+    let truncation: Bool
+    switch textEncoderVersion {
+    case .chatglm3_6b:
+      truncation = false
+      tokenMaxLength = 0
+    case nil:
+      truncation = true
+      tokenMaxLength = 77
+    }
     let (_, zeroTokens, _, _, _) = tokenizer.tokenize(
-      text: "", truncation: true, maxLength: 77)
+      text: "", truncation: truncation, maxLength: tokenMaxLength)
     let zeroCaptionInput = ProcessedInput(
       imagePath: "", tokens: zeroTokens, CLIPTokens: [], originalSize: (0, 0), cropTopLeft: (0, 0),
       targetSize: (0, 0), loadedImagePath: "")
@@ -483,7 +797,7 @@ public struct LoRATrainer {
           let imagePath = input.imageUrl.path
           store.write(imagePath, tensor: sample)
           let (_, tokens, _, _, _) = tokenizer.tokenize(
-            text: input.caption, truncation: true, maxLength: 77)
+            text: input.caption, truncation: truncation, maxLength: tokenMaxLength)
           var updatedTokens = [Int32]()
           for token in tokens {
             if tokenizer.isTextualInversion(token) {
@@ -494,8 +808,8 @@ public struct LoRATrainer {
               updatedTokens.append(token)
             }
           }
-          if updatedTokens.count > 77 {
-            updatedTokens = Array(updatedTokens.dropLast(updatedTokens.count - 77))
+          if tokenMaxLength > 0 && truncation && updatedTokens.count > tokenMaxLength {
+            updatedTokens = Array(updatedTokens.dropLast(updatedTokens.count - tokenMaxLength))
           }
           processedInputs.append(
             ProcessedInput(
@@ -563,203 +877,24 @@ public struct LoRATrainer {
       }
       // Now, check if we have cotrain turned on, if we don't, save the text encoding directly so we don't have to load the text model.
       if !cotrainTextModel && !cotrainCustomEmbedding {
-        graph.withNoGrad {
-          let textModel: [Model]
-          let embeddingSize: Int
-          switch version {
-          case .v1:
-            embeddingSize = 768
-            textModel = [
-              CLIPTextModel(
-                FloatType.self, injectEmbeddings: false,
-                vocabularySize: 49408, maxLength: 77, maxTokenLength: 77,
-                embeddingSize: embeddingSize,
-                numLayers: 13 - min(max(clipSkip, 1), 12),
-                numHeads: 12, batchSize: 1, intermediateSize: 3072, usesFlashAttention: false
-              ).0
-            ]
-          case .v2:
-            embeddingSize = 1024
-            textModel = [
-              OpenCLIPTextModel(
-                FloatType.self, injectEmbeddings: false,
-                vocabularySize: 49408, maxLength: 77, maxTokenLength: 77,
-                embeddingSize: embeddingSize,
-                numLayers: 24 - min(max(clipSkip, 1), 23),
-                numHeads: 16, batchSize: 1, intermediateSize: 4096,
-                usesFlashAttention: false
-              ).0
-            ]
-          case .sdxlBase, .ssd1b:
-            embeddingSize = 1280
-            textModel = [
-              OpenCLIPTextModel(
-                FloatType.self, injectEmbeddings: false,
-                vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 1280,
-                numLayers: 32 - min(max(clipSkip - 1, 0), 30), numHeads: 20, batchSize: 1,
-                intermediateSize: 5120, usesFlashAttention: false, outputPenultimate: true
-              ).0,
-              CLIPTextModel(
-                FloatType.self, injectEmbeddings: false,
-                vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 768,
-                numLayers: 13 - min(max(clipSkip, 1), 12), numHeads: 12, batchSize: 1,
-                intermediateSize: 3072, usesFlashAttention: false, noFinalLayerNorm: true
-              ).0,
-            ]
-          case .sdxlRefiner:
-            embeddingSize = 1280
-            textModel = [
-              OpenCLIPTextModel(
-                FloatType.self, injectEmbeddings: false,
-                vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 1280,
-                numLayers: 32 - min(max(clipSkip - 1, 0), 30), numHeads: 20, batchSize: 1,
-                intermediateSize: 5120, usesFlashAttention: false, outputPenultimate: true
-              ).0
-            ]
-          case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-            .wurstchenStageB:
-            fatalError()
+        switch textEncoderVersion {
+        case .chatglm3_6b:
+          guard
+            prepareKolorsTextEncodings(
+              graph: graph, store: store, zeroCaptionInput: zeroCaptionInput,
+              processedInputs: processedInputs, progressHandler: progressHandler)
+          else {
+            stopped = true
+            return
           }
-          let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
-          tokensTensor.full(0)
-          let tokensTensorGPU = tokensTensor.toGPU(0)
-          let positionTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
-          for i in 0..<77 {
-            positionTensor[i] = Int32(i)
-          }
-          let positionTensorGPU = positionTensor.toGPU(0)
-          let causalAttentionMask = graph.variable(.CPU, .NHWC(1, 1, 77, 77), of: FloatType.self)
-          causalAttentionMask.full(0)
-          for i in 0..<76 {
-            for j in (i + 1)..<77 {
-              causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
-            }
-          }
-          let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
-          textModel[0].maxConcurrency = .limit(4)
-          textModel[0].compile(inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)
-          let textProjection: DynamicGraph.Tensor<FloatType>?
-          if version == .sdxlBase || version == .sdxlRefiner {
-            textProjection = graph.constant(.GPU(0), .WC(1280, 1280), of: FloatType.self)
-          } else {
-            textProjection = nil
-          }
-          graph.openStore(
-            ModelZoo.filePathForModelDownloaded(textEncoder), flags: .readOnly,
-            externalStore: TensorData.externalStore(
-              filePath: ModelZoo.filePathForModelDownloaded(textEncoder))
-          ) {
-            store in
-            store.read(
-              "text_model", model: textModel[0], codec: [.q6p, .q8p, .ezm7, .fpzip, .externalData]
-            ) {
-              name, dataType, format, shape in
-              // Need to handle clip skip.
-              var name = name
-              switch version {
-              case .v1:
-                if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
-                  name = "__text_model__[t-98-0]"
-                } else if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-1]" {
-                  name = "__text_model__[t-98-1]"
-                }
-              case .v2:
-                if name == "__text_model__[t-\(186 - (min(clipSkip, 23) - 1) * 8)-0]" {
-                  name = "__text_model__[t-186-0]"
-                } else if name == "__text_model__[t-\(186 - (min(clipSkip, 23) - 1) * 8)-1]" {
-                  name = "__text_model__[t-186-1]"
-                }
-              case .sdxlBase, .sdxlRefiner, .ssd1b:
-                if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-0]" {
-                  name = "__text_model__[t-258-0]"
-                } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
-                  name = "__text_model__[t-258-1]"
-                }
-              case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-                .wurstchenStageC,
-                .wurstchenStageB:
-                fatalError()
-              }
-              return .continue(name)
-            }
-            if let textProjection = textProjection {
-              store.read(
-                "text_projection", variable: textProjection,
-                codec: [.q6p, .q8p, .ezm7, .fpzip, .externalData])
-            }
-          }
-          for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
-            guard input.imagePath == input.loadedImagePath else { continue }
-            for i in 0..<77 {
-              tokensTensor[i] = input.tokens[i]
-            }
-            let tokensTensorGPU = tokensTensor.toGPU(0)
-            let c = textModel[0](
-              inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU
-            ).map {
-              $0.as(of: FloatType.self)
-            }
-            store.write(
-              "cond_\(input.imagePath)",
-              tensor: c[0].reshaped(.HWC(1, 77, embeddingSize)).rawValue.toCPU())
-            if c.count > 1, let textProjection = textProjection {
-              var pooled = graph.variable(.GPU(0), .WC(1, embeddingSize), of: FloatType.self)
-              var tokenEnd: Int? = nil
-              for i in 0..<77 {
-                if input.tokens[i] == 49407 && tokenEnd == nil {
-                  tokenEnd = i
-                }
-              }
-              if let tokenEnd = tokenEnd {
-                pooled[0..<1, 0..<embeddingSize] =
-                  c[1][(tokenEnd)..<(tokenEnd + 1), 0..<embeddingSize] * textProjection
-              }
-              store.write("pool_\(input.imagePath)", tensor: pooled.rawValue.toCPU())
-            }
-            guard progressHandler(.conditionalEncoding, index) else {
-              stopped = true
-              return
-            }
-          }
-          if textModel.count > 1, let CLIPEncoder = CLIPEncoder {
-            textModel[1].maxConcurrency = .limit(4)
-            textModel[1].compile(inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)
-            graph.openStore(
-              ModelZoo.filePathForModelDownloaded(CLIPEncoder), flags: .readOnly,
-              externalStore: TensorData.externalStore(
-                filePath: ModelZoo.filePathForModelDownloaded(CLIPEncoder))
-            ) {
-              store in
-              store.read(
-                "text_model", model: textModel[1],
-                codec: [.q6p, .q8p, .ezm7, .fpzip, .externalData]
-              ) {
-                name, dataType, format, shape in
-                // Need to handle clip skip.
-                var name = name
-                if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
-                  name = "__text_model__[t-98-0]"
-                } else if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-1]" {
-                  name = "__text_model__[t-98-1]"
-                }
-                return .continue(name)
-              }
-            }
-            for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
-              guard input.imagePath == input.loadedImagePath else { continue }
-              for i in 0..<77 {
-                tokensTensor[i] = input.tokens[i]
-              }
-              let tokensTensorGPU = tokensTensor.toGPU(0)
-              let c = textModel[1](
-                inputs: tokensTensorGPU, positionTensorGPU, causalAttentionMaskGPU)[0]
-                .as(of: FloatType.self).reshaped(.HWC(1, 77, 768))
-              store.write("cond_te2_\(input.imagePath)", tensor: c.rawValue.toCPU())
-              guard progressHandler(.conditionalEncoding, index) else {
-                stopped = true
-                return
-              }
-            }
+        case nil:
+          guard
+            prepareSDTextEncodings(
+              graph: graph, store: store, zeroCaptionInput: zeroCaptionInput,
+              processedInputs: processedInputs, progressHandler: progressHandler)
+          else {
+            stopped = true
+            return
           }
         }
       }
@@ -1514,10 +1649,12 @@ public struct LoRATrainer {
       let unetLoRAMapping: [Int: Int]
       let embeddingSize: (Int, Int)
       let timeEmbeddingSize: Int
+      let tokenLength: Int
       switch version {
       case .v1:
         embeddingSize = (768, 768)
         timeEmbeddingSize = 320
+        tokenLength = 77
         if cotrainTextModel {
           textModel = [
             LoRACLIPTextModel(
@@ -1558,6 +1695,7 @@ public struct LoRATrainer {
       case .v2:
         embeddingSize = (1024, 1024)
         timeEmbeddingSize = 320
+        tokenLength = 77
         if cotrainTextModel {
           textModel = [
             LoRAOpenCLIPTextModel(
@@ -1598,6 +1736,12 @@ public struct LoRATrainer {
       case .sdxlBase:
         embeddingSize = (1280, 768)
         timeEmbeddingSize = 320
+        switch textEncoderVersion {
+        case .chatglm3_6b:
+          tokenLength = 256
+        case nil:
+          tokenLength = 77
+        }
         if cotrainTextModel {
           textModel = [
             LoRAOpenCLIPTextModel(
@@ -1646,7 +1790,7 @@ public struct LoRATrainer {
         }
         unetFixed = LoRAUNetXLFixed(
           batchSize: 1, startHeight: latentsHeight, startWidth: latentsWidth,
-          channels: [320, 640, 1280], embeddingLength: (77, 77),
+          channels: [320, 640, 1280], embeddingLength: (tokenLength, tokenLength),
           inputAttentionRes: [2: [2, 2], 4: [10, 10]], middleAttentionBlocks: 10,
           outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
           usesFlashAttention: isMFAEnabled ? .scaleMerged : .none, LoRAConfiguration: configuration)
@@ -1655,7 +1799,7 @@ public struct LoRATrainer {
             batchSize: 1, startHeight: size.height, startWidth: size.width,
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
             middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
-            embeddingLength: (77, 77), injectIPAdapterLengths: [],
+            embeddingLength: (tokenLength, tokenLength), injectIPAdapterLengths: [],
             upcastAttention: ([:], false, [:]),
             usesFlashAttention: isMFAEnabled ? .scaleMerged : .none,
             injectControls: false, LoRAConfiguration: configuration
@@ -1665,6 +1809,7 @@ public struct LoRATrainer {
       case .sdxlRefiner:
         embeddingSize = (1280, 1280)
         timeEmbeddingSize = 384
+        tokenLength = 77
         if cotrainTextModel {
           textModel = [
             LoRAOpenCLIPTextModel(
@@ -1716,6 +1861,7 @@ public struct LoRATrainer {
       case .ssd1b:
         embeddingSize = (1280, 768)
         timeEmbeddingSize = 320
+        tokenLength = 77
         if cotrainTextModel {
           textModel = [
             LoRAOpenCLIPTextModel(
@@ -2011,10 +2157,10 @@ public struct LoRATrainer {
         unetFixed.maxConcurrency = .limit(1)
         let crossattn: DynamicGraph.Tensor<FloatType>
         if version == .sdxlBase || version == .ssd1b {
-          crossattn = graph.variable(.GPU(0), .HWC(1, 77, 2048), of: FloatType.self)
+          crossattn = graph.variable(.GPU(0), .HWC(1, tokenLength, 2048), of: FloatType.self)
         } else {
           precondition(version == .sdxlRefiner)
-          crossattn = graph.variable(.GPU(0), .HWC(1, 77, 1280), of: FloatType.self)
+          crossattn = graph.variable(.GPU(0), .HWC(1, tokenLength, 1280), of: FloatType.self)
         }
         crossattn.full(0)
         kvs = unetFixed(inputs: crossattn).map { $0.as(of: FloatType.self) }
@@ -2048,7 +2194,12 @@ public struct LoRATrainer {
       case .v1, .v2:
         c = graph.variable(.GPU(0), .HWC(1, 77, embeddingSize.0), of: FloatType.self)
       case .sdxlBase, .ssd1b:
-        c = graph.variable(.GPU(0), .WC(1, 2816), of: FloatType.self)
+        switch textEncoderVersion {
+        case .chatglm3_6b:
+          c = graph.variable(.GPU(0), .WC(1, 4096 + 1536), of: FloatType.self)
+        case nil:
+          c = graph.variable(.GPU(0), .WC(1, 1280 + 1536), of: FloatType.self)
+        }
       case .sdxlRefiner:
         c = graph.variable(.GPU(0), .WC(1, 2560), of: FloatType.self)
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
@@ -2665,29 +2816,50 @@ public struct LoRATrainer {
               c = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
               kvs = []
             case .sdxlBase, .ssd1b:
-              guard let te2 = sessionStore.read("cond_te2_\(textEncodingPath)"),
-                let pooled = sessionStore.read("pool_\(textEncodingPath)")
-              else { continue }
-              let unetFixEncoder = UNetFixedEncoder<FloatType>(
-                filePath: "", version: version, dualAttentionLayers: [], usesFlashAttention: true,
-                zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
-                externalOnDemand: false)
-              c =
-                unetFixEncoder.vector(
-                  textEmbedding: graph.variable(Tensor<FloatType>(from: pooled).toGPU(0)),
-                  originalSize: input.originalSize, cropTopLeft: input.cropTopLeft,
-                  targetSize: input.targetSize, aestheticScore: 6,
-                  negativeOriginalSize: input.originalSize, negativeAestheticScore: 2.5, fpsId: 5,
-                  motionBucketId: 127, condAug: 0.02)[0]
-              var crossattn = graph.variable(.GPU(0), .HWC(1, 77, 2048), of: FloatType.self)
-              crossattn[0..<1, 0..<77, 0..<768] = graph.variable(
-                Tensor<FloatType>(from: te2).toGPU(0))
-              crossattn[0..<1, 0..<77, 768..<2048] = graph.variable(
-                Tensor<FloatType>(from: tensor).toGPU(0))
-              if let unetFixed = unetFixed {
-                kvs = unetFixed(inputs: crossattn).map { $0.as(of: FloatType.self) }
-              } else {
-                kvs = []
+              guard let pooled = sessionStore.read("pool_\(textEncodingPath)") else { continue }
+              switch textEncoderVersion {
+              case .chatglm3_6b:
+                let unetFixEncoder = UNetFixedEncoder<FloatType>(
+                  filePath: "", version: version, dualAttentionLayers: [], usesFlashAttention: true,
+                  zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
+                  externalOnDemand: false)
+                c =
+                  unetFixEncoder.vector(
+                    textEmbedding: graph.variable(Tensor<FloatType>(from: pooled).toGPU(0)),
+                    originalSize: input.originalSize, cropTopLeft: input.cropTopLeft,
+                    targetSize: input.targetSize, aestheticScore: 6,
+                    negativeOriginalSize: input.originalSize, negativeAestheticScore: 2.5, fpsId: 5,
+                    motionBucketId: 127, condAug: 0.02)[0]
+                let crossattn = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
+                if let unetFixed = unetFixed {
+                  kvs = unetFixed(inputs: crossattn).map { $0.as(of: FloatType.self) }
+                } else {
+                  kvs = []
+                }
+              case nil:
+                guard let te2 = sessionStore.read("cond_te2_\(textEncodingPath)")
+                else { continue }
+                let unetFixEncoder = UNetFixedEncoder<FloatType>(
+                  filePath: "", version: version, dualAttentionLayers: [], usesFlashAttention: true,
+                  zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
+                  externalOnDemand: false)
+                c =
+                  unetFixEncoder.vector(
+                    textEmbedding: graph.variable(Tensor<FloatType>(from: pooled).toGPU(0)),
+                    originalSize: input.originalSize, cropTopLeft: input.cropTopLeft,
+                    targetSize: input.targetSize, aestheticScore: 6,
+                    negativeOriginalSize: input.originalSize, negativeAestheticScore: 2.5, fpsId: 5,
+                    motionBucketId: 127, condAug: 0.02)[0]
+                var crossattn = graph.variable(.GPU(0), .HWC(1, 77, 2048), of: FloatType.self)
+                crossattn[0..<1, 0..<77, 0..<768] = graph.variable(
+                  Tensor<FloatType>(from: te2).toGPU(0))
+                crossattn[0..<1, 0..<77, 768..<2048] = graph.variable(
+                  Tensor<FloatType>(from: tensor).toGPU(0))
+                if let unetFixed = unetFixed {
+                  kvs = unetFixed(inputs: crossattn).map { $0.as(of: FloatType.self) }
+                } else {
+                  kvs = []
+                }
               }
             case .sdxlRefiner:
               guard let pooled = sessionStore.read("pool_\(textEncodingPath)") else { continue }

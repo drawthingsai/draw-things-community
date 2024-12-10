@@ -1,7 +1,7 @@
 import Foundation
 import NNC
 
-func GLMRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+public func GLMRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   sequenceLength: Int, of dataType: FloatType.Type = FloatType.self
 ) -> Tensor<FloatType> {
   var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, 128))
@@ -137,7 +137,7 @@ private func TextEmbedding<T: TensorNumeric>(
   return (Model([tokens], [embedding]), mapper)
 }
 
-func GLMTransformer<T: TensorNumeric>(
+public func GLMTransformer<T: TensorNumeric>(
   _ dataType: T.Type, vocabularySize: Int, width: Int, tokenLength: Int,
   layers: Int, MLP: Int, heads: Int, batchSize: Int,
   outputPenultimate: Bool, applyFinalNorm: Bool, usesFlashAttention: Bool
