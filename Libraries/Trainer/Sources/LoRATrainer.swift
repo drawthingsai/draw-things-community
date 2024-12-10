@@ -2882,8 +2882,7 @@ public struct LoRATrainer {
                 kvs = []
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-              .wurstchenStageC,
-              .wurstchenStageB:
+              .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
             condTokensTensorGPU = nil
