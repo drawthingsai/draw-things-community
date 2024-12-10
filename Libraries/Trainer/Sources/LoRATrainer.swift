@@ -632,8 +632,7 @@ public struct LoRATrainer {
               name = "__text_model__[t-258-1]"
             }
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-            .wurstchenStageC,
-            .wurstchenStageB:
+            .wurstchenStageC, .wurstchenStageB:
             fatalError()
           }
           return .continue(name)
@@ -2680,8 +2679,7 @@ public struct LoRATrainer {
                 injectedEmbeddings.append(injectedEmbedding0)
                 injectedEmbeddings.append(injectedEmbedding1)
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-                .wurstchenStageC,
-                .wurstchenStageB:
+                .wurstchenStageC, .wurstchenStageB:
                 fatalError()
               }
               if !hasTrainableEmbeddings {
@@ -2803,8 +2801,7 @@ public struct LoRATrainer {
                 kvs = []
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-              .wurstchenStageC,
-              .wurstchenStageB:
+              .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
             condTokensTensorGPU = tokensTensorGPU
