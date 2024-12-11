@@ -36,16 +36,16 @@ public struct RemoteImageGenerator: ImageGenerator {
   public let name: String
   public let deviceType: ImageGeneratorDeviceType
   private var fileExistsCall: UnaryCall<FileListRequest, FileExistenceResponse>? = nil
-  private var bearTokenAuthenticateBlock: ((String) -> String)
+  private var authenticationHandler: (Data) -> String?
 
   public init(
     name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper,
-    bearTokenAuthenticateBlock: @escaping ((String) -> String)
+    authenticationHandler: @escaping ((Data) -> String?)
   ) {
     self.name = name
     self.deviceType = deviceType
     self.client = client
-    self.bearTokenAuthenticateBlock = bearTokenAuthenticateBlock
+    self.authenticationHandler = authenticationHandler
   }
 
   public func generate(
@@ -130,14 +130,16 @@ public struct RemoteImageGenerator: ImageGenerator {
       contents.removeAll()
     }
 
-    var bearToken = ""
     request.contents = []
-    let encodedBlobString = try? request.serializedData().base64EncodedString()
-    if let encodedBlobString = encodedBlobString, encodedBlobString.count > 0 {
-      bearToken = bearTokenAuthenticateBlock(encodedBlobString)
-    }
-
+    let encodedBlob = try? request.serializedData()
     request.contents = Array(contents.values)
+
+    let bearer: String?
+    if let encodedBlob = encodedBlob, !encodedBlob.isEmpty {
+      bearer = authenticationHandler(encodedBlob)
+    } else {
+      bearer = nil
+    }
 
     // Send the request
     // handler is running on event group thread
@@ -146,7 +148,9 @@ public struct RemoteImageGenerator: ImageGenerator {
     var scaleFactor: Int = 1
     var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
     var metadata = HPACKHeaders()
-    metadata.add(name: "bear-token", value: bearToken)
+    if let bearer = bearer {
+      metadata.add(name: "authorization", value: "bearer \(bearer)")
+    }
     let callOptions = CallOptions(customMetadata: metadata)
 
     let callInstance = client.generateImage(request, callOptions: callOptions) { response in
