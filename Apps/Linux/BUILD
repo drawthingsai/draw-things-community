@@ -10,6 +10,15 @@ pkg_tar(
     package_dir = "/usr/local/bin",
 )
 
+pkg_tar(
+    name = "launch_script_layer",
+    srcs = [
+        "//linux-script:launch_gpu_servers.sh",
+    ],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+)
+
 oci_image(
     name = "gRPCServerCLI_image",
     base = "@cuda12.4.1_swift5.10.1_ubuntu22.04",
@@ -29,4 +38,26 @@ oci_push(
     image = ":gRPCServerCLI_image",
     remote_tags = ["latest"],
     repository = "docker.io/drawthingsai/draw-things-grpc-server-cli",
+)
+
+pkg_tar(
+    name = "proxyServerCLI_layer",
+    srcs = [
+        "//Apps:proxyServerCLI",
+    ],
+    package_dir = "/usr/local/bin",
+)
+
+oci_image(
+    name = "proxyServerCLI_image",
+    base = "@swift_base",
+    tars = [
+        ":proxyServerCLI_layer",
+    ],
+)
+
+oci_tarball(
+    name = "proxyServerCLI_tar",
+    image = ":proxyServerCLI_image",
+    repo_tags = ["draw-things:proxyServerCLI"],
 )

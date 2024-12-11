@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+service ControlPanelService {
+  rpc ManageGPUServer(GPUServerRequest) returns (GPUServerResponse);
+  rpc UpdateThrottlingConfig(ThrottlingRequest) returns (ThrottlingResponse);
+
+}
+
+message GPUServerRequest {
+  // Operation type to perform
+  enum Operation {
+    UNSPECIFIED = 0;
+    ADD = 1;
+    REMOVE = 2;
+  }
+
+  // Server configuration details
+  message ServerConfig {
+    string address = 1;
+    int32 port = 2;
+    bool isHighPriority = 3;
+  }
+
+  Operation operation = 1;
+  ServerConfig server_config = 2;
+}
+
+message GPUServerResponse {
+  string message = 1;
+}
+
+message ThrottlingRequest {
+    map<string, int32> limit_config = 1;  // e.g. {"request_in_5min": 10, "request_in_10min": 20}
+}
+
+message ThrottlingResponse {
+  string message = 1;
+}
+
+message UpdatePemRequest {
+    string message = 1;
+}
+
+message UpdatePemResponse {
+  string message = 1;
+}

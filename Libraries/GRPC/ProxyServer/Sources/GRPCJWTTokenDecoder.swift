@@ -85,10 +85,12 @@ public class JWTDecoder {
 
 // JWT Payload structure matching your token
 public struct JWTPayload: Codable {
-  public let admin: Bool
-  public let sub: String
-  public let name: String
-  public let iat: Int
+  public let checksum: String
+  public let stats: [String: Int]
+  public let nonce: String
+  public let isHighPriority: Bool
+  public let iss: String
+  public let exp: Int
 }
 
 enum JWTError: Error {

@@ -33,16 +33,15 @@ cc_library(
 swift_library(
     name = "GRPCServer",
     srcs = [
-        "Server/Sources/GRPCFileUploader.swift",
-        "Server/Sources/GRPCHostnameUtils.swift",
-        "Server/Sources/GRPCJWTTokenDecoder.swift",
-        "Server/Sources/GRPCServerAdvertiser.swift",
-        "Server/Sources/ImageGenerationClientWrapper.swift",
-        "Server/Sources/ImageGenerationServiceImpl.swift",
-        "Server/Sources/ProtectedValue.swift",
+        "GPUServer/Sources/GRPCFileUploader.swift",
+        "GPUServer/Sources/GRPCHostnameUtils.swift",
+        "GPUServer/Sources/GRPCServerAdvertiser.swift",
+        "GPUServer/Sources/ImageGenerationClientWrapper.swift",
+        "GPUServer/Sources/ImageGenerationServiceImpl.swift",
+        "GPUServer/Sources/ProtectedValue.swift",
     ] + select({
         ":ios_or_macos_build": [
-            "Server/Sources/GRPCServiceBrowser.swift",
+            "GPUServer/Sources/GRPCServiceBrowser.swift",
         ],
         "//conditions:default": [
         ],
@@ -51,6 +50,7 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":GRPCModels",
+        ":ProxyServer",
         "//Libraries/DataModels",
         "//Libraries/ImageGenerator",
         "//Libraries/ModelZoo",
@@ -70,6 +70,25 @@ swift_library(
             ":C_DNSAdvertiser",
         ],
     }),
+)
+
+swift_library(
+    name = "ProxyServer",
+    srcs = glob([
+        "ProxyServer/Sources/*.swift",
+    ]),
+    module_name = "ProxyServer",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":GRPCModels",
+        "//Libraries/BinaryResources",
+        "@SwiftArgumentParser//:ArgumentParser",
+        "@SwiftCrypto//:CCryptoBoringSSL",
+        "@SwiftCrypto//:CCryptoBoringSSLShims",
+        "@SwiftCrypto//:Crypto",
+        "@SwiftCrypto//:CryptoBoringWrapper",
+        "@SwiftLog//:Logging",
+    ],
 )
 
 swift_library(

@@ -9,6 +9,8 @@ swift_library(
         "//Libraries/GRPC:GRPCModels",
         "//Libraries/GRPC:GRPCServer",
         "//Libraries/ImageGenerator",
+        "//Libraries/UserAccount",
+        "@dflat//:SQLiteDflat",
         "@grpc-swift//:GRPC",
     ],
 )
