@@ -1,6 +1,5 @@
 import Crypto
 import DataModels
-import Dflat
 import Diffusion
 import Foundation
 import GRPC
@@ -10,15 +9,11 @@ import ImageGenerator
 import Logging
 import ModelZoo
 import NIO
-import NIOHPACK
 import NNC
 import OrderedCollections
-import UserAccount
 
 public enum RemoteImageGeneratorError: Error {
   case notConnected
-  case blobStringGenerateFailed
-  case jwtTokenGenerateFailed
 }
 
 extension DeviceType {
@@ -40,15 +35,13 @@ public struct RemoteImageGenerator: ImageGenerator {
   public let name: String
   public let deviceType: ImageGeneratorDeviceType
   private var fileExistsCall: UnaryCall<FileListRequest, FileExistenceResponse>? = nil
-  private let workspace: Workspace
+
   public init(
-    name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper,
-    workspace: Workspace
+    name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper
   ) {
     self.name = name
     self.deviceType = deviceType
     self.client = client
-    self.workspace = workspace
   }
 
   public func generate(
@@ -132,28 +125,6 @@ public struct RemoteImageGenerator: ImageGenerator {
       // Don't need to send any data. This is a small optimization and this logic can be fragile.
       contents.removeAll()
     }
-    var bearToken = ""
-    if AccountManager.isSignedUser(workspace: workspace) {
-      request.contents = []
-      let encodedBlobString = try? request.serializedData().base64EncodedString()
-      guard let encodedBlobString = encodedBlobString, encodedBlobString.count > 0 else {
-        throw RemoteImageGeneratorError.blobStringGenerateFailed
-      }
-      let blob = AccountManager.GenerationPayload(blob: encodedBlobString)
-      let group = DispatchGroup()
-
-      var error: Error? = nil
-      group.enter()
-      AccountManager.authenticate(with: workspace, blob: blob) { jwtToken, jwtError in
-        bearToken = jwtToken ?? ""
-        error = jwtError
-        group.leave()
-      }
-      group.wait()
-      guard error == nil, bearToken.count != 0 else {
-        throw RemoteImageGeneratorError.jwtTokenGenerateFailed
-      }
-    }
     request.contents = Array(contents.values)
 
     // Send the request
@@ -162,11 +133,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     var tensors = [Tensor<FloatType>]()
     var scaleFactor: Int = 1
     var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
-    var metadata = HPACKHeaders()
-    metadata.add(name: "bear-token", value: bearToken)
-    let callOptions = CallOptions(customMetadata: metadata)
-
-    let callInstance = client.generateImage(request, callOptions: callOptions) { response in
+    let callInstance = client.generateImage(request) { response in
       if !response.generatedImages.isEmpty {
         let imageTensors = response.generatedImages.compactMap { generatedImageData in
           if let image = Tensor<FloatType>(data: generatedImageData, using: [.zip, .fpzip]) {

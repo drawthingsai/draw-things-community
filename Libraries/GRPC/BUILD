@@ -33,15 +33,15 @@ cc_library(
 swift_library(
     name = "GRPCServer",
     srcs = [
-        "GPUServer/Sources/GRPCFileUploader.swift",
-        "GPUServer/Sources/GRPCHostnameUtils.swift",
-        "GPUServer/Sources/GRPCServerAdvertiser.swift",
-        "GPUServer/Sources/ImageGenerationClientWrapper.swift",
-        "GPUServer/Sources/ImageGenerationServiceImpl.swift",
-        "GPUServer/Sources/ProtectedValue.swift",
+        "Server/Sources/GRPCFileUploader.swift",
+        "Server/Sources/GRPCHostnameUtils.swift",
+        "Server/Sources/GRPCServerAdvertiser.swift",
+        "Server/Sources/ImageGenerationClientWrapper.swift",
+        "Server/Sources/ImageGenerationServiceImpl.swift",
+        "Server/Sources/ProtectedValue.swift",
     ] + select({
         ":ios_or_macos_build": [
-            "GPUServer/Sources/GRPCServiceBrowser.swift",
+            "Server/Sources/GRPCServiceBrowser.swift",
         ],
         "//conditions:default": [
         ],
