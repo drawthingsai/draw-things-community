@@ -9,6 +9,7 @@ import ImageGenerator
 import Logging
 import ModelZoo
 import NIO
+import NIOHPACK
 import NNC
 import OrderedCollections
 
@@ -35,13 +36,16 @@ public struct RemoteImageGenerator: ImageGenerator {
   public let name: String
   public let deviceType: ImageGeneratorDeviceType
   private var fileExistsCall: UnaryCall<FileListRequest, FileExistenceResponse>? = nil
+  private var bearTokenAuthenticateBlock: ((String) -> String)
 
   public init(
-    name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper
+    name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper,
+    bearTokenAuthenticateBlock: @escaping ((String) -> String)
   ) {
     self.name = name
     self.deviceType = deviceType
     self.client = client
+    self.bearTokenAuthenticateBlock = bearTokenAuthenticateBlock
   }
 
   public func generate(
@@ -125,6 +129,14 @@ public struct RemoteImageGenerator: ImageGenerator {
       // Don't need to send any data. This is a small optimization and this logic can be fragile.
       contents.removeAll()
     }
+
+    var bearToken = ""
+    request.contents = []
+    let encodedBlobString = try? request.serializedData().base64EncodedString()
+    if let encodedBlobString = encodedBlobString, encodedBlobString.count > 0 {
+      bearToken = bearTokenAuthenticateBlock(encodedBlobString)
+    }
+
     request.contents = Array(contents.values)
 
     // Send the request
@@ -133,7 +145,11 @@ public struct RemoteImageGenerator: ImageGenerator {
     var tensors = [Tensor<FloatType>]()
     var scaleFactor: Int = 1
     var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
-    let callInstance = client.generateImage(request) { response in
+    var metadata = HPACKHeaders()
+    metadata.add(name: "bear-token", value: bearToken)
+    let callOptions = CallOptions(customMetadata: metadata)
+
+    let callInstance = client.generateImage(request, callOptions: callOptions) { response in
       if !response.generatedImages.isEmpty {
         let imageTensors = response.generatedImages.compactMap { generatedImageData in
           if let image = Tensor<FloatType>(data: generatedImageData, using: [.zip, .fpzip]) {
