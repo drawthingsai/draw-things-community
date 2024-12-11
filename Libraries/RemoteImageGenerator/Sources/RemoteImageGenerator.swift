@@ -13,7 +13,6 @@ import NIO
 import NIOHPACK
 import NNC
 import OrderedCollections
-import ProxyServer
 import UserAccount
 
 public enum RemoteImageGeneratorError: Error {
