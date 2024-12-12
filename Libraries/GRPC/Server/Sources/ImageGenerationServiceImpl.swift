@@ -392,7 +392,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
           guard let values = try? $0.resourceValues(forKeys: [.fileSizeKey]) else { return nil }
           guard let fileSize = values.fileSize, fileSize > 0 else { return nil }
           let file = $0.lastPathComponent
-          guard !file.lowercased().hasSuffix(".ckpt") else { return nil }
+          guard file.lowercased().hasSuffix(".ckpt") else { return nil }
           return file
         }
         // Load all specifications that is available locally into override JSON payload.
