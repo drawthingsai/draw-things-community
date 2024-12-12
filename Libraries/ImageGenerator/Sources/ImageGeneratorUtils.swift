@@ -331,6 +331,41 @@ extension ImageGeneratorUtils {
     return (models, loras, controlNets)
   }
 
+  public static func filesToMatch(_ configuration: GenerationConfiguration, keywords: [String])
+    -> [(
+      name: String, subtitle: String, file: String
+    )]
+  {
+    var filesToMatch = [(name: String, subtitle: String, file: String)]()
+
+    for lora in configuration.loras {
+      if let model = lora.file,
+        let specification = LoRAZoo.specificationForModel(model)
+      {
+        let files = LoRAZoo.filesToDownload(specification).map {
+          (name, subtitle, file, _) in
+          (name, subtitle, file)
+        }
+        filesToMatch.append(contentsOf: files)
+      }
+    }
+
+    for keyword in keywords {
+      guard
+        let specification = TextualInversionZoo.modelFromKeyword(keyword, potentials: []).flatMap({
+          TextualInversionZoo.specificationForModel($0)
+        })
+      else { continue }
+      filesToMatch.append(
+        (
+          specification.name, ModelZoo.humanReadableNameForVersion(specification.version),
+          specification.file
+        ))
+    }
+
+    return filesToMatch
+  }
+
   public static func filesToDownload(_ configuration: GenerationConfiguration, keywords: [String])
     -> [(
       name: String, subtitle: String, file: String

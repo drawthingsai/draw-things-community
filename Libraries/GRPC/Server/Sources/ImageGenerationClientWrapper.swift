@@ -83,20 +83,26 @@ public final class ImageGenerationClientWrapper {
   public typealias FileExistsCall = UnaryCall<FileListRequest, FileExistenceResponse>
 
   public func filesExists(
-    files: [String], callback: @escaping (Bool, [(String, Bool)]) -> Void
+    files: [String], filesToMatch: [String],
+    callback: @escaping (Bool, [(String, Bool, Data)]) -> Void
   ) -> UnaryCall<FileListRequest, FileExistenceResponse>? {
     guard let client = client else {
       callback(false, [])
       return nil
     }
 
-    var request = FileListRequest()
-    request.files = files
+    let request = FileListRequest.with {
+      $0.files = files
+      $0.filesWithHash = filesToMatch
+    }
     let call = client.filesExist(request)
     let _ = call.response.always { result in
       switch result {
       case .success(let response):
-        callback(true, Array(zip(response.files, response.existences)))
+        let payload = zip(response.files, response.existences).enumerated().map {
+          ($1.0, $1.1, $0 < response.hashes.count ? response.hashes[$0] : Data())
+        }
+        callback(true, payload)
       case .failure(_):
         callback(false, [])
       }
