@@ -127,6 +127,9 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Disable TLS for the connection.")
   var noTLS = false
 
+  @Flag(help: "Disable response compression.")
+  var noResponseCompression = false
+
   @Flag(help: "Disable FlashAttention.")
   var noFlashAttention = false
 
@@ -169,6 +172,11 @@ struct gRPCServerCLI: ParsableCommand {
     let localImageGenerator = createLocalImageGenerator(queue: queue)
     let imageGenerationServiceImpl = ImageGenerationServiceImpl(
       imageGenerator: localImageGenerator, queue: queue, backupQueue: queue)
+    if noResponseCompression {
+      imageGenerationServiceImpl.responseCompression.store(false, ordering: .releasing)
+    } else {
+      imageGenerationServiceImpl.responseCompression.store(true, ordering: .releasing)
+    }
 
     // Bind the server and get an `EventLoopFuture<Server>`
     let serverFuture: EventLoopFuture<GRPC.Server>
