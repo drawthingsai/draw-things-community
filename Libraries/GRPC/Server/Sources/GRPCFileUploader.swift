@@ -4,7 +4,7 @@ import Crypto
 import CryptoBoringWrapper
 import Foundation
 import GRPC
-import GRPCModels
+import GRPCImageServiceModels
 import Logging
 import NIO
 

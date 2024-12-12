@@ -80,6 +80,7 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":GRPCControlPanelModels",
+        ":GRPCImageServiceModels",
         "//Libraries/BinaryResources",
         "@SwiftArgumentParser//:ArgumentParser",
         "@SwiftCrypto//:CCryptoBoringSSL",
@@ -93,7 +94,7 @@ swift_library(
 swift_library(
     name = "GRPCControlPanelModels",
     srcs = glob(["Models/Sources/controlPanel/*.swift"]),
-    module_name = "GRPCModels",
+    module_name = "GRPCControlPanelModels",
     visibility = ["//visibility:public"],
     deps = [
         "//Libraries/DataModels",
@@ -104,10 +105,9 @@ swift_library(
 swift_library(
     name = "GRPCImageServiceModels",
     srcs = glob(["Models/Sources/imageService/*.swift"]),
-    module_name = "GRPCModels",
+    module_name = "GRPCImageServiceModels",
     visibility = ["//visibility:public"],
     deps = [
-        "//Libraries/DataModels",
         "@grpc-swift//:GRPC",
     ],
 )

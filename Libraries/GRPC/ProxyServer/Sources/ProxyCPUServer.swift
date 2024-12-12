@@ -2,7 +2,8 @@ import BinaryResources
 import Crypto
 import Foundation
 import GRPC
-import GRPCModels
+import GRPCControlPanelModels
+import GRPCImageServiceModels
 import Logging
 import NIO
 import NIOHPACK
@@ -243,7 +244,8 @@ public actor ControlConfigs {
 }
 
 class ControlPanelService: ControlPanelServiceProvider {
-  var interceptors: (any GRPCModels.ControlPanelServiceServerInterceptorFactoryProtocol)?
+  var interceptors:
+    (any GRPCControlPanelModels.ControlPanelServiceServerInterceptorFactoryProtocol)?
   private let taskCoordinator: TaskCoordinator
   private var controlConfigs: ControlConfigs
   private let logger: Logger
@@ -260,9 +262,9 @@ class ControlPanelService: ControlPanelServiceProvider {
   }
 
   func manageGPUServer(
-    request: GRPCModels.GPUServerRequest, context: any GRPC.StatusOnlyCallContext
-  ) -> NIOCore.EventLoopFuture<GRPCModels.GPUServerResponse> {
-    let promise = context.eventLoop.makePromise(of: GRPCModels.GPUServerResponse.self)
+    request: GRPCControlPanelModels.GPUServerRequest, context: any GRPC.StatusOnlyCallContext
+  ) -> NIOCore.EventLoopFuture<GRPCControlPanelModels.GPUServerResponse> {
+    let promise = context.eventLoop.makePromise(of: GRPCControlPanelModels.GPUServerResponse.self)
     Task {
       let gpuServerName = "\(request.serverConfig.address):\(request.serverConfig.port)"
       if request.operation == .add {
@@ -309,9 +311,9 @@ class ControlPanelService: ControlPanelServiceProvider {
   }
 
   func updateThrottlingConfig(
-    request: GRPCModels.ThrottlingRequest, context: any GRPC.StatusOnlyCallContext
-  ) -> NIOCore.EventLoopFuture<GRPCModels.ThrottlingResponse> {
-    let promise = context.eventLoop.makePromise(of: GRPCModels.ThrottlingResponse.self)
+    request: GRPCControlPanelModels.ThrottlingRequest, context: any GRPC.StatusOnlyCallContext
+  ) -> NIOCore.EventLoopFuture<GRPCControlPanelModels.ThrottlingResponse> {
+    let promise = context.eventLoop.makePromise(of: GRPCControlPanelModels.ThrottlingResponse.self)
     Task {
       await controlConfigs.updateThrotellPolicy(
         newPolicies: request.limitConfig.mapValues { Int($0) })
@@ -325,9 +327,9 @@ class ControlPanelService: ControlPanelServiceProvider {
   }
 
   func updatePem(
-    request: GRPCModels.UpdatePemRequest, context: any GRPC.StatusOnlyCallContext
-  ) -> NIOCore.EventLoopFuture<GRPCModels.UpdatePemResponse> {
-    let promise = context.eventLoop.makePromise(of: GRPCModels.UpdatePemResponse.self)
+    request: GRPCControlPanelModels.UpdatePemRequest, context: any GRPC.StatusOnlyCallContext
+  ) -> NIOCore.EventLoopFuture<GRPCControlPanelModels.UpdatePemResponse> {
+    let promise = context.eventLoop.makePromise(of: GRPCControlPanelModels.UpdatePemResponse.self)
     Task {
       try await controlConfigs.updatePublicPem()
       let pem = await controlConfigs.publicPem
@@ -342,7 +344,8 @@ class ControlPanelService: ControlPanelServiceProvider {
 }
 
 class ImageGenerationProxyService: ImageGenerationServiceProvider {
-  var interceptors: (any GRPCModels.ImageGenerationServiceServerInterceptorFactoryProtocol)?
+  var interceptors:
+    (any GRPCImageServiceModels.ImageGenerationServiceServerInterceptorFactoryProtocol)?
 
   private let taskCoordinator: TaskCoordinator
   private let logger: Logger

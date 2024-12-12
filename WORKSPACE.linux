@@ -396,6 +396,13 @@ oci_pull(
     image = "docker.io/drawthingsai/cuda-swift",
 )
 
+oci_pull(
+    name = "swift5.10.1_ubuntu22.04",
+    digest = "sha256:2351780014bad244d1867e03ef282508aedbc438b0a722ea126eac5c6d104131",
+    image = "docker.io/library/swift",
+    platforms = ["linux/amd64"],
+)
+
 http_archive(
     name = "rules_pkg",
     urls = [

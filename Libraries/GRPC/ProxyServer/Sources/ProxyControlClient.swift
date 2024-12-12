@@ -1,7 +1,7 @@
 import BinaryResources
 import Foundation
 import GRPC
-import GRPCModels
+import GRPCControlPanelModels
 import NIO
 import NIOSSL
 

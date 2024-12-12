@@ -41,23 +41,39 @@ oci_push(
 )
 
 pkg_tar(
-    name = "proxyServerCLI_layer",
+    name = "ProxyServiceCLI_layer",
     srcs = [
-        "//Apps:proxyServerCLI",
+        "//Apps:ProxyServiceCLI",
+    ],
+    package_dir = "/usr/local/bin",
+)
+
+pkg_tar(
+    name = "ProxyServerControlPanelCLI_layer",
+    srcs = [
+        "//Apps:ProxyServerControlPanelCLI",
     ],
     package_dir = "/usr/local/bin",
 )
 
 oci_image(
-    name = "proxyServerCLI_image",
-    base = "@swift_base",
+    name = "ProxyServiceCLI_image",
+    base = "@swift5.10.1_ubuntu22.04",
     tars = [
-        ":proxyServerCLI_layer",
+        ":ProxyServiceCLI_layer",
+        ":ProxyServerControlPanelCLI_layer",
     ],
 )
 
 oci_tarball(
-    name = "proxyServerCLI_tar",
-    image = ":proxyServerCLI_image",
-    repo_tags = ["draw-things:proxyServerCLI"],
+    name = "ProxyServiceCLI_tar",
+    image = ":ProxyServiceCLI_image",
+    repo_tags = ["draw-things-proxy-server-cli:latest"],
+)
+
+oci_push(
+    name = "push_ProxyServiceCLI_image",
+    image = ":ProxyServiceCLI_image",
+    remote_tags = ["latest"],
+    repository = "docker.io/weiyan117/draw-things-proxy-server-cli",
 )

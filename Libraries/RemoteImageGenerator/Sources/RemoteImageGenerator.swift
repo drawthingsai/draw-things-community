@@ -3,7 +3,7 @@ import DataModels
 import Diffusion
 import Foundation
 import GRPC
-import GRPCModels
+import GRPCImageServiceModels
 import GRPCServer
 import ImageGenerator
 import Logging

@@ -4,7 +4,7 @@ import DataModels
 import Diffusion
 import Foundation
 import GRPC
-import GRPCModels
+import GRPCImageServiceModels
 import ImageGenerator
 import Logging
 import ModelZoo
@@ -343,8 +343,10 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     return context.eventLoop.makeSucceededFuture(response)
   }
 
-  public func echo(request: GRPCModels.EchoRequest, context: any GRPC.StatusOnlyCallContext)
-    -> NIOCore.EventLoopFuture<GRPCModels.EchoReply>
+  public func echo(
+    request: GRPCImageServiceModels.EchoRequest, context: any GRPC.StatusOnlyCallContext
+  )
+    -> NIOCore.EventLoopFuture<GRPCImageServiceModels.EchoReply>
   {
     let response = EchoReply.with {
       logger.info("Received echo from: \(request.name)")
