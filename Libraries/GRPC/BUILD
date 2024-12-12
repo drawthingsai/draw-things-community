@@ -49,7 +49,7 @@ swift_library(
     module_name = "GRPCServer",
     visibility = ["//visibility:public"],
     deps = [
-        ":GRPCModels",
+        ":GRPCImageServiceModels",
         "//Libraries/DataModels",
         "//Libraries/ImageGenerator",
         "//Libraries/ModelZoo",
@@ -79,7 +79,7 @@ swift_library(
     module_name = "ProxyServer",
     visibility = ["//visibility:public"],
     deps = [
-        ":GRPCModels",
+        ":GRPCControlPanelModels",
         "//Libraries/BinaryResources",
         "@SwiftArgumentParser//:ArgumentParser",
         "@SwiftCrypto//:CCryptoBoringSSL",
@@ -91,8 +91,19 @@ swift_library(
 )
 
 swift_library(
-    name = "GRPCModels",
-    srcs = glob(["Models/Sources/*.swift"]),
+    name = "GRPCControlPanelModels",
+    srcs = glob(["Models/Sources/controlPanel/*.swift"]),
+    module_name = "GRPCModels",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//Libraries/DataModels",
+        "@grpc-swift//:GRPC",
+    ],
+)
+
+swift_library(
+    name = "GRPCImageServiceModels",
+    srcs = glob(["Models/Sources/imageService/*.swift"]),
     module_name = "GRPCModels",
     visibility = ["//visibility:public"],
     deps = [

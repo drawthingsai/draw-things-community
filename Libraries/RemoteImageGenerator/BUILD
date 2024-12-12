@@ -6,7 +6,7 @@ swift_library(
     module_name = "RemoteImageGenerator",
     visibility = ["//visibility:public"],
     deps = [
-        "//Libraries/GRPC:GRPCModels",
+        "//Libraries/GRPC:GRPCImageServiceModels",
         "//Libraries/GRPC:GRPCServer",
         "//Libraries/ImageGenerator",
         "@grpc-swift//:GRPC",
