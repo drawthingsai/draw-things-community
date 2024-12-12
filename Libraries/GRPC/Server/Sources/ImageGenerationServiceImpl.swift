@@ -107,7 +107,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   private let logger = Logger(label: "com.draw-things.image-generation-service")
   public let usesBackupQueue = ManagedAtomic<Bool>(false)
   public let responseCompression = ManagedAtomic<Bool>(false)
-  public let isModelBrowsingEnabled = ManagedAtomic<Bool>(false)
+  public let enableModelBrowsing = ManagedAtomic<Bool>(false)
 
   public init(imageGenerator: ImageGenerator, queue: DispatchQueue, backupQueue: DispatchQueue) {
     self.imageGenerator = imageGenerator
@@ -365,11 +365,11 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   )
     -> NIOCore.EventLoopFuture<GRPCImageServiceModels.EchoReply>
   {
-    let isModelBrowsingEnabled = isModelBrowsingEnabled.load(ordering: .acquiring)
+    let enableModelBrowsing = enableModelBrowsing.load(ordering: .acquiring)
     let response = EchoReply.with {
       logger.info("Received echo from: \(request.name)")
       $0.message = "HELLO \(request.name)"
-      if isModelBrowsingEnabled {
+      if enableModelBrowsing {
         // Looking for ckpt files.
         let internalFilePath = ModelZoo.internalFilePathForModelDownloaded("")
         let fileManager = FileManager.default
