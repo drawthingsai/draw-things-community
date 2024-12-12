@@ -13,15 +13,19 @@ message EchoRequest {
 
 message EchoReply {
   string message = 1;
+  repeated string files = 2;
+  optional MetadataOverride override = 3;
 }
 
 message FileListRequest {
   repeated string files = 1;
+  repeated string filesWithHash = 2;
 }
 
 message FileExistenceResponse {
   repeated string files = 1;
   repeated bool existences = 2;
+  repeated bytes hashes = 3;
 }
 
 message MetadataOverride {

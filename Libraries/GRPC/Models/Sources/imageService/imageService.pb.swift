@@ -78,9 +78,22 @@ public struct EchoReply: Sendable {
 
   public var message: String = String()
 
+  public var files: [String] = []
+
+  public var override: MetadataOverride {
+    get {return _override ?? MetadataOverride()}
+    set {_override = newValue}
+  }
+  /// Returns true if `override` has been explicitly set.
+  public var hasOverride: Bool {return self._override != nil}
+  /// Clears the value of `override`. Subsequent reads from it will return its default value.
+  public mutating func clearOverride() {self._override = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _override: MetadataOverride? = nil
 }
 
 public struct FileListRequest: Sendable {
@@ -90,12 +103,14 @@ public struct FileListRequest: Sendable {
 
   public var files: [String] = []
 
+  public var filesWithHash: [String] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 }
 
-public struct FileExistenceResponse: Sendable {
+public struct FileExistenceResponse: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -103,6 +118,8 @@ public struct FileExistenceResponse: Sendable {
   public var files: [String] = []
 
   public var existences: [Bool] = []
+
+  public var hashes: [Data] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -610,6 +627,8 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
   public static let protoMessageName: String = "EchoReply"
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "message"),
+    2: .same(proto: "files"),
+    3: .same(proto: "override"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -619,20 +638,34 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      case 2: try { try decoder.decodeRepeatedStringField(value: &self.files) }()
+      case 3: try { try decoder.decodeSingularMessageField(value: &self._override) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.message.isEmpty {
       try visitor.visitSingularStringField(value: self.message, fieldNumber: 1)
     }
+    if !self.files.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.files, fieldNumber: 2)
+    }
+    try { if let v = self._override {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: EchoReply, rhs: EchoReply) -> Bool {
     if lhs.message != rhs.message {return false}
+    if lhs.files != rhs.files {return false}
+    if lhs._override != rhs._override {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -642,6 +675,7 @@ extension FileListRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
   public static let protoMessageName: String = "FileListRequest"
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "files"),
+    2: .same(proto: "filesWithHash"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -651,6 +685,7 @@ extension FileListRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedStringField(value: &self.files) }()
+      case 2: try { try decoder.decodeRepeatedStringField(value: &self.filesWithHash) }()
       default: break
       }
     }
@@ -660,11 +695,15 @@ extension FileListRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
     if !self.files.isEmpty {
       try visitor.visitRepeatedStringField(value: self.files, fieldNumber: 1)
     }
+    if !self.filesWithHash.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.filesWithHash, fieldNumber: 2)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: FileListRequest, rhs: FileListRequest) -> Bool {
     if lhs.files != rhs.files {return false}
+    if lhs.filesWithHash != rhs.filesWithHash {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -675,6 +714,7 @@ extension FileExistenceResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "files"),
     2: .same(proto: "existences"),
+    3: .same(proto: "hashes"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -685,6 +725,7 @@ extension FileExistenceResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedStringField(value: &self.files) }()
       case 2: try { try decoder.decodeRepeatedBoolField(value: &self.existences) }()
+      case 3: try { try decoder.decodeRepeatedBytesField(value: &self.hashes) }()
       default: break
       }
     }
@@ -697,12 +738,16 @@ extension FileExistenceResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if !self.existences.isEmpty {
       try visitor.visitPackedBoolField(value: self.existences, fieldNumber: 2)
     }
+    if !self.hashes.isEmpty {
+      try visitor.visitRepeatedBytesField(value: self.hashes, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: FileExistenceResponse, rhs: FileExistenceResponse) -> Bool {
     if lhs.files != rhs.files {return false}
     if lhs.existences != rhs.existences {return false}
+    if lhs.hashes != rhs.hashes {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

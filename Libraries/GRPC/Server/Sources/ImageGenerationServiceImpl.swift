@@ -107,6 +107,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   private let logger = Logger(label: "com.draw-things.image-generation-service")
   public let usesBackupQueue = ManagedAtomic<Bool>(false)
   public let responseCompression = ManagedAtomic<Bool>(false)
+  public let isModelBrowsingEnabled = ManagedAtomic<Bool>(false)
 
   public init(imageGenerator: ImageGenerator, queue: DispatchQueue, backupQueue: DispatchQueue) {
     self.imageGenerator = imageGenerator
@@ -331,14 +332,30 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     logger.info("Received request for files exist: \(request.files)")
     var files = [String]()
     var existences = [Bool]()
+    var hashes = [Data]()
+    let needsToComputeHash = Set<String>(request.filesWithHash)
     for file in request.files {
       let existence = ModelZoo.isModelDownloaded(file)
       files.append(file)
       existences.append(existence)
+      if needsToComputeHash.contains(file) {
+        let filePath = ModelZoo.filePathForModelDownloaded(file)
+        if let fileData = try? Data(
+          contentsOf: URL(fileURLWithPath: filePath), options: .mappedIfSafe)
+        {
+          let computedHash = Data(SHA256.hash(data: fileData))
+          hashes.append(computedHash)
+        } else {
+          hashes.append(Data())
+        }
+      } else {
+        hashes.append(Data())
+      }
     }
     let response = FileExistenceResponse.with {
       $0.files = files
       $0.existences = existences
+      $0.hashes = hashes
     }
     return context.eventLoop.makeSucceededFuture(response)
   }
@@ -348,9 +365,58 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   )
     -> NIOCore.EventLoopFuture<GRPCImageServiceModels.EchoReply>
   {
+    let isModelBrowsingEnabled = isModelBrowsingEnabled.load(ordering: .acquiring)
     let response = EchoReply.with {
       logger.info("Received echo from: \(request.name)")
-      $0.message = "Hello, \(request.name)!"
+      $0.message = "HELLO \(request.name)"
+      if isModelBrowsingEnabled {
+        // Looking for ckpt files.
+        let internalFilePath = ModelZoo.internalFilePathForModelDownloaded("")
+        let fileManager = FileManager.default
+        var fileUrls = [URL]()
+        if let urls = try? fileManager.contentsOfDirectory(
+          at: URL(fileURLWithPath: internalFilePath), includingPropertiesForKeys: [.fileSizeKey],
+          options: [.skipsHiddenFiles, .skipsPackageDescendants, .skipsSubdirectoryDescendants])
+        {
+          fileUrls.append(contentsOf: urls)
+        }
+        if let externalUrl = ModelZoo.externalUrl,
+          let urls = try? fileManager.contentsOfDirectory(
+            at: externalUrl, includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants, .skipsSubdirectoryDescendants])
+        {
+          fileUrls.append(contentsOf: urls)
+        }
+        // Check if the file ends with ckpt. If it is, this is a file we need to fill.
+        $0.files = fileUrls.compactMap {
+          guard let values = try? $0.resourceValues(forKeys: [.fileSizeKey]) else { return nil }
+          guard let fileSize = values.fileSize, fileSize > 0 else { return nil }
+          let file = $0.lastPathComponent
+          guard !file.lowercased().hasSuffix(".ckpt") else { return nil }
+          return file
+        }
+        // Load all specifications that is available locally into override JSON payload.
+        let models = ModelZoo.availableSpecifications.filter {
+          return ModelZoo.isModelDownloaded($0)
+        }
+        let loras = LoRAZoo.availableSpecifications.filter {
+          return LoRAZoo.isModelDownloaded($0)
+        }
+        let controlNets = ControlNetZoo.availableSpecifications.filter {
+          return ControlNetZoo.isModelDownloaded($0)
+        }
+        let textualInversions = TextualInversionZoo.availableSpecifications.filter {
+          return TextualInversionZoo.isModelDownloaded($0.file)
+        }
+        $0.override = MetadataOverride.with {
+          let jsonEncoder = JSONEncoder()
+          jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+          $0.models = (try? jsonEncoder.encode(models)) ?? Data()
+          $0.loras = (try? jsonEncoder.encode(loras)) ?? Data()
+          $0.controlNets = (try? jsonEncoder.encode(controlNets)) ?? Data()
+          $0.textualInversions = (try? jsonEncoder.encode(textualInversions)) ?? Data()
+        }
+      }
     }
     return context.eventLoop.makeSucceededFuture(response)
   }
