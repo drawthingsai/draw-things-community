@@ -36,11 +36,11 @@ public struct RemoteImageGenerator: ImageGenerator {
   public let name: String
   public let deviceType: ImageGeneratorDeviceType
   private var fileExistsCall: UnaryCall<FileListRequest, FileExistenceResponse>? = nil
-  private var authenticationHandler: (Data) -> String?
+  private var authenticationHandler: ((Data, (@escaping () -> Void) -> Void) -> String?)?
 
   public init(
     name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper,
-    authenticationHandler: @escaping ((Data) -> String?)
+    authenticationHandler: ((Data, (@escaping () -> Void) -> Void) -> String?)?
   ) {
     self.name = name
     self.deviceType = deviceType
@@ -135,8 +135,10 @@ public struct RemoteImageGenerator: ImageGenerator {
     request.contents = Array(contents.values)
 
     let bearer: String?
-    if let encodedBlob = encodedBlob, !encodedBlob.isEmpty {
-      bearer = authenticationHandler(encodedBlob)
+    if let encodedBlob = encodedBlob, !encodedBlob.isEmpty,
+      let authenticationHandler = authenticationHandler
+    {
+      bearer = authenticationHandler(encodedBlob, cancellation)
     } else {
       bearer = nil
     }
