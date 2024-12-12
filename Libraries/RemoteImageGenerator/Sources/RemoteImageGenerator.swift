@@ -123,8 +123,9 @@ public struct RemoteImageGenerator: ImageGenerator {
         ImageGeneratorUtils.modifierForModel($0, LoRAs: configuration.loras.compactMap(\.file))
       } ?? .none
     let isInpainting = ImageGeneratorUtils.isInpainting(for: mask, configuration: configuration)
+    let version = configuration.model.map { ModelZoo.versionForModel($0) } ?? .v1
     if configuration.strength == 1 && configuration.controls.isEmpty && modifier == .none
-      && !isInpainting
+      && !isInpainting && version != .svdI2v
     {
       // Don't need to send any data. This is a small optimization and this logic can be fragile.
       contents.removeAll()
