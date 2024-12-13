@@ -1,6 +1,7 @@
 import Foundation
 import GRPC
 import GRPCImageServiceModels
+import ModelZoo
 import NIO
 import NIOSSL
 
@@ -61,9 +62,18 @@ public final class ImageGenerationClientWrapper {
     }
   }
 
-  public func echo(callback: @escaping (Bool) -> Void) {
+  public func echo(
+    callback: @escaping (
+      Bool,
+      (
+        files: [String], models: [ModelZoo.Specification], LoRAs: [LoRAZoo.Specification],
+        controlNets: [ControlNetZoo.Specification],
+        textualInversions: [TextualInversionZoo.Specification]
+      )
+    ) -> Void
+  ) {
     guard let client = client else {
-      callback(false)
+      callback(false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []))
       return
     }
 
@@ -72,10 +82,34 @@ public final class ImageGenerationClientWrapper {
 
     let _ = client.echo(request).response.always {
       switch $0 {
-      case .success(_):
-        callback(true)
+      case .success(let result):
+        let jsonDecoder = JSONDecoder()
+        jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+        let models =
+          (try? jsonDecoder.decode(
+            [FailableDecodable<ModelZoo.Specification>].self, from: result.override.models
+          ).compactMap({ $0.value })) ?? []
+        let loras =
+          (try? jsonDecoder.decode(
+            [FailableDecodable<LoRAZoo.Specification>].self, from: result.override.loras
+          ).compactMap({ $0.value })) ?? []
+        let controlNets =
+          (try? jsonDecoder.decode(
+            [FailableDecodable<ControlNetZoo.Specification>].self, from: result.override.controlNets
+          ).compactMap({ $0.value })) ?? []
+        let textualInversions =
+          (try? jsonDecoder.decode(
+            [FailableDecodable<TextualInversionZoo.Specification>].self,
+            from: result.override.textualInversions
+          ).compactMap({ $0.value })) ?? []
+        callback(
+          true,
+          (
+            files: result.files, models: models, LoRAs: loras, controlNets: controlNets,
+            textualInversions: textualInversions
+          ))
       case .failure(_):
-        callback(false)
+        callback(false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []))
       }
     }
   }
