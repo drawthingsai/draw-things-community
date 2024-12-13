@@ -130,6 +130,9 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Disable response compression.")
   var noResponseCompression = false
 
+  @Flag(help: "Enable model browsing.")
+  var modelBrowser = false
+
   @Flag(help: "Disable FlashAttention.")
   var noFlashAttention = false
 
@@ -147,7 +150,6 @@ struct gRPCServerCLI: ParsableCommand {
       atPath: URL(fileURLWithPath: modelsDirectory).path, isDirectory: &isDirectory)
 
     if exists && isDirectory.boolValue {
-      print("Models Path check PASS")
     } else {
       throw gRPCServerCLIrror.invalidModelPath
     }
@@ -176,6 +178,11 @@ struct gRPCServerCLI: ParsableCommand {
       imageGenerationServiceImpl.responseCompression.store(false, ordering: .releasing)
     } else {
       imageGenerationServiceImpl.responseCompression.store(true, ordering: .releasing)
+    }
+    if modelBrowser {
+      imageGenerationServiceImpl.enableModelBrowsing.store(true, ordering: .releasing)
+    } else {
+      imageGenerationServiceImpl.enableModelBrowsing.store(false, ordering: .releasing)
     }
 
     // Bind the server and get an `EventLoopFuture<Server>`
