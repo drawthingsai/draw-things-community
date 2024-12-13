@@ -1,13 +1,16 @@
 import Foundation
 
 public protocol DownloadZoo {
-  static func isModelDownloaded(_ name: String) -> Bool
+  static func isModelDownloaded(_ name: String, memorizedBy: Set<String>) -> Bool
   static func filePathForModelDownloaded(_ name: String) -> String
   static func fileSHA256ForModelDownloaded(_ name: String) -> String?
   static func availableFiles(excluding file: String?) -> Set<String>
 }
 
 extension DownloadZoo {
+  public static func isModelDownloaded(_ name: String) -> Bool {
+    return isModelDownloaded(name, memorizedBy: [])
+  }
   public static func availableFiles(excluding of: DownloadZoo.Type = Self.self) -> Set<String> {
     var files = Set<String>()
     if of != ControlNetZoo.self {

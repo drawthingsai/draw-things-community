@@ -83,8 +83,8 @@ public struct EverythingZoo: DownloadZoo {
     return specification.backbone ?? ""
   }
 
-  public static func isModelDownloaded(_ name: String) -> Bool {
-    return ModelZoo.isModelDownloaded(name)
+  public static func isModelDownloaded(_ name: String, memorizedBy: Set<String>) -> Bool {
+    return ModelZoo.isModelDownloaded(name, memorizedBy: memorizedBy)
   }
 
   public static func modelsToDownload(_ name: String) -> [(

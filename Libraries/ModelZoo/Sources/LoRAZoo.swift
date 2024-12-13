@@ -327,13 +327,16 @@ public struct LoRAZoo: DownloadZoo {
     self.availableSpecifications = availableSpecifications
   }
 
-  public static func isModelDownloaded(_ name: String) -> Bool {
-    return ModelZoo.isModelDownloaded(name)
+  public static func isModelDownloaded(_ name: String, memorizedBy: Set<String>) -> Bool {
+    return ModelZoo.isModelDownloaded(name, memorizedBy: memorizedBy)
   }
 
-  public static func isModelDownloaded(_ specification: Specification) -> Bool {
-    return isModelDownloaded(specification.file)
-      && (specification.alternativeDecoder.map { isModelDownloaded($0) } ?? true)
+  public static func isModelDownloaded(
+    _ specification: Specification, memorizedBy: Set<String> = []
+  ) -> Bool {
+    return isModelDownloaded(specification.file, memorizedBy: memorizedBy)
+      && (specification.alternativeDecoder.map { isModelDownloaded($0, memorizedBy: memorizedBy) }
+        ?? true)
   }
 
   public static func isModelDeprecated(_ name: String) -> Bool {
@@ -346,13 +349,17 @@ public struct LoRAZoo: DownloadZoo {
     return specification.name
   }
 
+  // We prefer these if it is a hit.
   public static var overrideMapping: [String: Specification] = [:]
+
+  // These are only the hit if everything else fails.
+  public static var fallbackMapping: [String: Specification] = [:]
 
   public static func specificationForModel(_ name: String) -> Specification? {
     if let override = overrideMapping[name] {
       return override
     }
-    return specificationMapping[name]
+    return specificationMapping[name] ?? fallbackMapping[name]
   }
 
   public static func filesToDownload(

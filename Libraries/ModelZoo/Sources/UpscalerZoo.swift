@@ -61,8 +61,8 @@ public struct UpscalerZoo: DownloadZoo {
     return ModelZoo.filePathForModelDownloaded(name)
   }
 
-  public static func isModelDownloaded(_ name: String) -> Bool {
-    return ModelZoo.isModelDownloaded(name)
+  public static func isModelDownloaded(_ name: String, memorizedBy: Set<String>) -> Bool {
+    return ModelZoo.isModelDownloaded(name, memorizedBy: memorizedBy)
   }
 
   public static func humanReadableNameForModel(_ name: String) -> String {

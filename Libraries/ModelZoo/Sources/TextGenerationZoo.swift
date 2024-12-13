@@ -40,21 +40,25 @@ public struct TextGenerationZoo: DownloadZoo {
     return mapping
   }()
 
+  // We prefer these if it is a hit.
   public static var overrideMapping: [String: Specification] = [:]
+
+  // These are only the hit if everything else fails.
+  public static var fallbackMapping: [String: Specification] = [:]
 
   public static func specificationForModel(_ name: String) -> Specification? {
     if let override = overrideMapping[name] {
       return override
     }
-    return specificationMapping[name]
+    return specificationMapping[name] ?? fallbackMapping[name]
   }
 
   public static func filePathForModelDownloaded(_ name: String) -> String {
     return ModelZoo.filePathForModelDownloaded(name)
   }
 
-  public static func isModelDownloaded(_ name: String) -> Bool {
-    return ModelZoo.isModelDownloaded(name)
+  public static func isModelDownloaded(_ name: String, memorizedBy: Set<String>) -> Bool {
+    return ModelZoo.isModelDownloaded(name, memorizedBy: memorizedBy)
   }
 
   public static func humanReadableNameForModel(_ name: String) -> String {

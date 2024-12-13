@@ -865,13 +865,17 @@ public struct ModelZoo: DownloadZoo {
     return availableSpecifications.first { $0.name == name }
   }
 
+  // We prefer these if it is a hit.
   public static var overrideMapping: [String: Specification] = [:]
+
+  // These are only the hit if everything else fails.
+  public static var fallbackMapping: [String: Specification] = [:]
 
   public static func specificationForModel(_ name: String) -> Specification? {
     if let override = overrideMapping[name] {
       return override
     }
-    return specificationMapping[name]
+    return specificationMapping[name] ?? fallbackMapping[name]
   }
 
   public static func filesToDownload(_ specification: Specification)
@@ -952,25 +956,30 @@ public struct ModelZoo: DownloadZoo {
     return filePath
   }
 
-  public static func isModelDownloaded(_ specification: Specification) -> Bool {
+  public static func isModelDownloaded(
+    _ specification: Specification, memorizedBy: Set<String> = []
+  ) -> Bool {
     var result =
-      isModelDownloaded(specification.file)
-      && isModelDownloaded(specification.autoencoder ?? "vae_ft_mse_840000_f16.ckpt")
+      isModelDownloaded(specification.file, memorizedBy: memorizedBy)
+      && isModelDownloaded(
+        specification.autoencoder ?? "vae_ft_mse_840000_f16.ckpt", memorizedBy: memorizedBy)
       && isModelDownloaded(
         specification.textEncoder
-          ?? (specification.version == .v1 ? "clip_vit_l14_f16.ckpt" : "open_clip_vit_h14_f16.ckpt")
+          ?? (specification.version == .v1
+            ? "clip_vit_l14_f16.ckpt" : "open_clip_vit_h14_f16.ckpt"),
+        memorizedBy: memorizedBy
       )
     if let imageEncoder = specification.imageEncoder {
-      result = result && isModelDownloaded(imageEncoder)
+      result = result && isModelDownloaded(imageEncoder, memorizedBy: memorizedBy)
     }
     if let clipEncoder = specification.clipEncoder {
-      result = result && isModelDownloaded(clipEncoder)
+      result = result && isModelDownloaded(clipEncoder, memorizedBy: memorizedBy)
     }
     if let t5Encoder = specification.t5Encoder {
-      result = result && isModelDownloaded(t5Encoder)
+      result = result && isModelDownloaded(t5Encoder, memorizedBy: memorizedBy)
     }
     if let diffusionMapping = specification.diffusionMapping {
-      result = result && isModelDownloaded(diffusionMapping)
+      result = result && isModelDownloaded(diffusionMapping, memorizedBy: memorizedBy)
     }
     return result
   }
@@ -982,7 +991,10 @@ public struct ModelZoo: DownloadZoo {
     return FileManager.default.fileExists(atPath: externalUrl.appendingPathComponent(name).path)
   }
 
-  public static func isModelDownloaded(_ name: String) -> Bool {
+  public static func isModelDownloaded(_ name: String, memorizedBy: Set<String>) -> Bool {
+    guard !memorizedBy.contains(name) else {
+      return true
+    }
     let fileManager = FileManager.default
     if let externalUrl = externalUrl {
       let filePath = externalUrl.appendingPathComponent(name).path
