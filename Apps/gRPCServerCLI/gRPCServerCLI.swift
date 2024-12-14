@@ -161,9 +161,10 @@ struct gRPCServerCLI: ParsableCommand {
     if !datadogAPIKey.isEmpty {
       let gpu = gpu
       let datadogAPIKey = datadogAPIKey
+      let name = name
       LoggingSystem.bootstrap {
         var handler = DataDogLogHandler(
-          label: $0, key: datadogAPIKey, hostname: "GPU \(gpu)", region: .US5)
+          label: $0, key: datadogAPIKey, hostname: "\(name) GPU \(gpu)", region: .US5)
         handler.metadata = ["gpu": "\(gpu)"]
         return handler
       }
