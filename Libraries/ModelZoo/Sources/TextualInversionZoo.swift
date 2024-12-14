@@ -64,66 +64,7 @@ public struct TextualInversionZoo: DownloadZoo {
       "4eedda1636bd07f4f5e4da1451fba82476420c944203122501f667c54ff6fe8e",
   ]
 
-  public static let builtinSpecifications: [Specification] = [
-    Specification(
-      name: "Action Helper", file: "actionhelper_ti_f16.ckpt", keyword: "actionhelper", length: 6,
-      version: .v2, deprecated: true),
-    Specification(
-      name: "Anime ScreenCap", file: "animescreencap_ti_f16.ckpt", keyword: "animescreencap",
-      length: 6, version: .v2, deprecated: true),
-    Specification(
-      name: "Bad Prompt (v2)", file: "bad_prompt_v2_ti_f16.ckpt", keyword: "bad_prompt", length: 8,
-      version: .v1, deprecated: true),
-    Specification(
-      name: "Birb Style", file: "birb_style_ti_f16.ckpt", keyword: "birb_style", length: 1,
-      version: .v1, deprecated: true),
-    Specification(
-      name: "Car Helper", file: "carhelper_ti_f16.ckpt", keyword: "carhelper", length: 4,
-      version: .v2, deprecated: true),
-    Specification(
-      name: "Character Turner", file: "charturner_ti_f16.ckpt", keyword: "charturner", length: 4,
-      version: .v1, deprecated: true),
-    Specification(
-      name: "Cinema Helper", file: "cinemahelper_ti_f16.ckpt", keyword: "cinemahelper", length: 10,
-      version: .v2, deprecated: true),
-    Specification(
-      name: "Classipeint", file: "classipeint_ti_f16.ckpt", keyword: "classipeint", length: 15,
-      version: .v2, deprecated: true),
-    Specification(
-      name: "Cloudport v1.0", file: "cloudport_v1.0_ti_f16.ckpt", keyword: "cloudport", length: 4,
-      version: .v1, deprecated: true),
-    Specification(
-      name: "Doctor Diffusion's \"Point E\" Negative Embedding",
-      file: "drd_point_e_768_v_ti_f16.ckpt", keyword: "drd_pnte768", length: 8, version: .v2,
-      deprecated: true),
-    Specification(
-      name: "Double Exposure", file: "double_exposure_ti_f16.ckpt", keyword: "double_exposure",
-      length: 8, version: .v2, deprecated: true),
-    Specification(
-      name: "Knollingcase (v4)", file: "knollingcase_v4_kc16_5000_ti_f16.ckpt",
-      keyword: "kc16_5000", length: 16, version: .v2, deprecated: true),
-    Specification(
-      name: "Laxpeint (v2)", file: "laxpeint_v2_ti_f16.ckpt", keyword: "laxpeintv2", length: 9,
-      version: .v2, deprecated: true),
-    Specification(
-      name: "ParchArt", file: "parchart_ti_f16.ckpt", keyword: "parchart", length: 10,
-      version: .v2, deprecated: true),
-    Specification(
-      name: "Photo Helper", file: "photohelper_ti_f16.ckpt", keyword: "photohelper", length: 8,
-      version: .v2, deprecated: true),
-    Specification(
-      name: "Pure Eros Face", file: "pure_eros_ti_f16.ckpt", keyword: "pure_eros", length: 1,
-      version: .v1, deprecated: true),
-    Specification(
-      name: "SD2 Papercut", file: "sd2_papercut_ti_f16.ckpt", keyword: "sd2_papercut", length: 8,
-      version: .v2, deprecated: true),
-    Specification(
-      name: "V2 Dreamink", file: "v2_dreamink_ti_f16.ckpt", keyword: "v2_dreamink", length: 4,
-      version: .v2, deprecated: true),
-    Specification(
-      name: "Vintage Helper", file: "vintagehelper_ti_f16.ckpt", keyword: "vintagehelper",
-      length: 8, version: .v2, deprecated: true),
-  ]
+  public static let builtinSpecifications: [Specification] = []
 
   private static let builtinModelsAndAvailableSpecifications: (Set<String>, [Specification]) = {
     let jsonFile = filePathForModelDownloaded("custom_textual_inversions.json")

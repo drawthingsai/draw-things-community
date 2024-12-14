@@ -138,61 +138,6 @@ public struct LoRAZoo: DownloadZoo {
       name: "Foreground to Blending",
       file: "layer_xl_fg2ble_v1.0_lora_f16.ckpt",
       prefix: "", version: .sdxlBase, modifier: .inpainting, weight: .init(value: 1)),
-    Specification(
-      name: "LCM SSD 1B (Segmind)", file: "lcm_ssd_1b_lora_f16.ckpt",
-      prefix: "", version: .ssd1b, isConsistencyModel: true, deprecated: true),
-    Specification(
-      name: "Moxin v1.0", file: "moxin_v1.0_lora_f16.ckpt", prefix: "shuimobysim ", version: .v1,
-      deprecated: true),
-    Specification(
-      name: "Moxin Shukezouma v1.1", file: "moxin_shukezouma_v1.1_lora_f16.ckpt",
-      prefix: "shukezouma ", version: .v1, deprecated: true),
-    Specification(
-      name: "Openjourney v1.0", file: "openjourney_v1_lora_f16.ckpt",
-      prefix: "mdjrny-v4 ", version: .v1, deprecated: true),
-    Specification(
-      name: "Analog Diffusion v1.0", file: "analog_diffusion_v1_lora_f16.ckpt",
-      prefix: "analog ", version: .v1, deprecated: true),
-    Specification(
-      name: "Adam's Artwork Style v.1", file: "adams_artwork_style_v0.1_lora_f16.ckpt",
-      prefix: "ajaws ", version: .v1, deprecated: true),
-    Specification(
-      name: "Cyberpunk 2077 Nightcity v1.15",
-      file: "cyberpunk_2007_concept_art_nightcity_v1.15_lora_f16.ckpt",
-      prefix: "", version: .v1, deprecated: true),
-    Specification(
-      name: "Epi Noise Offset v2", file: "epi_noiseoffset_v2_lora_f16.ckpt",
-      prefix: "", version: .v1, deprecated: true),
-    Specification(
-      name: "Anime LineArt Style v2.0", file: "anime_lineart_style_v2.0_lora_f16.ckpt",
-      prefix: "", version: .v1, deprecated: true),
-    Specification(
-      name: "Theovercomer8's Contrast Fix",
-      file: "theovercomer8s_contrast_fix_lora_f16.ckpt",
-      prefix: "to8contrast style ", version: .v1, deprecated: true),
-    Specification(
-      name: "Theovercomer8's Contrast Fix",
-      file: "theovercomer8s_contrast_fix_sd_v2.x_lora_f16.ckpt",
-      prefix: "to8contrast style ", version: .v2, deprecated: true),
-    Specification(
-      name: "Arcane Style", file: "arcane_style_lora_f16.ckpt",
-      prefix: "arcane style ", version: .v1, deprecated: true),
-    Specification(
-      name: "Crazy Expressions", file: "crazy_expressions_lora_f16.ckpt",
-      prefix: "crazy face ", version: .v1, deprecated: true),
-    Specification(
-      name: "TO8's High Key", file: "to8s_high_key_lora_f16.ckpt",
-      prefix: "to8highkey ", version: .v1, deprecated: true),
-    Specification(
-      name: "TO8's High Key", file: "to8s_high_key_sd_v2.x_lora_f16.ckpt",
-      prefix: "to8highkey ", version: .v2, deprecated: true),
-    Specification(
-      name: "Hipoly 3D Model", file: "hipoly_3d_model_lora_f16.ckpt",
-      prefix: "hiqcgbody ", version: .v1, deprecated: true),
-    Specification(
-      name: "Haute Couture or Gowns v1.0",
-      file: "haute_couture_or_gowns_v1.0_lora_f16.ckpt",
-      prefix: "hc_gown ", version: .v1, deprecated: true),
   ]
 
   public static func isBuiltinLoRA(_ name: String) -> Bool {

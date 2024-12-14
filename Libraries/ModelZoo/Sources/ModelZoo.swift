@@ -418,47 +418,6 @@ public struct ModelZoo: DownloadZoo {
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt"),
     Specification(
-      name: "SDXL Turbo", file: "sd_xl_turbo_f16.ckpt", prefix: "",
-      version: .sdxlBase,
-      defaultScale: 8, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
-      isConsistencyModel: true),
-    Specification(
-      name: "SDXL Turbo (8-bit)", file: "sd_xl_turbo_q6p_q8p.ckpt", prefix: "",
-      version: .sdxlBase,
-      defaultScale: 8, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
-      isConsistencyModel: true),
-    Specification(
-      name: "Stable Cascade (Würstchen v3.0)", file: "wurstchen_3.0_stage_c_f32_f16.ckpt",
-      prefix: "",
-      version: .wurstchenStageC, upcastAttention: false, defaultScale: 16,
-      textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "wurstchen_3.0_stage_a_hq_f16.ckpt", deprecated: true,
-      stageModels: ["wurstchen_3.0_stage_b_f16.ckpt"]
-    ),
-    Specification(
-      name: "Stable Cascade (Würstchen v3.0, 8-bit)",
-      file: "wurstchen_3.0_stage_c_f32_q6p_q8p.ckpt",
-      prefix: "",
-      version: .wurstchenStageC, upcastAttention: false, defaultScale: 16,
-      textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "wurstchen_3.0_stage_a_hq_f16.ckpt", deprecated: true,
-      stageModels: ["wurstchen_3.0_stage_b_q6p_q8p.ckpt"]
-    ),
-    Specification(
-      name: "LCM SDXL Base (v1.0)", file: "lcm_sd_xl_base_1.0_f16.ckpt", prefix: "",
-      version: .sdxlBase,
-      defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
-      isConsistencyModel: true),
-    Specification(
-      name: "LCM SDXL Base v1.0 (8-bit)", file: "lcm_sd_xl_base_1.0_q6p_q8p.ckpt", prefix: "",
-      version: .sdxlBase,
-      defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
-      isConsistencyModel: true),
-    Specification(
       name: "SDXL Refiner (v1.0)", file: "sd_xl_refiner_1.0_f16.ckpt", prefix: "",
       version: .sdxlRefiner, defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt"),
@@ -512,19 +471,6 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "clip_vit_l14_f16.ckpt",
       diffusionMapping: "kandinsky_diffusion_mapping_f16.ckpt"),
     Specification(
-      name: "Stable Video Diffusion I2V v1.0", file: "svd_i2v_1.0_f16.ckpt", prefix: "",
-      version: .svdI2v,
-      defaultScale: 8, textEncoder: "open_clip_vit_h14_vision_model_f16.ckpt",
-      deprecated: true, clipEncoder: "svd_i2v_1.0_f16.ckpt", conditioning: .noise, objective: .v,
-      noiseDiscretization: .edm(.init(sigmaMax: 700.0))),
-    Specification(
-      name: "Stable Video Diffusion I2V 1.0 (8-bit)", file: "svd_i2v_1.0_q6p_q8p.ckpt", prefix: "",
-      version: .svdI2v,
-      defaultScale: 8, textEncoder: "open_clip_vit_h14_vision_model_f16.ckpt",
-      deprecated: true, clipEncoder: "svd_i2v_1.0_q6p_q8p.ckpt", conditioning: .noise,
-      objective: .v,
-      noiseDiscretization: .edm(.init(sigmaMax: 700.0))),
-    Specification(
       name: "Stable Video Diffusion I2V XT v1.0", file: "svd_i2v_xt_1.0_f16.ckpt", prefix: "",
       version: .svdI2v,
       defaultScale: 8, textEncoder: "open_clip_vit_h14_vision_model_f16.ckpt", deprecated: true,
@@ -538,178 +484,11 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "svd_i2v_xt_1.0_q6p_q8p.ckpt", conditioning: .noise, objective: .v,
       noiseDiscretization: .edm(.init(sigmaMax: 700.0))),
     Specification(
-      name: "Stable Video Diffusion I2V XT v1.1", file: "svd_i2v_xt_1.1_f16.ckpt", prefix: "",
-      version: .svdI2v,
-      defaultScale: 8, textEncoder: "open_clip_vit_h14_vision_model_f16.ckpt",
-      deprecated: true, clipEncoder: "svd_i2v_xt_1.1_f16.ckpt", conditioning: .noise, objective: .v,
-      noiseDiscretization: .edm(.init(sigmaMax: 700.0))),
-    Specification(
-      name: "Stable Video Diffusion I2V XT 1.1 (8-bit)", file: "svd_i2v_xt_1.1_q6p_q8p.ckpt",
-      prefix: "", version: .svdI2v,
-      defaultScale: 8, textEncoder: "open_clip_vit_h14_vision_model_f16.ckpt",
-      deprecated: true, clipEncoder: "svd_i2v_xt_1.1_q6p_q8p.ckpt", conditioning: .noise,
-      objective: .v,
-      noiseDiscretization: .edm(.init(sigmaMax: 700.0))),
-    Specification(
-      name: "Playground v2.5", file: "playground_v2.5_f16.ckpt", prefix: "",
-      version: .sdxlBase,
-      defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
-      conditioning: .noise, objective: .edm(sigmaData: 0.5), noiseDiscretization: .edm(.init()),
-      latentsMean: [-1.6574, 1.886, -1.383, 2.5155], latentsStd: [8.4927, 5.9022, 6.5498, 5.2299],
-      latentsScalingFactor: 0.5),
-    Specification(
-      name: "Playground v2.5 (8-bit)", file: "playground_v2.5_q6p_q8p.ckpt", prefix: "",
-      version: .sdxlBase,
-      defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
-      conditioning: .noise, objective: .edm(sigmaData: 0.5), noiseDiscretization: .edm(.init()),
-      latentsMean: [-1.6574, 1.886, -1.383, 2.5155], latentsStd: [8.4927, 5.9022, 6.5498, 5.2299],
-      latentsScalingFactor: 0.5),
-    Specification(
-      name: "SSD 1B (Segmind SDXL)", file: "ssd_1b_f16.ckpt", prefix: "",
-      version: .ssd1b,
-      defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt"),
-    Specification(
-      name: "SSD 1B (8-bit)", file: "ssd_1b_q6p_q8p.ckpt", prefix: "",
-      version: .ssd1b,
-      defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt"),
-    Specification(
-      name: "LCM SSD 1B (Segmind SDXL)", file: "lcm_ssd_1b_f16.ckpt", prefix: "",
-      version: .ssd1b,
-      defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
-      isConsistencyModel: true),
-    Specification(
-      name: "LCM SSD 1B (8-bit)", file: "lcm_ssd_1b_q6p_q8p.ckpt", prefix: "",
-      version: .ssd1b,
-      defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt",
-      isConsistencyModel: true),
-    Specification(
       name: "Generic SD (MiniSD v1.4)", file: "minisd_v1.4_f16.ckpt", prefix: "", version: .v1,
       defaultScale: 4, deprecated: true),
     Specification(
       name: "Editing (Instruct Pix2Pix)", file: "instruct_pix2pix_22000_f16.ckpt", prefix: "",
-      version: .v1,
-      defaultScale: 8, modifier: .editing, deprecated: true),
-    Specification(
-      name: "Anime (Waifu Diffusion v1.3)", file: "wd_v1.3_f16.ckpt", prefix: "", version: .v1,
-      deprecated: true),
-    Specification(
-      name: "Multi-Style (Nitro Diffusion v1)", file: "nitro_v1_f16.ckpt", prefix: "", version: .v1,
-      textEncoder: "nitro_v1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Cyberpunk Anime", file: "cyberpunk_anime_f16.ckpt", prefix: "dgs illustration style ",
-      version: .v1,
-      textEncoder: "cyberpunk_anime_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "3D Model (Redshift v1)", file: "redshift_v1_f16.ckpt", prefix: "redshift style ",
-      version: .v1,
-      textEncoder: "redshift_v1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "3D Model 768 (Redshift 768)", file: "redshift_768_v_f16.ckpt",
-      prefix: "redshift style ",
-      version: .v2, defaultScale: 12,
-      textEncoder: "redshift_768_v_open_clip_vit_h14_f16.ckpt", deprecated: true, objective: .v),
-    Specification(
-      name: "Dungeons and Diffusion (30000)", file: "dnd_30000_f16.ckpt", prefix: "", version: .v1,
-      textEncoder: "dnd_30000_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Tron Legacy", file: "trnlgcy_f16.ckpt", prefix: "trnlgcy style ", version: .v1,
-      textEncoder: "trnlgcy_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Openjourney", file: "mdjrny_v4_f16.ckpt", prefix: "mdjrny-v4 style ", version: .v1,
-      textEncoder: "mdjrny_v4_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Anime (Anything v3)", file: "anything_v3_f16.ckpt", prefix: "", version: .v1,
-      textEncoder: "anything_v3_clip_vit_l14_f16.ckpt", autoencoder: "anything_v3_vae_f16.ckpt",
-      deprecated: true),
-    Specification(
-      name: "Classic Animation (v1)", file: "classicanim_v1_f16.ckpt",
-      prefix: "classic disney style ", version: .v1,
-      textEncoder: "classicanim_v1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Modern Disney (v1)", file: "modi_v1_f16.ckpt", prefix: "modern disney style ",
-      version: .v1,
-      textEncoder: "modi_v1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Arcane (v3)", file: "arcane_v3_f16.ckpt", prefix: "arcane style ", version: .v1,
-      textEncoder: "arcane_v3_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Hassanblend (v1.4)", file: "hassanblend_v1.4_f16.ckpt", prefix: "", version: .v1,
-      deprecated: true),
-    Specification(
-      name: "Hassanblend (v1.5.1.2)", file: "hassanblend_v1.5.1.2_f16.ckpt", prefix: "",
-      version: .v1, textEncoder: "hassanblend_v1.5.1.2_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Van Gogh Style (Lvngvncnt v2)", file: "lvngvncnt_v2_f16.ckpt", prefix: "lvngvncnt ",
-      version: .v1, textEncoder: "lvngvncnt_v2_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Spider-Verse (v1)", file: "spiderverse_v1_f16.ckpt", prefix: "spiderverse style ",
-      version: .v1, textEncoder: "spiderverse_v1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Elden Ring (v3)", file: "eldenring_v3_f16.ckpt", prefix: "elden ring style ",
-      version: .v1, textEncoder: "eldenring_v3_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Paper Cut (v1)", file: "papercut_v1_f16.ckpt", prefix: "papercut ",
-      version: .v1, textEncoder: "papercut_v1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "VoxelArt (v1)", file: "voxelart_v1_f16.ckpt", prefix: "voxelart ",
-      version: .v1, textEncoder: "voxelart_v1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Balloon Art (v1)", file: "balloonart_v1_f16.ckpt", prefix: "balloonart ",
-      version: .v1, textEncoder: "balloonart_v1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "F222", file: "f222_f16.ckpt", prefix: "", version: .v1, deprecated: true),
-    Specification(
-      name: "Super Mario Nation (v2)", file: "supermarionation_v2_f16.ckpt",
-      prefix: "supermarionation ", version: .v1,
-      textEncoder: "supermarionation_v2_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Inkpunk (v2)", file: "inkpunk_v2_f16.ckpt", prefix: "nvinkpunk ", version: .v1,
-      textEncoder: "inkpunk_v2_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "SamDoesArt (v3)", file: "samdoesart_v3_f16.ckpt", prefix: "samdoesart ", version: .v1,
-      textEncoder: "samdoesart_v3_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Ghibli (v1)", file: "ghibli_v1_f16.ckpt", prefix: "ghibli style ", version: .v1,
-      textEncoder: "ghibli_v1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Analog (v1)", file: "analog_v1_f16.ckpt", prefix: "analog style ", version: .v1,
-      textEncoder: "analog_v1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "DnD Classes and Species", file: "dnd_classes_and_species_f16.ckpt", prefix: "",
-      version: .v1,
-      textEncoder: "dnd_classes_and_species_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "AloeVera's SimpMaker 3K1", file: "aloeveras_simpmaker_3k1_f16.ckpt", prefix: "",
-      version: .v1, deprecated: true),
-    Specification(
-      name: "H&A's 3DKX 1.0b", file: "hna_3dkx_1.0b_f16.ckpt", prefix: "a 3d render / cartoon of ",
-      version: .v1, textEncoder: "hna_3dkx_1.0b_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "H&A's 3DKX 1.1", file: "hna_3dkx_1.1_f16.ckpt", prefix: "a 3d render / cartoon of ",
-      version: .v1, textEncoder: "hna_3dkx_1.1_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "seek.art MEGA (v1)", file: "seek_art_mega_v1_f16.ckpt", prefix: "",
-      version: .v1, defaultScale: 10, textEncoder: "seek_art_mega_v1_clip_vit_l14_f16.ckpt",
-      deprecated: true),
-    Specification(
-      name: "Deliberate v2.0 (8-bit)", file: "deliberate_v2_q6p_q8p.ckpt", prefix: "",
-      version: .v1, textEncoder: "deliberate_v2_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "Disney Pixar Cartoon Type B (8-bit)", file: "disney_pixar_cartoon_type_b_q6p_q8p.ckpt",
-      prefix: "", version: .v1, textEncoder: "disney_pixar_cartoon_type_b_clip_vit_l14_f16.ckpt",
-      deprecated: true),
-    Specification(
-      name: "Realistic Vision v3.0 (8-bit)", file: "realistic_vision_v3.0_q6p_q8p.ckpt", prefix: "",
-      version: .v1, textEncoder: "realistic_vision_v3.0_clip_vit_l14_f16.ckpt", deprecated: true),
-    Specification(
-      name: "DreamShaper v6.31 (8-bit)", file: "dreamshaper_v6.31_q6p_q8p.ckpt", prefix: "",
-      version: .v1, textEncoder: "dreamshaper_v6.31_clip_vit_l14_f16.ckpt", deprecated: true),
+      version: .v1, defaultScale: 8, modifier: .editing, deprecated: true),
   ]
 
   private static let builtinModelsAndAvailableSpecifications: (Set<String>, [Specification]) = {
@@ -836,13 +615,6 @@ public struct ModelZoo: DownloadZoo {
       }
     }
     return nil
-  }
-
-  private static func filePathForDefaultModelDownloaded(_ name: String) -> String {
-    let urls = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-    let modelZooUrl = urls.first!.appendingPathComponent("model_zoo")
-    try? FileManager.default.createDirectory(at: modelZooUrl, withIntermediateDirectories: true)
-    return modelZooUrl.appendingPathComponent(name).path
   }
 
   private static func filePathForOtherModelDownloaded(_ name: String) -> String {
@@ -1004,12 +776,6 @@ public struct ModelZoo: DownloadZoo {
     }
     let otherModelPath = filePathForOtherModelDownloaded(name)
     if fileManager.fileExists(atPath: otherModelPath) {
-      return true
-    }
-    // Move the file to the document directory so people can manage it themselves.
-    let defaultModelPath = filePathForDefaultModelDownloaded(name)
-    if fileManager.fileExists(atPath: defaultModelPath) {
-      try? fileManager.moveItem(atPath: defaultModelPath, toPath: otherModelPath)
       return true
     }
     return false
