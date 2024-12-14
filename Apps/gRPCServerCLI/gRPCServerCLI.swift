@@ -125,7 +125,7 @@ struct gRPCServerCLI: ParsableCommand {
   @Option(name: .shortAndLong, help: "The GPU to use for image generation.")
   var gpu: Int = 0
 
-  @Option(name: .shortAndLong, help: "add datadog api key for logging.")
+  @Option(name: .shortAndLong, help: "Use Datadog as the logging backend.")
   var datadogAPIKey: String = ""
 
   @Flag(help: "Disable TLS for the connection.")
@@ -158,12 +158,12 @@ struct gRPCServerCLI: ParsableCommand {
       throw gRPCServerCLIrror.invalidModelPath
     }
 
-    if datadogAPIKey.count > 0 {
-      let gpu = self.gpu
-      let datadogAPIKey = self.datadogAPIKey
+    if !datadogAPIKey.isEmpty {
+      let gpu = gpu
+      let datadogAPIKey = datadogAPIKey
       LoggingSystem.bootstrap {
         var handler = DataDogLogHandler(
-          label: $0, key: datadogAPIKey, hostname: "drawthings ai GPU \( gpu)", region: .US5)
+          label: $0, key: datadogAPIKey, hostname: "GPU \(gpu)", region: .US5)
         handler.metadata = ["gpu": "\(gpu)"]
         return handler
       }
