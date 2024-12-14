@@ -352,6 +352,14 @@ new_git_repository(
     shallow_since = "1686982714 -0400",
 )
 
+new_git_repository(
+    name = "swift-log-datadog",
+    build_file = "swift-log-datadog.BUILD",
+    commit = "e47aa092908764bdd625bb18d72e4db5bf9d7c4e",
+    remote = "https://github.com/jagreenwood/swift-log-datadog",
+    shallow_since = "1686982714 -0400",
+)
+
 load("@s4nnc//:deps.bzl", "s4nnc_extra_deps")
 
 s4nnc_extra_deps()

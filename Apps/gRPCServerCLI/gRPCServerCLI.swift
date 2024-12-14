@@ -1,5 +1,6 @@
 import ArgumentParser
 import BinaryResources
+import DataDogLog
 import DataModels
 import Dflat
 import Diffusion
@@ -124,6 +125,9 @@ struct gRPCServerCLI: ParsableCommand {
   @Option(name: .shortAndLong, help: "The GPU to use for image generation.")
   var gpu: Int = 0
 
+  @Option(name: .shortAndLong, help: "add datadog api key for logging.")
+  var datadogAPIKey: String = ""
+
   @Flag(help: "Disable TLS for the connection.")
   var noTLS = false
 
@@ -152,6 +156,17 @@ struct gRPCServerCLI: ParsableCommand {
     if exists && isDirectory.boolValue {
     } else {
       throw gRPCServerCLIrror.invalidModelPath
+    }
+
+    if datadogAPIKey.count > 0 {
+      let gpu = self.gpu
+      let datadogAPIKey = self.datadogAPIKey
+      LoggingSystem.bootstrap {
+        var handler = DataDogLogHandler(
+          label: $0, key: datadogAPIKey, hostname: "drawthings ai GPU \( gpu)", region: .US5)
+        handler.metadata = ["gpu": "\(gpu)"]
+        return handler
+      }
     }
 
     ModelZoo.externalUrl = URL(fileURLWithPath: modelsDirectory)
