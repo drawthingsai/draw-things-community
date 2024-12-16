@@ -18,12 +18,6 @@ import NNC
 import SQLiteDflat
 import Utils
 
-#if os(Linux)
-  import Glibc
-#else
-  import Darwin
-#endif
-
 private func createTemporaryDirectory() -> String {
   let fileManager = FileManager.default
   let tempDirURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
@@ -83,90 +77,84 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
       return nil
     }
   }
-#endif
 
-class ProcessSupervisor {
-  private let maxRestarts: Int
-  private let restartDelay: TimeInterval
-  private var restartCount: Int = 0
-  private let command: String
-  private let arguments: [String]
-  private var isRunning: Bool = true
-  private var currentProcess: Process?
-
-  // Static reference to current process for signal handlers
-  private static var currentProcessRef: Process?
-
-  init(command: String, arguments: [String], maxRestarts: Int = 5, restartDelay: TimeInterval = 1.0)
-  {
-    self.command = command
-    self.arguments = arguments
-    self.maxRestarts = maxRestarts
-    self.restartDelay = restartDelay
-
-    setupSignalHandlers()
+  func checkWIFEXITED(_ status: Int32) -> Bool {
+    return (status & 0x7f) == 0
   }
 
-  private func setupSignalHandlers() {
-    signal(SIGINT) { _ in
-      print("\nReceived SIGINT (Ctrl+C), shutting down gracefully...")
-      ProcessSupervisor.terminateCurrentProcess()
+  func getWEXITSTATUS(_ status: Int32) -> Int32 {
+    return (status >> 8) & 0xff
+  }
+
+  func checkWIFSIGNALED(_ status: Int32) -> Bool {
+    return ((status & 0x7f) + 1) >> 1 > 0
+  }
+
+  func getWTERMSIG(_ status: Int32) -> Int32 {
+    return status & 0x7f
+  }
+
+  class ForkSupervisor {
+    private let maxRestarts: Int
+    private let restartDelay: Double
+    private var restartCount: Int = 0
+
+    init(maxRestarts: Int = 5, restartDelay: Double = 1.0) {
+      self.maxRestarts = maxRestarts
+      self.restartDelay = restartDelay
+      setupSignalHandlers()
     }
-  }
 
-  private static func terminateCurrentProcess() {
-    if let process = currentProcessRef {
-      process.terminate()
-      process.waitUntilExit()
-    }
-    exit(0)
-  }
-
-  private func sleep(_ seconds: TimeInterval) {
-    #if os(Linux)
-      usleep(UInt32(seconds * 1_000_000))
-    #else
-      Thread.sleep(forTimeInterval: seconds)
-    #endif
-  }
-
-  func run() {
-    while restartCount < maxRestarts && isRunning {
-
-      let process = Process()
-      process.executableURL = URL(fileURLWithPath: command)
-      process.arguments = arguments
-      ProcessSupervisor.currentProcessRef = process
-      do {
-        try process.run()
-        process.waitUntilExit()
-
-        let status = process.terminationStatus
-        print("Process terminated with status: \(status)")
-        if status != 0 {
-          handleProcessFailure()
-        } else {
-          // Clean exit
-          break
-        }
-      } catch {
-        print("process failed by error: \(error)")
-        handleProcessFailure()
+    private func setupSignalHandlers() {
+      signal(SIGINT) { _ in
+        print("\nReceived SIGINT (Ctrl+C), shutting down gracefully...")
+        exit(0)
       }
-      ProcessSupervisor.currentProcessRef = nil
+    }
+
+    func supervise(childWork: () -> Void) {
+      while restartCount < maxRestarts {
+        let pid = fork()
+
+        if pid == 0 {
+          // Child process
+          childWork()
+        } else if pid > 0 {
+          // Parent process
+          var status: Int32 = 0
+          waitpid(pid, &status, 0)
+
+          if checkWIFEXITED(status) {
+            let exitStatus = getWEXITSTATUS(status)
+            if exitStatus == 0 {
+              print("Child process exited normally")
+              exit(0)
+            }
+            print("Child process exited with status: \(exitStatus)")
+          } else if checkWIFSIGNALED(status) {
+            print("Child process terminated by signal: \(getWTERMSIG(status))")
+          }
+
+          restartCount += 1
+          if restartCount < maxRestarts {
+            print(
+              "Restarting in \(restartDelay) seconds... (Attempt \(restartCount)/\(maxRestarts))")
+            sleep(UInt32(restartDelay))
+          } else {
+            print("Max restart attempts reached. Giving up.")
+            exit(1)
+          }
+        } else {
+          // Fork failed
+          print("Fork failed")
+          exit(1)
+        }
+      }
+      exit(1)
     }
   }
 
-  private func handleProcessFailure() {
-    restartCount += 1
-    if restartCount < maxRestarts {
-      print("Restarting in \(restartDelay) seconds... (Attempt \(restartCount)/\(maxRestarts))")
-      sleep(restartDelay)
-    } else {
-      print("Max restart attempts reached. Giving up.")
-    }
-  }
-}
+#endif
 
 enum gRPCServerCLIrror: Error {
   case invalidModelPath
@@ -232,37 +220,28 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Debug flag for the verbose model inference logging.")
   var debug = false
 
-  @Option(name: .long, help: "Enable supervisor mode with specified number of max restarts.")
-  var maxRestarts: Int?
+  #if os(Linux)
+    @Option(name: .long, help: "Enable supervisor mode with specified number of max restarts.")
+    var maxRestarts: Int?
 
-  @Option(name: .long, help: "Delay between restarts in seconds")
-  var restartDelay: Double = 3.0
+    @Option(name: .long, help: "Delay between restarts in seconds")
+    var restartDelay: Double = 3.0
+  #endif
 
   mutating func run() throws {
-    if let maxRestarts = maxRestarts {
-      // Get the executable path in a platform-independent way
-      let executable: String
-      #if os(Linux)
-        executable = CommandLine.arguments[0]
-      #else
-        executable = ProcessInfo.processInfo.arguments[0]
-      #endif
-
-      // Remove supervisor-specific arguments
-      let supervisedArgs = CommandLine.arguments.dropFirst().filter {
-        !$0.contains("--max-restarts") && !$0.contains("--restart-delay")
+    #if os(Linux)
+      if let maxRestarts = maxRestarts {
+        // Run in supervised mode
+        let supervisor = ForkSupervisor(maxRestarts: maxRestarts, restartDelay: restartDelay)
+        supervisor.supervise {
+          try? startGRPCServer()
+        }
+      } else {
+        try startGRPCServer()
       }
-
-      let supervisor = ProcessSupervisor(
-        command: executable,
-        arguments: Array(supervisedArgs),
-        maxRestarts: maxRestarts,
-        restartDelay: restartDelay
-      )
-      supervisor.run()
-    } else {
+    #else
       try startGRPCServer()
-    }
+    #endif
   }
 
   func startGRPCServer() throws {
