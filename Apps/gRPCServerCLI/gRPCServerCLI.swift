@@ -95,27 +95,11 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
   }
 
   class ForkSupervisor {
-    private let maxRestarts: Int
-    private let restartDelay: Double
     private var restartCount: Int = 0
 
-    init(maxRestarts: Int = 5, restartDelay: Double = 1.0) {
-      self.maxRestarts = maxRestarts
-      self.restartDelay = restartDelay
-      setupSignalHandlers()
-    }
-
-    private func setupSignalHandlers() {
-      signal(SIGINT) { _ in
-        print("\nReceived SIGINT (Ctrl+C), shutting down gracefully...")
-        exit(0)
-      }
-    }
-
     func supervise(childWork: () -> Void) {
-      while restartCount < maxRestarts {
+      while true {
         let pid = fork()
-
         if pid == 0 {
           // Child process
           childWork()
@@ -134,16 +118,8 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
           } else if checkWIFSIGNALED(status) {
             print("Child process terminated by signal: \(getWTERMSIG(status))")
           }
-
           restartCount += 1
-          if restartCount < maxRestarts {
-            print(
-              "Restarting in \(restartDelay) seconds... (Attempt \(restartCount)/\(maxRestarts))")
-            sleep(UInt32(restartDelay))
-          } else {
-            print("Max restart attempts reached. Giving up.")
-            exit(1)
-          }
+          print("Restarting...  (Attempt \(restartCount) restarting")
         } else {
           // Fork failed
           print("Fork failed")
@@ -153,7 +129,6 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
       exit(1)
     }
   }
-
 #endif
 
 enum gRPCServerCLIrror: Error {
@@ -221,18 +196,16 @@ struct gRPCServerCLI: ParsableCommand {
   var debug = false
 
   #if os(Linux)
-    @Option(name: .long, help: "Enable supervisor mode with specified number of max restarts.")
-    var maxRestarts: Int?
+    @Option(name: .long, help: "Enable supervisor mode (auto restart from crash).")
+    var supervised = true
 
-    @Option(name: .long, help: "Delay between restarts in seconds")
-    var restartDelay: Double = 3.0
   #endif
 
   mutating func run() throws {
     #if os(Linux)
-      if let maxRestarts = maxRestarts {
+      if supervised {
         // Run in supervised mode
-        let supervisor = ForkSupervisor(maxRestarts: maxRestarts, restartDelay: restartDelay)
+        let supervisor = ForkSupervisor()
         supervisor.supervise {
           try? startGRPCServer()
         }
