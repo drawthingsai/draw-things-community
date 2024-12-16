@@ -58,6 +58,7 @@ swift_library(
         "//Libraries/Utils",
         "@SwiftArgumentParser//:ArgumentParser",
         "@grpc-swift//:GRPC",
+        "@swift-log-datadog//:DataDogLog",
     ],
 )
 
