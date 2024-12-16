@@ -515,6 +515,9 @@ extension ScriptExecutor {
         plainText(value) {
           return {"type": "plainText", "value": value};
         },
+        markdown(value) {
+          return {"type": "markdown", "value": value};
+        },
         image(src, height, selectable) {
           return {"type": "image", "src": src, "selectable": selectable, "height": height};
         }
