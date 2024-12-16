@@ -29,12 +29,13 @@ public struct LoRAZoo: DownloadZoo {
     public var alternativeDecoder: String? = nil
     public var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
     public var weight: WeightRange? = nil
+    public var note: String? = nil
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       isConsistencyModel: Bool? = nil, isLoHa: Bool? = nil, modifier: SamplerModifier? = nil,
       deprecated: Bool? = nil, alternativeDecoder: String? = nil,
       alternativeDecoderVersion: AlternativeDecoderVersion? = nil,
-      weight: WeightRange? = nil
+      weight: WeightRange? = nil, note: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -47,6 +48,7 @@ public struct LoRAZoo: DownloadZoo {
       self.alternativeDecoder = alternativeDecoder
       self.alternativeDecoderVersion = alternativeDecoderVersion
       self.weight = weight
+      self.note = note
     }
   }
 
@@ -348,6 +350,11 @@ public struct LoRAZoo: DownloadZoo {
     let isConsistencyModel = specification.isConsistencyModel ?? false
     let isInpainting = specification.modifier == .inpainting
     return specification.weight ?? .init(value: isConsistencyModel || isInpainting ? 1.0 : nil)
+  }
+
+  public static func noteForModel(_ name: String) -> String {
+    guard let specification = specificationForModel(name) else { return "" }
+    return specification.note ?? ""
   }
 
   public static func alternativeDecoderForModel(_ name: String) -> (

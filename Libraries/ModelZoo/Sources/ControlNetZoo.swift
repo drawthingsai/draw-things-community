@@ -16,12 +16,13 @@ public struct ControlNetZoo: DownloadZoo {
     public var imageEncoderVersion: ImageEncoderVersion? = nil
     public var ipAdapterConfig: IPAdapterConfig? = nil
     public var autoencoder: String? = nil
+    public var note: String? = nil
     public init(
       name: String, file: String, modifier: ControlHintType?, version: ModelVersion,
       type: ControlType, globalAveragePooling: Bool = false, imageEncoder: String? = nil,
       preprocessor: String? = nil, transformerBlocks: [Int]? = nil, deprecated: Bool? = nil,
       imageEncoderVersion: ImageEncoderVersion? = nil, ipAdapterConfig: IPAdapterConfig? = nil,
-      autoencoder: String? = nil
+      autoencoder: String? = nil, note: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -36,6 +37,7 @@ public struct ControlNetZoo: DownloadZoo {
       self.imageEncoderVersion = imageEncoderVersion
       self.ipAdapterConfig = ipAdapterConfig
       self.autoencoder = autoencoder
+      self.note = note
     }
   }
 
@@ -430,6 +432,11 @@ public struct ControlNetZoo: DownloadZoo {
   public static func transformerBlocksForModel(_ name: String) -> [Int] {
     guard let specification = specificationForModel(name) else { return [] }
     return specification.transformerBlocks ?? []
+  }
+
+  public static func noteForModel(_ name: String) -> String {
+    guard let specification = specificationForModel(name) else { return "" }
+    return specification.note ?? ""
   }
 
   public static func fileSHA256ForModelDownloaded(_ name: String) -> String? {
