@@ -486,8 +486,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             }
           }
           original = original.map {
-            Functional.add(
-              left: $0, right: (w1A * w1B) .* (w2A * w2B), leftScalar: 1, rightScalar: weight)
+            addWeight(original: $0, diff: (w1A * w1B) .* (w2A * w2B), weight: weight)
           }
         } else {
           guard
@@ -505,8 +504,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             }
             original = original.map {
               let diff = graph.variable(Tensor<FloatType>(from: diff).toGPU(0))
-              return Functional.add(
-                left: $0, right: diff, leftScalar: 1, rightScalar: weight)
+              return addWeight(original: $0, diff: diff, weight: weight)
             }
             continue
           }
@@ -522,8 +520,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
               }
             }
             original = original.map {
-              Functional.add(
-                left: $0, right: up * down, leftScalar: 1, rightScalar: weight)
+              addWeight(original: $0, diff: up * down, weight: weight)
             }
             continue
           }
@@ -542,9 +539,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             }
           }
           original = original.map {
-            Functional.add(
-              left: $0, right: (up * midDown).reshaped(format: .NCHW, shape: $0.shape),
-              leftScalar: 1, rightScalar: weight)
+            addWeight(original: $0, diff: up * midDown, weight: weight)
           }
         }
       }
