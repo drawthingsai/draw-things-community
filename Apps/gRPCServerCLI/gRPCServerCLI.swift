@@ -18,6 +18,12 @@ import NNC
 import SQLiteDflat
 import Utils
 
+#if os(Linux)
+  import Glibc
+#else
+  import Darwin
+#endif
+
 private func createTemporaryDirectory() -> String {
   let fileManager = FileManager.default
   let tempDirURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
@@ -78,6 +84,89 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
     }
   }
 #endif
+
+class ProcessSupervisor {
+  private let maxRestarts: Int
+  private let restartDelay: TimeInterval
+  private var restartCount: Int = 0
+  private let command: String
+  private let arguments: [String]
+  private var isRunning: Bool = true
+  private var currentProcess: Process?
+
+  // Static reference to current process for signal handlers
+  private static var currentProcessRef: Process?
+
+  init(command: String, arguments: [String], maxRestarts: Int = 5, restartDelay: TimeInterval = 1.0)
+  {
+    self.command = command
+    self.arguments = arguments
+    self.maxRestarts = maxRestarts
+    self.restartDelay = restartDelay
+
+    setupSignalHandlers()
+  }
+
+  private func setupSignalHandlers() {
+    signal(SIGINT) { _ in
+      print("\nReceived SIGINT (Ctrl+C), shutting down gracefully...")
+      ProcessSupervisor.terminateCurrentProcess()
+    }
+  }
+
+  private static func terminateCurrentProcess() {
+    if let process = currentProcessRef {
+      process.terminate()
+      process.waitUntilExit()
+    }
+    exit(0)
+  }
+
+  private func sleep(_ seconds: TimeInterval) {
+    #if os(Linux)
+      usleep(UInt32(seconds * 1_000_000))
+    #else
+      Thread.sleep(forTimeInterval: seconds)
+    #endif
+  }
+
+  func run() {
+    while restartCount < maxRestarts && isRunning {
+
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: command)
+      process.arguments = arguments
+      ProcessSupervisor.currentProcessRef = process
+      do {
+        try process.run()
+        process.waitUntilExit()
+
+        let status = process.terminationStatus
+        print("Process terminated with status: \(status)")
+        if status != 0 {
+          handleProcessFailure()
+        } else {
+          // Clean exit
+          break
+        }
+      } catch {
+        print("process failed by error: \(error)")
+        handleProcessFailure()
+      }
+      ProcessSupervisor.currentProcessRef = nil
+    }
+  }
+
+  private func handleProcessFailure() {
+    restartCount += 1
+    if restartCount < maxRestarts {
+      print("Restarting in \(restartDelay) seconds... (Attempt \(restartCount)/\(maxRestarts))")
+      sleep(restartDelay)
+    } else {
+      print("Max restart attempts reached. Giving up.")
+    }
+  }
+}
 
 enum gRPCServerCLIrror: Error {
   case invalidModelPath
@@ -143,7 +232,40 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Debug flag for the verbose model inference logging.")
   var debug = false
 
+  @Option(name: .long, help: "Enable supervisor mode with specified number of max restarts.")
+  var maxRestarts: Int?
+
+  @Option(name: .long, help: "Delay between restarts in seconds")
+  var restartDelay: Double = 3.0
+
   mutating func run() throws {
+    if let maxRestarts = maxRestarts {
+      // Get the executable path in a platform-independent way
+      let executable: String
+      #if os(Linux)
+        executable = CommandLine.arguments[0]
+      #else
+        executable = ProcessInfo.processInfo.arguments[0]
+      #endif
+
+      // Remove supervisor-specific arguments
+      let supervisedArgs = CommandLine.arguments.dropFirst().filter {
+        !$0.contains("--max-restarts") && !$0.contains("--restart-delay")
+      }
+
+      let supervisor = ProcessSupervisor(
+        command: executable,
+        arguments: Array(supervisedArgs),
+        maxRestarts: maxRestarts,
+        restartDelay: restartDelay
+      )
+      supervisor.run()
+    } else {
+      try startGRPCServer()
+    }
+  }
+
+  func startGRPCServer() throws {
     if debug {
       DynamicGraph.logLevel = .verbose
     }
