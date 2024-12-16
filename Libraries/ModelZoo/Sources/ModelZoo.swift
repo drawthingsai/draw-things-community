@@ -86,6 +86,7 @@ public struct ModelZoo: DownloadZoo {
     public var paddedTextEncodingLength: Int?
     public var hiresFixScale: UInt16?
     public var mmdit: MMDiT?
+    public var note: String?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -98,7 +99,8 @@ public struct ModelZoo: DownloadZoo {
       noiseDiscretization: NoiseDiscretization? = nil, latentsMean: [Float]? = nil,
       latentsStd: [Float]? = nil, latentsScalingFactor: Float? = nil, stageModels: [String]? = nil,
       textEncoderVersion: TextEncoderVersion? = nil, guidanceEmbed: Bool? = nil,
-      paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil
+      paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil,
+      note: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -129,6 +131,7 @@ public struct ModelZoo: DownloadZoo {
       self.paddedTextEncodingLength = paddedTextEncodingLength
       self.hiresFixScale = hiresFixScale
       self.mmdit = mmdit
+      self.note = note
     }
     fileprivate var predictV: Bool? = nil
   }
@@ -828,6 +831,11 @@ public struct ModelZoo: DownloadZoo {
   public static func versionForModel(_ name: String) -> ModelVersion {
     guard let specification = specificationForModel(name) else { return .v1 }
     return specification.version
+  }
+
+  public static func noteForModel(_ name: String) -> String {
+    guard let specification = specificationForModel(name) else { return "" }
+    return specification.note ?? ""
   }
 
   public static func autoencoderForModel(_ name: String) -> String? {
