@@ -495,7 +495,7 @@ public struct ModelZoo: DownloadZoo {
   ]
 
   private static let builtinModelsAndAvailableSpecifications: (Set<String>, [Specification]) = {
-    let jsonFile = filePathForOtherModelDownloaded("custom.json")
+    let jsonFile = filePathForModelDownloaded("custom.json")
     guard let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) else {
       return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
     }
