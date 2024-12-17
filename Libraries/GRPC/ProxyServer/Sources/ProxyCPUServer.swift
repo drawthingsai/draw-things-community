@@ -357,12 +357,24 @@ class ImageGenerationProxyService: ImageGenerationServiceProvider {
     self.controlConfigs = controlConfigs
   }
 
+  func parseBearer(from string: String) -> String? {
+    let components = string.trimmingCharacters(in: .whitespaces).split(separator: " ")
+    guard components.count == 2,
+      components[0].lowercased() == "bearer"
+    else {
+      return nil
+    }
+    return String(components[1])
+  }
+
   func generateImage(
     request: ImageGenerationRequest,
     context: StreamingResponseCallContext<ImageGenerationResponse>
   ) -> EventLoopFuture<GRPCStatus> {
     let headers = context.headers
-    guard let bearToken = headers.first(name: "bear-token") else {
+    guard let authorization = headers.first(name: "authorization"),
+      let bearToken = parseBearer(from: authorization)
+    else {
       return context.eventLoop.makeFailedFuture(
         GRPCStatus(code: .permissionDenied, message: "Service bear-token is empty")
       )

@@ -97,7 +97,6 @@ swift_library(
     module_name = "GRPCControlPanelModels",
     visibility = ["//visibility:public"],
     deps = [
-        "//Libraries/DataModels",
         "@grpc-swift//:GRPC",
     ],
 )
