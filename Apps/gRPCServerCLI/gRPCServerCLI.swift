@@ -78,55 +78,50 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
     }
   }
 
-  func checkWIFEXITED(_ status: Int32) -> Bool {
+  private func checkWIFEXITED(_ status: Int32) -> Bool {
     return (status & 0x7f) == 0
   }
 
-  func getWEXITSTATUS(_ status: Int32) -> Int32 {
+  private func getWEXITSTATUS(_ status: Int32) -> Int32 {
     return (status >> 8) & 0xff
   }
 
-  func checkWIFSIGNALED(_ status: Int32) -> Bool {
+  private func checkWIFSIGNALED(_ status: Int32) -> Bool {
     return ((status & 0x7f) + 1) >> 1 > 0
   }
 
-  func getWTERMSIG(_ status: Int32) -> Int32 {
+  private func getWTERMSIG(_ status: Int32) -> Int32 {
     return status & 0x7f
   }
 
-  class ForkSupervisor {
-    private var restartCount: Int = 0
-
-    func supervise(childWork: () -> Void) {
-      while true {
-        let pid = fork()
-        if pid == 0 {
-          // Child process
-          childWork()
-        } else if pid > 0 {
-          // Parent process
-          var status: Int32 = 0
-          waitpid(pid, &status, 0)
-
-          if checkWIFEXITED(status) {
-            let exitStatus = getWEXITSTATUS(status)
-            if exitStatus == 0 {
-              print("Child process exited normally")
-              exit(0)
-            }
-            print("Child process exited with status: \(exitStatus)")
-          } else if checkWIFSIGNALED(status) {
-            print("Child process terminated by signal: \(getWTERMSIG(status))")
-          }
-          restartCount += 1
-          print("Restarting...  (Attempt \(restartCount) restarting")
-        } else {
-          // Fork failed
-          print("Fork failed")
-          exit(1)
-        }
+  private func supervise(childWork: () -> Void) {
+    var restartCount = 0
+    while true {
+      let pid = fork()
+      guard pid != 0 else {
+        childWork()
+        return
       }
-      exit(1)
+      guard pid > 0 else {
+        print("Fork failed")
+        return
+      }
+      // Parent process
+      var status: Int32 = 0
+      waitpid(pid, &status, 0)
+
+      if checkWIFEXITED(status) {
+        let exitStatus = getWEXITSTATUS(status)
+        if exitStatus == 0 {
+          print("Child process exited normally")
+          return
+        }
+        print("Child process exited with status: \(exitStatus)")
+      } else if checkWIFSIGNALED(status) {
+        print("Child process terminated by signal: \(getWTERMSIG(status))")
+      }
+      restartCount += 1
+      print("Restarting...  (Attempt \(restartCount) restarting")
     }
   }
 #endif
@@ -196,8 +191,8 @@ struct gRPCServerCLI: ParsableCommand {
   var debug = false
 
   #if os(Linux)
-    @Option(name: .long, help: "Enable supervisor mode (auto restart from crash).")
-    var supervised = true
+    @Flag(help: "Supervise the server so it restarts upon a internal crash.")
+    var supervised = false
 
   #endif
 
@@ -205,8 +200,7 @@ struct gRPCServerCLI: ParsableCommand {
     #if os(Linux)
       if supervised {
         // Run in supervised mode
-        let supervisor = ForkSupervisor()
-        supervisor.supervise {
+        supervise {
           try? startGRPCServer()
         }
       } else {
