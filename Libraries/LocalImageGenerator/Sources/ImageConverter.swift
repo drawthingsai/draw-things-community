@@ -798,7 +798,8 @@ public enum ImageConverter {
     public static func imageData(
       from tensor: Tensor<FloatType>, binaryMask: Tensor<UInt8>?,
       configuration: GenerationConfiguration,
-      savedPositivePrompt: String, savedNegativePrompt: String
+      savedPositivePrompt: String, savedNegativePrompt: String,
+      profile: GenerationProfile? = nil
     ) -> Data? {
       return autoreleasepool { () -> Data? in
         guard let cgImage = image(from: tensor, scaleFactor: 1, binaryMask: binaryMask).cgImage
@@ -1064,6 +1065,15 @@ public enum ImageConverter {
                 "guidance_start": control.guidanceStart, "guidance_end": control.guidanceEnd,
               ] as [String: Any]
             ]
+          }
+        }
+        if let profile = profile {
+          let jsonEncoder = JSONEncoder()
+          jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+          if let data = try? jsonEncoder.encode(profile),
+            let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+          {
+            json["profile"] = dict
           }
         }
         var info = [String: Any]()

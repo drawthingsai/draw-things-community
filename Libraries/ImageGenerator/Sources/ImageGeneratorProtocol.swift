@@ -31,3 +31,28 @@ public protocol ImageGenerator {
       -> Bool
   ) throws -> ([Tensor<FloatType>]?, Int)
 }
+
+extension ImageGeneratorSignpost {
+  public var description: String {
+    switch self {
+    case .textEncoded:
+      return "text_encoded"
+    case .imageEncoded:
+      return "image_encoded"
+    case .sampling(_):
+      return "sampling"
+    case .imageDecoded:
+      return "image_decoded"
+    case .secondPassImageEncoded:
+      return "second_pass_image_encoded"
+    case .secondPassSampling(_):
+      return "second_pass_sampling"
+    case .secondPassImageDecoded:
+      return "second_pass_image_decoded"
+    case .faceRestored:
+      return "face_restored"
+    case .imageUpscaled:
+      return "image_upscaled"
+    }
+  }
+}
