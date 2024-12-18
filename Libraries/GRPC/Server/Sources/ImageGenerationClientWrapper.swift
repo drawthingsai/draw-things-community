@@ -80,7 +80,10 @@ public final class ImageGenerationClientWrapper {
     var request = EchoRequest()
     request.name = deviceName ?? ""
 
-    let _ = client.echo(request).response.always {
+    let callOptions = CallOptions(
+      messageEncoding: .enabled(.responsesOnly(decompressionLimit: .ratio(100))))
+
+    let _ = client.echo(request, callOptions: callOptions).response.always {
       switch $0 {
       case .success(let result):
         let jsonDecoder = JSONDecoder()
