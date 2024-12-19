@@ -521,6 +521,7 @@ public final class ImageHistoryManager {
       guidanceEmbed: imageHistory.guidanceEmbed,
       resolutionDependentShift: imageHistory.resolutionDependentShift
     )
+    _profileData = imageHistory.profileData
     dataStored = imageData.sorted(by: { $0.index < $1.index }).map {
       let tensorId = $0.tensorId == 0 ? nil : $0.tensorId
       let maskId = $0.maskId == 0 ? nil : $0.maskId
@@ -681,6 +682,13 @@ public final class ImageHistoryManager {
     self.contentOffset = contentOffset
     self.scaleFactorBy120 = scaleFactorBy120
     self.shuffleData = shuffleData
+    let profileData: [UInt8]? = {
+      guard let profile = profile else { return nil }
+      let jsonEncoder = JSONEncoder()
+      jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+      return (try? jsonEncoder.encode(profile)).map { [UInt8]($0) }
+    }()
+    self._profileData = profileData
     let previewId: Int64?
     if let preview = preview {
       var id: Int64 = 0
@@ -803,10 +811,8 @@ public final class ImageHistoryManager {
           let _ = try? transactionContext.submit(thumbnailHistoryHalfNodeChangeRequest)
         }
       }
-      if let profile = profile {
-        let jsonEncoder = JSONEncoder()
-        jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
-        upsertRequest.profileData = (try? jsonEncoder.encode(profile)).map { [UInt8]($0) } ?? []
+      if let profileData = profileData {
+        upsertRequest.profileData = profileData
       }
       transactionContext.try(submit: upsertRequest)
       for item in tensorData {
@@ -1051,20 +1057,18 @@ public final class ImageHistoryManager {
       self.lineage = 0
       dataStored = []
       shuffleData = []
+      _profileData = nil
     }
     project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
     return true
   }
 
+  private var _profileData: [UInt8]?
   public var profileData: GenerationProfile? {
-    guard
-      let historyNode = project.fetch(for: TensorHistoryNode.self).where(
-        TensorHistoryNode.lineage == lineage && TensorHistoryNode.logicalTime == logicalTime
-      ).first
-    else { return nil }
+    guard let profileData = _profileData else { return nil }
     let jsonDecoder = JSONDecoder()
     jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-    return try? jsonDecoder.decode(GenerationProfile.self, from: Data(historyNode.profileData))
+    return try? jsonDecoder.decode(GenerationProfile.self, from: Data(profileData))
   }
 
   public func preview(
