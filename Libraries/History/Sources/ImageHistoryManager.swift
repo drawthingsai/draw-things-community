@@ -550,7 +550,7 @@ public final class ImageHistoryManager {
     imageData: [ImageData], preview: UIImage?, textEdits: Int?,
     textLineage: Int64?, configuration: GenerationConfiguration, isGenerated: Bool,
     contentOffset: (x: Int32, y: Int32), scaleFactorBy120: Int32, scriptSessionId: UInt64?,
-    shuffleData: [ShuffleData]? = nil
+    shuffleData: [ShuffleData]? = nil, profile: GenerationProfile? = nil
   ) {
     dispatchPrecondition(condition: .onQueue(.main))
     // We need to fork this history.
@@ -803,6 +803,11 @@ public final class ImageHistoryManager {
           let _ = try? transactionContext.submit(thumbnailHistoryHalfNodeChangeRequest)
         }
       }
+      if let profile = profile {
+        let jsonEncoder = JSONEncoder()
+        jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+        upsertRequest.profileData = (try? jsonEncoder.encode(profile)).map { [UInt8]($0) } ?? []
+      }
       transactionContext.try(submit: upsertRequest)
       for item in tensorData {
         let upsertRequest = TensorDataChangeRequest.upsertRequest(item)
@@ -1049,6 +1054,17 @@ public final class ImageHistoryManager {
     }
     project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
     return true
+  }
+
+  public var profileData: GenerationProfile? {
+    guard
+      let historyNode = project.fetch(for: TensorHistoryNode.self).where(
+        TensorHistoryNode.lineage == lineage && TensorHistoryNode.logicalTime == logicalTime
+      ).first
+    else { return nil }
+    let jsonDecoder = JSONDecoder()
+    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    return try? jsonDecoder.decode(GenerationProfile.self, from: Data(historyNode.profileData))
   }
 
   public func preview(
