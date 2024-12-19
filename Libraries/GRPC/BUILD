@@ -50,6 +50,7 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":GRPCImageServiceModels",
+        "//Libraries/BinaryResources",
         "//Libraries/DataModels",
         "//Libraries/ImageGenerator",
         "//Libraries/ModelZoo",

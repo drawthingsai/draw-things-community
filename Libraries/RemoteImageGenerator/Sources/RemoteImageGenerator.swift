@@ -63,6 +63,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     var overrideProto = MetadataOverride()
     let jsonEncoder = JSONEncoder()
     jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+    jsonEncoder.outputFormatting = [.sortedKeys]
     overrideProto.models = (try? jsonEncoder.encode(metadataOverride.models)) ?? Data()
     overrideProto.loras = (try? jsonEncoder.encode(metadataOverride.loras)) ?? Data()
     overrideProto.controlNets = (try? jsonEncoder.encode(metadataOverride.controlNets)) ?? Data()

@@ -1,3 +1,4 @@
+import BinaryResources
 import Foundation
 import GRPC
 import GRPCImageServiceModels
@@ -23,10 +24,20 @@ public final class ImageGenerationClientWrapper {
     let eventLoopGroup = PlatformSupport.makeEventLoopGroup(loopCount: 1)
     let transportSecurity: GRPCChannelPool.Configuration.TransportSecurity
     if TLS {
-      guard let rootCA = Bundle.main.path(forResource: "root_ca", ofType: "crt") else {
-        throw ImageGenerationClientWrapper.Error.invalidRootCA
-      }
-      let certificate = try NIOSSLCertificate(file: rootCA, format: .pem)
+      var certificate: NIOSSLCertificate
+      #if os(Linux)
+        let bytes = [UInt8](BinaryResources.root_ca_crt)
+        guard bytes.count > 0 else {
+          throw ImageGenerationClientWrapper.Error.invalidRootCA
+        }
+        certificate = try NIOSSLCertificate(bytes: bytes, format: .pem)
+      #else
+        guard let rootCA = Bundle.main.path(forResource: "root_ca", ofType: "crt") else {
+          throw ImageGenerationClientWrapper.Error.invalidRootCA
+        }
+        certificate = try NIOSSLCertificate(file: rootCA, format: .pem)
+      #endif
+
       transportSecurity = .tls(
         .makeClientConfigurationBackedByNIOSSL(
           trustRoots: .certificates([certificate]), certificateVerification: .noHostnameVerification

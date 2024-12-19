@@ -8,6 +8,7 @@ resource_library(
         "Resources/chatglm3.spiece.model",
         "Resources/merges.txt",
         "Resources/pile_t5.spiece.model",
+        "Resources/root_ca.crt",
         "Resources/server_crt.crt",
         "Resources/server_key.key",
         "Resources/t5.spiece.model",

@@ -28,6 +28,9 @@ public enum BinaryResources {
   public static let server_crt_crt = Data(
     bytesNoCopy: C_Resources.server_crt_crt()!, count: C_Resources.server_crt_crt_size,
     deallocator: .none)
+  public static let root_ca_crt = Data(
+    bytesNoCopy: C_Resources.root_ca_crt()!, count: C_Resources.root_ca_crt_size,
+    deallocator: .none)
   public static let server_key_key = Data(
     bytesNoCopy: C_Resources.server_key_key()!, count: C_Resources.server_key_key_size,
     deallocator: .none)
