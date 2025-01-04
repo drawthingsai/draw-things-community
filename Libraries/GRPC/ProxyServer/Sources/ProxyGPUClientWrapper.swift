@@ -48,19 +48,20 @@ public final class ProxyGPUClientWrapper {
     }
   }
 
-  public func echo() async -> Bool {
+  public func echo(requestFiles: Bool = false) async -> (Bool, [String]) {
     guard let client = client else {
-      return false
+      return (false, [])
     }
 
     var request = EchoRequest()
     let name = deviceName ?? ""
     request.name = "Proxy Server connect \(name)"
+    request.requestFiles = requestFiles
     do {
-      let _ = try await client.echo(request).response.get()
-      return true
+      let result = try await client.echo(request).response.get()
+      return (true, result.files)
     } catch {
-      return false
+      return (false, [])
     }
   }
 

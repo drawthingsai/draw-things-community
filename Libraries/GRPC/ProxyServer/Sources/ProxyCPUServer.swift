@@ -5,6 +5,7 @@ import GRPC
 import GRPCControlPanelModels
 import GRPCImageServiceModels
 import Logging
+import ModelZoo
 import NIO
 import NIOHPACK
 import NIOHTTP2
@@ -277,7 +278,7 @@ class ControlPanelService: ControlPanelServiceProvider {
             host: request.serverConfig.address, port: Int(request.serverConfig.port))
           let result = await client.echo()
           self.logger.info("server: \(gpuServerName). echo \(result)")
-          if let _ = client.client, result {
+          if let _ = client.client, result.0 {
             let worker = Worker(
               name: gpuServerName, client: client,
               primaryPriority: request.serverConfig.isHighPriority ? .high : .low)
@@ -303,6 +304,54 @@ class ControlPanelService: ControlPanelServiceProvider {
           $0.message = "remove GPU \(gpuServerName) from taskCoordinator"
         }
         promise.succeed(response)
+      }
+
+    }
+
+    return promise.futureResult
+  }
+
+  func updateModelList(
+    request: GRPCControlPanelModels.UpdateModelListRequest, context: any GRPC.StatusOnlyCallContext
+  ) -> NIOCore.EventLoopFuture<GRPCControlPanelModels.UpdateModelListResponse> {
+    let promise = context.eventLoop.makePromise(
+      of: GRPCControlPanelModels.UpdateModelListResponse.self)
+    Task {
+      let gpuServerName = "\(request.address):\(request.port)"
+      self.logger.info(
+        "update model list from server: \(gpuServerName)"
+      )
+      let client = ProxyGPUClientWrapper(deviceName: gpuServerName)
+      do {
+        try client.connect(
+          host: request.address, port: Int(request.port))
+        let result = await client.echo(requestFiles: true)
+        self.logger.info("server: \(gpuServerName). echo \(result)")
+        if let _ = client.client, result.0 {
+          let dedupFiles = Array(Set(result.1))
+          let fileList = dedupFiles.joined(separator: "\n")
+          let internalFilePath = ModelZoo.internalFilePathForModelDownloaded("model-list")
+          try? fileList.write(
+            to: URL(fileURLWithPath: internalFilePath),
+            atomically: true,
+            encoding: .utf8)
+          self.logger.info("update model list to file: \(internalFilePath)")
+
+          let response = UpdateModelListResponse.with {
+            $0.message = "update model list: \(dedupFiles.count) models from \(gpuServerName)"
+            $0.files = dedupFiles
+          }
+          promise.succeed(response)
+        } else {
+          try? client.disconnect()
+          promise.fail(
+            ControlPanelError.nioClientFailed(
+              message: "fail to create nio client for \(gpuServerName)"))
+        }
+      } catch (let error) {
+        promise.fail(
+          ControlPanelError.gpuConnectFailed(
+            message: "fail to connect GPU \(gpuServerName) error:\(error)"))
       }
 
     }
@@ -402,6 +451,9 @@ class ImageGenerationProxyService: ImageGenerationServiceProvider {
         logger.info(
           "Proxy Server enqueue image generating request failed, payload.blobSHA:\(payload?.checksum ?? "empty"), request blob:\(checksum) "
         )
+        logger.info(
+          "Proxy Server enqueue image generating request failed, payload:\(payload)"
+        )
         promise.fail(
           GRPCStatus(code: .permissionDenied, message: "Service bear-token signature is failed"))
         return
@@ -444,6 +496,16 @@ class ImageGenerationProxyService: ImageGenerationServiceProvider {
     let response = EchoReply.with {
       logger.info("Proxy Server Received echo from: \(request.name)")
       $0.message = "Hello, \(request.name)!"
+      let internalFilePath = ModelZoo.internalFilePathForModelDownloaded("model-list")
+      var fileList = [String]()
+      if let fileContent = try? String(
+        contentsOf: URL(fileURLWithPath: internalFilePath), encoding: .utf8)
+      {
+        fileList = fileContent.components(separatedBy: .newlines).filter { !$0.isEmpty }
+      } else {
+        logger.error("Proxy Server file list is nil")
+      }
+      $0.files = fileList
     }
     return context.eventLoop.makeSucceededFuture(response)
   }

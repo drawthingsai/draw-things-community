@@ -365,9 +365,9 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   )
     -> NIOCore.EventLoopFuture<GRPCImageServiceModels.EchoReply>
   {
-    let enableModelBrowsing = enableModelBrowsing.load(ordering: .acquiring)
+    let enableModelBrowsing = enableModelBrowsing.load(ordering: .acquiring) || request.requestFiles
     let response = EchoReply.with {
-      logger.info("Received echo from: \(request.name)")
+      logger.info("Received echo from: \(request.name), enableModelBrowsing:\(enableModelBrowsing)")
       $0.message = "HELLO \(request.name)"
       if enableModelBrowsing {
         // Looking for ckpt files.

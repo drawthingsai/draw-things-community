@@ -44,6 +44,11 @@ public protocol ControlPanelServiceClientProtocol: GRPCClient {
     _ request: UpdatePemRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<UpdatePemRequest, UpdatePemResponse>
+
+  func updateModelList(
+    _ request: UpdateModelListRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<UpdateModelListRequest, UpdateModelListResponse>
 }
 
 extension ControlPanelServiceClientProtocol {
@@ -102,6 +107,24 @@ extension ControlPanelServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeUpdatePemInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to UpdateModelList
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to UpdateModelList.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  public func updateModelList(
+    _ request: UpdateModelListRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<UpdateModelListRequest, UpdateModelListResponse> {
+    return self.makeUnaryCall(
+      path: ControlPanelServiceClientMetadata.Methods.updateModelList.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdateModelListInterceptors() ?? []
     )
   }
 }
@@ -182,6 +205,11 @@ public protocol ControlPanelServiceAsyncClientProtocol: GRPCClient {
     _ request: UpdatePemRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<UpdatePemRequest, UpdatePemResponse>
+
+  func makeUpdateModelListCall(
+    _ request: UpdateModelListRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<UpdateModelListRequest, UpdateModelListResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -229,6 +257,18 @@ extension ControlPanelServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeUpdatePemInterceptors() ?? []
     )
   }
+
+  public func makeUpdateModelListCall(
+    _ request: UpdateModelListRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<UpdateModelListRequest, UpdateModelListResponse> {
+    return self.makeAsyncUnaryCall(
+      path: ControlPanelServiceClientMetadata.Methods.updateModelList.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdateModelListInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -268,6 +308,18 @@ extension ControlPanelServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeUpdatePemInterceptors() ?? []
     )
   }
+
+  public func updateModelList(
+    _ request: UpdateModelListRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> UpdateModelListResponse {
+    return try await self.performAsyncUnaryCall(
+      path: ControlPanelServiceClientMetadata.Methods.updateModelList.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdateModelListInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -299,6 +351,11 @@ public protocol ControlPanelServiceClientInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when invoking 'updatePem'.
   func makeUpdatePemInterceptors() -> [ClientInterceptor<UpdatePemRequest, UpdatePemResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'updateModelList'.
+  func makeUpdateModelListInterceptors() -> [ClientInterceptor<
+    UpdateModelListRequest, UpdateModelListResponse
+  >]
 }
 
 public enum ControlPanelServiceClientMetadata {
@@ -309,6 +366,7 @@ public enum ControlPanelServiceClientMetadata {
       ControlPanelServiceClientMetadata.Methods.manageGPUServer,
       ControlPanelServiceClientMetadata.Methods.updateThrottlingConfig,
       ControlPanelServiceClientMetadata.Methods.updatePem,
+      ControlPanelServiceClientMetadata.Methods.updateModelList,
     ]
   )
 
@@ -330,6 +388,12 @@ public enum ControlPanelServiceClientMetadata {
       path: "/ControlPanelService/UpdatePem",
       type: GRPCCallType.unary
     )
+
+    public static let updateModelList = GRPCMethodDescriptor(
+      name: "UpdateModelList",
+      path: "/ControlPanelService/UpdateModelList",
+      type: GRPCCallType.unary
+    )
   }
 }
 
@@ -346,6 +410,9 @@ public protocol ControlPanelServiceProvider: CallHandlerProvider {
   func updatePem(request: UpdatePemRequest, context: StatusOnlyCallContext) -> EventLoopFuture<
     UpdatePemResponse
   >
+
+  func updateModelList(request: UpdateModelListRequest, context: StatusOnlyCallContext)
+    -> EventLoopFuture<UpdateModelListResponse>
 }
 
 extension ControlPanelServiceProvider {
@@ -387,6 +454,15 @@ extension ControlPanelServiceProvider {
         userFunction: self.updatePem(request:context:)
       )
 
+    case "UpdateModelList":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<UpdateModelListRequest>(),
+        responseSerializer: ProtobufSerializer<UpdateModelListResponse>(),
+        interceptors: self.interceptors?.makeUpdateModelListInterceptors() ?? [],
+        userFunction: self.updateModelList(request:context:)
+      )
+
     default:
       return nil
     }
@@ -413,6 +489,11 @@ public protocol ControlPanelServiceAsyncProvider: CallHandlerProvider {
     request: UpdatePemRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> UpdatePemResponse
+
+  @Sendable func updateModelList(
+    request: UpdateModelListRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> UpdateModelListResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -461,6 +542,15 @@ extension ControlPanelServiceAsyncProvider {
         wrapping: self.updatePem(request:context:)
       )
 
+    case "UpdateModelList":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<UpdateModelListRequest>(),
+        responseSerializer: ProtobufSerializer<UpdateModelListResponse>(),
+        interceptors: self.interceptors?.makeUpdateModelListInterceptors() ?? [],
+        wrapping: self.updateModelList(request:context:)
+      )
+
     default:
       return nil
     }
@@ -482,6 +572,12 @@ public protocol ControlPanelServiceServerInterceptorFactoryProtocol {
   /// - Returns: Interceptors to use when handling 'updatePem'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeUpdatePemInterceptors() -> [ServerInterceptor<UpdatePemRequest, UpdatePemResponse>]
+
+  /// - Returns: Interceptors to use when handling 'updateModelList'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeUpdateModelListInterceptors() -> [ServerInterceptor<
+    UpdateModelListRequest, UpdateModelListResponse
+  >]
 }
 
 public enum ControlPanelServiceServerMetadata {
@@ -492,6 +588,7 @@ public enum ControlPanelServiceServerMetadata {
       ControlPanelServiceServerMetadata.Methods.manageGPUServer,
       ControlPanelServiceServerMetadata.Methods.updateThrottlingConfig,
       ControlPanelServiceServerMetadata.Methods.updatePem,
+      ControlPanelServiceServerMetadata.Methods.updateModelList,
     ]
   )
 
@@ -511,6 +608,12 @@ public enum ControlPanelServiceServerMetadata {
     public static let updatePem = GRPCMethodDescriptor(
       name: "UpdatePem",
       path: "/ControlPanelService/UpdatePem",
+      type: GRPCCallType.unary
+    )
+
+    public static let updateModelList = GRPCMethodDescriptor(
+      name: "UpdateModelList",
+      path: "/ControlPanelService/UpdateModelList",
       type: GRPCCallType.unary
     )
   }

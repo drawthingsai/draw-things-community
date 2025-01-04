@@ -49,7 +49,7 @@ public final class ProxyControlClient {
   }
 
   public func addGPUServer(
-    address: String, port: Int, completion: @escaping (Bool) -> Void
+    address: String, port: Int, isHighPriority: Bool, completion: @escaping (Bool) -> Void
   ) {
     guard let client = client else {
       print("addGPUServer can not connect to proxy server")
@@ -60,6 +60,7 @@ public final class ProxyControlClient {
     var request = GPUServerRequest()
     request.serverConfig.address = address
     request.serverConfig.port = Int32(port)
+    request.serverConfig.isHighPriority = isHighPriority
     request.operation = .add
 
     let _ = client.manageGPUServer(request).response.always {
@@ -140,6 +141,31 @@ public final class ProxyControlClient {
 
       case .failure(_):
         print("can not update PEM succees on Server")
+        completion(false)
+      }
+    }
+  }
+
+  public func updateModelList(address: String, port: Int, completion: @escaping (Bool) -> Void) {
+    guard let client = client else {
+      print("can not connect to proxy server")
+      completion(false)
+      return
+    }
+
+    var request = UpdateModelListRequest()
+    request.address = address
+    request.port = Int32(port)
+    let _ = client.updateModelList(request).response.always {
+      switch $0 {
+      case .success(let response):
+        print(
+          "update Model List success, updated :\(response.files.count) models in Proxy model-list file"
+        )
+        completion(true)
+
+      case .failure(_):
+        print("can not update Model List")
         completion(false)
       }
     }
