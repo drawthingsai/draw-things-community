@@ -325,7 +325,7 @@ class ControlPanelService: ControlPanelServiceProvider {
       do {
         try client.connect(
           host: request.address, port: Int(request.port))
-        let result = await client.echo(requestFiles: true)
+        let result = await client.echo()
         self.logger.info("server: \(gpuServerName). echo \(result)")
         if let _ = client.client, result.0 {
           let dedupFiles = Array(Set(result.1))
@@ -561,20 +561,48 @@ public class ProxyCPUServer {
     }
   }
 
-  public func start(host: String, port: Int, TLS: Bool) throws {
+  static func certificatesFromPEMFile(_ path: String) throws -> [NIOSSLCertificate] {
+    let pemContent = try String(contentsOfFile: path)
+    var certificates: [NIOSSLCertificate] = []
+
+    // Split by certificate markers and clean up
+    let pemComponents = pemContent.components(separatedBy: "-----BEGIN CERTIFICATE-----")
+      .filter { !$0.isEmpty }
+      .compactMap { component -> String? in
+        guard let endMarkerRange = component.range(of: "-----END CERTIFICATE-----") else {
+          return nil
+        }
+        let certContent = "-----BEGIN CERTIFICATE-----" + component[..<endMarkerRange.upperBound]
+        // Ensure the certificate has both markers and proper content between them
+        guard certContent.hasSuffix("-----END CERTIFICATE-----") else {
+          return nil
+        }
+        return certContent.trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+
+    for pemCert in pemComponents {
+      let certData = Array(pemCert.utf8)
+      if let cert = try? NIOSSLCertificate(bytes: certData, format: .pem) {
+        certificates.append(cert)
+      }
+    }
+
+    return certificates
+  }
+
+  public func start(host: String, port: Int, TLS: Bool, certPath: String, keyPath: String) throws {
     print("ImageGenerationProxyService starting on \(host):\(port)")
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     let proxyService = ImageGenerationProxyService(
       taskCoordinator: taskCoordinator, controlConfigs: controlConfigs, logger: logger)
-    let certificate = try? NIOSSLCertificate(
-      bytes: [UInt8](BinaryResources.server_crt_crt), format: .pem)
-    let privateKey = try? NIOSSLPrivateKey(
-      bytes: [UInt8](BinaryResources.server_key_key), format: .pem)
-    var TLS = TLS
-    if TLS, let certificate = certificate, let privateKey = privateKey {
+    let certificates = try? ProxyCPUServer.certificatesFromPEMFile(certPath)
+    let privateKey = try? NIOSSLPrivateKey(file: keyPath, format: .pem)
+
+    if TLS, let certificates = certificates, let privateKey = privateKey {
+      let certificateSources = certificates.map { NIOSSLCertificateSource.certificate($0) }
       imageServer = try Server.usingTLS(
         with: GRPCTLSConfiguration.makeServerConfigurationBackedByNIOSSL(
-          certificateChain: [.certificate(certificate)], privateKey: .privateKey(privateKey)),
+          certificateChain: certificateSources, privateKey: .privateKey(privateKey)),
         on: group
       )
       .withServiceProviders([proxyService])
