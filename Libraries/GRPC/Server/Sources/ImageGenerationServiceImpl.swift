@@ -365,7 +365,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   )
     -> NIOCore.EventLoopFuture<GRPCImageServiceModels.EchoReply>
   {
-    let enableModelBrowsing = enableModelBrowsing.load(ordering: .acquiring) || request.requestFiles
+    let enableModelBrowsing = enableModelBrowsing.load(ordering: .acquiring)
     let response = EchoReply.with {
       logger.info("Received echo from: \(request.name), enableModelBrowsing:\(enableModelBrowsing)")
       $0.message = "HELLO \(request.name)"

@@ -9,7 +9,6 @@ service ImageGenerationService {
 
 message EchoRequest {
   string name = 1;
-  bool requestFiles = 2; 
 }
 
 message EchoReply {
