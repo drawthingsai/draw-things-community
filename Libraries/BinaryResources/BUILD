@@ -6,6 +6,7 @@ resource_library(
     srcs = [
         "Resources/bpe_simple_vocab_16e6.txt",
         "Resources/chatglm3.spiece.model",
+        "Resources/isrgrootx1.pem",
         "Resources/merges.txt",
         "Resources/pile_t5.spiece.model",
         "Resources/root_ca.crt",

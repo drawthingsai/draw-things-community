@@ -34,4 +34,7 @@ public enum BinaryResources {
   public static let server_key_key = Data(
     bytesNoCopy: C_Resources.server_key_key()!, count: C_Resources.server_key_key_size,
     deallocator: .none)
+  public static let isrgrootx1_pem = Data(
+    bytesNoCopy: C_Resources.isrgrootx1_pem()!, count: C_Resources.isrgrootx1_pem_size,
+    deallocator: .none)
 }

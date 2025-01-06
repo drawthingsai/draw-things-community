@@ -9,3 +9,4 @@
 #include "Libraries/BinaryResources/server_crt_generated.h"
 #include "Libraries/BinaryResources/server_key_generated.h"
 #include "Libraries/BinaryResources/root_ca_generated.h"
+#include "Libraries/BinaryResources/isrgrootx1_generated.h"

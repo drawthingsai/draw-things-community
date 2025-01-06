@@ -30,9 +30,15 @@ public final class ImageGenerationClientWrapper {
       }
       let certificate = try NIOSSLCertificate(bytes: bytes, format: .pem)
 
+      let isrgrootx1 = {
+        let bytes = [UInt8](BinaryResources.isrgrootx1_pem)
+        return try? NIOSSLCertificate(bytes: bytes, format: .pem)
+      }()
+
       transportSecurity = .tls(
         .makeClientConfigurationBackedByNIOSSL(
-          trustRoots: .certificates([certificate]), certificateVerification: .noHostnameVerification
+          trustRoots: .certificates([certificate] + (isrgrootx1.map { [$0] } ?? [])),
+          certificateVerification: .noHostnameVerification
         ))
     } else {
       transportSecurity = .plaintext
