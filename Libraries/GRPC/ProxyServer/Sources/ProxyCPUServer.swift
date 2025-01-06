@@ -147,10 +147,10 @@ actor TaskCoordinator {
 
   func addTask(_ task: WorkTask) {
     if task.priority == .high {
-      logger.info("highPriorityTasks append task \(task)")
+      logger.info("highPriorityTasks append task \(task.priority)")
       highPriorityTasks.append(task)
     } else {
-      logger.info("lowPriorityTasks append task \(task)")
+      logger.info("lowPriorityTasks append task \(task.priority)")
       lowPriorityTasks.append(task)
     }
   }
@@ -429,13 +429,15 @@ class ImageGenerationProxyService: ImageGenerationServiceProvider {
       )
     }
 
+    var localRequest = request
+    localRequest.contents = []
+    let encodedBlobString = try? localRequest.serializedData().base64EncodedString()
     let promise = context.eventLoop.makePromise(of: GRPCStatus.self)
     logger.info("Proxy Server enqueue image generating request")
     Task {
       let pem = await controlConfigs.publicPem
       let decoder = try? JWTDecoder(publicKeyPEM: pem)
       let payload = try? decoder?.decode(bearToken)
-      let encodedBlobString = try? request.serializedData().base64EncodedString()
       guard let fileData = Data(base64Encoded: encodedBlobString ?? "") else {
         logger.info(
           "Proxy Server enqueue image generating request failed, encodedBlobString:\(encodedBlobString) decode to file data failed"
