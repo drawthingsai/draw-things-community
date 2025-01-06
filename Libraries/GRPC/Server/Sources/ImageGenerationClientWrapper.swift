@@ -19,7 +19,7 @@ public final class ImageGenerationClientWrapper {
     self.deviceName = deviceName
   }
 
-  public func connect(host: String, port: Int, TLS: Bool) throws {
+  public func connect(host: String, port: Int, TLS: Bool, hostnameVerification: Bool) throws {
     try? eventLoopGroup?.syncShutdownGracefully()
     let eventLoopGroup = PlatformSupport.makeEventLoopGroup(loopCount: 1)
     let transportSecurity: GRPCChannelPool.Configuration.TransportSecurity
@@ -38,7 +38,8 @@ public final class ImageGenerationClientWrapper {
       transportSecurity = .tls(
         .makeClientConfigurationBackedByNIOSSL(
           trustRoots: .certificates([certificate] + (isrgrootx1.map { [$0] } ?? [])),
-          certificateVerification: .noHostnameVerification
+          certificateVerification: hostnameVerification
+            ? .fullVerification : .noHostnameVerification
         ))
     } else {
       transportSecurity = .plaintext
