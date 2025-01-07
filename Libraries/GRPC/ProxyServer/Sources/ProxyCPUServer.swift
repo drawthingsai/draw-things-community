@@ -194,22 +194,22 @@ actor TaskCoordinator {
 }
 
 public actor ControlConfigs {
-  private var throtellPolicy = [String: Int]()
+  public private(set) var throtellePolicy = [String: Int]()
   public private(set) var publicPem: String
   private let logger: Logger
   enum ControlConfigsError: Error {
     case updatePublicKeyFailed(message: String)
   }
 
-  init(throtellPolicy: [String: Int], publicPem: String, logger: Logger) {
-    self.throtellPolicy = throtellPolicy
+  init(throtellePolicy: [String: Int], publicPem: String, logger: Logger) {
+    self.throtellePolicy = throtellePolicy
     self.publicPem = publicPem
     self.logger = logger
   }
 
-  func updateThrotellPolicy(newPolicies: [String: Int]) async {
+  func updatethrotellePolicy(newPolicies: [String: Int]) async {
     for (key, value) in newPolicies {
-      throtellPolicy[key] = value
+      throtellePolicy[key] = value
     }
   }
   func updatePublicPem() async throws {
@@ -341,7 +341,7 @@ class ControlPanelService: ControlPanelServiceProvider {
   ) -> NIOCore.EventLoopFuture<GRPCControlPanelModels.ThrottlingResponse> {
     let promise = context.eventLoop.makePromise(of: GRPCControlPanelModels.ThrottlingResponse.self)
     Task {
-      await controlConfigs.updateThrotellPolicy(
+      await controlConfigs.updatethrotellePolicy(
         newPolicies: request.limitConfig.mapValues { Int($0) })
       let response = ThrottlingResponse.with {
         $0.message = "Update throttling for \(request.limitConfig)"
@@ -412,9 +412,12 @@ class ImageGenerationProxyService: ImageGenerationServiceProvider {
     let promise = context.eventLoop.makePromise(of: GRPCStatus.self)
     logger.info("Proxy Server enqueue image generating request")
     Task {
-      let pem = await controlConfigs.publicPem
+      let pem: String = await controlConfigs.publicPem
       let decoder = try? JWTDecoder(publicKeyPEM: pem)
       let payload = try? decoder?.decode(bearToken)
+      logger.info(
+        "Proxy Server enqueue image generating payload:\(payload)"
+      )
       guard let fileData = Data(base64Encoded: encodedBlobString ?? "") else {
         logger.info(
           "Proxy Server enqueue image generating request failed, encodedBlobString:\(encodedBlobString) decode to file data failed"
@@ -438,6 +441,20 @@ class ImageGenerationProxyService: ImageGenerationServiceProvider {
         return
       }
       logger.info("Proxy Server verified request checksum:\(checksum) success")
+
+      let throtellPolicies = await controlConfigs.throtellePolicy
+      for (key, stat) in payload.stats {
+        if let throtellePolicy = throtellPolicies[key], throtellePolicy < stat {
+          logger.error(
+            "user made \(stat) requests, while policy only allow \(throtellPolicies[key]) for \(key)"
+          )
+          promise.fail(
+            GRPCStatus(
+              code: .permissionDenied,
+              message: "user failed to pass \(key) in \(throtellPolicies[key]) "))
+          return
+        }
+      }
       let priority = payload.isHighPriority ? TaskPriority.high : TaskPriority.low
       let task = WorkTask(priority: priority, request: request, context: context, promise: promise)
       await taskCoordinator.addTask(task)
@@ -510,7 +527,7 @@ public class ProxyCPUServer {
   public init(workers: [Worker], publicPem: String) {
     self.workers = workers
     self.controlConfigs = ControlConfigs(
-      throtellPolicy: [
+      throtellePolicy: [
         "request_in_5min": 10, "request_in_10min": 15, "request_in_1hr": 60,
         "request_in_24hr": 1000,
       ], publicPem: publicPem, logger: logger)
