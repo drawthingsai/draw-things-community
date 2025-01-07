@@ -146,7 +146,7 @@ public final class ProxyControlClient {
     }
   }
 
-  public func updateModelList(address: String, port: Int, completion: @escaping (Bool) -> Void) {
+  public func updateModelList(files: [String], completion: @escaping (Bool) -> Void) {
     guard let client = client else {
       print("can not connect to proxy server")
       completion(false)
@@ -154,14 +154,11 @@ public final class ProxyControlClient {
     }
 
     var request = UpdateModelListRequest()
-    request.address = address
-    request.port = Int32(port)
+    request.files = files
     let _ = client.updateModelList(request).response.always {
       switch $0 {
       case .success(let response):
-        print(
-          "update Model List success, updated :\(response.files.count) models in Proxy model-list file"
-        )
+        print(response.message)
         completion(true)
 
       case .failure(_):
