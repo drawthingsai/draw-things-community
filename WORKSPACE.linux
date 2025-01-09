@@ -411,6 +411,13 @@ oci_pull(
     platforms = ["linux/amd64"],
 )
 
+oci_pull(
+    name = "dt_swift6.0.3_ubuntu22.04",
+    digest = "sha256:374b169902fc436bd8e63b777bfab494e2a9548e1907242edeb6a023404a164c",
+    image = "docker.io/drawthingsai/swift6-ubuntu22.04",
+    platforms = ["linux/amd64"],
+)
+
 http_archive(
     name = "rules_pkg",
     urls = [

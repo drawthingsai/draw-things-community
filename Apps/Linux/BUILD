@@ -58,7 +58,7 @@ pkg_tar(
 
 oci_image(
     name = "ProxyServiceCLI_image",
-    base = "@swift5.10.1_ubuntu22.04",
+    base = "@dt_swift6.0.3_ubuntu22.04",
     tars = [
         ":ProxyServiceCLI_layer",
         ":ProxyServerControlPanelCLI_layer",

@@ -1,0 +1,9 @@
+# Build stage
+FROM library/swift:6.0.3-jammy AS builder
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    libatlas3-base \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LD_LIBRARY_PATH="/usr/lib/swift/linux:${LD_LIBRARY_PATH}"
