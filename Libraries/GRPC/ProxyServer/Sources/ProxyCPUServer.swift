@@ -195,15 +195,17 @@ actor TaskQueue {
 public actor ControlConfigs {
   public private(set) var throttlePolicy = [String: Int]()
   public private(set) var publicKeyPEM: String
+  public private(set) var modelListPath: String
   private let logger: Logger
   enum ControlConfigsError: Error {
     case updatePublicKeyFailed(message: String)
   }
 
-  init(throttlePolicy: [String: Int], publicKeyPEM: String, logger: Logger) {
+  init(throttlePolicy: [String: Int], publicKeyPEM: String, logger: Logger, modelListPath: String) {
     self.throttlePolicy = throttlePolicy
     self.publicKeyPEM = publicKeyPEM
     self.logger = logger
+    self.modelListPath = modelListPath
   }
 
   func updateThrottlePolicy(newPolicies: [String: Int]) async {
@@ -304,7 +306,7 @@ final class ControlPanelService: ControlPanelServiceProvider {
     Task {
       let fileList = request.files.joined(separator: "\n")
       // TODO: The path is problematic.
-      let internalFilePath = ModelZoo.internalFilePathForModelDownloaded("model-list")
+      let internalFilePath = await controlConfigs.modelListPath
       try? fileList.write(
         to: URL(fileURLWithPath: internalFilePath),
         atomically: true,
@@ -468,36 +470,51 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   func filesExist(request: FileListRequest, context: StatusOnlyCallContext) -> EventLoopFuture<
     FileExistenceResponse
   > {
-    let response = FileExistenceResponse.with {
-
-      $0.files = [String]()
-      $0.existences = [Bool]()
-      // by pass files Exist check for uploading
-      for file in request.files {
-        $0.files.append(file)
-        $0.existences.append(true)
+    let promise = context.eventLoop.makePromise(of: FileExistenceResponse.self)
+    Task {
+      var internalFilePath = await controlConfigs.modelListPath
+      let response = FileExistenceResponse.with {
+        $0.files = [String]()
+        $0.existences = [Bool]()
+        var fileList = [String]()
+        if let fileContent = try? String(
+          contentsOf: URL(fileURLWithPath: internalFilePath), encoding: .utf8)
+        {
+          fileList = fileContent.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        } else {
+          logger.error("Proxy Server file list is nil")
+        }
+        for file in request.files {
+          $0.files.append(file)
+          let existence = fileList.contains(file)
+          $0.existences.append(existence)
+        }
       }
+      promise.succeed(response)
     }
-
-    return context.eventLoop.makeSucceededFuture(response)
+    return promise.futureResult
   }
 
   func echo(request: EchoRequest, context: StatusOnlyCallContext) -> EventLoopFuture<EchoReply> {
-    let response = EchoReply.with {
-      logger.info("Proxy Server Received echo from: \(request.name)")
-      $0.message = "Hello, \(request.name)!"
-      let internalFilePath = ModelZoo.internalFilePathForModelDownloaded("model-list")
-      var fileList = [String]()
-      if let fileContent = try? String(
-        contentsOf: URL(fileURLWithPath: internalFilePath), encoding: .utf8)
-      {
-        fileList = fileContent.components(separatedBy: .newlines).filter { !$0.isEmpty }
-      } else {
-        logger.error("Proxy Server file list is nil")
+    let promise = context.eventLoop.makePromise(of: EchoReply.self)
+    Task {
+      var internalFilePath = await controlConfigs.modelListPath
+      let response = EchoReply.with {
+        logger.info("Proxy Server Received echo from: \(request.name)")
+        $0.message = "Hello, \(request.name)!"
+        var fileList = [String]()
+        if let fileContent = try? String(
+          contentsOf: URL(fileURLWithPath: internalFilePath), encoding: .utf8)
+        {
+          fileList = fileContent.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        } else {
+          logger.error("Proxy Server file list is nil")
+        }
+        $0.files = fileList
       }
-      $0.files = fileList
+      promise.succeed(response)
     }
-    return context.eventLoop.makeSucceededFuture(response)
+    return promise.futureResult
   }
 
   func uploadFile(context: StreamingResponseCallContext<UploadResponse>) -> EventLoopFuture<
@@ -516,13 +533,13 @@ public class ProxyCPUServer {
   private var controlConfigs: ControlConfigs
   private var taskQueue: TaskQueue
 
-  public init(workers: [Worker], publicKeyPEM: String) {
+  public init(workers: [Worker], publicKeyPEM: String, modelListPath: String) {
     self.workers = workers
     self.controlConfigs = ControlConfigs(
       throttlePolicy: [
         "request_in_5min": 10, "request_in_10min": 15, "request_in_1hr": 60,
         "request_in_24hr": 1000,
-      ], publicKeyPEM: publicKeyPEM, logger: logger)
+      ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath)
 
     self.taskQueue = TaskQueue(workers: workers, logger: logger)
   }
