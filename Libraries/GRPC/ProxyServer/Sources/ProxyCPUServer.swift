@@ -196,16 +196,37 @@ public actor ControlConfigs {
   public private(set) var throttlePolicy = [String: Int]()
   public private(set) var publicKeyPEM: String
   public private(set) var modelListPath: String
+  private var nonces = Set<String>()
   private let logger: Logger
+  private var nounceSizeLimit: Int
   enum ControlConfigsError: Error {
     case updatePublicKeyFailed(message: String)
   }
 
-  init(throttlePolicy: [String: Int], publicKeyPEM: String, logger: Logger, modelListPath: String) {
+  init(
+    throttlePolicy: [String: Int], publicKeyPEM: String, logger: Logger, modelListPath: String,
+    nounceSizeLimit: Int
+  ) {
     self.throttlePolicy = throttlePolicy
     self.publicKeyPEM = publicKeyPEM
     self.logger = logger
     self.modelListPath = modelListPath
+    self.nounceSizeLimit = nounceSizeLimit
+  }
+
+  func addProcessedNonce(_ nounce: String) async {
+    if nonces.count >= nounceSizeLimit {
+      if let randomElement = nonces.randomElement() {
+        nonces.remove(randomElement)
+      }
+    }
+
+    nonces.insert(nounce)
+    logger.info("ControlConfigs add processed nounce:\(nounce)")
+  }
+
+  func isUsedNonce(_ nounce: String) async -> Bool {
+    nonces.contains(nounce)
   }
 
   func updateThrottlePolicy(newPolicies: [String: Int]) async {
@@ -412,7 +433,6 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       logger.info(
         "Proxy Server enqueue image generating payload:\(payload as Any)"
       )
-
       let requestHash = Data(SHA256.hash(data: encodedBlob))
       let checksum = requestHash.map({ String(format: "%02x", $0) }).joined()
       guard let payload = payload, payload.checksum == checksum else {
@@ -428,6 +448,15 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       }
       logger.info("Proxy Server verified request checksum:\(checksum) success")
 
+      guard await !controlConfigs.isUsedNonce(payload.nonce) else {
+        logger.error(
+          "Proxy Server image generating request failed, \(payload.nonce) is a used nonce"
+        )
+        promise.fail(
+          GRPCStatus(code: .permissionDenied, message: "used nonce"))
+        return
+      }
+      await self.controlConfigs.addProcessedNonce(payload.nonce)
       let throttlePolicies = await controlConfigs.throttlePolicy
       for (key, stat) in payload.stats {
         if let throttlePolicy = throttlePolicies[key], throttlePolicy < stat {
@@ -533,13 +562,15 @@ public class ProxyCPUServer {
   private var controlConfigs: ControlConfigs
   private var taskQueue: TaskQueue
 
-  public init(workers: [Worker], publicKeyPEM: String, modelListPath: String) {
+  public init(workers: [Worker], publicKeyPEM: String, modelListPath: String, nounceSizeLimit: Int)
+  {
     self.workers = workers
     self.controlConfigs = ControlConfigs(
       throttlePolicy: [
         "request_in_5min": 10, "request_in_10min": 15, "request_in_1hr": 60,
         "request_in_24hr": 1000,
-      ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath)
+      ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath,
+      nounceSizeLimit: nounceSizeLimit)
 
     self.taskQueue = TaskQueue(workers: workers, logger: logger)
   }
