@@ -198,35 +198,36 @@ public actor ControlConfigs {
   public private(set) var modelListPath: String
   private var nonces = Set<String>()
   private let logger: Logger
-  private var nounceSizeLimit: Int
+  private var nonceSizeLimit: Int
   enum ControlConfigsError: Error {
     case updatePublicKeyFailed(message: String)
   }
 
   init(
     throttlePolicy: [String: Int], publicKeyPEM: String, logger: Logger, modelListPath: String,
-    nounceSizeLimit: Int
+    nonceSizeLimit: Int
   ) {
     self.throttlePolicy = throttlePolicy
     self.publicKeyPEM = publicKeyPEM
     self.logger = logger
     self.modelListPath = modelListPath
-    self.nounceSizeLimit = nounceSizeLimit
+    self.nonceSizeLimit = nonceSizeLimit
   }
 
-  func addProcessedNonce(_ nounce: String) async {
-    if nonces.count >= nounceSizeLimit {
+  func addProcessedNonce(_ nonce: String) async {
+    guard !nonces.contains(nonce) else { return }
+    if nonces.count >= nonceSizeLimit {
       if let randomElement = nonces.randomElement() {
         nonces.remove(randomElement)
       }
     }
 
-    nonces.insert(nounce)
-    logger.info("ControlConfigs add processed nounce:\(nounce)")
+    nonces.insert(nonce)
+    logger.info("ControlConfigs add processed nonce:\(nonce)")
   }
 
-  func isUsedNonce(_ nounce: String) async -> Bool {
-    nonces.contains(nounce)
+  func isUsedNonce(_ nonce: String) async -> Bool {
+    nonces.contains(nonce)
   }
 
   func updateThrottlePolicy(newPolicies: [String: Int]) async {
@@ -562,15 +563,14 @@ public class ProxyCPUServer {
   private var controlConfigs: ControlConfigs
   private var taskQueue: TaskQueue
 
-  public init(workers: [Worker], publicKeyPEM: String, modelListPath: String, nounceSizeLimit: Int)
-  {
+  public init(workers: [Worker], publicKeyPEM: String, modelListPath: String, nonceSizeLimit: Int) {
     self.workers = workers
     self.controlConfigs = ControlConfigs(
       throttlePolicy: [
         "request_in_5min": 10, "request_in_10min": 15, "request_in_1hr": 60,
         "request_in_24hr": 1000,
       ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath,
-      nounceSizeLimit: nounceSizeLimit)
+      nonceSizeLimit: nonceSizeLimit)
 
     self.taskQueue = TaskQueue(workers: workers, logger: logger)
   }
