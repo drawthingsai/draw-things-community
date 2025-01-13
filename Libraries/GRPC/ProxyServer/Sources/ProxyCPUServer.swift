@@ -626,11 +626,13 @@ public class ProxyCPUServer {
     return certificates
   }
 
-  public func startAndWait(host: String, port: Int, TLS: Bool, certPath: String, keyPath: String)
+  public func startAndWait(
+    host: String, port: Int, TLS: Bool, certPath: String, keyPath: String, numberOfThreads: Int
+  )
     throws
   {
     logger.info("ImageGenerationProxyService starting on \(host):\(port)")
-    let group = MultiThreadedEventLoopGroup(numberOfThreads: 16)
+    let group = MultiThreadedEventLoopGroup(numberOfThreads: numberOfThreads)
     let proxyService = ImageGenerationProxyService(
       taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger)
     let imageServer: Server
