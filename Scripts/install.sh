@@ -28,5 +28,7 @@ if [ "$OS" == "Darwin" ]; then
 else
   echo "try-import %workspace%/.bazelrc.linux" > $GIT_ROOT/.bazelrc
   ln -s $GIT_ROOT/WORKSPACE.linux $GIT_ROOT/WORKSPACE
-  $GIT_ROOT/Scripts/setup_clang.sh /usr/local || true
+  # Use first argument as clang setup path if provided, otherwise default to /usr/local
+  CLANG_PATH=${1:-"/usr/local"}
+  $GIT_ROOT/Scripts/setup_clang.sh $CLANG_PATH || true
 fi
