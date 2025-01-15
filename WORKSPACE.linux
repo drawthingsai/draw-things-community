@@ -413,7 +413,7 @@ oci_pull(
 
 oci_pull(
     name = "dt_swift6.0.3_ubuntu22.04",
-    digest = "sha256:374b169902fc436bd8e63b777bfab494e2a9548e1907242edeb6a023404a164c",
+    digest = "sha256:4e4583bcc540bec80608ca12df368d148487adb2462705fa76ce1170a5b5ceab",
     image = "docker.io/drawthingsai/swift6-ubuntu22.04",
     platforms = ["linux/amd64"],
 )
