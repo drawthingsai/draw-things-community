@@ -708,6 +708,19 @@ extension UNetFromNNC {
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
                   return result
                 }
+                // Patch for bias weights which missing a 1/8 scale. Note that this is not needed if we merge this into the model import step like we do for Hunyuan.
+                if version == .flux1
+                  && (name.hasSuffix("_out_proj-17-1]") || name.hasSuffix("_out_proj-18-1]")),
+                  let tensor = store.read(name, codec: [.ezm7, .externalData, .q6p, .q8p])
+                {
+                  return .final(
+                    graph.withNoGrad {
+                      let scaleFactor: Float = 8
+                      return
+                        ((1 / scaleFactor)
+                        * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
+                    })
+                }
                 return loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
                   store: store, dataType: dataType, format: format, shape: shape)
@@ -725,6 +738,19 @@ extension UNetFromNNC {
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
                   return result
                 }
+                // Patch for bias weights which missing a 1/8 scale. Note that this is not needed if we merge this into the model import step like we do for Hunyuan.
+                if version == .flux1
+                  && (name.hasSuffix("_out_proj-17-1]") || name.hasSuffix("_out_proj-18-1]")),
+                  let tensor = store.read(name, codec: [.ezm7, .externalData, .q6p, .q8p])
+                {
+                  return .final(
+                    graph.withNoGrad {
+                      let scaleFactor: Float = 8
+                      return
+                        ((1 / scaleFactor)
+                        * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
+                    })
+                }
                 return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
               }
             }
@@ -739,6 +765,19 @@ extension UNetFromNNC {
             name, _, _, _ in
             if let result = controlModelLoader.loadMergedWeight(name: name) {
               return result
+            }
+            // Patch for bias weights which missing a 1/8 scale. Note that this is not needed if we merge this into the model import step like we do for Hunyuan.
+            if version == .flux1
+              && (name.hasSuffix("_out_proj-17-1]") || name.hasSuffix("_out_proj-18-1]")),
+              let tensor = store.read(name, codec: [.ezm7, .externalData, .q6p, .q8p])
+            {
+              return .final(
+                graph.withNoGrad {
+                  let scaleFactor: Float = 8
+                  return
+                    ((1 / scaleFactor) * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0))
+                    .rawValue.toCPU()
+                })
             }
             return .continue(name)
           }
