@@ -75,7 +75,6 @@ oci_push(
     name = "push_ProxyServiceCLI_image",
     image = ":ProxyServiceCLI_image",
     remote_tags = [
-        "$(DOCKER_TAG)",
         "latest",
     ],
     repository = "docker.io/drawthingsai/draw-things-proxy-server-cli",
