@@ -10,3 +10,5 @@
 #include "Libraries/BinaryResources/server_key_generated.h"
 #include "Libraries/BinaryResources/root_ca_generated.h"
 #include "Libraries/BinaryResources/isrgrootx1_generated.h"
+#include "Libraries/BinaryResources/vocab_llama3_generated.h"
+#include "Libraries/BinaryResources/merges_llama3_generated.h"

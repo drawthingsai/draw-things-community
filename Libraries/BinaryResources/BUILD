@@ -8,6 +8,7 @@ resource_library(
         "Resources/chatglm3.spiece.model",
         "Resources/isrgrootx1.pem",
         "Resources/merges.txt",
+        "Resources/merges_llama3.txt",
         "Resources/pile_t5.spiece.model",
         "Resources/root_ca.crt",
         "Resources/server_crt.crt",
@@ -15,6 +16,7 @@ resource_library(
         "Resources/t5.spiece.model",
         "Resources/vocab.json",
         "Resources/vocab_16e6.json",
+        "Resources/vocab_llama3.json",
         "Resources/xlmroberta.bpe.model",
     ],
 )

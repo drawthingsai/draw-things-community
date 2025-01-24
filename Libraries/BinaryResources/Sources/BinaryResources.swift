@@ -37,4 +37,10 @@ public enum BinaryResources {
   public static let isrgrootx1_pem = Data(
     bytesNoCopy: C_Resources.isrgrootx1_pem()!, count: C_Resources.isrgrootx1_pem_size,
     deallocator: .none)
+  public static let merges_llama3_txt = Data(
+    bytesNoCopy: C_Resources.merges_llama3_txt()!, count: C_Resources.merges_llama3_txt_size,
+    deallocator: .none)
+  public static let vocab_llama3_json = Data(
+    bytesNoCopy: C_Resources.vocab_llama3_json()!, count: C_Resources.vocab_llama3_json_size,
+    deallocator: .none)
 }
