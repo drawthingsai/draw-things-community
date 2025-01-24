@@ -8,7 +8,7 @@ public struct MoondreamTextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
   let question: String
   let version: MoondreamEncode<T>.Version
   public init(
-    filePath: String, vocabulary: String, merges: String, usesFlashAttention: Bool,
+    filePath: String, vocabulary: Data, merges: Data, usesFlashAttention: Bool,
     question: String, version: MoondreamEncode<T>.Version
   ) {
     self.filePath = filePath

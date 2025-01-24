@@ -15,15 +15,21 @@ public struct GPT2Tokenizer {
   public let unknownToken: Int32
   public let startToken: Int32
   public let endToken: Int32
-  public init(vocabulary: String, merges: String) {
-    let vocabJSONData = try! Data(contentsOf: URL(fileURLWithPath: vocabulary))
-    self.vocabulary = try! JSONDecoder().decode([String: Int32].self, from: vocabJSONData)
+  public let specialTokens: [String]
+  public init(
+    vocabulary: Data, merges: Data, specialTokens: [String: Int32] = [:],
+    unknownToken: String = "<|endoftext|>", startToken: String = "<|endoftext|>",
+    endToken: String = "<|endoftext|>"
+  ) {
+    var vocabulary = try! JSONDecoder().decode([String: Int32].self, from: vocabulary)
+    vocabulary.merge(specialTokens) { a, _ in a }
+    self.vocabulary = vocabulary
     var decoder = [Int32: String]()
     for (k, v) in self.vocabulary {
       decoder[v] = k
     }
     self.decoder = decoder
-    let bpeMerges = (try! String(contentsOf: URL(fileURLWithPath: merges), encoding: .utf8))
+    let bpeMerges = (String(data: merges, encoding: .utf8) ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\n")[
         1...]
     var bpeRanks = [Pair: Int]()
@@ -32,9 +38,14 @@ public struct GPT2Tokenizer {
       bpeRanks[Pair(first: String(splits[0]), second: String(splits[1]))] = i
     }
     self.bpeRanks = bpeRanks
-    self.unknownToken = self.vocabulary["<|endoftext|>"]!
-    self.startToken = self.vocabulary["<|endoftext|>"]!
-    self.endToken = self.vocabulary["<|endoftext|>"]!
+    self.unknownToken = self.vocabulary[unknownToken]!
+    self.startToken = self.vocabulary[startToken]!
+    self.endToken = self.vocabulary[endToken]!
+    var specialTokens = Set(specialTokens.keys)
+    specialTokens.insert(unknownToken)
+    specialTokens.insert(startToken)
+    specialTokens.insert(endToken)
+    self.specialTokens = Array(specialTokens)
   }
 
   private static let byteEncoder: [Int: String] = {
@@ -99,6 +110,7 @@ public struct GPT2Tokenizer {
     // Implement this with for loop rather than regex so it is applicable with Swift 5.6.x
     var tokens = [Substring]()
     var lastIndex = fixText.startIndex
+    var lastIsNewline = false
     for (i, character) in fixText.enumerated() {
       let index = fixText.index(fixText.startIndex, offsetBy: i)
       if character.isNumber {
@@ -128,17 +140,21 @@ public struct GPT2Tokenizer {
         tokens.append(fixText[splitIndex..<lastIndex])
         continue
       }
-      if pat.hasSuffix("<|startoftext|>") {
-        let splitIndex = fixText.index(index, offsetBy: -14)
-        if lastIndex < splitIndex {
-          tokens.append(fixText[lastIndex..<splitIndex])
+      // Check if the previous one is new line but this one is not, separate up until here.
+      if lastIsNewline && !character.isNewline {
+        lastIsNewline = false
+        if lastIndex < index {
+          tokens.append(fixText[lastIndex..<index])
         }
-        lastIndex = fixText.index(index, offsetBy: 1)
-        tokens.append(fixText[splitIndex..<lastIndex])
+        lastIndex = index
         continue
       }
-      if pat.hasSuffix("<|endoftext|>") {
-        let splitIndex = fixText.index(index, offsetBy: -12)
+      if character.isNewline {
+        lastIsNewline = true
+        continue
+      }
+      if let specialToken = (specialTokens.first { pat.hasSuffix($0) }) {
+        let splitIndex = fixText.index(index, offsetBy: 1 - specialToken.count)
         if lastIndex < splitIndex {
           tokens.append(fixText[lastIndex..<splitIndex])
         }
@@ -159,6 +175,9 @@ public struct GPT2Tokenizer {
     }
     // token should match the token before sending to bpe mapping. Now do bpe merge.
     let bpeTokens = tokens.flatMap { token -> [String] in
+      guard !specialTokens.contains(String(token)) else {
+        return [String(token)]
+      }
       let token = token.unicodeScalars.map({
         Self.byteEncoder[Int($0.value), default: "\($0)"]
       }).joined()
