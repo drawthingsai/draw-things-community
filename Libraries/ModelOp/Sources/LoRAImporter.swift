@@ -109,6 +109,8 @@ public enum LoRAImporter {
         guidanceEmbed: true)
     case .auraflow:
       fatalError()
+    case .hunyuanVideo:
+      fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
     case .ssd1b:
@@ -150,6 +152,8 @@ public enum LoRAImporter {
       case .flux1:
         inputDim = 16
         conditionalLength = 4096
+      case .hunyuanVideo:
+        fatalError()
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
@@ -213,6 +217,8 @@ public enum LoRAImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
+      case .hunyuanVideo:
+        fatalError()
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -256,6 +262,8 @@ public enum LoRAImporter {
         vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
       case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1:
         vectors = []
+      case .hunyuanVideo:
+        fatalError()
       case .kandinsky21, .v1, .v2:
         fatalError()
       }
@@ -290,6 +298,8 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .hunyuanVideo:
+        fatalError()
       case .kandinsky21, .v1, .v2:
         fatalError()
       }
@@ -653,6 +663,8 @@ public enum LoRAImporter {
     case .flux1:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
+    case .hunyuanVideo:
+      fatalError()
     case .auraflow:
       fatalError()
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -884,6 +896,8 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
+      case .hunyuanVideo:
+        fatalError()
       case .auraflow:
         fatalError()
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
@@ -918,7 +932,7 @@ public enum LoRAImporter {
       case .wurstchenStageC, .wurstchenStageB:
         modelPrefix = "stage_c"
         modelPrefixFixed = "stage_c_fixed"
-      case .sd3, .sd3Large, .pixart, .auraflow, .flux1:
+      case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

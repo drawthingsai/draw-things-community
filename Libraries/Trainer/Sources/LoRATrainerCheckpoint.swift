@@ -62,7 +62,7 @@ extension LoRATrainerCheckpoint {
     graph.openStore(filePath) {
       if let textEmbedding1 = textEmbedding1 {
         switch version {
-        case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1:
+        case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo:
           $0.write("string_to_param", variable: textEmbedding1)
         case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           $0.write("string_to_param_clip_g", variable: textEmbedding1)
@@ -92,7 +92,7 @@ extension LoRATrainerCheckpoint {
       switch version {
       case .v1, .v2, .ssd1b, .sdxlBase, .sdxlRefiner:
         modelName = "unet"
-      case .sd3, .pixart, .flux1, .sd3Large:
+      case .sd3, .pixart, .flux1, .sd3Large, .hunyuanVideo:
         modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
@@ -118,7 +118,7 @@ extension LoRATrainerCheckpoint {
       store.removeAll()
       if let textEmbedding1 = textEmbedding1 {
         switch version {
-        case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1:
+        case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo:
           store.write("string_to_param", variable: textEmbedding1)
         case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           store.write("string_to_param_clip_g", variable: textEmbedding1)
@@ -135,7 +135,7 @@ extension LoRATrainerCheckpoint {
         case .v2:
           textModelMapping = LoRAMapping.OpenCLIPTextModel
         case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-          .wurstchenStageB:
+          .wurstchenStageB, .hunyuanVideo:
           fatalError()
         case .sdxlBase, .ssd1b, .sdxlRefiner:
           textModelMapping = LoRAMapping.OpenCLIPTextModelG
@@ -217,7 +217,7 @@ extension LoRATrainerCheckpoint {
             return ($0, $0)
           })
         modelName = "dit"
-      case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
         fatalError()
       case .ssd1b:
         UNetMapping = LoRAMapping.SDUNetXLSSD1B
@@ -254,7 +254,7 @@ extension LoRATrainerCheckpoint {
       store.removeAll()
       if let textEmbedding1 = exponentialMovingAverage.textEmbedding1 {
         switch version {
-        case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1:
+        case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo:
           store.write("string_to_param", tensor: textEmbedding1)
         case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           store.write("string_to_param_clip_g", tensor: textEmbedding1)
@@ -271,7 +271,7 @@ extension LoRATrainerCheckpoint {
         case .v2:
           textModelMapping = LoRAMapping.OpenCLIPTextModel
         case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-          .wurstchenStageB:
+          .wurstchenStageB, .hunyuanVideo:
           fatalError()
         case .sdxlBase, .ssd1b, .sdxlRefiner:
           textModelMapping = LoRAMapping.OpenCLIPTextModelG
@@ -360,7 +360,7 @@ extension LoRATrainerCheckpoint {
             return ($0, $0)
           })
         modelName = "dit"
-      case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+      case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
         fatalError()
       case .ssd1b:
         UNetMapping = LoRAMapping.SDUNetXLSSD1B

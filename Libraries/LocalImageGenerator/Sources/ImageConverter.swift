@@ -719,6 +719,8 @@ public enum ImageConverter {
             bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
+        case .hunyuanVideo:
+          fatalError()
         case .sdxlBase, .sdxlRefiner, .ssd1b, .pixart, .auraflow:
           for i in 0..<imageHeight * imageWidth {
             // We need to do some computations from the latent values.

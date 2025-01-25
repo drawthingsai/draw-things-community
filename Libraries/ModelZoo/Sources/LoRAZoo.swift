@@ -404,6 +404,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (AuraFlow)"
     case .flux1:
       return " (FLUX.1)"
+    case .hunyuanVideo:
+      return " (Hunyuan Video)"
     }
   }
 

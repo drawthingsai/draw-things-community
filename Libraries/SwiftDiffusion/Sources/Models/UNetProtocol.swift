@@ -115,6 +115,8 @@ extension UNetProtocol {
       rEmbed[0..<batchSize, 0..<64] = rTimeEmbed
       rEmbed[0..<batchSize, 64..<128] = rZeros
       return graph.variable(Tensor<FloatType>(from: rEmbed).toGPU(0))
+    case .hunyuanVideo:
+      fatalError()
     }
   }
 }
@@ -143,6 +145,8 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
           .copied()
       }
+  case .hunyuanVideo:
+    fatalError()
   case .pixart:
     var extractedConditions = [conditions[0]]
     let layers = (conditions.count - 3) / 8
@@ -567,6 +571,8 @@ extension UNetFromNNC {
           injectControls: injectControlsAndAdapters.injectControls,
           injectIPAdapterLengths: injectIPAdapterLengths)
       }
+    case .hunyuanVideo:
+      fatalError()
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -601,6 +607,8 @@ extension UNetFromNNC {
         c.append(contentsOf: injectedIPAdapters)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
+        fatalError()
+      case .hunyuanVideo:
         fatalError()
       }
     }
@@ -652,7 +660,7 @@ extension UNetFromNNC {
       modelKey = "stage_b"
     case .wurstchenStageC:
       modelKey = "stage_c"
-    case .sd3, .pixart, .auraflow, .flux1, .sd3Large:
+    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -693,6 +701,8 @@ extension UNetFromNNC {
                   return ($0, $0)
                 })
             case .auraflow:
+              fatalError()
+            case .hunyuanVideo:
               fatalError()
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
@@ -1047,6 +1057,8 @@ extension UNetFromNNC {
           }
         }
         c = newC
+      case .hunyuanVideo:
+        fatalError()
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB:
         fatalError()
@@ -1078,6 +1090,8 @@ extension UNetFromNNC {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .wurstchenStageB:
       return x
+    case .hunyuanVideo:
+      fatalError()
     }
   }
 

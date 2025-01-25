@@ -335,8 +335,7 @@ extension UNetFromCoreML {
       case .v2:
         reduceMemory = CoreMLModelManager.reduceMemoryFor2x.load(ordering: .acquiring)
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .svdI2v,
-        .wurstchenStageC, .wurstchenStageB:
+        .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
         fatalError()
       }
       let channels = xT.shape[3]

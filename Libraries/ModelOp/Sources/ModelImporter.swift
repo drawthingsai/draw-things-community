@@ -288,7 +288,7 @@ public final class ModelImporter {
         expectedTotalAccess += 388 + 196
       case .sdxlRefiner:
         expectedTotalAccess += 388
-      case .sd3, .sd3Large, .pixart, .auraflow, .flux1:
+      case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo:
         throw Error.noTextEncoder
       case .svdI2v:
         throw Error.noTextEncoder
@@ -363,7 +363,7 @@ public final class ModelImporter {
             filePath = ModelZoo.filePathForModelDownloaded(
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-            .wurstchenStageB:
+            .wurstchenStageB, .hunyuanVideo:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -402,8 +402,7 @@ public final class ModelImporter {
                 throw Error.tensorWritesFailed
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-              .wurstchenStageC,
-              .wurstchenStageB:
+              .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
               fatalError()
             }
           }
@@ -530,6 +529,8 @@ public final class ModelImporter {
     case .flux1:
       conditionalLength = 4096
       batchSize = 1
+    case .hunyuanVideo:
+      fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -550,7 +551,7 @@ public final class ModelImporter {
       let filePath = ModelZoo.filePathForModelDownloaded("\(self.modelName)_f16.ckpt")
       switch modelVersion {
       case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .pixart,
-        .sd3, .sd3Large, .auraflow:
+        .sd3, .sd3Large, .auraflow, .hunyuanVideo:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: false, zeroNegativePrompt: false,
@@ -573,6 +574,8 @@ public final class ModelImporter {
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1:
           vectors = []
+        case .hunyuanVideo:
+          fatalError()
         case .kandinsky21, .v1, .v2:
           fatalError()
         }
@@ -730,6 +733,8 @@ public final class ModelImporter {
         (unetFixedMapper, unetFixed) = Flux1Fixed(
           batchSize: (batchSize, batchSize), channels: 3072, layers: (19, 38),
           contextPreloaded: true, guidanceEmbed: true)
+      case .hunyuanVideo:
+        fatalError()
       case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
@@ -789,6 +794,8 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(batchSize, 256), of: FloatType.self),
         ]
         tEmb = nil
+      case .hunyuanVideo:
+        fatalError()
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -952,6 +959,8 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
+          case .hunyuanVideo:
+            fatalError()
           case .auraflow:
             fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1079,6 +1088,8 @@ public final class ModelImporter {
           if $0.keys.count != 1732 && $0.keys.count != 1728 {
             throw Error.tensorWritesFailed
           }
+        case .hunyuanVideo:
+          fatalError()
         case .auraflow:
           fatalError()
         case .kandinsky21, .wurstchenStageB:

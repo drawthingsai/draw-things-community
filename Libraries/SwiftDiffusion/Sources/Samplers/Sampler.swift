@@ -16,6 +16,7 @@ public enum ModelVersion: String, Codable {
   case auraflow = "auraflow"
   case flux1 = "flux1"
   case sd3Large = "sd3_large"
+  case hunyuanVideo = "hunyuan_video"
 }
 
 public enum TextEncoderVersion: String, Codable {

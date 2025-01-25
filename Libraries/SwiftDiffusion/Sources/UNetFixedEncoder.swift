@@ -31,7 +31,7 @@ extension UNetFixedEncoder {
   static func isFixedEncoderRequired(version: ModelVersion) -> Bool {
     switch version {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
-      .wurstchenStageC, .wurstchenStageB:
+      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
       return true
     case .v1, .v2, .kandinsky21:
       return false
@@ -182,6 +182,8 @@ extension UNetFixedEncoder {
     case .flux1:
       return []
     case .v1, .v2, .kandinsky21:
+      fatalError()
+    case .hunyuanVideo:
       fatalError()
     }
   }
@@ -498,7 +500,7 @@ extension UNetFixedEncoder {
           batchSize: cBatchSize * timesteps.count, channels: 2432, layers: 38,
           dualAttentionLayers: [])
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
-        .svdI2v, .wurstchenStageB, .wurstchenStageC:
+        .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo:
         fatalError()
       }
       var timeEmbeds = graph.variable(
@@ -715,6 +717,8 @@ extension UNetFixedEncoder {
           height: h, width: w, tokenLength: t5Length, channels: 128)
       ).toGPU(0)
       return ([graph.variable(rot)] + conditions, nil)
+    case .hunyuanVideo:
+      fatalError()
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
       let effnetHeight = textEncoding[textEncoding.count - 1].shape[1]

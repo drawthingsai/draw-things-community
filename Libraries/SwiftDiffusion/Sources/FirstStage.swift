@@ -76,9 +76,10 @@ extension FirstStage {
     let zoomFactor: Int
     switch version {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v,
-      .kandinsky21:
+      .svdI2v, .kandinsky21:
       zoomFactor = 8
+    case .hunyuanVideo:
+      fatalError()
     case .wurstchenStageB, .wurstchenStageC:
       zoomFactor = 4
     }
@@ -174,6 +175,8 @@ extension FirstStage {
         }
       }
       outputChannels = 3
+    case .hunyuanVideo:
+      fatalError()
     case .kandinsky21:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
@@ -473,6 +476,8 @@ extension FirstStage {
         }
       }
       outputChannels = 32
+    case .hunyuanVideo:
+      fatalError()
     case .kandinsky21:
       startHeight = shape[1] / 8
       startWidth = shape[2] / 8

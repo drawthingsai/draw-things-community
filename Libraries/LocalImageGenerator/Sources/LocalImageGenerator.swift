@@ -112,7 +112,7 @@ extension LocalImageGenerator {
         700.00, 54.5, 15.886, 7.977, 4.248, 1.789, 0.981, 0.403, 0.173, 0.034, 0.002,
       ]
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB,
-      .wurstchenStageC:
+      .wurstchenStageC, .hunyuanVideo:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1068,6 +1068,8 @@ extension LocalImageGenerator {
         tokenTensors, positionTensors, [], [], [Float](repeating: 1, count: 77),
         [Float](repeating: 1, count: 77), false, 77, 77, lengthsOfUncond, lengthsOfCond
       )
+    case .hunyuanVideo:
+      fatalError()
     case .wurstchenStageC, .wurstchenStageB:
       // The difference between this and SDXL: paddingToken is no long '!' (indexed by 0) but unknown.
       return tokenize(
@@ -2267,7 +2269,7 @@ extension LocalImageGenerator {
           }
           return c
         }
-      case .auraflow, .flux1, .kandinsky21, .pixart:
+      case .auraflow, .flux1, .kandinsky21, .pixart, .hunyuanVideo:
         break
       }
     }
@@ -2354,11 +2356,13 @@ extension LocalImageGenerator {
         let encodedShape = encodedDepth.shape
         return firstStage.scale(
           encodedDepth[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied())
+      case .hunyuanVideo:
+        fatalError()
       }
     case .canny:
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
+        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo:
         return nil
       case .flux1:
         guard
@@ -2388,7 +2392,7 @@ extension LocalImageGenerator {
     let graph = encodedImage.graph
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-      .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
+      .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo:
       let shape = encodedImage.shape
       let maskShape = encodedMask.shape
       var result = graph.variable(
@@ -2685,7 +2689,7 @@ extension LocalImageGenerator {
         (hiresFixEnabled ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
         * 8
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .sd3Large, .flux1:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo:
         firstPassChannels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -3170,7 +3174,7 @@ extension LocalImageGenerator {
         )
         let channels: Int
         switch modelVersion {
-        case .wurstchenStageC, .sd3, .sd3Large, .flux1:
+        case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo:
           channels = 16
         case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
           .wurstchenStageB:
@@ -3544,7 +3548,7 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .sd3Large, .flux1:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -4663,7 +4667,7 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .sd3Large, .flux1:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -5341,7 +5345,7 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .sd3Large, .flux1:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:

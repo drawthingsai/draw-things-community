@@ -479,6 +479,14 @@ public struct DeviceCapability {
       else {
         return false
       }
+    case .hunyuanVideo:
+      guard
+        (!isMaxPerformance
+          && !((isMacCatalystBuild() ? isHighPerformance : isMaxPerformance) && is8BitModel))
+          || force
+      else {
+        return false
+      }
     case .sd3Large:
       guard
         (!isMaxPerformance

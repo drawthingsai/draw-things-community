@@ -1391,6 +1391,8 @@ extension TextEncoder {
       }
     case .svdI2v:
       return encodeI2v(image: image, textModels: existingTextModels)
+    case .hunyuanVideo:
+      fatalError()
     case .wurstchenStageC, .wurstchenStageB:
       return encodeWurstchen(
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
@@ -1466,7 +1468,7 @@ extension TextEncoder {
             intermediateSize: 4096, usesFlashAttention: usesFlashAttention
           ).0
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+        .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -1502,8 +1504,7 @@ extension TextEncoder {
                     name = "__text_model__[t-186-1]"
                   }
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
-                  .sdxlRefiner,
-                  .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+                  .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
                   fatalError()
                 }
                 return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
@@ -1537,8 +1538,7 @@ extension TextEncoder {
                   name = "__text_model__[t-186-1]"
                 }
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
-                .sdxlRefiner, .ssd1b,
-                .svdI2v, .wurstchenStageC, .wurstchenStageB:
+                .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
                 fatalError()
               }
               return .continue(name)
