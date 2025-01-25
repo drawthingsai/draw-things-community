@@ -1313,6 +1313,18 @@ public struct LoRATrainer {
             fatalError()
           }
         }
+        // Patch for bias weights which missing a 1/8 scale. Note that this is not needed if we merge this into the model import step like we do for Hunyuan.
+        if name.hasSuffix("_out_proj-17-1]") || name.hasSuffix("_out_proj-18-1]"),
+          let tensor = store.read(name, codec: [.ezm7, .externalData, .q6p, .q8p])
+        {
+          return .final(
+            graph.withNoGrad {
+              let scaleFactor: Float = 8
+              return
+                ((1 / scaleFactor)
+                * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
+            })
+        }
         return .continue(name)
       }
     }
