@@ -1,17 +1,17 @@
 import Foundation
 
 public struct GPT2Tokenizer {
-  public struct Pair: Hashable, Equatable {
-    public var first: String
-    public var second: String
-    public init(first: String, second: String) {
+  private struct Pair: Hashable, Equatable {
+    var first: String
+    var second: String
+    init(first: String, second: String) {
       self.first = first
       self.second = second
     }
   }
+  private let decoder: [Int32: String]
+  private let bpeRanks: [Pair: Int]
   public let vocabulary: [String: Int32]
-  public let decoder: [Int32: String]
-  public let bpeRanks: [Pair: Int]
   public let unknownToken: Int32
   public let startToken: Int32
   public let endToken: Int32
@@ -96,8 +96,8 @@ public struct GPT2Tokenizer {
     }).joined()
   }
 
-  public func tokenize(text: String, addSpecialTokens: Bool = true)
-    -> [Int32]
+  public func tokenize(text: String, addSpecialTokens: Bool = false)
+    -> ([Int32], [String])
   {
     var fixText = text.split(separator: " ").joined(separator: " ")
     if text.hasPrefix(" ") {
@@ -184,14 +184,16 @@ public struct GPT2Tokenizer {
       return bpe(token: String(token))
     }
     // With bpeTokens, we can query vocabulary and return index now.
+    var strs: [String] = addSpecialTokens ? [""] : []
     var ids: [Int32] = addSpecialTokens ? [startToken] : []
     for bpeToken in bpeTokens {
+      strs.append(bpeToken)
       ids.append(vocabulary[bpeToken, default: unknownToken])
     }
-    return ids
+    return (ids, strs)
   }
 
-  func getPairs(word: [String]) -> Set<Pair>? {
+  private func getPairs(word: [String]) -> Set<Pair>? {
     guard word.count > 1 else {
       return nil
     }
@@ -204,7 +206,7 @@ public struct GPT2Tokenizer {
     return pairs
   }
 
-  func bpe(token: String) -> [String] {
+  private func bpe(token: String) -> [String] {
     var word = [String]()
     for character in token {
       word.append(String(character))
@@ -258,4 +260,23 @@ public struct GPT2Tokenizer {
     }
     return word
   }
+}
+
+extension GPT2Tokenizer: Tokenizer {
+  public func tokenize(text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?) -> (
+    [String], [Int32], [Float], [String?], [Int]
+  ) {
+    let (ids, strs) = tokenize(text: text, addSpecialTokens: true)
+    return (strs, ids, [Float](repeating: 1, count: ids.count), strs, [ids.count])
+  }
+}
+
+extension GPT2Tokenizer: TextualInversionPoweredTokenizer {
+  public func textualInversion(for token: Int32) -> String? {
+    return nil
+  }
+  public func isTextualInversion(_ token: Int32) -> Bool {
+    return false
+  }
+  public var textualInversions: [String] { [] }
 }

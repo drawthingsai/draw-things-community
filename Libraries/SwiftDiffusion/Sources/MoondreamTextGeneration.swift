@@ -51,12 +51,12 @@ extension MoondreamTextGeneration {
       switch version {
       case .moondream1, .moondream2_240306:
         eos = "<END>"
-        before = tokenizer.tokenize(text: "<image>", addSpecialTokens: true)
-        after = tokenizer.tokenize(text: "</image>\n\nQuestion: \(question)\n\nAnswer:")
+        before = tokenizer.tokenize(text: "<image>", addSpecialTokens: true).0
+        after = tokenizer.tokenize(text: "</image>\n\nQuestion: \(question)\n\nAnswer:").0
       case .moondream2_240520:
         eos = "<|endoftext|>"
-        before = tokenizer.tokenize(text: "", addSpecialTokens: true)
-        after = tokenizer.tokenize(text: "\n\nQuestion: \(question)\n\nAnswer:")
+        before = tokenizer.tokenize(text: "", addSpecialTokens: true).0
+        after = tokenizer.tokenize(text: "\n\nQuestion: \(question)\n\nAnswer:").0
       }
       guard
         let textEmbedding = existingTextEmbedding
