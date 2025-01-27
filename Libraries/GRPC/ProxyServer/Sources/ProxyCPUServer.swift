@@ -478,7 +478,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
           try? await Task.sleep(for: .seconds(20))  // Every 20 seconds send a heartbeat.
         }
       }
-      let priority = payload.isHighPriority ? TaskPriority.high : TaskPriority.low
+      let priority = taskPriority(from: payload.priority)
       // Enqueue task.
       let task = WorkTask(priority: priority, request: request, context: context, promise: promise)
       await taskQueue.addTask(task)
@@ -495,6 +495,16 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     }
 
     return promise.futureResult
+  }
+
+  func taskPriority(from priority: String) -> TaskPriority {
+    if priority == "community" {
+      return TaskPriority.low
+    }
+    if priority == "plus" {
+      return TaskPriority.high
+    }
+    return TaskPriority.low
   }
 
   func filesExist(request: FileListRequest, context: StatusOnlyCallContext) -> EventLoopFuture<

@@ -88,7 +88,7 @@ public struct JWTPayload: Codable {
   public let checksum: String
   public let stats: [String: Int]
   public let nonce: String
-  public let isHighPriority: Bool
+  public let priority: String
   public let iss: String
   public let exp: Int
 }
