@@ -32,6 +32,7 @@ public struct LocalImageGenerator: ImageGenerator {
   public var tokenizerT5: SentencePieceTokenizer
   public var tokenizerPileT5: SentencePieceTokenizer
   public var tokenizerChatGLM3: SentencePieceTokenizer
+  public var tokenizerLlama3: GPT2Tokenizer
   private let queue: DispatchQueue
   public init(
     queue: DispatchQueue, configurations: FetchedResult<GenerationConfiguration>,
@@ -41,7 +42,8 @@ public struct LocalImageGenerator: ImageGenerator {
     tokenizerKandinsky: SentencePieceTokenizer,
     tokenizerT5: SentencePieceTokenizer,
     tokenizerPileT5: SentencePieceTokenizer,
-    tokenizerChatGLM3: SentencePieceTokenizer
+    tokenizerChatGLM3: SentencePieceTokenizer,
+    tokenizerLlama3: GPT2Tokenizer
   ) {
     self.queue = queue
     self.tokenizerV1 = tokenizerV1
@@ -51,6 +53,7 @@ public struct LocalImageGenerator: ImageGenerator {
     self.tokenizerT5 = tokenizerT5
     self.tokenizerPileT5 = tokenizerPileT5
     self.tokenizerChatGLM3 = tokenizerChatGLM3
+    self.tokenizerLlama3 = tokenizerLlama3
     modelPreloader = ModelPreloader(
       queue: queue, configurations: configurations, workspace: workspace)
   }
@@ -1069,7 +1072,25 @@ extension LocalImageGenerator {
         [Float](repeating: 1, count: 77), false, 77, 77, lengthsOfUncond, lengthsOfCond
       )
     case .hunyuanVideo:
-      fatalError()
+      let tokenizerV1 = tokenizerV1
+      var result = tokenize(
+        graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials)
+      assert(result.7 >= 77 && result.8 >= 77)
+      let promptWithTemplate =
+        "<|start_header_id|>system<|end_header_id|>\n\nDescribe the video by detailing the following aspects: 1. The main content and theme of the video.2. The color, shape, size, texture, quantity, text, and spatial relationships of the objects.3. Actions, events, behaviors temporal relationships, physical movement changes of the objects.4. background environment, light, style and atmosphere.5. camera angles, movements, and transitions used in the video:<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n\(text)<|eot_id|>"
+      let (
+        llama3Tokens, _, _, _, _, _, _, tokenLengthUncond, tokenLengthCond,
+        _, _
+      ) = tokenize(
+        graph: graph, tokenizer: tokenizerLlama3, text: promptWithTemplate,
+        negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 4096, modifier: .llama3, potentials: potentials,
+        startLength: 0, maxLength: 0, paddingLength: 0)
+      result.0 = llama3Tokens + result.0
+      result.2 = result.2
+      result.3 = result.3
+      return result
     case .wurstchenStageC, .wurstchenStageB:
       // The difference between this and SDXL: paddingToken is no long '!' (indexed by 0) but unknown.
       return tokenize(

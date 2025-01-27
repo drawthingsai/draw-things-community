@@ -1,4 +1,62 @@
+import Foundation
 import NNC
+
+func HunyuanRotaryPositionEmbedding(
+  height: Int, width: Int, time: Int, tokenLength: Int, channels: Int, heads: Int = 1
+)
+  -> (Tensor<Float>, Tensor<Float>)
+{
+  var rotNdTensor0 = Tensor<Float>(.CPU, .NHWC(1, time * height * width, heads, channels))
+  var rotNdTensor1 = Tensor<Float>(
+    .CPU, .NHWC(1, time * height * width + tokenLength, heads, channels))
+  let dim0 = channels / 8
+  let dim1 = channels * 7 / 16
+  let dim2 = dim1
+  assert(channels % 16 == 0)
+  for t in 0..<time {
+    for y in 0..<height {
+      for x in 0..<width {
+        let i = t * height * width + y * width + x + tokenLength
+        for j in 0..<heads {
+          for k in 0..<(dim0 / 2) {
+            let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotNdTensor0[0, i, j, k * 2] = Float(costheta)
+            rotNdTensor0[0, i, j, k * 2 + 1] = Float(sintheta)
+            rotNdTensor1[0, i, j, k * 2] = Float(costheta)
+            rotNdTensor1[0, i, j, k * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim1 / 2) {
+            let theta = Double(y) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotNdTensor0[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+            rotNdTensor0[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+            rotNdTensor1[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+            rotNdTensor1[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim2 / 2) {
+            let theta = Double(x) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotNdTensor0[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+            rotNdTensor0[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+            rotNdTensor1[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+            rotNdTensor1[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+          }
+        }
+      }
+    }
+  }
+  for i in (time * height * width)..<(time * height * width + tokenLength) {
+    for k in 0..<(channels / 2) {
+      rotNdTensor1[0, i, 0, k * 2] = 1
+      rotNdTensor1[0, i, 0, k * 2 + 1] = 0
+    }
+  }
+  return (rotNdTensor0, rotNdTensor1)
+}
 
 private func MLPEmbedder(channels: Int, name: String) -> (Model, Model, Model) {
   let x = Input()

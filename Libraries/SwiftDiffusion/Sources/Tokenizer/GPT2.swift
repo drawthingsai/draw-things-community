@@ -266,7 +266,14 @@ extension GPT2Tokenizer: Tokenizer {
   public func tokenize(text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?) -> (
     [String], [Int32], [Float], [String?], [Int]
   ) {
-    let (ids, strs) = tokenize(text: text, addSpecialTokens: true)
+    var (ids, strs) = tokenize(text: text, addSpecialTokens: true)
+    let paddingToken = paddingToken ?? unknownToken
+    if ids.count < maxLength {
+      for _ in ids.count..<maxLength {
+        strs.append("")
+        ids.append(paddingToken)
+      }
+    }
     return (strs, ids, [Float](repeating: 1, count: ids.count), strs, [ids.count])
   }
 }

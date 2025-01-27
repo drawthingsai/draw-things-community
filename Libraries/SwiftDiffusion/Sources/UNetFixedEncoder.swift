@@ -181,9 +181,9 @@ extension UNetFixedEncoder {
       return []
     case .flux1:
       return []
-    case .v1, .v2, .kandinsky21:
-      fatalError()
     case .hunyuanVideo:
+      return []
+    case .v1, .v2, .kandinsky21:
       fatalError()
     }
   }
@@ -718,7 +718,17 @@ extension UNetFixedEncoder {
       ).toGPU(0)
       return ([graph.variable(rot)] + conditions, nil)
     case .hunyuanVideo:
-      fatalError()
+      let c0 = textEncoding[0]
+      let llama3Length = c0.shape[1]
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let embeddings = HunyuanRotaryPositionEmbedding(
+        height: h, width: w, time: 33, tokenLength: llama3Length, channels: 128)
+      let (rot0, rot1) = (
+        Tensor<FloatType>(from: embeddings.0).toGPU(0),
+        Tensor<FloatType>(from: embeddings.1).toGPU(0)
+      )
+      return ([graph.variable(rot0), graph.variable(rot1)], nil)
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
       let effnetHeight = textEncoding[textEncoding.count - 1].shape[1]
