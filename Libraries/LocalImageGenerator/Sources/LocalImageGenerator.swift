@@ -2887,6 +2887,16 @@ extension LocalImageGenerator {
         }
         guard feedback(.imageEncoded, signposts, nil) else { return (nil, 1) }
       }
+      var batchSize = batchSize
+      switch modelVersion {
+      case .svdI2v:
+        batchSize = Int(configuration.numFrames)
+      case .hunyuanVideo:
+        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
+      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+        break
+      }
       let x_T = randomLatentNoise(
         graph: graph, batchSize: batchSize, startHeight: firstPassStartHeight,
         startWidth: firstPassStartWidth, channels: firstPassChannels, seed: configuration.seed,
@@ -3736,8 +3746,14 @@ extension LocalImageGenerator {
       }
       guard feedback(.imageEncoded, signposts, nil) else { return (nil, 1) }
       var batchSize = batchSize
-      if modelVersion == .svdI2v {
+      switch modelVersion {
+      case .svdI2v:
         batchSize = Int(configuration.numFrames)
+      case .hunyuanVideo:
+        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
+      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+        break
       }
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize, startHeight: startHeight,
@@ -4923,8 +4939,14 @@ extension LocalImageGenerator {
       }
       guard feedback(.imageEncoded, signposts, nil) else { return nil }
       var batchSize = batchSize
-      if modelVersion == .svdI2v {
+      switch modelVersion {
+      case .svdI2v:
         batchSize = Int(configuration.numFrames)
+      case .hunyuanVideo:
+        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
+      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+        break
       }
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize, startHeight: startHeight,
@@ -5635,8 +5657,14 @@ extension LocalImageGenerator {
         } ?? false
       }
       var batchSize = batchSize
-      if modelVersion == .svdI2v {
+      switch modelVersion {
+      case .svdI2v:
         batchSize = Int(configuration.numFrames)
+      case .hunyuanVideo:
+        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
+      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+        break
       }
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize, startHeight: startHeight,

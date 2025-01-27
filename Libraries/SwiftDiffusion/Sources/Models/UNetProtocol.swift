@@ -116,7 +116,11 @@ extension UNetProtocol {
       rEmbed[0..<batchSize, 64..<128] = rZeros
       return graph.variable(Tensor<FloatType>(from: rEmbed).toGPU(0))
     case .hunyuanVideo:
-      fatalError()
+      return graph.variable(
+        Tensor<FloatType>(
+          from: timeEmbedding(
+            timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+        ).toGPU(0))
     }
   }
 }
@@ -146,7 +150,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
           .copied()
       }
   case .hunyuanVideo:
-    fatalError()
+    return conditions
   case .pixart:
     var extractedConditions = [conditions[0]]
     let layers = (conditions.count - 3) / 8
@@ -572,7 +576,15 @@ extension UNetFromNNC {
           injectIPAdapterLengths: injectIPAdapterLengths)
       }
     case .hunyuanVideo:
-      fatalError()
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      let tokenLength = c[2].shape[1]
+      (_, unet) = Hunyuan(
+        time: batchSize, height: tiledHeight, width: tiledWidth, textLength: tokenLength)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version

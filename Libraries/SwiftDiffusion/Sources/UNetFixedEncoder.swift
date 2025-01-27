@@ -723,12 +723,34 @@ extension UNetFixedEncoder {
       let h = startHeight / 2
       let w = startWidth / 2
       let embeddings = HunyuanRotaryPositionEmbedding(
-        height: h, width: w, time: 33, tokenLength: llama3Length, channels: 128)
+        height: h, width: w, time: batchSize, tokenLength: llama3Length, channels: 128)
       let (rot0, rot1) = (
         Tensor<FloatType>(from: embeddings.0).toGPU(0),
         Tensor<FloatType>(from: embeddings.1).toGPU(0)
       )
-      return ([graph.variable(rot0), graph.variable(rot1)], nil)
+      let isGuidanceEmbedSupported =
+        (try?
+          (graph.openStore(
+            filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+          ) {
+            return $0.read(like: "__dit__[t-guidance_embedder_0-0-1]") != nil
+          }).get()) ?? false
+      let guidanceEmbeds: DynamicGraph.Tensor<FloatType>?
+      if isGuidanceEmbedSupported {
+        let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : guidanceEmbed
+        guidanceEmbeds = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: guidanceScale * 1_000, batchSize: 1, embeddingSize: 256,
+              maxPeriod: 10_000)
+          ).toGPU(0))
+      } else {
+        guidanceEmbeds = nil
+      }
+      return (
+        [graph.variable(rot0), graph.variable(rot1), c0, textEncoding[1]]
+          + (guidanceEmbeds.map { [$0] } ?? []), nil
+      )
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
       let effnetHeight = textEncoding[textEncoding.count - 1].shape[1]

@@ -279,7 +279,9 @@ private func SingleTransformerBlock(
 func Hunyuan(time: Int, height: Int, width: Int, textLength: Int) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
-  let imgIn = Dense(count: 3072, name: "x_embedder")
+  let imgIn = Convolution(
+    groups: 1, filters: 3072, filterSize: [2, 2],
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   let txt = Input()
   let t = Input()
   let vector = Input()
@@ -299,14 +301,14 @@ func Hunyuan(time: Int, height: Int, width: Int, textLength: Int) -> (ModelWeigh
     mappers.append(mapper)
   }
   context = context.to(.Float32)
-  var out = imgIn(x).to(.Float32)
+  let h = height / 2
+  let w = width / 2
+  var out = imgIn(x).reshaped([1, time * h * w, 3072]).to(.Float32)
   let (timeInMlp0, timeInMlp2, timeIn) = MLPEmbedder(channels: 3_072, name: "t")
   let (vMlp0, vMlp2, vectorIn) = MLPEmbedder(channels: 3_072, name: "vector")
   let (gMlp0, gMlp2, guidanceIn) = MLPEmbedder(channels: 3_072, name: "guidance")
   var vec = timeIn(t) + vectorIn(vector) + guidanceIn(guidanceEmbed)
   vec = vec.reshaped([1, 1, 3072]).swish()
-  let h = height / 2
-  let w = width / 2
   for i in 0..<20 {
     let (mapper, block) = JointTransformerBlock(
       prefix: "double_blocks.\(i)", k: 128, h: 24, b: 1, t: textLength, hw: time * h * w,
@@ -330,9 +332,12 @@ func Hunyuan(time: Int, height: Int, width: Int, textLength: Int) -> (ModelWeigh
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = (1 + scale(vec)) .* normFinal(out).to(.Float16) + shift(vec)
   let projOut = Dense(count: 2 * 2 * 16, name: "linear")
-  out = projOut(out)
+  out = projOut(out).reshaped([time, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous()
+    .reshaped([
+      time, h * 2, w * 2, 16,
+    ])
   let mapper: ModelWeightMapper = { _ in
     return ModelWeightMapping()
   }
-  return (mapper, Model([x, rot, rot2, txt, t, vector, guidanceEmbed], [out]))
+  return (mapper, Model([x, t, rot, rot2, txt, vector, guidanceEmbed], [out]))
 }
