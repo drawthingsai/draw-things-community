@@ -115,8 +115,10 @@ func EncoderCausal3D(
     }
   }
   var out = convIn(
-    x.reshaped([1, depth, height, width, 3]).padded(
-      .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
+    x.padded(
+      .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+    ).reshaped([1, depth + 2, height + 2, width + 2, 3])
+  ).reshaped([depth, height, width, previousChannel])
   var mappers = [ModelWeightMapper]()
   for (i, channel) in channels.enumerated() {
     for j in 0..<numRepeat {
@@ -132,8 +134,11 @@ func EncoderCausal3D(
       // Conv always pad left first, then right, and pad top first then bottom.
       // Thus, we cannot have (0, 1, 0, 1) (left 0, right 1, top 0, bottom 1) padding as in
       // Stable Diffusion. Instead, we pad to (2, 1, 2, 1) and simply discard the first row and first column.
+      let oldHeight = height
       height /= 2
+      let oldWidth = width
       width /= 2
+      let oldDepth = depth
       let strideZ: Int
       if i > 0 {
         depth = (depth - 1) / 2 + 1
@@ -146,7 +151,11 @@ func EncoderCausal3D(
         hint: Hint(
           stride: [strideZ, 2, 2], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW, name: "downsample")
-      out = conv2d(out.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
+      out = conv2d(
+        out.padded(.replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+          1, oldDepth + 2, oldHeight + 2, oldWidth + 2, channel,
+        ])
+      ).reshaped([depth, height, width, channel])
       let downLayer = i
       let mapper: ModelWeightMapper = { _ in
         return ModelWeightMapping()
@@ -169,16 +178,18 @@ func EncoderCausal3D(
     shortcut: false, depth: depth, height: height, width: width)
   out = midBlock2(out)
   let normOut = GroupNorm(axis: 3, groups: 32, epsilon: 1e-6, reduce: [0, 1, 2], name: "norm_out")
-  out = normOut(out.reshaped([depth, height, width, previousChannel])).reshaped([
-    1, depth, height, width, previousChannel,
-  ])
+  out = normOut(out)
   out = out.swish()
   let convOut = Convolution(
     groups: 1, filters: 32, filterSize: [3, 3, 3], format: .OIHW, name: "conv_out")
-  out = convOut(out.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
+  out = convOut(
+    out.padded(.replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+      1, depth + 2, height + 2, width + 2, previousChannel,
+    ])
+  ).reshaped([depth, height, width, 32])
   let quantConv = Convolution(
-    groups: 1, filters: 32, filterSize: [1, 1, 1], format: .OIHW, name: "quant_conv")
-  out = quantConv(out).reshaped([depth, height, width, 32])
+    groups: 1, filters: 32, filterSize: [1, 1], format: .OIHW, name: "quant_conv")
+  out = quantConv(out)
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     for mapper in mappers {
