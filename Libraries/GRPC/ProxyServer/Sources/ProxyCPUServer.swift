@@ -498,11 +498,13 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   }
 
   func taskPriority(from priority: String) -> TaskPriority {
-    if priority == "community" {
+    switch priority {
+    case "community":
       return TaskPriority.low
-    }
-    if priority == "plus" {
+    case "plus":
       return TaskPriority.high
+    default:
+      return TaskPriority.low
     }
     return TaskPriority.low
   }
