@@ -1100,10 +1100,8 @@ extension UNetFromNNC {
       }
       return x
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v, .kandinsky21, .wurstchenStageB:
+      .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo:
       return x
-    case .hunyuanVideo:
-      fatalError()
     }
   }
 
