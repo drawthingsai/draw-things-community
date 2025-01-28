@@ -16,8 +16,9 @@ private func ResnetBlockCausal3D(
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "resnet_conv1")
   out = conv1(
-    out.reshaped([1, depth, height, width, inChannels]).padded(
-      .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])
+    out.padded(
+      .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+    ).reshaped([1, depth + 2, height + 2, width + 2, inChannels])
   ).reshaped([depth, height, width, outChannels])
   let norm2 = GroupNorm(
     axis: 3, groups: 32, epsilon: 1e-6, reduce: [0, 1, 2], name: "resnet_norm2")
@@ -28,8 +29,9 @@ private func ResnetBlockCausal3D(
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "resnet_conv2")
   out = conv2(
-    out.reshaped([1, depth, height, width, outChannels]).padded(
-      .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])
+    out.padded(
+      .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+    ).reshaped([1, depth + 2, height + 2, width + 2, outChannels])
   ).reshaped([depth, height, width, outChannels])
   let ninShortcut: Model?
   if shortcut {
@@ -207,8 +209,9 @@ func DecoderCausal3D(
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_in")
   out = convIn(
-    out.reshaped([1, startDepth, startHeight, startWidth, 16]).padded(
-      .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])
+    out.padded(
+      .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+    ).reshaped([1, startDepth + 2, startHeight + 2, startWidth + 2, 16])
   ).reshaped([startDepth, startHeight, startWidth, previousChannel])
   let (midBlockMapper1, midBlock1) = ResnetBlockCausal3D(
     prefix: "decoder.mid_block.resnets.0", inChannels: previousChannel,
@@ -263,8 +266,9 @@ func DecoderCausal3D(
         hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW, name: "upsample")
       out = conv2d(
-        out.reshaped([1, depth, height, width, channel]).padded(
-          .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])
+        out.padded(
+          .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+        ).reshaped([1, depth + 2, height + 2, width + 2, channel])
       ).reshaped([depth, height, width, channel])
       let upLayer = channels.count - 1 - i
       let mapper: ModelWeightMapper = { _ in
@@ -281,8 +285,9 @@ func DecoderCausal3D(
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_out")
   out = convOut(
-    out.reshaped([1, depth, height, width, channels[0]]).padded(
-      .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])
+    out.padded(
+      .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+    ).reshaped([1, depth + 2, height + 2, width + 2, channels[0]])
   ).reshaped([
     depth, height, width, 3,
   ])

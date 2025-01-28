@@ -3028,6 +3028,10 @@ extension LocalImageGenerator {
         if signposts.contains(.imageUpscaled) {
           let _ = feedback(.imageUpscaled, signposts, nil)
         }
+        var batchSize = batchSize
+        if modelVersion == .hunyuanVideo {
+          batchSize = Int(configuration.numFrames)
+        }
         guard batchSize > 1 else {
           return ([result], scaleFactor)
         }

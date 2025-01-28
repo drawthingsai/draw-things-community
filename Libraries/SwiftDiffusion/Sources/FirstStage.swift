@@ -197,7 +197,6 @@ extension FirstStage {
       causalAttentionMask = graph.variable(mask.toGPU(0))
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
-        DynamicGraph.logLevel = .verbose
         if highPrecision {
           decoder.compile(
             inputs: [
@@ -367,7 +366,7 @@ extension FirstStage {
   public func decode(_ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?)
     -> (DynamicGraph.Tensor<FloatType>, Model)
   {
-    let (result, decoder) = decode(x, decoder: existingDecoder, highPrecision: true)
+    let (result, decoder) = decode(x, decoder: existingDecoder, highPrecision: false)
     if highPrecisionFallback && isNaN(result.rawValue.toCPU()) {
       let (highPrecisionResult, _) = decode(x, decoder: nil, highPrecision: true)
       return (highPrecisionResult, decoder)
