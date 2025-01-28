@@ -69,7 +69,7 @@ private func AttnBlockCausal3D(
     1, hw, inChannels,
   ])
   var dot =
-    Matmul(transposeA: (1, 2))(q, k).reshaped([
+    Matmul(transposeB: (1, 2))(q, k).reshaped([
       depth, height * width, depth, height * width,
     ]) + causalAttentionMask
   dot = dot.reshaped([hw, hw])
@@ -102,8 +102,6 @@ func EncoderCausal3D(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_in")
-  var out = convIn(x.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
-  var mappers = [ModelWeightMapper]()
   var height = startHeight
   var width = startWidth
   var depth = startDepth
@@ -114,6 +112,10 @@ func EncoderCausal3D(
       depth = (depth - 1) * 2 + 1
     }
   }
+  var out = convIn(
+    x.reshaped([1, depth, height, width, 3]).padded(
+      .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
+  var mappers = [ModelWeightMapper]()
   for (i, channel) in channels.enumerated() {
     for j in 0..<numRepeat {
       let (mapper, block) = ResnetBlockCausal3D(
@@ -174,7 +176,7 @@ func EncoderCausal3D(
   out = convOut(out.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
   let quantConv = Convolution(
     groups: 1, filters: 32, filterSize: [1, 1, 1], format: .OIHW, name: "quant_conv")
-  out = quantConv(out)
+  out = quantConv(out).reshaped([depth, height, width, 32])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     for mapper in mappers {
@@ -199,7 +201,7 @@ func DecoderCausal3D(
   var previousChannel = channels[channels.count - 1]
   let postQuantConv = Convolution(
     groups: 1, filters: 16, filterSize: [1, 1, 1], format: .OIHW, name: "post_quant_conv")
-  var out = postQuantConv(x)
+  var out = postQuantConv(x.reshaped([1, startDepth, startHeight, startWidth, 16]))
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
@@ -244,12 +246,12 @@ func DecoderCausal3D(
           [1, height * width, channel], strides: [height * width * channel, channel, 1]
         ).contiguous()
         let more = out.reshaped(
-          [(depth - 1), height * width, channel], offset: [1, 0, 0],
-          strides: [height * width, channel, 1]
+          [(depth - 1), 1, height * width, channel], offset: [1, 0, 0, 0],
+          strides: [height * width * channel, height * width * channel, channel, 1]
         ).contiguous()
         out = Functional.concat(
           axis: 0, first,
-          Functional.concat(axis: 0, more, more).reshaped([
+          Functional.concat(axis: 1, more, more).reshaped([
             (depth - 1) * 2, height * width, channel,
           ]))
         depth = 1 + (depth - 1) * 2
@@ -273,10 +275,12 @@ func DecoderCausal3D(
   ])
   out = out.swish()
   let convOut = Convolution(
-    groups: 1, filters: 3, filterSize: [3, 3, 3],
+    groups: 1, filters: 4, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_out")
-  out = convOut(out.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
+  out = convOut(out.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])).reshaped([
+    depth, height, width, 4,
+  ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     mapping.merge(midBlockMapper1(format)) { v, _ in v }

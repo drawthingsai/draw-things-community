@@ -393,7 +393,8 @@ public struct ModelZoo: DownloadZoo {
       name: "Hunyuan Video 720p", file: "hunyuan_video_t2v_720p_q8p.ckpt", prefix: "",
       version: .hunyuanVideo, defaultScale: 12, textEncoder: "llava_llama_3_8b_v1.1_q8p.ckpt",
       autoencoder: "hunyuan_video_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
-      objective: .u(conditionScale: 1000), guidanceEmbed: true, hiresFixScale: 24),
+      highPrecisionAutoencoder: true, objective: .u(conditionScale: 1000), guidanceEmbed: true,
+      hiresFixScale: 24),
     Specification(
       name: "PixArt Sigma XL 512", file: "pixart_sigma_xl_2_512_ms_f16.ckpt", prefix: "",
       version: .pixart, defaultScale: 8, textEncoder: "t5_xxl_encoder_q6p.ckpt",

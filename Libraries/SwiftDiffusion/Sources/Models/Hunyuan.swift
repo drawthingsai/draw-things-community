@@ -16,7 +16,7 @@ func HunyuanRotaryPositionEmbedding(
   for t in 0..<time {
     for y in 0..<height {
       for x in 0..<width {
-        let i = t * height * width + y * width + x + tokenLength
+        let i = t * height * width + y * width + x
         for j in 0..<heads {
           for k in 0..<(dim0 / 2) {
             let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))
