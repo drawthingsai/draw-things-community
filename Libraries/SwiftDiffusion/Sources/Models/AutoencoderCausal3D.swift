@@ -9,30 +9,32 @@ private func ResnetBlockCausal3D(
   let x = Input()
   let norm1 = GroupNorm(
     axis: 3, groups: 32, epsilon: 1e-6, reduce: [0, 1, 2], name: "resnet_norm1")
-  var out = norm1(x.reshaped([depth, height, width, inChannels])).reshaped([
-    1, depth, height, width, inChannels,
-  ])
+  var out = norm1(x)
   out = Swish()(out)
   let conv1 = Convolution(
     groups: 1, filters: outChannels, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "resnet_conv1")
-  out = conv1(out.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
+  out = conv1(
+    out.reshaped([1, depth, height, width, inChannels]).padded(
+      .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])
+  ).reshaped([depth, height, width, outChannels])
   let norm2 = GroupNorm(
     axis: 3, groups: 32, epsilon: 1e-6, reduce: [0, 1, 2], name: "resnet_norm2")
-  out = norm2(out.reshaped([depth, height, width, outChannels])).reshaped([
-    1, depth, height, width, outChannels,
-  ])
+  out = norm2(out)
   out = Swish()(out)
   let conv2 = Convolution(
     groups: 1, filters: outChannels, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "resnet_conv2")
-  out = conv2(out.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
+  out = conv2(
+    out.reshaped([1, depth, height, width, outChannels]).padded(
+      .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])
+  ).reshaped([depth, height, width, outChannels])
   let ninShortcut: Model?
   if shortcut {
     let nin = Convolution(
-      groups: 1, filters: outChannels, filterSize: [1, 1, 1], hint: Hint(stride: [1, 1, 1]),
+      groups: 1, filters: outChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
       format: .OIHW, name: "resnet_shortcut")
     out = nin(x) + out
     ninShortcut = nin
@@ -54,16 +56,14 @@ private func AttnBlockCausal3D(
   let x = Input()
   let causalAttentionMask = Input()
   let norm = GroupNorm(axis: 3, groups: 32, epsilon: 1e-6, reduce: [0, 1, 2], name: "attn_norm")
-  var out = norm(x.reshaped([depth, height, width, inChannels])).reshaped([
-    1, depth, height, width, inChannels,
-  ])
+  var out = norm(x)
   let hw = width * height * depth
   let tokeys = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1, 1], hint: Hint(stride: [1, 1, 1]),
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
     format: .OIHW, name: "to_k")
   let k = tokeys(out).reshaped([1, hw, inChannels])
   let toqueries = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1, 1], hint: Hint(stride: [1, 1, 1]),
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
     format: .OIHW, name: "to_q")
   let q = ((1.0 / Float(inChannels).squareRoot()) * toqueries(out)).reshaped([
     1, hw, inChannels,
@@ -76,14 +76,14 @@ private func AttnBlockCausal3D(
   dot = dot.softmax()
   dot = dot.reshaped([1, hw, hw])
   let tovalues = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1, 1], hint: Hint(stride: [1, 1, 1]),
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
     format: .OIHW, name: "to_v")
   let v = tovalues(out).reshaped([1, hw, inChannels])
   out = dot.to(of: v) * v
   let projOut = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1, 1], hint: Hint(stride: [1, 1, 1]),
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
     format: .OIHW, name: "proj_out")
-  out = x + projOut(out.reshaped([1, depth, height, width, inChannels]))
+  out = x + projOut(out.reshaped([depth, height, width, inChannels]))
   let mapper: ModelWeightMapper = { _ in
     return ModelWeightMapping()
   }
@@ -200,13 +200,16 @@ func DecoderCausal3D(
   let causalAttentionMask = Input()
   var previousChannel = channels[channels.count - 1]
   let postQuantConv = Convolution(
-    groups: 1, filters: 16, filterSize: [1, 1, 1], format: .OIHW, name: "post_quant_conv")
-  var out = postQuantConv(x.reshaped([1, startDepth, startHeight, startWidth, 16]))
+    groups: 1, filters: 16, filterSize: [1, 1], format: .OIHW, name: "post_quant_conv")
+  var out = postQuantConv(x)
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_in")
-  out = convIn(out.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
+  out = convIn(
+    out.reshaped([1, startDepth, startHeight, startWidth, 16]).padded(
+      .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])
+  ).reshaped([startDepth, startHeight, startWidth, previousChannel])
   let (midBlockMapper1, midBlock1) = ResnetBlockCausal3D(
     prefix: "decoder.mid_block.resnets.0", inChannels: previousChannel,
     outChannels: previousChannel, shortcut: false, depth: startDepth, height: startHeight,
@@ -236,9 +239,7 @@ func DecoderCausal3D(
       previousChannel = channel
     }
     if i > 0 {
-      out = Upsample(.nearest, widthScale: 2, heightScale: 2)(
-        out.reshaped([depth, height, width, channel])
-      ).reshaped([1, depth, height * 2, width * 2, channel])
+      out = Upsample(.nearest, widthScale: 2, heightScale: 2)(out)
       width *= 2
       height *= 2
       if i < channels.count - 1 {  // Scale time too.
@@ -255,13 +256,16 @@ func DecoderCausal3D(
             (depth - 1) * 2, height * width, channel,
           ]))
         depth = 1 + (depth - 1) * 2
-        out = out.reshaped([1, depth, height, width, channel])
+        out = out.reshaped([depth, height, width, channel])
       }
       let conv2d = Convolution(
         groups: 1, filters: channel, filterSize: [3, 3, 3],
         hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW, name: "upsample")
-      out = conv2d(out.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0]))
+      out = conv2d(
+        out.reshaped([1, depth, height, width, channel]).padded(
+          .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])
+      ).reshaped([depth, height, width, channel])
       let upLayer = channels.count - 1 - i
       let mapper: ModelWeightMapper = { _ in
         return ModelWeightMapping()
@@ -270,16 +274,17 @@ func DecoderCausal3D(
     }
   }
   let normOut = GroupNorm(axis: 3, groups: 32, epsilon: 1e-6, reduce: [0, 1, 2], name: "norm_out")
-  out = normOut(out.reshaped([depth, height, width, channels[0]])).reshaped([
-    1, depth, height, width, channels[0],
-  ])
+  out = normOut(out)
   out = out.swish()
   let convOut = Convolution(
-    groups: 1, filters: 4, filterSize: [3, 3, 3],
+    groups: 1, filters: 3, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_out")
-  out = convOut(out.padded(.replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])).reshaped([
-    depth, height, width, 4,
+  out = convOut(
+    out.reshaped([1, depth, height, width, channels[0]]).padded(
+      .replication, begin: [0, 2, 1, 1, 0], end: [0, 0, 1, 1, 0])
+  ).reshaped([
+    depth, height, width, 3,
   ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
