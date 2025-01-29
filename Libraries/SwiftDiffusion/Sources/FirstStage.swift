@@ -899,7 +899,6 @@ extension FirstStage {
             ).rawValue.toCPU())
         }
       }
-      print("tileSize \(tileSize.depth)")
       let tileDecodedDepth = ((tileSize.depth - 1) * 4) + 1
       let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
       result.withUnsafeMutableBytes {
@@ -926,8 +925,6 @@ extension FirstStage {
           } else {
             tWeight = 1
           }
-          print("tresultstart \(tDecoded + tStart * 4)")
-          print("decodedstart \(tDecodedStart) tweight at tdecoded \(tDecoded) \(tWeight)")
           for j in 0..<(shape[1] * zoomFactor.spatial) {
             let yWeightAndIndex = yWeightsAndIndexes[j]
             for i in 0..<(shape[2] * zoomFactor.spatial) {
