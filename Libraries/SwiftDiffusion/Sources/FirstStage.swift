@@ -187,17 +187,17 @@ extension FirstStage {
       var startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
-      if startWidth > 36 || startHeight > 36 || startDepth > 17 {
+      if startWidth > 32 || startHeight > 32 || startDepth > 15 {
         // We turn on tiled decoding forcefully.
         if !tiledDecoding {
-          decodingTileOverlap = 8
+          decodingTileOverlap = 4
         }
         tiledDecoding = true
-        startWidth = min(startWidth, 36)
-        startHeight = min(startHeight, 36)
+        startWidth = min(startWidth, 32)
+        startHeight = min(startHeight, 32)
         decodingTileSize.width = startWidth
         decodingTileSize.height = startHeight
-        startDepth = min(startDepth, 17)
+        startDepth = min(startDepth, 15)
         decodingTileSize.depth = startDepth
       }
       decoder =
@@ -899,6 +899,7 @@ extension FirstStage {
             ).rawValue.toCPU())
         }
       }
+      print("tileSize \(tileSize.depth)")
       let tileDecodedDepth = ((tileSize.depth - 1) * 4) + 1
       let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
       result.withUnsafeMutableBytes {
@@ -915,18 +916,18 @@ extension FirstStage {
         }
         for tDecoded in tDecodedStart..<tileDecodedDepth {
           var fp =
-            rfp + (tDecoded * (tileSize.depth - 5) * 4 + 9) * shape[1] * zoomFactor.spatial
-            * shape[2] * zoomFactor.spatial * outputChannels
-          let tWeight: T
-          if isLast || tDecodedStart == 0 {
-            tWeight = 1
-          } else if tDecoded - tDecodedStart < 8 {
-            tWeight = T(min(Float(tDecoded - tDecodedStart) / 8, 1))
-          } else if tileDecodedDepth - tDecoded < 8 {
-            tWeight = T(min(Float(tileDecodedDepth - tDecoded) / 8, 1))
+            rfp + (tDecoded + tStart * 4) * shape[1] * zoomFactor.spatial * shape[2]
+            * zoomFactor.spatial * outputChannels
+          let tWeight: Float
+          if tDecoded - tDecodedStart < 8 && tDecodedStart != 0 {
+            tWeight = min((Float(tDecoded - tDecodedStart) + 0.5) / 8, 1)
+          } else if tileDecodedDepth - tDecoded <= 8 && !isLast {
+            tWeight = min((Float(tileDecodedDepth - tDecoded) - 0.5) / 8, 1)
           } else {
             tWeight = 1
           }
+          print("tresultstart \(tDecoded + tStart * 4)")
+          print("decodedstart \(tDecodedStart) tweight at tdecoded \(tDecoded) \(tWeight)")
           for j in 0..<(shape[1] * zoomFactor.spatial) {
             let yWeightAndIndex = yWeightsAndIndexes[j]
             for i in 0..<(shape[2] * zoomFactor.spatial) {
@@ -937,7 +938,7 @@ extension FirstStage {
               for y in yWeightAndIndex {
                 let yOffset = y.offset * tileSize.width * zoomFactor.spatial * inputChannels
                 for x in xWeightAndIndex {
-                  let weight = T(x.weight * y.weight)
+                  let weight = T(x.weight * y.weight * tWeight)
                   let index = y.index * xTiles + x.index
                   let tensor = decodedRawValues[index]
                   tensor.withUnsafeBytes {
@@ -945,7 +946,7 @@ extension FirstStage {
                     // Note that while result is outputChannels, this is padded to 4 i.e. channels.
                     v += x.offset * inputChannels + yOffset + tOffset
                     for k in 0..<outputChannels {
-                      fp[k] += v[k] * weight * tWeight
+                      fp[k] += v[k] * weight
                     }
                   }
                 }
