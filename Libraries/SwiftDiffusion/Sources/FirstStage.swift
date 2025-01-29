@@ -877,7 +877,6 @@ extension FirstStage {
         resultBatchSize, shape[1] * zoomFactor.spatial, shape[2] * zoomFactor.spatial,
         outputChannels))
     // Hard-code overlapping 16 frames in time.
-    DynamicGraph.logLevel = .verbose
     for t in stride(from: 0, to: batchSize, by: max(1, tileSize.depth - 5)) {
       var decodedRawValues = [Tensor<T>]()
       let tStart = min(t, batchSize - tileSize.depth)
