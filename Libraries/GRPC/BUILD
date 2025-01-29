@@ -83,6 +83,7 @@ swift_library(
         ":GRPCControlPanelModels",
         ":GRPCImageServiceModels",
         "//Libraries/BinaryResources",
+        "//Libraries/DataModels",
         "//Libraries/ModelZoo",
         "@SwiftArgumentParser//:ArgumentParser",
         "@SwiftCrypto//:CCryptoBoringSSL",

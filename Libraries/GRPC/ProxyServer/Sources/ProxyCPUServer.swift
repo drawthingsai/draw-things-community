@@ -1,5 +1,6 @@
 import BinaryResources
 import Crypto
+import DataModels
 import Foundation
 import GRPC
 import GRPCControlPanelModels
@@ -479,6 +480,44 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         }
       }
       let priority = taskPriority(from: payload.priority)
+      let configuration = GenerationConfiguration.from(data: request.configuration)
+      guard let modelName = configuration.model else {
+        promise.fail(
+          GRPCStatus(
+            code: .permissionDenied,
+            message: "no valid model name "))
+        return
+      }
+      let modelVersion = ModelZoo.versionForModel(modelName).rawValue
+      guard
+        let cost = try? ProxyServerUtils.calculateGenerationCost(
+          modelName: modelVersion, width: Int(configuration.targetImageWidth),
+          height: Int(configuration.targetImageHeight),
+          steps: Int(configuration.steps),
+          batchSize: Int(configuration.batchSize),
+          cfgEnabled: (configuration.guidanceScale - 1).magnitude > 1e-2)
+      else {
+        logger.error(
+          "Proxy Server can not calculate cost for modelVersion \(modelVersion)"
+        )
+        promise.fail(
+          GRPCStatus(
+            code: .permissionDenied,
+            message: "Proxy Server can not calculate cost for modelVersion \(modelVersion)"))
+        return
+      }
+      let costThreshold = generationCostThreshold(from: payload.priority)
+      guard cost < costThreshold else {
+        logger.error(
+          "Proxy Server enqueue image generating request failed, cost exceed threshold \(costThreshold)"
+        )
+        promise.fail(
+          GRPCStatus(
+            code: .permissionDenied, message: "cost \(cost) exceed threshold \(costThreshold)"))
+        return
+      }
+      print("cost \(cost)")
+
       // Enqueue task.
       let task = WorkTask(priority: priority, request: request, context: context, promise: promise)
       await taskQueue.addTask(task)
@@ -507,6 +546,18 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       return TaskPriority.low
     }
     return TaskPriority.low
+  }
+
+  func generationCostThreshold(from priority: String) -> Double {
+    switch priority {
+    case "community":
+      return 15000  // around 120s
+    case "plus":
+      return 37000  // around 300s
+    default:
+      return 15000
+    }
+    return 15000
   }
 
   func filesExist(request: FileListRequest, context: StatusOnlyCallContext) -> EventLoopFuture<
