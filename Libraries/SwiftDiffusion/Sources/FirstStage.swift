@@ -877,6 +877,7 @@ extension FirstStage {
         resultBatchSize, shape[1] * zoomFactor.spatial, shape[2] * zoomFactor.spatial,
         outputChannels))
     // Hard-code overlapping 16 frames in time.
+    DynamicGraph.logLevel = .verbose
     for t in stride(from: 0, to: batchSize, by: max(1, tileSize.depth - 5)) {
       var decodedRawValues = [Tensor<T>]()
       let tStart = min(t, batchSize - tileSize.depth)
@@ -905,10 +906,10 @@ extension FirstStage {
         guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
         // Due to hard-code and causal convolution, we skip the first 8 frames and only mix the rest 8 frames.
         let tDecodedStart: Int
-        let isLast = t + tileSize.depth - 5 >= batchSize
+        let isLast = t + tileSize.depth >= batchSize
         if t == 0 {
           tDecodedStart = 0
-        } else if t + tileSize.depth - 5 > batchSize {
+        } else if t + tileSize.depth > batchSize {
           tDecodedStart = (t - (batchSize - tileSize.depth)) * zoomFactor.temporal + 9
         } else {
           tDecodedStart = 9

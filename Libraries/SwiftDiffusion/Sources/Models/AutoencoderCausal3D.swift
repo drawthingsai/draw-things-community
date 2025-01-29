@@ -9,7 +9,8 @@ private func ResnetBlockCausal3D(
   let x = Input()
   let norm1 = GroupNorm(
     axis: 3, groups: 32, epsilon: 1e-6, reduce: [0, 1, 2], name: "resnet_norm1")
-  var out = norm1(x)
+  let norm1X = norm1(x)
+  var out = norm1X
   out = Swish()(out)
   let conv1 = Convolution(
     groups: 1, filters: outChannels, filterSize: [3, 3, 3],
@@ -38,7 +39,8 @@ private func ResnetBlockCausal3D(
     let nin = Convolution(
       groups: 1, filters: outChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
       format: .OIHW, name: "resnet_shortcut")
-    out = nin(x) + out
+    let ninX = nin(x)
+    out = ninX + out
     ninShortcut = nin
   } else {
     ninShortcut = nil
@@ -81,7 +83,7 @@ private func AttnBlockCausal3D(
     groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
     format: .OIHW, name: "to_v")
   let v = tovalues(out).reshaped([1, hw, inChannels])
-  out = dot.to(of: v) * v
+  out = dot * v
   let projOut = Convolution(
     groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
     format: .OIHW, name: "proj_out")
