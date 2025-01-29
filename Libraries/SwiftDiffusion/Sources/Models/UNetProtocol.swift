@@ -94,7 +94,7 @@ extension UNetProtocol {
             embeddingSize: timeEmbeddingSize,
             maxPeriod: 10_000)
         ).toGPU(0))
-    case .sd3, .pixart, .auraflow, .flux1, .sd3Large:
+    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo:
       return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
@@ -115,12 +115,6 @@ extension UNetProtocol {
       rEmbed[0..<batchSize, 0..<64] = rTimeEmbed
       rEmbed[0..<batchSize, 64..<128] = rZeros
       return graph.variable(Tensor<FloatType>(from: rEmbed).toGPU(0))
-    case .hunyuanVideo:
-      return graph.variable(
-        Tensor<FloatType>(
-          from: timeEmbedding(
-            timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
-        ).toGPU(0))
     }
   }
 }
@@ -150,7 +144,12 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
           .copied()
       }
   case .hunyuanVideo:
-    return conditions
+    return conditions[0..<2]
+      + conditions[2..<conditions.count].map {
+        let shape = $0.shape
+        return $0[index..<(index + 1), 0..<shape[1], 0..<shape[2]]
+          .copied()
+      }
   case .pixart:
     var extractedConditions = [conditions[0]]
     let layers = (conditions.count - 3) / 8
@@ -584,7 +583,9 @@ extension UNetFromNNC {
       tileScaleFactor = 8
       let tokenLength = c[2].shape[1]
       (_, unet) = Hunyuan(
-        time: batchSize, height: tiledHeight, width: tiledWidth, textLength: tokenLength)
+        time: batchSize, height: tiledHeight, width: tiledWidth, textLength: tokenLength,
+        channels: 3072, layers: (20, 40),
+        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version

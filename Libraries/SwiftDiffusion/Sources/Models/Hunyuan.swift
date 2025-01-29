@@ -89,13 +89,13 @@ private func RefinerSelfAttention(prefix: String, k: Int, h: Int, hk: Int, b: In
   return (Model([x], [out]), mapper)
 }
 
-private func IndividualRefinerBlock(prefix: String, t: Int) -> (Model, ModelWeightMapper) {
+private func IndividualRefinerBlock(prefix: String, b: Int, t: Int) -> (Model, ModelWeightMapper) {
   let x = Input()
   let c = Input()
   let norm1 = LayerNorm(epsilon: 1e-6, axis: [2], name: "refiner_norm1")
   let gateMsa = Dense(count: 3_072, name: "refiner_ada_ln_msa")
   let (attention, attentionMapper) = RefinerSelfAttention(
-    prefix: prefix, k: 128, h: 24, hk: 24, b: 1, t: t)
+    prefix: prefix, k: 128, h: 24, hk: 24, b: b, t: t)
   var out = x + attention(norm1(x)) .* gateMsa(c)
   let norm2 = LayerNorm(epsilon: 1e-6, axis: [2], name: "refiner_norm2")
   let mlp0 = Dense(count: 3_072 * 4, name: "refiner_mlp_0")
@@ -129,18 +129,18 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
 }
 
 private func JointTransformerBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool, upcast: Bool
+  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool, upcast: Bool,
+  usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
-  let c = Input()
   let rot = Input()
-  let contextAdaLNs = (0..<(contextBlockPreOnly ? 2 : 6)).map {
-    Dense(count: k * h, name: "context_ada_ln_\($0)")
+  let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in
+    Input()
   }
-  let contextChunks = contextAdaLNs.map { $0(c) }
+  let xChunks = (0..<6).map { _ in Input() }
   let contextNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var contextOut = (1 + contextChunks[1]) .* contextNorm1(context).to(.Float16) + contextChunks[0]
+  var contextOut = contextChunks[1] .* contextNorm1(context).to(.Float16) + contextChunks[0]
   let contextToKeys = Dense(count: k * h, name: "c_k")
   let contextToQueries = Dense(count: k * h, name: "c_q")
   let contextToValues = Dense(count: k * h, name: "c_v")
@@ -151,10 +151,8 @@ private func JointTransformerBlock(
   let normAddedQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "c_norm_q")
   contextQ = normAddedQ(contextQ)
   let contextV = contextToValues(contextOut).reshaped([b, t, h, k])
-  let xAdaLNs = (0..<6).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
-  let xChunks = xAdaLNs.map { $0(c) }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = (1 + xChunks[1]) .* xNorm1(x).to(.Float16) + xChunks[0]
+  var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
   let xToKeys = Dense(count: k * h, name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
@@ -204,7 +202,7 @@ private func JointTransformerBlock(
       contextOut
       + ((upcast ? contextChunks[5].to(of: contextOut) : contextChunks[5])
       .* contextFF(
-        contextNorm2(contextOut).to(.Float16) .* (1 + contextChunks[4]) + contextChunks[3])).to(
+        contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])).to(
         of: contextOut)
   } else {
     contextLinear1 = nil
@@ -216,27 +214,26 @@ private func JointTransformerBlock(
   xOut =
     xOut
     + ((upcast ? xChunks[5].to(of: xOut) : xChunks[5])
-    .* xFF(xNorm2(xOut).to(.Float16) .* (1 + xChunks[4]) + xChunks[3])).to(of: xOut)
+    .* xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3])).to(of: xOut)
   let mapper: ModelWeightMapper = { _ in
     return ModelWeightMapping()
   }
   if !contextBlockPreOnly {
-    return (mapper, Model([x, context, c, rot], [xOut, contextOut]))
+    return (mapper, Model([x, context, rot] + contextChunks + xChunks, [xOut, contextOut]))
   } else {
-    return (mapper, Model([x, context, c, rot], [xOut]))
+    return (mapper, Model([x, context, rot] + contextChunks + xChunks, [xOut]))
   }
 }
 
 private func SingleTransformerBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool
+  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
+  usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
-  let c = Input()
   let rot = Input()
-  let xAdaLNs = (0..<3).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
-  let xChunks = xAdaLNs.map { $0(c) }
+  let xChunks = (0..<3).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = (1 + xChunks[1]) .* xNorm1(x).to(.Float16) + xChunks[0]
+  var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
   let xToKeys = Dense(count: k * h, name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
@@ -273,64 +270,55 @@ private func SingleTransformerBlock(
   let mapper: ModelWeightMapper = { _ in
     return ModelWeightMapping()
   }
-  return (mapper, Model([x, c, rot], [out]))
+  return (mapper, Model([x, rot] + xChunks, [out]))
 }
 
-func Hunyuan(time: Int, height: Int, width: Int, textLength: Int) -> (ModelWeightMapper, Model) {
+func Hunyuan(
+  time: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: (Int, Int),
+  usesFlashAttention: FlashAttentionLevel
+) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
   let imgIn = Convolution(
-    groups: 1, filters: 3072, filterSize: [2, 2],
+    groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  let txt = Input()
-  let t = Input()
-  let vector = Input()
-  let guidanceEmbed = Input()
-  let (tMlp0, tMlp2, timeEmbedder) = MLPEmbedder(channels: 3_072, name: "txt_in_t")
-  var c = txt.reduced(.mean, axis: [1])
-  let (cLinear1, cLinear2, contextEmbedder) = MLPEmbedder(channels: 3_072, name: "c")
-  c = timeEmbedder(t) + contextEmbedder(c)
-  c = c.reshaped([1, 1, 3072]).swish()
-  let inputEmbedder = Dense(count: 3_072, name: "input_embedder")
-  var context = inputEmbedder(txt)
+  let contextIn = Input()
+  var adaLNChunks = [Input]()
   var mappers = [ModelWeightMapper]()
-  for i in 0..<2 {
-    let (block, mapper) = IndividualRefinerBlock(
-      prefix: "txt_in.individual_token_refiner.blocks.\(i)", t: textLength)
-    context = block(context, c)
-    mappers.append(mapper)
-  }
-  context = context.to(.Float32)
+  var context = contextIn.to(.Float32)
   let h = height / 2
   let w = width / 2
-  var out = imgIn(x).reshaped([1, time * h * w, 3072]).to(.Float32)
-  let (timeInMlp0, timeInMlp2, timeIn) = MLPEmbedder(channels: 3_072, name: "t")
-  let (vMlp0, vMlp2, vectorIn) = MLPEmbedder(channels: 3_072, name: "vector")
-  let (gMlp0, gMlp2, guidanceIn) = MLPEmbedder(channels: 3_072, name: "guidance")
-  var vec = timeIn(t) + vectorIn(vector) + guidanceIn(guidanceEmbed)
-  vec = vec.reshaped([1, 1, 3072]).swish()
-  for i in 0..<20 {
+  var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
+  for i in 0..<layers.0 {
+    let contextChunks = (0..<6).map { _ in Input() }
+    let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = JointTransformerBlock(
-      prefix: "double_blocks.\(i)", k: 128, h: 24, b: 1, t: textLength, hw: time * h * w,
-      contextBlockPreOnly: false, upcast: true)
-    let blockOut = block(out, context, vec, rot)
+      prefix: "double_blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength,
+      hw: time * h * w,
+      contextBlockPreOnly: false, upcast: true, usesFlashAttention: usesFlashAttention)
+    let blockOut = block([out, context, rot] + contextChunks + xChunks)
     out = blockOut[0]
     context = blockOut[1]
+    adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
   let rot2 = Input()
   out = Functional.concat(axis: 1, out, context)
-  for i in 0..<40 {
+  for i in 0..<layers.1 {
+    let xChunks = (0..<3).map { _ in Input() }
     let (mapper, block) = SingleTransformerBlock(
-      prefix: "single_blocks.\(i)", k: 128, h: 24, b: 1, t: textLength, hw: time * h * w,
-      contextBlockPreOnly: i == 39)
-    out = block(out, vec, rot2)
+      prefix: "single_blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength,
+      hw: time * h * w,
+      contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
+    out = block([out, rot2] + xChunks)
+    adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
   }
-  let scale = Dense(count: 3072, name: "ada_ln_0")
-  let shift = Dense(count: 3072, name: "ada_ln_1")
+  let shift = Input()
+  let scale = Input()
+  adaLNChunks.append(contentsOf: [shift, scale])
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  out = (1 + scale(vec)) .* normFinal(out).to(.Float16) + shift(vec)
+  out = scale .* normFinal(out).to(.Float16) + shift
   let projOut = Dense(count: 2 * 2 * 16, name: "linear")
   out = projOut(out).reshaped([time, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous()
     .reshaped([
@@ -339,5 +327,86 @@ func Hunyuan(time: Int, height: Int, width: Int, textLength: Int) -> (ModelWeigh
   let mapper: ModelWeightMapper = { _ in
     return ModelWeightMapping()
   }
-  return (mapper, Model([x, t, rot, rot2, txt, vector, guidanceEmbed], [out]))
+  return (mapper, Model([x, rot, rot2, contextIn] + adaLNChunks, [out]))
+}
+
+private func JointTransformerBlockFixed(
+  prefix: String, k: Int, h: Int, contextBlockPreOnly: Bool
+) -> (ModelWeightMapper, Model) {
+  let c = Input()
+  let contextAdaLNs = (0..<(contextBlockPreOnly ? 2 : 6)).map {
+    Dense(count: k * h, name: "context_ada_ln_\($0)")
+  }
+  var contextChunks = contextAdaLNs.map { $0(c) }
+  contextChunks[1] = 1 + contextChunks[1]
+  let xAdaLNs = (0..<6).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
+  var xChunks = xAdaLNs.map { $0(c) }
+  xChunks[1] = 1 + xChunks[1]
+  if !contextBlockPreOnly {
+    contextChunks[4] = 1 + contextChunks[4]
+  }
+  xChunks[4] = 1 + xChunks[4]
+  let mapper: ModelWeightMapper = { _ in
+    return ModelWeightMapping()
+  }
+  return (mapper, Model([c], contextChunks + xChunks))
+}
+
+private func SingleTransformerBlockFixed(
+  prefix: String, k: Int, h: Int
+) -> (ModelWeightMapper, Model) {
+  let c = Input()
+  let xAdaLNs = (0..<3).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
+  var xChunks = xAdaLNs.map { $0(c) }
+  xChunks[1] = 1 + xChunks[1]
+  let mapper: ModelWeightMapper = { _ in
+    return ModelWeightMapping()
+  }
+  return (mapper, Model([c], xChunks))
+}
+
+func HunyuanFixed(batchSize: Int, channels: Int, layers: (Int, Int), textLength: Int) -> Model {
+  let txt = Input()
+  let t = Input()
+  let vector = Input()
+  let guidanceEmbed = Input()
+  let (tMlp0, tMlp2, timeEmbedder) = MLPEmbedder(channels: channels, name: "txt_in_t")
+  var c = txt.reduced(.mean, axis: [1])
+  let (cLinear1, cLinear2, contextEmbedder) = MLPEmbedder(channels: channels, name: "c")
+  c = timeEmbedder(t).reshaped([batchSize, 1, channels]) + contextEmbedder(c)
+  c = c.swish()
+  let inputEmbedder = Dense(count: channels, name: "input_embedder")
+  var context = inputEmbedder(txt)
+  var mappers = [ModelWeightMapper]()
+  for i in 0..<2 {
+    let (block, mapper) = IndividualRefinerBlock(
+      prefix: "txt_in.individual_token_refiner.blocks.\(i)", b: batchSize, t: textLength)
+    context = block(context, c)
+    mappers.append(mapper)
+  }
+  var outs = [Model.IO]()
+  outs.append(context)
+  let (timeInMlp0, timeInMlp2, timeIn) = MLPEmbedder(channels: channels, name: "t")
+  let (vMlp0, vMlp2, vectorIn) = MLPEmbedder(channels: channels, name: "vector")
+  let (gMlp0, gMlp2, guidanceIn) = MLPEmbedder(channels: channels, name: "guidance")
+  var vec = timeIn(t) + vectorIn(vector) + guidanceIn(guidanceEmbed)
+  vec = vec.reshaped([batchSize, 1, channels]).swish()
+  for i in 0..<layers.0 {
+    let (mapper, block) = JointTransformerBlockFixed(
+      prefix: "double_blocks.\(i)", k: 128, h: channels / 128, contextBlockPreOnly: false)
+    let blockOut = block(vec)
+    mappers.append(mapper)
+    outs.append(blockOut)
+  }
+  for i in 0..<layers.1 {
+    let (mapper, block) = SingleTransformerBlockFixed(
+      prefix: "single_blocks.\(i)", k: 128, h: channels / 128)
+    let blockOut = block(vec)
+    mappers.append(mapper)
+    outs.append(blockOut)
+  }
+  let scale = Dense(count: channels, name: "ada_ln_0")
+  let shift = Dense(count: channels, name: "ada_ln_1")
+  outs.append(contentsOf: [shift(vec), 1 + scale(vec)])
+  return Model([txt, t, vector, guidanceEmbed], outs)
 }

@@ -719,6 +719,7 @@ extension UNetFixedEncoder {
       return ([graph.variable(rot)] + conditions, nil)
     case .hunyuanVideo:
       let c0 = textEncoding[0]
+      let pooled = textEncoding[1]
       let llama3Length = c0.shape[1]
       let h = startHeight / 2
       let w = startWidth / 2
@@ -747,9 +748,33 @@ extension UNetFixedEncoder {
       } else {
         guidanceEmbeds = nil
       }
+      var timeEmbeds = graph.variable(
+        .GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
+      var c = graph.variable(
+        .GPU(0), .HWC(timesteps.count, llama3Length, 4096), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
+        c[i..<(i + 1), 0..<llama3Length, 0..<4096] = c0
+      }
+      let unetFixed = HunyuanFixed(
+        batchSize: timesteps.count, channels: 3072, layers: (20, 40), textLength: llama3Length)
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: [c, timeEmbeds, pooled] + (guidanceEmbeds.map { [$0] } ?? []))
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+      }
+      let conditions = unetFixed(
+        inputs: c, [timeEmbeds, pooled] + (guidanceEmbeds.map { [$0] } ?? [])
+      ).map { $0.as(of: FloatType.self) }
       return (
-        [graph.variable(rot0), graph.variable(rot1), c0, textEncoding[1]]
-          + (guidanceEmbeds.map { [$0] } ?? []), nil
+        [graph.variable(rot0), graph.variable(rot1)] + conditions, nil
       )
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
