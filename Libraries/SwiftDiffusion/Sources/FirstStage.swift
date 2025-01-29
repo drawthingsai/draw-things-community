@@ -65,11 +65,11 @@ extension FirstStage {
     let decoder: Model
     var transparentDecoder: Model? = nil
     let queueWatermark = DynamicGraph.queueWatermark
-    if version == .kandinsky21 {
-      DynamicGraph.queueWatermark = 8
+    if version == .kandinsky21 || version == .hunyuanVideo {
+      DynamicGraph.queueWatermark = min(2, queueWatermark)
     }
     defer {
-      if version == .kandinsky21 {
+      if version == .kandinsky21 || version == .hunyuanVideo {
         DynamicGraph.queueWatermark = queueWatermark
       }
     }
