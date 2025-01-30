@@ -2504,8 +2504,10 @@ extension LocalImageGenerator {
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? ImageGeneratorUtils.defaultAutoencoder
+    // Always enable for Hunyuan.
     let isGuidanceEmbedEnabled =
-      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
+      ModelZoo.guidanceEmbedForModel(file)
+      && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
@@ -3392,7 +3394,8 @@ extension LocalImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? ImageGeneratorUtils.defaultAutoencoder
     let isGuidanceEmbedEnabled =
-      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
+      ModelZoo.guidanceEmbedForModel(file)
+      && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
@@ -4590,7 +4593,8 @@ extension LocalImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? ImageGeneratorUtils.defaultAutoencoder
     let isGuidanceEmbedEnabled =
-      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
+      ModelZoo.guidanceEmbedForModel(file)
+      && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
@@ -5279,7 +5283,8 @@ extension LocalImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? ImageGeneratorUtils.defaultAutoencoder
     let isGuidanceEmbedEnabled =
-      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
+      ModelZoo.guidanceEmbedForModel(file)
+      && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
