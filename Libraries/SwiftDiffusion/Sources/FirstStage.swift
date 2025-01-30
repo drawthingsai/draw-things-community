@@ -978,7 +978,7 @@ extension FirstStage {
             ).rawValue.toCPU())
         }
       }
-      let tileDecodedDepth = ((tileSize.depth - 1) * 4) + 1
+      let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
       let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
       result.withUnsafeMutableBytes {
         guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
@@ -994,7 +994,8 @@ extension FirstStage {
         }
         for tDecoded in tDecodedStart..<tileDecodedDepth {
           var fp =
-            rfp + (tDecoded + tStart * 4) * shape[1] * scaleFactor.spatial * shape[2]
+            rfp + (tDecoded + tStart * scaleFactor.temporal) * shape[1] * scaleFactor.spatial
+            * shape[2]
             * scaleFactor.spatial * outputChannels
           let tWeight: Float
           if tDecoded - tDecodedStart < 8 && tDecodedStart != 0 {
@@ -1039,7 +1040,7 @@ extension FirstStage {
 
   private func tiledEncode<T: TensorNumeric & BinaryFloatingPoint>(
     _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, encoder: Model,
-    tileSize: (depth: Int, width: Int, height: Int), tileOverlap: Int,
+    tileSize: (width: Int, height: Int), tileOverlap: Int,
     scaleFactor: (spatial: Int, temporal: Int),
     outputChannels: Int
   ) -> DynamicGraph.Tensor<T> {
@@ -1115,6 +1116,117 @@ extension FirstStage {
               }
             }
             fp += outputChannels
+          }
+        }
+      }
+    }
+    return graph.variable(result.toGPU(0))
+  }
+
+  private func tiledEncode<T: TensorNumeric & BinaryFloatingPoint>(
+    _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, encoder: Model,
+    tileSize: (depth: Int, width: Int, height: Int), tileOverlap: Int,
+    scaleFactor: (spatial: Int, temporal: Int),
+    outputChannels: Int
+  ) -> DynamicGraph.Tensor<T> {
+    guard tileSize.depth > 1 && tileSize.depth < (z.shape[0] - 1) / scaleFactor.temporal + 1 else {
+      return tiledEncode(
+        z, causalAttentionMask: causalAttentionMask, encoder: encoder,
+        tileSize: (width: tileSize.width, height: tileSize.height), tileOverlap: tileOverlap,
+        scaleFactor: scaleFactor, outputChannels: outputChannels)
+    }
+    let shape = z.shape
+    let channels = shape[3]
+    let batchSize = shape[0]
+    // tile overlap shouldn't be bigger than 1/3 of either height or width (otherwise we cannot make much progress).
+    let tileOverlap = min(
+      min(tileOverlap, Int((Double(tileSize.height / 3) / 8).rounded(.down)) * 8),
+      Int((Double(tileSize.width / 3) / 8).rounded(.down)) * 8)
+    let startHeight = shape[1] / scaleFactor.spatial
+    let startWidth = shape[2] / scaleFactor.spatial
+    let yTiles =
+      (startHeight - tileOverlap * 2 + (tileSize.height - tileOverlap * 2) - 1)
+      / (tileSize.height - tileOverlap * 2)
+    let xTiles =
+      (startWidth - tileOverlap * 2 + (tileSize.width - tileOverlap * 2) - 1)
+      / (tileSize.width - tileOverlap * 2)
+    let graph = z.graph
+    var encodedRawValues = [Tensor<T>]()
+    let resultBatchSize = (shape[0] - 1) / scaleFactor.temporal + 1
+    var result = Tensor<T>(.CPU, .NHWC(resultBatchSize, startHeight, startWidth, outputChannels))
+    let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
+    for t in stride(from: 0, to: resultBatchSize, by: max(1, tileSize.depth - 5)) {
+      let tDecodedStart = min(t * scaleFactor.temporal, batchSize - tileDecodedDepth)
+      for y in 0..<yTiles {
+        let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
+        let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
+          iOfs: yOfs * scaleFactor.spatial, length: shape[1],
+          tileSize: tileSize.height * scaleFactor.spatial,
+          tileOverlap: tileOverlap * scaleFactor.spatial)
+        for x in 0..<xTiles {
+          let xOfs = x * (tileSize.width - tileOverlap * 2) + (x > 0 ? tileOverlap : 0)
+          let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
+            iOfs: xOfs * scaleFactor.spatial, length: shape[2],
+            tileSize: tileSize.width * scaleFactor.spatial,
+            tileOverlap: tileOverlap * scaleFactor.spatial)
+          encodedRawValues.append(
+            encoder(
+              inputs:
+                z[
+                  tDecodedStart..<(tDecodedStart + tileDecodedDepth), inputStartYPad..<inputEndYPad,
+                  inputStartXPad..<inputEndXPad,
+                  0..<channels
+                ].copied(), (causalAttentionMask.map { [$0] } ?? []))[0].as(of: T.self).rawValue
+              .toCPU())
+        }
+      }
+      let (xWeightsAndIndexes, yWeightsAndIndexes) = xyTileWeightsAndIndexes(
+        width: startWidth, height: startHeight, xTiles: xTiles, yTiles: yTiles,
+        tileSize: (width: tileSize.width, height: tileSize.height), tileOverlap: tileOverlap)
+      result.withUnsafeMutableBytes {
+        guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
+        let tEncodedStart: Int
+        let isLast = t + tileSize.depth >= resultBatchSize
+        if t == 0 {
+          tEncodedStart = 0
+        } else if t + tileSize.depth > resultBatchSize {
+          tEncodedStart = (t - (resultBatchSize - tileSize.depth)) + 2
+        } else {
+          tEncodedStart = 2
+        }
+        for tEncoded in tEncodedStart..<tileSize.depth {
+          var fp = rfp + (tEncoded + t) * tileSize.width * tileSize.height * outputChannels
+          let tWeight: Float
+          if tEncoded - tEncodedStart < 2 && tEncodedStart != 0 {
+            tWeight = min((Float(tEncoded - tEncodedStart) + 0.5) / 2, 1)
+          } else if tileSize.depth - tEncoded <= 2 && !isLast {
+            tWeight = min((Float(tileSize.depth - tEncoded) - 0.5) / 2, 1)
+          } else {
+            tWeight = 1
+          }
+          for j in 0..<startHeight {
+            let yWeightAndIndex = yWeightsAndIndexes[j]
+            for i in 0..<startWidth {
+              let xWeightAndIndex = xWeightsAndIndexes[i]
+              let tOffset = tEncoded * tileSize.width * outputChannels * tileSize.height
+              for y in yWeightAndIndex {
+                let yOffset = y.offset * tileSize.width * outputChannels + tOffset
+                for x in xWeightAndIndex {
+                  let weight = T(x.weight * y.weight * tWeight)
+                  let index = y.index * xTiles + x.index
+                  let tensor = encodedRawValues[index]
+                  tensor.withUnsafeBytes {
+                    guard var v = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
+                    // Note that while result is outputChannels, this is padded to 4 i.e. channels.
+                    v = v + x.offset * outputChannels + yOffset
+                    for k in 0..<outputChannels {
+                      fp[k] += v[k] * weight
+                    }
+                  }
+                }
+              }
+              fp += outputChannels
+            }
           }
         }
       }
