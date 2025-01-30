@@ -19,7 +19,7 @@ func HunyuanRotaryPositionEmbedding(
         let i = t * height * width + y * width + x
         for j in 0..<heads {
           for k in 0..<(dim0 / 2) {
-            let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))
+            let theta = 0 * 1.0 / pow(256, Double(k) * 2 / Double(dim0))
             let sintheta = sin(theta)
             let costheta = cos(theta)
             rotNdTensor0[0, i, j, k * 2] = Float(costheta)
@@ -28,7 +28,7 @@ func HunyuanRotaryPositionEmbedding(
             rotNdTensor1[0, i, j, k * 2 + 1] = Float(sintheta)
           }
           for k in 0..<(dim1 / 2) {
-            let theta = Double(y) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
+            let theta = Double(y) * 1.0 / pow(256, Double(k) * 2 / Double(dim1))
             let sintheta = sin(theta)
             let costheta = cos(theta)
             rotNdTensor0[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
@@ -37,7 +37,7 @@ func HunyuanRotaryPositionEmbedding(
             rotNdTensor1[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
           }
           for k in 0..<(dim2 / 2) {
-            let theta = Double(x) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
+            let theta = Double(x) * 1.0 / pow(256, Double(k) * 2 / Double(dim2))
             let sintheta = sin(theta)
             let costheta = cos(theta)
             rotNdTensor0[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
