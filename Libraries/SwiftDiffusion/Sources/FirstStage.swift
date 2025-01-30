@@ -1189,9 +1189,9 @@ extension FirstStage {
         if t == 0 {
           tEncodedStart = 0
         } else if t + tileSize.depth > resultBatchSize {
-          tEncodedStart = (t - (resultBatchSize - tileSize.depth)) + 2
+          tEncodedStart = (t - (resultBatchSize - tileSize.depth)) + 3
         } else {
-          tEncodedStart = 2
+          tEncodedStart = 3
         }
         for tEncoded in tEncodedStart..<tileSize.depth {
           var fp =
