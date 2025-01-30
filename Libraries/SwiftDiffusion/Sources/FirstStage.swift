@@ -69,7 +69,7 @@ extension FirstStage {
     var transparentDecoder: Model? = nil
     let queueWatermark = DynamicGraph.queueWatermark
     if version == .kandinsky21 || version == .hunyuanVideo {
-      DynamicGraph.queueWatermark = min(0, queueWatermark)
+      DynamicGraph.queueWatermark = min(1, queueWatermark)
     }
     defer {
       if version == .kandinsky21 || version == .hunyuanVideo {
@@ -488,7 +488,7 @@ extension FirstStage {
     let encoder: Model
     let queueWatermark = DynamicGraph.queueWatermark
     if version == .hunyuanVideo {
-      DynamicGraph.queueWatermark = min(0, queueWatermark)
+      DynamicGraph.queueWatermark = min(1, queueWatermark)
     }
     defer {
       if version == .hunyuanVideo {
