@@ -1518,7 +1518,7 @@ extension TextEncoder {
     // Now load Llama3 decoder.
     let tokenLength = tokens[0].shape[0] / 2
     let llama3 = Llama3(
-      Float16.self, vocabularySize: 128_320, maxLength: tokenLength, width: 4_096,
+      FloatType.self, vocabularySize: 128_320, maxLength: tokenLength, width: 4_096,
       tokenLength: tokenLength, layers: 32, MLP: 14336, heads: 32, outputHiddenStates: 29,
       batchSize: batchSize)
     let tokens2TensorGPU: DynamicGraph.Tensor<Int32>
