@@ -490,6 +490,7 @@ extension FirstStage {
     let tiledHeight: Int
     let tiledWidth: Int
     let scaleFactor: Int
+    let causalAttentionMask: DynamicGraph.Tensor<Float>?
     switch version {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .pixart, .auraflow:
       startHeight = shape[1] / 8
@@ -524,6 +525,7 @@ extension FirstStage {
         }
       }
       outputChannels = 8
+      causalAttentionMask = nil
     case .sd3, .sd3Large, .flux1:
       startHeight = shape[1] / 8
       startWidth = shape[2] / 8
@@ -558,8 +560,53 @@ extension FirstStage {
         }
       }
       outputChannels = 32
+      causalAttentionMask = nil
     case .hunyuanVideo:
-      fatalError()
+      let startDepth = (shape[0] - 1) / 4 + 1
+      startHeight = shape[1] / 8
+      startWidth = shape[2] / 8
+      scaleFactor = 8
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tileOverlap = tiledDiffusion.tileOverlap * 8
+      encoder =
+        existingEncoder
+        ?? EncoderCausal3D(
+          channels: [128, 256, 512, 512], numRepeat: 2, startWidth: tiledWidth,
+          startHeight: tiledHeight, startDepth: startDepth
+        ).1
+      var mask = Tensor<Float>(
+        Array(repeating: 0, count: startDepth * startDepth), .CPU,
+        .NHWC(startDepth, 1, startDepth, 1))
+      for i in 0..<(startDepth - 1) {
+        for j in (i + 1)..<startDepth {
+          mask[i, 0, j, 0] = -Float.greatestFiniteMagnitude
+        }
+      }
+      causalAttentionMask = graph.variable(mask.toGPU(0))
+      if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          encoder.compile(
+            inputs: [
+              DynamicGraph.Tensor<Float>(
+                from: x[0..<1, 0..<(tiledHeight * 8), 0..<(tiledWidth * 8), 0..<shape[3]])
+            ] + (causalAttentionMask.map { [$0] } ?? []))
+        } else {
+          encoder.compile(
+            inputs: [x[0..<1, 0..<(tiledHeight * 8), 0..<(tiledWidth * 8), 0..<shape[3]]]
+              + (causalAttentionMask.map { [DynamicGraph.Tensor<FloatType>(from: $0)] } ?? []))
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("encoder", model: encoder, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 32
     case .kandinsky21:
       startHeight = shape[1] / 8
       startWidth = shape[2] / 8
@@ -585,6 +632,7 @@ extension FirstStage {
         }
       }
       outputChannels = 4
+      causalAttentionMask = nil
     case .wurstchenStageC:
       startHeight = shape[1] / 32
       startWidth = shape[2] / 32
@@ -617,6 +665,7 @@ extension FirstStage {
           .GPU(0), .NHWC(1, 1, 1, 3)))
       x = (x - mean) .* invStd
       outputChannels = 16
+      causalAttentionMask = nil
     case .wurstchenStageB:
       startHeight = shape[1] / 4
       startWidth = shape[2] / 4
@@ -639,16 +688,18 @@ extension FirstStage {
       }
       x = (x + 1) * 0.5
       outputChannels = 4
+      causalAttentionMask = nil
     }
     let tiledEncoding =
       tiledDiffusion.isEnabled && (startWidth > tiledWidth || startHeight > tiledHeight)
-    guard batchSize > 1 else {
+    guard batchSize > 1 && version != .hunyuanVideo else {
       if highPrecision {
         if tiledEncoding {
           return (
             DynamicGraph.Tensor<FloatType>(
               from: tiledEncode(
-                DynamicGraph.Tensor<Float>(from: x), encoder: encoder,
+                DynamicGraph.Tensor<Float>(from: x), causalAttentionMask: causalAttentionMask,
+                encoder: encoder,
                 tileSize: (depth: 0, width: tiledWidth, height: tiledHeight),
                 tileOverlap: tileOverlap,
                 scaleFactor: scaleFactor, outputChannels: outputChannels)), encoder
@@ -656,7 +707,9 @@ extension FirstStage {
         } else {
           return (
             DynamicGraph.Tensor<FloatType>(
-              from: encoder(inputs: DynamicGraph.Tensor<Float>(from: x))[0].as(of: Float.self)),
+              from: encoder(
+                inputs: DynamicGraph.Tensor<Float>(from: x),
+                (causalAttentionMask.map { [$0] } ?? []))[0].as(of: Float.self)),
             encoder
           )
         }
@@ -664,12 +717,20 @@ extension FirstStage {
         if tiledEncoding {
           return (
             tiledEncode(
-              x, encoder: encoder, tileSize: (depth: 0, width: tiledWidth, height: tiledHeight),
+              x,
+              causalAttentionMask: causalAttentionMask.map {
+                DynamicGraph.Tensor<FloatType>(from: $0)
+              }, encoder: encoder, tileSize: (depth: 0, width: tiledWidth, height: tiledHeight),
               tileOverlap: tileOverlap, scaleFactor: scaleFactor, outputChannels: outputChannels),
             encoder
           )
         } else {
-          return (encoder(inputs: x)[0].as(of: FloatType.self), encoder)
+          return (
+            encoder(
+              inputs: x,
+              (causalAttentionMask.map { [DynamicGraph.Tensor<FloatType>(from: $0)] } ?? []))[0].as(
+                of: FloatType.self), encoder
+          )
         }
       }
     }
@@ -684,7 +745,8 @@ extension FirstStage {
               FloatType
             >(
               from: tiledEncode(
-                DynamicGraph.Tensor<Float>(from: z), encoder: encoder,
+                DynamicGraph.Tensor<Float>(from: z), causalAttentionMask: causalAttentionMask,
+                encoder: encoder,
                 tileSize: (depth: 0, width: tiledWidth, height: tiledHeight),
                 tileOverlap: tileOverlap,
                 scaleFactor: scaleFactor, outputChannels: outputChannels))
@@ -693,17 +755,23 @@ extension FirstStage {
             .Tensor<
               FloatType
             >(
-              from: encoder(inputs: DynamicGraph.Tensor<Float>(from: z))[0].as(
-                of: Float.self))
+              from: encoder(
+                inputs: DynamicGraph.Tensor<Float>(from: z),
+                (causalAttentionMask.map { [$0] } ?? []))[0].as(
+                  of: Float.self))
         }
       } else {
         if tiledEncoding {
           result[i..<(i + 1), 0..<startHeight, 0..<startWidth, 0..<outputChannels] = tiledEncode(
-            z, encoder: encoder, tileSize: (depth: 0, width: tiledWidth, height: tiledHeight),
+            z,
+            causalAttentionMask: causalAttentionMask.map {
+              DynamicGraph.Tensor<FloatType>(from: $0)
+            }, encoder: encoder, tileSize: (depth: 0, width: tiledWidth, height: tiledHeight),
             tileOverlap: tileOverlap, scaleFactor: scaleFactor, outputChannels: outputChannels)
         } else {
           result[i..<(i + 1), 0..<startHeight, 0..<startWidth, 0..<outputChannels] = encoder(
-            inputs: z)[0].as(
+            inputs: z,
+            (causalAttentionMask.map { [DynamicGraph.Tensor<FloatType>(from: $0)] } ?? []))[0].as(
               of: FloatType.self)
         }
       }
@@ -958,7 +1026,7 @@ extension FirstStage {
   }
 
   private func tiledEncode<T: TensorNumeric & BinaryFloatingPoint>(
-    _ z: DynamicGraph.Tensor<T>, encoder: Model,
+    _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, encoder: Model,
     tileSize: (depth: Int, width: Int, height: Int), tileOverlap: Int, scaleFactor: Int,
     outputChannels: Int
   ) -> DynamicGraph.Tensor<T> {
@@ -994,7 +1062,8 @@ extension FirstStage {
             inputs:
               z[
                 0..<1, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad, 0..<channels
-              ].copied())[0].as(of: T.self).rawValue.toCPU())
+              ].copied(), (causalAttentionMask.map { [$0] } ?? []))[0].as(of: T.self).rawValue
+            .toCPU())
       }
     }
     let (xWeightsAndIndexes, yWeightsAndIndexes) = xyTileWeightsAndIndexes(
