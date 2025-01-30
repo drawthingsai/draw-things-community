@@ -3315,6 +3315,9 @@ extension LocalImageGenerator {
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
+      if modelVersion == .hunyuanVideo {
+        batchSize = Int(configuration.numFrames)
+      }
       guard batchSize > 1 else {
         return ([result], scaleFactor)
       }
@@ -4000,6 +4003,9 @@ extension LocalImageGenerator {
         firstStageResult, configuration: configuration)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
+      }
+      if modelVersion == .hunyuanVideo {
+        batchSize = Int(configuration.numFrames)
       }
       guard batchSize > 1 else {
         return ([result], scaleFactor)
@@ -5192,6 +5198,9 @@ extension LocalImageGenerator {
       } else {
         guard feedback(.imageDecoded, signposts, nil) else { return nil }
       }
+      if modelVersion == .hunyuanVideo {
+        batchSize = Int(configuration.numFrames)
+      }
       guard batchSize > 1 else {
         return [result]
       }
@@ -6043,6 +6052,9 @@ extension LocalImageGenerator {
         guard feedback(.secondPassImageDecoded, signposts, nil) else { return nil }
       } else {
         guard feedback(.imageDecoded, signposts, nil) else { return nil }
+      }
+      if modelVersion == .hunyuanVideo {
+        batchSize = Int(configuration.numFrames)
       }
       guard batchSize > 1 else {
         return [result]
