@@ -995,8 +995,7 @@ extension FirstStage {
         for tDecoded in tDecodedStart..<tileDecodedDepth {
           var fp =
             rfp + (tDecoded + tStart * scaleFactor.temporal) * shape[1] * scaleFactor.spatial
-            * shape[2]
-            * scaleFactor.spatial * outputChannels
+            * shape[2] * scaleFactor.spatial * outputChannels
           let tWeight: Float
           if tDecoded - tDecodedStart < 8 && tDecodedStart != 0 {
             tWeight = min((Float(tDecoded - tDecodedStart) + 0.5) / 8, 1)
@@ -1196,8 +1195,8 @@ extension FirstStage {
         }
         for tEncoded in tEncodedStart..<tileSize.depth {
           var fp =
-            rfp + (tEncoded + tDecodedStart / scaleFactor.temporal) * tileSize.width
-            * tileSize.height * outputChannels
+            rfp + (tEncoded + tDecodedStart / scaleFactor.temporal) * startWidth * startHeight
+            * outputChannels
           let tWeight: Float
           if tEncoded - tEncodedStart < 2 && tEncodedStart != 0 {
             tWeight = min((Float(tEncoded - tEncodedStart) + 0.5) / 2, 1)
