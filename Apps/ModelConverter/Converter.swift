@@ -123,7 +123,7 @@ struct Converter: ParsableCommand {
       if autoencoder == nil {
         autoencoder = "flux_1_vae_f16.ckpt"
       }
-    case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow:
+    case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow, .hunyuanVideo:
       fatalError()
     }
     var specification = Specification(
