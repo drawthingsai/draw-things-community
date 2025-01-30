@@ -2524,7 +2524,7 @@ extension LocalImageGenerator {
       isEnabled: configuration.tiledDecoding,
       tileSize: .init(
         width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
-      tileOverlap: ((Int(configuration.decodingTileOverlap) + 3) / 4) * 2)
+      tileOverlap: (Int(configuration.decodingTileOverlap) + 1) / 2)
     let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
@@ -3406,7 +3406,7 @@ extension LocalImageGenerator {
       isEnabled: configuration.tiledDecoding,
       tileSize: .init(
         width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
-      tileOverlap: ((Int(configuration.decodingTileOverlap) + 3) / 4) * 2)  // Round up to 2, but divide by 2 first.
+      tileOverlap: (Int(configuration.decodingTileOverlap) + 1) / 2)  // Divide by 2 first.
     let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
@@ -4599,7 +4599,7 @@ extension LocalImageGenerator {
       isEnabled: configuration.tiledDecoding,
       tileSize: .init(
         width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
-      tileOverlap: ((Int(configuration.decodingTileOverlap) + 3) / 4) * 2)
+      tileOverlap: (Int(configuration.decodingTileOverlap) + 1) / 2)
     let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
@@ -5283,7 +5283,7 @@ extension LocalImageGenerator {
       isEnabled: configuration.tiledDecoding,
       tileSize: .init(
         width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
-      tileOverlap: ((Int(configuration.decodingTileOverlap) + 3) / 4) * 2)
+      tileOverlap: (Int(configuration.decodingTileOverlap) + 1) / 2)
     let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
