@@ -644,7 +644,7 @@ extension UNetFromNNC {
     unet.maxConcurrency = .limit(4)
     let tileOverlap = min(
       min(
-        tiledDiffusion.tileOverlap * tileScaleFactor,
+        tiledDiffusion.tileOverlap * tileScaleFactor / 2,
         Int((Double(tiledHeight / 3) / Double(tileScaleFactor)).rounded(.down)) * tileScaleFactor),
       Int((Double(tiledWidth / 3) / Double(tileScaleFactor)).rounded(.down)) * tileScaleFactor)
     let yTiles =
@@ -937,7 +937,7 @@ extension UNetFromNNC {
       ? min(tiledDiffusion.tileSize.height * tileScaleFactor, startHeight) : startHeight
     let tileOverlap = min(
       min(
-        tiledDiffusion.tileOverlap * tileScaleFactor,
+        tiledDiffusion.tileOverlap * tileScaleFactor / 2,
         Int((Double(tiledHeight / 3) / Double(tileScaleFactor)).rounded(.down)) * tileScaleFactor),
       Int((Double(tiledWidth / 3) / Double(tileScaleFactor)).rounded(.down)) * tileScaleFactor)
     let yTiles =

@@ -473,7 +473,7 @@ extension ControlModel {
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 64, startWidth) : startWidth
       let tileOverlap = min(
         min(
-          tiledDiffusion.tileOverlap * 64,
+          tiledDiffusion.tileOverlap * 64 / 2,
           Int((Double(tiledHeight / 3) / 64).rounded(.down)) * 64),
         Int((Double(tiledWidth / 3) / 64).rounded(.down)) * 64)
       let tiledDiffusionIsEnabled = (startWidth > tiledWidth) || (startHeight > tiledHeight)
@@ -1414,7 +1414,7 @@ extension ControlModel {
       if tiledDiffusionIsEnabled {
         let tileOverlap = min(
           min(
-            tiledDiffusion.tileOverlap * 8,
+            tiledDiffusion.tileOverlap * 8 / 2,
             Int((Double(tiledHeight / 3) / 8).rounded(.down)) * 8),
           Int((Double(tiledWidth / 3) / 8).rounded(.down)) * 8)
         let yTiles =
