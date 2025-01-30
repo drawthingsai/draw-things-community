@@ -19,7 +19,7 @@ func HunyuanRotaryPositionEmbedding(
         let i = t * height * width + y * width + x
         for j in 0..<heads {
           for k in 0..<(dim0 / 2) {
-            let theta = 0 * 1.0 / pow(256, Double(k) * 2 / Double(dim0))
+            let theta = Double(t) * 1.0 / pow(256, Double(k) * 2 / Double(dim0))
             let sintheta = sin(theta)
             let costheta = cos(theta)
             rotNdTensor0[0, i, j, k * 2] = Float(costheta)
