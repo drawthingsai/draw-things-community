@@ -28,7 +28,7 @@ func generateCArray(fromFile path: String) throws -> (String, String) {
 
   // Add bytes with formatting
   for (index, byte) in bytes.enumerated() {
-    output += String(format: "%3d", byte)
+    output += "\(Int(byte))"
 
     // Add separator unless it's the last byte
     if index < bytes.count - 1 {
