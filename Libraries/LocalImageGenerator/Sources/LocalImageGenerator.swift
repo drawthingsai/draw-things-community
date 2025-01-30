@@ -2851,7 +2851,8 @@ extension LocalImageGenerator {
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
-        alternativeDecoderVersion: alternativeDecoderVersion)
+        alternativeDecoderVersion: alternativeDecoderVersion,
+        highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
       if modifier == .inpainting || modifier == .editing || modifier == .double {
         // Only apply the image fill logic (for image encoding purpose) when it is inpainting or editing.
         let firstPassImage =
@@ -2982,7 +2983,8 @@ extension LocalImageGenerator {
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
-        alternativeDecoderVersion: alternativeDecoderVersion)
+        alternativeDecoderVersion: alternativeDecoderVersion,
+        highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
 
       if DeviceCapability.isLowPerformance {
         graph.garbageCollect()
@@ -3712,7 +3714,8 @@ extension LocalImageGenerator {
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
-        alternativeDecoderVersion: alternativeDecoderVersion)
+        alternativeDecoderVersion: alternativeDecoderVersion,
+        highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
       // Check if strength is 0.
       guard initTimestep.roundedDownStartStep < sampling.steps && configuration.strength > 0 else {
         let image = faceRestoreImage(image, configuration: configuration)
@@ -3857,7 +3860,8 @@ extension LocalImageGenerator {
           tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
-          alternativeDecoderVersion: alternativeDecoderVersion)
+          alternativeDecoderVersion: alternativeDecoderVersion,
+          highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
         let (sample, encodedImage) = modelPreloader.consumeFirstStageSample(
           firstStage.sample(
             image,
@@ -4890,7 +4894,8 @@ extension LocalImageGenerator {
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
-        alternativeDecoderVersion: alternativeDecoderVersion)
+        alternativeDecoderVersion: alternativeDecoderVersion,
+        highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
       let firstPassImage: DynamicGraph.Tensor<FloatType>
       if modelVersion == .wurstchenStageC {
         // Try to resize the input image so we can encode with EfficientNetv2s properly.
@@ -5058,7 +5063,8 @@ extension LocalImageGenerator {
           tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
-          alternativeDecoderVersion: alternativeDecoderVersion)
+          alternativeDecoderVersion: alternativeDecoderVersion,
+          highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
         let (sample, _) = modelPreloader.consumeFirstStageSample(
           firstStage.sample(
             image,
@@ -5576,7 +5582,8 @@ extension LocalImageGenerator {
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
-        alternativeDecoderVersion: alternativeDecoderVersion)
+        alternativeDecoderVersion: alternativeDecoderVersion,
+        highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
       let firstPassImage: DynamicGraph.Tensor<FloatType>
       if modelVersion == .wurstchenStageC {
         // Try to resize the input image so we can encode with EfficientNetv2s properly.
@@ -5855,7 +5862,8 @@ extension LocalImageGenerator {
           tiledDiffusion: tiledDiffusion,
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
-          alternativeDecoderVersion: alternativeDecoderVersion)
+          alternativeDecoderVersion: alternativeDecoderVersion,
+          highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
         let (sample, _) = modelPreloader.consumeFirstStageSample(
           firstStage.sample(
             image,

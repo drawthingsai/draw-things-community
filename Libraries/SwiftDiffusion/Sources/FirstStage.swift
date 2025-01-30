@@ -13,13 +13,15 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let latentsScaling:
     (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?)
   private let highPrecisionFallback: Bool
+  private let highMemoryCapacity: Bool  // If this device has more than 24GiB RAM.
   public init(
     filePath: String, version: ModelVersion,
     latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?),
     highPrecisionKeysAndValues: Bool, highPrecisionFallback: Bool,
     tiledDecoding: TiledConfiguration,
     tiledDiffusion: TiledConfiguration, externalOnDemand: Bool, alternativeUsesFlashAttention: Bool,
-    alternativeFilePath: String?, alternativeDecoderVersion: AlternativeDecoderVersion?
+    alternativeFilePath: String?, alternativeDecoderVersion: AlternativeDecoderVersion?,
+    highMemoryCapacity: Bool
   ) {
     self.filePath = filePath
     self.version = version
@@ -32,6 +34,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.alternativeUsesFlashAttention = alternativeUsesFlashAttention
     self.alternativeFilePath = alternativeFilePath
     self.alternativeDecoderVersion = alternativeDecoderVersion
+    self.highMemoryCapacity = highMemoryCapacity
   }
 }
 
@@ -188,14 +191,15 @@ extension FirstStage {
       var startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
-      if startWidth > 32 || startHeight > 32 || startDepth > 15 {
+      let sizeLimit = highMemoryCapacity ? 32 : 20
+      if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > 15 {
         // We turn on tiled decoding forcefully.
         if !tiledDecoding {
           decodingTileOverlap = 4
         }
         tiledDecoding = true
-        startWidth = min(startWidth, 32)
-        startHeight = min(startHeight, 32)
+        startWidth = min(startWidth, sizeLimit)
+        startHeight = min(startHeight, sizeLimit)
         decodingTileSize.width = startWidth
         decodingTileSize.height = startHeight
         startDepth = min(startDepth, 15)
@@ -585,14 +589,15 @@ extension FirstStage {
       var startDepth = (shape[0] - 1) / 4 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
-      if startWidth > 32 || startHeight > 32 || startDepth > 15 {
+      let sizeLimit = highMemoryCapacity ? 32 : 20
+      if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > 15 {
         // We turn on tiled decoding forcefully.
         if !tiledEncoding {
           encodingTileOverlap = 4
         }
         tiledEncoding = true
-        startWidth = min(startWidth, 32)
-        startHeight = min(startHeight, 32)
+        startWidth = min(startWidth, sizeLimit)
+        startHeight = min(startHeight, sizeLimit)
         encodingTileSize.width = startWidth
         encodingTileSize.height = startHeight
         startDepth = min(startDepth, 15)

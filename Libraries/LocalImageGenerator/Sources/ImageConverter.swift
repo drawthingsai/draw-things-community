@@ -991,6 +991,9 @@ public enum ImageConverter {
           json["min_cfg"] = configuration.startFrameCfg
           description +=
             ", Number of Frames: \(configuration.numFrames), FPS: \(configuration.fpsId), Motion Scale: \(configuration.motionBucketId), Guiding Frame Noise: \(configuration.condAug.formatted(.number.precision(.fractionLength(2)))), Start Frame Guidance: \(configuration.startFrameCfg.formatted(.number.precision(.fractionLength(1))))"
+        } else if modelVersion == .hunyuanVideo {
+          json["num_frames"] = configuration.numFrames
+          description += ", Number of Frames: \(configuration.numFrames)"
         }
         if configuration.tiledDecoding
           && (configuration.startWidth > configuration.decodingTileWidth
