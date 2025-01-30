@@ -50,9 +50,11 @@ func HunyuanRotaryPositionEmbedding(
     }
   }
   for i in (time * height * width)..<(time * height * width + tokenLength) {
-    for k in 0..<(channels / 2) {
-      rotNdTensor1[0, i, 0, k * 2] = 1
-      rotNdTensor1[0, i, 0, k * 2 + 1] = 0
+    for j in 0..<heads {
+      for k in 0..<(channels / 2) {
+        rotNdTensor1[0, i, j, k * 2] = 1
+        rotNdTensor1[0, i, j, k * 2 + 1] = 0
+      }
     }
   }
   return (rotNdTensor0, rotNdTensor1)
