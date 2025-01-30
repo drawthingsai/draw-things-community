@@ -73,26 +73,26 @@ extension FirstStage {
         DynamicGraph.queueWatermark = queueWatermark
       }
     }
-    let zoomFactorZ: Int
-    let zoomFactor: Int
+    let scaleFactorZ: Int
+    let scaleFactor: Int
     switch version {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21:
-      zoomFactor = 8
-      zoomFactorZ = 1
+      scaleFactor = 8
+      scaleFactorZ = 1
     case .hunyuanVideo:
-      zoomFactor = 8
-      zoomFactorZ = 4
+      scaleFactor = 8
+      scaleFactorZ = 4
     case .wurstchenStageB, .wurstchenStageC:
-      zoomFactor = 4
-      zoomFactorZ = 1
+      scaleFactor = 4
+      scaleFactorZ = 1
     }
     var decodingTileSize = (
       depth: 0,
-      width: min(tiledDecoding.tileSize.width * (64 / zoomFactor), startWidth),
-      height: min(tiledDecoding.tileSize.height * (64 / zoomFactor), startHeight)
+      width: min(tiledDecoding.tileSize.width * (64 / scaleFactor), startWidth),
+      height: min(tiledDecoding.tileSize.height * (64 / scaleFactor), startHeight)
     )
-    var decodingTileOverlap = tiledDecoding.tileOverlap * (64 / zoomFactor)
+    var decodingTileOverlap = tiledDecoding.tileOverlap * (64 / scaleFactor)
     var tiledDecoding =
       tiledDecoding.isEnabled
       && (startWidth > decodingTileSize.width || startHeight > decodingTileSize.height)
@@ -294,7 +294,7 @@ extension FirstStage {
             decoder: decoder,
             transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
             tileOverlap: decodingTileOverlap, outputChannels: outputChannels,
-            zoomFactor: (zoomFactor, zoomFactorZ)
+            scaleFactor: (scaleFactor, scaleFactorZ)
           )
         } else {
           result = internalDecode(
@@ -317,7 +317,7 @@ extension FirstStage {
               DynamicGraph.Tensor<FloatType>(from: $0)
             }, decoder: decoder, transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
             tileOverlap: decodingTileOverlap, outputChannels: outputChannels,
-            zoomFactor: (zoomFactor, zoomFactorZ)
+            scaleFactor: (scaleFactor, scaleFactorZ)
           )
         } else {
           result = internalDecode(
@@ -333,7 +333,8 @@ extension FirstStage {
       }
     }
     var result = graph.variable(
-      .GPU(0), .NHWC(batchSize, startHeight * zoomFactor, startWidth * zoomFactor, outputChannels),
+      .GPU(0),
+      .NHWC(batchSize, startHeight * scaleFactor, startWidth * scaleFactor, outputChannels),
       of: FloatType.self)
     for i in 0..<batchSize {
       let zEnc = z[i..<(i + 1), 0..<startHeight, 0..<startWidth, 0..<shape[3]].copied()
@@ -345,7 +346,7 @@ extension FirstStage {
             decoder: decoder,
             transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
             tileOverlap: decodingTileOverlap, outputChannels: outputChannels,
-            zoomFactor: (zoomFactor, zoomFactorZ)
+            scaleFactor: (scaleFactor, scaleFactorZ)
           )
         } else {
           partial = internalDecode(
@@ -355,7 +356,7 @@ extension FirstStage {
         }
         let shape = partial.shape
         result[
-          i..<(i + 1), 0..<(startHeight * zoomFactor), 0..<(startWidth * zoomFactor),
+          i..<(i + 1), 0..<(startHeight * scaleFactor), 0..<(startWidth * scaleFactor),
           0..<outputChannels] =
           DynamicGraph
           .Tensor<FloatType>(from: partial[0..<1, 0..<shape[1], 0..<shape[2], 0..<outputChannels])
@@ -368,7 +369,7 @@ extension FirstStage {
               DynamicGraph.Tensor<FloatType>(from: $0)
             }, decoder: decoder, transparentDecoder: transparentDecoder,
             tileSize: decodingTileSize, tileOverlap: decodingTileOverlap,
-            outputChannels: outputChannels, zoomFactor: (zoomFactor, zoomFactorZ))
+            outputChannels: outputChannels, scaleFactor: (scaleFactor, scaleFactorZ))
         } else {
           partial = internalDecode(
             zEnc,
@@ -378,7 +379,7 @@ extension FirstStage {
         }
         let shape = partial.shape
         result[
-          i..<(i + 1), 0..<(startHeight * zoomFactor), 0..<(startWidth * zoomFactor),
+          i..<(i + 1), 0..<(startHeight * scaleFactor), 0..<(startWidth * scaleFactor),
           0..<outputChannels] =
           partial[0..<1, 0..<shape[1], 0..<shape[2], 0..<outputChannels]
       }
@@ -805,7 +806,7 @@ extension FirstStage {
     _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, decoder: Model,
     transparentDecoder: Model?,
     tileSize: (width: Int, height: Int), tileOverlap: Int, outputChannels: Int,
-    zoomFactor: (spatial: Int, temporal: Int)
+    scaleFactor: (spatial: Int, temporal: Int)
   ) -> DynamicGraph.Tensor<T> {
     let shape = z.shape
     let channels = shape[3]
@@ -814,10 +815,10 @@ extension FirstStage {
     let tileOverlap = min(
       min(
         tileOverlap,
-        Int((Double(tileSize.height / 3) / Double(64 / zoomFactor.spatial)).rounded(.down))
-          * (64 / zoomFactor.spatial)),
-      Int((Double(tileSize.width / 3) / Double(64 / zoomFactor.spatial)).rounded(.down))
-        * (64 / zoomFactor.spatial)
+        Int((Double(tileSize.height / 3) / Double(64 / scaleFactor.spatial)).rounded(.down))
+          * (64 / scaleFactor.spatial)),
+      Int((Double(tileSize.width / 3) / Double(64 / scaleFactor.spatial)).rounded(.down))
+        * (64 / scaleFactor.spatial)
     )
     let yTiles =
       (shape[1] - tileOverlap * 2 + (tileSize.height - tileOverlap * 2) - 1)
@@ -846,34 +847,34 @@ extension FirstStage {
       }
     }
     let (xWeightsAndIndexes, yWeightsAndIndexes) = xyTileWeightsAndIndexes(
-      width: shape[2] * zoomFactor.spatial, height: shape[1] * zoomFactor.spatial, xTiles: xTiles,
+      width: shape[2] * scaleFactor.spatial, height: shape[1] * scaleFactor.spatial, xTiles: xTiles,
       yTiles: yTiles,
       tileSize: (
-        width: tileSize.width * zoomFactor.spatial, height: tileSize.height * zoomFactor.spatial
+        width: tileSize.width * scaleFactor.spatial, height: tileSize.height * scaleFactor.spatial
       ),
-      tileOverlap: tileOverlap * zoomFactor.spatial)
-    let resultBatchSize = (shape[0] - 1) * zoomFactor.temporal + 1
+      tileOverlap: tileOverlap * scaleFactor.spatial)
+    let resultBatchSize = (shape[0] - 1) * scaleFactor.temporal + 1
     var result = Tensor<T>(
       .CPU,
       .NHWC(
-        resultBatchSize, shape[1] * zoomFactor.spatial, shape[2] * zoomFactor.spatial,
+        resultBatchSize, shape[1] * scaleFactor.spatial, shape[2] * scaleFactor.spatial,
         outputChannels))
     let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
     result.withUnsafeMutableBytes {
       guard var fp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
       for t in 0..<resultBatchSize {
-        for j in 0..<(shape[1] * zoomFactor.spatial) {
+        for j in 0..<(shape[1] * scaleFactor.spatial) {
           let yWeightAndIndex = yWeightsAndIndexes[j]
-          for i in 0..<(shape[2] * zoomFactor.spatial) {
+          for i in 0..<(shape[2] * scaleFactor.spatial) {
             let xWeightAndIndex = xWeightsAndIndexes[i]
             for k in 0..<outputChannels {
               fp[k] = 0
             }
             let tOffset =
-              t * tileSize.width * zoomFactor.spatial * inputChannels * tileSize.height
-              * zoomFactor.spatial
+              t * tileSize.width * scaleFactor.spatial * inputChannels * tileSize.height
+              * scaleFactor.spatial
             for y in yWeightAndIndex {
-              let yOffset = y.offset * tileSize.width * zoomFactor.spatial * inputChannels
+              let yOffset = y.offset * tileSize.width * scaleFactor.spatial * inputChannels
               for x in xWeightAndIndex {
                 let weight = T(x.weight * y.weight)
                 let index = y.index * xTiles + x.index
@@ -900,14 +901,14 @@ extension FirstStage {
     _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, decoder: Model,
     transparentDecoder: Model?,
     tileSize: (depth: Int, width: Int, height: Int), tileOverlap: Int, outputChannels: Int,
-    zoomFactor: (spatial: Int, temporal: Int)
+    scaleFactor: (spatial: Int, temporal: Int)
   ) -> DynamicGraph.Tensor<T> {
     guard tileSize.depth > 1 && tileSize.depth < z.shape[0] else {
       return tiledDecode(
         z, causalAttentionMask: causalAttentionMask, decoder: decoder,
         transparentDecoder: transparentDecoder,
         tileSize: (width: tileSize.width, height: tileSize.height), tileOverlap: tileOverlap,
-        outputChannels: outputChannels, zoomFactor: zoomFactor)
+        outputChannels: outputChannels, scaleFactor: scaleFactor)
     }
     let shape = z.shape
     let channels = shape[3]
@@ -917,10 +918,10 @@ extension FirstStage {
     let tileOverlap = min(
       min(
         tileOverlap,
-        Int((Double(tileSize.height / 3) / Double(64 / zoomFactor.spatial)).rounded(.down))
-          * (64 / zoomFactor.spatial)),
-      Int((Double(tileSize.width / 3) / Double(64 / zoomFactor.spatial)).rounded(.down))
-        * (64 / zoomFactor.spatial)
+        Int((Double(tileSize.height / 3) / Double(64 / scaleFactor.spatial)).rounded(.down))
+          * (64 / scaleFactor.spatial)),
+      Int((Double(tileSize.width / 3) / Double(64 / scaleFactor.spatial)).rounded(.down))
+        * (64 / scaleFactor.spatial)
     )
     let yTiles =
       (shape[1] - tileOverlap * 2 + (tileSize.height - tileOverlap * 2) - 1)
@@ -929,20 +930,20 @@ extension FirstStage {
       (shape[2] - tileOverlap * 2 + (tileSize.width - tileOverlap * 2) - 1)
       / (tileSize.width - tileOverlap * 2)
     let (xWeightsAndIndexes, yWeightsAndIndexes) = xyTileWeightsAndIndexes(
-      width: shape[2] * zoomFactor.spatial, height: shape[1] * zoomFactor.spatial, xTiles: xTiles,
+      width: shape[2] * scaleFactor.spatial, height: shape[1] * scaleFactor.spatial, xTiles: xTiles,
       yTiles: yTiles,
       tileSize: (
-        width: tileSize.width * zoomFactor.spatial, height: tileSize.height * zoomFactor.spatial
+        width: tileSize.width * scaleFactor.spatial, height: tileSize.height * scaleFactor.spatial
       ),
-      tileOverlap: tileOverlap * zoomFactor.spatial)
-    let resultBatchSize = (shape[0] - 1) * zoomFactor.temporal + 1
+      tileOverlap: tileOverlap * scaleFactor.spatial)
+    let resultBatchSize = (shape[0] - 1) * scaleFactor.temporal + 1
     var result = Tensor<T>(
       Array(
         repeating: 0,
-        count: resultBatchSize * shape[1] * zoomFactor.spatial * shape[2] * zoomFactor.spatial
+        count: resultBatchSize * shape[1] * scaleFactor.spatial * shape[2] * scaleFactor.spatial
           * outputChannels), .CPU,
       .NHWC(
-        resultBatchSize, shape[1] * zoomFactor.spatial, shape[2] * zoomFactor.spatial,
+        resultBatchSize, shape[1] * scaleFactor.spatial, shape[2] * scaleFactor.spatial,
         outputChannels))
     // Hard-code overlapping 16 frames in time.
     for t in stride(from: 0, to: batchSize, by: max(1, tileSize.depth - 5)) {
@@ -977,14 +978,14 @@ extension FirstStage {
         if t == 0 {
           tDecodedStart = 0
         } else if t + tileSize.depth > batchSize {
-          tDecodedStart = (t - (batchSize - tileSize.depth)) * zoomFactor.temporal + 9
+          tDecodedStart = (t - (batchSize - tileSize.depth)) * scaleFactor.temporal + 9
         } else {
           tDecodedStart = 9
         }
         for tDecoded in tDecodedStart..<tileDecodedDepth {
           var fp =
-            rfp + (tDecoded + tStart * 4) * shape[1] * zoomFactor.spatial * shape[2]
-            * zoomFactor.spatial * outputChannels
+            rfp + (tDecoded + tStart * 4) * shape[1] * scaleFactor.spatial * shape[2]
+            * scaleFactor.spatial * outputChannels
           let tWeight: Float
           if tDecoded - tDecodedStart < 8 && tDecodedStart != 0 {
             tWeight = min((Float(tDecoded - tDecodedStart) + 0.5) / 8, 1)
@@ -993,15 +994,15 @@ extension FirstStage {
           } else {
             tWeight = 1
           }
-          for j in 0..<(shape[1] * zoomFactor.spatial) {
+          for j in 0..<(shape[1] * scaleFactor.spatial) {
             let yWeightAndIndex = yWeightsAndIndexes[j]
-            for i in 0..<(shape[2] * zoomFactor.spatial) {
+            for i in 0..<(shape[2] * scaleFactor.spatial) {
               let xWeightAndIndex = xWeightsAndIndexes[i]
               let tOffset =
-                tDecoded * tileSize.width * zoomFactor.spatial * inputChannels * tileSize.height
-                * zoomFactor.spatial
+                tDecoded * tileSize.width * scaleFactor.spatial * inputChannels * tileSize.height
+                * scaleFactor.spatial
               for y in yWeightAndIndex {
-                let yOffset = y.offset * tileSize.width * zoomFactor.spatial * inputChannels
+                let yOffset = y.offset * tileSize.width * scaleFactor.spatial * inputChannels
                 for x in xWeightAndIndex {
                   let weight = T(x.weight * y.weight * tWeight)
                   let index = y.index * xTiles + x.index
