@@ -2524,7 +2524,7 @@ extension LocalImageGenerator {
       isEnabled: configuration.tiledDecoding,
       tileSize: .init(
         width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
-      tileOverlap: Int(configuration.decodingTileOverlap))
+      tileOverlap: ((Int(configuration.decodingTileOverlap) + 3) / 4) * 2)
     let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
@@ -3385,7 +3385,7 @@ extension LocalImageGenerator {
     let autoencoderFile =
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
-      } ?? "vae_ft_mse_840000_f16.ckpt"
+      } ?? ImageGeneratorUtils.defaultAutoencoder
     let isGuidanceEmbedEnabled =
       ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
@@ -3406,7 +3406,7 @@ extension LocalImageGenerator {
       isEnabled: configuration.tiledDecoding,
       tileSize: .init(
         width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
-      tileOverlap: Int(configuration.decodingTileOverlap))
+      tileOverlap: ((Int(configuration.decodingTileOverlap) + 3) / 4) * 2)  // Round up to 2, but divide by 2 first.
     let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
@@ -4578,7 +4578,7 @@ extension LocalImageGenerator {
     let autoencoderFile =
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
-      } ?? "vae_ft_mse_840000_f16.ckpt"
+      } ?? ImageGeneratorUtils.defaultAutoencoder
     let isGuidanceEmbedEnabled =
       ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
@@ -4599,7 +4599,7 @@ extension LocalImageGenerator {
       isEnabled: configuration.tiledDecoding,
       tileSize: .init(
         width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
-      tileOverlap: Int(configuration.decodingTileOverlap))
+      tileOverlap: ((Int(configuration.decodingTileOverlap) + 3) / 4) * 2)
     let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
@@ -5262,7 +5262,7 @@ extension LocalImageGenerator {
     let autoencoderFile =
       ModelZoo.autoencoderForModel(file).flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
-      } ?? "vae_ft_mse_840000_f16.ckpt"
+      } ?? ImageGeneratorUtils.defaultAutoencoder
     let isGuidanceEmbedEnabled =
       ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
@@ -5283,7 +5283,7 @@ extension LocalImageGenerator {
       isEnabled: configuration.tiledDecoding,
       tileSize: .init(
         width: Int(configuration.decodingTileWidth), height: Int(configuration.decodingTileHeight)),
-      tileOverlap: Int(configuration.decodingTileOverlap))
+      tileOverlap: ((Int(configuration.decodingTileOverlap) + 3) / 4) * 2)
     let tiledDiffusion = TiledConfiguration(
       isEnabled: configuration.tiledDiffusion,
       tileSize: .init(
