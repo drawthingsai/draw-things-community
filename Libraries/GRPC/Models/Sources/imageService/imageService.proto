@@ -16,7 +16,7 @@ message EchoReply {
   string message = 1;
   repeated string files = 2;
   optional MetadataOverride override = 3;
-  bool sharedSecret = 4; // If this is true, sharedSecret is required.
+  bool sharedSecretMissing = 4; // If this is true, sharedSecret is required.
 }
 
 message FileListRequest {

@@ -126,7 +126,7 @@ public final class ImageGenerationClientWrapper {
             from: result.override.textualInversions
           ).compactMap({ $0.value })) ?? []
         callback(
-          true, result.sharedSecret,
+          true, !result.sharedSecretMissing,
           (
             files: result.files, models: models, LoRAs: loras, controlNets: controlNets,
             textualInversions: textualInversions

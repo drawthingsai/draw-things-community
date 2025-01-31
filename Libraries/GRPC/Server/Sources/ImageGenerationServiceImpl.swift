@@ -386,11 +386,11 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       if let sharedSecret = sharedSecret, !sharedSecret.isEmpty {
         guard request.sharedSecret == sharedSecret else {
           // Mismatch on shared secret.
-          $0.sharedSecret = false
+          $0.sharedSecretMissing = true
           return
         }
       }
-      $0.sharedSecret = true
+      $0.sharedSecretMissing = false
       $0.message = "HELLO \(request.name)"
       if enableModelBrowsing {
         // Looking for ckpt files.

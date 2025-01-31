@@ -102,7 +102,7 @@ public struct EchoReply: Sendable {
   public mutating func clearOverride() {self._override = nil}
 
   /// If this is true, sharedSecret is required.
-  public var sharedSecret: Bool = false
+  public var sharedSecretMissing: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -689,7 +689,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     1: .same(proto: "message"),
     2: .same(proto: "files"),
     3: .same(proto: "override"),
-    4: .same(proto: "sharedSecret"),
+    4: .same(proto: "sharedSecretMissing"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -701,7 +701,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
       case 1: try { try decoder.decodeSingularStringField(value: &self.message) }()
       case 2: try { try decoder.decodeRepeatedStringField(value: &self.files) }()
       case 3: try { try decoder.decodeSingularMessageField(value: &self._override) }()
-      case 4: try { try decoder.decodeSingularBoolField(value: &self.sharedSecret) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.sharedSecretMissing) }()
       default: break
       }
     }
@@ -721,8 +721,8 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     try { if let v = self._override {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
     } }()
-    if self.sharedSecret != false {
-      try visitor.visitSingularBoolField(value: self.sharedSecret, fieldNumber: 4)
+    if self.sharedSecretMissing != false {
+      try visitor.visitSingularBoolField(value: self.sharedSecretMissing, fieldNumber: 4)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -731,7 +731,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     if lhs.message != rhs.message {return false}
     if lhs.files != rhs.files {return false}
     if lhs._override != rhs._override {return false}
-    if lhs.sharedSecret != rhs.sharedSecret {return false}
+    if lhs.sharedSecretMissing != rhs.sharedSecretMissing {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
