@@ -50,7 +50,7 @@ public enum ComputeUnits {
       && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
     let isCfgEnabled =
       (!ModelZoo.isConsistencyModelForModel(model) && !isGuidanceEmbedEnabled)
-      || isCfgEnabled(
+      && isCfgEnabled(
         textGuidanceScale: configuration.guidanceScale, startFrameCfg: configuration.startFrameCfg,
         version: modelVersion)
     switch modelVersion {
