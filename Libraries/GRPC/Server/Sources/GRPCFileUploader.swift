@@ -29,6 +29,7 @@ public struct GRPCFileUploader {
     progressHandler: @escaping (Int64, Int64) -> Void,
     completionHandler: @escaping (Bool) -> Void
   ) throws -> Call {
+    let sharedSecret = client.sharedSecret
     guard let client = client.client else {
       throw GRPCFileUploaderError.notConnected
     }
@@ -74,6 +75,9 @@ public struct GRPCFileUploader {
             $0.content = chunkData
             $0.offset = offset
           }
+          if let sharedSecret = sharedSecret {
+            $0.sharedSecret = sharedSecret
+          }
         }
         // Send the chunk to the server
         sentOffset = offset
@@ -110,6 +114,9 @@ public struct GRPCFileUploader {
           $0.filename = filename
           $0.sha256 = fileHash
           $0.totalSize = fileSize
+        }
+        if let sharedSecret = sharedSecret {
+          $0.sharedSecret = sharedSecret
         }
       }
       callInstance.sendMessage(initRequest).whenComplete { result in

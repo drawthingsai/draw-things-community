@@ -9,17 +9,20 @@ service ImageGenerationService {
 
 message EchoRequest {
   string name = 1;
+  optional string sharedSecret = 2; // The secret use to authenticate if needed.
 }
 
 message EchoReply {
   string message = 1;
   repeated string files = 2;
   optional MetadataOverride override = 3;
+  bool sharedSecret = 4; // If this is true, sharedSecret is required.
 }
 
 message FileListRequest {
   repeated string files = 1;
   repeated string filesWithHash = 2;
+  optional string sharedSecret = 3; // The secret use to authenticate if needed.
 }
 
 message FileExistenceResponse {
@@ -55,6 +58,7 @@ message ImageGenerationRequest {
   string user = 10; // The name of the client.
   DeviceType device = 11; // The type of the device uses.
   repeated bytes contents = 12; // The image data as array of bytes. It is addressed by its sha256 content. This is modeled as content-addressable storage.
+  optional string sharedSecret = 13; // The secret use to authenticate if needed.
 }
 
 message HintProto {
@@ -135,4 +139,5 @@ message FileUploadRequest {
     InitUploadRequest initRequest = 1;  // Initial upload request to sync SHA and filename.
     FileChunk chunk = 2;                // File chunk data.
   }
+  optional string sharedSecret = 3; // The secret use to authenticate if needed.
 }

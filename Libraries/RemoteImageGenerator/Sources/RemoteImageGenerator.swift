@@ -56,6 +56,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
       -> Bool
   ) throws -> ([Tensor<FloatType>]?, Int) {
+    let sharedSecret = client.sharedSecret
     guard let client = client.client else {
       throw RemoteImageGeneratorError.notConnected
     }
@@ -83,6 +84,9 @@ public struct RemoteImageGenerator: ImageGenerator {
     request.keywords = keywords
     request.user = name
     request.device = DeviceType(from: deviceType)
+    if let sharedSecret = sharedSecret {
+      request.sharedSecret = sharedSecret
+    }
     var contents = OrderedDictionary<Data, Data>()
 
     if let image = image {

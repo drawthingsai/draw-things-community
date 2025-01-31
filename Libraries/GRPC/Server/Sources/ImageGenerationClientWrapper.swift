@@ -13,13 +13,16 @@ public final class ImageGenerationClientWrapper {
   private var deviceName: String? = nil
   private var eventLoopGroup: EventLoopGroup? = nil
   private var channel: GRPCChannel? = nil
+  public private(set) var sharedSecret: String? = nil
   public private(set) var client: ImageGenerationServiceNIOClient? = nil
 
   public init(deviceName: String? = nil) {
     self.deviceName = deviceName
   }
 
-  public func connect(host: String, port: Int, TLS: Bool, hostnameVerification: Bool) throws {
+  public func connect(
+    host: String, port: Int, TLS: Bool, hostnameVerification: Bool, sharedSecret: String?
+  ) throws {
     try? eventLoopGroup?.syncShutdownGracefully()
     let eventLoopGroup = PlatformSupport.makeEventLoopGroup(loopCount: 1)
     let transportSecurity: GRPCChannelPool.Configuration.TransportSecurity
@@ -54,6 +57,7 @@ public final class ImageGenerationClientWrapper {
     self.eventLoopGroup = eventLoopGroup
     self.channel = channel
     self.client = client
+    self.sharedSecret = sharedSecret
   }
 
   public func disconnect() throws {
@@ -62,6 +66,7 @@ public final class ImageGenerationClientWrapper {
     client = nil
     channel = nil
     eventLoopGroup = nil
+    sharedSecret = nil
   }
 
   deinit {
@@ -74,7 +79,7 @@ public final class ImageGenerationClientWrapper {
 
   public func echo(
     callback: @escaping (
-      Bool,
+      Bool, Bool,
       (
         files: [String], models: [ModelZoo.Specification], LoRAs: [LoRAZoo.Specification],
         controlNets: [ControlNetZoo.Specification],
@@ -83,12 +88,17 @@ public final class ImageGenerationClientWrapper {
     ) -> Void
   ) {
     guard let client = client else {
-      callback(false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []))
+      callback(
+        false, false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []))
       return
     }
 
-    var request = EchoRequest()
-    request.name = deviceName ?? ""
+    let request = EchoRequest.with {
+      $0.name = deviceName ?? ""
+      if let sharedSecret = sharedSecret {
+        $0.sharedSecret = sharedSecret
+      }
+    }
 
     let callOptions = CallOptions(
       messageEncoding: .enabled(.responsesOnly(decompressionLimit: .ratio(100))))
@@ -116,13 +126,14 @@ public final class ImageGenerationClientWrapper {
             from: result.override.textualInversions
           ).compactMap({ $0.value })) ?? []
         callback(
-          true,
+          true, result.sharedSecret,
           (
             files: result.files, models: models, LoRAs: loras, controlNets: controlNets,
             textualInversions: textualInversions
           ))
       case .failure(_):
-        callback(false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []))
+        callback(
+          false, false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []))
       }
     }
   }
@@ -141,6 +152,9 @@ public final class ImageGenerationClientWrapper {
     let request = FileListRequest.with {
       $0.files = files
       $0.filesWithHash = filesToMatch
+      if let sharedSecret = sharedSecret {
+        $0.sharedSecret = sharedSecret
+      }
     }
     let call = client.filesExist(request)
     let _ = call.response.always { result in

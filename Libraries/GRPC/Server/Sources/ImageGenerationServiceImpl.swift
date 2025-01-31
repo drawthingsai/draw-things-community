@@ -96,6 +96,10 @@ public protocol ImageGenerationServiceDelegate: AnyObject {
   func didCompleteGenerationResponse(success: Bool)
 }
 
+public enum ImageGenerationServiceError: Error {
+  case sharedSecret
+}
+
 public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
 
   private let queue: DispatchQueue
@@ -108,6 +112,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   public let usesBackupQueue = ManagedAtomic<Bool>(false)
   public let responseCompression = ManagedAtomic<Bool>(false)
   public let enableModelBrowsing = ManagedAtomic<Bool>(false)
+  public var sharedSecret: String? = nil
 
   public init(imageGenerator: ImageGenerator, queue: DispatchQueue, backupQueue: DispatchQueue) {
     self.imageGenerator = imageGenerator
@@ -122,6 +127,11 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     // Log the incoming request
     logger.info("Received image processing request with prompt: \(request.prompt)")
     let eventLoop = context.eventLoop
+    if let sharedSecret = sharedSecret, !sharedSecret.isEmpty {
+      guard request.sharedSecret == sharedSecret else {
+        return eventLoop.makeFailedFuture(ImageGenerationServiceError.sharedSecret)
+      }
+    }
     let promise = eventLoop.makePromise(of: GRPCStatus.self)
     let cancelFlag = ManagedAtomic<Bool>(false)
     var cancellation: ProtectedValue<(() -> Void)?> = ProtectedValue(nil)
@@ -330,6 +340,11 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     -> EventLoopFuture<FileExistenceResponse>
   {
     logger.info("Received request for files exist: \(request.files)")
+    if let sharedSecret = sharedSecret, !sharedSecret.isEmpty {
+      guard request.sharedSecret == sharedSecret else {
+        return context.eventLoop.makeFailedFuture(ImageGenerationServiceError.sharedSecret)
+      }
+    }
     var files = [String]()
     var existences = [Bool]()
     var hashes = [Data]()
@@ -368,6 +383,14 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     let enableModelBrowsing = enableModelBrowsing.load(ordering: .acquiring)
     let response = EchoReply.with {
       logger.info("Received echo from: \(request.name), enableModelBrowsing:\(enableModelBrowsing)")
+      if let sharedSecret = sharedSecret, !sharedSecret.isEmpty {
+        guard request.sharedSecret == sharedSecret else {
+          // Mismatch on shared secret.
+          $0.sharedSecret = false
+          return
+        }
+      }
+      $0.sharedSecret = true
       $0.message = "HELLO \(request.name)"
       if enableModelBrowsing {
         // Looking for ckpt files.
@@ -450,10 +473,17 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       }
     }
 
+    let sharedSecret = sharedSecret
     return context.eventLoop.makeSucceededFuture({
       (event: StreamEvent<FileUploadRequest>) -> Void in
       switch event {
       case .message(let uploadRequest):
+        if let sharedSecret = sharedSecret, !sharedSecret.isEmpty {
+          guard uploadRequest.sharedSecret == sharedSecret else {
+            context.statusPromise.fail(ImageGenerationServiceError.sharedSecret)
+            return
+          }
+        }
         switch uploadRequest.request {
         case .initRequest(let initRequest):
           // Process the initial upload request

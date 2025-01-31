@@ -66,9 +66,21 @@ public struct EchoRequest: Sendable {
 
   public var name: String = String()
 
+  /// The secret use to authenticate if needed.
+  public var sharedSecret: String {
+    get {return _sharedSecret ?? String()}
+    set {_sharedSecret = newValue}
+  }
+  /// Returns true if `sharedSecret` has been explicitly set.
+  public var hasSharedSecret: Bool {return self._sharedSecret != nil}
+  /// Clears the value of `sharedSecret`. Subsequent reads from it will return its default value.
+  public mutating func clearSharedSecret() {self._sharedSecret = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _sharedSecret: String? = nil
 }
 
 public struct EchoReply: Sendable {
@@ -89,6 +101,9 @@ public struct EchoReply: Sendable {
   /// Clears the value of `override`. Subsequent reads from it will return its default value.
   public mutating func clearOverride() {self._override = nil}
 
+  /// If this is true, sharedSecret is required.
+  public var sharedSecret: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -105,9 +120,21 @@ public struct FileListRequest: Sendable {
 
   public var filesWithHash: [String] = []
 
+  /// The secret use to authenticate if needed.
+  public var sharedSecret: String {
+    get {return _sharedSecret ?? String()}
+    set {_sharedSecret = newValue}
+  }
+  /// Returns true if `sharedSecret` has been explicitly set.
+  public var hasSharedSecret: Bool {return self._sharedSecret != nil}
+  /// Clears the value of `sharedSecret`. Subsequent reads from it will return its default value.
+  public mutating func clearSharedSecret() {self._sharedSecret = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _sharedSecret: String? = nil
 }
 
 public struct FileExistenceResponse: @unchecked Sendable {
@@ -206,6 +233,16 @@ public struct ImageGenerationRequest: @unchecked Sendable {
   /// The image data as array of bytes. It is addressed by its sha256 content. This is modeled as content-addressable storage.
   public var contents: [Data] = []
 
+  /// The secret use to authenticate if needed.
+  public var sharedSecret: String {
+    get {return _sharedSecret ?? String()}
+    set {_sharedSecret = newValue}
+  }
+  /// Returns true if `sharedSecret` has been explicitly set.
+  public var hasSharedSecret: Bool {return self._sharedSecret != nil}
+  /// Clears the value of `sharedSecret`. Subsequent reads from it will return its default value.
+  public mutating func clearSharedSecret() {self._sharedSecret = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -213,6 +250,7 @@ public struct ImageGenerationRequest: @unchecked Sendable {
   fileprivate var _image: Data? = nil
   fileprivate var _mask: Data? = nil
   fileprivate var _override: MetadataOverride? = nil
+  fileprivate var _sharedSecret: String? = nil
 }
 
 public struct HintProto: Sendable {
@@ -568,6 +606,16 @@ public struct FileUploadRequest: Sendable {
     set {request = .chunk(newValue)}
   }
 
+  /// The secret use to authenticate if needed.
+  public var sharedSecret: String {
+    get {return _sharedSecret ?? String()}
+    set {_sharedSecret = newValue}
+  }
+  /// Returns true if `sharedSecret` has been explicitly set.
+  public var hasSharedSecret: Bool {return self._sharedSecret != nil}
+  /// Clears the value of `sharedSecret`. Subsequent reads from it will return its default value.
+  public mutating func clearSharedSecret() {self._sharedSecret = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public enum OneOf_Request: Equatable, Sendable {
@@ -579,6 +627,8 @@ public struct FileUploadRequest: Sendable {
   }
 
   public init() {}
+
+  fileprivate var _sharedSecret: String? = nil
 }
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
@@ -595,6 +645,7 @@ extension EchoRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementati
   public static let protoMessageName: String = "EchoRequest"
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "name"),
+    2: .same(proto: "sharedSecret"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -604,20 +655,29 @@ extension EchoRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementati
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self._sharedSecret) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.name.isEmpty {
       try visitor.visitSingularStringField(value: self.name, fieldNumber: 1)
     }
+    try { if let v = self._sharedSecret {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 2)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: EchoRequest, rhs: EchoRequest) -> Bool {
     if lhs.name != rhs.name {return false}
+    if lhs._sharedSecret != rhs._sharedSecret {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -629,6 +689,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     1: .same(proto: "message"),
     2: .same(proto: "files"),
     3: .same(proto: "override"),
+    4: .same(proto: "sharedSecret"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -640,6 +701,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
       case 1: try { try decoder.decodeSingularStringField(value: &self.message) }()
       case 2: try { try decoder.decodeRepeatedStringField(value: &self.files) }()
       case 3: try { try decoder.decodeSingularMessageField(value: &self._override) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.sharedSecret) }()
       default: break
       }
     }
@@ -659,6 +721,9 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     try { if let v = self._override {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
     } }()
+    if self.sharedSecret != false {
+      try visitor.visitSingularBoolField(value: self.sharedSecret, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -666,6 +731,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     if lhs.message != rhs.message {return false}
     if lhs.files != rhs.files {return false}
     if lhs._override != rhs._override {return false}
+    if lhs.sharedSecret != rhs.sharedSecret {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -676,6 +742,7 @@ extension FileListRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "files"),
     2: .same(proto: "filesWithHash"),
+    3: .same(proto: "sharedSecret"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -686,24 +753,33 @@ extension FileListRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedStringField(value: &self.files) }()
       case 2: try { try decoder.decodeRepeatedStringField(value: &self.filesWithHash) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self._sharedSecret) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.files.isEmpty {
       try visitor.visitRepeatedStringField(value: self.files, fieldNumber: 1)
     }
     if !self.filesWithHash.isEmpty {
       try visitor.visitRepeatedStringField(value: self.filesWithHash, fieldNumber: 2)
     }
+    try { if let v = self._sharedSecret {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 3)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: FileListRequest, rhs: FileListRequest) -> Bool {
     if lhs.files != rhs.files {return false}
     if lhs.filesWithHash != rhs.filesWithHash {return false}
+    if lhs._sharedSecret != rhs._sharedSecret {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -818,6 +894,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     10: .same(proto: "user"),
     11: .same(proto: "device"),
     12: .same(proto: "contents"),
+    13: .same(proto: "sharedSecret"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -838,6 +915,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
       case 10: try { try decoder.decodeSingularStringField(value: &self.user) }()
       case 11: try { try decoder.decodeSingularEnumField(value: &self.device) }()
       case 12: try { try decoder.decodeRepeatedBytesField(value: &self.contents) }()
+      case 13: try { try decoder.decodeSingularStringField(value: &self._sharedSecret) }()
       default: break
       }
     }
@@ -884,6 +962,9 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     if !self.contents.isEmpty {
       try visitor.visitRepeatedBytesField(value: self.contents, fieldNumber: 12)
     }
+    try { if let v = self._sharedSecret {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 13)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -900,6 +981,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     if lhs.user != rhs.user {return false}
     if lhs.device != rhs.device {return false}
     if lhs.contents != rhs.contents {return false}
+    if lhs._sharedSecret != rhs._sharedSecret {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1577,6 +1659,7 @@ extension FileUploadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "initRequest"),
     2: .same(proto: "chunk"),
+    3: .same(proto: "sharedSecret"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -1611,6 +1694,7 @@ extension FileUploadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
           self.request = .chunk(v)
         }
       }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self._sharedSecret) }()
       default: break
       }
     }
@@ -1632,11 +1716,15 @@ extension FileUploadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
     }()
     case nil: break
     }
+    try { if let v = self._sharedSecret {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 3)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: FileUploadRequest, rhs: FileUploadRequest) -> Bool {
     if lhs.request != rhs.request {return false}
+    if lhs._sharedSecret != rhs._sharedSecret {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
