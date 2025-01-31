@@ -148,17 +148,33 @@ public final class VideoExporter {
   }
 
   private func appendFrameToExport(frame: Tensor<FloatType>) {
-    guard let exportingImageSize = exportingImageSize, !self.aborted else {
+    guard let exportingImageSize = exportingImageSize, !aborted,
+      let pixelBufferPool = pixelBufferPool
+    else {
       return
     }
     let imageHeight = Int(frame.shape[1])
     let imageWidth = Int(frame.shape[2])
-    // skip append frame size doesn't match origin export setup
+    // resize frame size to fit what we want.
     guard imageHeight == Int(exportingImageSize.height), imageWidth == Int(exportingImageSize.width)
-    else { return }
-    if let pixelBufferPool = pixelBufferPool,
-      let buffer = newPixelBufferFrom(
-        imageTensor: frame, pixelBufferPool: pixelBufferPool)
+    else {
+      let graph = DynamicGraph()
+      graph.withNoGrad {
+        let widthScale = Float(exportingImageSize.width) / Float(imageWidth)
+        let heightScale = Float(exportingImageSize.height) / Float(imageHeight)
+        let newFrame = Upsample(.bilinear, widthScale: widthScale, heightScale: heightScale)(
+          graph.variable(frame.toGPU(0))
+        ).rawValue.toCPU()
+        if let buffer = newPixelBufferFrom(
+          imageTensor: newFrame, pixelBufferPool: pixelBufferPool)
+        {
+          pendingFrames.append(buffer)
+        }
+      }
+      return
+    }
+    if let buffer = newPixelBufferFrom(
+      imageTensor: frame, pixelBufferPool: pixelBufferPool)
     {
       pendingFrames.append(buffer)
     }
