@@ -148,7 +148,9 @@ func Blur<T: TensorNumeric & BinaryFloatingPoint>(
   return model
 }
 
-func isCfgEnabled(textGuidanceScale: Float, startFrameCfg: Float, version: ModelVersion) -> Bool {
+public func isCfgEnabled(textGuidanceScale: Float, startFrameCfg: Float, version: ModelVersion)
+  -> Bool
+{
   guard version == .svdI2v else {
     return (textGuidanceScale - 1).magnitude > 1e-2
   }
