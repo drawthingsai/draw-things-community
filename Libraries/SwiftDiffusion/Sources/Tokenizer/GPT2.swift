@@ -190,7 +190,7 @@ public struct GPT2Tokenizer {
       strs.append(
         bpeToken.unicodeScalars.map({
           Self.byteDecoder[Int($0.value), default: "\($0)"]
-        }).joined())
+        }).joined().trimmingCharacters(in: .whitespacesAndNewlines))  // I shouldn't trim it, but there is no other way since we don't really maintain the canonical yet.
       ids.append(vocabulary[bpeToken, default: unknownToken])
     }
     return (ids, strs)
