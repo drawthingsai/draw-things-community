@@ -56,7 +56,7 @@ public enum ComputeUnits {
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large:
-      batchSize = Int(configuration.batchSize) * (isCfgEnabled ? 2 : 1)
+      batchSize = max(1, Int(configuration.batchSize)) * (isCfgEnabled ? 2 : 1)
       numFrames = 1
     case .svdI2v:
       batchSize = isCfgEnabled ? 2 : 1
@@ -67,11 +67,12 @@ public enum ComputeUnits {
     }
     let modelCoefficient = modelCoefficient(modelVersion)
     let root = Double(
-      Int(configuration.startWidth) * 64 * Int(configuration.startHeight) * 64
-        * Int(configuration.steps) * numFrames)
-    let scalingFactor: Double = 0.000001904
+      Int(configuration.startWidth) * 64 * Int(configuration.startHeight) * 64 * numFrames)
+    let scalingFactor: Double = 0.00000922917
 
-    return Int((modelCoefficient * pow(root * scalingFactor, 1.9) * Double(batchSize)).rounded(.up))
+    return Int(
+      (modelCoefficient * pow(root * scalingFactor, 1.9) * Double(configuration.steps)
+        * Double(max(configuration.strength, 0.05)) * Double(batchSize)).rounded(.up))
   }
 
   public static func threadhold(for priority: String) -> Int {
