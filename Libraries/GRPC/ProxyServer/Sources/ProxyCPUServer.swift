@@ -11,7 +11,6 @@ import NIO
 import NIOHPACK
 import NIOHTTP2
 import NIOSSL
-import ProxyServerUtils
 
 #if canImport(FoundationNetworking)
   import FoundationNetworking
@@ -490,7 +489,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         return
       }
       guard
-        let cost = try? ProxyServerUtils.calculateGenerationCost(from: configuration)
+        let cost = try? ComputeUnits.from(configuration)
       else {
         logger.error(
           "Proxy Server can not calculate cost for configuration \(configuration)"
@@ -498,10 +497,10 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         promise.fail(
           GRPCStatus(
             code: .permissionDenied,
-            message: "Proxy Server can not calculate cost for modelVersion \(configuration)"))
+            message: "Proxy Server can not calculate cost for model \(modelName)"))
         return
       }
-      let costThreshold = ProxyServerUtils.generationCostThreshold(from: payload.priority)
+      let costThreshold = ComputeUnits.threadhold(for: payload.priority)
       guard cost < costThreshold else {
         logger.error(
           "Proxy Server enqueue image generating request failed, cost exceed threshold \(costThreshold)"
@@ -511,7 +510,6 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             code: .permissionDenied, message: "cost \(cost) exceed threshold \(costThreshold)"))
         return
       }
-      print("cost \(cost)")
 
       // Enqueue task.
       let task = WorkTask(priority: priority, request: request, context: context, promise: promise)
