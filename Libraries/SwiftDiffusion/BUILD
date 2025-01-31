@@ -41,6 +41,7 @@ swift_library(
         "@SwiftNumerics//:Numerics",
         "@ccv//lib:ccv",
         "@s4nnc//nnc",
+        "@swift-atomics//:SwiftAtomics",
         "@swift-fickling//:fickling",
         "@swift-sentencepiece//:swift-sentencepiece",
     ],
@@ -56,7 +57,6 @@ swift_library(
         ":SwiftDiffusionCoreMLModelManager",
         "@SwiftAlgorithms//:Algorithms",
         "@s4nnc//nnc:nnc_coreml",
-        "@swift-atomics//:SwiftAtomics",
     ],
 )
 

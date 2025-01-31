@@ -1,3 +1,4 @@
+import Atomics
 import Collections
 import NNC
 
@@ -182,6 +183,7 @@ public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
   var timeEmbed: Model? = nil
   var yTileWeightsAndIndexes: [[(weight: Float, index: Int, offset: Int)]]? = nil
   var xTileWeightsAndIndexes: [[(weight: Float, index: Int, offset: Int)]]? = nil
+  let isCancelled = ManagedAtomic<Bool>(false)
   public private(set) var version: ModelVersion = .v1
   public init() {}
   public var isLoaded: Bool { unet != nil }
@@ -206,6 +208,7 @@ extension UNetFromNNC {
     tiledDiffusion: TiledConfiguration
   ) -> Bool {
     guard unet == nil else { return true }
+    isCancelled.store(false, ordering: .releasing)
     let injectedControls = injectedControlsAndAdapters.injectedControls
     let injectedIPAdapters = injectedControlsAndAdapters.injectedIPAdapters
     let injectedT2IAdapters = injectedControlsAndAdapters.injectedT2IAdapters
@@ -994,6 +997,11 @@ extension UNetFromNNC {
       (startWidth - tileOverlap * 2 + (tiledWidth - tileOverlap * 2) - 1)
       / (tiledWidth - tileOverlap * 2)
     var et = [DynamicGraph.Tensor<FloatType>]()
+    let graph = xT.graph
+    guard !isCancelled.load(ordering: .acquiring) else {
+      return graph.variable(
+        Tensor<FloatType>(.GPU(0), .NHWC(shape[0], startHeight, startWidth, shape[3])))
+    }
     for y in 0..<yTiles {
       let yOfs = y * (tiledHeight - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
       let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
@@ -1008,9 +1016,12 @@ extension UNetFromNNC {
             inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
             xT: xT, inputs: inputs, injectedControlsAndAdapters: injectedControlsAndAdapters,
             controlNets: &controlNets))
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return graph.variable(
+            Tensor<FloatType>(.GPU(0), .NHWC(shape[0], startHeight, startWidth, shape[3])))
+        }
       }
     }
-    let graph = xT.graph
     graph.joined()
     let etRawValues = et.map { $0.rawValue.toCPU() }
     let channels = etRawValues[0].shape[3]
@@ -1154,6 +1165,7 @@ extension UNetFromNNC {
   }
 
   public func cancel() {
+    isCancelled.store(true, ordering: .releasing)
     unet?.cancel()
   }
 }
