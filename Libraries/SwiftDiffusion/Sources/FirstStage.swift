@@ -729,6 +729,12 @@ extension FirstStage {
       outputChannels = 4
       causalAttentionMask = nil
     }
+    isCancelled.store(false, ordering: .releasing)
+    let isCancelled = isCancelled
+    cancellation {
+      isCancelled.store(true, ordering: .releasing)
+      encoder.cancel()
+    }
     guard batchSize > 1 && version != .hunyuanVideo else {
       if highPrecision {
         if tiledEncoding {
@@ -1111,6 +1117,11 @@ extension FirstStage {
       / (tileSize.width - tileOverlap * 2)
     let graph = z.graph
     var encodedRawValues = [Tensor<T>]()
+    let resultBatchSize = (shape[0] - 1) / scaleFactor.temporal + 1
+    guard !isCancelled.load(ordering: .acquiring) else {
+      return graph.variable(
+        Tensor<T>(.GPU(0), .NHWC(resultBatchSize, startHeight, startWidth, outputChannels)))
+    }
     for y in 0..<yTiles {
       let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
       let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
@@ -1131,12 +1142,15 @@ extension FirstStage {
                 0..<channels
               ].copied(), (causalAttentionMask.map { [$0] } ?? []))[0].as(of: T.self).rawValue
             .toCPU())
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return graph.variable(
+            Tensor<T>(.GPU(0), .NHWC(resultBatchSize, startHeight, startWidth, outputChannels)))
+        }
       }
     }
     let (xWeightsAndIndexes, yWeightsAndIndexes) = xyTileWeightsAndIndexes(
       width: startWidth, height: startHeight, xTiles: xTiles, yTiles: yTiles,
       tileSize: (width: tileSize.width, height: tileSize.height), tileOverlap: tileOverlap)
-    let resultBatchSize = (shape[0] - 1) / scaleFactor.temporal + 1
     var result = Tensor<T>(.CPU, .NHWC(resultBatchSize, startHeight, startWidth, outputChannels))
     result.withUnsafeMutableBytes {
       guard var fp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
@@ -1203,7 +1217,14 @@ extension FirstStage {
     let graph = z.graph
     var encodedRawValues = [Tensor<T>]()
     let resultBatchSize = (shape[0] - 1) / scaleFactor.temporal + 1
-    var result = Tensor<T>(.CPU, .NHWC(resultBatchSize, startHeight, startWidth, outputChannels))
+    var result = Tensor<T>(
+      Array(
+        repeating: 0,
+        count: resultBatchSize * startHeight * startWidth * outputChannels), .CPU,
+      .NHWC(resultBatchSize, startHeight, startWidth, outputChannels))
+    guard !isCancelled.load(ordering: .acquiring) else {
+      return graph.variable(result.toGPU(0))
+    }
     let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
     for t in stride(from: 0, to: resultBatchSize, by: max(1, tileSize.depth - 5)) {
       let tDecodedStart = min(t * scaleFactor.temporal, batchSize - tileDecodedDepth)
@@ -1228,6 +1249,9 @@ extension FirstStage {
                   0..<channels
                 ].copied(), (causalAttentionMask.map { [$0] } ?? []))[0].as(of: T.self).rawValue
               .toCPU())
+          guard !isCancelled.load(ordering: .acquiring) else {
+            return graph.variable(result.toGPU(0))
+          }
         }
       }
       let (xWeightsAndIndexes, yWeightsAndIndexes) = xyTileWeightsAndIndexes(
