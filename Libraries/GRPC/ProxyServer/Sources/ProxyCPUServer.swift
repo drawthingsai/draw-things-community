@@ -489,22 +489,16 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             message: "no valid model name "))
         return
       }
-      let modelVersion = ModelZoo.versionForModel(modelName)
       guard
-        let cost = try? ProxyServerUtils.calculateGenerationCost(
-          modelVersion: modelVersion, width: Int(configuration.startWidth * 64),
-          height: Int(configuration.startHeight * 64),
-          steps: Int(configuration.steps),
-          batchSize: Int(configuration.batchSize),
-          cfgEnabled: (configuration.guidanceScale - 1).magnitude > 1e-2)
+        let cost = try? ProxyServerUtils.calculateGenerationCost(from: configuration)
       else {
         logger.error(
-          "Proxy Server can not calculate cost for modelVersion \(modelVersion)"
+          "Proxy Server can not calculate cost for configuration \(configuration)"
         )
         promise.fail(
           GRPCStatus(
             code: .permissionDenied,
-            message: "Proxy Server can not calculate cost for modelVersion \(modelVersion)"))
+            message: "Proxy Server can not calculate cost for modelVersion \(configuration)"))
         return
       }
       let costThreshold = ProxyServerUtils.generationCostThreshold(from: payload.priority)

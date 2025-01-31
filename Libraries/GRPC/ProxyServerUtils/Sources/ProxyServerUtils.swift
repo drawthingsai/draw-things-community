@@ -1,5 +1,7 @@
+import DataModels
 import Diffusion
 import Foundation
+import ModelZoo
 
 public enum ModelCoefficientError: Error {
   case unsupportedModel(String)
@@ -58,6 +60,30 @@ public struct ProxyServerUtils {
     let cfgMultiplier = cfgEnabled ? 2.0 : 1.0
 
     return modelCoefficient * pow(baseCalc * scalingFactor, 1.9) * Double(batchSize) * cfgMultiplier
+  }
+
+  public static func calculateGenerationCost(from configuration: GenerationConfiguration) throws
+    -> Double
+  {
+    guard let model = configuration.model else {
+      throw ModelCoefficientError.unsupportedModel("empty model name")
+    }
+    let modelVersion = ModelZoo.versionForModel(model)
+    var batchSize = Int(configuration.batchSize)
+    var cfgEnabled =
+      (configuration.guidanceScale - 1).magnitude > 1e-2
+      || (configuration.startFrameCfg - 1).magnitude > 1e-2
+    if modelVersion == .svdI2v || modelVersion == .hunyuanVideo {
+      batchSize = Int(configuration.batchCount)
+      cfgEnabled = (configuration.guidanceScale - 1).magnitude > 1e-2
+    }
+
+    return try ProxyServerUtils.calculateGenerationCost(
+      modelVersion: modelVersion, width: Int(configuration.startWidth * 64),
+      height: Int(configuration.startHeight * 64),
+      steps: Int(configuration.steps),
+      batchSize: batchSize,
+      cfgEnabled: cfgEnabled)
   }
 
   public static func generationCostThreshold(from priority: String) -> Double {
