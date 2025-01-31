@@ -187,7 +187,10 @@ public struct GPT2Tokenizer {
     var strs: [String] = addSpecialTokens ? [""] : []
     var ids: [Int32] = addSpecialTokens ? [startToken] : []
     for bpeToken in bpeTokens {
-      strs.append(bpeToken)
+      strs.append(
+        bpeToken.unicodeScalars.map({
+          Self.byteDecoder[Int($0.value), default: "\($0)"]
+        }).joined())
       ids.append(vocabulary[bpeToken, default: unknownToken])
     }
     return (ids, strs)
