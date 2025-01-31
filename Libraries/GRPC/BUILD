@@ -82,6 +82,7 @@ swift_library(
     deps = [
         ":GRPCControlPanelModels",
         ":GRPCImageServiceModels",
+        ":ProxyServerUtils",
         "//Libraries/BinaryResources",
         "//Libraries/DataModels",
         "//Libraries/ModelZoo",
@@ -91,6 +92,19 @@ swift_library(
         "@SwiftCrypto//:Crypto",
         "@SwiftCrypto//:CryptoBoringWrapper",
         "@SwiftLog//:Logging",
+    ],
+)
+
+swift_library(
+    name = "ProxyServerUtils",
+    srcs = glob([
+        "ProxyServerUtils/Sources/*.swift",
+    ]),
+    module_name = "ProxyServerUtils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//Libraries/DataModels",
+        "//Libraries/ModelZoo",
     ],
 )
 

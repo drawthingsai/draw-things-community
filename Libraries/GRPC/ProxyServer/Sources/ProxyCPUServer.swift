@@ -11,6 +11,7 @@ import NIO
 import NIOHPACK
 import NIOHTTP2
 import NIOSSL
+import ProxyServerUtils
 
 #if canImport(FoundationNetworking)
   import FoundationNetworking
@@ -488,11 +489,11 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             message: "no valid model name "))
         return
       }
-      let modelVersion = ModelZoo.versionForModel(modelName).rawValue
+      let modelVersion = ModelZoo.versionForModel(modelName)
       guard
         let cost = try? ProxyServerUtils.calculateGenerationCost(
-          modelName: modelVersion, width: Int(configuration.targetImageWidth),
-          height: Int(configuration.targetImageHeight),
+          modelVersion: modelVersion, width: Int(configuration.startWidth * 64),
+          height: Int(configuration.startHeight * 64),
           steps: Int(configuration.steps),
           batchSize: Int(configuration.batchSize),
           cfgEnabled: (configuration.guidanceScale - 1).magnitude > 1e-2)
@@ -506,7 +507,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             message: "Proxy Server can not calculate cost for modelVersion \(modelVersion)"))
         return
       }
-      let costThreshold = generationCostThreshold(from: payload.priority)
+      let costThreshold = ProxyServerUtils.generationCostThreshold(from: payload.priority)
       guard cost < costThreshold else {
         logger.error(
           "Proxy Server enqueue image generating request failed, cost exceed threshold \(costThreshold)"
@@ -546,18 +547,6 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       return TaskPriority.low
     }
     return TaskPriority.low
-  }
-
-  func generationCostThreshold(from priority: String) -> Double {
-    switch priority {
-    case "community":
-      return 15000  // around 120s
-    case "plus":
-      return 37000  // around 300s
-    default:
-      return 15000
-    }
-    return 15000
   }
 
   func filesExist(request: FileListRequest, context: StatusOnlyCallContext) -> EventLoopFuture<
