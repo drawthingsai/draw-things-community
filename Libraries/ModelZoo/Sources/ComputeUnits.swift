@@ -58,9 +58,12 @@ public enum ComputeUnits {
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large:
       batchSize = Int(configuration.batchSize) * (isCfgEnabled ? 2 : 1)
       numFrames = 1
-    case .svdI2v, .hunyuanVideo:
+    case .svdI2v:
       batchSize = isCfgEnabled ? 2 : 1
       numFrames = Int(configuration.numFrames)
+    case .hunyuanVideo:
+      batchSize = isCfgEnabled ? 2 : 1
+      numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
     }
     let modelCoefficient = modelCoefficient(modelVersion)
     let root = Double(
