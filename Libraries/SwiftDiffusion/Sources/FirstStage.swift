@@ -1,3 +1,4 @@
+import Atomics
 import NNC
 
 public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
@@ -14,6 +15,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?)
   private let highPrecisionFallback: Bool
   private let highMemoryCapacity: Bool  // If this device has more than 24GiB RAM.
+  private let isCancelled = ManagedAtomic<Bool>(false)
   public init(
     filePath: String, version: ModelVersion,
     latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?),
@@ -40,7 +42,8 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
 
 extension FirstStage {
   private func decode(
-    _ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?, highPrecision: Bool
+    _ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?, highPrecision: Bool,
+    cancellation: (@escaping () -> Void) -> Void
   )
     -> (DynamicGraph.Tensor<FloatType>, Model)
   {
@@ -289,6 +292,12 @@ extension FirstStage {
       outputChannels = 3
       causalAttentionMask = nil
     }
+    isCancelled.store(false, ordering: .releasing)
+    let isCancelled = isCancelled
+    cancellation {
+      isCancelled.store(true, ordering: .releasing)
+      decoder.cancel()
+    }
     // Hunyuan just do the decoding with the batch.
     guard batchSize > 1 && version != .hunyuanVideo else {
       if highPrecision {
@@ -304,8 +313,7 @@ extension FirstStage {
         } else {
           result = internalDecode(
             DynamicGraph.Tensor<Float>(from: z), causalAttentionMask: causalAttentionMask,
-            decoder: decoder,
-            transparentDecoder: transparentDecoder)
+            decoder: decoder, transparentDecoder: transparentDecoder)
         }
         let shape = result.shape
         return (
@@ -392,12 +400,19 @@ extension FirstStage {
     return (result, decoder)
   }
 
-  public func decode(_ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?)
+  public func decode(
+    _ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?,
+    cancellation: (@escaping () -> Void) -> Void
+  )
     -> (DynamicGraph.Tensor<FloatType>, Model)
   {
-    let (result, decoder) = decode(x, decoder: existingDecoder, highPrecision: false)
-    if highPrecisionFallback && isNaN(result.rawValue.toCPU()) {
-      let (highPrecisionResult, _) = decode(x, decoder: nil, highPrecision: true)
+    let (result, decoder) = decode(
+      x, decoder: existingDecoder, highPrecision: false, cancellation: cancellation)
+    if highPrecisionFallback && !isCancelled.load(ordering: .acquiring)
+      && isNaN(result.rawValue.toCPU())
+    {
+      let (highPrecisionResult, _) = decode(
+        x, decoder: nil, highPrecision: true, cancellation: cancellation)
       return (highPrecisionResult, decoder)
     }
     return (result, decoder)
@@ -429,10 +444,13 @@ extension FirstStage {
     return (scale(mean + std .* n), mean)
   }
 
-  public func sample(_ x: DynamicGraph.Tensor<FloatType>, encoder: Model?) -> (
+  public func sample(
+    _ x: DynamicGraph.Tensor<FloatType>, encoder: Model?,
+    cancellation: (@escaping () -> Void) -> Void
+  ) -> (
     DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>, Model
   ) {
-    let (parameters, encoder) = encode(x, encoder: encoder)
+    let (parameters, encoder) = encode(x, encoder: encoder, cancellation: cancellation)
     guard version != .kandinsky21 && version != .wurstchenStageC else {
       return (parameters, parameters, encoder)
     }
@@ -464,19 +482,25 @@ extension FirstStage {
     }
   }
 
-  public func encode(_ x: DynamicGraph.Tensor<FloatType>, encoder existingEncoder: Model?)
+  public func encode(
+    _ x: DynamicGraph.Tensor<FloatType>, encoder existingEncoder: Model?,
+    cancellation: (@escaping () -> Void) -> Void
+  )
     -> (DynamicGraph.Tensor<FloatType>, Model)
   {
-    let (result, encoder) = encode(x, encoder: existingEncoder, highPrecision: false)
+    let (result, encoder) = encode(
+      x, encoder: existingEncoder, highPrecision: false, cancellation: cancellation)
     if highPrecisionFallback && isNaN(result.rawValue.toCPU()) {
-      let (highPrecisionResult, _) = encode(x, encoder: nil, highPrecision: true)
+      let (highPrecisionResult, _) = encode(
+        x, encoder: nil, highPrecision: true, cancellation: cancellation)
       return (highPrecisionResult, encoder)
     }
     return (result, encoder)
   }
 
   private func encode(
-    _ x: DynamicGraph.Tensor<FloatType>, encoder existingEncoder: Model?, highPrecision: Bool
+    _ x: DynamicGraph.Tensor<FloatType>, encoder existingEncoder: Model?, highPrecision: Bool,
+    cancellation: (@escaping () -> Void) -> Void
   )
     -> (DynamicGraph.Tensor<FloatType>, Model)
   {
@@ -842,6 +866,15 @@ extension FirstStage {
       / (tileSize.width - tileOverlap * 2)
     let graph = z.graph
     var decodedRawValues = [Tensor<T>]()
+    let resultBatchSize = (shape[0] - 1) * scaleFactor.temporal + 1
+    guard !isCancelled.load(ordering: .acquiring) else {
+      return graph.variable(
+        Tensor<T>(
+          .GPU(0),
+          .NHWC(
+            resultBatchSize, shape[1] * scaleFactor.spatial, shape[2] * scaleFactor.spatial,
+            outputChannels)))
+    }
     for y in 0..<yTiles {
       let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
       let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
@@ -858,6 +891,14 @@ extension FirstStage {
             ].copied(), causalAttentionMask: causalAttentionMask, decoder: decoder,
             transparentDecoder: transparentDecoder
           ).rawValue.toCPU())
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return graph.variable(
+            Tensor<T>(
+              .GPU(0),
+              .NHWC(
+                resultBatchSize, shape[1] * scaleFactor.spatial, shape[2] * scaleFactor.spatial,
+                outputChannels)))
+        }
       }
     }
     let (xWeightsAndIndexes, yWeightsAndIndexes) = xyTileWeightsAndIndexes(
@@ -867,7 +908,6 @@ extension FirstStage {
         width: tileSize.width * scaleFactor.spatial, height: tileSize.height * scaleFactor.spatial
       ),
       tileOverlap: tileOverlap * scaleFactor.spatial)
-    let resultBatchSize = (shape[0] - 1) * scaleFactor.temporal + 1
     var result = Tensor<T>(
       .CPU,
       .NHWC(
@@ -960,6 +1000,9 @@ extension FirstStage {
       .NHWC(
         resultBatchSize, shape[1] * scaleFactor.spatial, shape[2] * scaleFactor.spatial,
         outputChannels))
+    guard !isCancelled.load(ordering: .acquiring) else {
+      return graph.variable(result.toGPU(0))
+    }
     // Hard-code overlapping 16 frames in time.
     for t in stride(from: 0, to: batchSize, by: max(1, tileSize.depth - 5)) {
       var decodedRawValues = [Tensor<T>]()
@@ -981,6 +1024,9 @@ extension FirstStage {
               ].copied(), causalAttentionMask: causalAttentionMask, decoder: decoder,
               transparentDecoder: transparentDecoder
             ).rawValue.toCPU())
+          guard !isCancelled.load(ordering: .acquiring) else {
+            return graph.variable(result.toGPU(0))
+          }
         }
       }
       let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1

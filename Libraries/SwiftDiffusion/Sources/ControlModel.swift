@@ -461,7 +461,7 @@ extension ControlModel {
       if let firstStage = firstStage {  // For FLUX.1, we use the VAE as encoder.
         var encoder: Model? = nil
         return inputs.map {
-          let result = firstStage.sample($0.hint, encoder: encoder)
+          let result = firstStage.sample($0.hint, encoder: encoder, cancellation: { _ in })
           encoder = result.2
           return [result.0]
         }

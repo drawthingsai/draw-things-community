@@ -239,7 +239,8 @@ public struct LoRATrainer {
           previousImageWidth = imageWidth
           previousImageHeight = imageHeight
           // Keep this in the database.
-          let tuple = firstStage.encode(graph.constant(tensor.toGPU(0)), encoder: encoder)
+          let tuple = firstStage.encode(
+            graph.constant(tensor.toGPU(0)), encoder: encoder, cancellation: { _ in })
           let sample = tuple.0.rawValue.toCPU()
           encoder = tuple.1
           let imagePath = input.imageUrl.path
@@ -268,7 +269,8 @@ public struct LoRATrainer {
         if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
           encoder = nil  // Reload encoder.
         }
-        let latentZeros = firstStage.sample(zeros, encoder: encoder).1.copied().rawValue.toCPU()
+        let latentZeros = firstStage.sample(zeros, encoder: encoder, cancellation: { _ in }).1
+          .copied().rawValue.toCPU()
         store.write("latent_zeros", tensor: latentZeros)
         if useImageAspectRatio && !additionalScales.isEmpty {
           var inputMap = [String: ProcessedInput]()
@@ -293,7 +295,8 @@ public struct LoRATrainer {
               previousImageWidth = imageWidth
               previousImageHeight = imageHeight
               // Keep this in the database.
-              let tuple = firstStage.encode(graph.constant(tensor.toGPU(0)), encoder: encoder)
+              let tuple = firstStage.encode(
+                graph.constant(tensor.toGPU(0)), encoder: encoder, cancellation: { _ in })
               let sample = tuple.0.rawValue.toCPU()
               encoder = tuple.1
               let imagePath = input.imageUrl.path
@@ -794,7 +797,8 @@ public struct LoRATrainer {
             encoder = nil  // Reload encoder.
           }
           // Keep this in the database.
-          let tuple = firstStage.encode(graph.constant(tensor.toGPU(0)), encoder: encoder)
+          let tuple = firstStage.encode(
+            graph.constant(tensor.toGPU(0)), encoder: encoder, cancellation: { _ in })
           let sample = tuple.0.rawValue.toCPU()
           encoder = tuple.1
           let imagePath = input.imageUrl.path
@@ -828,7 +832,8 @@ public struct LoRATrainer {
         let zeros = graph.variable(
           .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
         zeros.full(0)
-        let latentZeros = firstStage.sample(zeros, encoder: encoder).1.copied().rawValue.toCPU()
+        let latentZeros = firstStage.sample(zeros, encoder: encoder, cancellation: { _ in }).1
+          .copied().rawValue.toCPU()
         store.write("latent_zeros", tensor: latentZeros)
         if useImageAspectRatio && !additionalScales.isEmpty {
           var inputMap = [String: ProcessedInput]()
@@ -853,7 +858,8 @@ public struct LoRATrainer {
               previousImageWidth = imageWidth
               previousImageHeight = imageHeight
               // Keep this in the database.
-              let tuple = firstStage.encode(graph.constant(tensor.toGPU(0)), encoder: encoder)
+              let tuple = firstStage.encode(
+                graph.constant(tensor.toGPU(0)), encoder: encoder, cancellation: { _ in })
               let sample = tuple.0.rawValue.toCPU()
               encoder = tuple.1
               let imagePath = input.imageUrl.path

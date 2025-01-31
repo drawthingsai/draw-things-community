@@ -2373,7 +2373,7 @@ extension LocalImageGenerator {
         depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] = depth
         depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 1..<2] = depth
         depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = depth
-        let encodedDepth = firstStage.encode(depthRGB, encoder: nil).0
+        let encodedDepth = firstStage.encode(depthRGB, encoder: nil, cancellation: { _ in }).0
         let encodedShape = encodedDepth.shape
         return firstStage.scale(
           encodedDepth[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied())
@@ -2396,7 +2396,7 @@ extension LocalImageGenerator {
               ControlModel<FloatType>.canny(image.rawValue.toCPU(), adjustRGB: false).toGPU(0))
           }()
         else { return nil }
-        let encodedCanny = firstStage.encode(cannyRGB, encoder: nil).0
+        let encodedCanny = firstStage.encode(cannyRGB, encoder: nil, cancellation: { _ in }).0
         let encodedShape = encodedCanny.shape
         return firstStage.scale(
           encodedCanny[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied())
@@ -2870,7 +2870,8 @@ extension LocalImageGenerator {
           firstStage.encode(
             firstPassImage,
             encoder: modelPreloader.retrieveFirstStageEncoder(
-              firstStage: firstStage, scale: firstPassScale)), firstStage: firstStage,
+              firstStage: firstStage, scale: firstPassScale), cancellation: cancellation),
+          firstStage: firstStage,
           scale: firstPassScale)
         if modifier == .inpainting {
           maskedImage = firstStage.scale(
@@ -3016,7 +3017,8 @@ extension LocalImageGenerator {
           firstStage.decode(
             x,
             decoder: modelPreloader.retrieveFirstStageDecoder(
-              firstStage: firstStage, scale: firstPassScale)), firstStage: firstStage,
+              firstStage: firstStage, scale: firstPassScale), cancellation: cancellation),
+          firstStage: firstStage,
           scale: firstPassScale)
         guard !isNaN(firstStageResult.rawValue.toCPU()) else { return (nil, 1) }
       }
@@ -3077,7 +3079,8 @@ extension LocalImageGenerator {
         }
         // encode image again.
         (sample, _, _) = firstStage.sample(
-          DynamicGraph.Tensor<FloatType>(from: firstStageImage), encoder: nil)
+          DynamicGraph.Tensor<FloatType>(from: firstStageImage), encoder: nil,
+          cancellation: cancellation)
       }
       if modifier == .inpainting || modifier == .editing || modifier == .double {
         // TODO: Support this properly for Wurstchen models.
@@ -3099,7 +3102,8 @@ extension LocalImageGenerator {
           firstStage.encode(
             image,
             encoder: modelPreloader.retrieveFirstStageEncoder(
-              firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale
+              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+          firstStage: firstStage, scale: imageScale
         )
         if modifier == .inpainting {
           maskedImage = firstStage.scale(
@@ -3307,7 +3311,8 @@ extension LocalImageGenerator {
         firstStage.decode(
           x,
           decoder: modelPreloader.retrieveFirstStageDecoder(
-            firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale)
+            firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+        firstStage: firstStage, scale: imageScale)
       guard !isNaN(secondPassResult.rawValue.toCPU()) else { return (nil, 1) }
       guard feedback(.secondPassImageDecoded, signposts, nil) else { return (nil, 1) }
       secondPassResult = faceRestoreImage(secondPassResult, configuration: configuration)
@@ -3744,7 +3749,8 @@ extension LocalImageGenerator {
         firstStage.sample(
           firstPassImage,
           encoder: modelPreloader.retrieveFirstStageEncoder(
-            firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale)
+            firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+        firstStage: firstStage, scale: imageScale)
       var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
       var mask: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting {
@@ -3869,7 +3875,8 @@ extension LocalImageGenerator {
           firstStage.sample(
             image,
             encoder: modelPreloader.retrieveFirstStageEncoder(
-              firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale
+              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+          firstStage: firstStage, scale: imageScale
         )
         let startHeight = Int(configuration.startHeight) * 16
         let startWidth = Int(configuration.startWidth) * 16
@@ -3995,7 +4002,8 @@ extension LocalImageGenerator {
         firstStage.decode(
           x,
           decoder: modelPreloader.retrieveFirstStageDecoder(
-            firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale)
+            firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+        firstStage: firstStage, scale: imageScale)
       guard !isNaN(firstStageResult.rawValue.toCPU()) else { return (nil, 1) }
       if modelVersion == .wurstchenStageC {
         guard feedback(.secondPassImageDecoded, signposts, nil) else { return (nil, 1) }
@@ -4917,7 +4925,8 @@ extension LocalImageGenerator {
         firstStage.sample(
           firstPassImage,
           encoder: modelPreloader.retrieveFirstStageEncoder(
-            firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale)
+            firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+        firstStage: firstStage, scale: imageScale)
       let depthImage = depth.map {
         let depthImage = graph.variable($0.toGPU(0))
         let depthHeight = depthImage.shape[1]
@@ -4947,7 +4956,8 @@ extension LocalImageGenerator {
           firstStage.encode(
             image,
             encoder: modelPreloader.retrieveFirstStageEncoder(
-              firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale
+              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+          firstStage: firstStage, scale: imageScale
         )
         if modifier == .inpainting {
           maskedImage = firstStage.scale(
@@ -5073,7 +5083,8 @@ extension LocalImageGenerator {
           firstStage.sample(
             image,
             encoder: modelPreloader.retrieveFirstStageEncoder(
-              firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale
+              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+          firstStage: firstStage, scale: imageScale
         )
         let startHeight = Int(configuration.startHeight) * 16
         let startWidth = Int(configuration.startWidth) * 16
@@ -5197,11 +5208,10 @@ extension LocalImageGenerator {
           firstStage.decode(
             x,
             decoder: modelPreloader.retrieveFirstStageDecoder(
-              firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale
+              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+          firstStage: firstStage, scale: imageScale
         )
-      )
-      .rawValue
-      .toCPU()
+      ).rawValue.toCPU()
       guard !isNaN(result) else { return nil }
       if modelVersion == .wurstchenStageC {
         guard feedback(.secondPassImageDecoded, signposts, nil) else { return nil }
@@ -5606,7 +5616,8 @@ extension LocalImageGenerator {
         firstStage.sample(
           firstPassImage,
           encoder: modelPreloader.retrieveFirstStageEncoder(
-            firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale)
+            firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+        firstStage: firstStage, scale: imageScale)
       var maskedImage1: DynamicGraph.Tensor<FloatType>? = nil
       var maskedImage2: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modifier == .double
@@ -5631,7 +5642,8 @@ extension LocalImageGenerator {
           firstStage.encode(
             batch,
             encoder: modelPreloader.retrieveFirstStageEncoder(
-              firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale
+              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+          firstStage: firstStage, scale: imageScale
         )
         if modifier == .inpainting {
           maskedImage1 = firstStage.scale(
@@ -5873,7 +5885,8 @@ extension LocalImageGenerator {
           firstStage.sample(
             image,
             encoder: modelPreloader.retrieveFirstStageEncoder(
-              firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale
+              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+          firstStage: firstStage, scale: imageScale
         )
         let startHeight = Int(configuration.startHeight) * 16
         let startWidth = Int(configuration.startWidth) * 16
@@ -6055,11 +6068,10 @@ extension LocalImageGenerator {
           firstStage.decode(
             x,
             decoder: modelPreloader.retrieveFirstStageDecoder(
-              firstStage: firstStage, scale: imageScale)), firstStage: firstStage, scale: imageScale
+              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+          firstStage: firstStage, scale: imageScale
         )
-      )
-      .rawValue
-      .toCPU()
+      ).rawValue.toCPU()
       guard !isNaN(result) else { return nil }
       if modelVersion == .wurstchenStageC {
         guard feedback(.secondPassImageDecoded, signposts, nil) else { return nil }
