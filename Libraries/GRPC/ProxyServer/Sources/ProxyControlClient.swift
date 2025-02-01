@@ -146,6 +146,28 @@ public final class ProxyControlClient {
     }
   }
 
+  public func updateSharedSecret(completion: @escaping (Bool) -> Void) {
+    guard let client = client else {
+      print("can not connect to proxy server")
+      completion(false)
+      return
+    }
+
+    var request = UpdateSharedSecretRequest()
+
+    let _ = client.updateSharedSecret(request).response.always {
+      switch $0 {
+      case .success(let response):
+        print("\(response.message)")
+        completion(true)
+
+      case .failure(_):
+        print("can not update Shared Secret succees on Server")
+        completion(false)
+      }
+    }
+  }
+
   public func updateModelList(files: [String], completion: @escaping (Bool) -> Void) {
     guard let client = client else {
       print("can not connect to proxy server")

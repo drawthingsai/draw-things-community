@@ -200,6 +200,7 @@ public actor ControlConfigs {
   private var nonces = Set<String>()
   private let logger: Logger
   private var nonceSizeLimit: Int
+  private var sharedSecret: String?
   enum ControlConfigsError: Error {
     case updatePublicKeyFailed(message: String)
   }
@@ -231,6 +232,13 @@ public actor ControlConfigs {
     nonces.contains(nonce)
   }
 
+  func isSharedSecretValid(_ sharedSecret: String) async -> Bool {
+    guard let configuredSecret = self.sharedSecret else {
+      return false
+    }
+    return configuredSecret == sharedSecret
+  }
+
   func updateThrottlePolicy(newPolicies: [String: Int]) async {
     for (key, value) in newPolicies {
       throttlePolicy[key] = value
@@ -248,6 +256,31 @@ public actor ControlConfigs {
     } else {
       logger.error("ControlConfigs failed to update Pem, response:\(response))")
     }
+  }
+
+  func updateSharedSecret() async -> String {
+    func generatePassword() -> String {
+      // Avoiding confusing characters like 1, l, I, i, 0, O
+      let allowedChars = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+      var password = ""
+      // Ensure at least one number and one letter
+      let numbers = "23456789"
+      let letters = "ABCDEFGHJKMNPQRSTUVWXYZ"
+      // Add one random number
+      password.append(numbers.randomElement()!)
+      // Add one random letter
+      password.append(letters.randomElement()!)
+      // Fill the remaining 10 characters
+      for _ in 0..<10 {
+        password.append(allowedChars.randomElement()!)
+      }
+      // Shuffle the password to randomize position of guaranteed number and letter
+      return String(password.shuffled())
+    }
+    let sharedSecret = generatePassword()
+    self.sharedSecret = sharedSecret
+    logger.info("ControlConfigs update shared Secret")
+    return sharedSecret
   }
 }
 
@@ -372,6 +405,21 @@ final class ControlPanelService: ControlPanelServiceProvider {
       let pem = await controlConfigs.publicKeyPEM
       let response = UpdatePemResponse.with {
         $0.message = "Update proxy pem as:\n \(pem)"
+      }
+      promise.succeed(response)
+    }
+    return promise.futureResult
+  }
+
+  func updateSharedSecret(request: UpdateSharedSecretRequest, context: StatusOnlyCallContext)
+    -> EventLoopFuture<UpdateSharedSecretResponse>
+  {
+    let promise = context.eventLoop.makePromise(
+      of: GRPCControlPanelModels.UpdateSharedSecretResponse.self)
+    Task {
+      let sharedSecret = await controlConfigs.updateSharedSecret()
+      let response = UpdateSharedSecretResponse.with {
+        $0.message = "Update proxy shared secret as:\n \(sharedSecret)"
       }
       promise.succeed(response)
     }
@@ -500,8 +548,9 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             message: "Proxy Server can not calculate cost for model \(modelName)"))
         return
       }
+      let isSharedSecretValid = await controlConfigs.isSharedSecretValid(request.sharedSecret)
       let costThreshold = ComputeUnits.threadhold(for: payload.priority)
-      guard cost < costThreshold else {
+      guard cost < costThreshold || isSharedSecretValid else {
         logger.error(
           "Proxy Server enqueue image generating request failed, cost exceed threshold \(costThreshold)"
         )
