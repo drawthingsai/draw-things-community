@@ -492,7 +492,7 @@ extension UNetFromNNC {
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file })
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         (_, unet) =
           LoRAMMDiT(
@@ -558,7 +558,7 @@ extension UNetFromNNC {
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file })
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         (_, unet) = LoRAFlux1(
           batchSize: batchSize, tokenLength: tokenLength,
@@ -585,10 +585,22 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
       let tokenLength = c[2].shape[1]
-      (_, unet) = Hunyuan(
-        time: batchSize, height: tiledHeight, width: tiledWidth, textLength: tokenLength,
-        channels: 3072, layers: (20, 40),
-        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        (_, unet) = LoRAHunyuan(
+          time: batchSize, height: tiledHeight, width: tiledWidth, textLength: tokenLength,
+          channels: 3072, layers: (20, 40),
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+          LoRAConfiguration: configuration)
+      } else {
+        (_, unet) = Hunyuan(
+          time: batchSize, height: tiledHeight, width: tiledWidth, textLength: tokenLength,
+          channels: 3072, layers: (20, 40),
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+      }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -716,9 +728,12 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<38).map {
                   return ($0, $0)
                 })
-            case .auraflow:
-              fatalError()
             case .hunyuanVideo:
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<(20 + 40)).map {
+                  return ($0, $0)
+                })
+            case .auraflow:
               fatalError()
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()

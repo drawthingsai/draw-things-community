@@ -635,7 +635,7 @@ extension UNetFixedEncoder {
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file })
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         (_, unetFixed) = LoRAFlux1Fixed(
           batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
@@ -761,15 +761,70 @@ extension UNetFixedEncoder {
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
         c[i..<(i + 1), 0..<llama3Length, 0..<4096] = c0
       }
-      let unetFixed = HunyuanFixed(
-        batchSize: timesteps.count, channels: 3072, layers: (20, 40), textLength: llama3Length
-      ).1
+      let unetFixed: Model
+      let lora = Array(
+        (OrderedDictionary<String, LoRAConfiguration>(
+          lora.filter({ $0.version == version }).map {
+            ($0.file, $0)
+          }
+        ) {
+          LoRAConfiguration(
+            file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
+            modifier: $0.modifier)
+        })
+        .values
+      ).filter { $0.weight != 0 }
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unetFixed =
+          LoRAHunyuanFixed(
+            batchSize: timesteps.count, channels: 3072, layers: (20, 40), textLength: llama3Length,
+            LoRAConfiguration: configuration
+          ).1
+      } else {
+        unetFixed =
+          HunyuanFixed(
+            batchSize: timesteps.count, channels: 3072, layers: (20, 40), textLength: llama3Length
+          ).1
+      }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c, timeEmbeds, pooled] + (guidanceEmbeds.map { [$0] } ?? []))
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
-        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        if !lora.isEmpty {
+          if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<(20 + 40)).map {
+                return ($0, $0)
+              })
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, format, shape in
+                return loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                  store: store, dataType: dataType, format: format, shape: shape)
+              }
+            }
+          } else {
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, _, _, shape in
+                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              }
+            }
+          }
+        } else {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
       }
       let conditions = unetFixed(
         inputs: c, [timeEmbeds, pooled] + (guidanceEmbeds.map { [$0] } ?? [])

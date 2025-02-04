@@ -64,7 +64,9 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
       }, filesRequireMerge
     )
   }
-  public static func keys(_ graph: DynamicGraph, of files: [String], prefix: String = "")
+  public static func keys(
+    _ graph: DynamicGraph, of files: [String], modelFile: String, prefix: String = ""
+  )
     -> [String]
   {
     return Array(
@@ -73,6 +75,10 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
         graph.openStore(file, flags: .readOnly) {
           for key in $0.keys {
             guard prefix.isEmpty || key.hasPrefix(prefix) else { continue }
+            // If the LoRA file is the model file, only interested in keys with suffix __up__ or __down__.
+            if file == modelFile && !(key.hasSuffix("__up__") || key.hasSuffix("__down__")) {
+              continue
+            }
             // this is to check if it is a key for LoRA network directly.
             let components = key.components(separatedBy: ["[", "]"])
             guard components.count >= 2, components[1].hasPrefix("t-") else { continue }
