@@ -113,8 +113,8 @@ public final class ProxyControlClient {
 
     let _ = client.updateThrottlingConfig(request).response.always {
       switch $0 {
-      case .success(_):
-        print("update ThrottlingConfig succees")
+      case .success(let result):
+        print("\(result.message)")
         completion(true)
 
       case .failure(_):

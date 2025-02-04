@@ -387,8 +387,13 @@ final class ControlPanelService: ControlPanelServiceProvider {
     Task {
       await controlConfigs.updateThrottlePolicy(
         newPolicies: request.limitConfig.mapValues { Int($0) })
+      let currentThrottlePolicies = await controlConfigs.throttlePolicy
+      self.logger.info(
+        "Update throttling for \(request.limitConfig), current throttling policies are \(currentThrottlePolicies)"
+      )
       let response = ThrottlingResponse.with {
-        $0.message = "Update throttling for \(request.limitConfig)"
+        $0.message =
+          "Update throttling for \(request.limitConfig), current throttling policies are \(currentThrottlePolicies)"
       }
       promise.succeed(response)
     }
@@ -660,8 +665,8 @@ public class ProxyCPUServer {
     self.workers = workers
     self.controlConfigs = ControlConfigs(
       throttlePolicy: [
-        "request_in_5min": 10, "request_in_10min": 15, "request_in_1hr": 60,
-        "request_in_24hr": 1000,
+        "5_min": 10, "10_min": 15, "1_hour": 60,
+        "24_hour": 1000,
       ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath,
       nonceSizeLimit: nonceSizeLimit)
 
