@@ -762,7 +762,8 @@ extension UNetFixedEncoder {
         c[i..<(i + 1), 0..<llama3Length, 0..<4096] = c0
       }
       let unetFixed = HunyuanFixed(
-        batchSize: timesteps.count, channels: 3072, layers: (20, 40), textLength: llama3Length)
+        batchSize: timesteps.count, channels: 3072, layers: (20, 40), textLength: llama3Length
+      ).1
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c, timeEmbeds, pooled] + (guidanceEmbeds.map { [$0] } ?? []))
       graph.openStore(
