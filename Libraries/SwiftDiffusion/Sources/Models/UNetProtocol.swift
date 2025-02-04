@@ -235,7 +235,7 @@ extension UNetFromNNC {
       .values
     ).filter { $0.weight != 0 }
     let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
-      graph, of: lora.map { $0.file })
+      graph, of: lora.map { $0.file }, modelFile: filePath)
     let isLoHa = lora.contains { $0.isLoHa }
     var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
     let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand

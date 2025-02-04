@@ -88,6 +88,7 @@ public struct ModelZoo: DownloadZoo {
     public var paddedTextEncodingLength: Int?
     public var hiresFixScale: UInt16?
     public var mmdit: MMDiT?
+    public var builtinLora: Bool?
     public var note: String?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
@@ -102,7 +103,7 @@ public struct ModelZoo: DownloadZoo {
       latentsStd: [Float]? = nil, latentsScalingFactor: Float? = nil, stageModels: [String]? = nil,
       textEncoderVersion: TextEncoderVersion? = nil, guidanceEmbed: Bool? = nil,
       paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil,
-      note: String? = nil
+      builtinLora: Bool? = nil, note: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -133,6 +134,7 @@ public struct ModelZoo: DownloadZoo {
       self.paddedTextEncodingLength = paddedTextEncodingLength
       self.hiresFixScale = hiresFixScale
       self.mmdit = mmdit
+      self.builtinLora = builtinLora
       self.note = note
     }
     fileprivate var predictV: Bool? = nil
@@ -843,6 +845,11 @@ public struct ModelZoo: DownloadZoo {
   public static func autoencoderForModel(_ name: String) -> String? {
     guard let specification = specificationForModel(name) else { return nil }
     return specification.autoencoder
+  }
+
+  public static func builtinLoRAForModel(_ name: String) -> Bool {
+    guard let specification = specificationForModel(name) else { return false }
+    return specification.builtinLora ?? false
   }
 
   public static func isModelDeprecated(_ name: String) -> Bool {

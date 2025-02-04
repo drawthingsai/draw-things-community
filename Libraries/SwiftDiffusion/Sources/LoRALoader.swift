@@ -31,7 +31,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
   }
   // Compute the LoRA rank of all loras.
   public static func rank(
-    _ graph: DynamicGraph, of files: [String], prefix: String = "",
+    _ graph: DynamicGraph, of files: [String], prefix: String = "", modelFile: String? = nil,
     inspectFilesRequireMerge: Bool = true
   ) -> (
     rank: Int, filesRequireMerge: Set<String>
@@ -48,7 +48,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             let isLoRADownNetworkKey = key.contains("-lora_down-")
             // If it doesn't have __ suffix but have a __ suffix (indicate it is a weight for model), then it is a "full" LoRA that requires a merge.
             guard isLoRADownNetworkKey || (key.hasSuffix("__") && key.hasPrefix("__")) else {
-              if inspectFilesRequireMerge && key.hasPrefix("__") {
+              if inspectFilesRequireMerge && modelFile != file && key.hasPrefix("__") {
                 filesRequireMerge.insert(file)
                 break
               }

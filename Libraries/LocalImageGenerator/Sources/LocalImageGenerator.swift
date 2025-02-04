@@ -2534,24 +2534,31 @@ extension LocalImageGenerator {
       ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
-    let lora: [LoRAConfiguration] = configuration.loras.compactMap {
-      guard let file = $0.file else { return nil }
-      let loraVersion = LoRAZoo.versionForModel(file)
-      guard LoRAZoo.isModelDownloaded(file),
-        modelVersion == loraVersion || refinerVersion == loraVersion
-          || (modelVersion == .kandinsky21 && loraVersion == .v1)
-      else { return nil }
-      if LoRAZoo.isConsistencyModelForModel(file) {
-        isCfgEnabled = false
+    let lora: [LoRAConfiguration] =
+      (ModelZoo.builtinLoRAForModel(file)
+        ? [
+          LoRAConfiguration(
+            file: ModelZoo.filePathForModelDownloaded(file), weight: 1, version: modelVersion,
+            isLoHa: false, modifier: .none)
+        ] : [])
+      + configuration.loras.compactMap {
+        guard let file = $0.file else { return nil }
+        let loraVersion = LoRAZoo.versionForModel(file)
+        guard LoRAZoo.isModelDownloaded(file),
+          modelVersion == loraVersion || refinerVersion == loraVersion
+            || (modelVersion == .kandinsky21 && loraVersion == .v1)
+        else { return nil }
+        if LoRAZoo.isConsistencyModelForModel(file) {
+          isCfgEnabled = false
+        }
+        if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
+          alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
+          alternativeDecoderVersion = alternativeDecoder.1
+        }
+        return LoRAConfiguration(
+          file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
+          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
       }
-      if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
-        alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
-        alternativeDecoderVersion = alternativeDecoder.1
-      }
-      return LoRAConfiguration(
-        file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
-        isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
-    }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
       || modelVersion == .sd3 || modelVersion == .pixart
@@ -3427,24 +3434,31 @@ extension LocalImageGenerator {
       ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
-    let lora: [LoRAConfiguration] = configuration.loras.compactMap {
-      guard let file = $0.file else { return nil }
-      let loraVersion = LoRAZoo.versionForModel(file)
-      guard LoRAZoo.isModelDownloaded(file),
-        modelVersion == loraVersion || refinerVersion == loraVersion
-          || (modelVersion == .kandinsky21 && loraVersion == .v1)
-      else { return nil }
-      if LoRAZoo.isConsistencyModelForModel(file) {
-        isCfgEnabled = false
+    let lora: [LoRAConfiguration] =
+      (ModelZoo.builtinLoRAForModel(file)
+        ? [
+          LoRAConfiguration(
+            file: ModelZoo.filePathForModelDownloaded(file), weight: 1, version: modelVersion,
+            isLoHa: false, modifier: .none)
+        ] : [])
+      + configuration.loras.compactMap {
+        guard let file = $0.file else { return nil }
+        let loraVersion = LoRAZoo.versionForModel(file)
+        guard LoRAZoo.isModelDownloaded(file),
+          modelVersion == loraVersion || refinerVersion == loraVersion
+            || (modelVersion == .kandinsky21 && loraVersion == .v1)
+        else { return nil }
+        if LoRAZoo.isConsistencyModelForModel(file) {
+          isCfgEnabled = false
+        }
+        if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
+          alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
+          alternativeDecoderVersion = alternativeDecoder.1
+        }
+        return LoRAConfiguration(
+          file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
+          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
       }
-      if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
-        alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
-        alternativeDecoderVersion = alternativeDecoder.1
-      }
-      return LoRAConfiguration(
-        file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
-        isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
-    }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
       || modelVersion == .sd3 || modelVersion == .pixart
@@ -4629,24 +4643,31 @@ extension LocalImageGenerator {
       ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
-    let lora: [LoRAConfiguration] = configuration.loras.compactMap {
-      guard let file = $0.file else { return nil }
-      let loraVersion = LoRAZoo.versionForModel(file)
-      guard LoRAZoo.isModelDownloaded(file),
-        modelVersion == loraVersion || refinerVersion == loraVersion
-          || (modelVersion == .kandinsky21 && loraVersion == .v1)
-      else { return nil }
-      if LoRAZoo.isConsistencyModelForModel(file) {
-        isCfgEnabled = false
+    let lora: [LoRAConfiguration] =
+      (ModelZoo.builtinLoRAForModel(file)
+        ? [
+          LoRAConfiguration(
+            file: ModelZoo.filePathForModelDownloaded(file), weight: 1, version: modelVersion,
+            isLoHa: false, modifier: .none)
+        ] : [])
+      + configuration.loras.compactMap {
+        guard let file = $0.file else { return nil }
+        let loraVersion = LoRAZoo.versionForModel(file)
+        guard LoRAZoo.isModelDownloaded(file),
+          modelVersion == loraVersion || refinerVersion == loraVersion
+            || (modelVersion == .kandinsky21 && loraVersion == .v1)
+        else { return nil }
+        if LoRAZoo.isConsistencyModelForModel(file) {
+          isCfgEnabled = false
+        }
+        if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
+          alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
+          alternativeDecoderVersion = alternativeDecoder.1
+        }
+        return LoRAConfiguration(
+          file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
+          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
       }
-      if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
-        alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
-        alternativeDecoderVersion = alternativeDecoder.1
-      }
-      return LoRAConfiguration(
-        file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
-        isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
-    }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
       || modelVersion == .sd3 || modelVersion == .pixart
@@ -5321,24 +5342,31 @@ extension LocalImageGenerator {
       ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
-    let lora: [LoRAConfiguration] = configuration.loras.compactMap {
-      guard let file = $0.file else { return nil }
-      let loraVersion = LoRAZoo.versionForModel(file)
-      guard LoRAZoo.isModelDownloaded(file),
-        modelVersion == loraVersion || refinerVersion == loraVersion
-          || (modelVersion == .kandinsky21 && loraVersion == .v1)
-      else { return nil }
-      if LoRAZoo.isConsistencyModelForModel(file) {
-        isCfgEnabled = false
+    let lora: [LoRAConfiguration] =
+      (ModelZoo.builtinLoRAForModel(file)
+        ? [
+          LoRAConfiguration(
+            file: ModelZoo.filePathForModelDownloaded(file), weight: 1, version: modelVersion,
+            isLoHa: false, modifier: .none)
+        ] : [])
+      + configuration.loras.compactMap {
+        guard let file = $0.file else { return nil }
+        let loraVersion = LoRAZoo.versionForModel(file)
+        guard LoRAZoo.isModelDownloaded(file),
+          modelVersion == loraVersion || refinerVersion == loraVersion
+            || (modelVersion == .kandinsky21 && loraVersion == .v1)
+        else { return nil }
+        if LoRAZoo.isConsistencyModelForModel(file) {
+          isCfgEnabled = false
+        }
+        if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
+          alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
+          alternativeDecoderVersion = alternativeDecoder.1
+        }
+        return LoRAConfiguration(
+          file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
+          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
       }
-      if let alternativeDecoder = LoRAZoo.alternativeDecoderForModel(file) {
-        alternativeDecoderFilePath = LoRAZoo.filePathForModelDownloaded(alternativeDecoder.0)
-        alternativeDecoderVersion = alternativeDecoder.1
-      }
-      return LoRAConfiguration(
-        file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
-        isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
-    }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
       || modelVersion == .sd3 || modelVersion == .pixart
