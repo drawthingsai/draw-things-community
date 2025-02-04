@@ -37,15 +37,18 @@ public struct RemoteImageGenerator: ImageGenerator {
   public let deviceType: ImageGeneratorDeviceType
   private var fileExistsCall: UnaryCall<FileListRequest, FileExistenceResponse>? = nil
   private var authenticationHandler: ((Data, (@escaping () -> Void) -> Void) -> String?)?
+  private var requestExceedLimitHandler: (() -> Void)?
 
   public init(
     name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper,
-    authenticationHandler: ((Data, (@escaping () -> Void) -> Void) -> String?)?
+    authenticationHandler: ((Data, (@escaping () -> Void) -> Void) -> String?)?,
+    requestExceedLimitHandler: (() -> Void)?
   ) {
     self.name = name
     self.deviceType = deviceType
     self.client = client
     self.authenticationHandler = authenticationHandler
+    self.requestExceedLimitHandler = requestExceedLimitHandler
   }
 
   public func generate(
@@ -207,6 +210,12 @@ public struct RemoteImageGenerator: ImageGenerator {
       switch result {
       case .success(let status):
         logger.info("Stream completed with status: \(status)")
+        if status.code == GRPCStatus.Code.permissionDenied, let message = status.message,
+          message.contains("throttlePolicy"),
+          let requestExceedLimitHandler = requestExceedLimitHandler
+        {
+          requestExceedLimitHandler()
+        }
       case .failure(let error):
         logger.error("Stream failed with error: \(error)")
       }

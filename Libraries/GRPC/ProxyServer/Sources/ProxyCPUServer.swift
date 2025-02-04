@@ -516,7 +516,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
           promise.fail(
             GRPCStatus(
               code: .permissionDenied,
-              message: "user failed to pass \(key) in \(throttlePolicy)"))
+              message: "user failed to pass throttlePolicy, \(key) in \(throttlePolicy)"))
           return
         }
       }
