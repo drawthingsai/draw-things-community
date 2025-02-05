@@ -131,7 +131,7 @@ public final class ProxyControlClient {
       return
     }
 
-    var request = UpdatePemRequest()
+    let request = UpdatePemRequest()
 
     let _ = client.updatePem(request).response.always {
       switch $0 {
@@ -153,7 +153,7 @@ public final class ProxyControlClient {
       return
     }
 
-    var request = UpdateSharedSecretRequest()
+    let request = UpdateSharedSecretRequest()
 
     let _ = client.updateSharedSecret(request).response.always {
       switch $0 {

@@ -26,6 +26,7 @@ struct WorkTask {
   var request: ImageGenerationRequest
   var context: StreamingResponseCallContext<ImageGenerationResponse>
   var promise: EventLoopPromise<GRPCStatus>
+  var heartbeat: Task<Void, Error>
 }
 
 public struct Worker {
@@ -50,6 +51,7 @@ extension Worker {
     logger.info(
       "Worker \(id) primaryPriority:\(primaryPriority) starting task  (Priority: \(task.priority))"
     )
+    defer { task.heartbeat.cancel() }
     do {
       var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
       guard let client = client.client else {
@@ -525,13 +527,6 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
           return
         }
       }
-      let heartbeat = Task {
-        while !Task.isCancelled {
-          // Abort the task if we cannot send response any more. Send empty response as heartbeat to keep Cloudflare alive.
-          let _ = try await context.sendResponse(ImageGenerationResponse()).get()
-          try? await Task.sleep(for: .seconds(20))  // Every 20 seconds send a heartbeat.
-        }
-      }
       let priority = taskPriority(from: payload.priority)
       let configuration = GenerationConfiguration.from(data: request.configuration)
       guard let modelName = configuration.model else {
@@ -541,9 +536,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             message: "no valid model name "))
         return
       }
-      guard
-        let cost = try? ComputeUnits.from(configuration)
-      else {
+      guard let cost = ComputeUnits.from(configuration) else {
         logger.error(
           "Proxy Server can not calculate cost for configuration \(configuration)"
         )
@@ -564,9 +557,17 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             code: .permissionDenied, message: "cost \(cost) exceed threshold \(costThreshold)"))
         return
       }
-
       // Enqueue task.
-      let task = WorkTask(priority: priority, request: request, context: context, promise: promise)
+      let heartbeat = Task {
+        while !Task.isCancelled {
+          // Abort the task if we cannot send response any more. Send empty response as heartbeat to keep Cloudflare alive.
+          let _ = try await context.sendResponse(ImageGenerationResponse()).get()
+          try? await Task.sleep(for: .seconds(20))  // Every 20 seconds send a heartbeat.
+        }
+      }
+      let task = WorkTask(
+        priority: priority, request: request, context: context, promise: promise,
+        heartbeat: heartbeat)
       await taskQueue.addTask(task)
       if let worker = await taskQueue.nextWorker() {
         // Note that the extracted task may not be the ones we just enqueued.
@@ -576,8 +577,8 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         }
       } else {
         logger.error("worker stream finished, can not get available worker")
+        heartbeat.cancel()
       }
-      heartbeat.cancel()
     }
 
     return promise.futureResult
@@ -592,7 +593,6 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     default:
       return TaskPriority.low
     }
-    return TaskPriority.low
   }
 
   func filesExist(request: FileListRequest, context: StatusOnlyCallContext) -> EventLoopFuture<
@@ -600,7 +600,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   > {
     let promise = context.eventLoop.makePromise(of: FileExistenceResponse.self)
     Task {
-      var internalFilePath = await controlConfigs.modelListPath
+      let internalFilePath = await controlConfigs.modelListPath
       let response = FileExistenceResponse.with {
         $0.files = [String]()
         $0.existences = [Bool]()
@@ -626,7 +626,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   func echo(request: EchoRequest, context: StatusOnlyCallContext) -> EventLoopFuture<EchoReply> {
     let promise = context.eventLoop.makePromise(of: EchoReply.self)
     Task {
-      var internalFilePath = await controlConfigs.modelListPath
+      let internalFilePath = await controlConfigs.modelListPath
       let response = EchoReply.with {
         logger.info("Proxy Server Received echo from: \(request.name)")
         $0.message = "Hello, \(request.name)!"
