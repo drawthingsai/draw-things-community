@@ -133,10 +133,16 @@ public final class ModelImporter {
         ($0.contains("blocks.27.") || $0.contains("transformer_blocks.27."))
           && !($0.contains("single_transformer_blocks.27.")) && !($0.contains("single_blocks.27."))
       }
-    var isFlux1 = stateDict.keys.contains {
-      $0.contains("double_blocks.18.img_attn.qkv.")
-        || $0.contains("single_transformer_blocks.37.")
+    var isHunyuan = stateDict.keys.contains {
+      $0.contains("double_blocks.19.img_attn.qkv.")
+        || $0.contains("single_transformer_blocks.39.")
     }
+    var isFlux1 =
+      !isHunyuan
+      && stateDict.keys.contains {
+        $0.contains("double_blocks.18.img_attn.qkv.")
+          || $0.contains("single_transformer_blocks.37.")
+      }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
     let inputDim: Int
@@ -201,6 +207,7 @@ public final class ModelImporter {
       isSD3Medium = false
       isSD3Large = false
       isFlux1 = false
+      isHunyuan = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -236,6 +243,14 @@ public final class ModelImporter {
       expectedTotalAccess = 1732
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("single_transformer_blocks.37.")
+      }
+    } else if isHunyuan {
+      modelVersion = .hunyuanVideo
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 1732
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("single_transformer_blocks.39.")
       }
     } else {
       throw UnpickleError.tensorNotFound

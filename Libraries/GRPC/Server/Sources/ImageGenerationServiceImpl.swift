@@ -125,7 +125,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     context: StreamingResponseCallContext<ImageGenerationResponse>
   ) -> EventLoopFuture<GRPCStatus> {
     // Log the incoming request
-    logger.info("Received image processing request")
+    logger.info("Received image processing request, begin.")
     let eventLoop = context.eventLoop
     if let sharedSecret = sharedSecret, !sharedSecret.isEmpty {
       guard request.sharedSecret == sharedSecret else {
@@ -157,7 +157,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
 
       let configuration = GenerationConfiguration.from(data: request.configuration)
       self.logger.info(
-        "Received image processing request with decoded configuration: \(configuration), steps:\(configuration.steps)"
+        "Received image processing request with configuration steps: \(configuration.steps)"
       )
       let override = request.override
       let jsonDecoder = JSONDecoder()

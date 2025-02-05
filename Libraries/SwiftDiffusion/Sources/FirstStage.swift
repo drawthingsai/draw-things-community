@@ -857,12 +857,8 @@ extension FirstStage {
     let batchSize = shape[0]
     // tile overlap shouldn't be bigger than 1/3 of either height or width (otherwise we cannot make much progress).
     let tileOverlap = min(
-      min(
-        tileOverlap,
-        Int((Double(tileSize.height / 3) / Double(64 / scaleFactor.spatial)).rounded(.down))
-          * (64 / scaleFactor.spatial)),
-      Int((Double(tileSize.width / 3) / Double(64 / scaleFactor.spatial)).rounded(.down))
-        * (64 / scaleFactor.spatial)
+      min(tileOverlap, Int((Double(tileSize.height) / 6).rounded(.down) * 2)),
+      Int((Double(tileSize.width) / 6).rounded(.down) * 2)
     )
     let yTiles =
       (shape[1] - tileOverlap * 2 + (tileSize.height - tileOverlap * 2) - 1)
@@ -977,12 +973,8 @@ extension FirstStage {
     let graph = z.graph
     // tile overlap shouldn't be bigger than 1/3 of either height or width (otherwise we cannot make much progress).
     let tileOverlap = min(
-      min(
-        tileOverlap,
-        Int((Double(tileSize.height / 3) / Double(64 / scaleFactor.spatial)).rounded(.down))
-          * (64 / scaleFactor.spatial)),
-      Int((Double(tileSize.width / 3) / Double(64 / scaleFactor.spatial)).rounded(.down))
-        * (64 / scaleFactor.spatial)
+      min(tileOverlap, Int((Double(tileSize.height) / 6).rounded(.down) * 2)),
+      Int((Double(tileSize.width) / 6).rounded(.down) * 2)
     )
     let yTiles =
       (shape[1] - tileOverlap * 2 + (tileSize.height - tileOverlap * 2) - 1)
@@ -1105,8 +1097,9 @@ extension FirstStage {
     let batchSize = shape[0]
     // tile overlap shouldn't be bigger than 1/3 of either height or width (otherwise we cannot make much progress).
     let tileOverlap = min(
-      min(tileOverlap, Int((Double(tileSize.height / 3) / 8).rounded(.down)) * 8),
-      Int((Double(tileSize.width / 3) / 8).rounded(.down)) * 8)
+      min(tileOverlap, Int((Double(tileSize.height) / 6).rounded(.down) * 2)),
+      Int((Double(tileSize.width) / 6).rounded(.down) * 2)
+    )
     let startHeight = shape[1] / scaleFactor.spatial
     let startWidth = shape[2] / scaleFactor.spatial
     let yTiles =
@@ -1204,8 +1197,9 @@ extension FirstStage {
     let batchSize = shape[0]
     // tile overlap shouldn't be bigger than 1/3 of either height or width (otherwise we cannot make much progress).
     let tileOverlap = min(
-      min(tileOverlap, Int((Double(tileSize.height / 3) / 8).rounded(.down)) * 8),
-      Int((Double(tileSize.width / 3) / 8).rounded(.down)) * 8)
+      min(tileOverlap, Int((Double(tileSize.height) / 6).rounded(.down) * 2)),
+      Int((Double(tileSize.width) / 6).rounded(.down) * 2)
+    )
     let startHeight = shape[1] / scaleFactor.spatial
     let startWidth = shape[2] / scaleFactor.spatial
     let yTiles =
