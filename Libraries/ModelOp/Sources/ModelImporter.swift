@@ -101,7 +101,9 @@ public final class ModelImporter {
     } else if let zipArchive = Archive(url: URL(fileURLWithPath: filePath), accessMode: .read) {
       archive = zipArchive
       let rootObject = try Interpreter.unpickle(zip: zipArchive)
-      let originalStateDict = rootObject["state_dict"] as? Interpreter.Dictionary ?? rootObject
+      let originalStateDict =
+        rootObject["state_dict"] as? Interpreter.Dictionary ?? rootObject["module"]
+        as? Interpreter.Dictionary ?? rootObject
       stateDict = [String: TensorDescriptor]()
       originalStateDict.forEach { key, value in
         guard let value = value as? TensorDescriptor else { return }
@@ -134,7 +136,7 @@ public final class ModelImporter {
           && !($0.contains("single_transformer_blocks.27.")) && !($0.contains("single_blocks.27."))
       }
     var isHunyuan = stateDict.keys.contains {
-      $0.contains("double_blocks.19.img_attn.qkv.")
+      $0.contains("double_blocks.19.img_attn_qkv.")
         || $0.contains("single_transformer_blocks.39.")
     }
     var isFlux1 =
@@ -248,7 +250,7 @@ public final class ModelImporter {
       modelVersion = .hunyuanVideo
       modifier = .none
       inputDim = 16
-      expectedTotalAccess = 1732
+      expectedTotalAccess = 1870
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("single_transformer_blocks.39.")
       }
@@ -342,7 +344,8 @@ public final class ModelImporter {
               textEncoderArchive = zipArchive
               let rootObject = try Interpreter.unpickle(zip: zipArchive)
               let originalStateDict =
-                rootObject["state_dict"] as? Interpreter.Dictionary ?? rootObject
+                rootObject["state_dict"] as? Interpreter.Dictionary ?? rootObject["module"]
+                as? Interpreter.Dictionary ?? rootObject
               textEncoderStateDict = [String: TensorDescriptor]()
               originalStateDict.forEach { key, value in
                 guard let value = value as? TensorDescriptor else { return }
@@ -455,7 +458,8 @@ public final class ModelImporter {
                 let rootObject = try Interpreter.unpickle(zip: zipArchive)
                 textEncoder2StateDict = [String: TensorDescriptor]()
                 let originalStateDict =
-                  rootObject["state_dict"] as? Interpreter.Dictionary ?? rootObject
+                  rootObject["state_dict"] as? Interpreter.Dictionary ?? rootObject["module"]
+                  as? Interpreter.Dictionary ?? rootObject
                 originalStateDict.forEach { key, value in
                   guard let value = value as? TensorDescriptor else { return }
                   if key.hasPrefix("text_projection") {
@@ -545,7 +549,8 @@ public final class ModelImporter {
       conditionalLength = 4096
       batchSize = 1
     case .hunyuanVideo:
-      fatalError()
+      conditionalLength = 4096
+      batchSize = 1
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -566,7 +571,7 @@ public final class ModelImporter {
       let filePath = ModelZoo.filePathForModelDownloaded("\(self.modelName)_f16.ckpt")
       switch modelVersion {
       case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .pixart,
-        .sd3, .sd3Large, .auraflow, .hunyuanVideo:
+        .sd3, .sd3Large, .auraflow:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: false, zeroNegativePrompt: false,
@@ -587,10 +592,9 @@ public final class ModelImporter {
           vectors = [graph.variable(.CPU, .WC(batchSize, 2560), of: FloatType.self)]
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
-        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1:
+        case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
+          .hunyuanVideo:
           vectors = []
-        case .hunyuanVideo:
-          fatalError()
         case .kandinsky21, .v1, .v2:
           fatalError()
         }
@@ -622,6 +626,20 @@ public final class ModelImporter {
           + Flux1FixedOutputShapes(
             batchSize: (1, 1), tokenLength: 256, channels: 3072, layers: (19, 38),
             contextPreloaded: true
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
+      case .hunyuanVideo:
+        // TODO: This is not right.
+        let (rot0, rot1) = HunyuanRotaryPositionEmbedding(
+          height: 64, width: 64, time: 1, tokenLength: 20, channels: 128)
+        cArr =
+          [
+            graph.variable(Tensor<FloatType>(from: rot0)),
+            graph.variable(Tensor<FloatType>(from: rot1)),
+          ]
+          + HunyuanFixedOutputShapes(
+            batchSize: batchSize, channels: 3072, layers: (20, 40), textLength: 20
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
@@ -749,7 +767,11 @@ public final class ModelImporter {
           batchSize: (batchSize, batchSize), channels: 3072, layers: (19, 38),
           contextPreloaded: true, guidanceEmbed: true)
       case .hunyuanVideo:
-        fatalError()
+        (unetMapper, unet) = Hunyuan(
+          time: 1, height: 64, width: 64, textLength: 20, channels: 3072, layers: (20, 40),
+          usesFlashAttention: .scaleMerged)
+        (unetFixedMapper, unetFixed) = HunyuanFixed(
+          batchSize: batchSize, channels: 3072, layers: (20, 40), textLength: 20)
       case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
@@ -810,7 +832,13 @@ public final class ModelImporter {
         ]
         tEmb = nil
       case .hunyuanVideo:
-        fatalError()
+        crossattn = [
+          graph.variable(.CPU, .HWC(batchSize, 20, 4096), of: FloatType.self),
+          graph.variable(.CPU, .WC(batchSize, 256), of: FloatType.self),
+          graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self),
+          graph.variable(.CPU, .WC(batchSize, 256), of: FloatType.self),
+        ]
+        tEmb = nil
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -975,7 +1003,14 @@ public final class ModelImporter {
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
           case .hunyuanVideo:
-            fatalError()
+            let inputs: [DynamicGraph.Tensor<FloatType>] =
+              [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
+            unet.compile(inputs: inputs)
+            unetFixed.compile(inputs: crossattn)
+            UNetMapping = unetMapper(isDiffusersFormat ? .diffusers : .generativeModels)
+            UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
+            modelPrefix = "dit"
+            modelPrefixFixed = "dit"
           case .auraflow:
             fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1104,7 +1139,9 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .hunyuanVideo:
-          fatalError()
+          if $0.keys.count != 1870 {
+            throw Error.tensorWritesFailed
+          }
         case .auraflow:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
@@ -1134,7 +1171,11 @@ public final class ModelImporter {
           {
             archive = zipArchive
             let rootObject = try Interpreter.unpickle(zip: zipArchive)
-            guard let originalStateDict = rootObject["state_dict"] as? Interpreter.Dictionary else {
+            guard
+              let originalStateDict =
+                (rootObject["state_dict"] as? Interpreter.Dictionary ?? rootObject["module"]
+                  as? Interpreter.Dictionary)
+            else {
               throw UnpickleError.dataNotFound
             }
             originalStateDict.forEach { key, value in

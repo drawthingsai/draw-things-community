@@ -1,7 +1,7 @@
 import Foundation
 import NNC
 
-func HunyuanRotaryPositionEmbedding(
+public func HunyuanRotaryPositionEmbedding(
   height: Int, width: Int, time: Int, tokenLength: Int, channels: Int, heads: Int = 1
 )
   -> (Tensor<Float>, Tensor<Float>)
@@ -345,7 +345,7 @@ private func SingleTransformerBlock(
   return (mapper, Model([x, rot] + xChunks, [out]))
 }
 
-func Hunyuan(
+public func Hunyuan(
   time: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: (Int, Int),
   usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
@@ -463,7 +463,7 @@ private func SingleTransformerBlockFixed(
   return (mapper, Model([c], xChunks))
 }
 
-func HunyuanFixed(batchSize: Int, channels: Int, layers: (Int, Int), textLength: Int) -> (
+public func HunyuanFixed(batchSize: Int, channels: Int, layers: (Int, Int), textLength: Int) -> (
   ModelWeightMapper, Model
 ) {
   let txt = Input()
@@ -540,6 +540,46 @@ func HunyuanFixed(batchSize: Int, channels: Int, layers: (Int, Int), textLength:
     return mapping
   }
   return (mapper, Model([txt, t, vector, guidanceEmbed], outs))
+}
+
+private func JointTransformerBlockFixedOutputShapes(
+  prefix: String, batchSize: Int, k: Int, h: Int, contextBlockPreOnly: Bool
+) -> [TensorShape] {
+  let contextOutputShapes = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in
+    TensorShape([batchSize, 1, k * h])
+  }
+  let xOutputShapes = (0..<6).map { _ in TensorShape([batchSize, 1, k * h]) }
+  return contextOutputShapes + xOutputShapes
+}
+
+private func SingleTransformerBlockFixedOutputShapes(
+  prefix: String, batchSize: Int, k: Int, h: Int
+) -> [TensorShape] {
+  let xOutputShapes = (0..<3).map { _ in TensorShape([batchSize, 1, k * h]) }
+  return xOutputShapes
+}
+
+public func HunyuanFixedOutputShapes(
+  batchSize: Int, channels: Int, layers: (Int, Int), textLength: Int
+) -> [TensorShape] {
+  var outs = [TensorShape]()
+  outs.append(TensorShape([batchSize, textLength, channels]))
+  for i in 0..<layers.0 {
+    let contextBlockPreOnly = i == layers.0 - 1 && layers.1 == 0
+    let outputShapes = JointTransformerBlockFixedOutputShapes(
+      prefix: "double_blocks.\(i)", batchSize: batchSize, k: 128, h: channels / 128,
+      contextBlockPreOnly: contextBlockPreOnly)
+    outs.append(contentsOf: outputShapes)
+  }
+  for i in 0..<layers.1 {
+    let outputShapes = SingleTransformerBlockFixedOutputShapes(
+      prefix: "single_blocks.\(i)", batchSize: batchSize, k: 128, h: channels / 128)
+    outs.append(contentsOf: outputShapes)
+  }
+  outs.append(contentsOf: [
+    TensorShape([batchSize, 1, channels]), TensorShape([batchSize, 1, channels]),
+  ])
+  return outs
 }
 
 private func LoRAMLPEmbedder(channels: Int, configuration: LoRANetworkConfiguration, name: String)
