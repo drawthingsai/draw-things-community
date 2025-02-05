@@ -125,7 +125,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     context: StreamingResponseCallContext<ImageGenerationResponse>
   ) -> EventLoopFuture<GRPCStatus> {
     // Log the incoming request
-    logger.info("Received image processing request with prompt: \(request.prompt)")
+    logger.info("Received image processing request")
     let eventLoop = context.eventLoop
     if let sharedSecret = sharedSecret, !sharedSecret.isEmpty {
       guard request.sharedSecret == sharedSecret else {
