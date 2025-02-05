@@ -310,7 +310,11 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             self.logger.info("Image processed successfully")
             $0.generatedImages.append(contentsOf: imageDatas)
           } else {
-            self.logger.error("Image processed failed")
+            if isCancelled() {
+              self.logger.info("Image processed cancelled, generated images return nil")
+            } else {
+              self.logger.error("Image processed failed")
+            }
           }
           $0.scaleFactor = Int32(scaleFactor)
         }
