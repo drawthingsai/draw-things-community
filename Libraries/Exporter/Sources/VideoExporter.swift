@@ -193,6 +193,12 @@ public final class VideoExporter {
       AVVideoCodecKey: AVVideoCodecType.h264.rawValue,
       AVVideoWidthKey: NSNumber(value: Float(imageWidth)),
       AVVideoHeightKey: NSNumber(value: Float(imageHeight)),
+      AVVideoCompressionPropertiesKey: [
+        AVVideoAverageBitRateKey: 9_500_000,  // 9.5 Mbps
+        AVVideoProfileLevelKey: AVVideoProfileLevelH264High41,
+        AVVideoMaxKeyFrameIntervalKey: 30,
+        AVVideoAllowFrameReorderingKey: true,
+      ],
     ]
 
     let pixelBufferAttributes = [
