@@ -47,7 +47,20 @@ private func ResnetBlockCausal3D(
     out = x + out
   }
   let mapper: ModelWeightMapper = { _ in
-    return ModelWeightMapping()
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).norm1.weight"] = [norm1.weight.name]
+    mapping["\(prefix).norm1.bias"] = [norm1.bias.name]
+    mapping["\(prefix).conv1.conv.weight"] = [conv1.weight.name]
+    mapping["\(prefix).conv1.conv.bias"] = [conv1.bias.name]
+    mapping["\(prefix).norm2.weight"] = [norm2.weight.name]
+    mapping["\(prefix).norm2.bias"] = [norm2.bias.name]
+    mapping["\(prefix).conv2.conv.weight"] = [conv2.weight.name]
+    mapping["\(prefix).conv2.conv.bias"] = [conv2.bias.name]
+    if let ninShortcut = ninShortcut {
+      mapping["\(prefix).conv_shortcut.conv.weight"] = [ninShortcut.weight.name]
+      mapping["\(prefix).conv_shortcut.conv.bias"] = [ninShortcut.bias.name]
+    }
+    return mapping
   }
   return (mapper, Model([x], [out]))
 }
@@ -89,7 +102,18 @@ private func AttnBlockCausal3D(
     format: .OIHW, name: "proj_out")
   out = x + projOut(out.reshaped([depth, height, width, inChannels]))
   let mapper: ModelWeightMapper = { _ in
-    return ModelWeightMapping()
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).group_norm.weight"] = [norm.weight.name]
+    mapping["\(prefix).group_norm.bias"] = [norm.bias.name]
+    mapping["\(prefix).to_k.weight"] = [tokeys.weight.name]
+    mapping["\(prefix).to_k.bias"] = [tokeys.bias.name]
+    mapping["\(prefix).to_q.weight"] = [toqueries.weight.name]
+    mapping["\(prefix).to_q.bias"] = [toqueries.bias.name]
+    mapping["\(prefix).to_v.weight"] = [tovalues.weight.name]
+    mapping["\(prefix).to_v.bias"] = [tovalues.bias.name]
+    mapping["\(prefix).to_out.0.weight"] = [projOut.weight.name]
+    mapping["\(prefix).to_out.0.bias"] = [projOut.bias.name]
+    return mapping
   }
   return (mapper, Model([x, causalAttentionMask], [out]))
 }
@@ -160,7 +184,14 @@ func EncoderCausal3D(
       ).reshaped([depth, height, width, channel])
       let downLayer = i
       let mapper: ModelWeightMapper = { _ in
-        return ModelWeightMapping()
+        var mapping = ModelWeightMapping()
+        mapping["encoder.down_blocks.\(downLayer).downsamplers.0.conv.conv.weight"] = [
+          conv2d.weight.name
+        ]
+        mapping["encoder.down_blocks.\(downLayer).downsamplers.0.conv.conv.bias"] = [
+          conv2d.bias.name
+        ]
+        return mapping
       }
       mappers.append(mapper)
     }
@@ -194,12 +225,20 @@ func EncoderCausal3D(
   out = quantConv(out)
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
+    mapping["encoder.conv_in.conv.weight"] = [convIn.weight.name]
+    mapping["encoder.conv_in.conv.bias"] = [convIn.bias.name]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
     mapping.merge(midBlockMapper1(format)) { v, _ in v }
     mapping.merge(midAttnMapper1(format)) { v, _ in v }
     mapping.merge(midBlockMapper2(format)) { v, _ in v }
+    mapping["encoder.conv_norm_out.weight"] = [normOut.weight.name]
+    mapping["encoder.conv_norm_out.bias"] = [normOut.bias.name]
+    mapping["encoder.conv_out.conv.weight"] = [convOut.weight.name]
+    mapping["encoder.conv_out.conv.bias"] = [convOut.bias.name]
+    mapping["quant_conv.weight"] = [quantConv.weight.name]
+    mapping["quant_conv.bias"] = [quantConv.bias.name]
     return mapping
   }
   return (mapper, Model([x, causalAttentionMask], [out]))
@@ -285,7 +324,10 @@ func DecoderCausal3D(
       ).reshaped([depth, height, width, channel])
       let upLayer = channels.count - 1 - i
       let mapper: ModelWeightMapper = { _ in
-        return ModelWeightMapping()
+        var mapping = ModelWeightMapping()
+        mapping["decoder.up_blocks.\(upLayer).upsamplers.0.conv.conv.weight"] = [conv2d.weight.name]
+        mapping["decoder.up_blocks.\(upLayer).upsamplers.0.conv.conv.bias"] = [conv2d.bias.name]
+        return mapping
       }
       mappers.append(mapper)
     }
@@ -306,12 +348,20 @@ func DecoderCausal3D(
   ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
+    mapping["post_quant_conv.weight"] = [postQuantConv.weight.name]
+    mapping["post_quant_conv.bias"] = [postQuantConv.bias.name]
+    mapping["decoder.conv_in.conv.weight"] = [convIn.weight.name]
+    mapping["decoder.conv_in.conv.bias"] = [convIn.bias.name]
     mapping.merge(midBlockMapper1(format)) { v, _ in v }
     mapping.merge(midAttnMapper1(format)) { v, _ in v }
     mapping.merge(midBlockMapper2(format)) { v, _ in v }
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
+    mapping["decoder.conv_norm_out.weight"] = [normOut.weight.name]
+    mapping["decoder.conv_norm_out.bias"] = [normOut.bias.name]
+    mapping["decoder.conv_out.conv.weight"] = [convOut.weight.name]
+    mapping["decoder.conv_out.conv.bias"] = [convOut.bias.name]
     return mapping
   }
   return (mapper, Model([x, causalAttentionMask], [out]))
