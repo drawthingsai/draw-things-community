@@ -442,11 +442,34 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   private let taskQueue: TaskQueue
   private let logger: Logger
   private var controlConfigs: ControlConfigs
+  private var healthCheckTask: Task<Void, Never>?
 
-  init(taskQueue: TaskQueue, controlConfigs: ControlConfigs, logger: Logger) {
+  init(taskQueue: TaskQueue, controlConfigs: ControlConfigs, logger: Logger, healthCheck: Bool) {
     self.taskQueue = taskQueue
     self.logger = logger
     self.controlConfigs = controlConfigs
+    if healthCheck {
+      self.startHealthCheck()
+    }
+  }
+
+  private func startHealthCheck() {
+    healthCheckTask = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self = self else { break }
+        if let worker = await taskQueue.nextWorker() {
+          do {
+            try await worker.client.echo()
+            logger.info("Health check passed for worker: \(worker.id)")
+            await taskQueue.returnWorker(worker)
+          } catch {
+            logger.error("Health check failed for worker: \(worker.id), error: \(error)")
+            await taskQueue.removeWorkerById(worker.id)
+          }
+          try? await Task.sleep(for: .seconds(10))  // wait for 10s
+        }
+      }
+    }
   }
 
   func parseBearer(from string: String) -> String? {
@@ -725,14 +748,16 @@ public class ProxyCPUServer {
   }
 
   public func startAndWait(
-    host: String, port: Int, TLS: Bool, certPath: String, keyPath: String, numberOfThreads: Int
+    host: String, port: Int, TLS: Bool, certPath: String, keyPath: String, numberOfThreads: Int,
+    healthCheck: Bool
   )
     throws
   {
     logger.info("ImageGenerationProxyService starting on \(host):\(port)")
     let group = MultiThreadedEventLoopGroup(numberOfThreads: numberOfThreads)
     let proxyService = ImageGenerationProxyService(
-      taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger)
+      taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger, healthCheck: healthCheck
+    )
     let imageServer: Server
     if TLS {
       let certificates: [NIOSSLCertificate]
