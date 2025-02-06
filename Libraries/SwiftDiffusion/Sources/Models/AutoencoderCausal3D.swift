@@ -258,7 +258,7 @@ func DecoderCausal3D(
       out = Upsample(.nearest, widthScale: 2, heightScale: 2)(out)
       width *= 2
       height *= 2
-      if i < channels.count - 1 {  // Scale time too.
+      if i < channels.count - 1 && depth > 1 {  // Scale time too.
         let first = out.reshaped(
           [1, height * width, channel], strides: [height * width * channel, channel, 1]
         ).contiguous()

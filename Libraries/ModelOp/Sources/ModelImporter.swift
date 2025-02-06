@@ -630,7 +630,6 @@ public final class ModelImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .hunyuanVideo:
-        // TODO: This is not right.
         let (rot0, rot1) = HunyuanRotaryPositionEmbedding(
           height: 64, width: 64, time: 1, tokenLength: 20, channels: 128)
         cArr =
