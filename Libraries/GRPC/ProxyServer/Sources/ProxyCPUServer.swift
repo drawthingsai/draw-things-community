@@ -64,7 +64,7 @@ extension Worker {
           case .success:
             logger.debug("forward response: \(response)")
           case .failure(let error):
-            logger.error("forward response error \(error)")
+            logger.error("Worker:\(self), forward response error \(error)")
             call?.cancel(promise: nil)
             task.promise.fail(error)
           }

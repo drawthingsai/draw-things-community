@@ -65,8 +65,8 @@ public final class ProxyControlClient {
 
     let _ = client.manageGPUServer(request).response.always {
       switch $0 {
-      case .success(_):
-        print("added GPU Server \(address):\(port) to Proxy Server")
+      case .success(let result):
+        print(result.message)
         completion(true)
       case .failure(_):
         print("can not add GPU Server \(address):\(port) to Proxy Server")
@@ -90,8 +90,8 @@ public final class ProxyControlClient {
 
     let _ = client.manageGPUServer(request).response.always {
       switch $0 {
-      case .success(_):
-        print("remove GPU Server \(address):\(port) from Proxy Server")
+      case .success(let result):
+        print(result.message)
         completion(true)
       case .failure(_):
         print("can not remove GPU Server \(address):\(port) from Proxy Server")
