@@ -1192,10 +1192,10 @@ public final class ModelImporter {
         }
         try graph.withNoGrad {
           let encoderTensor = graph.variable(.CPU, .NHWC(1, 512, 512, 3), of: FloatType.self)
-          let decoderTensor = graph.variable(.CPU, .NHWC(1, 64, 64, 4), of: FloatType.self)
+          let decoderTensor = graph.variable(.CPU, .NHWC(1, 64, 64, inputDim), of: FloatType.self)
           let (encoder, encoderReader, encoderWeightMapper) = Encoder(
             channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: 64,
-            startHeight: 64, usesFlashAttention: false)
+            startHeight: 64, usesFlashAttention: false, outputChannels: inputDim)
           let (decoder, decoderReader, decoderWeightMapper) = Decoder(
             channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: 64,
             startHeight: 64, highPrecisionKeysAndValues: false, usesFlashAttention: false,
