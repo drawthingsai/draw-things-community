@@ -1005,6 +1005,18 @@ extension FirstStage {
     for t in stride(from: 0, to: batchSize, by: max(1, tileSize.depth - 5)) {
       var decodedRawValues = [Tensor<T>]()
       let tStart = min(t, batchSize - tileSize.depth)
+      // Due to hard-code and causal convolution, we skip the first 8 frames and only mix the rest 8 frames.
+      let tDecodedStart: Int
+      let isLast = t + tileSize.depth >= batchSize
+      if t == 0 {
+        tDecodedStart = 0
+      } else if t + tileSize.depth > batchSize {
+        tDecodedStart = (t - (batchSize - tileSize.depth)) * scaleFactor.temporal + 9
+      } else {
+        tDecodedStart = 9
+      }
+      let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
+      guard tDecodedStart < tileDecodedDepth else { break }  // Nothing to copy, break.
       for y in 0..<yTiles {
         let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
         let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
@@ -1027,20 +1039,9 @@ extension FirstStage {
           }
         }
       }
-      let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
       let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
       result.withUnsafeMutableBytes {
         guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
-        // Due to hard-code and causal convolution, we skip the first 8 frames and only mix the rest 8 frames.
-        let tDecodedStart: Int
-        let isLast = t + tileSize.depth >= batchSize
-        if t == 0 {
-          tDecodedStart = 0
-        } else if t + tileSize.depth > batchSize {
-          tDecodedStart = (t - (batchSize - tileSize.depth)) * scaleFactor.temporal + 9
-        } else {
-          tDecodedStart = 9
-        }
         for tDecoded in tDecodedStart..<tileDecodedDepth {
           var fp =
             rfp + (tDecoded + tStart * scaleFactor.temporal) * shape[1] * scaleFactor.spatial
@@ -1222,6 +1223,16 @@ extension FirstStage {
     let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
     for t in stride(from: 0, to: resultBatchSize, by: max(1, tileSize.depth - 5)) {
       let tDecodedStart = min(t * scaleFactor.temporal, batchSize - tileDecodedDepth)
+      let tEncodedStart: Int
+      let isLast = t + tileSize.depth >= resultBatchSize
+      if t == 0 {
+        tEncodedStart = 0
+      } else if t + tileSize.depth > resultBatchSize {
+        tEncodedStart = (t - (resultBatchSize - tileSize.depth)) + 3
+      } else {
+        tEncodedStart = 3
+      }
+      guard tEncodedStart < tileSize.depth else { break }  // If nothing to copy, skip.
       for y in 0..<yTiles {
         let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
         let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
@@ -1253,15 +1264,6 @@ extension FirstStage {
         tileSize: (width: tileSize.width, height: tileSize.height), tileOverlap: tileOverlap)
       result.withUnsafeMutableBytes {
         guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
-        let tEncodedStart: Int
-        let isLast = t + tileSize.depth >= resultBatchSize
-        if t == 0 {
-          tEncodedStart = 0
-        } else if t + tileSize.depth > resultBatchSize {
-          tEncodedStart = (t - (resultBatchSize - tileSize.depth)) + 3
-        } else {
-          tEncodedStart = 3
-        }
         for tEncoded in tEncodedStart..<tileSize.depth {
           var fp =
             rfp + (tEncoded + tDecodedStart / scaleFactor.temporal) * startWidth * startHeight
