@@ -103,7 +103,8 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
       rrdbnet
       ?? RRDBNet(
         numberOfOutputChannels: 3, numberOfFeatures: 64, numberOfBlocks: numberOfBlocks,
-        numberOfGrowChannels: 32)
+        numberOfGrowChannels: 32
+      ).1
     var z: DynamicGraph.Tensor<FloatType>
     if nativeScaleFactor == .x2 {  // Need to do pixel unshuffle.
       z = x.reshaped(format: .NHWC, shape: [batchSize, height / 2, 2, width / 2, 2, 3]).permuted(
@@ -128,16 +129,149 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
           min(tileSize + 2 * overlapping, width)))
       rrdbnet.maxConcurrency = .limit(4)
       rrdbnet.compile(inputs: z)
-      graph.openStore(filePath, flags: .readOnly) {
+      let legacyMapping: [String: Int] = [
+        "conv_first": 0,
+        "conv_body": numberOfBlocks * 15 + 1,
+        "conv_up1": numberOfBlocks * 15 + 2,
+        "conv_up2": numberOfBlocks * 15 + 3,
+        "conv_hr": numberOfBlocks * 15 + 4,
+        "conv_last": numberOfBlocks * 15 + 5,
+      ]
+      graph.openStore(filePath, flags: .readOnly) { store in
+        let reader:
+          (String, DataType, TensorFormat, TensorShape) -> DynamicGraph.Store.ModelReaderResult = {
+            name, _, _, _ in
+            var components = name.components(separatedBy: "-")
+            guard components.count >= 4, let index = Int(components[2]) else {
+              return .continue(name)
+            }
+            guard let legacyName = legacyMapping[components[1]] else {
+              assert(components[1].hasPrefix("rdb_"))
+              if components[1].hasPrefix("rdb_conv1") {
+                components.remove(at: 1)
+                components[1] = "\(1 + index * 5)"
+                return .continue(components.joined(separator: "-"))
+              } else if components[1].hasPrefix("rdb_conv2") {
+                guard
+                  let lastIndex =
+                    (components[1].components(separatedBy: "_").last.flatMap { Int($0) })
+                else { return .continue(name) }
+                components.remove(at: 1)
+                components[1] = "\(2 + index * 5)"
+                let newName = components.joined(separator: "-")
+                if components[2] == "1]" {
+                  return .continue(newName)
+                }
+                guard let tensor = (store.read(newName).map { Tensor<FloatType>(from: $0).toCPU() })
+                else { return .continue(name) }
+                let shape = tensor.shape
+                if lastIndex == 0 {
+                  return .final(tensor[0..<shape[0], 0..<64, 0..<shape[2], 0..<shape[3]].copied())
+                } else {
+                  return .final(
+                    tensor[
+                      0..<shape[0], (64 + (lastIndex - 1) * 32)..<(64 + lastIndex * 32),
+                      0..<shape[2], 0..<shape[3]
+                    ].copied())
+                }
+              } else if components[1].hasPrefix("rdb_conv3") {
+                guard
+                  let lastIndex =
+                    (components[1].components(separatedBy: "_").last.flatMap { Int($0) })
+                else { return .continue(name) }
+                components.remove(at: 1)
+                components[1] = "\(3 + index * 5)"
+                let newName = components.joined(separator: "-")
+                if components[2] == "1]" {
+                  return .continue(newName)
+                }
+                guard let tensor = (store.read(newName).map { Tensor<FloatType>(from: $0).toCPU() })
+                else { return .continue(name) }
+                let shape = tensor.shape
+                if lastIndex == 0 {
+                  return .final(tensor[0..<shape[0], 0..<64, 0..<shape[2], 0..<shape[3]].copied())
+                } else {
+                  return .final(
+                    tensor[
+                      0..<shape[0], (64 + (lastIndex - 1) * 32)..<(64 + lastIndex * 32),
+                      0..<shape[2], 0..<shape[3]
+                    ].copied())
+                }
+              } else if components[1].hasPrefix("rdb_conv4") {
+                guard
+                  let lastIndex =
+                    (components[1].components(separatedBy: "_").last.flatMap { Int($0) })
+                else { return .continue(name) }
+                components.remove(at: 1)
+                components[1] = "\(4 + index * 5)"
+                let newName = components.joined(separator: "-")
+                if components[2] == "1]" {
+                  return .continue(newName)
+                }
+                guard let tensor = (store.read(newName).map { Tensor<FloatType>(from: $0).toCPU() })
+                else { return .continue(name) }
+                let shape = tensor.shape
+                if lastIndex == 0 {
+                  return .final(tensor[0..<shape[0], 0..<64, 0..<shape[2], 0..<shape[3]].copied())
+                } else {
+                  return .final(
+                    tensor[
+                      0..<shape[0], (64 + (lastIndex - 1) * 32)..<(64 + lastIndex * 32),
+                      0..<shape[2], 0..<shape[3]
+                    ].copied())
+                }
+              } else if components[1].hasPrefix("rdb_conv5") {
+                guard
+                  let lastIndex =
+                    (components[1].components(separatedBy: "_").last.flatMap { Int($0) })
+                else { return .continue(name) }
+                components.remove(at: 1)
+                components[1] = "\(5 + index * 5)"
+                let newName = components.joined(separator: "-")
+                if components[2] == "1]" {
+                  return .continue(newName)
+                }
+                guard let tensor = (store.read(newName).map { Tensor<FloatType>(from: $0).toCPU() })
+                else { return .continue(name) }
+                let shape = tensor.shape
+                if lastIndex == 0 {
+                  return .final(tensor[0..<shape[0], 0..<64, 0..<shape[2], 0..<shape[3]].copied())
+                } else {
+                  return .final(
+                    tensor[
+                      0..<shape[0], (64 + (lastIndex - 1) * 32)..<(64 + lastIndex * 32),
+                      0..<shape[2], 0..<shape[3]
+                    ].copied())
+                }
+              } else {
+                return .continue(name)
+              }
+            }
+            components.remove(at: 1)
+            components[1] = "\(legacyName)"
+            return .continue(components.joined(separator: "-"))
+          }
         switch nativeScaleFactor {
         case .x4:
           if numberOfBlocks == 6 {
-            $0.read("realesrgan_x4plus_6b", model: rrdbnet)
+            if store.read(like: "__realesrgan_x4plus_6b__[t-0-0]") != nil {
+              store.read("realesrgan_x4plus_6b", model: rrdbnet, reader: reader)
+            } else {  // It is not in legacy form, read directly.
+              store.read("realesrgan_x4plus_6b", model: rrdbnet)
+            }
           } else {
-            $0.read("realesrgan_x4plus", model: rrdbnet)
+            if store.read(like: "__realesrgan_x4plus__[t-0-0]") != nil {
+              store.read("realesrgan_x4plus", model: rrdbnet, reader: reader)
+            } else {  // It is not in legacy form, read directly.
+              store.read("realesrgan_x4plus", model: rrdbnet)
+            }
           }
         case .x2:
-          $0.read("realesrgan_x2plus", model: rrdbnet)
+          if store.read(like: "__realesrgan_x2plus__[t-0-0]") != nil {
+            store.read("realesrgan_x2plus", model: rrdbnet, reader: reader)
+          } else {  // It is not in legacy form, read directly.
+            store.read("realesrgan_x2plus", model: rrdbnet)
+          }
         }
       }
     }
