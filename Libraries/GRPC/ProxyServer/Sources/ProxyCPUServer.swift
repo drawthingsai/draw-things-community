@@ -459,7 +459,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         guard let self = self else { break }
         if let worker = await taskQueue.nextWorker() {
           do {
-            let (success, _) = try await worker.client.echo()
+            let (success, _) = await worker.client.echo()
             if success {
               logger.info("Health check passed for worker: \(worker.id)")
               await taskQueue.returnWorker(worker)
