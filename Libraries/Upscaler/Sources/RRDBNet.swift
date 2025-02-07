@@ -2,7 +2,7 @@ import NNC
 
 typealias ModelWeightMapper = () -> [String: [String]]
 
-func ResidualDenseBlock(prefix: String, numberOfFeatures: Int, numberOfGrowChannels: Int) -> (
+func ResidualDenseBlock(prefix: [String], numberOfFeatures: Int, numberOfGrowChannels: Int) -> (
   ModelWeightMapper, Model
 ) {
   let x = Input()
@@ -42,35 +42,48 @@ func ResidualDenseBlock(prefix: String, numberOfFeatures: Int, numberOfGrowChann
   let out = 0.2 * x5 + x
   let mapper: ModelWeightMapper = {
     var mapping = [String: [String]]()
-    mapping["\(prefix).conv1.weight"] = [conv1.weight.name]
-    mapping["\(prefix).conv1.bias"] = [conv1.bias.name]
-    mapping["\(prefix).conv2.weight"] = conv2.map { $0.weight.name }
-    mapping["\(prefix).conv2.bias"] = [conv2[0].bias.name]
-    mapping["\(prefix).conv3.weight"] = conv3.map { $0.weight.name }
-    mapping["\(prefix).conv3.bias"] = [conv3[0].bias.name]
-    mapping["\(prefix).conv4.weight"] = conv4.map { $0.weight.name }
-    mapping["\(prefix).conv4.bias"] = [conv4[0].bias.name]
-    mapping["\(prefix).conv5.weight"] = conv5.map { $0.weight.name }
-    mapping["\(prefix).conv5.bias"] = [conv5[0].bias.name]
+    for prefix in prefix {
+      mapping["\(prefix).conv1.weight"] = [conv1.weight.name]
+      mapping["\(prefix).conv1.bias"] = [conv1.bias.name]
+      mapping["\(prefix).conv2.weight"] = conv2.map { $0.weight.name }
+      mapping["\(prefix).conv2.bias"] = [conv2[0].bias.name]
+      mapping["\(prefix).conv3.weight"] = conv3.map { $0.weight.name }
+      mapping["\(prefix).conv3.bias"] = [conv3[0].bias.name]
+      mapping["\(prefix).conv4.weight"] = conv4.map { $0.weight.name }
+      mapping["\(prefix).conv4.bias"] = [conv4[0].bias.name]
+      mapping["\(prefix).conv5.weight"] = conv5.map { $0.weight.name }
+      mapping["\(prefix).conv5.bias"] = [conv5[0].bias.name]
+      // More formats.
+      mapping["\(prefix).conv1.0.weight"] = [conv1.weight.name]
+      mapping["\(prefix).conv1.0.bias"] = [conv1.bias.name]
+      mapping["\(prefix).conv2.0.weight"] = conv2.map { $0.weight.name }
+      mapping["\(prefix).conv2.0.bias"] = [conv2[0].bias.name]
+      mapping["\(prefix).conv3.0.weight"] = conv3.map { $0.weight.name }
+      mapping["\(prefix).conv3.0.bias"] = [conv3[0].bias.name]
+      mapping["\(prefix).conv4.0.weight"] = conv4.map { $0.weight.name }
+      mapping["\(prefix).conv4.0.bias"] = [conv4[0].bias.name]
+      mapping["\(prefix).conv5.0.weight"] = conv5.map { $0.weight.name }
+      mapping["\(prefix).conv5.0.bias"] = [conv5[0].bias.name]
+    }
     return mapping
   }
   return (mapper, Model([x], [out]))
 }
 
-func RRDB(prefix: String, numberOfFeatures: Int, numberOfGrowChannels: Int) -> (
+func RRDB(prefix: [String], numberOfFeatures: Int, numberOfGrowChannels: Int) -> (
   ModelWeightMapper, Model
 ) {
   let x = Input()
   let (rdb1Mapper, rdb1) = ResidualDenseBlock(
-    prefix: "\(prefix).rdb1", numberOfFeatures: numberOfFeatures,
+    prefix: prefix.flatMap { ["\($0).rdb1", "\($0).RDB1"] }, numberOfFeatures: numberOfFeatures,
     numberOfGrowChannels: numberOfGrowChannels)
   var out = rdb1(x)
   let (rdb2Mapper, rdb2) = ResidualDenseBlock(
-    prefix: "\(prefix).rdb2", numberOfFeatures: numberOfFeatures,
+    prefix: prefix.flatMap { ["\($0).rdb2", "\($0).RDB2"] }, numberOfFeatures: numberOfFeatures,
     numberOfGrowChannels: numberOfGrowChannels)
   out = rdb2(out)
   let (rdb3Mapper, rdb3) = ResidualDenseBlock(
-    prefix: "\(prefix).rdb3", numberOfFeatures: numberOfFeatures,
+    prefix: prefix.flatMap { ["\($0).rdb3", "\($0).RDB3"] }, numberOfFeatures: numberOfFeatures,
     numberOfGrowChannels: numberOfGrowChannels)
   out = 0.2 * rdb3(out) + x
   let mapper: ModelWeightMapper = {
@@ -96,7 +109,7 @@ func RRDBNet(
   var mappers = [ModelWeightMapper]()
   for i in 0..<numberOfBlocks {
     let (rrdbMapper, rrdb) = RRDB(
-      prefix: "body.\(i)", numberOfFeatures: numberOfFeatures,
+      prefix: ["body.\(i)", "model.1.sub.\(i)"], numberOfFeatures: numberOfFeatures,
       numberOfGrowChannels: numberOfGrowChannels)
     out = rrdb(out)
     mappers.append(rrdbMapper)
@@ -146,6 +159,19 @@ func RRDBNet(
     mapping["conv_hr.bias"] = [convHr.bias.name]
     mapping["conv_last.weight"] = [convLast.weight.name]
     mapping["conv_last.bias"] = [convLast.bias.name]
+    // More formats.
+    mapping["model.0.weight"] = [convFirst.weight.name]
+    mapping["model.0.bias"] = [convFirst.bias.name]
+    mapping["model.1.sub.23.weight"] = [convBody.weight.name]
+    mapping["model.1.sub.23.bias"] = [convBody.bias.name]
+    mapping["model.3.weight"] = [convUp1.weight.name]
+    mapping["model.3.bias"] = [convUp1.bias.name]
+    mapping["model.6.weight"] = [convUp2.weight.name]
+    mapping["model.6.bias"] = [convUp2.bias.name]
+    mapping["model.8.weight"] = [convHr.weight.name]
+    mapping["model.8.bias"] = [convHr.bias.name]
+    mapping["model.10.weight"] = [convLast.weight.name]
+    mapping["model.10.bias"] = [convLast.bias.name]
     return mapping
   }
   return (mapper, Model([x], [out]))
