@@ -458,17 +458,12 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       while !Task.isCancelled {
         guard let self = self else { break }
         if let worker = await taskQueue.nextWorker() {
-          do {
-            let (success, _) = await worker.client.echo()
-            if success {
-              logger.info("Health check passed for worker: \(worker.id)")
-              await taskQueue.returnWorker(worker)
-            } else {
-              logger.error("Health check failed for worker: \(worker.id)")
-              await taskQueue.removeWorkerById(worker.id)
-            }
-          } catch {
-            logger.error("Health check failed for worker: \(worker.id), error: \(error)")
+          let (success, _) = await worker.client.echo()
+          if success {
+            logger.info("Health check passed for worker: \(worker.id)")
+            await taskQueue.returnWorker(worker)
+          } else {
+            logger.error("Health check failed for worker: \(worker.id)")
             await taskQueue.removeWorkerById(worker.id)
           }
           try? await Task.sleep(for: .seconds(10))  // wait for 10s
