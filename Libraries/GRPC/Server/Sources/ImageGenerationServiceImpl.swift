@@ -198,7 +198,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
 
           guard !isCancelled() else {
             self.logger.info(
-              "cacncelled image generation for prompt: \(request.prompt)"
+              "cacncelled image generation"
             )
             return false
           }
