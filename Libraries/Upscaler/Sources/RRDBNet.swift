@@ -96,9 +96,9 @@ func RRDB(prefix: [String], numberOfFeatures: Int, numberOfGrowChannels: Int) ->
   return (mapper, Model([x], [out]))
 }
 
-func RRDBNet(
+public func RRDBNet(
   numberOfOutputChannels: Int, numberOfFeatures: Int, numberOfBlocks: Int, numberOfGrowChannels: Int
-) -> (ModelWeightMapper, Model) {
+) -> (() -> [String: [String]], Model) {
   let x = Input()
   let convFirst = Convolution(
     groups: 1, filters: numberOfFeatures, filterSize: [3, 3],

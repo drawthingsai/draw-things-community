@@ -31,8 +31,8 @@ public let F8_E4M3: [Float] = [
 ]
 
 public final class SafeTensors {
-  private var data: Data
-  private let bufferStart: Int
+  public var data: Data
+  public let bufferStart: Int
   public let states: [String: TensorDescriptor]
   public init?(url: URL) {
     guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
@@ -101,13 +101,21 @@ public final class SafeTensors {
   }
 }
 
-extension SafeTensors: TensorArchive {
+public protocol TensorDataArchive: TensorArchive, AnyObject {
+  var data: Data { get }
+  var bufferStart: Int { get }
+}
+
+extension SafeTensors: TensorDataArchive {
+}
+
+extension TensorDataArchive {
   public func with<T>(_ tensorDescriptor: TensorDescriptor, block: (AnyTensor) throws -> T) throws
     -> T
   {
     // Don't subrange data, otherwise it will materialize the data into memory. Accessing the underlying
     // bytes directly, this way, it is just the mmap bytes, and we won't cause spike in memory usage.
-    return try data.withUnsafeMutableBytes {
+    return try data.withUnsafeBytes {
       guard let address = $0.baseAddress else { throw InflateError.dataNoBaseAddress }
       if Interpreter.inflateInterrupter?() ?? false {
         throw InflateError.interrupted
@@ -133,17 +141,21 @@ extension SafeTensors: TensorArchive {
           } else {
             tensor = Tensor<Float16>(
               .CPU, format: .NCHW, shape: TensorShape(tensorDescriptor.shape),
-              unsafeMutablePointer: (address + bufferStart + tensorDescriptor.storageOffset)
-                .assumingMemoryBound(
-                  to: Float16.self), bindLifetimeOf: self
+              unsafeMutablePointer: UnsafeMutableRawPointer(
+                mutating: address + bufferStart + tensorDescriptor.storageOffset
+              )
+              .assumingMemoryBound(
+                to: Float16.self), bindLifetimeOf: self
             ).copied()
           }
         } else if tensorDescriptor.storage.dataType == .Float64 {
           tensor = Tensor<Double>(
             .CPU, format: .NCHW, shape: TensorShape(tensorDescriptor.shape),
-            unsafeMutablePointer: (address + bufferStart + tensorDescriptor.storageOffset)
-              .assumingMemoryBound(
-                to: Double.self), bindLifetimeOf: self
+            unsafeMutablePointer: UnsafeMutableRawPointer(
+              mutating: address + bufferStart + tensorDescriptor.storageOffset
+            )
+            .assumingMemoryBound(
+              to: Double.self), bindLifetimeOf: self
           )
         } else if tensorDescriptor.storage.dataType == .UInt8 {
           let count = tensorDescriptor.strides[0] * tensorDescriptor.shape[0]
@@ -162,9 +174,11 @@ extension SafeTensors: TensorArchive {
         } else {
           tensor = Tensor<Float>(
             .CPU, format: .NCHW, shape: TensorShape(tensorDescriptor.shape),
-            unsafeMutablePointer: (address + bufferStart + tensorDescriptor.storageOffset)
-              .assumingMemoryBound(
-                to: Float.self), bindLifetimeOf: self
+            unsafeMutablePointer: UnsafeMutableRawPointer(
+              mutating: address + bufferStart + tensorDescriptor.storageOffset
+            )
+            .assumingMemoryBound(
+              to: Float.self), bindLifetimeOf: self
           )
         }
       #else
@@ -191,9 +205,11 @@ extension SafeTensors: TensorArchive {
         } else if tensorDescriptor.storage.dataType == .Float64 {
           tensor = Tensor<Double>(
             .CPU, format: .NCHW, shape: TensorShape(tensorDescriptor.shape),
-            unsafeMutablePointer: (address + bufferStart + tensorDescriptor.storageOffset)
-              .assumingMemoryBound(
-                to: Double.self), bindLifetimeOf: self
+            unsafeMutablePointer: UnsafeMutableRawPointer(
+              mutating: address + bufferStart + tensorDescriptor.storageOffset
+            )
+            .assumingMemoryBound(
+              to: Double.self), bindLifetimeOf: self
           )
         } else if tensorDescriptor.storage.dataType == .UInt8 {
           let count = tensorDescriptor.strides[0] * tensorDescriptor.shape[0]
@@ -212,9 +228,11 @@ extension SafeTensors: TensorArchive {
         } else {
           tensor = Tensor<Float>(
             .CPU, format: .NCHW, shape: TensorShape(tensorDescriptor.shape),
-            unsafeMutablePointer: (address + bufferStart + tensorDescriptor.storageOffset)
-              .assumingMemoryBound(
-                to: Float.self), bindLifetimeOf: self
+            unsafeMutablePointer: UnsafeMutableRawPointer(
+              mutating: address + bufferStart + tensorDescriptor.storageOffset
+            )
+            .assumingMemoryBound(
+              to: Float.self), bindLifetimeOf: self
           ).copied()
         }
       #endif

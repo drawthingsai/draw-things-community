@@ -64,6 +64,9 @@ extension Interpreter {
     }
     var data = Data()
     let _ = try archive.extract(entry) { data.append($0) }
+    return try unpickle(data: data, fileReadDirectly: false)
+  }
+  public static func unpickle(data: Data, fileReadDirectly: Bool) throws -> Interpreter.Dictionary {
     let interpreter = Interpreter.from(data: data)
     interpreter.intercept(module: "UNPICKLER", function: "persistent_load") {
       module, function, args in
@@ -117,9 +120,63 @@ extension Interpreter {
       guard let tensorDescriptor = args.first as? TensorDescriptor else { return [nil] }
       return [tensorDescriptor]
     }
-    while try interpreter.step() {}
-    guard let rootObject = (interpreter.rootObject as? Interpreter.Dictionary) else {
+    guard fileReadDirectly else {
+      // This uses the other containers (zip or tar), so we can read all opcode and do this.
+      while try interpreter.step() {}
+      guard let rootObject = (interpreter.rootObject as? Interpreter.Dictionary) else {
+        // Check if it is old format, which contains dictionary and array.
+        throw UnpickleError.noRootObject
+      }
+      return rootObject
+    }
+    // This is the legacy implementation, it will first read magic number, protocol version, sys info, and then dictionary and key order.
+    // Read more in https://github.com/pytorch/pytorch/blob/v2.6.0/torch/serialization.py#L1744
+    let stopOffset = interpreter.stopOffset
+    while try interpreter.step(onStop: true) {}
+    let _ = interpreter.pop()
+    while try interpreter.step(onStop: true) {}
+    let _ = interpreter.pop()
+    while try interpreter.step(onStop: true) {}
+    let _ = interpreter.pop()
+    while try interpreter.step(onStop: true) {}
+    guard let rootObject = interpreter.pop() as? Interpreter.Dictionary else {
       throw UnpickleError.noRootObject
+    }
+    while try interpreter.step(onStop: true) {}
+    guard
+      let deserializationKeys =
+        ((interpreter.rootObject as? Interpreter.Array).flatMap { $0.array as? [String] })
+    else { throw UnpickleError.noRootObject }
+    var storageKeys = [String: String]()
+    rootObject.forEach { key, value in
+      guard let descriptor = value as? TensorDescriptor else { return }
+      storageKeys[descriptor.storage.name] = key
+    }
+    var offset = stopOffset
+    for key in deserializationKeys {
+      guard let name = storageKeys[key], var descriptor = rootObject[name] as? TensorDescriptor
+      else { continue }
+      let size =
+        offset < data.count
+        ? (data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: Int64.self) }) : 0
+      descriptor.storageOffset = offset + MemoryLayout<Int64>.size
+      let elementSize = {
+        if descriptor.storage.FP8 {
+          return 1
+        }
+        switch descriptor.storage.dataType {
+        case .Float16:
+          return 2
+        case .Float32, .Int32:
+          return 4
+        case .Float64, .Int64:
+          return 8
+        case .UInt8:
+          return 1
+        }
+      }()
+      offset += MemoryLayout<Int64>.size + Int(size) * elementSize
+      rootObject[name] = descriptor
     }
     return rootObject
   }
