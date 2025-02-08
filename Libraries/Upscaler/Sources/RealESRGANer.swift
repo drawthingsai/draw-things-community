@@ -74,8 +74,7 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
           let outputStartXTile = 0
           let outputEndXTile = outputStartXTile + (inputEndX - inputStartX) / scaleFactor
           let z = input[i..<(i + 1), inputStartY..<inputEndY, inputStartX..<inputEndX, 0..<channels]
-            .copied()
-            .toGPU(0)
+            .copied().toGPU(0)
           let outputTile = Functional.averagePool(
             z, filterSize: [scaleFactor, scaleFactor],
             hint: Hint(stride: [scaleFactor, scaleFactor]))
@@ -108,12 +107,12 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
     var z: DynamicGraph.Tensor<FloatType>
     if nativeScaleFactor == .x2 {  // Need to do pixel unshuffle.
       z = x.reshaped(format: .NHWC, shape: [batchSize, height / 2, 2, width / 2, 2, 3]).permuted(
-        0, 5, 2, 4, 1, 3
-      ).copied().reshaped(.NCHW(batchSize, 12, height / 2, width / 2))
+        0, 1, 3, 5, 2, 4
+      ).copied().reshaped(.NHWC(batchSize, height / 2, width / 2, 12))
       height = height / 2
       width = width / 2
     } else {
-      z = x.permuted(0, 3, 1, 2).copied().reshaped(.NCHW(batchSize, 3, height, width))
+      z = x
     }
     z = (0.5 * (z + 1)).clamped(0...1)
     let yTiles = (height + tileSize - 1) / tileSize
@@ -124,9 +123,9 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
       // Load model from parameters.
       z = graph.variable(
         .GPU(0),
-        .NCHW(
-          1, inputShape[1], min(tileSize + 2 * overlapping, height),
-          min(tileSize + 2 * overlapping, width)))
+        .NHWC(
+          1, min(tileSize + 2 * overlapping, height),
+          min(tileSize + 2 * overlapping, width), inputShape[3]))
       rrdbnet.maxConcurrency = .limit(4)
       rrdbnet.compile(inputs: z)
       let legacyMapping: [String: Int] = [
@@ -301,7 +300,7 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
               result)
         }
         return (
-          (result * 2 - 1).permuted(0, 2, 3, 1)
+          (result * 2 - 1)
             .reshaped(.NHWC(1, height * upscaleFactor, width * upscaleFactor, 3)).copied().toCPU(),
           rrdbnet
         )
@@ -318,7 +317,7 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
               result)
         }
         output[i..<(i + 1), 0..<(height * upscaleFactor), 0..<(width * upscaleFactor), 0..<3] =
-          (result * 2 - 1).permuted(0, 2, 3, 1)
+          (result * 2 - 1)
           .reshaped(.NHWC(1, height * upscaleFactor, width * upscaleFactor, 3)).copied().toCPU()
       }
       return (output, rrdbnet)
@@ -366,8 +365,8 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
             let outputStartXTile = (inputStartX - inputStartXPad) * upscaleFactor
             let outputEndXTile = outputStartXTile + (inputEndX - inputStartX) * upscaleFactor
             let z = input[
-              i..<(i + 1), 0..<inputShape[1], inputStartYPad..<inputEndYPad,
-              inputStartXPad..<inputEndXPad
+              i..<(i + 1), inputStartYPad..<inputEndYPad,
+              inputStartXPad..<inputEndXPad, 0..<inputShape[3]
             ].copied()
             var outputTile = rrdbnet(inputs: z)[0].as(of: FloatType.self)
             if upscaleFactor != 4 {
@@ -378,8 +377,8 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
             outputTile = outputTile * 2 - 1
             output[i..<(i + 1), outputStartY..<outputEndY, outputStartX..<outputEndX, 0..<3] =
               outputTile[
-                0..<1, 0..<3, outputStartYTile..<outputEndYTile, outputStartXTile..<outputEndXTile
-              ].copied().permuted(0, 2, 3, 1).copied().toCPU()
+                0..<1, outputStartYTile..<outputEndYTile, outputStartXTile..<outputEndXTile, 0..<3
+              ].copied().toCPU()
           }
         }
       }
@@ -404,7 +403,7 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
           let outputEndX = inputEndX * upscaleFactor
           let outputStartXTile = (inputStartX - inputStartXPad) * upscaleFactor
           let outputEndXTile = outputStartXTile + (inputEndX - inputStartX) * upscaleFactor
-          let z = input[i..<(i + 1), 0..<inputShape[1], 0..<height, inputStartXPad..<inputEndXPad]
+          let z = input[i..<(i + 1), 0..<height, inputStartXPad..<inputEndXPad, 0..<inputShape[3]]
             .copied()
           var outputTile = rrdbnet(inputs: z)[0].as(of: FloatType.self)
           if upscaleFactor != 4 {
@@ -415,8 +414,8 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
           outputTile = outputTile * 2 - 1
           output[i..<(i + 1), 0..<(height * upscaleFactor), outputStartX..<outputEndX, 0..<3] =
             outputTile[
-              0..<1, 0..<3, 0..<(height * upscaleFactor), outputStartXTile..<outputEndXTile
-            ].copied().permuted(0, 2, 3, 1).copied().toCPU()
+              0..<1, 0..<(height * upscaleFactor), outputStartXTile..<outputEndXTile, 0..<3
+            ].copied().toCPU()
         }
       }
     } else {
@@ -441,7 +440,7 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
           let outputEndY = inputEndY * upscaleFactor
           let outputStartYTile = (inputStartY - inputStartYPad) * upscaleFactor
           let outputEndYTile = outputStartYTile + (inputEndY - inputStartY) * upscaleFactor
-          let z = input[i..<(i + 1), 0..<inputShape[1], inputStartYPad..<inputEndYPad, 0..<width]
+          let z = input[i..<(i + 1), inputStartYPad..<inputEndYPad, 0..<width, 0..<inputShape[3]]
             .copied()
           var outputTile = rrdbnet(inputs: z)[0].as(of: FloatType.self)
           if upscaleFactor != 4 {
@@ -452,8 +451,8 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
           outputTile = outputTile * 2 - 1
           output[i..<(i + 1), outputStartY..<outputEndY, 0..<(width * upscaleFactor), 0..<3] =
             outputTile[
-              0..<1, 0..<3, outputStartYTile..<outputEndYTile, 0..<(width * upscaleFactor)
-            ].copied().permuted(0, 2, 3, 1).copied().toCPU()
+              0..<1, outputStartYTile..<outputEndYTile, 0..<(width * upscaleFactor), 0..<3
+            ].copied().toCPU()
         }
       }
     }
