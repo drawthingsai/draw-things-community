@@ -574,6 +574,7 @@ public enum LoRAImporter {
       let isHunyuan = stateDict.keys.contains {
         $0.contains("double_blocks.19.img_attn_qkv.")
           || $0.contains("double_blocks_19_img_attn_qkv.")
+          || $0.contains("double_blocks.19.img_attn.qkv.")
           || $0.contains("single_transformer_blocks_39_")
       }
       let isSDOrSDXL = stateDict.keys.contains {
