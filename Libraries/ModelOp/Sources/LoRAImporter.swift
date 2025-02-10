@@ -1215,19 +1215,25 @@ public enum LoRAImporter {
           guard parts.count > 2 else { continue }
           let te2 = parts[1] == "te2"
           // Try to remove the prefixes.
-          let newKeys: [String] = (0...2).compactMap {
-            let newParts = String(parts[$0..<parts.count].joined(separator: "_")).components(
+          let newKeys: [String] = (0...2).flatMap { (index) -> [String] in
+            let newParts = String(parts[index..<parts.count].joined(separator: "_")).components(
               separatedBy: ".")  // Remove the first two.
-            guard newParts.count > 1 else { return nil }
+            guard newParts.count > 1 else { return [] }
             var newKey =
               newParts[0..<(newParts.count > 2 ? newParts.count - 2 : newParts.count - 1)].joined(
                 separator: ".")
-            if newParts[newParts.count - 1] == "diff" && newParts.count > 2 {
+            if (newParts[newParts.count - 1] == "diff" || newParts[newParts.count - 1] == "diff_b")
+              && newParts.count > 2
+            {
               newKey = newKey + "." + newParts[newParts.count - 2]
+              if newParts[newParts.count - 1] == "diff_b" {
+                return [newKey, newKey + ".bias"]
+              }
+              return [newKey, newKey + ".weight"]
             } else {
               newKey = newKey + ".weight"
+              return [newKey]
             }
-            return newKey
           }
           if let (newKey, unetParams) = Self.findKeysAndValues(UNetMapping, keys: newKeys) {
             if key.hasSuffix("down.weight") {
@@ -1277,7 +1283,7 @@ public enum LoRAImporter {
                 }
               }
               isLoHa = true
-            } else if key.hasSuffix(".diff") {
+            } else if key.hasSuffix(".diff") || key.hasSuffix(".diff_b") {
               try archive.with(descriptor) {
                 let tensor = Tensor<FloatType>(from: $0)
                 /* One-off code to import 8-channel to 9-channel as if it is a inpainting LoRA.
@@ -1349,7 +1355,7 @@ public enum LoRAImporter {
                 }
               }
               isLoHa = true
-            } else if key.hasSuffix(".diff") {
+            } else if key.hasSuffix(".diff") || key.hasSuffix(".diff_b") {
               try archive.with(descriptor) {
                 let tensor = Tensor<FloatType>(from: $0)
                 for name in unetParams {
@@ -1399,7 +1405,7 @@ public enum LoRAImporter {
                   }
                 }
                 isLoHa = true
-              } else if key.hasSuffix(".diff") {
+              } else if key.hasSuffix(".diff") || key.hasSuffix(".diff_b") {
                 try archive.with(descriptor) {
                   let tensor = Tensor<FloatType>(from: $0)
                   if te2 != swapTE2 {
