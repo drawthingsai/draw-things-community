@@ -118,6 +118,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     self.imageGenerator = imageGenerator
     self.queue = queue
     self.backupQueue = backupQueue
+    self.logger.info("ImageGenerationServiceImpl init")
   }
   // Implement the async generateImage method
   public func generateImage(

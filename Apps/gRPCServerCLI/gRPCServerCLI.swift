@@ -6,6 +6,7 @@ import Dflat
 import Diffusion
 import Foundation
 import GRPC
+import GRPCControlPanelModels
 import GRPCImageServiceModels
 import GRPCServer
 import ImageGenerator
@@ -15,6 +16,7 @@ import ModelZoo
 import NIO
 import NIOSSL
 import NNC
+import ProxyServer
 import SQLiteDflat
 import Utils
 
@@ -137,6 +139,77 @@ enum gRPCServerCLIrror: Error {
   case invalidModelPath
 }
 
+// Server info structure matching ServerArgu
+struct ServerInfo: Codable {
+  let address: String
+  let port: Int
+  let priority: Int
+}
+
+// Throttling policy structure matching ThrottlingPolicy
+struct ThrottlingPolicyConfig: Codable {
+  let name: String
+  let limit: Int
+}
+
+// Main configuration structure
+struct ControlPanelConfiguration: Codable {
+  // Global options
+  var host: String?
+  var port: Int?
+
+  // Server management
+  var addGPUServers: [ServerInfo]?
+  var removeGPUServers: [ServerInfo]?
+
+  // Throttling policies
+  var throttlingPolicies: [ThrottlingPolicyConfig]?
+
+  // Model configuration
+  var modelListPath: String?
+
+  // Security settings
+  var updatePem: Bool?
+  var updateSharedSecret: Bool?
+
+  enum CodingKeys: String, CodingKey {
+    case host
+    case port
+    case addGPUServers = "add_gpu_servers"
+    case removeGPUServers = "remove_gpu_servers"
+    case throttlingPolicies = "throttling_policies"
+    case modelListPath = "model_list_path"
+    case updatePem = "update_pem"
+    case updateSharedSecret = "update_shared_secret"
+  }
+}
+
+extension ControlPanelConfiguration {
+  static func fromJSONString(_ jsonString: String) throws -> ControlPanelConfiguration {
+    guard let jsonData = jsonString.data(using: .utf8) else {
+      throw ConfigurationError.invalidJSON
+    }
+
+    let decoder = JSONDecoder()
+    return try decoder.decode(ControlPanelConfiguration.self, from: jsonData)
+  }
+
+  func toJSON() throws -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let jsonData = try encoder.encode(self)
+    guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+      throw ConfigurationError.encodingError
+    }
+    return jsonString
+  }
+}
+
+enum ConfigurationError: Error {
+  case invalidJSON
+  case encodingError
+}
+
 @main
 struct gRPCServerCLI: ParsableCommand {
   static let configuration: CommandConfiguration = CommandConfiguration(
@@ -202,6 +275,13 @@ struct gRPCServerCLI: ParsableCommand {
     var supervised = false
 
   #endif
+
+  @Option(
+    name: .long,
+    help:
+      "Inline JSON configuration string, example  --join '{\"host\":\"proxy ip\" , \"port\": proxy port, \"add_gpu_servers\": [{\"address\":\"gpu ip\", \"port\":gpu port, \"priority\":1 1 = high, 2 = low}]}' "
+  )
+  var join: String?
 
   mutating func run() throws {
     #if os(Linux)
@@ -309,8 +389,55 @@ struct gRPCServerCLI: ParsableCommand {
     }
     let advertiser: GRPCServerAdvertiser = GRPCServerAdvertiser(name: name)
     advertiser.startAdvertising(port: Int32(port), TLS: TLS)
+
+    if let jsonString = join {
+      do {
+        let config = try ControlPanelConfiguration.fromJSONString(jsonString)
+        self.applyConfiguration(config: config)
+      } catch {
+        print("Error parsing control panel configuration: \(error)")
+      }
+    }
+
     // Block the current thread until the server closes
     try server.onClose.wait()
     advertiser.stopAdvertising()
+  }
+
+  func applyConfiguration(config: ControlPanelConfiguration) {
+    let client = ProxyControlClient()
+    do {
+      try addGPUServer(config: config, client: client)
+    } catch {
+      print("Error applying control panel configuration: \(error)")
+    }
+  }
+
+  func addGPUServer(config: ControlPanelConfiguration, client: ProxyControlClient) throws {
+    guard let host = config.host, let port = config.port else {
+      print("invalid host or port for proxy server in control panel join")
+      return
+    }
+    guard let gpuServers = config.addGPUServers else {
+      print("no gpus to add")
+      return
+    }
+    print(gpuServers)
+    try client.connect(
+      host: host,
+      port: port
+    )
+    let group = DispatchGroup()
+    for server in gpuServers {
+      group.enter()
+      client.addGPUServer(
+        address: server.address, port: server.port,
+        isHighPriority: server.priority == 1 ? true : false
+      ) {
+        _ in
+        group.leave()
+      }
+    }
+    group.wait()
   }
 }

@@ -313,7 +313,7 @@ final class ControlPanelService: ControlPanelServiceProvider {
       switch request.operation {
       case .add:
         self.logger.info(
-          "Worker connect to server: \(gpuServerName). Worker focus on \(request.serverConfig.isHighPriority ? ProxyTaskPriority.high : ProxyTaskPriority.low) priority Task"
+          "Worker connecting server: \(gpuServerName). Worker focus on \(request.serverConfig.isHighPriority ? ProxyTaskPriority.high : ProxyTaskPriority.low) priority Task"
         )
         let client = ProxyGPUClientWrapper(deviceName: gpuServerName)
         do {
