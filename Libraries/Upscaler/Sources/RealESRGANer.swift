@@ -1,6 +1,6 @@
 import NNC
 
-public enum UpscaleFactor: Int {
+public enum UpscaleFactor: Int, Codable {
   case x2 = 2
   case x4 = 4
 }

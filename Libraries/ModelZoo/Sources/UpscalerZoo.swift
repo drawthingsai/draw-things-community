@@ -2,7 +2,7 @@ import Foundation
 import Upscaler
 
 public struct UpscalerZoo: DownloadZoo {
-  public struct Specification {
+  public struct Specification: Codable {
     public var name: String
     public var file: String
     public var scaleFactor: UpscaleFactor = .x4
@@ -15,7 +15,7 @@ public struct UpscalerZoo: DownloadZoo {
     }
   }
 
-  private static let fileSHA256: [String: String] = [
+  private static var fileSHA256: [String: String] = [
     "realesrgan_x2plus_f16.ckpt":
       "98ce77870b5ca059ec004fe8572182dc67ac8d6a2bba8a938df0ba44fbaccc66",
     "realesrgan_x4plus_f16.ckpt":
@@ -43,7 +43,50 @@ public struct UpscalerZoo: DownloadZoo {
       name: "4x UltraSharp", file: "4x_ultrasharp_f16.ckpt"),
   ]
 
-  public static var availableSpecifications: [Specification] { builtinSpecifications }
+  public static func isBuiltinUpscaler(_ name: String) -> Bool {
+    return builtinModels.contains(name)
+  }
+
+  public static func mergeFileSHA256(_ sha256: [String: String]) {
+    var fileSHA256 = fileSHA256
+    for (key, value) in sha256 {
+      fileSHA256[key] = value
+    }
+    self.fileSHA256 = fileSHA256
+  }
+
+  private static let builtinModelsAndAvailableSpecifications: (Set<String>, [Specification]) = {
+    let jsonFile = filePathForModelDownloaded("custom_upscaler.json")
+    guard let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) else {
+      return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
+    }
+
+    let jsonDecoder = JSONDecoder()
+    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    guard
+      let jsonSpecifications = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value })
+    else {
+      return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
+    }
+
+    var availableSpecifications = builtinSpecifications
+    var builtinModels = Set(builtinSpecifications.map { $0.file })
+    for specification in jsonSpecifications {
+      if builtinModels.contains(specification.file) {
+        builtinModels.remove(specification.file)
+        // Remove this from previous list.
+        availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+      }
+      availableSpecifications.append(specification)
+    }
+    return (builtinModels, availableSpecifications)
+  }()
+
+  private static let builtinModels: Set<String> = builtinModelsAndAvailableSpecifications.0
+  public static var availableSpecifications: [Specification] =
+    builtinModelsAndAvailableSpecifications.1
 
   private static var specificationMapping: [String: Specification] = {
     var mapping = [String: Specification]()
@@ -55,6 +98,34 @@ public struct UpscalerZoo: DownloadZoo {
 
   public static func specificationForModel(_ name: String) -> Specification? {
     return specificationMapping[name]
+  }
+
+  public static func appendCustomSpecification(_ specification: Specification) {
+    dispatchPrecondition(condition: .onQueue(.main))
+    var customSpecifications = [Specification]()
+    let jsonFile = filePathForModelDownloaded("custom_upscaler.json")
+    if let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) {
+      let jsonDecoder = JSONDecoder()
+      jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+      if let jsonSpecification = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value }) {
+        customSpecifications.append(contentsOf: jsonSpecification)
+      }
+    }
+    customSpecifications = customSpecifications.filter { $0.file != specification.file }
+    customSpecifications.append(specification)
+    let jsonEncoder = JSONEncoder()
+    jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+    jsonEncoder.outputFormatting = .prettyPrinted
+    guard let jsonData = try? jsonEncoder.encode(customSpecifications) else { return }
+    try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
+    // Modify these two are not thread safe. availableSpecifications are OK. specificationMapping is particularly problematic (as it is access on both main thread and a background thread).
+    var availableSpecifications = availableSpecifications
+    availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
+    availableSpecifications.append(specification)
+    self.availableSpecifications = availableSpecifications
+    specificationMapping[specification.file] = specification
   }
 
   public static func filePathForModelDownloaded(_ name: String) -> String {

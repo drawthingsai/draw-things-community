@@ -16,13 +16,15 @@ public final class UpscalerImporter {
       self.bufferStart = bufferStart
     }
   }
+  public let name: String
   private let filePath: String
-  public init(filePath: String) {
+  public init(name: String, filePath: String) {
+    self.name = name
     self.filePath = filePath
   }
   public func `import`(
     progress: @escaping (Float) -> Void
-  ) throws -> (file: String, numberOfBlocks: Int) {
+  ) throws -> (file: String, numberOfBlocks: Int, upscaleFactor: UpscaleFactor)? {
     let archive: TensorArchive
     var stateDict: [String: TensorDescriptor]
     if let safeTensors = SafeTensors(url: URL(fileURLWithPath: filePath)) {
@@ -56,6 +58,75 @@ public final class UpscalerImporter {
     } else {
       throw UnpickleError.dataNotFound
     }
-    return ("", 0)
+    let keys = Array(stateDict.keys)
+    let numberOfBlocks = {
+      for i in stride(from: 22, through: 0, by: -1) {
+        if keys.contains(where: {
+          $0.hasPrefix("body.\(i)") || $0.hasPrefix("model.1.sub.\(i)")
+        }) {
+          return i + 1
+        }
+      }
+      return 0
+    }()
+    guard numberOfBlocks > 0 else { return nil }
+    let (mapper, rrdbnet) = RRDBNet(
+      numberOfOutputChannels: 3, numberOfFeatures: 64, numberOfBlocks: numberOfBlocks,
+      numberOfGrowChannels: 32)
+    let graph = DynamicGraph()
+    let inputChannels: Int
+    if let descriptor = stateDict["conv_first.weight"] ?? stateDict["model.0.weight"],
+      descriptor.shape.count == 4
+    {
+      inputChannels = descriptor.shape[1]
+    } else {
+      inputChannels = 3
+    }
+    let upscaleFactor: UpscaleFactor
+    let z = graph.variable(.GPU(0), .NHWC(1, 128, 128, inputChannels), of: FloatType.self)
+    rrdbnet.compile(inputs: z)
+    let modelKey: String
+    if inputChannels == 12 {
+      upscaleFactor = .x2
+    } else {
+      upscaleFactor = .x4
+    }
+    if numberOfBlocks == 6 {
+      modelKey = "realesrgan_x4plus_6b"
+    } else if upscaleFactor == .x2 {
+      modelKey = "realesrgan_x2plus"
+    } else {
+      modelKey = "realesrgan_x4plus"
+    }
+    let mapping = mapper()
+    let filePath = UpscalerZoo.filePathForModelDownloaded(name)
+    try graph.openStore(filePath, flags: .truncateWhenClose) { store in
+      for (key, values) in mapping {
+        guard let descriptor = stateDict[key] else { continue }
+        try archive.with(descriptor) {
+          let tensor = Tensor<FloatType>(from: $0)
+          if values.count > 1 {
+            let shape = tensor.shape
+            if shape.count == 4 && shape[1] == 64 + (values.count - 1) * 32 {
+              store.write(
+                "__\(modelKey)__[\(values[0])]",
+                tensor: tensor[0..<shape[0], 0..<64, 0..<shape[2], 0..<shape[3]].contiguous())
+              for i in 1..<values.count {
+                store.write(
+                  "__\(modelKey)__[\(values[i])]",
+                  tensor: tensor[
+                    0..<shape[0], (64 + (i - 1) * 32)..<(64 + i * 32), 0..<shape[2], 0..<shape[3]
+                  ].contiguous())
+              }
+            } else {
+              store.write("__\(modelKey)__[\(values[0])]", tensor: tensor)
+            }
+          } else if let value = values.first {
+            store.write("__\(modelKey)__[\(value)]", tensor: tensor)
+          }
+        }
+      }
+    }
+    return (name, numberOfBlocks, upscaleFactor)
   }
 }
