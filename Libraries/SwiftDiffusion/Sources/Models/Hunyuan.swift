@@ -90,11 +90,15 @@ private func RefinerSelfAttention(prefix: String, k: Int, h: Int, hk: Int, b: In
     mapping["\(prefix).self_attn_qkv.weight"] = [
       toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
     ]
+    mapping["\(prefix).self_attn.qkv.weight"] = mapping["\(prefix).self_attn_qkv.weight"]
     mapping["\(prefix).self_attn_qkv.bias"] = [
       toqueries.bias.name, tokeys.bias.name, tovalues.bias.name,
     ]
+    mapping["\(prefix).self_attn.qkv.bias"] = mapping["\(prefix).self_attn_qkv.bias"]
     mapping["\(prefix).self_attn_proj.weight"] = [unifyheads.weight.name]
+    mapping["\(prefix).self_attn.proj.weight"] = mapping["\(prefix).self_attn_proj.weight"]
     mapping["\(prefix).self_attn_proj.bias"] = [unifyheads.bias.name]
+    mapping["\(prefix).self_attn.proj.bias"] = mapping["\(prefix).self_attn_proj.bias"]
     return mapping
   }
   return (Model([x], [out]), mapper)
@@ -120,9 +124,13 @@ private func IndividualRefinerBlock(prefix: String, b: Int, t: Int) -> (Model, M
     mapping["\(prefix).norm2.weight"] = [norm2.weight.name]
     mapping["\(prefix).norm2.bias"] = [norm2.bias.name]
     mapping["\(prefix).mlp.fc1.weight"] = [mlp0.weight.name]
+    mapping["\(prefix).mlp.0.weight"] = mapping["\(prefix).mlp.fc1.weight"]
     mapping["\(prefix).mlp.fc1.bias"] = [mlp0.bias.name]
+    mapping["\(prefix).mlp.0.bias"] = mapping["\(prefix).mlp.fc1.bias"]
     mapping["\(prefix).mlp.fc2.weight"] = [mlp1.weight.name]
+    mapping["\(prefix).mlp.2.weight"] = mapping["\(prefix).mlp.fc2.weight"]
     mapping["\(prefix).mlp.fc2.bias"] = [mlp1.bias.name]
+    mapping["\(prefix).mlp.2.bias"] = mapping["\(prefix).mlp.fc2.bias"]
     mapping["\(prefix).adaLN_modulation.1.weight"] = [gateMsa.weight.name, gateMlp.weight.name]
     mapping["\(prefix).adaLN_modulation.1.bias"] = [gateMsa.bias.name, gateMlp.bias.name]
     return mapping
@@ -242,40 +250,56 @@ private func JointTransformerBlock(
     mapping["\(prefix).txt_attn_qkv.weight"] = [
       contextToQueries.weight.name, contextToKeys.weight.name, contextToValues.weight.name,
     ]
+    mapping["\(prefix).txt_attn.qkv.weight"] = mapping["\(prefix).txt_attn_qkv.weight"]
     mapping["\(prefix).txt_attn_qkv.bias"] = [
       contextToQueries.bias.name, contextToKeys.bias.name, contextToValues.bias.name,
     ]
+    mapping["\(prefix).txt_attn.qkv.bias"] = mapping["\(prefix).txt_attn_qkv.bias"]
     mapping["\(prefix).txt_attn_k_norm.weight"] = [normAddedK.weight.name]
     mapping["\(prefix).txt_attn_q_norm.weight"] = [normAddedQ.weight.name]
     mapping["\(prefix).img_attn_qkv.weight"] = [
       xToQueries.weight.name, xToKeys.weight.name, xToValues.weight.name,
     ]
+    mapping["\(prefix).img_attn.qkv.weight"] = mapping["\(prefix).img_attn_qkv.weight"]
     mapping["\(prefix).img_attn_qkv.bias"] = [
       xToQueries.bias.name, xToKeys.bias.name, xToValues.bias.name,
     ]
+    mapping["\(prefix).img_attn.qkv.bias"] = mapping["\(prefix).img_attn_qkv.bias"]
     mapping["\(prefix).img_attn_k_norm.weight"] = [normK.weight.name]
     mapping["\(prefix).img_attn_q_norm.weight"] = [normQ.weight.name]
     if let contextUnifyheads = contextUnifyheads {
       mapping["\(prefix).txt_attn_proj.weight"] = [contextUnifyheads.weight.name]
+      mapping["\(prefix).txt_attn.proj.weight"] = mapping["\(prefix).txt_attn_proj.weight"]
       mapping["\(prefix).txt_attn_proj.bias"] = [contextUnifyheads.bias.name]
+      mapping["\(prefix).txt_attn.proj.bias"] = mapping["\(prefix).txt_attn_proj.bias"]
     }
     mapping["\(prefix).img_attn_proj.weight"] = [xUnifyheads.weight.name]
+    mapping["\(prefix).img_attn.proj.weight"] = mapping["\(prefix).img_attn_proj.weight"]
     mapping["\(prefix).img_attn_proj.bias"] = [xUnifyheads.bias.name]
+    mapping["\(prefix).img_attn.proj.bias"] = mapping["\(prefix).img_attn_proj.bias"]
     let scaleFactor: Float = upcast ? 8 : 1
     if let contextLinear1 = contextLinear1,
       let contextOutProjection = contextOutProjection
     {
       mapping["\(prefix).txt_mlp.fc1.weight"] = [contextLinear1.weight.name]
+      mapping["\(prefix).txt_mlp.0.weight"] = mapping["\(prefix).txt_mlp.fc1.weight"]
       mapping["\(prefix).txt_mlp.fc1.bias"] = [contextLinear1.bias.name]
+      mapping["\(prefix).txt_mlp.0.bias"] = mapping["\(prefix).txt_mlp.fc1.bias"]
       mapping["\(prefix).txt_mlp.fc2.weight"] = [contextOutProjection.weight.name]
+      mapping["\(prefix).txt_mlp.2.weight"] = mapping["\(prefix).txt_mlp.fc2.weight"]
       mapping["\(prefix).txt_mlp.fc2.bias"] = ModelWeightElement(
         [contextOutProjection.bias.name], scale: (1 / scaleFactor))
+      mapping["\(prefix).txt_mlp.2.bias"] = mapping["\(prefix).txt_mlp.fc2.bias"]
     }
     mapping["\(prefix).img_mlp.fc1.weight"] = [xLinear1.weight.name]
+    mapping["\(prefix).img_mlp.0.weight"] = mapping["\(prefix).img_mlp.fc1.weight"]
     mapping["\(prefix).img_mlp.fc1.bias"] = [xLinear1.bias.name]
+    mapping["\(prefix).img_mlp.0.bias"] = mapping["\(prefix).img_mlp.fc1.bias"]
     mapping["\(prefix).img_mlp.fc2.weight"] = [xOutProjection.weight.name]
+    mapping["\(prefix).img_mlp.2.weight"] = mapping["\(prefix).img_mlp.fc2.weight"]
     mapping["\(prefix).img_mlp.fc2.bias"] = ModelWeightElement(
       [xOutProjection.bias.name], scale: (1 / scaleFactor))
+    mapping["\(prefix).img_mlp.2.bias"] = mapping["\(prefix).img_mlp.fc2.bias"]
     return mapping
   }
   if !contextBlockPreOnly {
@@ -432,14 +456,18 @@ private func JointTransformerBlockFixed(
       (0..<(contextBlockPreOnly ? 2 : 6)).map {
         contextAdaLNs[$0].weight.name
       })
+    mapping["\(prefix).txt_mod.lin.weight"] = mapping["\(prefix).txt_mod.linear.weight"]
     mapping["\(prefix).txt_mod.linear.bias"] = ModelWeightElement(
       (0..<(contextBlockPreOnly ? 2 : 6)).map {
         contextAdaLNs[$0].bias.name
       })
+    mapping["\(prefix).txt_mod.lin.bias"] = mapping["\(prefix).txt_mod.linear.bias"]
     mapping["\(prefix).img_mod.linear.weight"] = ModelWeightElement(
       (0..<6).map { xAdaLNs[$0].weight.name })
+    mapping["\(prefix).img_mod.lin.weight"] = mapping["\(prefix).img_mod.linear.weight"]
     mapping["\(prefix).img_mod.linear.bias"] = ModelWeightElement(
       (0..<6).map { xAdaLNs[$0].bias.name })
+    mapping["\(prefix).img_mod.lin.bias"] = mapping["\(prefix).img_mod.linear.bias"]
     return mapping
   }
   return (mapper, Model([c], contextChunks + xChunks))
@@ -456,8 +484,10 @@ private func SingleTransformerBlockFixed(
     var mapping = ModelWeightMapping()
     mapping["\(prefix).modulation.linear.weight"] = ModelWeightElement(
       (0..<3).map { xAdaLNs[$0].weight.name })
+    mapping["\(prefix).modulation.lin.weight"] = mapping["\(prefix).modulation.linear.weight"]
     mapping["\(prefix).modulation.linear.bias"] = ModelWeightElement(
       (0..<3).map { xAdaLNs[$0].bias.name })
+    mapping["\(prefix).modulation.lin.bias"] = mapping["\(prefix).modulation.linear.bias"]
     return mapping
   }
   return (mapper, Model([c], xChunks))
@@ -513,25 +543,41 @@ public func HunyuanFixed(batchSize: Int, channels: Int, layers: (Int, Int), text
     mapping["txt_in.input_embedder.weight"] = [inputEmbedder.weight.name]
     mapping["txt_in.input_embedder.bias"] = [inputEmbedder.bias.name]
     mapping["txt_in.t_embedder.mlp.0.weight"] = [tMlp0.weight.name]
+    mapping["txt_in.t_embedder.in_layer.weight"] = mapping["txt_in.t_embedder.mlp.0.weight"]
     mapping["txt_in.t_embedder.mlp.0.bias"] = [tMlp0.bias.name]
+    mapping["txt_in.t_embedder.in_layer.bias"] = mapping["txt_in.t_embedder.mlp.0.bias"]
     mapping["txt_in.t_embedder.mlp.2.weight"] = [tMlp2.weight.name]
+    mapping["txt_in.t_embedder.out_layer.weight"] = mapping["txt_in.t_embedder.mlp.2.weight"]
     mapping["txt_in.t_embedder.mlp.2.bias"] = [tMlp2.bias.name]
+    mapping["txt_in.t_embedder.out_layer.bias"] = mapping["txt_in.t_embedder.mlp.2.bias"]
     mapping["txt_in.c_embedder.linear_1.weight"] = [cLinear1.weight.name]
+    mapping["txt_in.c_embedder.in_layer.weight"] = mapping["txt_in.c_embedder.linear_1.weight"]
     mapping["txt_in.c_embedder.linear_1.bias"] = [cLinear1.bias.name]
+    mapping["txt_in.c_embedder.in_layer.bias"] = mapping["txt_in.c_embedder.linear_1.bias"]
     mapping["txt_in.c_embedder.linear_2.weight"] = [cLinear2.weight.name]
+    mapping["txt_in.c_embedder.out_layer.weight"] = mapping["txt_in.c_embedder.linear_2.weight"]
     mapping["txt_in.c_embedder.linear_2.bias"] = [cLinear2.bias.name]
+    mapping["txt_in.c_embedder.out_layer.bias"] = mapping["txt_in.c_embedder.linear_2.bias"]
     mapping["time_in.mlp.0.weight"] = [timeInMlp0.weight.name]
+    mapping["time_in.in_layer.weight"] = mapping["time_in.mlp.0.weight"]
     mapping["time_in.mlp.0.bias"] = [timeInMlp0.bias.name]
+    mapping["time_in.in_layer.bias"] = mapping["time_in.mlp.0.bias"]
     mapping["time_in.mlp.2.weight"] = [timeInMlp2.weight.name]
+    mapping["time_in.out_layer.weight"] = mapping["time_in.mlp.2.weight"]
     mapping["time_in.mlp.2.bias"] = [timeInMlp2.bias.name]
+    mapping["time_in.out_layer.bias"] = mapping["time_in.mlp.2.bias"]
     mapping["vector_in.in_layer.weight"] = [vMlp0.weight.name]
     mapping["vector_in.in_layer.bias"] = [vMlp0.bias.name]
     mapping["vector_in.out_layer.weight"] = [vMlp2.weight.name]
     mapping["vector_in.out_layer.bias"] = [vMlp2.bias.name]
     mapping["guidance_in.mlp.0.weight"] = [gMlp0.weight.name]
+    mapping["guidance_in.in_layer.weight"] = mapping["guidance_in.mlp.0.weight"]
     mapping["guidance_in.mlp.0.bias"] = [gMlp0.bias.name]
+    mapping["guidance_in.in_layer.bias"] = mapping["guidance_in.mlp.0.bias"]
     mapping["guidance_in.mlp.2.weight"] = [gMlp2.weight.name]
+    mapping["guidance_in.out_layer.weight"] = mapping["guidance_in.mlp.2.weight"]
     mapping["guidance_in.mlp.2.bias"] = [gMlp2.bias.name]
+    mapping["guidance_in.out_layer.bias"] = mapping["guidance_in.mlp.2.bias"]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
@@ -620,7 +666,9 @@ private func LoRARefinerSelfAttention(
       toqueries.bias.name, tokeys.bias.name, tovalues.bias.name,
     ]
     mapping["\(prefix).self_attn_proj.weight"] = [unifyheads.weight.name]
+    mapping["\(prefix).self_attn.proj.weight"] = mapping["\(prefix).self_attn_proj.weight"]
     mapping["\(prefix).self_attn_proj.bias"] = [unifyheads.bias.name]
+    mapping["\(prefix).self_attn.proj.bias"] = mapping["\(prefix).self_attn_proj.bias"]
     return mapping
   }
   return (Model([x], [out]), mapper)
@@ -648,9 +696,13 @@ private func LoRAIndividualRefinerBlock(
     mapping["\(prefix).norm2.weight"] = [norm2.weight.name]
     mapping["\(prefix).norm2.bias"] = [norm2.bias.name]
     mapping["\(prefix).mlp.fc1.weight"] = [mlp0.weight.name]
+    mapping["\(prefix).mlp.0.weight"] = mapping["\(prefix).mlp.fc1.weight"]
     mapping["\(prefix).mlp.fc1.bias"] = [mlp0.bias.name]
+    mapping["\(prefix).mlp.0.bias"] = mapping["\(prefix).mlp.fc1.bias"]
     mapping["\(prefix).mlp.fc2.weight"] = [mlp1.weight.name]
+    mapping["\(prefix).mlp.2.weight"] = mapping["\(prefix).mlp.fc2.weight"]
     mapping["\(prefix).mlp.fc2.bias"] = [mlp1.bias.name]
+    mapping["\(prefix).mlp.2.bias"] = mapping["\(prefix).mlp.fc2.bias"]
     mapping["\(prefix).adaLN_modulation.1.weight"] = [gateMsa.weight.name, gateMlp.weight.name]
     mapping["\(prefix).adaLN_modulation.1.bias"] = [gateMsa.bias.name, gateMlp.bias.name]
     return mapping
@@ -785,40 +837,56 @@ private func LoRAJointTransformerBlock(
     mapping["\(prefix).txt_attn_qkv.weight"] = [
       contextToQueries.weight.name, contextToKeys.weight.name, contextToValues.weight.name,
     ]
+    mapping["\(prefix).txt_attn.qkv.weight"] = mapping["\(prefix).txt_attn_qkv.weight"]
     mapping["\(prefix).txt_attn_qkv.bias"] = [
       contextToQueries.bias.name, contextToKeys.bias.name, contextToValues.bias.name,
     ]
+    mapping["\(prefix).txt_attn.qkv.bias"] = mapping["\(prefix).txt_attn_qkv.bias"]
     mapping["\(prefix).txt_attn_k_norm.weight"] = [normAddedK.weight.name]
     mapping["\(prefix).txt_attn_q_norm.weight"] = [normAddedQ.weight.name]
     mapping["\(prefix).img_attn_qkv.weight"] = [
       xToQueries.weight.name, xToKeys.weight.name, xToValues.weight.name,
     ]
+    mapping["\(prefix).img_attn_qkv.weight"] = mapping["\(prefix).img_attn.qkv.weight"]
     mapping["\(prefix).img_attn_qkv.bias"] = [
       xToQueries.bias.name, xToKeys.bias.name, xToValues.bias.name,
     ]
+    mapping["\(prefix).img_attn.qkv.bias"] = mapping["\(prefix).img_attn_qkv.bias"]
     mapping["\(prefix).img_attn_k_norm.weight"] = [normK.weight.name]
     mapping["\(prefix).img_attn_q_norm.weight"] = [normQ.weight.name]
     if let contextUnifyheads = contextUnifyheads {
       mapping["\(prefix).txt_attn_proj.weight"] = [contextUnifyheads.weight.name]
+      mapping["\(prefix).txt_attn.proj.weight"] = mapping["\(prefix).txt_attn_proj.weight"]
       mapping["\(prefix).txt_attn_proj.bias"] = [contextUnifyheads.bias.name]
+      mapping["\(prefix).txt_attn.proj.bias"] = mapping["\(prefix).txt_attn_proj.bias"]
     }
     mapping["\(prefix).img_attn_proj.weight"] = [xUnifyheads.weight.name]
+    mapping["\(prefix).img_attn.proj.weight"] = mapping["\(prefix).img_attn_proj.weight"]
     mapping["\(prefix).img_attn_proj.bias"] = [xUnifyheads.bias.name]
+    mapping["\(prefix).img_attn.proj.bias"] = mapping["\(prefix).img_attn_proj.bias"]
     let scaleFactor: Float = upcast ? 8 : 1
     if let contextLinear1 = contextLinear1,
       let contextOutProjection = contextOutProjection
     {
       mapping["\(prefix).txt_mlp.fc1.weight"] = [contextLinear1.weight.name]
+      mapping["\(prefix).txt_mlp.0.weight"] = mapping["\(prefix).txt_mlp.fc1.weight"]
       mapping["\(prefix).txt_mlp.fc1.bias"] = [contextLinear1.bias.name]
+      mapping["\(prefix).txt_mlp.0.bias"] = mapping["\(prefix).txt_mlp.fc1.bias"]
       mapping["\(prefix).txt_mlp.fc2.weight"] = [contextOutProjection.weight.name]
+      mapping["\(prefix).txt_mlp.2.weight"] = mapping["\(prefix).txt_mlp.fc2.weight"]
       mapping["\(prefix).txt_mlp.fc2.bias"] = ModelWeightElement(
         [contextOutProjection.bias.name], scale: (1 / scaleFactor))
+      mapping["\(prefix).txt_mlp.2.bias"] = mapping["\(prefix).txt_mlp.fc2.bias"]
     }
     mapping["\(prefix).img_mlp.fc1.weight"] = [xLinear1.weight.name]
+    mapping["\(prefix).img_mlp.0.weight"] = mapping["\(prefix).img_mlp.fc1.weight"]
     mapping["\(prefix).img_mlp.fc1.bias"] = [xLinear1.bias.name]
+    mapping["\(prefix).img_mlp.0.bias"] = mapping["\(prefix).img_mlp.fc1.bias"]
     mapping["\(prefix).img_mlp.fc2.weight"] = [xOutProjection.weight.name]
+    mapping["\(prefix).img_mlp.2.weight"] = mapping["\(prefix).img_mlp.fc2.weight"]
     mapping["\(prefix).img_mlp.fc2.bias"] = ModelWeightElement(
       [xOutProjection.bias.name], scale: (1 / scaleFactor))
+    mapping["\(prefix).img_mlp.2.bias"] = mapping["\(prefix).img_mlp.fc2.bias"]
     return mapping
   }
   if !contextBlockPreOnly {
@@ -987,14 +1055,18 @@ private func LoRAJointTransformerBlockFixed(
       (0..<(contextBlockPreOnly ? 2 : 6)).map {
         contextAdaLNs[$0].weight.name
       })
+    mapping["\(prefix).txt_mod.lin.weight"] = mapping["\(prefix).txt_mod.linear.weight"]
     mapping["\(prefix).txt_mod.linear.bias"] = ModelWeightElement(
       (0..<(contextBlockPreOnly ? 2 : 6)).map {
         contextAdaLNs[$0].bias.name
       })
+    mapping["\(prefix).txt_mod.lin.bias"] = mapping["\(prefix).txt_mod.linear.bias"]
     mapping["\(prefix).img_mod.linear.weight"] = ModelWeightElement(
       (0..<6).map { xAdaLNs[$0].weight.name })
+    mapping["\(prefix).img_mod.lin.weight"] = mapping["\(prefix).img_mod.linear.weight"]
     mapping["\(prefix).img_mod.linear.bias"] = ModelWeightElement(
       (0..<6).map { xAdaLNs[$0].bias.name })
+    mapping["\(prefix).img_mod.lin.bias"] = mapping["\(prefix).img_mod.linear.bias"]
     return mapping
   }
   return (mapper, Model([c], contextChunks + xChunks))
@@ -1013,8 +1085,10 @@ private func LoRASingleTransformerBlockFixed(
     var mapping = ModelWeightMapping()
     mapping["\(prefix).modulation.linear.weight"] = ModelWeightElement(
       (0..<3).map { xAdaLNs[$0].weight.name })
+    mapping["\(prefix).modulation.lin.weight"] = mapping["\(prefix).modulation.linear.weight"]
     mapping["\(prefix).modulation.linear.bias"] = ModelWeightElement(
       (0..<3).map { xAdaLNs[$0].bias.name })
+    mapping["\(prefix).modulation.lin.bias"] = mapping["\(prefix).modulation.linear.bias"]
     return mapping
   }
   return (mapper, Model([c], xChunks))
@@ -1082,25 +1156,41 @@ func LoRAHunyuanFixed(
     mapping["txt_in.input_embedder.weight"] = [inputEmbedder.weight.name]
     mapping["txt_in.input_embedder.bias"] = [inputEmbedder.bias.name]
     mapping["txt_in.t_embedder.mlp.0.weight"] = [tMlp0.weight.name]
+    mapping["txt_in.t_embedder.in_layer.weight"] = mapping["txt_in.t_embedder.mlp.0.weight"]
     mapping["txt_in.t_embedder.mlp.0.bias"] = [tMlp0.bias.name]
+    mapping["txt_in.t_embedder.in_layer.bias"] = mapping["txt_in.t_embedder.mlp.0.bias"]
     mapping["txt_in.t_embedder.mlp.2.weight"] = [tMlp2.weight.name]
+    mapping["txt_in.t_embedder.out_layer.weight"] = mapping["txt_in.t_embedder.mlp.2.weight"]
     mapping["txt_in.t_embedder.mlp.2.bias"] = [tMlp2.bias.name]
+    mapping["txt_in.t_embedder.out_layer.bias"] = mapping["txt_in.t_embedder.mlp.2.bias"]
     mapping["txt_in.c_embedder.linear_1.weight"] = [cLinear1.weight.name]
+    mapping["txt_in.c_embedder.in_layer.weight"] = mapping["txt_in.c_embedder.linear_1.weight"]
     mapping["txt_in.c_embedder.linear_1.bias"] = [cLinear1.bias.name]
+    mapping["txt_in.c_embedder.in_layer.bias"] = mapping["txt_in.c_embedder.linear_1.bias"]
     mapping["txt_in.c_embedder.linear_2.weight"] = [cLinear2.weight.name]
+    mapping["txt_in.c_embedder.out_layer.weight"] = mapping["txt_in.c_embedder.linear_2.weight"]
     mapping["txt_in.c_embedder.linear_2.bias"] = [cLinear2.bias.name]
+    mapping["txt_in.c_embedder.out_layer.bias"] = mapping["txt_in.c_embedder.linear_2.bias"]
     mapping["time_in.mlp.0.weight"] = [timeInMlp0.weight.name]
+    mapping["time_in.in_layer.weight"] = mapping["time_in.mlp.0.weight"]
     mapping["time_in.mlp.0.bias"] = [timeInMlp0.bias.name]
+    mapping["time_in.in_layer.bias"] = mapping["time_in.mlp.0.bias"]
     mapping["time_in.mlp.2.weight"] = [timeInMlp2.weight.name]
+    mapping["time_in.out_layer.weight"] = mapping["time_in.mlp.2.weight"]
     mapping["time_in.mlp.2.bias"] = [timeInMlp2.bias.name]
+    mapping["time_in.out_layer.bias"] = mapping["time_in.mlp.2.bias"]
     mapping["vector_in.in_layer.weight"] = [vMlp0.weight.name]
     mapping["vector_in.in_layer.bias"] = [vMlp0.bias.name]
     mapping["vector_in.out_layer.weight"] = [vMlp2.weight.name]
     mapping["vector_in.out_layer.bias"] = [vMlp2.bias.name]
     mapping["guidance_in.mlp.0.weight"] = [gMlp0.weight.name]
+    mapping["guidance_in.in_layer.weight"] = mapping["guidance_in.mlp.0.weight"]
     mapping["guidance_in.mlp.0.bias"] = [gMlp0.bias.name]
+    mapping["guidance_in.in_layer.bias"] = mapping["guidance_in.mlp.0.bias"]
     mapping["guidance_in.mlp.2.weight"] = [gMlp2.weight.name]
+    mapping["guidance_in.out_layer.weight"] = mapping["guidance_in.mlp.2.weight"]
     mapping["guidance_in.mlp.2.bias"] = [gMlp2.bias.name]
+    mapping["guidance_in.out_layer.bias"] = mapping["guidance_in.mlp.2.bias"]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
