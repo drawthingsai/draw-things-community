@@ -96,7 +96,13 @@ public struct UpscalerZoo: DownloadZoo {
     return mapping
   }()
 
+  // We prefer these if it is a hit.
+  public static var overrideMapping: [String: Specification] = [:]
+
   public static func specificationForModel(_ name: String) -> Specification? {
+    if let override = overrideMapping[name] {
+      return override
+    }
     return specificationMapping[name]
   }
 

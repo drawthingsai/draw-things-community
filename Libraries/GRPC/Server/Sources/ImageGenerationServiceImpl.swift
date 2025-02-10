@@ -179,17 +179,24 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
           [FailableDecodable<TextualInversionZoo.Specification>].self,
           from: override.textualInversions
         ).compactMap({ $0.value })) ?? []
+      let upscalers =
+        (try? jsonDecoder.decode(
+          [FailableDecodable<UpscalerZoo.Specification>].self,
+          from: override.upscalers
+        ).compactMap({ $0.value })) ?? []
       ModelZoo.overrideMapping = Dictionary(models.map { ($0.file, $0) }) { v, _ in v }
       LoRAZoo.overrideMapping = Dictionary(loras.map { ($0.file, $0) }) { v, _ in v }
       ControlNetZoo.overrideMapping = Dictionary(controlNets.map { ($0.file, $0) }) { v, _ in v }
       TextualInversionZoo.overrideMapping = Dictionary(textualInversions.map { ($0.file, $0) }) {
         v, _ in v
       }
+      UpscalerZoo.overrideMapping = Dictionary(upscalers.map { ($0.file, $0) }) { v, _ in v }
       defer {
         ModelZoo.overrideMapping = [:]
         LoRAZoo.overrideMapping = [:]
         ControlNetZoo.overrideMapping = [:]
         TextualInversionZoo.overrideMapping = [:]
+        UpscalerZoo.overrideMapping = [:]
       }
       let progressUpdateHandler:
         (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) -> Bool = {

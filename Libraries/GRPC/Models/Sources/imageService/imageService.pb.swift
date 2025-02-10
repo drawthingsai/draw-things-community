@@ -166,6 +166,8 @@ public struct MetadataOverride: @unchecked Sendable {
 
   public var textualInversions: Data = Data()
 
+  public var upscalers: Data = Data()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -179,78 +181,102 @@ public struct ImageGenerationRequest: @unchecked Sendable {
 
   /// Image data as sha256 content.
   public var image: Data {
-    get {return _image ?? Data()}
-    set {_image = newValue}
+    get {return _storage._image ?? Data()}
+    set {_uniqueStorage()._image = newValue}
   }
   /// Returns true if `image` has been explicitly set.
-  public var hasImage: Bool {return self._image != nil}
+  public var hasImage: Bool {return _storage._image != nil}
   /// Clears the value of `image`. Subsequent reads from it will return its default value.
-  public mutating func clearImage() {self._image = nil}
+  public mutating func clearImage() {_uniqueStorage()._image = nil}
 
-  public var scaleFactor: Int32 = 0
+  public var scaleFactor: Int32 {
+    get {return _storage._scaleFactor}
+    set {_uniqueStorage()._scaleFactor = newValue}
+  }
 
   /// Optional  Mask data as sha256 content.
   public var mask: Data {
-    get {return _mask ?? Data()}
-    set {_mask = newValue}
+    get {return _storage._mask ?? Data()}
+    set {_uniqueStorage()._mask = newValue}
   }
   /// Returns true if `mask` has been explicitly set.
-  public var hasMask: Bool {return self._mask != nil}
+  public var hasMask: Bool {return _storage._mask != nil}
   /// Clears the value of `mask`. Subsequent reads from it will return its default value.
-  public mutating func clearMask() {self._mask = nil}
+  public mutating func clearMask() {_uniqueStorage()._mask = nil}
 
   /// List of hints
-  public var hints: [HintProto] = []
+  public var hints: [HintProto] {
+    get {return _storage._hints}
+    set {_uniqueStorage()._hints = newValue}
+  }
 
   /// Optional prompt string
-  public var prompt: String = String()
+  public var prompt: String {
+    get {return _storage._prompt}
+    set {_uniqueStorage()._prompt = newValue}
+  }
 
   /// Optional negative prompt string
-  public var negativePrompt: String = String()
+  public var negativePrompt: String {
+    get {return _storage._negativePrompt}
+    set {_uniqueStorage()._negativePrompt = newValue}
+  }
 
   /// Configuration data as bytes (FlatBuffer)
-  public var configuration: Data = Data()
+  public var configuration: Data {
+    get {return _storage._configuration}
+    set {_uniqueStorage()._configuration = newValue}
+  }
 
   /// Override the existing metadata on various Zoo objects.
   public var override: MetadataOverride {
-    get {return _override ?? MetadataOverride()}
-    set {_override = newValue}
+    get {return _storage._override ?? MetadataOverride()}
+    set {_uniqueStorage()._override = newValue}
   }
   /// Returns true if `override` has been explicitly set.
-  public var hasOverride: Bool {return self._override != nil}
+  public var hasOverride: Bool {return _storage._override != nil}
   /// Clears the value of `override`. Subsequent reads from it will return its default value.
-  public mutating func clearOverride() {self._override = nil}
+  public mutating func clearOverride() {_uniqueStorage()._override = nil}
 
   /// Keywords send to the ImageGenerator, not useful for local generation.
-  public var keywords: [String] = []
+  public var keywords: [String] {
+    get {return _storage._keywords}
+    set {_uniqueStorage()._keywords = newValue}
+  }
 
   /// The name of the client.
-  public var user: String = String()
+  public var user: String {
+    get {return _storage._user}
+    set {_uniqueStorage()._user = newValue}
+  }
 
   /// The type of the device uses.
-  public var device: DeviceType = .phone
+  public var device: DeviceType {
+    get {return _storage._device}
+    set {_uniqueStorage()._device = newValue}
+  }
 
   /// The image data as array of bytes. It is addressed by its sha256 content. This is modeled as content-addressable storage.
-  public var contents: [Data] = []
+  public var contents: [Data] {
+    get {return _storage._contents}
+    set {_uniqueStorage()._contents = newValue}
+  }
 
   /// The secret use to authenticate if needed.
   public var sharedSecret: String {
-    get {return _sharedSecret ?? String()}
-    set {_sharedSecret = newValue}
+    get {return _storage._sharedSecret ?? String()}
+    set {_uniqueStorage()._sharedSecret = newValue}
   }
   /// Returns true if `sharedSecret` has been explicitly set.
-  public var hasSharedSecret: Bool {return self._sharedSecret != nil}
+  public var hasSharedSecret: Bool {return _storage._sharedSecret != nil}
   /// Clears the value of `sharedSecret`. Subsequent reads from it will return its default value.
-  public mutating func clearSharedSecret() {self._sharedSecret = nil}
+  public mutating func clearSharedSecret() {_uniqueStorage()._sharedSecret = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _image: Data? = nil
-  fileprivate var _mask: Data? = nil
-  fileprivate var _override: MetadataOverride? = nil
-  fileprivate var _sharedSecret: String? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 public struct HintProto: Sendable {
@@ -482,10 +508,10 @@ public struct ImageGenerationResponse: @unchecked Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Generated image data as bytes
+  /// Generated image data as bytes.
   public var generatedImages: [Data] = []
 
-  /// Single current signpost
+  /// Single current signpost.
   public var currentSignpost: ImageGenerationSignpostProto {
     get {return _currentSignpost ?? ImageGenerationSignpostProto()}
     set {_currentSignpost = newValue}
@@ -495,10 +521,10 @@ public struct ImageGenerationResponse: @unchecked Sendable {
   /// Clears the value of `currentSignpost`. Subsequent reads from it will return its default value.
   public mutating func clearCurrentSignpost() {self._currentSignpost = nil}
 
-  /// Collection of signposts
+  /// Collection of signposts.
   public var signposts: [ImageGenerationSignpostProto] = []
 
-  /// preview generating image data as bytes
+  /// preview generating image data as bytes.
   public var previewImage: Data {
     get {return _previewImage ?? Data()}
     set {_previewImage = newValue}
@@ -517,6 +543,9 @@ public struct ImageGenerationResponse: @unchecked Sendable {
   public var hasScaleFactor: Bool {return self._scaleFactor != nil}
   /// Clears the value of `scaleFactor`. Subsequent reads from it will return its default value.
   public mutating func clearScaleFactor() {self._scaleFactor = nil}
+
+  /// Tags to track which server responded to the generation request.
+  public var tags: [String] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -836,6 +865,7 @@ extension MetadataOverride: SwiftProtobuf.Message, SwiftProtobuf._MessageImpleme
     2: .same(proto: "loras"),
     3: .same(proto: "controlNets"),
     4: .same(proto: "textualInversions"),
+    5: .same(proto: "upscalers"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -848,6 +878,7 @@ extension MetadataOverride: SwiftProtobuf.Message, SwiftProtobuf._MessageImpleme
       case 2: try { try decoder.decodeSingularBytesField(value: &self.loras) }()
       case 3: try { try decoder.decodeSingularBytesField(value: &self.controlNets) }()
       case 4: try { try decoder.decodeSingularBytesField(value: &self.textualInversions) }()
+      case 5: try { try decoder.decodeSingularBytesField(value: &self.upscalers) }()
       default: break
       }
     }
@@ -866,6 +897,9 @@ extension MetadataOverride: SwiftProtobuf.Message, SwiftProtobuf._MessageImpleme
     if !self.textualInversions.isEmpty {
       try visitor.visitSingularBytesField(value: self.textualInversions, fieldNumber: 4)
     }
+    if !self.upscalers.isEmpty {
+      try visitor.visitSingularBytesField(value: self.upscalers, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -874,6 +908,7 @@ extension MetadataOverride: SwiftProtobuf.Message, SwiftProtobuf._MessageImpleme
     if lhs.loras != rhs.loras {return false}
     if lhs.controlNets != rhs.controlNets {return false}
     if lhs.textualInversions != rhs.textualInversions {return false}
+    if lhs.upscalers != rhs.upscalers {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -897,91 +932,155 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     13: .same(proto: "sharedSecret"),
   ]
 
+  fileprivate class _StorageClass {
+    var _image: Data? = nil
+    var _scaleFactor: Int32 = 0
+    var _mask: Data? = nil
+    var _hints: [HintProto] = []
+    var _prompt: String = String()
+    var _negativePrompt: String = String()
+    var _configuration: Data = Data()
+    var _override: MetadataOverride? = nil
+    var _keywords: [String] = []
+    var _user: String = String()
+    var _device: DeviceType = .phone
+    var _contents: [Data] = []
+    var _sharedSecret: String? = nil
+
+    #if swift(>=5.10)
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+    #else
+      static let defaultInstance = _StorageClass()
+    #endif
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _image = source._image
+      _scaleFactor = source._scaleFactor
+      _mask = source._mask
+      _hints = source._hints
+      _prompt = source._prompt
+      _negativePrompt = source._negativePrompt
+      _configuration = source._configuration
+      _override = source._override
+      _keywords = source._keywords
+      _user = source._user
+      _device = source._device
+      _contents = source._contents
+      _sharedSecret = source._sharedSecret
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBytesField(value: &self._image) }()
-      case 2: try { try decoder.decodeSingularInt32Field(value: &self.scaleFactor) }()
-      case 3: try { try decoder.decodeSingularBytesField(value: &self._mask) }()
-      case 4: try { try decoder.decodeRepeatedMessageField(value: &self.hints) }()
-      case 5: try { try decoder.decodeSingularStringField(value: &self.prompt) }()
-      case 6: try { try decoder.decodeSingularStringField(value: &self.negativePrompt) }()
-      case 7: try { try decoder.decodeSingularBytesField(value: &self.configuration) }()
-      case 8: try { try decoder.decodeSingularMessageField(value: &self._override) }()
-      case 9: try { try decoder.decodeRepeatedStringField(value: &self.keywords) }()
-      case 10: try { try decoder.decodeSingularStringField(value: &self.user) }()
-      case 11: try { try decoder.decodeSingularEnumField(value: &self.device) }()
-      case 12: try { try decoder.decodeRepeatedBytesField(value: &self.contents) }()
-      case 13: try { try decoder.decodeSingularStringField(value: &self._sharedSecret) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularBytesField(value: &_storage._image) }()
+        case 2: try { try decoder.decodeSingularInt32Field(value: &_storage._scaleFactor) }()
+        case 3: try { try decoder.decodeSingularBytesField(value: &_storage._mask) }()
+        case 4: try { try decoder.decodeRepeatedMessageField(value: &_storage._hints) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._prompt) }()
+        case 6: try { try decoder.decodeSingularStringField(value: &_storage._negativePrompt) }()
+        case 7: try { try decoder.decodeSingularBytesField(value: &_storage._configuration) }()
+        case 8: try { try decoder.decodeSingularMessageField(value: &_storage._override) }()
+        case 9: try { try decoder.decodeRepeatedStringField(value: &_storage._keywords) }()
+        case 10: try { try decoder.decodeSingularStringField(value: &_storage._user) }()
+        case 11: try { try decoder.decodeSingularEnumField(value: &_storage._device) }()
+        case 12: try { try decoder.decodeRepeatedBytesField(value: &_storage._contents) }()
+        case 13: try { try decoder.decodeSingularStringField(value: &_storage._sharedSecret) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    try { if let v = self._image {
-      try visitor.visitSingularBytesField(value: v, fieldNumber: 1)
-    } }()
-    if self.scaleFactor != 0 {
-      try visitor.visitSingularInt32Field(value: self.scaleFactor, fieldNumber: 2)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      try { if let v = _storage._image {
+        try visitor.visitSingularBytesField(value: v, fieldNumber: 1)
+      } }()
+      if _storage._scaleFactor != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._scaleFactor, fieldNumber: 2)
+      }
+      try { if let v = _storage._mask {
+        try visitor.visitSingularBytesField(value: v, fieldNumber: 3)
+      } }()
+      if !_storage._hints.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._hints, fieldNumber: 4)
+      }
+      if !_storage._prompt.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._prompt, fieldNumber: 5)
+      }
+      if !_storage._negativePrompt.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._negativePrompt, fieldNumber: 6)
+      }
+      if !_storage._configuration.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._configuration, fieldNumber: 7)
+      }
+      try { if let v = _storage._override {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+      } }()
+      if !_storage._keywords.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._keywords, fieldNumber: 9)
+      }
+      if !_storage._user.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._user, fieldNumber: 10)
+      }
+      if _storage._device != .phone {
+        try visitor.visitSingularEnumField(value: _storage._device, fieldNumber: 11)
+      }
+      if !_storage._contents.isEmpty {
+        try visitor.visitRepeatedBytesField(value: _storage._contents, fieldNumber: 12)
+      }
+      try { if let v = _storage._sharedSecret {
+        try visitor.visitSingularStringField(value: v, fieldNumber: 13)
+      } }()
     }
-    try { if let v = self._mask {
-      try visitor.visitSingularBytesField(value: v, fieldNumber: 3)
-    } }()
-    if !self.hints.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.hints, fieldNumber: 4)
-    }
-    if !self.prompt.isEmpty {
-      try visitor.visitSingularStringField(value: self.prompt, fieldNumber: 5)
-    }
-    if !self.negativePrompt.isEmpty {
-      try visitor.visitSingularStringField(value: self.negativePrompt, fieldNumber: 6)
-    }
-    if !self.configuration.isEmpty {
-      try visitor.visitSingularBytesField(value: self.configuration, fieldNumber: 7)
-    }
-    try { if let v = self._override {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
-    } }()
-    if !self.keywords.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.keywords, fieldNumber: 9)
-    }
-    if !self.user.isEmpty {
-      try visitor.visitSingularStringField(value: self.user, fieldNumber: 10)
-    }
-    if self.device != .phone {
-      try visitor.visitSingularEnumField(value: self.device, fieldNumber: 11)
-    }
-    if !self.contents.isEmpty {
-      try visitor.visitRepeatedBytesField(value: self.contents, fieldNumber: 12)
-    }
-    try { if let v = self._sharedSecret {
-      try visitor.visitSingularStringField(value: v, fieldNumber: 13)
-    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ImageGenerationRequest, rhs: ImageGenerationRequest) -> Bool {
-    if lhs._image != rhs._image {return false}
-    if lhs.scaleFactor != rhs.scaleFactor {return false}
-    if lhs._mask != rhs._mask {return false}
-    if lhs.hints != rhs.hints {return false}
-    if lhs.prompt != rhs.prompt {return false}
-    if lhs.negativePrompt != rhs.negativePrompt {return false}
-    if lhs.configuration != rhs.configuration {return false}
-    if lhs._override != rhs._override {return false}
-    if lhs.keywords != rhs.keywords {return false}
-    if lhs.user != rhs.user {return false}
-    if lhs.device != rhs.device {return false}
-    if lhs.contents != rhs.contents {return false}
-    if lhs._sharedSecret != rhs._sharedSecret {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._image != rhs_storage._image {return false}
+        if _storage._scaleFactor != rhs_storage._scaleFactor {return false}
+        if _storage._mask != rhs_storage._mask {return false}
+        if _storage._hints != rhs_storage._hints {return false}
+        if _storage._prompt != rhs_storage._prompt {return false}
+        if _storage._negativePrompt != rhs_storage._negativePrompt {return false}
+        if _storage._configuration != rhs_storage._configuration {return false}
+        if _storage._override != rhs_storage._override {return false}
+        if _storage._keywords != rhs_storage._keywords {return false}
+        if _storage._user != rhs_storage._user {return false}
+        if _storage._device != rhs_storage._device {return false}
+        if _storage._contents != rhs_storage._contents {return false}
+        if _storage._sharedSecret != rhs_storage._sharedSecret {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1464,6 +1563,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     3: .same(proto: "signposts"),
     4: .same(proto: "previewImage"),
     5: .same(proto: "scaleFactor"),
+    6: .same(proto: "tags"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -1477,6 +1577,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
       case 3: try { try decoder.decodeRepeatedMessageField(value: &self.signposts) }()
       case 4: try { try decoder.decodeSingularBytesField(value: &self._previewImage) }()
       case 5: try { try decoder.decodeSingularInt32Field(value: &self._scaleFactor) }()
+      case 6: try { try decoder.decodeRepeatedStringField(value: &self.tags) }()
       default: break
       }
     }
@@ -1502,6 +1603,9 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     try { if let v = self._scaleFactor {
       try visitor.visitSingularInt32Field(value: v, fieldNumber: 5)
     } }()
+    if !self.tags.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.tags, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1511,6 +1615,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     if lhs.signposts != rhs.signposts {return false}
     if lhs._previewImage != rhs._previewImage {return false}
     if lhs._scaleFactor != rhs._scaleFactor {return false}
+    if lhs.tags != rhs.tags {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

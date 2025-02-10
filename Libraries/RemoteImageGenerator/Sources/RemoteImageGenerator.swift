@@ -77,6 +77,7 @@ public struct RemoteImageGenerator: ImageGenerator {
           TextualInversionZoo.specificationForModel(
             TextualInversionZoo.modelFromKeyword($0, potentials: []) ?? "")
         })) ?? Data()
+    overrideProto.upscalers = (try? jsonEncoder.encode(metadataOverride.upscalers)) ?? Data()
 
     var request = ImageGenerationRequest()
     request.configuration = configuration.toData()

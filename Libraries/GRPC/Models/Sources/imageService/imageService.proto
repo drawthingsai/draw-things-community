@@ -36,6 +36,7 @@ message MetadataOverride {
   bytes loras = 2;
   bytes controlNets = 3;
   bytes textualInversions = 4;
+  bytes upscalers = 5;
 }
 
 enum DeviceType {
@@ -107,11 +108,12 @@ message ImageGenerationSignpostProto {
 }
 
 message ImageGenerationResponse {
-  repeated bytes generatedImages = 1;      // Generated image data as bytes
-  optional ImageGenerationSignpostProto currentSignpost = 2; // Single current signpost
-  repeated ImageGenerationSignpostProto signposts = 3; // Collection of signposts
-  optional bytes previewImage = 4;      // preview generating image data as bytes
+  repeated bytes generatedImages = 1;      // Generated image data as bytes.
+  optional ImageGenerationSignpostProto currentSignpost = 2; // Single current signpost.
+  repeated ImageGenerationSignpostProto signposts = 3; // Collection of signposts.
+  optional bytes previewImage = 4;      // preview generating image data as bytes.
   optional int32 scaleFactor = 5; // The scale factor of the image.
+  repeated string tags = 6; // Tags to track which server responded to the generation request.
 }
 
 message FileChunk {

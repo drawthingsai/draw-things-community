@@ -299,7 +299,7 @@ public struct ImageGeneratorUtils {
 extension ImageGeneratorUtils {
   public static func metadataOverride(_ configuration: GenerationConfiguration) -> (
     models: [ModelZoo.Specification], loras: [LoRAZoo.Specification],
-    controlNets: [ControlNetZoo.Specification]
+    controlNets: [ControlNetZoo.Specification], upscalers: [UpscalerZoo.Specification]
   ) {
     var models = [ModelZoo.Specification]()
     func appendModel(_ model: String?) {
@@ -328,7 +328,13 @@ extension ImageGeneratorUtils {
       guard let specification = ControlNetZoo.specificationForModel(file) else { continue }
       controlNets.append(specification)
     }
-    return (models, loras, controlNets)
+    var upscalers = [UpscalerZoo.Specification]()
+    if let upscaler = configuration.upscaler,
+      let specification = UpscalerZoo.specificationForModel(upscaler)
+    {
+      upscalers.append(specification)
+    }
+    return (models, loras, controlNets, upscalers)
   }
 
   public static func filesToMatch(_ configuration: GenerationConfiguration, keywords: [String])
