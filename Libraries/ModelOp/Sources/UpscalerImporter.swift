@@ -8,6 +8,10 @@ import Upscaler
 import ZIPFoundation
 
 public final class UpscalerImporter {
+  public enum Error: Swift.Error {
+    case tensorWritesFailed
+    case parsingFailed
+  }
   final class DataArchive: TensorDataArchive {
     let data: Data
     let bufferStart: Int
@@ -24,7 +28,7 @@ public final class UpscalerImporter {
   }
   public func `import`(
     progress: @escaping (Float) -> Void
-  ) throws -> (file: String, numberOfBlocks: Int, upscaleFactor: UpscaleFactor)? {
+  ) throws -> (file: String, numberOfBlocks: Int, upscaleFactor: UpscaleFactor) {
     let archive: TensorArchive
     var stateDict: [String: TensorDescriptor]
     if let safeTensors = SafeTensors(url: URL(fileURLWithPath: filePath)) {
@@ -69,7 +73,9 @@ public final class UpscalerImporter {
       }
       return 0
     }()
-    guard numberOfBlocks > 0 else { return nil }
+    guard numberOfBlocks > 0 else {
+      throw Error.parsingFailed
+    }
     let (mapper, rrdbnet) = RRDBNet(
       numberOfOutputChannels: 3, numberOfFeatures: 64, numberOfBlocks: numberOfBlocks,
       numberOfGrowChannels: 32)
@@ -101,6 +107,7 @@ public final class UpscalerImporter {
     let mapping = mapper()
     let filePath = UpscalerZoo.filePathForModelDownloaded(name)
     try graph.openStore(filePath, flags: .truncateWhenClose) { store in
+      store.removeAll()
       for (key, values) in mapping {
         guard let descriptor = stateDict[key] else { continue }
         try archive.with(descriptor) {
@@ -125,6 +132,9 @@ public final class UpscalerImporter {
             store.write("__\(modelKey)__[\(value)]", tensor: tensor)
           }
         }
+      }
+      if store.keys.count != 12 + 60 * numberOfBlocks {
+        throw Error.tensorWritesFailed
       }
     }
     return (name, numberOfBlocks, upscaleFactor)
