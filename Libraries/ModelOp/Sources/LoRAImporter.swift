@@ -6,6 +6,9 @@ import NNC
 import ZIPFoundation
 
 public enum LoRAImporter {
+  public enum Error: Swift.Error {
+    case modelVersionFailed
+  }
   public static func modelWeightsMapping(
     by version: ModelVersion, qkNorm: Bool, dualAttentionLayers: [Int], format: [ModelWeightFormat]
   ) -> (ModelWeightMapping, ModelWeightMapping) {
@@ -633,13 +636,13 @@ public enum LoRAImporter {
             if let forceVersion = forceVersion {
               return forceVersion
             }
-            throw UnpickleError.tensorNotFound
+            throw Error.modelVersionFailed
           }
         } else {
           if let forceVersion = forceVersion {
             return forceVersion
           }
-          throw UnpickleError.tensorNotFound
+          throw Error.modelVersionFailed
         }
       case (false, true, false, false, false, false):
         return .sd3
@@ -655,7 +658,7 @@ public enum LoRAImporter {
         if let forceVersion = forceVersion {
           return forceVersion
         }
-        throw UnpickleError.tensorNotFound
+        throw Error.modelVersionFailed
       }
     }()
     let graph = DynamicGraph()
