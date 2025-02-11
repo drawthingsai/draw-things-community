@@ -34,9 +34,9 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     _ graph: DynamicGraph, of files: [String], prefix: String = "", modelFile: String? = nil,
     inspectFilesRequireMerge: Bool = true
   ) -> (
-    rank: Int, filesRequireMerge: Set<String>
+    rank: Int, filesRequireMerge: [String: Set<String>]
   ) {
-    var filesRequireMerge = Set<String>()
+    var filesRequireMerge = [String: Set<String>]()
     return (
       files.reduce(0) { oldRank, file in
         var rank: Int = 0
@@ -49,7 +49,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             // If it doesn't have __ suffix but have a __ suffix (indicate it is a weight for model), then it is a "full" LoRA that requires a merge.
             guard isLoRADownNetworkKey || (key.hasSuffix("__") && key.hasPrefix("__")) else {
               if inspectFilesRequireMerge && modelFile != file && key.hasPrefix("__") {
-                filesRequireMerge.insert(file)
+                filesRequireMerge[file, default: Set<String>()].insert(key)
                 break
               }
               continue
@@ -100,9 +100,14 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
   }
 
   public func concatenateLoRA(
-    _ graph: DynamicGraph, LoRAMapping: [Int: Int], filesRequireMerge: Set<String>, name: String,
+    _ graph: DynamicGraph, LoRAMapping: [Int: Int], filesRequireMerge: [String: Set<String>],
+    name: String,
     store: DynamicGraph.Store, dataType: DataType, format: TensorFormat, shape: TensorShape
   ) -> DynamicGraph.Store.ModelReaderResult {
+    let filesRequireMerge: Set<String> = Set(
+      filesRequireMerge.compactMap {
+        return $1.contains(name) ? $0 : nil
+      })
     guard name.contains("lora_up") || name.contains("lora_down") else {
       return mergeLoRA(
         graph, name: name, store: store, shape: shape, filesRequireMerge: filesRequireMerge)

@@ -1300,8 +1300,10 @@ public enum LoRAImporter {
                   tensor = newTensor
                 }
                  */
-                for name in unetParams {
-                  store.write("__\(modelPrefix)__[\(name)]", tensor: tensor)
+                unetParams.write(
+                  to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
+                ) {
+                  return "__\(modelPrefix)__[\($0)]"
                 }
               }
             }
@@ -1358,8 +1360,10 @@ public enum LoRAImporter {
             } else if key.hasSuffix(".diff") || key.hasSuffix(".diff_b") {
               try archive.with(descriptor) {
                 let tensor = Tensor<FloatType>(from: $0)
-                for name in unetParams {
-                  store.write("__\(modelPrefixFixed)__[\(name)]", tensor: tensor)
+                unetParams.write(
+                  to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
+                ) {
+                  return "__\(modelPrefixFixed)__[\($0)]"
                 }
               }
             }
