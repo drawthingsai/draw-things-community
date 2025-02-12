@@ -16,7 +16,7 @@ import ModelZoo
 import NIO
 import NIOSSL
 import NNC
-import ProxyServer
+import ProxyControlClient
 import SQLiteDflat
 import Utils
 

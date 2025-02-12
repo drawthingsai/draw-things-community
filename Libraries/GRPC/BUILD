@@ -73,6 +73,28 @@ swift_library(
 )
 
 swift_library(
+    name = "ProxyControlClient",
+    srcs = glob([
+        "ProxyControlClient/Sources/*.swift",
+    ]),
+    module_name = "ProxyControlClient",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":GRPCControlPanelModels",
+        ":GRPCImageServiceModels",
+        "//Libraries/BinaryResources",
+        "//Libraries/DataModels",
+        "//Libraries/ModelZoo",
+        "@SwiftArgumentParser//:ArgumentParser",
+        "@SwiftCrypto//:CCryptoBoringSSL",
+        "@SwiftCrypto//:CCryptoBoringSSLShims",
+        "@SwiftCrypto//:Crypto",
+        "@SwiftCrypto//:CryptoBoringWrapper",
+        "@SwiftLog//:Logging",
+    ],
+)
+
+swift_library(
     name = "ProxyServer",
     srcs = glob([
         "ProxyServer/Sources/*.swift",
