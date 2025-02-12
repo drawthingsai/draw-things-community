@@ -5,6 +5,7 @@ service ControlPanelService {
   rpc UpdateThrottlingConfig(ThrottlingRequest) returns (ThrottlingResponse);
   rpc UpdatePem(UpdatePemRequest) returns (UpdatePemResponse);
   rpc UpdateModelList(UpdateModelListRequest) returns (UpdateModelListResponse);
+  rpc UpdateSharedSecret(UpdateSharedSecretRequest) returns (UpdateSharedSecretResponse);
 
 }
 
