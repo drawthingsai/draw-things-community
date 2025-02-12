@@ -215,6 +215,9 @@ struct gRPCServerCLI: ParsableCommand {
   @Option(name: .shortAndLong, help: "Use Datadog as the logging backend.")
   var datadogAPIKey: String = ""
 
+  @Option(name: .shortAndLong, help: "The shared secret that can help to secure the server.")
+  var sharedSecret: String = ""
+
   @Flag(help: "Disable TLS for the connection.")
   var noTLS = false
 
@@ -315,6 +318,7 @@ struct gRPCServerCLI: ParsableCommand {
     } else {
       imageGenerationServiceImpl.enableModelBrowsing.store(false, ordering: .releasing)
     }
+    imageGenerationServiceImpl.sharedSecret = sharedSecret.isEmpty ? nil : sharedSecret
 
     // Bind the server and get an `EventLoopFuture<Server>`
     let serverFuture: EventLoopFuture<GRPC.Server>

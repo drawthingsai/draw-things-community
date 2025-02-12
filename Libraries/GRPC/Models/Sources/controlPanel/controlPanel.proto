@@ -55,3 +55,12 @@ message UpdateModelListRequest {
 message UpdateModelListResponse {
   string message = 1;
 }
+
+
+message UpdateSharedSecretRequest {
+    string message = 1;
+}
+
+message UpdateSharedSecretResponse {
+  string message = 1;
+}
