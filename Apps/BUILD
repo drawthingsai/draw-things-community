@@ -50,6 +50,7 @@ swift_library(
     deps = [
         "//Libraries/BinaryResources",
         "//Libraries/DataModels",
+        "//Libraries/GRPC:GRPCControlPanelModels",
         "//Libraries/GRPC:GRPCImageServiceModels",
         "//Libraries/GRPC:GRPCServer",
         "//Libraries/ImageGenerator",
