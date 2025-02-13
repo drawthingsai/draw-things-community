@@ -92,8 +92,10 @@ actor TaskQueue {
   private var lowPriorityTasks: [WorkTask] = []
   private var pendingRemoveWorkerId = Set<String>()
   private var workers: [String: Worker]
-
   private let logger: Logger
+  var workerIds: [String] {
+    return Array(workers.keys)
+  }
 
   // Shared availability stream
   private let workerAvailabilityStream: AsyncStream<Worker>
@@ -172,18 +174,14 @@ actor TaskQueue {
         "can add worker:\(worker) to worker TaskQueue with invalid nioclient connection")
       return
     }
-    let isExist = workers.keys.contains(worker.id)
+    let alreadyExists = workers[worker.id] != nil
     workers[worker.id] = worker
-    guard !isExist else {
+    guard !alreadyExists else {
       logger.info("worker:\(worker) already exists in workers, skip adding")
       return
     }
     availabilityContinuation.yield(worker)
     logger.info("add worker:\(worker) to worker TaskQueue and stream")
-  }
-
-  func allWorkersId() async -> [String] {
-    return Array(workers.keys)
   }
 
   func removeWorkerById(_ name: String) async {
@@ -335,7 +333,7 @@ final class ControlPanelService: ControlPanelServiceProvider {
               id: gpuServerName, client: client,
               primaryPriority: request.serverConfig.isHighPriority ? .high : .low)
             await taskQueue.addWorker(worker)
-            let workersId = await taskQueue.allWorkersId()
+            let workersId = await taskQueue.workerIds
             let response = GPUServerResponse.with {
               $0.message =
                 "added GPU \(gpuServerName) into workers stream, current workers:\(workersId)"
@@ -354,7 +352,7 @@ final class ControlPanelService: ControlPanelServiceProvider {
         }
       case .remove:
         await taskQueue.removeWorkerById(gpuServerName)
-        let workersId = await taskQueue.allWorkersId()
+        let workersId = await taskQueue.workerIds
         let response = GPUServerResponse.with {
           $0.message =
             "remove GPU \(gpuServerName) from taskCoordinator, current workers:\(workersId)"
