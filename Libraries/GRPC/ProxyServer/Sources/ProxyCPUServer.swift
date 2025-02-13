@@ -172,9 +172,18 @@ actor TaskQueue {
         "can add worker:\(worker) to worker TaskQueue with invalid nioclient connection")
       return
     }
+    let isExist = workers.keys.contains(worker.id)
     workers[worker.id] = worker
+    guard !isExist else {
+      logger.info("worker:\(worker) already exists in workers, skip adding")
+      return
+    }
     availabilityContinuation.yield(worker)
     logger.info("add worker:\(worker) to worker TaskQueue and stream")
+  }
+
+  func allWorkersId() async -> [String] {
+    return Array(workers.keys)
   }
 
   func removeWorkerById(_ name: String) async {
@@ -326,8 +335,10 @@ final class ControlPanelService: ControlPanelServiceProvider {
               id: gpuServerName, client: client,
               primaryPriority: request.serverConfig.isHighPriority ? .high : .low)
             await taskQueue.addWorker(worker)
+            let workersId = await taskQueue.allWorkersId()
             let response = GPUServerResponse.with {
-              $0.message = "added GPU \(gpuServerName) into workers stream"
+              $0.message =
+                "added GPU \(gpuServerName) into workers stream, current workers:\(workersId)"
             }
             promise.succeed(response)
           } else {
@@ -343,8 +354,10 @@ final class ControlPanelService: ControlPanelServiceProvider {
         }
       case .remove:
         await taskQueue.removeWorkerById(gpuServerName)
+        let workersId = await taskQueue.allWorkersId()
         let response = GPUServerResponse.with {
-          $0.message = "remove GPU \(gpuServerName) from taskCoordinator"
+          $0.message =
+            "remove GPU \(gpuServerName) from taskCoordinator, current workers:\(workersId)"
         }
         promise.succeed(response)
       case .unspecified, .UNRECOGNIZED(_):
