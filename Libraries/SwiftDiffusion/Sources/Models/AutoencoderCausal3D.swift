@@ -246,7 +246,7 @@ func EncoderCausal3D(
 
 func DecoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
-  startDepth: Int
+  startDepth: Int, paddingFinalConvLayer: Bool
 )
   -> (ModelWeightMapper, Model)
 {
@@ -336,7 +336,7 @@ func DecoderCausal3D(
   out = normOut(out)
   out = out.swish()
   let convOut = Convolution(
-    groups: 1, filters: 3, filterSize: [3, 3, 3],
+    groups: 1, filters: paddingFinalConvLayer ? 4 : 3, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_out")
   out = convOut(
@@ -344,7 +344,7 @@ func DecoderCausal3D(
       .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
     ).reshaped([1, depth + 2, height + 2, width + 2, channels[0]])
   ).reshaped([
-    depth, height, width, 3,
+    depth, height, width, paddingFinalConvLayer ? 4 : 3,
   ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
