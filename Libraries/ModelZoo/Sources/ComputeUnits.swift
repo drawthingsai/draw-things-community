@@ -38,18 +38,35 @@ public enum ComputeUnits {
     }
   }
 
-  public static func from(_ configuration: GenerationConfiguration) -> Int? {
+  public static func from(
+    _ configuration: GenerationConfiguration, overrideMapping: [String: ModelZoo.Specification]
+  ) -> Int? {
     guard let model = configuration.model else {
       return nil
     }
-    let modelVersion = ModelZoo.versionForModel(model)
+    let modelVersion: ModelVersion
+    let isGuidanceEmbedEnabled: Bool
+    let isConsistencyModel: Bool
+
+    if let specification = overrideMapping[model] {
+      modelVersion = specification.version
+      isGuidanceEmbedEnabled =
+        (specification.guidanceEmbed ?? false)
+        && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
+      isConsistencyModel = specification.isConsistencyModel ?? false
+    } else {
+      modelVersion = ModelZoo.versionForModel(model)
+      isGuidanceEmbedEnabled =
+        ModelZoo.guidanceEmbedForModel(model)
+        && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
+      isConsistencyModel = ModelZoo.isConsistencyModelForModel(model)
+    }
+
     let batchSize: Int
     let numFrames: Int
-    let isGuidanceEmbedEnabled =
-      ModelZoo.guidanceEmbedForModel(model)
-      && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
+
     let isCfgEnabled =
-      (!ModelZoo.isConsistencyModelForModel(model) && !isGuidanceEmbedEnabled)
+      (!isConsistencyModel && !isGuidanceEmbedEnabled)
       && isCfgEnabled(
         textGuidanceScale: configuration.guidanceScale, startFrameCfg: configuration.startFrameCfg,
         version: modelVersion)

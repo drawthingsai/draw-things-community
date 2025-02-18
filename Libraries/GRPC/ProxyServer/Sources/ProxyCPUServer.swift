@@ -570,7 +570,18 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             message: "no valid model name "))
         return
       }
-      guard let cost = ComputeUnits.from(configuration) else {
+
+      // decode override models mapping
+      let override = request.override
+      let jsonDecoder = JSONDecoder()
+      jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+      let overrideModels =
+        (try? jsonDecoder.decode(
+          [FailableDecodable<ModelZoo.Specification>].self, from: override.models
+        ).compactMap({ $0.value })) ?? []
+      let modelOverrideMapping = Dictionary(overrideModels.map { ($0.file, $0) }) { v, _ in v }
+      guard let cost = ComputeUnits.from(configuration, overrideMapping: modelOverrideMapping)
+      else {
         logger.error(
           "Proxy Server can not calculate cost for configuration \(configuration)"
         )
