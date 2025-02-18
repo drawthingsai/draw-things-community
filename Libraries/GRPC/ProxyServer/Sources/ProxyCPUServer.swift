@@ -718,9 +718,9 @@ public class ProxyCPUServer {
     self.taskQueue = TaskQueue(workers: workers, logger: logger)
   }
 
-  public func startControlPanel(host: String, port: Int) throws {
+  public func startControlPanel(hosts: [String], port: Int) throws {
     Task {
-      logger.info("Control Panel Service starting on \(host):\(port)")
+      logger.info("Control Panel Service starting on \(hosts) , port \(port)")
       let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
       defer {
         try! group.syncShutdownGracefully()
@@ -728,13 +728,24 @@ public class ProxyCPUServer {
       let controlPanelService = ControlPanelService(
         taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger)
 
-      let controlPanelServer = try Server.insecure(group: group)
-        .withServiceProviders([controlPanelService])
-        .bind(host: host, port: port)
-        .wait()
-      logger.info("Control Panel Service started on \(host):\(port)")
+      var serverBindings: [EventLoopFuture<Server>] = []
 
-      try controlPanelServer.onClose.wait()
+      // Start all servers
+      for host in hosts {
+        let binding = try Server.insecure(group: group)
+          .withServiceProviders([controlPanelService])
+          .bind(host: host, port: port)
+        serverBindings.append(binding)
+        logger.info("Control Panel Service started on \(host):\(port)")
+      }
+
+      // Wait for all servers to bind
+      let servers = try EventLoopFuture.whenAllSucceed(serverBindings, on: group.next()).wait()
+
+      // Wait for any server to close (first one that closes)
+      let onCloseFutures = servers.map { $0.onClose }
+      try EventLoopFuture.whenAllComplete(onCloseFutures, on: group.next()).wait()
+
       logger.info("Leave Control Panel Service, something may be wrong")
     }
   }
