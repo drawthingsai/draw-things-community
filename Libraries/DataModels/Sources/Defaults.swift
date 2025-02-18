@@ -7,7 +7,7 @@ extension GenerationConfiguration {
     return GenerationConfiguration(
       id: 0, startWidth: defaultScale.widthScale, startHeight: defaultScale.heightScale,
       seed: UInt32.random(in: UInt32.min...UInt32.max),
-      steps: 20, guidanceScale: 4.5, strength: 1.0, model: "sd_v1.5_f16.ckpt",
+      steps: 20, guidanceScale: 4.5, strength: 1.0, model: nil,
       sampler: .DPMPP2MAYS, hiresFixStartWidth: 7, hiresFixStartHeight: 7, hiresFixStrength: 0.7,
       imageGuidanceScale: 1.5,
       seedMode: .scaleAlike, clipSkip: 1, maskBlur: 1.5, clipWeight: 1, aestheticScore: 6,
