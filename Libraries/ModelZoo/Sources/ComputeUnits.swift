@@ -39,7 +39,8 @@ public enum ComputeUnits {
   }
 
   public static func from(
-    _ configuration: GenerationConfiguration, overrideMapping: [String: ModelZoo.Specification]
+    _ configuration: GenerationConfiguration,
+    overrideMapping: [String: ModelZoo.Specification]? = nil
   ) -> Int? {
     guard let model = configuration.model else {
       return nil
@@ -48,7 +49,7 @@ public enum ComputeUnits {
     let isGuidanceEmbedEnabled: Bool
     let isConsistencyModel: Bool
 
-    if let specification = overrideMapping[model] {
+    if let overrideMapping = overrideMapping, let specification = overrideMapping[model] {
       modelVersion = specification.version
       isGuidanceEmbedEnabled =
         (specification.guidanceEmbed ?? false)
