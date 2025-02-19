@@ -280,12 +280,33 @@ struct gRPCServerCLI: ParsableCommand {
       let gpu = gpu
       let datadogAPIKey = datadogAPIKey
       let name = name
-      LoggingSystem.bootstrap {
-        var handler = DataDogLogHandler(
-          label: $0, key: datadogAPIKey, hostname: "\(name) GPU \(gpu)", region: .US5)
-        handler.metadata = ["gpu": "\(gpu)"]
-        return handler
+
+      LoggingSystem.bootstrap { label in
+        // Create a multiplexing log handler that will send logs to multiple destinations
+        var handlers: [LogHandler] = []
+
+        // Always add the console log handler for local visibility
+        handlers.append(StreamLogHandler.standardOutput(label: label))
+
+        // If Datadog API key is provided, add the Datadog handler
+        var datadogHandler = DataDogLogHandler(
+          label: label,
+          key: datadogAPIKey,
+          hostname: "\(name) GPU \(gpu)",
+          region: .US5
+        )
+        datadogHandler.metadata = ["gpu": "\(gpu)"]
+        handlers.append(datadogHandler)
+
+        // Return a multiplexing handler that writes to all configured handlers
+        return MultiplexLogHandler(handlers)
       }
+      // LoggingSystem.bootstrap {
+      //   var handler = DataDogLogHandler(
+      //     label: $0, key: datadogAPIKey, hostname: "\(name) GPU \(gpu)", region: .US5)
+      //   handler.metadata = ["gpu": "\(gpu)"]
+      //   return handler
+      // }
     }
 
     ModelZoo.externalUrl = URL(fileURLWithPath: modelsDirectory)
