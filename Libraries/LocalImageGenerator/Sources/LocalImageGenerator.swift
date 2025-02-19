@@ -2506,8 +2506,7 @@ extension LocalImageGenerator {
       } ?? ImageGeneratorUtils.defaultAutoencoder
     // Always enable for Hunyuan.
     let isGuidanceEmbedEnabled =
-      ModelZoo.guidanceEmbedForModel(file)
-      && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
+      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
@@ -3406,8 +3405,7 @@ extension LocalImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? ImageGeneratorUtils.defaultAutoencoder
     let isGuidanceEmbedEnabled =
-      ModelZoo.guidanceEmbedForModel(file)
-      && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
+      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
@@ -4615,8 +4613,7 @@ extension LocalImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? ImageGeneratorUtils.defaultAutoencoder
     let isGuidanceEmbedEnabled =
-      ModelZoo.guidanceEmbedForModel(file)
-      && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
+      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
@@ -5314,8 +5311,7 @@ extension LocalImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       } ?? ImageGeneratorUtils.defaultAutoencoder
     let isGuidanceEmbedEnabled =
-      ModelZoo.guidanceEmbedForModel(file)
-      && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
+      ModelZoo.guidanceEmbedForModel(file) && configuration.speedUpWithGuidanceEmbed
     var isCfgEnabled = !ModelZoo.isConsistencyModelForModel(file) && !isGuidanceEmbedEnabled
     let latentsScaling = ModelZoo.latentsScalingForModel(file)
     let paddedTextEncodingLength = ModelZoo.paddedTextEncodingLengthForModel(file)
