@@ -1125,6 +1125,7 @@ extension UNetFromNNC {
       let etUncond: DynamicGraph.Tensor<FloatType>
       let etCond: DynamicGraph.Tensor<FloatType>
       if tokenLengthCond > tokenLengthUncond {
+        // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
         let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
         etCond = unet!(
@@ -1147,6 +1148,9 @@ extension UNetFromNNC {
               return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
             }
           })[0].as(of: FloatType.self)
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etCond, etCond)
+        }
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
         etUncond = unet!(
@@ -1186,6 +1190,9 @@ extension UNetFromNNC {
               return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
             }
           })[0].as(of: FloatType.self)
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etUncond, etUncond)
+        }
         let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
         etCond = unet!(
