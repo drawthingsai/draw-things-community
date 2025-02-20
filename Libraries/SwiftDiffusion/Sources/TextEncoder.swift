@@ -1528,7 +1528,7 @@ extension TextEncoder {
       tokens2TensorGPU = tokens[0][tokenLength..<(tokenLength * 2)].toGPU(0)
     }
     var causalAttentionMaskLlama3 = Tensor<FloatType>(
-      Array(repeating: 0, count: 2 * tokenLength * tokenLength), .CPU,
+      Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
       .NHWC(1, 1, tokenLength, tokenLength)
     )
     for i in 0..<(tokenLength - 1) {
@@ -1550,7 +1550,8 @@ extension TextEncoder {
     }
     let c2 = llama3(inputs: tokens2TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU)[0].as(
       of: FloatType.self
-    )[95..<tokenLength, 0..<4096].reshaped(.HWC(batchSize, tokenLength - 95, 4096))
+    ).reshaped(.HWC(batchSize, tokenLength, 4096))[0..<batchSize, 95..<tokenLength, 0..<4096]
+    .copied()
     return ([c2, pooled], [textModel])
   }
 

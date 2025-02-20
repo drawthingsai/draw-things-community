@@ -957,7 +957,7 @@ extension LocalImageGenerator {
       maxPosition = max(length, maxPosition)
       prefixLength += length
     }
-    var tokenLengthUncond = tokenLength
+    var tokenLengthUncond = unconditionalTokensCount
     // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than paddingLength.
     if prefixLength < tokenLength - 1 {
       if maxPosition + endLength + startLength > paddingLength {  // If it is paddingLength, we can go to later to find i
@@ -986,7 +986,7 @@ extension LocalImageGenerator {
       maxPosition = max(length, maxPosition)
       prefixLength += length
     }
-    var tokenLengthCond = tokenLength
+    var tokenLengthCond = tokensCount
     // We shouldn't have anything to fill between maxPosition and tokenLength - 1 if we are longer than paddingLength.
     if prefixLength < tokenLength - 1 {
       if maxPosition + endLength + startLength > paddingLength {  // If it is paddingLength, we can go to later to find i
@@ -1079,17 +1079,20 @@ extension LocalImageGenerator {
       assert(result.7 >= 77 && result.8 >= 77)
       let promptWithTemplate =
         "<|start_header_id|>system<|end_header_id|>\n\nDescribe the video by detailing the following aspects: 1. The main content and theme of the video.2. The color, shape, size, texture, quantity, text, and spatial relationships of the objects.3. Actions, events, behaviors temporal relationships, physical movement changes of the objects.4. background environment, light, style and atmosphere.5. camera angles, movements, and transitions used in the video:<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n\(text)<|eot_id|>"
+      let negativePromptWithTemplate =
+        "<|start_header_id|>system<|end_header_id|>\n\nDescribe the video by detailing the following aspects: 1. The main content and theme of the video.2. The color, shape, size, texture, quantity, text, and spatial relationships of the objects.3. Actions, events, behaviors temporal relationships, physical movement changes of the objects.4. background environment, light, style and atmosphere.5. camera angles, movements, and transitions used in the video:<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n\(negativeText)<|eot_id|>"
       let (
-        llama3Tokens, _, _, _, _, _, _, tokenLengthUncond, tokenLengthCond,
-        _, _
+        llama3Tokens, _, _, _, _, _, _, tokenLengthsUncond, tokenLengthsCond, _, _
       ) = tokenize(
         graph: graph, tokenizer: tokenizerLlama3, text: promptWithTemplate,
-        negativeText: negativeText,
+        negativeText: negativePromptWithTemplate,
         paddingToken: nil, conditionalLength: 4096, modifier: .llama3, potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
       result.0 = llama3Tokens + result.0
       result.2 = result.2
       result.3 = result.3
+      result.7 = tokenLengthsUncond - 95  // Remove the leading template.
+      result.8 = tokenLengthsCond - 95
       return result
     case .wurstchenStageC, .wurstchenStageB:
       // The difference between this and SDXL: paddingToken is no long '!' (indexed by 0) but unknown.
@@ -2630,7 +2633,8 @@ extension LocalImageGenerator {
       scale: DeviceCapability.Scale(
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
-    let batchSize = Int(configuration.batchSize)
+    let batchSize =
+      modelVersion == .hunyuanVideo || modelVersion == .svdI2v ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
@@ -3590,7 +3594,8 @@ extension LocalImageGenerator {
         denoiserParameterization: denoiserParameterization, sampling: sampling,
         cancellation: cancellation, feedback: feedback)
     }
-    let batchSize = Int(configuration.batchSize)
+    let batchSize =
+      modelVersion == .hunyuanVideo || modelVersion == .svdI2v ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     precondition(strength >= 0 && strength <= 1)
     let highPrecisionForAutoencoder = ModelZoo.isHighPrecisionAutoencoderForModel(file)
@@ -5402,7 +5407,8 @@ extension LocalImageGenerator {
         DynamicGraph.queueWatermark = queueWatermark
       }
     }
-    let batchSize = Int(configuration.batchSize)
+    let batchSize =
+      modelVersion == .hunyuanVideo || modelVersion == .svdI2v ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale

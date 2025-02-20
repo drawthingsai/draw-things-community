@@ -112,7 +112,7 @@ extension ControlModel {
     inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [[DynamicGraph.Tensor<FloatType>]],
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool, index: Int,
-    mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
+    mainUNetAndWeightMapper: (AnyModel, ModelWeightMapper)?,
     controlNets existingControlNets: inout [Model?]
   ) -> (
     [DynamicGraph.Tensor<FloatType>]
@@ -160,7 +160,7 @@ extension ControlModel {
     inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [[DynamicGraph.Tensor<FloatType>]],
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool, index: Int,
-    mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
+    mainUNetAndWeightMapper: (AnyModel, ModelWeightMapper)?,
     controlNets existingControlNets: inout [Model?]
   ) -> (
     (
@@ -2061,7 +2061,7 @@ extension ControlModel {
     step: Int, inputs xT: DynamicGraph.Tensor<FloatType>, _ hint: [DynamicGraph.Tensor<FloatType>],
     strength: Float, _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
-    isCfgEnabled: Bool, index: Int, mainUNetAndWeightMapper: (Model, ModelWeightMapper)?,
+    isCfgEnabled: Bool, index: Int, mainUNetAndWeightMapper: (AnyModel, ModelWeightMapper)?,
     controlNet existingControlNet: inout Model?
   ) -> [DynamicGraph.Tensor<FloatType>] {
     let graph = xT.graph
@@ -2282,7 +2282,8 @@ extension ControlModel {
     let tiledDiffusionIsEnabled = inputEndYPad > 0 && inputEndXPad > 0
     var c = UNetExtractConditions(
       of: FloatType.self,
-      graph: graph, index: index, batchSize: batchSize, conditions: c, version: version)
+      graph: graph, index: index, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
+      tokenLengthCond: tokenLengthCond, conditions: c, version: version, isCfgEnabled: isCfgEnabled)
     if tiledDiffusionIsEnabled {
       let shape = hint[0].shape
       c = sliceInputs(

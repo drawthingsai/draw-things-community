@@ -44,7 +44,7 @@ public protocol UNetProtocol {
   var isLoaded: Bool { get }
   func unloadResources()
   var version: ModelVersion { get }
-  var modelAndWeightMapper: (Model, ModelWeightMapper)? { get }
+  var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { get }
   mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, qkNorm: Bool,
     dualAttentionLayers: [Int], upcastAttention: Bool,
@@ -53,7 +53,7 @@ public protocol UNetProtocol {
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
-    extraProjection: DynamicGraph.Tensor<FloatType>?,
+    isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration
   ) -> Bool
@@ -71,8 +71,8 @@ public protocol UNetProtocol {
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration,
-    controlNets: inout [Model?]
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType>
 
   func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType>
@@ -122,7 +122,8 @@ extension UNetProtocol {
 
 public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint>(
   of: FloatType.Type = FloatType.self, graph: DynamicGraph, index: Int, batchSize: Int,
-  conditions: [DynamicGraph.Tensor<FloatType>], version: ModelVersion
+  tokenLengthUncond: Int, tokenLengthCond: Int, conditions: [DynamicGraph.Tensor<FloatType>],
+  version: ModelVersion, isCfgEnabled: Bool
 )
   -> [DynamicGraph.Tensor<FloatType>]
 {
@@ -146,11 +147,36 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
       }
   case .hunyuanVideo:
     return conditions[0..<2]
-      + conditions[2..<conditions.count].map {
-        let shape = $0.shape
-        return $0[index..<(index + 1), 0..<shape[1], 0..<shape[2]]
-          .copied()
+      + conditions[2..<conditions.count].enumerated().map {
+        let shape = $0.1.shape
+        if !isCfgEnabled {
+          if $0.0 == 0 {
+            return $0.1[(index * tokenLengthCond)..<((index + 1) * tokenLengthCond), 0..<shape[1]]
+              .reshaped(.HWC(1, tokenLengthCond, shape[1])).copied()
+          }
+          return $0.1[index..<(index + 1), 0..<shape[1], 0..<shape[2]]
+            .copied()
+        } else {
+          // Note that for Hunyuan, batchSize is num of frames.
+          precondition(batchSize % 2 == 0)
+          if $0.0 == 0 {
+            let timesteps = shape[0] / (tokenLengthUncond + tokenLengthCond)
+            return Functional.concat(
+              axis: 1,
+              $0.1[(index * tokenLengthUncond)..<((index + 1) * tokenLengthUncond), 0..<shape[1]]
+                .reshaped(.HWC(1, tokenLengthUncond, shape[1])),
+              $0.1[
+                (index * tokenLengthCond + tokenLengthUncond * timesteps)..<((index + 1)
+                  * tokenLengthCond + tokenLengthUncond * timesteps), 0..<shape[1]
+              ].reshaped(.HWC(1, tokenLengthCond, shape[1])))
+          }
+          let timesteps = shape[0] / 2
+          return Functional.concat(
+            axis: 0, $0.1[index..<(index + 1), 0..<shape[1], 0..<shape[2]],
+            $0.1[(index + timesteps)..<(index + timesteps + 1), 0..<shape[1], 0..<shape[2]])
+        }
       }
+
   case .pixart:
     var extractedConditions = [conditions[0]]
     let layers = (conditions.count - 3) / 8
@@ -177,7 +203,71 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
 }
 
 public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetProtocol {
-  var unet: Model? = nil
+  enum ModelBuilderOrModel {
+    case modelBuilder(ModelBuilder<Void>)
+    case model(Model)
+    public var unwrapped: AnyModel {
+      switch self {
+      case .model(let model):
+        return model
+      case .modelBuilder(let modelBuilder):
+        return modelBuilder
+      }
+    }
+    public var maxConcurrency: StreamContext.Concurrency {
+      get {
+        switch self {
+        case .model(let model):
+          return model.maxConcurrency
+        case .modelBuilder(let modelBuilder):
+          return modelBuilder.maxConcurrency
+        }
+      }
+      set {
+        switch self {
+        case .model(let model):
+          model.maxConcurrency = newValue
+        case .modelBuilder(let modelBuilder):
+          modelBuilder.maxConcurrency = newValue
+        }
+      }
+    }
+    public func cancel() {
+      switch self {
+      case .model(let model):
+        model.cancel()
+      case .modelBuilder(let modelBuilder):
+        modelBuilder.cancel()
+      }
+    }
+    public func compile(inputs: [DynamicGraph_Any], isEager: Bool = false) {
+      switch self {
+      case .model(let model):
+        model.compile(inputs: inputs, isEager: isEager)
+      case .modelBuilder(let modelBuilder):
+        modelBuilder.compile(inputs: inputs, isEager: isEager)
+      }
+    }
+    public func compile(inputs: DynamicGraph_Any..., isEager: Bool = false) {
+      compile(inputs: inputs, isEager: isEager)
+    }
+    public func callAsFunction<T: DynamicGraph.AnyTensorGroup>(
+      inputs firstInput: T, _ restInputs: [DynamicGraph_Any], streamContext: StreamContext? = nil
+    ) -> [T.AnyTensor] {
+      switch self {
+      case .model(let model):
+        return model(inputs: firstInput, restInputs, streamContext: streamContext)
+      case .modelBuilder(let modelBuilder):
+        return modelBuilder(inputs: firstInput, restInputs, streamContext: streamContext)
+      }
+    }
+    public func callAsFunction<T: DynamicGraph.AnyTensorGroup>(
+      inputs firstInput: T, _ restInputs: DynamicGraph_Any..., streamContext: StreamContext? = nil
+    ) -> [T.AnyTensor] {
+      return self(inputs: firstInput, restInputs, streamContext: streamContext)
+    }
+  }
+  var unet: ModelBuilderOrModel? = nil
   var previewer: Model? = nil
   var unetWeightMapper: ModelWeightMapper? = nil
   var timeEmbed: Model? = nil
@@ -191,9 +281,9 @@ public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
 }
 
 extension UNetFromNNC {
-  public var modelAndWeightMapper: (Model, ModelWeightMapper)? {
+  public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? {
     guard let unet = unet, let unetWeightMapper = unetWeightMapper else { return nil }
-    return (unet, unetWeightMapper)
+    return (unet.unwrapped, unetWeightMapper)
   }
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, qkNorm: Bool,
@@ -203,6 +293,7 @@ extension UNetFromNNC {
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
+    isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration
@@ -221,7 +312,7 @@ extension UNetFromNNC {
     let tiledHeight: Int
     let tileScaleFactor: Int
     let graph = xT.graph
-    let unet: Model
+    var unet: ModelBuilderOrModel
     let lora = Array(
       (OrderedDictionary<String, LoRAConfiguration>(
         lora.filter({ $0.version == version }).map {
@@ -251,26 +342,28 @@ extension UNetFromNNC {
         && canRunLoRASeparately
       {
         unet =
-          LoRAUNet(
-            batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            startWidth: tiledWidth, startHeight: tiledHeight,
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            injectControls: injectControlsAndAdapters.injectControls,
-            injectT2IAdapters: injectControlsAndAdapters.injectT2IAdapters,
-            injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
-            LoRAConfiguration: configuration
-          )
+          ModelBuilderOrModel.model(
+            LoRAUNet(
+              batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
+              startWidth: tiledWidth, startHeight: tiledHeight,
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              injectControls: injectControlsAndAdapters.injectControls,
+              injectT2IAdapters: injectControlsAndAdapters.injectT2IAdapters,
+              injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
+              LoRAConfiguration: configuration
+            ))
       } else {
         unet =
-          UNet(
-            batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            startWidth: tiledWidth, startHeight: tiledHeight,
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            injectControls: injectControlsAndAdapters.injectControls,
-            injectT2IAdapters: injectControlsAndAdapters.injectT2IAdapters,
-            injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
-            injectAttentionKV: injectControlsAndAdapters.injectAttentionKV
-          ).0
+          ModelBuilderOrModel.model(
+            UNet(
+              batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
+              startWidth: tiledWidth, startHeight: tiledHeight,
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              injectControls: injectControlsAndAdapters.injectControls,
+              injectT2IAdapters: injectControlsAndAdapters.injectT2IAdapters,
+              injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
+              injectAttentionKV: injectControlsAndAdapters.injectAttentionKV
+            ).0)
       }
     case .v2:
       tiledWidth =
@@ -283,21 +376,23 @@ extension UNetFromNNC {
         && canRunLoRASeparately
       {
         unet =
-          LoRAUNetv2(
-            batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            startWidth: tiledWidth, startHeight: tiledHeight, upcastAttention: upcastAttention,
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            injectControls: injectControlsAndAdapters.injectControls,
-            LoRAConfiguration: configuration
-          )
+          ModelBuilderOrModel.model(
+            LoRAUNetv2(
+              batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
+              startWidth: tiledWidth, startHeight: tiledHeight, upcastAttention: upcastAttention,
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              injectControls: injectControlsAndAdapters.injectControls,
+              LoRAConfiguration: configuration
+            ))
       } else {
         unet =
-          UNetv2(
-            batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
-            startWidth: tiledWidth, startHeight: tiledHeight, upcastAttention: upcastAttention,
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            injectControls: injectControlsAndAdapters.injectControls
-          ).0
+          ModelBuilderOrModel.model(
+            UNetv2(
+              batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
+              startWidth: tiledWidth, startHeight: tiledHeight, upcastAttention: upcastAttention,
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              injectControls: injectControlsAndAdapters.injectControls
+            ).0)
       }
     case .svdI2v:
       tiledWidth =
@@ -306,7 +401,8 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      (unet, _, unetWeightMapper) =
+      let model: Model
+      (model, _, unetWeightMapper) =
         UNetXL(
           batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
           channels: [320, 640, 1280, 1280],
@@ -316,6 +412,7 @@ extension UNetFromNNC {
           usesFlashAttention: usesFlashAttention ? .scale1 : .none, injectControls: false,
           isTemporalMixEnabled: true, of: FloatType.self
         )
+      unet = ModelBuilderOrModel.model(model)
     case .kandinsky21:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -323,11 +420,12 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      unet = UNetKandinsky(
-        batchSize: batchSize, channels: 384, outChannels: 8, channelMult: [1, 2, 3, 4],
-        numResBlocks: 3, numHeadChannels: 64, t: 87, startHeight: tiledHeight,
-        startWidth: tiledWidth, attentionResolutions: Set([2, 4, 8]),
-        usesFlashAttention: usesFlashAttention)
+      unet = ModelBuilderOrModel.model(
+        UNetKandinsky(
+          batchSize: batchSize, channels: 384, outChannels: 8, channelMult: [1, 2, 3, 4],
+          numResBlocks: 3, numHeadChannels: 64, t: 87, startHeight: tiledHeight,
+          startWidth: tiledWidth, attentionResolutions: Set([2, 4, 8]),
+          usesFlashAttention: usesFlashAttention))
       timeEmbed = timestepEmbedding(prefix: "time_embed", channels: 384 * 4)
     case .sdxlBase:
       tiledWidth =
@@ -336,10 +434,11 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
+      let model: Model
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
-        (unet, unetWeightMapper) =
+        (model, unetWeightMapper) =
           LoRAUNetXL(
             batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
@@ -352,7 +451,7 @@ extension UNetFromNNC {
             LoRAConfiguration: configuration
           )
       } else {
-        (unet, _, unetWeightMapper) =
+        (model, _, unetWeightMapper) =
           UNetXL(
             batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
@@ -365,6 +464,7 @@ extension UNetFromNNC {
             of: FloatType.self
           )
       }
+      unet = ModelBuilderOrModel.model(model)
     case .sdxlRefiner:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -372,10 +472,11 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
+      let model: Model
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
-        (unet, unetWeightMapper) =
+        (model, unetWeightMapper) =
           LoRAUNetXL(
             batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
             channels: [384, 768, 1536, 1536], inputAttentionRes: [2: [4, 4], 4: [4, 4]],
@@ -386,7 +487,7 @@ extension UNetFromNNC {
             injectControls: false, LoRAConfiguration: configuration
           )
       } else {
-        (unet, _, unetWeightMapper) =
+        (model, _, unetWeightMapper) =
           UNetXL(
             batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
             channels: [384, 768, 1536, 1536], inputAttentionRes: [2: [4, 4], 4: [4, 4]],
@@ -397,6 +498,7 @@ extension UNetFromNNC {
             isTemporalMixEnabled: false, of: FloatType.self
           )
       }
+      unet = ModelBuilderOrModel.model(model)
     case .ssd1b:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -404,10 +506,11 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
+      let model: Model
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
-        (unet, unetWeightMapper) =
+        (model, unetWeightMapper) =
           LoRAUNetXL(
             batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [4, 4]],
@@ -419,7 +522,7 @@ extension UNetFromNNC {
             injectControls: false, LoRAConfiguration: configuration
           )
       } else {
-        (unet, _, unetWeightMapper) =
+        (model, _, unetWeightMapper) =
           UNetXL(
             batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
             channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [4, 4]],
@@ -431,14 +534,17 @@ extension UNetFromNNC {
             isTemporalMixEnabled: false, of: FloatType.self
           )
       }
+      unet = ModelBuilderOrModel.model(model)
     case .wurstchenStageC:
       tiledWidth = startWidth
       tiledHeight = startHeight
       tileScaleFactor = 1
-      (unet, _) = WurstchenStageC(
-        batchSize: batchSize, height: startHeight, width: startWidth,
-        t: (tokenLengthUncond + 8, tokenLengthCond + 8),
-        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+      unet = ModelBuilderOrModel.model(
+        WurstchenStageC(
+          batchSize: batchSize, height: startHeight, width: startWidth,
+          t: (tokenLengthUncond + 8, tokenLengthCond + 8),
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
+        ).0)
       previewer = WurstchenStageCPreviewer()
     case .wurstchenStageB:
       tiledWidth =
@@ -447,9 +553,11 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 16, startHeight) : startHeight
       tileScaleFactor = 16
-      (unet, _) = WurstchenStageB(
-        batchSize: batchSize, cIn: 4, height: tiledHeight, width: tiledWidth,
-        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+      unet = ModelBuilderOrModel.model(
+        WurstchenStageB(
+          batchSize: batchSize, cIn: 4, height: tiledHeight, width: tiledWidth,
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
+        ).0)
     case .sd3:
       var posEmbedMaxSize = 192
       graph.openStore(
@@ -467,20 +575,24 @@ extension UNetFromNNC {
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
-        (_, unet) =
-          LoRAMMDiT(
-            batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: qkNorm,
-            dualAttentionLayers: dualAttentionLayers, posEmbedMaxSize: posEmbedMaxSize,
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            LoRAConfiguration: configuration, of: FloatType.self)
+        unet =
+          ModelBuilderOrModel.model(
+            LoRAMMDiT(
+              batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
+              width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: qkNorm,
+              dualAttentionLayers: dualAttentionLayers, posEmbedMaxSize: posEmbedMaxSize,
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              LoRAConfiguration: configuration, of: FloatType.self
+            ).1)
       } else {
-        (_, unet) =
-          MMDiT(
-            batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: qkNorm,
-            dualAttentionLayers: dualAttentionLayers, posEmbedMaxSize: posEmbedMaxSize,
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
+        unet =
+          ModelBuilderOrModel.model(
+            MMDiT(
+              batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
+              width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: qkNorm,
+              dualAttentionLayers: dualAttentionLayers, posEmbedMaxSize: posEmbedMaxSize,
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self
+            ).1)
       }
     case .sd3Large:
       tiledWidth =
@@ -494,20 +606,24 @@ extension UNetFromNNC {
       {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
-        (_, unet) =
-          LoRAMMDiT(
-            batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
-            dualAttentionLayers: [], posEmbedMaxSize: 192,
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-            LoRAConfiguration: configuration, of: FloatType.self)
+        unet =
+          ModelBuilderOrModel.model(
+            LoRAMMDiT(
+              batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
+              width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
+              dualAttentionLayers: [], posEmbedMaxSize: 192,
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              LoRAConfiguration: configuration, of: FloatType.self
+            ).1)
       } else {
-        (_, unet) =
-          MMDiT(
-            batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
-            width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
-            dualAttentionLayers: [], posEmbedMaxSize: 192,
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
+        unet =
+          ModelBuilderOrModel.model(
+            MMDiT(
+              batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
+              width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
+              dualAttentionLayers: [], posEmbedMaxSize: 192,
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self
+            ).1)
       }
     case .pixart:
       tiledWidth =
@@ -519,15 +635,23 @@ extension UNetFromNNC {
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
-        (_, unet) = LoRAPixArt(
-          batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152, layers: 28,
-          tokenLength: (tokenLengthUncond, tokenLengthCond), usesFlashAttention: usesFlashAttention,
-          LoRAConfiguration: configuration, of: FloatType.self)
+        unet = ModelBuilderOrModel.model(
+          LoRAPixArt(
+            batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152,
+            layers: 28,
+            tokenLength: (tokenLengthUncond, tokenLengthCond),
+            usesFlashAttention: usesFlashAttention,
+            LoRAConfiguration: configuration, of: FloatType.self
+          ).1)
       } else {
-        (_, unet) = PixArt(
-          batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152, layers: 28,
-          tokenLength: (tokenLengthUncond, tokenLengthCond), usesFlashAttention: usesFlashAttention,
-          of: FloatType.self)
+        unet = ModelBuilderOrModel.model(
+          PixArt(
+            batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152,
+            layers: 28,
+            tokenLength: (tokenLengthUncond, tokenLengthCond),
+            usesFlashAttention: usesFlashAttention,
+            of: FloatType.self
+          ).1)
       }
     case .auraflow:
       tiledWidth =
@@ -536,10 +660,12 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      (_, unet) = AuraFlow(
-        batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
-        height: tiledHeight, width: tiledWidth, channels: 3072, layers: (4, 32),
-        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self)
+      unet = ModelBuilderOrModel.model(
+        AuraFlow(
+          batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
+          height: tiledHeight, width: tiledWidth, channels: 3072, layers: (4, 32),
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self
+        ).1)
     case .flux1:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -560,22 +686,26 @@ extension UNetFromNNC {
       {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
-        (_, unet) = LoRAFlux1(
-          batchSize: batchSize, tokenLength: tokenLength,
-          height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
-          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-          contextPreloaded: true,
-          injectControls: injectControlsAndAdapters.injectControls,
-          injectIPAdapterLengths: injectIPAdapterLengths,
-          LoRAConfiguration: configuration)
+        unet = ModelBuilderOrModel.model(
+          LoRAFlux1(
+            batchSize: batchSize, tokenLength: tokenLength,
+            height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
+            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+            contextPreloaded: true,
+            injectControls: injectControlsAndAdapters.injectControls,
+            injectIPAdapterLengths: injectIPAdapterLengths,
+            LoRAConfiguration: configuration
+          ).1)
       } else {
-        (_, unet) = Flux1(
-          batchSize: batchSize, tokenLength: tokenLength,
-          height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
-          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-          contextPreloaded: true,
-          injectControls: injectControlsAndAdapters.injectControls,
-          injectIPAdapterLengths: injectIPAdapterLengths)
+        unet = ModelBuilderOrModel.model(
+          Flux1(
+            batchSize: batchSize, tokenLength: tokenLength,
+            height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
+            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+            contextPreloaded: true,
+            injectControls: injectControlsAndAdapters.injectControls,
+            injectIPAdapterLengths: injectIPAdapterLengths
+          ).1)
       }
     case .hunyuanVideo:
       tiledWidth =
@@ -584,22 +714,31 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      let tokenLength = c[2].shape[1]
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
-        (_, unet) = LoRAHunyuan(
-          time: batchSize, height: tiledHeight, width: tiledWidth, textLength: tokenLength,
-          channels: 3072, layers: (20, 40),
-          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
-          LoRAConfiguration: configuration)
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            return LoRAHunyuan(
+              time: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: $0[3].shape[1],
+              channels: 3072, layers: (20, 40),
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              LoRAConfiguration: configuration
+            ).1
+          })
       } else {
-        (_, unet) = Hunyuan(
-          time: batchSize, height: tiledHeight, width: tiledWidth, textLength: tokenLength,
-          channels: 3072, layers: (20, 40),
-          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            return Hunyuan(
+              time: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: $0[3].shape[1],
+              channels: 3072, layers: (20, 40),
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
+            ).1
+          })
       }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
@@ -672,10 +811,14 @@ extension UNetFromNNC {
       let inputs = sliceInputs(
         inputs, originalShape: shape, xyTiles: xTiles * yTiles, index: 0, inputStartYPad: 0,
         inputEndYPad: tiledHeight, inputStartXPad: 0, inputEndXPad: tiledWidth)
-      unet.compile(
+      compile(
+        unet, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        isCfgEnabled: isCfgEnabled,
         inputs: [xT[0..<shape[0], 0..<tiledHeight, 0..<tiledWidth, 0..<shape[3]]] + inputs)
     } else {
-      unet.compile(inputs: [xT] + inputs)
+      compile(
+        unet, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        isCfgEnabled: isCfgEnabled, inputs: [xT] + inputs)
     }
     if let timeEmbed = timeEmbed, let timestep = timestep {
       timeEmbed.compile(inputs: timestep)
@@ -744,7 +887,9 @@ extension UNetFromNNC {
             version: version
           ) { controlModelLoader in
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
-              store.read(modelKey, model: unet, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read(
+                modelKey, model: unet.unwrapped, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+              ) {
                 name, dataType, format, shape in
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
                   return result
@@ -774,7 +919,9 @@ extension UNetFromNNC {
             version: version
           ) { controlModelLoader in
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
-              store.read(modelKey, model: unet, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read(
+                modelKey, model: unet.unwrapped, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+              ) {
                 name, _, _, shape in
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
                   return result
@@ -802,7 +949,9 @@ extension UNetFromNNC {
           graph, injectControlModels: injectControlsAndAdapters.injectControlModels,
           version: version
         ) { controlModelLoader in
-          store.read(modelKey, model: unet, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+          store.read(
+            modelKey, model: unet.unwrapped, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+          ) {
             name, _, _, _ in
             if let result = controlModelLoader.loadMergedWeight(name: name) {
               return result
@@ -941,6 +1090,130 @@ extension UNetFromNNC {
     }
   }
 
+  private func compile(
+    _ unet: ModelBuilderOrModel, tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    inputs: [DynamicGraph.Tensor<FloatType>]
+  ) {
+    if version == .hunyuanVideo && isCfgEnabled {
+      unet.compile(
+        inputs: inputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 0:
+            return $0.1[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          case 1...2:
+            return $0.1
+          case 3:
+            return $0.1[0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]]
+              .copied()
+          default:
+            return $0.1[0..<1, 0..<shape[1], 0..<shape[2]]
+          }
+        })
+    }
+    unet.compile(inputs: inputs)
+  }
+
+  private func callAsFunction(
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    inputs firstInput: DynamicGraph.Tensor<FloatType>,
+    _ restInputs: [DynamicGraph.Tensor<FloatType>]
+  ) -> DynamicGraph.Tensor<FloatType> {
+    if version == .hunyuanVideo && isCfgEnabled {
+      let shape = firstInput.shape
+      let tokenLength = max(tokenLengthUncond, tokenLengthCond)
+      let etUncond: DynamicGraph.Tensor<FloatType>
+      let etCond: DynamicGraph.Tensor<FloatType>
+      if tokenLengthCond > tokenLengthUncond {
+        let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        etCond = unet!(
+          inputs: xCond,
+          restInputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0:
+              return $0.1
+            case 1:
+              return Functional.concat(
+                axis: 1, $0.1[0..<shape[0], 0..<tokenLengthCond, 0..<shape[2], 0..<shape[3]],
+                $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]])
+            case 2:
+              return $0.1[
+                0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+                0..<shape[2]
+              ].copied()
+            default:
+              return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+            }
+          })[0].as(of: FloatType.self)
+        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        etUncond = unet!(
+          inputs: xUncond,
+          restInputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0:
+              return $0.1
+            case 1:
+              return Functional.concat(
+                axis: 1, $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2], 0..<shape[3]],
+                $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]])
+            case 2:
+              return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
+            default:
+              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
+            }
+          })[0].as(of: FloatType.self)
+      } else {
+        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        etUncond = unet!(
+          inputs: xUncond,
+          restInputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0:
+              return $0.1
+            case 1:
+              return Functional.concat(
+                axis: 1, $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2], 0..<shape[3]],
+                $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]])
+            case 2:
+              return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
+            default:
+              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
+            }
+          })[0].as(of: FloatType.self)
+        let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        etCond = unet!(
+          inputs: xCond,
+          restInputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0:
+              return $0.1
+            case 1:
+              return Functional.concat(
+                axis: 1, $0.1[0..<shape[0], 0..<tokenLengthCond, 0..<shape[2], 0..<shape[3]],
+                $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]])
+            case 2:
+              return $0.1[
+                0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+                0..<shape[2]
+              ].copied()
+            default:
+              return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+            }
+          })[0].as(of: FloatType.self)
+      }
+      return Functional.concat(axis: 0, etUncond, etCond)
+    }
+    return unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+  }
+
   private func internalDiffuse(
     xyTiles: Int, index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int,
     inputEndXPad: Int, xT: DynamicGraph.Tensor<FloatType>, inputs: [DynamicGraph.Tensor<FloatType>],
@@ -951,7 +1224,7 @@ extension UNetFromNNC {
       injectedControls: [DynamicGraph.Tensor<FloatType>],
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
-    ), controlNets: inout [Model?]
+    ), tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     let shape = xT.shape
     let xT = xT[
@@ -965,7 +1238,9 @@ extension UNetFromNNC {
       inputs + injectedControls + injectedT2IAdapters, originalShape: shape, xyTiles: xyTiles,
       index: index, inputStartYPad: inputStartYPad,
       inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad)
-    return unet!(inputs: xT, inputs + injectedAttentionKVs)[0].as(of: FloatType.self)
+    return self(
+      tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+      isCfgEnabled: isCfgEnabled, inputs: xT, inputs + injectedAttentionKVs)
   }
 
   private func tiledDiffuse(
@@ -978,7 +1253,7 @@ extension UNetFromNNC {
       injectedControls: [DynamicGraph.Tensor<FloatType>],
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
-    ), controlNets: inout [Model?]
+    ), tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     guard let xTileWeightsAndIndexes = xTileWeightsAndIndexes,
       let yTileWeightsAndIndexes = yTileWeightsAndIndexes
@@ -986,9 +1261,10 @@ extension UNetFromNNC {
       let (injectedControls, injectedT2IAdapters, injectedAttentionKVs) =
         injectedControlsAndAdapters(
           xT, 0, 0, 0, 0, &controlNets)
-      return unet!(
-        inputs: xT, inputs + injectedControls + injectedT2IAdapters + injectedAttentionKVs)[0].as(
-          of: FloatType.self)
+      return self(
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        isCfgEnabled: isCfgEnabled,
+        inputs: xT, inputs + injectedControls + injectedT2IAdapters + injectedAttentionKVs)
     }
     let shape = xT.shape
     let startHeight = shape[1]
@@ -1030,7 +1306,8 @@ extension UNetFromNNC {
             xyTiles: xTiles * yTiles, index: y * xTiles + x, inputStartYPad: inputStartYPad,
             inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
             xT: xT, inputs: inputs, injectedControlsAndAdapters: injectedControlsAndAdapters,
-            controlNets: &controlNets))
+            tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+            isCfgEnabled: isCfgEnabled, controlNets: &controlNets))
         guard !isCancelled.load(ordering: .acquiring) else {
           return graph.variable(
             Tensor<FloatType>(.GPU(0), .NHWC(shape[0], startHeight, startWidth, shape[3])))
@@ -1091,6 +1368,7 @@ extension UNetFromNNC {
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     if let extraProjection = extraProjection, let timeEmbed = timeEmbed, let timestep = timestep {
@@ -1100,9 +1378,13 @@ extension UNetFromNNC {
       if tiledDiffusion.isEnabled {
         return tiledDiffuse(
           tiledDiffusion: tiledDiffusion, xT: xT, inputs: [embGPU, c[0]],
-          injectedControlsAndAdapters: injectedControlsAndAdapters, controlNets: &controlNets)
+          injectedControlsAndAdapters: injectedControlsAndAdapters,
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+          isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
       } else {
-        return unet!(inputs: xT, embGPU, c[0])[0].as(of: FloatType.self)
+        return self(
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+          isCfgEnabled: isCfgEnabled, inputs: xT, [embGPU, c[0]])
       }
     }
     // Interleaving injectedAdapters with c.
@@ -1153,16 +1435,18 @@ extension UNetFromNNC {
     if tiledDiffusion.isEnabled {
       return tiledDiffuse(
         tiledDiffusion: tiledDiffusion, xT: xT, inputs: (timestep.map { [$0] } ?? []) + c,
-        injectedControlsAndAdapters: injectedControlsAndAdapters, controlNets: &controlNets)
+        injectedControlsAndAdapters: injectedControlsAndAdapters,
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
     } else {
       let (injectedControls, injectedT2IAdapters, injectedAttentionKVs) =
         injectedControlsAndAdapters(
           xT, 0, 0, 0, 0, &controlNets)
-      return unet!(
-        inputs: xT,
+      return self(
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        isCfgEnabled: isCfgEnabled, inputs: xT,
         (timestep.map { [$0] } ?? []) + c + injectedControls + injectedT2IAdapters
-          + injectedAttentionKVs)[0]
-        .as(of: FloatType.self)
+          + injectedAttentionKVs)
     }
   }
 

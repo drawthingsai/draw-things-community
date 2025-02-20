@@ -27,7 +27,7 @@ struct TensorNameAndBlobOffset {
 }
 
 extension UNetFromCoreML {
-  public var modelAndWeightMapper: (Model, ModelWeightMapper)? { nil }
+  public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { nil }
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, version: ModelVersion, qkNorm: Bool,
     dualAttentionLayers: [Int], upcastAttention: Bool,
@@ -36,7 +36,7 @@ extension UNetFromCoreML {
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
-    extraProjection: DynamicGraph.Tensor<FloatType>?,
+    isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration
   ) -> Bool {
@@ -320,7 +320,8 @@ extension UNetFromCoreML {
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration,
+    tokenLengthUncond: Int, tokenLengthCond: Int,
+    isCfgEnabled: Bool, tiledDiffusion: TiledConfiguration,
     controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     return autoreleasepool {

@@ -385,10 +385,11 @@ extension UniPCSampler: Sampler {
         inputs: xIn, t,
         UNetExtractConditions(
           of: FloatType.self,
-          graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
-          version: version),
+          graph: graph, index: 0, batchSize: cfgChannels * batchSize,
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, conditions: newC,
+          version: version, isCfgEnabled: isCfgEnabled),
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-        extraProjection: extraProjection,
+        isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
         injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
         tiledDiffusion: tiledDiffusion)
     }
@@ -520,10 +521,11 @@ extension UniPCSampler: Sampler {
             inputs: xIn, t,
             UNetExtractConditions(
               of: FloatType.self,
-              graph: graph, index: 0, batchSize: cfgChannels * batchSize, conditions: newC,
-              version: currentModelVersion),
+              graph: graph, index: 0, batchSize: cfgChannels * batchSize,
+              tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+              conditions: newC, version: currentModelVersion, isCfgEnabled: isCfgEnabled),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            extraProjection: extraProjection,
+            isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
             tiledDiffusion: tiledDiffusion)
           refinerKickIn = -1
@@ -541,8 +543,9 @@ extension UniPCSampler: Sampler {
           version: currentModelVersion)
         let c = UNetExtractConditions(
           of: FloatType.self,
-          graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize, conditions: c,
-          version: currentModelVersion)
+          graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize,
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, conditions: c,
+          version: currentModelVersion, isCfgEnabled: isCfgEnabled)
         let et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
           let condAugFrames = condAugFrames
@@ -571,7 +574,9 @@ extension UniPCSampler: Sampler {
           var etCond = unet(
             timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
-            injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+            injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+            tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
+            tiledDiffusion: tiledDiffusion,
             controlNets: &controlNets)
           let alpha =
             0.001 * sharpness * (discretization.timesteps - timestep)
@@ -582,7 +587,9 @@ extension UniPCSampler: Sampler {
             let etUncond = unet(
               timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
-              injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+              injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+              tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
+              tiledDiffusion: tiledDiffusion,
               controlNets: &controlNets)
             if let blur = blur {
               let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
@@ -627,7 +634,9 @@ extension UniPCSampler: Sampler {
           var etOut = unet(
             timestep: cNoise, inputs: xIn, t, c, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
-            injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+            injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+            tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
+            tiledDiffusion: tiledDiffusion,
             controlNets: &controlNets)
           let alpha =
             0.001 * sharpness * (discretization.timesteps - timestep)

@@ -69,19 +69,41 @@ private func MLPEmbedder(channels: Int, name: String) -> (Model, Model, Model) {
   return (fc0, fc2, Model([x], [out]))
 }
 
-private func RefinerSelfAttention(prefix: String, k: Int, h: Int, hk: Int, b: Int, t: Int) -> (
-  Model, ModelWeightMapper
-) {
+private func RefinerSelfAttention(prefix: String, k: Int, h: Int, hk: Int, b: Int, t: (Int, Int))
+  -> (
+    Model, ModelWeightMapper
+  )
+{
   let x = Input()
   let tokeys = Dense(count: k * hk, name: "refiner_k_proj")
   let toqueries = Dense(count: k * h, name: "refiner_q_proj")
   let tovalues = Dense(count: k * hk, name: "refiner_v_proj")
-  let keys = tokeys(x).reshaped([b, t, hk, k])
-  let queries = toqueries(x).reshaped([b, t, h, k])
-  let values = tovalues(x).reshaped([b, t, hk, k])
-  var out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
-    queries, keys, values
-  ).reshaped([b, t, h * k])
+  var out: Model.IO
+  if t.0 > 0 {
+    let keys = tokeys(x)
+    let queries = toqueries(x)
+    let values = tovalues(x)
+    let out0 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+      queries.reshaped([b, t.0, h, k]), keys.reshaped([b, t.0, hk, k]),
+      values.reshaped([b, t.0, hk, k])
+    ).reshaped([b * t.0, h * k])
+    let out1 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+      queries.reshaped(
+        [b, t.1, h, k], offset: [0, b * t.0, 0, 0], strides: [t.1 * h * k, h * k, k, 1]),
+      keys.reshaped(
+        [b, t.1, hk, k], offset: [0, b * t.0, 0, 0], strides: [t.1 * hk * k, hk * k, k, 1]),
+      values.reshaped(
+        [b, t.1, hk, k], offset: [0, b * t.0, 0, 0], strides: [t.1 * hk * k, hk * k, k, 1])
+    ).reshaped([b * t.1, h * k])
+    out = Functional.concat(axis: 0, out0, out1)
+  } else {
+    let keys = tokeys(x).reshaped([b, t.1, hk, k])
+    let queries = toqueries(x).reshaped([b, t.1, h, k])
+    let values = tovalues(x).reshaped([b, t.1, hk, k])
+    out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+      queries, keys, values
+    ).reshaped([b * t.1, h * k])
+  }
   let unifyheads = Dense(count: k * h, name: "refiner_out_proj")
   out = unifyheads(out)
   let mapper: ModelWeightMapper = { _ in
@@ -104,19 +126,61 @@ private func RefinerSelfAttention(prefix: String, k: Int, h: Int, hk: Int, b: In
   return (Model([x], [out]), mapper)
 }
 
-private func IndividualRefinerBlock(prefix: String, b: Int, t: Int) -> (Model, ModelWeightMapper) {
+private func IndividualRefinerBlock(prefix: String, b: Int, t: (Int, Int)) -> (
+  Model, ModelWeightMapper
+) {
   let x = Input()
   let c = Input()
-  let norm1 = LayerNorm(epsilon: 1e-6, axis: [2], name: "refiner_norm1")
+  let norm1 = LayerNorm(epsilon: 1e-6, axis: [1], name: "refiner_norm1")
   let gateMsa = Dense(count: 3_072, name: "refiner_ada_ln_msa")
   let (attention, attentionMapper) = RefinerSelfAttention(
     prefix: prefix, k: 128, h: 24, hk: 24, b: b, t: t)
-  var out = x + attention(norm1(x)) .* gateMsa(c)
-  let norm2 = LayerNorm(epsilon: 1e-6, axis: [2], name: "refiner_norm2")
+  let gateMsaC = gateMsa(c)
+  let attentionX = attention(norm1(x))
+  let gatedX: Model.IO
+  if t.0 > 0 {
+    gatedX = Functional.concat(
+      axis: 0,
+      (gateMsaC.reshaped([b, 1, 3_072])
+        .* attentionX.reshaped([b, t.0, 3_072], strides: [t.0 * 3_072, 3_072, 1])).reshaped([
+          b * t.0, 3_072,
+        ]),
+      (gateMsaC.reshaped([b, 1, 3_072], offset: [b, 0, 0], strides: [3_072, 3_072, 1])
+        .* attentionX.reshaped(
+          [b, t.1, 3_072], offset: [0, b * t.0, 0], strides: [t.1 * 3_072, 3_072, 1])).reshaped([
+          b * t.1, 3_072,
+        ]))
+  } else {
+    gatedX = (gateMsaC.reshaped([b, 1, 3_072]) .* attentionX.reshaped([b, t.1, 3_072])).reshaped([
+      b * t.1, 3_072,
+    ])
+  }
+  var out = x + gatedX
+  let norm2 = LayerNorm(epsilon: 1e-6, axis: [1], name: "refiner_norm2")
   let mlp0 = Dense(count: 3_072 * 4, name: "refiner_mlp_0")
   let mlp1 = Dense(count: 3_072, name: "refiner_mlp_1")
   let gateMlp = Dense(count: 3_072, name: "refiner_ada_ln_mlp")
-  out = out + mlp1(mlp0(norm2(out)).swish()) .* gateMlp(c)
+  let mlpOut = mlp1(mlp0(norm2(out)).swish())
+  let gateMlpC = gateMlp(c)
+  let gatedMlpOut: Model.IO
+  if t.0 > 0 {
+    gatedMlpOut = Functional.concat(
+      axis: 0,
+      (gateMlpC.reshaped([b, 1, 3_072])
+        .* mlpOut.reshaped([b, t.0, 3_072], strides: [t.0 * 3_072, 3_072, 1])).reshaped([
+          b * t.0, 3_072,
+        ]),
+      (gateMlpC.reshaped([b, 1, 3_072], offset: [b, 0, 0], strides: [3_072, 3_072, 1])
+        .* mlpOut.reshaped(
+          [b, t.1, 3_072], offset: [0, b * t.0, 0], strides: [t.1 * 3_072, 3_072, 1])).reshaped([
+          b * t.1, 3_072,
+        ]))
+  } else {
+    gatedMlpOut = (gateMlpC.reshaped([b, 1, 3_072]) .* mlpOut.reshaped([b, t.1, 3_072])).reshaped([
+      b * t.1, 3_072,
+    ])
+  }
+  out = out + gatedMlpOut
   let mapper: ModelWeightMapper = { format in
     var mapping = attentionMapper(format)
     mapping["\(prefix).norm1.weight"] = [norm1.weight.name]
@@ -493,24 +557,39 @@ private func SingleTransformerBlockFixed(
   return (mapper, Model([c], xChunks))
 }
 
-public func HunyuanFixed(batchSize: Int, channels: Int, layers: (Int, Int), textLength: Int) -> (
-  ModelWeightMapper, Model
-) {
+public func HunyuanFixed(timesteps: Int, channels: Int, layers: (Int, Int), textLength: (Int, Int))
+  -> (
+    ModelWeightMapper, Model
+  )
+{
   let txt = Input()
   let t = Input()
   let vector = Input()
   let guidanceEmbed = Input()
   let (tMlp0, tMlp2, timeEmbedder) = MLPEmbedder(channels: channels, name: "txt_in_t")
-  var c = txt.reduced(.mean, axis: [1])
+  var c: Model.IO
+  if textLength.0 > 0 {
+    c = Functional.concat(
+      axis: 0, txt.reshaped([timesteps, textLength.0, 4096]).reduced(.mean, axis: [1]),
+      txt.reshaped(
+        [timesteps, textLength.1, 4096], offset: [0, timesteps * textLength.0, 0],
+        strides: [textLength.1 * 4096, 4096, 1]
+      ).reduced(.mean, axis: [1])
+    ).reshaped([timesteps * 2, 4096])
+  } else {
+    c = txt.reshaped([timesteps, textLength.1, 4096]).reduced(.mean, axis: [1]).reshaped([
+      timesteps, 4096,
+    ])
+  }
   let (cLinear1, cLinear2, contextEmbedder) = MLPEmbedder(channels: channels, name: "c")
-  c = timeEmbedder(t).reshaped([batchSize, 1, channels]) + contextEmbedder(c)
+  c = timeEmbedder(t) + contextEmbedder(c)
   c = c.swish()
   let inputEmbedder = Dense(count: channels, name: "input_embedder")
   var context = inputEmbedder(txt)
   var mappers = [ModelWeightMapper]()
   for i in 0..<2 {
     let (block, mapper) = IndividualRefinerBlock(
-      prefix: "txt_in.individual_token_refiner.blocks.\(i)", b: batchSize, t: textLength)
+      prefix: "txt_in.individual_token_refiner.blocks.\(i)", b: timesteps, t: textLength)
     context = block(context, c)
     mappers.append(mapper)
   }
@@ -520,7 +599,7 @@ public func HunyuanFixed(batchSize: Int, channels: Int, layers: (Int, Int), text
   let (vMlp0, vMlp2, vectorIn) = MLPEmbedder(channels: channels, name: "vector")
   let (gMlp0, gMlp2, guidanceIn) = MLPEmbedder(channels: channels, name: "guidance")
   var vec = timeIn(t) + vectorIn(vector) + guidanceIn(guidanceEmbed)
-  vec = vec.reshaped([batchSize, 1, channels]).swish()
+  vec = vec.reshaped([textLength.0 > 0 ? timesteps * 2 : timesteps, 1, channels]).swish()
   for i in 0..<layers.0 {
     let (mapper, block) = JointTransformerBlockFixed(
       prefix: "double_blocks.\(i)", k: 128, h: channels / 128, contextBlockPreOnly: false)
@@ -640,7 +719,8 @@ private func LoRAMLPEmbedder(channels: Int, configuration: LoRANetworkConfigurat
 }
 
 private func LoRARefinerSelfAttention(
-  prefix: String, k: Int, h: Int, hk: Int, b: Int, t: Int, configuration: LoRANetworkConfiguration
+  prefix: String, k: Int, h: Int, hk: Int, b: Int, t: (Int, Int),
+  configuration: LoRANetworkConfiguration
 ) -> (
   Model, ModelWeightMapper
 ) {
@@ -648,12 +728,32 @@ private func LoRARefinerSelfAttention(
   let tokeys = LoRADense(count: k * hk, configuration: configuration, name: "refiner_k_proj")
   let toqueries = LoRADense(count: k * h, configuration: configuration, name: "refiner_q_proj")
   let tovalues = LoRADense(count: k * hk, configuration: configuration, name: "refiner_v_proj")
-  let keys = tokeys(x).reshaped([b, t, hk, k])
-  let queries = toqueries(x).reshaped([b, t, h, k])
-  let values = tovalues(x).reshaped([b, t, hk, k])
-  var out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
-    queries, keys, values
-  ).reshaped([b, t, h * k])
+  var out: Model.IO
+  if t.0 > 0 {
+    let keys = tokeys(x)
+    let queries = toqueries(x)
+    let values = tovalues(x)
+    let out0 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+      queries.reshaped([b, t.0, h, k]), keys.reshaped([b, t.0, hk, k]),
+      values.reshaped([b, t.0, hk, k])
+    ).reshaped([b * t.0, h * k])
+    let out1 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+      queries.reshaped(
+        [b, t.1, h, k], offset: [0, b * t.0, 0, 0], strides: [t.1 * h * k, h * k, k, 1]),
+      keys.reshaped(
+        [b, t.1, hk, k], offset: [0, b * t.0, 0, 0], strides: [t.1 * hk * k, hk * k, k, 1]),
+      values.reshaped(
+        [b, t.1, hk, k], offset: [0, b * t.0, 0, 0], strides: [t.1 * hk * k, hk * k, k, 1])
+    ).reshaped([b * t.1, h * k])
+    out = Functional.concat(axis: 0, out0, out1)
+  } else {
+    let keys = tokeys(x).reshaped([b, t.1, hk, k])
+    let queries = toqueries(x).reshaped([b, t.1, h, k])
+    let values = tovalues(x).reshaped([b, t.1, hk, k])
+    out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
+      queries, keys, values
+    ).reshaped([b * t.1, h * k])
+  }
   let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "refiner_out_proj")
   out = unifyheads(out)
   let mapper: ModelWeightMapper = { _ in
@@ -675,20 +775,60 @@ private func LoRARefinerSelfAttention(
 }
 
 private func LoRAIndividualRefinerBlock(
-  prefix: String, b: Int, t: Int, configuration: LoRANetworkConfiguration
+  prefix: String, b: Int, t: (Int, Int), configuration: LoRANetworkConfiguration
 ) -> (Model, ModelWeightMapper) {
   let x = Input()
   let c = Input()
-  let norm1 = LayerNorm(epsilon: 1e-6, axis: [2], name: "refiner_norm1")
+  let norm1 = LayerNorm(epsilon: 1e-6, axis: [1], name: "refiner_norm1")
   let gateMsa = LoRADense(count: 3_072, configuration: configuration, name: "refiner_ada_ln_msa")
-  let (attention, attentionMapper) = RefinerSelfAttention(
-    prefix: prefix, k: 128, h: 24, hk: 24, b: b, t: t)
-  var out = x + attention(norm1(x)) .* gateMsa(c)
-  let norm2 = LayerNorm(epsilon: 1e-6, axis: [2], name: "refiner_norm2")
+  let (attention, attentionMapper) = LoRARefinerSelfAttention(
+    prefix: prefix, k: 128, h: 24, hk: 24, b: b, t: t, configuration: configuration)
+  let gateMsaC = gateMsa(c)
+  let attentionX = attention(norm1(x))
+  let gatedX: Model.IO
+  if t.0 > 0 {
+    gatedX = Functional.concat(
+      axis: 0,
+      (gateMsaC.reshaped([b, 1, 3_072])
+        .* attentionX.reshaped([b, t.0, 3_072], strides: [t.0 * 3_072, 3_072, 1])).reshaped([
+          b * t.0, 3_072,
+        ]),
+      (gateMsaC.reshaped([b, 1, 3_072], offset: [b, 0, 0], strides: [3_072, 3_072, 1])
+        .* attentionX.reshaped(
+          [b, t.1, 3_072], offset: [0, b * t.0, 0], strides: [t.1 * 3_072, 3_072, 1])).reshaped([
+          b * t.1, 3_072,
+        ]))
+  } else {
+    gatedX = (gateMsaC.reshaped([b, 1, 3_072]) .* attentionX.reshaped([b, t.1, 3_072])).reshaped([
+      b * t.1, 3_072,
+    ])
+  }
+  var out = x + gatedX
+  let norm2 = LayerNorm(epsilon: 1e-6, axis: [1], name: "refiner_norm2")
   let mlp0 = LoRADense(count: 3_072 * 4, configuration: configuration, name: "refiner_mlp_0")
   let mlp1 = LoRADense(count: 3_072, configuration: configuration, name: "refiner_mlp_1")
   let gateMlp = LoRADense(count: 3_072, configuration: configuration, name: "refiner_ada_ln_mlp")
-  out = out + mlp1(mlp0(norm2(out)).swish()) .* gateMlp(c)
+  let mlpOut = mlp1(mlp0(norm2(out)).swish())
+  let gateMlpC = gateMlp(c)
+  let gatedMlpOut: Model.IO
+  if t.0 > 0 {
+    gatedMlpOut = Functional.concat(
+      axis: 0,
+      (gateMlpC.reshaped([b, 1, 3_072])
+        .* mlpOut.reshaped([b, t.0, 3_072], strides: [t.0 * 3_072, 3_072, 1])).reshaped([
+          b * t.0, 3_072,
+        ]),
+      (gateMlpC.reshaped([b, 1, 3_072], offset: [b, 0, 0], strides: [3_072, 3_072, 1])
+        .* mlpOut.reshaped(
+          [b, t.1, 3_072], offset: [0, b * t.0, 0], strides: [t.1 * 3_072, 3_072, 1])).reshaped([
+          b * t.1, 3_072,
+        ]))
+  } else {
+    gatedMlpOut = (gateMlpC.reshaped([b, 1, 3_072]) .* mlpOut.reshaped([b, t.1, 3_072])).reshaped([
+      b * t.1, 3_072,
+    ])
+  }
+  out = out + gatedMlpOut
   let mapper: ModelWeightMapper = { format in
     var mapping = attentionMapper(format)
     mapping["\(prefix).norm1.weight"] = [norm1.weight.name]
@@ -1095,7 +1235,7 @@ private func LoRASingleTransformerBlockFixed(
 }
 
 func LoRAHunyuanFixed(
-  batchSize: Int, channels: Int, layers: (Int, Int), textLength: Int,
+  timesteps: Int, channels: Int, layers: (Int, Int), textLength: (Int, Int),
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   ModelWeightMapper, Model
@@ -1106,10 +1246,23 @@ func LoRAHunyuanFixed(
   let guidanceEmbed = Input()
   let (tMlp0, tMlp2, timeEmbedder) = LoRAMLPEmbedder(
     channels: channels, configuration: LoRAConfiguration, name: "txt_in_t")
-  var c = txt.reduced(.mean, axis: [1])
+  var c: Model.IO
+  if textLength.0 > 0 {
+    c = Functional.concat(
+      axis: 0, txt.reshaped([timesteps, textLength.0, 4096]).reduced(.mean, axis: [1]),
+      txt.reshaped(
+        [timesteps, textLength.1, 4096], offset: [0, timesteps * textLength.0, 0],
+        strides: [textLength.1 * 4096, 4096, 1]
+      ).reduced(.mean, axis: [1])
+    ).reshaped([timesteps * 2, 4096])
+  } else {
+    c = txt.reshaped([timesteps, textLength.1, 4096]).reduced(.mean, axis: [1]).reshaped([
+      timesteps, 4096,
+    ])
+  }
   let (cLinear1, cLinear2, contextEmbedder) = LoRAMLPEmbedder(
     channels: channels, configuration: LoRAConfiguration, name: "c")
-  c = timeEmbedder(t).reshaped([batchSize, 1, channels]) + contextEmbedder(c)
+  c = timeEmbedder(t) + contextEmbedder(c)
   c = c.swish()
   let inputEmbedder = LoRADense(
     count: channels, configuration: LoRAConfiguration, name: "input_embedder")
@@ -1117,7 +1270,7 @@ func LoRAHunyuanFixed(
   var mappers = [ModelWeightMapper]()
   for i in 0..<2 {
     let (block, mapper) = LoRAIndividualRefinerBlock(
-      prefix: "txt_in.individual_token_refiner.blocks.\(i)", b: batchSize, t: textLength,
+      prefix: "txt_in.individual_token_refiner.blocks.\(i)", b: timesteps, t: textLength,
       configuration: LoRAConfiguration)
     context = block(context, c)
     mappers.append(mapper)
@@ -1131,7 +1284,7 @@ func LoRAHunyuanFixed(
   let (gMlp0, gMlp2, guidanceIn) = LoRAMLPEmbedder(
     channels: channels, configuration: LoRAConfiguration, name: "guidance")
   var vec = timeIn(t) + vectorIn(vector) + guidanceIn(guidanceEmbed)
-  vec = vec.reshaped([batchSize, 1, channels]).swish()
+  vec = vec.reshaped([textLength.0 > 0 ? timesteps * 2 : timesteps, 1, channels]).swish()
   for i in 0..<layers.0 {
     let (mapper, block) = LoRAJointTransformerBlockFixed(
       prefix: "double_blocks.\(i)", k: 128, h: channels / 128, contextBlockPreOnly: false,

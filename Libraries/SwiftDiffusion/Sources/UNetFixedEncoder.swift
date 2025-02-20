@@ -720,6 +720,7 @@ extension UNetFixedEncoder {
     case .hunyuanVideo:
       let c0 = textEncoding[0]
       let pooled = textEncoding[1]
+      let cBatchSize = c0.shape[0]
       let llama3Length = c0.shape[1]
       let h = startHeight / 2
       let w = startWidth / 2
@@ -749,17 +750,41 @@ extension UNetFixedEncoder {
         guidanceEmbeds = nil
       }
       var timeEmbeds = graph.variable(
-        .GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
+        .GPU(0), .WC(timesteps.count * cBatchSize, 256), of: FloatType.self)
       var c = graph.variable(
-        .GPU(0), .HWC(timesteps.count, llama3Length, 4096), of: FloatType.self)
+        .GPU(0),
+        .WC(timesteps.count * ((isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond), 4096),
+        of: FloatType.self)
+      var expandedPooled = pooled
+      if isCfgEnabled {
+        expandedPooled = graph.variable(
+          .GPU(0), .WC(timesteps.count * cBatchSize, 768), of: FloatType.self)
+      }
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(
           Tensor<FloatType>(
             from: timeEmbedding(
               timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
           ).toGPU(0))
-        timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
-        c[i..<(i + 1), 0..<llama3Length, 0..<4096] = c0
+        if isCfgEnabled {
+          timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
+          timeEmbeds[(i + timesteps.count)..<(i + timesteps.count + 1), 0..<256] = timeEmbed
+          expandedPooled[i..<(i + 1), 0..<768] = pooled[0..<1, 0..<768]
+          expandedPooled[(i + timesteps.count)..<(i + timesteps.count + 1), 0..<768] =
+            pooled[1..<2, 0..<768]
+          c[(i * tokenLengthUncond)..<((i + 1) * tokenLengthUncond), 0..<4096] = c0[
+            0..<1, 0..<tokenLengthUncond, 0..<4096
+          ].reshaped(.WC(tokenLengthUncond, 4096))
+          c[
+            (i * tokenLengthCond + tokenLengthUncond * timesteps.count)..<((i + 1) * tokenLengthCond
+              + tokenLengthUncond * timesteps.count), 0..<4096] = c0[
+              1..<2, 0..<tokenLengthCond, 0..<4096
+            ].reshaped(.WC(tokenLengthCond, 4096))
+        } else {
+          timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
+          c[(i * llama3Length)..<((i + 1) * llama3Length), 0..<4096] = c0.reshaped(
+            .WC(llama3Length, 4096))
+        }
       }
       let unetFixed: Model
       let lora = Array(
@@ -786,17 +811,20 @@ extension UNetFixedEncoder {
         configuration.keys = keys
         unetFixed =
           LoRAHunyuanFixed(
-            batchSize: timesteps.count, channels: 3072, layers: (20, 40), textLength: llama3Length,
+            timesteps: timesteps.count, channels: 3072, layers: (20, 40),
+            textLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond),
             LoRAConfiguration: configuration
           ).1
       } else {
         unetFixed =
           HunyuanFixed(
-            batchSize: timesteps.count, channels: 3072, layers: (20, 40), textLength: llama3Length
+            timesteps: timesteps.count, channels: 3072, layers: (20, 40),
+            textLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond)
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: [c, timeEmbeds, pooled] + (guidanceEmbeds.map { [$0] } ?? []))
+      unetFixed.compile(
+        inputs: [c, timeEmbeds, expandedPooled] + (guidanceEmbeds.map { [$0] } ?? []))
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
@@ -827,7 +855,7 @@ extension UNetFixedEncoder {
         }
       }
       let conditions = unetFixed(
-        inputs: c, [timeEmbeds, pooled] + (guidanceEmbeds.map { [$0] } ?? [])
+        inputs: c, [timeEmbeds, expandedPooled] + (guidanceEmbeds.map { [$0] } ?? [])
       ).map { $0.as(of: FloatType.self) }
       return (
         [graph.variable(rot0), graph.variable(rot1)] + conditions, nil

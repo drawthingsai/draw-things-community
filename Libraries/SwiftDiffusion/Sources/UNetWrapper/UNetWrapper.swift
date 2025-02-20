@@ -43,7 +43,7 @@ public struct UNetWrapper<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
 }
 
 extension UNetWrapper {
-  public var modelAndWeightMapper: (Model, ModelWeightMapper)? {
+  public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? {
     guard unetFromNNC.isLoaded else { return nil }
     return unetFromNNC.modelAndWeightMapper
   }
@@ -55,7 +55,7 @@ extension UNetWrapper {
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
-    extraProjection: DynamicGraph.Tensor<FloatType>?,
+    isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration
   ) -> Bool {
@@ -69,6 +69,7 @@ extension UNetWrapper {
         isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT,
         timestep, c,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        isCfgEnabled: isCfgEnabled,
         extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
         tiledDiffusion: tiledDiffusion)
       {
@@ -84,6 +85,7 @@ extension UNetWrapper {
       isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT,
       timestep, c,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+      isCfgEnabled: isCfgEnabled,
       extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
       tiledDiffusion: tiledDiffusion)
     return true
@@ -102,8 +104,8 @@ extension UNetWrapper {
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
     injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
-    tiledDiffusion: TiledConfiguration,
-    controlNets: inout [Model?]
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     #if !os(Linux)
 
@@ -111,15 +113,17 @@ extension UNetWrapper {
         return unetFromCoreML(
           timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
-          controlNets: &controlNets)
+          injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+          tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
+          tiledDiffusion: tiledDiffusion, controlNets: &controlNets)
       }
     #endif
 
     return unetFromNNC(
       timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
       injectedControlsAndAdapters: injectedControlsAndAdapters,
-      injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+      injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+      tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled, tiledDiffusion: tiledDiffusion,
       controlNets: &controlNets)
   }
 

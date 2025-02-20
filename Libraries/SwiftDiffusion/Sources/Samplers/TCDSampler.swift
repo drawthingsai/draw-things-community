@@ -263,10 +263,10 @@ extension TCDSampler: Sampler {
         inputs: xIn, t,
         UNetExtractConditions(
           of: FloatType.self,
-          graph: graph, index: 0, batchSize: batchSize, conditions: newC, version: version),
-        tokenLengthUncond: tokenLengthUncond,
-        tokenLengthCond: tokenLengthCond,
-        extraProjection: extraProjection,
+          graph: graph, index: 0, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
+          tokenLengthCond: tokenLengthCond, conditions: newC, version: version, isCfgEnabled: false),
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        isCfgEnabled: false, extraProjection: extraProjection,
         injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
         tiledDiffusion: tiledDiffusion)
     }
@@ -399,10 +399,11 @@ extension TCDSampler: Sampler {
             inputs: xIn, t,
             UNetExtractConditions(
               of: FloatType.self,
-              graph: graph, index: 0, batchSize: batchSize, conditions: newC,
-              version: currentModelVersion),
+              graph: graph, index: 0, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
+              tokenLengthCond: tokenLengthCond, conditions: newC,
+              version: currentModelVersion, isCfgEnabled: false),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            extraProjection: extraProjection,
+            isCfgEnabled: false, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
             tiledDiffusion: tiledDiffusion)
           refinerKickIn = -1
@@ -419,8 +420,9 @@ extension TCDSampler: Sampler {
           graph: graph, batchSize: batchSize, timestep: cNoise, version: currentModelVersion)
         let c = UNetExtractConditions(
           of: FloatType.self,
-          graph: graph, index: i - indexOffset, batchSize: batchSize, conditions: c,
-          version: currentModelVersion)
+          graph: graph, index: i - indexOffset, batchSize: batchSize,
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, conditions: c,
+          version: currentModelVersion, isCfgEnabled: false)
         xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
         let injectedIPAdapters = ControlModel<FloatType>
           .injectedIPAdapters(
@@ -447,7 +449,8 @@ extension TCDSampler: Sampler {
         var etOut = unet(
           timestep: cNoise, inputs: xIn, t, newC, extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, tiledDiffusion: tiledDiffusion,
+          injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+          tokenLengthCond: tokenLengthCond, isCfgEnabled: false, tiledDiffusion: tiledDiffusion,
           controlNets: &controlNets)
         if channels < etOut.shape[3] {
           etOut = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()

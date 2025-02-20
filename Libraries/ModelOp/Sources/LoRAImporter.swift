@@ -115,7 +115,7 @@ public enum LoRAImporter {
         time: 1, height: 64, width: 64, textLength: 20, channels: 3072, layers: (20, 40),
         usesFlashAttention: .scaleMerged)
       (unetFixedMapper, unetFixed) = HunyuanFixed(
-        batchSize: 1, channels: 3072, layers: (20, 40), textLength: 20)
+        timesteps: 1, channels: 3072, layers: (20, 40), textLength: (0, 20))
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
