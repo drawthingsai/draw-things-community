@@ -10,6 +10,7 @@ import Logging
 import ModelZoo
 import NIOCore
 import NNC
+import ScriptDataModels
 
 extension ImageGeneratorSignpost {
   public init(from signpostProto: ImageGenerationSignpostProto) {
@@ -321,7 +322,17 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             if isCancelled() {
               self.logger.info("Image processed cancelled, generated images return nil")
             } else {
-              self.logger.error("Image processed failed")
+              let configurationDictionary: [String: Any]?
+              if let jsonData = try? JSONEncoder().encode(
+                JSGenerationConfiguration(configuration: configuration))
+              {
+                configurationDictionary =
+                  try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
+              } else {
+                configurationDictionary = nil
+              }
+              self.logger.error(
+                "Image processed failed, failed configuration:\(configurationDictionary)")
             }
           }
           $0.scaleFactor = Int32(scaleFactor)

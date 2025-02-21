@@ -54,6 +54,7 @@ swift_library(
         "//Libraries/DataModels",
         "//Libraries/ImageGenerator",
         "//Libraries/ModelZoo",
+        "//Libraries/Scripting:ScriptDataModels",
         "//Libraries/SwiftDiffusion",
         "//Libraries/Utils",
         "@SwiftArgumentParser//:ArgumentParser",
