@@ -1136,9 +1136,10 @@ extension UNetFromNNC {
             case 0:
               return $0.1
             case 1:
-              return Functional.concat(
-                axis: 1, $0.1[0..<shape[0], 0..<tokenLengthCond, 0..<shape[2], 0..<shape[3]],
-                $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]])
+              let imageLength = shape[1] - tokenLength
+              return $0.1[
+                0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
+              ].copied()
             case 2:
               return $0.1[
                 0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
@@ -1161,9 +1162,10 @@ extension UNetFromNNC {
             case 0:
               return $0.1
             case 1:
-              return Functional.concat(
-                axis: 1, $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2], 0..<shape[3]],
-                $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]])
+              let imageLength = shape[1] - tokenLength
+              return $0.1[
+                0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
+              ].copied()
             case 2:
               return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
             default:
@@ -1181,9 +1183,10 @@ extension UNetFromNNC {
             case 0:
               return $0.1
             case 1:
-              return Functional.concat(
-                axis: 1, $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2], 0..<shape[3]],
-                $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]])
+              let imageLength = shape[1] - tokenLength
+              return $0.1[
+                0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
+              ].copied()
             case 2:
               return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
             default:
@@ -1203,9 +1206,10 @@ extension UNetFromNNC {
             case 0:
               return $0.1
             case 1:
-              return Functional.concat(
-                axis: 1, $0.1[0..<shape[0], 0..<tokenLengthCond, 0..<shape[2], 0..<shape[3]],
-                $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]])
+              let imageLength = shape[1] - tokenLength
+              return $0.1[
+                0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
+              ].copied()
             case 2:
               return $0.1[
                 0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
