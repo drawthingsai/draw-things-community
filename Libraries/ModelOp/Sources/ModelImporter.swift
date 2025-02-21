@@ -1063,7 +1063,14 @@ public final class ModelImporter {
                       "__\(modelPrefix)__[\(name)]", tensor: Tensor<FloatType>(from: f32Tensor))
                   } else {
                     let tensor = Tensor<FloatType>(from: tensor)
-                    store.write("__\(modelPrefix)__[\(name)]", tensor: tensor)
+                    value.write(
+                      graph: graph,
+                      to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
+                      isDiagonalDown: false
+                    ) {
+                      let _ = interrupt()
+                      return "__\(modelPrefix)__[\($0)]"
+                    }
                   }
                   let _ = interrupt()
                 }
