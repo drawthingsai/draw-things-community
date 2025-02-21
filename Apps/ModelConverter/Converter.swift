@@ -123,7 +123,13 @@ struct Converter: ParsableCommand {
       if autoencoder == nil {
         autoencoder = "flux_1_vae_f16.ckpt"
       }
-    case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow, .hunyuanVideo:
+    case .hunyuanVideo:
+      textEncoder = "llava_llama_3_8b_v1.1_q8p.ckpt"
+      clipEncoder = "clip_vit_l14_f16.ckpt"
+      if autoencoder == nil {
+        autoencoder = "hunyuan_video_vae_f16.ckpt"
+      }
+    case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow:
       fatalError()
     }
     var specification = Specification(
