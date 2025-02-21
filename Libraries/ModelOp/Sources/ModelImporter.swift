@@ -1036,6 +1036,7 @@ public final class ModelImporter {
                 if value.count > 1 {
                   let tensor = Tensor<FloatType>(from: tensor)
                   value.write(
+                    graph: graph,
                     to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
                     isDiagonalDown: false
                   ) {
@@ -1076,6 +1077,7 @@ public final class ModelImporter {
                 let tensor = Tensor<FloatType>(from: tensor)
                 if value.count > 1 {
                   value.write(
+                    graph: graph,
                     to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
                     isDiagonalDown: false
                   ) {

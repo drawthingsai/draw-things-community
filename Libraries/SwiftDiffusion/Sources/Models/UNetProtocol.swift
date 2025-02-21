@@ -1128,97 +1128,93 @@ extension UNetFromNNC {
         // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
         let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        etCond = unet!(
-          inputs: xCond,
-          restInputs.enumerated().map {
-            let shape = $0.1.shape
-            switch $0.0 {
-            case 0:
-              return $0.1
-            case 1:
-              let imageLength = shape[1] - tokenLength
-              return $0.1[
-                0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
-              ].copied()
-            case 2:
-              return $0.1[
-                0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
-                0..<shape[2]
-              ].copied()
-            default:
-              return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
-            }
-          })[0].as(of: FloatType.self)
+        let otherConds = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 0:
+            return $0.1
+          case 1:
+            let imageLength = shape[1] - tokenLength
+            return $0.1[
+              0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
+            ].copied()
+          case 2:
+            return $0.1[
+              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+              0..<shape[2]
+            ].copied()
+          default:
+            return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+          }
+        }
+        etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
         guard !isCancelled.load(ordering: .acquiring) else {
           return Functional.concat(axis: 0, etCond, etCond)
         }
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        etUncond = unet!(
-          inputs: xUncond,
-          restInputs.enumerated().map {
-            let shape = $0.1.shape
-            switch $0.0 {
-            case 0:
-              return $0.1
-            case 1:
-              let imageLength = shape[1] - tokenLength
-              return $0.1[
-                0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
-              ].copied()
-            case 2:
-              return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
-            default:
-              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
-            }
-          })[0].as(of: FloatType.self)
+        let otherUnconds = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 0:
+            return $0.1
+          case 1:
+            let imageLength = shape[1] - tokenLength
+            return $0.1[
+              0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
+            ].copied()
+          case 2:
+            return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
+          default:
+            return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
+          }
+        }
+        etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
       } else {
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        etUncond = unet!(
-          inputs: xUncond,
-          restInputs.enumerated().map {
-            let shape = $0.1.shape
-            switch $0.0 {
-            case 0:
-              return $0.1
-            case 1:
-              let imageLength = shape[1] - tokenLength
-              return $0.1[
-                0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
-              ].copied()
-            case 2:
-              return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
-            default:
-              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
-            }
-          })[0].as(of: FloatType.self)
+        let otherUnconds = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 0:
+            return $0.1
+          case 1:
+            let imageLength = shape[1] - tokenLength
+            return $0.1[
+              0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
+            ].copied()
+          case 2:
+            return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
+          default:
+            return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
+          }
+        }
+        etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
         guard !isCancelled.load(ordering: .acquiring) else {
           return Functional.concat(axis: 0, etUncond, etUncond)
         }
         let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        etCond = unet!(
-          inputs: xCond,
-          restInputs.enumerated().map {
-            let shape = $0.1.shape
-            switch $0.0 {
-            case 0:
-              return $0.1
-            case 1:
-              let imageLength = shape[1] - tokenLength
-              return $0.1[
-                0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
-              ].copied()
-            case 2:
-              return $0.1[
-                0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
-                0..<shape[2]
-              ].copied()
-            default:
-              return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
-            }
-          })[0].as(of: FloatType.self)
+        let otherConds = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 0:
+            return $0.1
+          case 1:
+            let imageLength = shape[1] - tokenLength
+            return $0.1[
+              0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
+            ].copied()
+          case 2:
+            return $0.1[
+              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+              0..<shape[2]
+            ].copied()
+          default:
+            return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+          }
+        }
+        etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
       }
       return Functional.concat(axis: 0, etUncond, etCond)
     }

@@ -1029,6 +1029,7 @@ public enum LoRAImporter {
                   diagonalUpMatrixKeys.insert(newKey)
                 }
                 unetParams.write(
+                  graph: graph,
                   to: store, tensor: tensor, format: .O, isDiagonalUp: isDiagonalUp,
                   isDiagonalDown: false
                 ) {
@@ -1061,6 +1062,7 @@ public enum LoRAImporter {
                       .rawValue)
                 }
                 unetParams.write(
+                  graph: graph,
                   to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
                 ) {
                   "__\(modelPrefix)__[\($0)]__\(wSuffix)__"
@@ -1099,6 +1101,7 @@ public enum LoRAImporter {
                   diagonalUpMatrixKeys.insert(newKey)
                 }
                 unetParams.write(
+                  graph: graph,
                   to: store, tensor: tensor, format: .O, isDiagonalUp: isDiagonalUp,
                   isDiagonalDown: false
                 ) {
@@ -1131,6 +1134,7 @@ public enum LoRAImporter {
                       .rawValue)
                 }
                 unetParams.write(
+                  graph: graph,
                   to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
                 ) {
                   "__\(modelPrefixFixed)__[\($0)]__\(wSuffix)__"
@@ -1257,6 +1261,7 @@ public enum LoRAImporter {
                       .rawValue)
                 }
                 unetParams.write(
+                  graph: graph,
                   to: store, tensor: tensor, format: .I,
                   isDiagonalUp: diagonalUpMatrixKeys.contains(newKey),
                   isDiagonalDown: isDiagonalDown
@@ -1304,6 +1309,7 @@ public enum LoRAImporter {
                 }
                  */
                 unetParams.write(
+                  graph: graph,
                   to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
                 ) {
                   return "__\(modelPrefix)__[\($0)]"
@@ -1331,6 +1337,7 @@ public enum LoRAImporter {
                       .rawValue)
                 }
                 unetParams.write(
+                  graph: graph,
                   to: store, tensor: tensor, format: .I,
                   isDiagonalUp: diagonalUpMatrixKeys.contains(newKey),
                   isDiagonalDown: isDiagonalDown
@@ -1364,6 +1371,7 @@ public enum LoRAImporter {
               try archive.with(descriptor) {
                 let tensor = Tensor<FloatType>(from: $0)
                 unetParams.write(
+                  graph: graph,
                   to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
                 ) {
                   return "__\(modelPrefixFixed)__[\($0)]"
@@ -1454,6 +1462,7 @@ public enum LoRAImporter {
             }
             let prefix = diagonalDownForRedefine.1
             unetParams.write(
+              graph: graph,
               to: store, tensor: tensor, format: .O, isDiagonalUp: false,
               isDiagonalDown: true
             ) {

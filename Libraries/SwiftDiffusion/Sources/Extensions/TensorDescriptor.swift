@@ -36,11 +36,18 @@ extension TensorDescriptor {
 
 extension ModelWeightElement {
   public func write<FloatType: BinaryFloatingPoint & TensorNumeric>(
-    to store: DynamicGraph.Store, tensor: Tensor<FloatType>, format: Format, isDiagonalUp: Bool,
-    isDiagonalDown: Bool,
-    renamer: (String) -> String
+    graph: DynamicGraph, to store: DynamicGraph.Store, tensor: Tensor<FloatType>, format: Format,
+    isDiagonalUp: Bool, isDiagonalDown: Bool, renamer: (String) -> String
   ) {
     let shape = tensor.shape
+    var tensor = tensor
+    if scale != 1 {
+      // Scale the tensor if needed.
+      tensor = graph.withNoGrad {
+        Tensor<FloatType>(
+          from: (scale * graph.variable(Tensor<Float>(from: tensor).toCPU())).rawValue)
+      }
+    }
     switch format {
     case .O:
       if self.count > 1 {

@@ -1089,8 +1089,6 @@ extension LocalImageGenerator {
         paddingToken: nil, conditionalLength: 4096, modifier: .llama3, potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
       result.0 = llama3Tokens + result.0
-      result.2 = result.2
-      result.3 = result.3
       result.7 = tokenLengthsUncond - 95  // Remove the leading template.
       result.8 = tokenLengthsCond - 95
       return result

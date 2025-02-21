@@ -756,9 +756,14 @@ extension UNetFixedEncoder {
         .WC(timesteps.count * ((isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond), 4096),
         of: FloatType.self)
       var expandedPooled = pooled
+      var c00 = c0.reshaped(.WC(llama3Length, 4096))
+      var c01 = c00
       if isCfgEnabled {
         expandedPooled = graph.variable(
           .GPU(0), .WC(timesteps.count * cBatchSize, 768), of: FloatType.self)
+        c00 = c0[0..<1, 0..<tokenLengthUncond, 0..<4096].copied().reshaped(
+          .WC(tokenLengthUncond, 4096))
+        c01 = c0[1..<2, 0..<tokenLengthCond, 0..<4096].copied().reshaped(.WC(tokenLengthCond, 4096))
       }
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(
@@ -772,18 +777,13 @@ extension UNetFixedEncoder {
           expandedPooled[i..<(i + 1), 0..<768] = pooled[0..<1, 0..<768]
           expandedPooled[(i + timesteps.count)..<(i + timesteps.count + 1), 0..<768] =
             pooled[1..<2, 0..<768]
-          c[(i * tokenLengthUncond)..<((i + 1) * tokenLengthUncond), 0..<4096] = c0[
-            0..<1, 0..<tokenLengthUncond, 0..<4096
-          ].reshaped(.WC(tokenLengthUncond, 4096))
+          c[(i * tokenLengthUncond)..<((i + 1) * tokenLengthUncond), 0..<4096] = c00
           c[
             (i * tokenLengthCond + tokenLengthUncond * timesteps.count)..<((i + 1) * tokenLengthCond
-              + tokenLengthUncond * timesteps.count), 0..<4096] = c0[
-              1..<2, 0..<tokenLengthCond, 0..<4096
-            ].reshaped(.WC(tokenLengthCond, 4096))
+              + tokenLengthUncond * timesteps.count), 0..<4096] = c01
         } else {
           timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
-          c[(i * llama3Length)..<((i + 1) * llama3Length), 0..<4096] = c0.reshaped(
-            .WC(llama3Length, 4096))
+          c[(i * llama3Length)..<((i + 1) * llama3Length), 0..<4096] = c01
         }
       }
       let unetFixed: Model

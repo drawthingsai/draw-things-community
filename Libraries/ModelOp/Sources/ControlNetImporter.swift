@@ -118,6 +118,7 @@ public final class ControlNetImporter {
             }()
             if value.count > 1 {
               value.write(
+                graph: graph,
                 to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
                 isDiagonalDown: false
               ) {
@@ -137,6 +138,7 @@ public final class ControlNetImporter {
             let tensor = Tensor<FloatType>(from: tensor)
             if value.count > 1 {
               value.write(
+                graph: graph,
                 to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
                 isDiagonalDown: false
               ) {
