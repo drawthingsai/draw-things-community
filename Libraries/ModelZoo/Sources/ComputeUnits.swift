@@ -53,13 +53,12 @@ public enum ComputeUnits {
       modelVersion = specification.version
       isGuidanceEmbedEnabled =
         (specification.guidanceEmbed ?? false)
-        && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
+        && configuration.speedUpWithGuidanceEmbed
       isConsistencyModel = specification.isConsistencyModel ?? false
     } else {
       modelVersion = ModelZoo.versionForModel(model)
       isGuidanceEmbedEnabled =
-        ModelZoo.guidanceEmbedForModel(model)
-        && (configuration.speedUpWithGuidanceEmbed || modelVersion == .hunyuanVideo)
+        ModelZoo.guidanceEmbedForModel(model) && configuration.speedUpWithGuidanceEmbed
       isConsistencyModel = ModelZoo.isConsistencyModelForModel(model)
     }
 
