@@ -214,15 +214,17 @@ extension UniPCSampler: Sampler {
     )
     switch modifier {
     case .inpainting, .depth, .canny:
-      let maskedImage = conditionImage!
-      let shape = maskedImage.shape
-      for i in 0..<batchSize {
-        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + shape[3])] =
-          maskedImage
-        if isCfgEnabled {
+      if let conditionImage = conditionImage {
+        let shape = conditionImage.shape
+        for i in stride(from: 0, to: batchSize, by: shape[0]) {
           xIn[
-            (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
-            channels..<(channels + shape[3])] = maskedImage
+            i..<(i + shape[0]), 0..<startHeight, 0..<startWidth, channels..<(channels + shape[3])] =
+            conditionImage
+          if isCfgEnabled {
+            xIn[
+              (batchSize + i)..<(batchSize + i + shape[0]), 0..<startHeight, 0..<startWidth,
+              channels..<(channels + shape[3])] = conditionImage
+          }
         }
       }
     case .editing:

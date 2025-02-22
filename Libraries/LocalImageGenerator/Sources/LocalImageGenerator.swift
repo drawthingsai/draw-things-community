@@ -2408,13 +2408,14 @@ extension LocalImageGenerator {
   }
 
   private func concatMaskWithMaskedImage(
+    batchSize: Int,
     version: ModelVersion, encodedImage: DynamicGraph.Tensor<FloatType>,
     encodedMask: DynamicGraph.Tensor<FloatType>, imageNegMask: DynamicGraph.Tensor<FloatType>?
   ) -> DynamicGraph.Tensor<FloatType> {
     let graph = encodedImage.graph
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-      .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo:
+      .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
       let shape = encodedImage.shape
       let maskShape = encodedMask.shape
       var result = graph.variable(
@@ -2423,6 +2424,16 @@ extension LocalImageGenerator {
       result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<maskShape[3]] = encodedMask
       result[0..<shape[0], 0..<shape[1], 0..<shape[2], maskShape[3]..<(maskShape[3] + shape[3])] =
         encodedImage
+      return result
+    case .hunyuanVideo:
+      // We don't handle mask yet, or we need to figure out for new variant of Hunyuan, how to handle mask.
+      let shape = encodedImage.shape
+      var result = graph.variable(
+        encodedImage.kind, format: encodedImage.format,
+        shape: [batchSize, shape[1], shape[2], shape[3]], of: FloatType.self)
+      result.full(0)
+      result[0..<min(shape[0], batchSize), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+        encodedImage[0..<min(shape[0], batchSize), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
       return result
     case .flux1:
       let shape = encodedImage.shape
@@ -2863,6 +2874,16 @@ extension LocalImageGenerator {
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
         highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+      var batchSize = batchSize
+      switch modelVersion {
+      case .svdI2v:
+        batchSize = Int(configuration.numFrames)
+      case .hunyuanVideo:
+        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
+      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+        break
+      }
       if modifier == .inpainting || modifier == .editing || modifier == .double {
         // Only apply the image fill logic (for image encoding purpose) when it is inpainting or editing.
         let firstPassImage =
@@ -2890,6 +2911,7 @@ extension LocalImageGenerator {
             .GPU(0), .NHWC(1, firstPassStartHeight, firstPassStartWidth, 1), of: FloatType.self)
           mask?.full(1)
           maskedImage = concatMaskWithMaskedImage(
+            batchSize: batchSize,
             version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
           )
         } else {
@@ -2898,16 +2920,6 @@ extension LocalImageGenerator {
           ].copied()
         }
         guard feedback(.imageEncoded, signposts, nil) else { return (nil, 1) }
-      }
-      var batchSize = batchSize
-      switch modelVersion {
-      case .svdI2v:
-        batchSize = Int(configuration.numFrames)
-      case .hunyuanVideo:
-        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
-      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
-        break
       }
       let x_T = randomLatentNoise(
         graph: graph, batchSize: batchSize, startHeight: firstPassStartHeight,
@@ -3119,6 +3131,7 @@ extension LocalImageGenerator {
           mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
           mask?.full(1)
           maskedImage = concatMaskWithMaskedImage(
+            batchSize: batchSize,
             version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
           )
         } else {
@@ -3760,6 +3773,16 @@ extension LocalImageGenerator {
       } else {
         firstPassImage = image
       }
+      var batchSize = batchSize
+      switch modelVersion {
+      case .svdI2v:
+        batchSize = Int(configuration.numFrames)
+      case .hunyuanVideo:
+        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
+      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+        break
+      }
       let (sample, encodedImage) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
           firstPassImage,
@@ -3774,21 +3797,12 @@ extension LocalImageGenerator {
         mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
         mask?.full(1)
         maskedImage = concatMaskWithMaskedImage(
+          batchSize: batchSize,
           version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil)
       } else if modifier == .editing || modelVersion == .svdI2v {
         maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
       }
       guard feedback(.imageEncoded, signposts, nil) else { return (nil, 1) }
-      var batchSize = batchSize
-      switch modelVersion {
-      case .svdI2v:
-        batchSize = Int(configuration.numFrames)
-      case .hunyuanVideo:
-        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
-      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
-        break
-      }
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth, channels: channels, seed: configuration.seed,
@@ -3904,6 +3918,7 @@ extension LocalImageGenerator {
           mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
           mask?.full(1)
           maskedImage = concatMaskWithMaskedImage(
+            batchSize: batchSize,
             version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
           )
         } else if modifier == .editing || modelVersion == .svdI2v {
@@ -5041,6 +5056,7 @@ extension LocalImageGenerator {
       var initNegMaskMaybe: DynamicGraph.Tensor<FloatType>? = initNegMask
       if modifier == .inpainting {
         maskedImage = concatMaskWithMaskedImage(
+          batchSize: batchSize,
           version: modelVersion, encodedImage: maskedImage!, encodedMask: initMask,
           imageNegMask: graph.variable(imageNegMask2.toGPU(0)))
         if !configuration.preserveOriginalAfterInpaint {
@@ -5753,6 +5769,7 @@ extension LocalImageGenerator {
       var initNegMaskMaybe: DynamicGraph.Tensor<FloatType>? = initNegMask
       if modifier == .inpainting {
         maskedImage1 = concatMaskWithMaskedImage(
+          batchSize: batchSize,
           version: modelVersion, encodedImage: maskedImage1!, encodedMask: initMask1,
           imageNegMask: graph.variable(imageNegMask1.toGPU(0)))
         if configuration.preserveOriginalAfterInpaint {
@@ -5853,6 +5870,7 @@ extension LocalImageGenerator {
       var initNegMask2Maybe: DynamicGraph.Tensor<FloatType>? = initNegMask2
       if modifier == .inpainting {
         maskedImage2 = concatMaskWithMaskedImage(
+          batchSize: batchSize,
           version: modelVersion, encodedImage: maskedImage2!, encodedMask: initMask2!,
           imageNegMask: imageNegMask2.map { graph.variable($0.toGPU(0)) })
         if !configuration.preserveOriginalAfterInpaint {

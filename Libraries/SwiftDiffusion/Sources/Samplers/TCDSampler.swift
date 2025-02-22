@@ -113,8 +113,8 @@ extension TCDSampler: Sampler {
     case .inpainting, .depth, .canny:
       let maskedImage = conditionImage!
       let shape = maskedImage.shape
-      for i in 0..<batchSize {
-        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + shape[3])] =
+      for i in stride(from: 0, to: batchSize, by: shape[0]) {
+        xIn[i..<(i + shape[0]), 0..<startHeight, 0..<startWidth, channels..<(channels + shape[3])] =
           maskedImage
       }
     case .editing:

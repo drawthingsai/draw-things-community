@@ -138,12 +138,13 @@ extension PLMSSampler: Sampler {
     case .inpainting, .depth, .canny:
       if let conditionImage = conditionImage {
         let shape = conditionImage.shape
-        for i in 0..<batchSize {
-          xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + shape[3])] =
+        for i in stride(from: 0, to: batchSize, by: shape[0]) {
+          xIn[
+            i..<(i + shape[0]), 0..<startHeight, 0..<startWidth, channels..<(channels + shape[3])] =
             conditionImage
           if isCfgEnabled {
             xIn[
-              (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
+              (batchSize + i)..<(batchSize + i + shape[0]), 0..<startHeight, 0..<startWidth,
               channels..<(channels + shape[3])] = conditionImage
           }
         }
