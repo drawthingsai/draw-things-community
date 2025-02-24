@@ -2873,6 +2873,7 @@ extension LocalImageGenerator {
         lora: lora)
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [], lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
@@ -3783,6 +3784,7 @@ extension LocalImageGenerator {
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
@@ -4984,6 +4986,7 @@ extension LocalImageGenerator {
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
@@ -5692,6 +5695,7 @@ extension LocalImageGenerator {
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,

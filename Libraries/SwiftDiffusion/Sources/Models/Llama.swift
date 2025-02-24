@@ -79,7 +79,7 @@ private func TextEmbedding<T: TensorNumeric>(
 }
 
 func Llama3<T: TensorNumeric>(
-  _ dataType: T.Type, vocabularySize: Int, width: Int, tokenLength: (Int, Int),
+  _ dataType: T.Type, vocabularySize: Int, width: Int, tokenLength: (Int, Int, Int),
   layers: Int, MLP: Int, heads: Int, outputHiddenStates: Int?, batchSize: Int
 ) -> Model {
   let tokens = Input()
@@ -89,11 +89,21 @@ func Llama3<T: TensorNumeric>(
     T.self, batchSize: batchSize, vocabularySize: vocabularySize, embeddingSize: width)
   var out = embedding(tokens)
   let textEmbedding: Input?
-  if tokenLength.1 > tokenLength.0 {
+  if tokenLength.2 > max(tokenLength.0, tokenLength.1) {
     let additionalEmbedding = Input()
-    out = Functional.concat(
-      axis: 1, out.reshaped([batchSize, tokenLength.0, width]), additionalEmbedding
-    ).reshaped([batchSize * tokenLength.1, width])
+    if batchSize == 1 {  // Only conditional side.
+      out = Functional.concat(axis: 0, out, additionalEmbedding)
+    } else {
+      precondition(batchSize == 2)
+      out = Functional.concat(
+        axis: 0,
+        out.reshaped([tokenLength.0, width]).padded(
+          .zero, begin: [0, 0], end: [tokenLength.2 - tokenLength.0, 0]),
+        out.reshaped(
+          [tokenLength.1, width], offset: [max(tokenLength.0, tokenLength.1), 0],
+          strides: [width, 1]
+        ).contiguous(), additionalEmbedding)
+    }
     textEmbedding = additionalEmbedding
   } else {
     textEmbedding = nil
@@ -102,7 +112,7 @@ func Llama3<T: TensorNumeric>(
   for i in 0..<layers {
     let layer = TransformerBlock(
       prefix: "layers.\(i)", k: width / heads, h: heads, hk: heads / 4, b: batchSize,
-      t: tokenLength.1, MLP: MLP)
+      t: tokenLength.2, MLP: MLP)
     out = layer(out, rot, causalAttentionMask)
     if let outputHiddenStates = outputHiddenStates, outputHiddenStates == i {
       hiddenStates = out

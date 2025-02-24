@@ -1341,6 +1341,7 @@ extension TextEncoder {
   }
 
   private func encodeLlama3(
+    tokenLengthUncond: Int, tokenLengthCond: Int,
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
     lengthsOfUncond: [Int], lengthsOfCond: [Int],
@@ -1529,23 +1530,24 @@ extension TextEncoder {
       (injectedTextEmbeddings.count > 1
       ? Concat(axis: 1)(inputs: injectedEmbeddings[0], Array(injectedTextEmbeddings[1...]))[0].as(
         of: FloatType.self) : injectedTextEmbeddings.first).map {
-        guard !isCfgEnabled else {
-          return $0
-        }
         let shape = $0.shape
-        return $0[1..<2, 0..<shape[1], 0..<shape[2]]
+        return $0[1..<2, 0..<shape[1], 0..<shape[2]].copied().reshaped(.WC(shape[1], shape[2]))
       }
-    let additionalTokenLength = tokenLength + (injectedTextEmbedding?.shape[1] ?? 0)
+    let additionalTokenLength = max(isCfgEnabled ? tokenLength : 0, tokenLengthCond + 95)
+    let tokenLengthCondWithoutAddition =
+      tokenLengthCond + 95 - (injectedTextEmbedding?.shape[0] ?? 0)
     let llama3 = Llama3(
       FloatType.self, vocabularySize: 128_320, width: 4_096,
-      tokenLength: (tokenLength, additionalTokenLength), layers: 32, MLP: 14336, heads: 32,
-      outputHiddenStates: 29,
-      batchSize: batchSize)
+      tokenLength: (tokenLengthUncond + 95, tokenLengthCondWithoutAddition, additionalTokenLength),
+      layers: 32, MLP: 14336, heads: 32,
+      outputHiddenStates: 29, batchSize: batchSize)
     let tokens2TensorGPU: DynamicGraph.Tensor<Int32>
     if isCfgEnabled {
       tokens2TensorGPU = tokens[0].toGPU(0)
     } else {
-      tokens2TensorGPU = tokens[0][tokenLength..<(tokenLength * 2)].toGPU(0)
+      tokens2TensorGPU = tokens[0][
+        tokenLength..<(tokenLength + additionalTokenLength - (injectedTextEmbedding?.shape[0] ?? 0))
+      ].toGPU(0)
     }
     var causalAttentionMaskLlama3 = Tensor<FloatType>(
       Array(repeating: 0, count: additionalTokenLength * additionalTokenLength), .CPU,
@@ -1582,6 +1584,7 @@ extension TextEncoder {
   }
 
   public func encode(
+    tokenLengthUncond: Int, tokenLengthCond: Int,
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
     image: [DynamicGraph.Tensor<FloatType>], lengthsOfUncond: [Int], lengthsOfCond: [Int],
@@ -1637,6 +1640,7 @@ extension TextEncoder {
       return encodeI2v(image: image, textModels: existingTextModels)
     case .hunyuanVideo:
       return encodeLlama3(
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         injectedTextEmbeddings: injectedTextEmbeddings, textModels: existingTextModels)
