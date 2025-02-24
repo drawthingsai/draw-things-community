@@ -1343,7 +1343,10 @@ extension TextEncoder {
   private func encodeLlama3(
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
-    lengthsOfUncond: [Int], lengthsOfCond: [Int], textModels existingTextModels: [Model?]
+    lengthsOfUncond: [Int], lengthsOfCond: [Int],
+    injectedTextEmbeddings: [(
+      model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
+    )], textModels existingTextModels: [Model?]
   )
     -> ([DynamicGraph.Tensor<FloatType>], [Model])
   {
@@ -1517,9 +1520,26 @@ extension TextEncoder {
     }
     // Now load Llama3 decoder.
     let tokenLength = tokens[0].shape[0] / 2
+    let injectedTextEmbeddings = injectedTextEmbeddings.flatMap {
+      $0.hints.flatMap {
+        $0.0
+      }
+    }
+    let injectedTextEmbedding: DynamicGraph.Tensor<FloatType>? =
+      (injectedTextEmbeddings.count > 1
+      ? Concat(axis: 1)(inputs: injectedEmbeddings[0], Array(injectedTextEmbeddings[1...]))[0].as(
+        of: FloatType.self) : injectedTextEmbeddings.first).map {
+        guard !isCfgEnabled else {
+          return $0
+        }
+        let shape = $0.shape
+        return $0[1..<2, 0..<shape[1], 0..<shape[2]]
+      }
+    let additionalTokenLength = tokenLength + (injectedTextEmbedding?.shape[1] ?? 0)
     let llama3 = Llama3(
-      FloatType.self, vocabularySize: 128_320, maxLength: tokenLength, width: 4_096,
-      tokenLength: tokenLength, layers: 32, MLP: 14336, heads: 32, outputHiddenStates: 29,
+      FloatType.self, vocabularySize: 128_320, width: 4_096,
+      tokenLength: (tokenLength, additionalTokenLength), layers: 32, MLP: 14336, heads: 32,
+      outputHiddenStates: 29,
       batchSize: batchSize)
     let tokens2TensorGPU: DynamicGraph.Tensor<Int32>
     if isCfgEnabled {
@@ -1528,18 +1548,20 @@ extension TextEncoder {
       tokens2TensorGPU = tokens[0][tokenLength..<(tokenLength * 2)].toGPU(0)
     }
     var causalAttentionMaskLlama3 = Tensor<FloatType>(
-      Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
-      .NHWC(1, 1, tokenLength, tokenLength)
+      Array(repeating: 0, count: additionalTokenLength * additionalTokenLength), .CPU,
+      .NHWC(1, 1, additionalTokenLength, additionalTokenLength)
     )
-    for i in 0..<(tokenLength - 1) {
-      for j in (i + 1)..<tokenLength {
+    for i in 0..<(additionalTokenLength - 1) {
+      for j in (i + 1)..<additionalTokenLength {
         causalAttentionMaskLlama3[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
       }
     }
     let rotaryTensorGPU = graph.variable(
-      Llama3RotaryEmbedding(sequenceLength: tokenLength, of: FloatType.self).toGPU(0))
+      Llama3RotaryEmbedding(sequenceLength: additionalTokenLength, of: FloatType.self).toGPU(0))
     let causalAttentionMaskLlama3GPU = graph.variable(causalAttentionMaskLlama3.toGPU(0))
-    llama3.compile(inputs: tokens2TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU)
+    llama3.compile(
+      inputs: [tokens2TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU]
+        + (injectedTextEmbedding.flatMap { [$0] } ?? []))
     // Move Llama3 8B to on-demand.
     TensorData.makeExternalData(for: filePaths[0], graph: graph)
     graph.openStore(
@@ -1548,10 +1570,14 @@ extension TextEncoder {
     ) {
       $0.read("llava", model: llama3, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
     }
-    let c2 = llama3(inputs: tokens2TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU)[0].as(
-      of: FloatType.self
-    ).reshaped(.HWC(batchSize, tokenLength, 4096))[0..<batchSize, 95..<tokenLength, 0..<4096]
-    .copied()
+    let c2 = llama3(
+      inputs: tokens2TensorGPU,
+      [rotaryTensorGPU, causalAttentionMaskLlama3GPU]
+        + (injectedTextEmbedding.flatMap { [$0] } ?? []))[0].as(
+        of: FloatType.self
+      ).reshaped(.HWC(batchSize, additionalTokenLength, 4096))[
+        0..<batchSize, 95..<additionalTokenLength, 0..<4096
+      ].copied()
     return ([c2, pooled], [textModel])
   }
 
@@ -1559,6 +1585,9 @@ extension TextEncoder {
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
     image: [DynamicGraph.Tensor<FloatType>], lengthsOfUncond: [Int], lengthsOfCond: [Int],
+    injectedTextEmbeddings: [(
+      model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
+    )],
     textModels existingTextModels: [Model?]
   )
     -> ([DynamicGraph.Tensor<FloatType>], [Model])
@@ -1610,7 +1639,7 @@ extension TextEncoder {
       return encodeLlama3(
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
-        textModels: existingTextModels)
+        injectedTextEmbeddings: injectedTextEmbeddings, textModels: existingTextModels)
     case .wurstchenStageC, .wurstchenStageB:
       return encodeWurstchen(
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,

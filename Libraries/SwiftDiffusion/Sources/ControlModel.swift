@@ -33,6 +33,7 @@ public enum ControlType: String, Codable {
   case controlnetunion
   case pulid  // This is a variant of IPAdapter, but like we need to have IPAdapter Plus / Full / FaceID Plus, this is needed.
   case redux  // This is different from IPAdapter as it directly integrate into prompt.
+  case llava  // This is used for prompt injection.
 }
 
 public enum ControlMode {
@@ -121,7 +122,7 @@ extension ControlModel {
     for (i, injected) in injecteds.enumerated() {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
-      case .controlnet, .controlnetlora, .controlnetunion, .t2iadapter, .injectKV, .redux:
+      case .controlnet, .controlnetlora, .controlnetunion, .t2iadapter, .injectKV, .redux, .llava:
         continue
       case .ipadapterplus, .ipadapterfull, .ipadapterfaceidplus, .pulid:
         var instanceInjectedIPAdapters = [DynamicGraph.Tensor<FloatType>]()
@@ -179,7 +180,7 @@ extension ControlModel {
       guard injected.model.version == version else { continue }
       switch injected.model.type {
       case .controlnet, .controlnetlora, .controlnetunion, .ipadapterplus, .ipadapterfull,
-        .ipadapterfaceidplus, .pulid, .redux:
+        .ipadapterfaceidplus, .pulid, .redux, .llava:
         continue
       case .injectKV:
         for (hint, strength) in injected.hints {
@@ -262,12 +263,31 @@ extension ControlModel {
             }
           }
         case .ipadapterplus, .ipadapterfull, .t2iadapter, .injectKV, .ipadapterfaceidplus, .pulid,
-          .redux:
+          .redux, .llava:
           continue
         }
       }
       return (injectedControls, injectedT2IAdapters, injectedKVs)
     }
+  }
+
+  public static func modifyTextEmbeddings(
+    tokenLengthUncond: Int, tokenLengthCond: Int,
+    injecteds: [(
+      model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
+    )]
+  ) -> (textLengthUncond: Int, textLengthCond: Int) {
+    let additionalCond = injecteds.reduce(0) {
+      guard $1.model.type == .llava else { return $0 }
+      return $0
+        + $1.hints.reduce(0) {
+          $0
+            + $1.0.reduce(0) {
+              $0 + $1.shape[1]
+            }
+        }
+    }
+    return (tokenLengthUncond, tokenLengthCond + additionalCond)
   }
 
   public static func modifyTextEncoding(
@@ -284,7 +304,7 @@ extension ControlModel {
       case .redux:
         return $0.hints.flatMap(\.0)
       case .controlnet, .controlnetlora, .controlnetunion, .injectKV, .ipadapterfaceidplus,
-        .ipadapterfull, .ipadapterplus, .pulid, .t2iadapter:
+        .ipadapterfull, .ipadapterplus, .pulid, .t2iadapter, .llava:
         return []
       }
     }
@@ -405,7 +425,7 @@ extension ControlModel {
           injectedKVs = emptyInjectKV(
             graph: graph, batchSize: batchSize, startWidth: tiledWidth, startHeight: tiledHeight)
         }
-      case .redux:
+      case .redux, .llava:
         continue
       }
     }
@@ -1380,6 +1400,57 @@ extension ControlModel {
         guard input.weight != 1 else { return [imagePromptEmbed] }
         return [input.weight * imagePromptEmbed]
       }
+    case .llava:
+      let imageEncoder = ImageEncoder<FloatType>(
+        filePath: filePaths[1], version: imageEncoderVersion)
+      let imageSize: Int
+      switch imageEncoderVersion {
+      case .clipL14_336, .eva02L14_336:
+        imageSize = 336
+      case .openClipH14:
+        imageSize = 224
+      case .siglipL27_384:
+        imageSize = 378
+      }
+      let zeroEmbeds = graph.variable(
+        .GPU(0), .NHWC(1, imageSize, imageSize, 3), of: FloatType.self)
+      zeroEmbeds.full(0)
+      let imageEmbeds = imageEncoder.encode(inputs.map(\.hint) + [zeroEmbeds]).map {
+        return $0[0][0..<1, 1..<577, 0..<1024].copied()
+      }
+      func MultiModalProjector(channels: Int) -> Model {
+        let x = Input()
+        let linear1 = Dense(count: channels)
+        let linear2 = Dense(count: channels)
+        let out = linear2(linear1(x).GELU())
+        return Model([x], [out])
+      }
+      let projector = MultiModalProjector(channels: 4096)
+      projector.compile(inputs: imageEmbeds[0])
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) {
+        $0.read("projector", model: projector, codec: [.ezm7, .q6p, .q8p, .jit, .externalData])
+      }
+      let imagePromptEmbeds = imageEmbeds.map {
+        projector(inputs: $0)[0].as(of: FloatType.self)
+      }
+      let batchedImagePromptEmbeds = (0..<inputs.count).map { i in
+        var imagePromptEmbed = graph.variable(.GPU(0), .HWC(2, 576, 4096), of: FloatType.self)
+        switch controlMode {
+        case .control:
+          imagePromptEmbed[0..<1, 0..<576, 0..<4096] = imagePromptEmbeds[inputs.count]  // The zero prompt embed for negative.
+        case .balanced, .prompt:  // For balanced / prompt, to decrease contrast, use the same embed for both positive / negative.
+          imagePromptEmbed[0..<1, 0..<576, 0..<4096] = imagePromptEmbeds[i]  // The positive prompt embed for negative.
+        }
+        imagePromptEmbed[1..<2, 0..<576, 0..<4096] = imagePromptEmbeds[i]
+        return imagePromptEmbed
+      }
+      return zip(batchedImagePromptEmbeds, inputs).map { (imagePromptEmbed, input) in
+        guard input.weight != 1 else { return [imagePromptEmbed] }
+        return [input.weight * imagePromptEmbed]
+      }
     case .t2iadapter:
       // For T2I-Adapter, we go all the way.
       let adapter: Model
@@ -1879,7 +1950,7 @@ extension ControlModel {
         }
       }
     case .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV, .ipadapterfaceidplus, .pulid,
-      .redux:
+      .redux, .llava:
       fatalError()
     }
     return (vector.map({ [$0] }) ?? []) + (controlAddEmbedding.map { [$0] } ?? [])
@@ -2017,7 +2088,7 @@ extension ControlModel {
       ).toGPU(0)
       return [graph.variable(rot)] + conditions
     case .controlnetlora, .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV,
-      .ipadapterfaceidplus, .pulid, .redux:
+      .ipadapterfaceidplus, .pulid, .redux, .llava:
       fatalError()
     }
   }
@@ -2100,7 +2171,7 @@ extension ControlModel {
       case .injectKV:
         return Self.emptyInjectKV(
           graph: graph, batchSize: batchSize, startWidth: startWidth, startHeight: startHeight)
-      case .redux:
+      case .redux, .llava:
         return []
       }
     }
@@ -2165,7 +2236,7 @@ extension ControlModel {
             return x
           }
         }
-      case .redux:
+      case .redux, .llava:
         fatalError()
       case .t2iadapter:
         guard controlMode == .control && isCfgEnabled else { return hint }

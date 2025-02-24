@@ -1658,6 +1658,61 @@ extension LocalImageGenerator {
     return rgbResults
   }
 
+  private func generateInjectedTextEmbeddings(
+    graph: DynamicGraph, hints: [ControlHintType: AnyTensor],
+    custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], pose: Tensor<FloatType>?,
+    controls: [Control], version: ModelVersion, tiledDiffusion: TiledConfiguration,
+    usesFlashAttention: Bool, externalOnDemand: Bool
+  ) -> [(model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)])] {
+    return controls.enumerated().compactMap {
+      index, control -> (
+        model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
+      )?
+      in
+      guard let file = control.file, let specification = ControlNetZoo.specificationForModel(file),
+        ControlNetZoo.isModelDownloaded(specification)
+      else { return nil }
+      guard ControlNetZoo.versionForModel(file) == version else { return nil }
+      guard control.weight > 0 else { return nil }
+      guard
+        let modifier = ControlNetZoo.modifierForModel(file)
+          ?? ControlHintType(from: control.inputOverride)
+      else { return nil }
+      let type = ControlNetZoo.typeForModel(file)
+      let imageEncoderVersion = ControlNetZoo.imageEncoderVersionForModel(file)
+      var filePaths = [ControlNetZoo.filePathForModelDownloaded(file)]
+      if let imageEncoder = ControlNetZoo.imageEncoderForModel(file) {
+        filePaths.append(ControlNetZoo.filePathForModelDownloaded(imageEncoder))
+      }
+      // We don't adjust RGB range if it is a ControlNet not trained for SDXL.
+      let controlModel = ControlModel<FloatType>(
+        filePaths: filePaths, type: type, modifier: modifier,
+        externalOnDemand: externalOnDemand, version: version,
+        tiledDiffusion: tiledDiffusion, usesFlashAttention: usesFlashAttention,
+        startStep: 0, endStep: 0, controlMode: .prompt,
+        globalAveragePooling: false, transformerBlocks: [],
+        targetBlocks: [], imageEncoderVersion: imageEncoderVersion,
+        ipAdapterConfig: nil, firstStage: nil)
+      switch type {
+      case .controlnet, .controlnetunion, .controlnetlora, .injectKV, .ipadapterplus,
+        .ipadapterfull, .redux, .ipadapterfaceidplus, .pulid, .t2iadapter:
+        return nil
+      case .llava:
+        var shuffles = shuffles
+        if shuffles.isEmpty {
+          guard let custom = custom else { return nil }
+          shuffles = [(custom, 1)]
+        }
+        let rgbs = ipAdapterRGB(
+          shuffles: shuffles, imageEncoderVersion: imageEncoderVersion, graph: graph)
+        let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
+          inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }
+        ).map { ($0, 1) }
+        return (model: controlModel, hints: hints)
+      }
+    }
+  }
+
   private func generateInjectedControls(
     graph: DynamicGraph, startHeight: Int, startWidth: Int, image: DynamicGraph.Tensor<FloatType>?,
     depth: DynamicGraph.Tensor<FloatType>?, hints: [ControlHintType: AnyTensor],
@@ -2068,7 +2123,8 @@ extension LocalImageGenerator {
           }
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
-
+      case .llava:
+        return nil
       case .ipadapterplus, .ipadapterfull, .redux:
         var shuffles = shuffles
         if shuffles.isEmpty {
@@ -2797,8 +2853,16 @@ extension LocalImageGenerator {
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil
     )
-    let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     return graph.withNoGrad {
+      let injectedTextEmbeddings = generateInjectedTextEmbeddings(
+        graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
+        controls: configuration.controls,
+        version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
+        externalOnDemand: controlExternalOnDemand)
+      let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        injecteds: injectedTextEmbeddings)
+      let tokenLength = max(tokenLengthUncond, tokenLengthCond)
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
@@ -2811,7 +2875,7 @@ extension LocalImageGenerator {
         textEncoder.encode(
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [], lengthsOfUncond: lengthsOfUncond,
-          lengthsOfCond: lengthsOfCond,
+          lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
         textEncoder: textEncoder)
       var c: [DynamicGraph.Tensor<FloatType>]
@@ -3698,6 +3762,15 @@ extension LocalImageGenerator {
       signposts.insert(.secondPassImageEncoded)
     }
     return graph.withNoGrad {
+      let injectedTextEmbeddings = generateInjectedTextEmbeddings(
+        graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
+        controls: configuration.controls,
+        version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
+        externalOnDemand: controlExternalOnDemand)
+      let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        injecteds: injectedTextEmbeddings)
+      let tokenLength = max(tokenLengthUncond, tokenLengthCond)
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
@@ -3712,7 +3785,7 @@ extension LocalImageGenerator {
         textEncoder.encode(
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
-          lengthsOfCond: lengthsOfCond,
+          lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
         textEncoder: textEncoder)
       var c: [DynamicGraph.Tensor<FloatType>]
@@ -4890,6 +4963,15 @@ extension LocalImageGenerator {
       signposts.insert(.secondPassImageEncoded)
     }
     return graph.withNoGrad {
+      let injectedTextEmbeddings = generateInjectedTextEmbeddings(
+        graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
+        controls: configuration.controls,
+        version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
+        externalOnDemand: controlExternalOnDemand)
+      let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        injecteds: injectedTextEmbeddings)
+      let tokenLength = max(tokenLengthUncond, tokenLengthCond)
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
@@ -4904,7 +4986,7 @@ extension LocalImageGenerator {
         textEncoder.encode(
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
-          lengthsOfCond: lengthsOfCond,
+          lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
         textEncoder: textEncoder)
       var c: [DynamicGraph.Tensor<FloatType>]
@@ -5589,6 +5671,15 @@ extension LocalImageGenerator {
       signposts.insert(.secondPassImageEncoded)
     }
     return graph.withNoGrad {
+      let injectedTextEmbeddings = generateInjectedTextEmbeddings(
+        graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
+        controls: configuration.controls,
+        version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
+        externalOnDemand: controlExternalOnDemand)
+      let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        injecteds: injectedTextEmbeddings)
+      let tokenLength = max(tokenLengthUncond, tokenLengthCond)
       let textEncoder = TextEncoder<FloatType>(
         filePaths: textEncoderFiles.map { ModelZoo.filePathForModelDownloaded($0) },
         version: modelVersion, textEncoderVersion: textEncoderVersion,
@@ -5603,7 +5694,7 @@ extension LocalImageGenerator {
         textEncoder.encode(
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
-          lengthsOfCond: lengthsOfCond,
+          lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
         textEncoder: textEncoder)
       var c: [DynamicGraph.Tensor<FloatType>]

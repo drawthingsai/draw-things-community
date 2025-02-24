@@ -63,13 +63,13 @@ private func TransformerBlock(prefix: String, k: Int, h: Int, hk: Int, b: Int, t
   let residual = out
   let norm2 = RMSNorm(epsilon: 1e-5, axis: [1], name: "post_attention_layernorm")
   out = norm2(out)
-  let (w1, w2, w3, ffn) = FeedForward(hiddenSize: h * k, intermediateSize: MLP, name: "mlp")
+  let (_, _, _, ffn) = FeedForward(hiddenSize: h * k, intermediateSize: MLP, name: "mlp")
   out = residual + ffn(out)
   return Model([x, rot, causalAttentionMask], [out])
 }
 
 private func TextEmbedding<T: TensorNumeric>(
-  _ dataType: T.Type, batchSize: Int, vocabularySize: Int, maxLength: Int, embeddingSize: Int
+  _ dataType: T.Type, batchSize: Int, vocabularySize: Int, embeddingSize: Int
 ) -> Model {
   let tokens = Input()
   let tokenEmbed = Embedding(
@@ -79,21 +79,30 @@ private func TextEmbedding<T: TensorNumeric>(
 }
 
 func Llama3<T: TensorNumeric>(
-  _ dataType: T.Type, vocabularySize: Int, maxLength: Int, width: Int, tokenLength: Int,
+  _ dataType: T.Type, vocabularySize: Int, width: Int, tokenLength: (Int, Int),
   layers: Int, MLP: Int, heads: Int, outputHiddenStates: Int?, batchSize: Int
 ) -> Model {
   let tokens = Input()
   let rot = Input()
   let causalAttentionMask = Input()
   let embedding = TextEmbedding(
-    T.self, batchSize: batchSize, vocabularySize: vocabularySize, maxLength: maxLength,
-    embeddingSize: width)
+    T.self, batchSize: batchSize, vocabularySize: vocabularySize, embeddingSize: width)
   var out = embedding(tokens)
+  let textEmbedding: Input?
+  if tokenLength.1 > tokenLength.0 {
+    let additionalEmbedding = Input()
+    out = Functional.concat(
+      axis: 1, out.reshaped([batchSize, tokenLength.0, width]), additionalEmbedding
+    ).reshaped([batchSize * tokenLength.1, width])
+    textEmbedding = additionalEmbedding
+  } else {
+    textEmbedding = nil
+  }
   var hiddenStates: Model.IO? = nil
   for i in 0..<layers {
     let layer = TransformerBlock(
       prefix: "layers.\(i)", k: width / heads, h: heads, hk: heads / 4, b: batchSize,
-      t: tokenLength, MLP: MLP)
+      t: tokenLength.1, MLP: MLP)
     out = layer(out, rot, causalAttentionMask)
     if let outputHiddenStates = outputHiddenStates, outputHiddenStates == i {
       hiddenStates = out
@@ -101,5 +110,7 @@ func Llama3<T: TensorNumeric>(
   }
   let norm = RMSNorm(epsilon: 1e-5, axis: [1], name: "norm")
   out = norm(out)
-  return Model([tokens, rot, causalAttentionMask], (hiddenStates.map { [$0] } ?? []) + [out])
+  return Model(
+    [tokens, rot, causalAttentionMask] + (textEmbedding.flatMap { [$0] } ?? []),
+    (hiddenStates.map { [$0] } ?? []) + [out])
 }
