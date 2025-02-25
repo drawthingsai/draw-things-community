@@ -322,14 +322,14 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             if isCancelled() {
               self.logger.info("Image processed cancelled, generated images return nil")
             } else {
-              let configurationDictionary: [String: Any]?
+              let configurationDictionary: [String: Any]
               if let jsonData = try? JSONEncoder().encode(
                 JSGenerationConfiguration(configuration: configuration))
               {
                 configurationDictionary =
-                  try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
+                  (try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]) ?? [:]
               } else {
-                configurationDictionary = nil
+                configurationDictionary = [:]
               }
               self.logger.error(
                 "Image processed failed, failed configuration:\(configurationDictionary)")

@@ -3741,7 +3741,6 @@ extension LocalImageGenerator {
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil
     )
-    let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     var signposts = Set<ImageGeneratorSignpost>([
       .textEncoded, .imageEncoded, .sampling(sampling.steps - initTimestep.roundedDownStartStep),
       .imageDecoded,
@@ -4953,7 +4952,6 @@ extension LocalImageGenerator {
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil
     )
-    let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     signposts.formUnion([
       .textEncoded, .imageEncoded, .sampling(sampling.steps - initTimestep.roundedDownStartStep),
       .imageDecoded,
@@ -5664,7 +5662,6 @@ extension LocalImageGenerator {
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil
     )
-    let tokenLength = max(tokenLengthUncond, tokenLengthCond)
     signposts.formUnion([
       .textEncoded, .imageEncoded, .sampling(sampling.steps), .imageDecoded,
     ])
