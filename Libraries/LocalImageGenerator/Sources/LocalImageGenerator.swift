@@ -1659,6 +1659,7 @@ extension LocalImageGenerator {
   }
 
   private func generateInjectedTextEmbeddings(
+    image: Tensor<FloatType>?,
     graph: DynamicGraph, hints: [ControlHintType: AnyTensor],
     custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], pose: Tensor<FloatType>?,
     controls: [Control], version: ModelVersion, tiledDiffusion: TiledConfiguration,
@@ -1700,7 +1701,7 @@ extension LocalImageGenerator {
       case .llava:
         var shuffles = shuffles
         if shuffles.isEmpty {
-          guard let custom = custom else { return nil }
+          guard let custom = custom ?? image else { return nil }
           shuffles = [(custom, 1)]
         }
         let rgbs = ipAdapterRGB(
@@ -2855,6 +2856,7 @@ extension LocalImageGenerator {
     )
     return graph.withNoGrad {
       let injectedTextEmbeddings = generateInjectedTextEmbeddings(
+        image: image,
         graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
@@ -3764,6 +3766,7 @@ extension LocalImageGenerator {
     }
     return graph.withNoGrad {
       let injectedTextEmbeddings = generateInjectedTextEmbeddings(
+        image: image,
         graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
@@ -4966,6 +4969,7 @@ extension LocalImageGenerator {
     }
     return graph.withNoGrad {
       let injectedTextEmbeddings = generateInjectedTextEmbeddings(
+        image: image,
         graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
@@ -5675,6 +5679,7 @@ extension LocalImageGenerator {
     }
     return graph.withNoGrad {
       let injectedTextEmbeddings = generateInjectedTextEmbeddings(
+        image: image,
         graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,

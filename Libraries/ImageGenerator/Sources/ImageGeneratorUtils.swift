@@ -130,7 +130,9 @@ public struct ImageGeneratorUtils {
           injectPrompts = true
         }
       case .llava:
-        break  // Not useful.
+        if hasImage || hasCustom || shuffleCount > 0 {
+          injectPrompts = true
+        }
       case .t2iadapter:
         switch modifier {
         case .canny, .mlsd, .tile, .blur, .gray, .lowquality:
