@@ -27,6 +27,7 @@ struct WorkTask {
   var context: StreamingResponseCallContext<ImageGenerationResponse>
   var promise: EventLoopPromise<GRPCStatus>
   var heartbeat: Task<Void, Error>
+  var creationTimestamp: Date
 }
 
 public struct Worker {
@@ -50,6 +51,10 @@ extension Worker {
   func executeTask(_ task: WorkTask) async {
     logger.info(
       "Worker \(id) primaryPriority:\(primaryPriority) starting task  (Priority: \(task.priority))"
+    )
+    let taskQueueingTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
+    logger.info(
+      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority))"
     )
     defer { task.heartbeat.cancel() }
     do {
@@ -579,6 +584,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         GRPCStatus(code: .permissionDenied, message: "Service bear-token is empty")
       )
     }
+    logger.info("generateImage request")
 
     var validationRequest = request
     validationRequest.contents = []
@@ -614,7 +620,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       }
       let task = WorkTask(
         priority: priority, request: request, context: context, promise: promise,
-        heartbeat: heartbeat)
+        heartbeat: heartbeat, creationTimestamp: Date())
       await taskQueue.addTask(task)
       if let worker = await taskQueue.nextWorker() {
         // Note that the extracted task may not be the ones we just enqueued.
