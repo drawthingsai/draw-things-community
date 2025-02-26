@@ -8,6 +8,7 @@ Apps/LoRAConverter
 Apps/ModelConverter
 Apps/ModelQuantizer
 Apps/gRPCServerCLI
+Libraries/ConfigurationZoo
 Libraries/DataModels
 Libraries/Exporter
 Libraries/FaceRestorer
