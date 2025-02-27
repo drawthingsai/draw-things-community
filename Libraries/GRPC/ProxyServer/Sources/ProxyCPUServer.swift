@@ -64,6 +64,12 @@ extension Worker {
       }
       let logger = logger
       let callInstance = client.generateImage(task.request) { response in
+        if !response.generatedImages.isEmpty {
+          let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
+          logger.info(
+            "Task total time: \(totalTimeMs)ms, (Priority: \(task.priority))"
+          )
+        }
         task.context.sendResponse(response).whenComplete { result in
           switch result {
           case .success:
