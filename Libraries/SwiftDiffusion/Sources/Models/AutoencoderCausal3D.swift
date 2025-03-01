@@ -214,7 +214,7 @@ func EncoderCausal3D(
   out = normOut(out)
   out = out.swish()
   let convOut = Convolution(
-    groups: 1, filters: 32, filterSize: [3, 3, 3], format: .OIHW, name: "conv_out")
+    groups: 1, filters: 32, filterSize: [3, 3, 3]. hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])), format: .OIHW, name: "conv_out")
   out = convOut(
     out.padded(.replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
       1, depth + 2, height + 2, width + 2, previousChannel,
