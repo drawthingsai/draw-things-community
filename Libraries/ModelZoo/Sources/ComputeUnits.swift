@@ -35,6 +35,8 @@ public enum ComputeUnits {
       return 1.18
     case .hunyuanVideo:
       return 2.6
+    case .wan21_1_3b, .wan21_14b:
+      return 2.6
     }
   }
 
@@ -78,7 +80,7 @@ public enum ComputeUnits {
     case .svdI2v:
       batchSize = isCfgEnabled ? 2 : 1
       numFrames = Int(configuration.numFrames)
-    case .hunyuanVideo:
+    case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       batchSize = isCfgEnabled ? 2 : 1
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
     }

@@ -370,7 +370,7 @@ extension ControlModel {
     let tiledWidth: Int
     switch version {
     case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .kandinsky21, .sd3, .pixart, .auraflow,
-      .flux1, .sd3Large, .hunyuanVideo:
+      .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
@@ -791,7 +791,7 @@ extension ControlModel {
             FloatType.self, inputDim: 1280, queryDim: 1280, outputDim: 2048, headDim: 64, heads: 20,
             grid: 16, queries: 16, layers: 4, batchSize: 1)
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
-          .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+          .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
           fatalError()
         }
       }
@@ -819,7 +819,7 @@ extension ControlModel {
           imagePromptEmbed[1..<2, 0..<16, 0..<2048] = imagePromptEmbeds[i]
           return imagePromptEmbed
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
-          .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+          .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
           fatalError()
         }
       }
@@ -837,7 +837,7 @@ extension ControlModel {
           embeddingLength: 16, attentionRes: [2: 2, 4: 10],
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
-        .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+        .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -887,7 +887,8 @@ extension ControlModel {
             case .sdxlBase:
               weight = input.weight * Float($0.element.shape[usesFlashAttention ? 2 : 1]) / 20
             case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21,
-              .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+              .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
+              .wan21_14b:
               fatalError()
             }
           }
@@ -921,7 +922,7 @@ extension ControlModel {
       case .sdxlBase:
         projModel = MLPProjModel(width: 1280, outputDim: 2048)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
-        .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+        .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         fatalError()
       }
       projModel.compile(inputs: imageEmbeds[0])
@@ -947,7 +948,7 @@ extension ControlModel {
           imagePromptEmbed[1..<2, 0..<257, 0..<2048] = imagePromptEmbeds[i]
           return imagePromptEmbed
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
-          .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+          .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
           fatalError()
         }
       }
@@ -965,7 +966,7 @@ extension ControlModel {
           embeddingLength: 257, attentionRes: [2: 2, 4: 10],
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
-        .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+        .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1016,7 +1017,8 @@ extension ControlModel {
             case .sdxlBase:
               weight = input.weight * Float($0.element.shape[usesFlashAttention ? 2 : 1]) / 20
             case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21,
-              .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+              .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
+              .wan21_14b:
               fatalError()
             }
           }
@@ -1131,7 +1133,7 @@ extension ControlModel {
           imagePromptEmbed[1..<2, 0..<6, 0..<2048] = imagePromptEmbeds[i]
           return imagePromptEmbed
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
-          .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+          .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
           fatalError()
         }
       }
@@ -1149,7 +1151,7 @@ extension ControlModel {
           embeddingLength: 6, attentionRes: [2: 2, 4: 10],
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
-        .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+        .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1201,7 +1203,8 @@ extension ControlModel {
             case .sdxlBase:
               weight = input.weight * Float($0.element.shape[usesFlashAttention ? 2 : 1]) / 20
             case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21,
-              .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+              .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
+              .wan21_14b:
               fatalError()
             }
           }
@@ -1298,7 +1301,8 @@ extension ControlModel {
           imagePromptEmbed[1..<2, 0..<32, 0..<2048] = imagePromptEmbeds[i]
           return imagePromptEmbed
         case .v1, .sdxlBase, .v2, .sd3, .sd3Large, .pixart, .auraflow, .sdxlRefiner, .kandinsky21,
-          .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+          .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
+          .wan21_14b:
           fatalError()
         }
       }
@@ -1312,7 +1316,7 @@ extension ControlModel {
           single: [0, 4, 8, 12, 16, 20, 24, 28, 32, 36],
           usesFlashAttention: usesFlashAttention ? .scale1 : .none)
       case .v1, .v2, .sdxlBase, .sd3, .sd3Large, .pixart, .auraflow, .sdxlRefiner, .kandinsky21,
-        .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+        .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         fatalError()
       }
       pulidFixed.compile(inputs: batchedImagePromptEmbeds[0])
@@ -1592,7 +1596,7 @@ extension ControlModel {
         .GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 3072), of: FloatType.self)
       emptyControls = Array(repeating: emptyControl, count: 19 + 38)
     case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .sdxlRefiner, .ssd1b,
-      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       fatalError()
     }
     for emptyControl in emptyControls {
@@ -1738,7 +1742,7 @@ extension ControlModel {
         emptyAdapters.append(contentsOf: Array(repeating: emptyAdapter, count: 40))
       }
     case .v2, .sd3, .sd3Large, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
-      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       fatalError()
     }
     for emptyAdapter in emptyAdapters {
@@ -2122,7 +2126,7 @@ extension ControlModel {
         tokenLengthCond: tokenLengthCond, zeroNegativePrompt: zeroNegativePrompt,
         mainUNetFixed: mainUNetFixed)
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
-      .wurstchenStageB, .wurstchenStageC, .hunyuanVideo:
+      .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       fatalError()
     }
   }
@@ -2269,7 +2273,7 @@ extension ControlModel {
         xIn =
           channels == 16 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<16].copied()
       case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v,
-        .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+        .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         fatalError()
       }
     } else {
@@ -2346,7 +2350,7 @@ extension ControlModel {
         xIn =
           channels == 16 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<16].copied()
       case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v,
-        .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+        .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         fatalError()
       }
     }
@@ -2485,7 +2489,7 @@ extension ControlModel {
         result = newResult
       }
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo:
+      .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       break
     }
     return result

@@ -311,6 +311,8 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .wurstchenStageC, .wurstchenStageB:
         throw Error.noTextEncoder
+      case .wan21_1_3b, .wan21_14b:
+        fatalError()
       case .kandinsky21:
         fatalError()
       }
@@ -383,6 +385,8 @@ public final class ModelImporter {
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB, .hunyuanVideo:
             fatalError()
+          case .wan21_1_3b, .wan21_14b:
+            fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
             for (key, value) in textEncoderStateDict {
@@ -420,7 +424,7 @@ public final class ModelImporter {
                 throw Error.tensorWritesFailed
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-              .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+              .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
               fatalError()
             }
           }
@@ -551,6 +555,8 @@ public final class ModelImporter {
     case .hunyuanVideo:
       conditionalLength = 4096
       batchSize = 1
+    case .wan21_1_3b, .wan21_14b:
+      fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -595,6 +601,8 @@ public final class ModelImporter {
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
           .hunyuanVideo:
           vectors = []
+        case .wan21_1_3b, .wan21_14b:
+          fatalError()
         case .kandinsky21, .v1, .v2:
           fatalError()
         }
@@ -642,6 +650,8 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .wan21_1_3b, .wan21_14b:
+        fatalError()
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -771,6 +781,8 @@ public final class ModelImporter {
           usesFlashAttention: .scaleMerged)
         (unetFixedMapper, unetFixed) = HunyuanFixed(
           timesteps: batchSize, channels: 3072, layers: (20, 40), textLength: (0, 20))
+      case .wan21_1_3b, .wan21_14b:
+        fatalError()
       case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
@@ -838,6 +850,8 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(batchSize, 256), of: FloatType.self),
         ]
         tEmb = nil
+      case .wan21_1_3b, .wan21_14b:
+        fatalError()
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1010,6 +1024,8 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
+          case .wan21_1_3b, .wan21_14b:
+            fatalError()
           case .auraflow:
             fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1150,6 +1166,8 @@ public final class ModelImporter {
           if $0.keys.count != 1870 {
             throw Error.tensorWritesFailed
           }
+        case .wan21_1_3b, .wan21_14b:
+          fatalError()
         case .auraflow:
           fatalError()
         case .kandinsky21, .wurstchenStageB:

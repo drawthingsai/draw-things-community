@@ -41,6 +41,8 @@ public struct ModelZoo: DownloadZoo {
       return "FLUX.1"
     case .hunyuanVideo:
       return "Hunyuan Video"
+    case .wan21_1_3b, .wan21_14b:
+      return "Wan v2.1 1.3B"
     }
   }
 
@@ -869,7 +871,7 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .pixart:
       return .epsilon
-    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo:
+    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       return .u(conditionScale: 1000)
     }
   }
@@ -881,7 +883,8 @@ public struct ModelZoo: DownloadZoo {
     }
     switch specification.version {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo:
+      .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b,
+      .wan21_14b:
       return .timestep
     case .svdI2v:
       return .noise
@@ -910,7 +913,7 @@ public struct ModelZoo: DownloadZoo {
       return .edm(.init(sigmaMax: 700.0))
     case .wurstchenStageC, .wurstchenStageB:
       return .edm(.init(sigmaMin: 0.01, sigmaMax: 99.995))
-    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo:
+    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
@@ -932,6 +935,8 @@ public struct ModelZoo: DownloadZoo {
       return 512
     case .hunyuanVideo:
       return 0
+    case .wan21_1_3b, .wan21_14b:
+      return 512
     }
   }
 
@@ -962,6 +967,8 @@ public struct ModelZoo: DownloadZoo {
       return (nil, nil, 0.3611, 0.11590)
     case .hunyuanVideo:
       return (nil, nil, 0.476986, nil)
+    case .wan21_1_3b, .wan21_14b:
+      return (nil, nil, 1, nil)
     }
   }
 
@@ -1062,6 +1069,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 10 * 1_024 * 1_024 * 1_024
       case .hunyuanVideo:
         return fileSize < 11 * 1_024 * 1_024 * 1_024
+      case .wan21_1_3b, .wan21_14b:
+        fatalError()
       }
     }
     return false
@@ -1102,6 +1111,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 16 * 1_024 * 1_024 * 1_024
       case .hunyuanVideo:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
+      case .wan21_1_3b, .wan21_14b:
+        fatalError()
       }
     }
     return false

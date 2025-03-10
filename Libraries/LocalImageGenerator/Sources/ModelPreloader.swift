@@ -489,7 +489,7 @@ extension ModelPreloader {
     case .sdxlBase, .sdxlRefiner, .ssd1b:
       conditionalLength = 1280
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-      .wurstchenStageB, .hunyuanVideo:
+      .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       fatalError()
     }
     let cfgChannels: Int
@@ -695,7 +695,7 @@ extension ModelPreloader {
             ).0
           textModelLoRAPrefix = "__te2"
         case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-          .wurstchenStageB, .hunyuanVideo:
+          .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
           fatalError()
         }
         let tokensTensor = graph.variable(.GPU(0), .C(2 * 77), of: Int32.self)
@@ -733,7 +733,7 @@ extension ModelPreloader {
                       name = "__text_model__[t-258-1]"
                     }
                   case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-                    .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+                    .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
                     fatalError()
                   }
                   return loader.mergeLoRA(
@@ -773,7 +773,7 @@ extension ModelPreloader {
                     name = "__text_model__[t-258-1]"
                   }
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-                  .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+                  .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
                   fatalError()
                 }
                 return .continue(name)
@@ -1068,7 +1068,7 @@ extension ModelPreloader {
           case .v1, .v2, .kandinsky21:
             return false
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-            .wurstchenStageB, .wurstchenStageC, .svdI2v, .hunyuanVideo:
+            .wurstchenStageB, .wurstchenStageC, .svdI2v, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
             return DeviceCapability.isLowPerformance
           }
         case .unet:

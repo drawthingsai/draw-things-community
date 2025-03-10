@@ -115,7 +115,7 @@ extension LocalImageGenerator {
         700.00, 54.5, 15.886, 7.977, 4.248, 1.789, 0.981, 0.403, 0.173, 0.034, 0.002,
       ]
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB,
-      .wurstchenStageC, .hunyuanVideo:
+      .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1092,6 +1092,8 @@ extension LocalImageGenerator {
       result.7 = tokenLengthsUncond - 95  // Remove the leading template.
       result.8 = tokenLengthsCond - 95
       return result
+    case .wan21_1_3b, .wan21_14b:
+      fatalError()
     case .wurstchenStageC, .wurstchenStageB:
       // The difference between this and SDXL: paddingToken is no long '!' (indexed by 0) but unknown.
       return tokenize(
@@ -2348,6 +2350,8 @@ extension LocalImageGenerator {
           }
           return c
         }
+      case .wan21_1_3b, .wan21_14b:
+        fatalError()
       case .auraflow, .flux1, .kandinsky21, .pixart, .hunyuanVideo:
         break
       }
@@ -2435,13 +2439,15 @@ extension LocalImageGenerator {
         let encodedShape = encodedDepth.shape
         return firstStage.scale(
           encodedDepth[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied())
+      case .wan21_1_3b, .wan21_14b:
+        fatalError()
       case .hunyuanVideo:
         fatalError()
       }
     case .canny:
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo:
+        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         return nil
       case .flux1:
         guard
@@ -2492,6 +2498,8 @@ extension LocalImageGenerator {
       result[0..<min(shape[0], batchSize), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
         encodedImage[0..<min(shape[0], batchSize), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
       return result
+    case .wan21_1_3b, .wan21_14b:
+      fatalError()
     case .flux1:
       let shape = encodedImage.shape
       var result = graph.variable(
@@ -2788,7 +2796,7 @@ extension LocalImageGenerator {
         (hiresFixEnabled ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
         * 8
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         firstPassChannels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -2945,7 +2953,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = Int(configuration.numFrames)
-      case .hunyuanVideo:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
@@ -3305,7 +3313,7 @@ extension LocalImageGenerator {
         )
         let channels: Int
         switch modelVersion {
-        case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo:
+        case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
           channels = 16
         case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
           .wurstchenStageB:
@@ -3691,7 +3699,7 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -3854,7 +3862,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = Int(configuration.numFrames)
-      case .hunyuanVideo:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
@@ -4843,7 +4851,7 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -5094,7 +5102,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = Int(configuration.numFrames)
-      case .hunyuanVideo:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
@@ -5553,7 +5561,7 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 8 / imageScaleFactor
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
-      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo:
+      case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -5838,7 +5846,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = Int(configuration.numFrames)
-      case .hunyuanVideo:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:

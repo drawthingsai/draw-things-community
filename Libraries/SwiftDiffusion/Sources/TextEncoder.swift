@@ -1646,6 +1646,8 @@ extension TextEncoder {
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         injectedTextEmbeddings: injectedTextEmbeddings, textModels: existingTextModels)
+    case .wan21_1_3b, .wan21_14b:
+      fatalError()
     case .wurstchenStageC, .wurstchenStageB:
       return encodeWurstchen(
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
@@ -1721,7 +1723,7 @@ extension TextEncoder {
             intermediateSize: 4096, usesFlashAttention: usesFlashAttention
           ).0
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+        .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -1757,7 +1759,8 @@ extension TextEncoder {
                     name = "__text_model__[t-186-1]"
                   }
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
-                  .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+                  .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
+                  .wan21_1_3b, .wan21_14b:
                   fatalError()
                 }
                 return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
@@ -1791,7 +1794,8 @@ extension TextEncoder {
                   name = "__text_model__[t-186-1]"
                 }
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
-                .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+                .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
+                .wan21_1_3b, .wan21_14b:
                 fatalError()
               }
               return .continue(name)

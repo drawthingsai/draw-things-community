@@ -513,6 +513,8 @@ public struct DeviceCapability {
       {
         return false
       }
+    case .wan21_1_3b, .wan21_14b:
+      fatalError()
     }
     return true
   }

@@ -95,7 +95,7 @@ extension UNetProtocol {
             embeddingSize: timeEmbeddingSize,
             maxPeriod: 10_000)
         ).toGPU(0))
-    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo:
+    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
@@ -176,7 +176,8 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
             $0.1[(index + timesteps)..<(index + timesteps + 1), 0..<shape[1], 0..<shape[2]])
         }
       }
-
+  case .wan21_1_3b, .wan21_14b:
+    fatalError()
   case .pixart:
     var extractedConditions = [conditions[0]]
     let layers = (conditions.count - 3) / 8
@@ -740,6 +741,8 @@ extension UNetFromNNC {
             ).1
           })
       }
+    case .wan21_1_3b, .wan21_14b:
+      fatalError()
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -773,9 +776,9 @@ extension UNetFromNNC {
       case .flux1:
         c.append(contentsOf: injectedIPAdapters)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB:
+        .wurstchenStageB, .hunyuanVideo:
         fatalError()
-      case .hunyuanVideo:
+      case .wan21_1_3b, .wan21_14b:
         fatalError()
       }
     }
@@ -831,7 +834,7 @@ extension UNetFromNNC {
       modelKey = "stage_b"
     case .wurstchenStageC:
       modelKey = "stage_c"
-    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo:
+    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -879,6 +882,8 @@ extension UNetFromNNC {
             case .auraflow:
               fatalError()
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
+              fatalError()
+            case .wan21_1_3b, .wan21_14b:
               fatalError()
             }
           }()
@@ -1063,6 +1068,8 @@ extension UNetFromNNC {
       case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
         break
+      case .wan21_1_3b, .wan21_14b:
+        fatalError()
       }
       let shape = $0.1.shape
       guard shape.count == 4 else { return $0.1 }
@@ -1434,10 +1441,10 @@ extension UNetFromNNC {
           }
         }
         c = newC
-      case .hunyuanVideo:
-        fatalError()
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB:
+        .wurstchenStageB, .hunyuanVideo:
+        fatalError()
+      case .wan21_1_3b, .wan21_14b:
         fatalError()
       }
     }
@@ -1467,7 +1474,7 @@ extension UNetFromNNC {
       }
       return x
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo:
+      .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       return x
     }
   }
