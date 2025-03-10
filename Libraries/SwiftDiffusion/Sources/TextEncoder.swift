@@ -1002,7 +1002,9 @@ extension TextEncoder {
   {
     let graph = tokens[0].graph
     let tokenLength = tokens[0].shape[0] / 2
-    let (_, textModel) = UMT5ForConditionalGeneration(b: 2, t: tokenLength, of: FloatType.self)
+    let (_, textModel) = UMT5ForConditionalGeneration(
+      b: 2, t: tokenLength, vocabularySize: 32_128, channels: 2_048, intermediateSize: 5_120,
+      of: FloatType.self)
     let relativePositionBuckets = relativePositionBuckets(
       sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
     var attentionMask = Tensor<FloatType>(.CPU, .NHWC(2, 1, 1, tokenLength))

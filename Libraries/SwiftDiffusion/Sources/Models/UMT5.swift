@@ -84,19 +84,20 @@ private func UMT5Block(
 }
 
 func UMT5ForConditionalGeneration<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  b: Int, t: Int, of: FloatType.Type = FloatType.self
+  b: Int, t: Int, vocabularySize: Int, channels: Int, intermediateSize: Int,
+  of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let attentionMask = Input()
   let relativePositionBuckets = Input()
   let textEmbed = UMT5TextEmbedding(
-    vocabularySize: 32_128, embeddingSize: 2_048, name: "shared", of: FloatType.self)
+    vocabularySize: vocabularySize, embeddingSize: channels, name: "shared", of: FloatType.self)
   var out = textEmbed(x).to(.Float32)
   var mappers = [ModelWeightMapper]()
   for i in 0..<24 {
     let (mapper, block) = UMT5Block(
-      prefix: "encoder.block.\(i)", k: 64, h: 32, b: b, t: t, outFeatures: 2_048,
-      intermediateSize: 5_120)
+      prefix: "encoder.block.\(i)", k: 64, h: channels / 64, b: b, t: t, outFeatures: channels,
+      intermediateSize: intermediateSize)
     out = block(out, attentionMask, relativePositionBuckets)
     mappers.append(mapper)
   }
