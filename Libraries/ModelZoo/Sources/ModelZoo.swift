@@ -360,6 +360,13 @@ public struct ModelZoo: DownloadZoo {
     "flux_1_schnell_q8p.ckpt": "26a38212290a928aad21d4d9a6e534cca6c06ddb7ce0a926ac31533500e39f64",
     "flux_1_schnell_f16.ckpt": "6fad328261de43847bf6a53a075445e90c5fd90f65c4a68dc538fcb7aa5f13a2",
     "flux_1_schnell_q5p.ckpt": "37a28dcba93e23e4433b64d621b5352f4651d46eaf40251351d8a553642b907b",
+    "wan_v2.1_1.3b_480p_f16.ckpt":
+      "d8f0e77085890f86b2d61095d1340bb94bbf876edac5a472693e7f047e5ac4a6",
+    "wan_v2.1_1.3b_480p_q8p.ckpt":
+      "2aa588d0c001d190e8a3a6b176835e89c97800479b8fe5d1837fe4514f9bf805",
+    "umt5_xxl_encoder_q8p.ckpt": "72ef62d22c09a3b764ac9e6fe0100f4029619fb3ff8ccec3432e509487b29831",
+    "wan_v2.1_video_vae_f16.ckpt":
+      "4c518b128b3c1f2ea164aa46269d8875b4be3661d1fc0fba2709d03fa94e418b",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -381,6 +388,16 @@ public struct ModelZoo: DownloadZoo {
       name: "PixArt Sigma XL 1K (8-bit)", file: "pixart_sigma_xl_2_1024_ms_q8p.ckpt", prefix: "",
       version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
+    Specification(
+      name: "Wan 2.1 T2V 1.3B", file: "wan_v2.1_1.3b_480p_f16.ckpt", prefix: "",
+      version: .wan21_1_3b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt"
+    ),
+    Specification(
+      name: "Wan 2.1 T2V 1.3B (8-bit)", file: "wan_v2.1_1.3b_480p_q8p.ckpt", prefix: "",
+      version: .wan21_1_3b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt"
+    ),
     Specification(
       name: "FLUX.1 [schnell]", file: "flux_1_schnell_q8p.ckpt", prefix: "",
       version: .flux1, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",

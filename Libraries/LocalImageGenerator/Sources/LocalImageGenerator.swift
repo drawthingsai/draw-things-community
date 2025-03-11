@@ -33,6 +33,7 @@ public struct LocalImageGenerator: ImageGenerator {
   public var tokenizerPileT5: SentencePieceTokenizer
   public var tokenizerChatGLM3: SentencePieceTokenizer
   public var tokenizerLlama3: GPT2Tokenizer
+  public var tokenizerUMT5: SentencePieceTokenizer
   private let queue: DispatchQueue
   public init(
     queue: DispatchQueue, configurations: FetchedResult<GenerationConfiguration>,
@@ -43,7 +44,8 @@ public struct LocalImageGenerator: ImageGenerator {
     tokenizerT5: SentencePieceTokenizer,
     tokenizerPileT5: SentencePieceTokenizer,
     tokenizerChatGLM3: SentencePieceTokenizer,
-    tokenizerLlama3: GPT2Tokenizer
+    tokenizerLlama3: GPT2Tokenizer,
+    tokenizerUMT5: SentencePieceTokenizer
   ) {
     self.queue = queue
     self.tokenizerV1 = tokenizerV1
@@ -54,6 +56,7 @@ public struct LocalImageGenerator: ImageGenerator {
     self.tokenizerPileT5 = tokenizerPileT5
     self.tokenizerChatGLM3 = tokenizerChatGLM3
     self.tokenizerLlama3 = tokenizerLlama3
+    self.tokenizerUMT5 = tokenizerUMT5
     modelPreloader = ModelPreloader(
       queue: queue, configurations: configurations, workspace: workspace)
   }

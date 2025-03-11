@@ -43,4 +43,7 @@ public enum BinaryResources {
   public static let vocab_llama3_json = Data(
     bytesNoCopy: C_Resources.vocab_llama3_json()!, count: C_Resources.vocab_llama3_json_size,
     deallocator: .none)
+  public static let umt5_spiece_model = Data(
+    bytesNoCopy: C_Resources.umt5_spiece_model()!, count: C_Resources.umt5_spiece_model_size,
+    deallocator: .none)
 }

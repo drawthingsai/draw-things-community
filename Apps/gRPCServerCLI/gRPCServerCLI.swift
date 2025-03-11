@@ -67,12 +67,16 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
       "<|begin_of_text|>": 128000, "<|end_of_text|>": 128001,
     ], unknownToken: "<|end_of_text|>", startToken: "<|begin_of_text|>",
     endToken: "<|end_of_text|>")
+  let tokenizerUMT5 = SentencePieceTokenizer(
+    data: BinaryResources.umt5_spiece_model, startToken: nil,
+    endToken: 1, tokenShift: 0)
 
   return LocalImageGenerator(
     queue: queue, configurations: configurations, workspace: workspace, tokenizerV1: tokenizerV1,
     tokenizerV2: tokenizerV2, tokenizerXL: tokenizerXL, tokenizerKandinsky: tokenizerKandinsky,
     tokenizerT5: tokenizerT5, tokenizerPileT5: tokenizerPileT5,
-    tokenizerChatGLM3: tokenizerChatGLM3, tokenizerLlama3: tokenizerLlama3)
+    tokenizerChatGLM3: tokenizerChatGLM3, tokenizerLlama3: tokenizerLlama3,
+    tokenizerUMT5: tokenizerUMT5)
 }
 
 #if os(Linux)

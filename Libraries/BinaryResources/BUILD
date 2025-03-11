@@ -14,6 +14,7 @@ resource_library(
         "Resources/server_crt.crt",
         "Resources/server_key.key",
         "Resources/t5.spiece.model",
+        "Resources/umt5.spiece.model",
         "Resources/vocab.json",
         "Resources/vocab_16e6.json",
         "Resources/vocab_llama3.json",

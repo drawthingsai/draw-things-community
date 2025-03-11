@@ -12,3 +12,4 @@
 #include "Libraries/BinaryResources/isrgrootx1_generated.h"
 #include "Libraries/BinaryResources/vocab_llama3_generated.h"
 #include "Libraries/BinaryResources/merges_llama3_generated.h"
+#include "Libraries/BinaryResources/umt5.spiece_generated.h"
