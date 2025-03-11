@@ -1,4 +1,48 @@
+import Foundation
 import NNC
+
+public func WanRotaryPositionEmbedding(
+  height: Int, width: Int, time: Int, channels: Int, heads: Int = 1
+)
+  -> Tensor<Float>
+{
+  var rotTensor = Tensor<Float>(.CPU, .NHWC(1, time * height * width, heads, channels))
+  let dim1 = (channels / 6) * 2
+  let dim2 = dim1
+  let dim0 = channels - dim1 - dim2
+  assert(channels % 16 == 0)
+  for t in 0..<time {
+    for y in 0..<height {
+      for x in 0..<width {
+        let i = t * height * width + y * width + x
+        for j in 0..<heads {
+          for k in 0..<(dim0 / 2) {
+            let theta = 0 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, k * 2] = Float(costheta)
+            rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim1 / 2) {
+            let theta = Double(y) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+            rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim2 / 2) {
+            let theta = Double(x) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+            rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+          }
+        }
+      }
+    }
+  }
+  return rotTensor
+}
 
 private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, name: String) -> (
   Model, Model, Model
@@ -103,22 +147,23 @@ func Wan(
   textLength: Int
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
-  let imgIn = Dense(count: channels, name: "x_embedder")
-  var out = imgIn(x)
+  let imgIn = Convolution(
+    groups: 1, filters: channels, filterSize: [2, 2],
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   let txt = Input()
   let (cLinear1, cLinear2, contextEmbedder) = MLPEmbedder(channels: channels, name: "c")
   let context = contextEmbedder(txt)
   let t = Input()
   let rot = Input()
   let (timeInMlp0, timeInMlp2, timeIn) = TimeEmbedder(channels: channels, name: "t")
-  let vector = timeIn(t).reshaped([1, 1, channels])
+  let vector = timeIn(t).reshaped([1, 1, channels]).to(.Float32)
   let vectorIn = vector.swish()
   let timeProjections = (0..<6).map { Dense(count: channels, name: "ada_ln_\($0)") }
   let tOut = timeProjections.map { $0(vectorIn) }
   let h = height / 2
   let w = width / 2
   var mappers = [ModelWeightMapper]()
-  out = out.to(.Float32)
+  var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlock(
       prefix: "blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength, hw: time * h * w,
@@ -131,7 +176,10 @@ func Wan(
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = ((1 + scale + vector) .* normFinal(out) + (vector + shift)).to(.Float16)
   let projOut = Dense(count: 2 * 2 * 16, name: "linear")
-  out = projOut(out)
+  out = projOut(out).reshaped([time, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
+    .reshaped([
+      time, h * 2, w * 2, 16,
+    ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     for mapper in mappers {
@@ -139,5 +187,5 @@ func Wan(
     }
     return mapping
   }
-  return (mapper, Model([x, txt, t, rot], [out]))
+  return (mapper, Model([x, t, txt, rot], [out]))
 }

@@ -747,7 +747,35 @@ public enum ImageConverter {
             bytes[i * 4 + 3] = 255
           }
         case .wan21_1_3b, .wan21_14b:
-          fatalError()
+          // Need to update the coefficients.
+          for i in 0..<imageHeight * imageWidth {
+            let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
+              fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3], fp16[i * 16 + 4],
+              fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
+              fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
+              fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
+            )
+            // TBD, I may want to regress these coefficients myself.
+            let r: FloatType =
+              (-0.1299 * v0 + 0.0671 * v1 + 0.3568 * v2 + 0.0372 * v3 + 0.0313 * v4 + 0.0296 * v5
+                - 0.3477 * v6 + 0.0166 * v7 - 0.0412 * v8 - 0.1293 * v9 + 0.0680 * v10 + 0.0032
+                * v11 - 0.1251 * v12 + 0.0060 * v13 - 0.3477 * v14 + 0.1984 * v15 - 0.1835) * 127.5
+              + 127.5
+            let g: FloatType =
+              (-0.1692 * v0 + 0.0406 * v1 + 0.2548 * v2 + 0.2344 * v3 + 0.0189 * v4 - 0.0956 * v5
+                - 0.4059 * v6 + 0.1902 * v7 + 0.0267 * v8 + 0.0740 * v9 + 0.3019 * v10 + 0.0581
+                * v11 + 0.0927 * v12 - 0.0633 * v13 + 0.2275 * v14 + 0.0913 * v15 - 0.0868) * 127.5
+              + 127.5
+            let b: FloatType =
+              (0.2932 * v0 + 0.0442 * v1 + 0.1747 * v2 + 0.1420 * v3 - 0.0328 * v4 - 0.0665 * v5
+                - 0.2925 * v6 + 0.1975 * v7 - 0.1364 * v8 + 0.1636 * v9 + 0.1128 * v10 + 0.0639
+                * v11 + 0.1699 * v12 + 0.0005 * v13 + 0.2950 * v14 + 0.1861 * v15 - 0.336) * 127.5
+              + 127.5
+            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+            bytes[i * 4 + 3] = 255
+          }
         case .sdxlBase, .sdxlRefiner, .ssd1b, .pixart, .auraflow:
           for i in 0..<imageHeight * imageWidth {
             // We need to do some computations from the latent values.

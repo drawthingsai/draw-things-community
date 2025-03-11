@@ -31,10 +31,8 @@ extension UNetFixedEncoder {
   static func isFixedEncoderRequired(version: ModelVersion) -> Bool {
     switch version {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
-      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo:
+      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       return true
-    case .wan21_1_3b, .wan21_14b:
-      fatalError()
     case .v1, .v2, .kandinsky21:
       return false
     }
@@ -186,7 +184,7 @@ extension UNetFixedEncoder {
     case .hunyuanVideo:
       return []
     case .wan21_1_3b, .wan21_14b:
-      fatalError()
+      return []
     case .v1, .v2, .kandinsky21:
       fatalError()
     }
@@ -864,7 +862,19 @@ extension UNetFixedEncoder {
       return (
         [graph.variable(rot0), graph.variable(rot1)] + conditions, nil
       )
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b:
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let rot = Tensor<FloatType>(
+        from: WanRotaryPositionEmbedding(
+          height: h, width: w, time: batchSize, channels: 128)
+      ).toGPU(0)
+      let c0 = textEncoding[0]
+      var c = graph.variable(.GPU(0), .HWC(2, 512, 4_096), of: FloatType.self)
+      c.full(0)
+      c[0..<2, 0..<c0.shape[1], 0..<4096] = c0
+      return ([c, graph.variable(rot)], nil)
+    case .wan21_14b:
       fatalError()
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]

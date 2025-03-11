@@ -95,8 +95,14 @@ extension UNetProtocol {
             embeddingSize: timeEmbeddingSize,
             maxPeriod: 10_000)
         ).toGPU(0))
-    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo:
       return nil
+    case .wan21_1_3b, .wan21_14b:
+      return graph.variable(
+        Tensor<FloatType>(
+          from: timeEmbedding(
+            timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+        ).toGPU(0))
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
         timesteps: timestep, batchSize: batchSize, embeddingSize: 64, maxPeriod: 10_000)
@@ -177,7 +183,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         }
       }
   case .wan21_1_3b, .wan21_14b:
-    fatalError()
+    return conditions
   case .pixart:
     var extractedConditions = [conditions[0]]
     let layers = (conditions.count - 3) / 8
@@ -741,7 +747,20 @@ extension UNetFromNNC {
             ).1
           })
       }
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b:
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      unet = ModelBuilderOrModel.model(
+        Wan(
+          channels: 1_536, layers: 30, intermediateSize: 8_960,
+          time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
+          textLength: 512
+        ).1)
+    case .wan21_14b:
       fatalError()
     }
     // Need to assign version now such that sliceInputs will have the correct version.
@@ -1101,22 +1120,41 @@ extension UNetFromNNC {
     _ unet: ModelBuilderOrModel, tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     inputs: [DynamicGraph.Tensor<FloatType>]
   ) {
-    if version == .hunyuanVideo && isCfgEnabled {
-      unet.compile(
-        inputs: inputs.enumerated().map {
-          let shape = $0.1.shape
-          switch $0.0 {
-          case 0:
-            return $0.1[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-          case 1...2:
-            return $0.1
-          case 3:
-            return $0.1[0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]]
-              .copied()
-          default:
-            return $0.1[0..<1, 0..<shape[1], 0..<shape[2]]
-          }
-        })
+    if isCfgEnabled {
+      switch version {
+      case .hunyuanVideo:
+        unet.compile(
+          inputs: inputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0:
+              return $0.1[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+            case 1...2:
+              return $0.1
+            case 3:
+              return $0.1[0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]]
+                .copied()
+            default:
+              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]]
+            }
+          })
+      case .wan21_1_3b, .wan21_14b:
+        unet.compile(
+          inputs: inputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0:
+              return $0.1[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+            case 1, 3:
+              return $0.1
+            default:
+              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]]
+            }
+          })
+      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+        break
+      }
     }
     unet.compile(inputs: inputs)
   }
@@ -1126,106 +1164,147 @@ extension UNetFromNNC {
     inputs firstInput: DynamicGraph.Tensor<FloatType>,
     _ restInputs: [DynamicGraph.Tensor<FloatType>]
   ) -> DynamicGraph.Tensor<FloatType> {
-    if version == .hunyuanVideo && isCfgEnabled {
-      let shape = firstInput.shape
-      let tokenLength = max(tokenLengthUncond, tokenLengthCond)
-      let etUncond: DynamicGraph.Tensor<FloatType>
-      let etCond: DynamicGraph.Tensor<FloatType>
-      if tokenLengthCond > tokenLengthUncond {
-        // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
-        let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+    if isCfgEnabled {
+      switch version {
+      case .hunyuanVideo:
+        let shape = firstInput.shape
+        let tokenLength = max(tokenLengthUncond, tokenLengthCond)
+        let etUncond: DynamicGraph.Tensor<FloatType>
+        let etCond: DynamicGraph.Tensor<FloatType>
+        if tokenLengthCond > tokenLengthUncond {
+          // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
+          let xCond = firstInput[
+            (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+          ]
           .copied()
-        let otherConds = restInputs.enumerated().map {
-          let shape = $0.1.shape
-          switch $0.0 {
-          case 0:
-            return $0.1
-          case 1:
-            let imageLength = shape[1] - tokenLength
-            return $0.1[
-              0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
-            ].copied()
-          case 2:
-            return $0.1[
-              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
-              0..<shape[2]
-            ].copied()
-          default:
-            return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+          let otherConds = restInputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0:
+              return $0.1
+            case 1:
+              let imageLength = shape[1] - tokenLength
+              return $0.1[
+                0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
+              ].copied()
+            case 2:
+              return $0.1[
+                0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+                0..<shape[2]
+              ].copied()
+            default:
+              return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+            }
           }
+          etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+          etCond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+          guard !isCancelled.load(ordering: .acquiring) else {
+            return Functional.concat(axis: 0, etCond, etCond)
+          }
+          let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+            .copied()
+          let otherUnconds = restInputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0:
+              return $0.1
+            case 1:
+              let imageLength = shape[1] - tokenLength
+              return $0.1[
+                0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
+              ].copied()
+            case 2:
+              return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
+            default:
+              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
+            }
+          }
+          etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+        } else {
+          let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+            .copied()
+          let otherUnconds = restInputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0:
+              return $0.1
+            case 1:
+              let imageLength = shape[1] - tokenLength
+              return $0.1[
+                0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
+              ].copied()
+            case 2:
+              return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
+            default:
+              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
+            }
+          }
+          etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+          etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+          guard !isCancelled.load(ordering: .acquiring) else {
+            return Functional.concat(axis: 0, etUncond, etUncond)
+          }
+          let xCond = firstInput[
+            (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+          ]
+          .copied()
+          let otherConds = restInputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0:
+              return $0.1
+            case 1:
+              let imageLength = shape[1] - tokenLength
+              return $0.1[
+                0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
+              ].copied()
+            case 2:
+              return $0.1[
+                0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+                0..<shape[2]
+              ].copied()
+            default:
+              return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+            }
+          }
+          etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
         }
-        etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
-        etCond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
-        guard !isCancelled.load(ordering: .acquiring) else {
-          return Functional.concat(axis: 0, etCond, etCond)
-        }
+        return Functional.concat(axis: 0, etUncond, etCond)
+      case .wan21_1_3b, .wan21_14b:
+        let shape = firstInput.shape
+        let etUncond: DynamicGraph.Tensor<FloatType>
+        let etCond: DynamicGraph.Tensor<FloatType>
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        let otherUnconds = restInputs.enumerated().map {
-          let shape = $0.1.shape
-          switch $0.0 {
-          case 0:
-            return $0.1
-          case 1:
-            let imageLength = shape[1] - tokenLength
-            return $0.1[
-              0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
-            ].copied()
-          case 2:
-            return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
-          default:
-            return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
-          }
-        }
-        etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
-      } else {
-        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-          .copied()
-        let otherUnconds = restInputs.enumerated().map {
-          let shape = $0.1.shape
-          switch $0.0 {
-          case 0:
-            return $0.1
-          case 1:
-            let imageLength = shape[1] - tokenLength
-            return $0.1[
-              0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
-            ].copied()
-          case 2:
-            return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
-          default:
-            return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
-          }
-        }
-        etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
-        etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
-        guard !isCancelled.load(ordering: .acquiring) else {
-          return Functional.concat(axis: 0, etUncond, etUncond)
-        }
+        etUncond = unet!(
+          inputs: xUncond,
+          restInputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0, 2:
+              return $0.1
+            default:
+              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
+            }
+          })[0].as(of: FloatType.self)
         let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        let otherConds = restInputs.enumerated().map {
-          let shape = $0.1.shape
-          switch $0.0 {
-          case 0:
-            return $0.1
-          case 1:
-            let imageLength = shape[1] - tokenLength
-            return $0.1[
-              0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
-            ].copied()
-          case 2:
-            return $0.1[
-              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
-              0..<shape[2]
-            ].copied()
-          default:
-            return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
-          }
-        }
-        etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+        etCond = unet!(
+          inputs: xCond,
+          restInputs.enumerated().map {
+            let shape = $0.1.shape
+            switch $0.0 {
+            case 0, 2:
+              return $0.1
+            default:
+              return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+            }
+          })[0].as(of: FloatType.self)
+        return Functional.concat(axis: 0, etUncond, etCond)
+      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+        break
       }
-      return Functional.concat(axis: 0, etUncond, etCond)
     }
     return unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
   }

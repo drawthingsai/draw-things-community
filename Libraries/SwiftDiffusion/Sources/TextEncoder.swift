@@ -1609,7 +1609,7 @@ extension TextEncoder {
     let attentionMaskGPU = graph.variable(attentionMask.toGPU(0))
     textModel.compile(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)
     // Move UMT5 XXL to on-demand.
-    // TensorData.makeExternalData(for: filePaths[0], graph: graph)
+    TensorData.makeExternalData(for: filePaths[0], graph: graph)
     graph.openStore(
       filePaths[0], flags: .readOnly,
       externalStore: TensorData.externalStore(filePath: filePaths[0])
@@ -1617,7 +1617,6 @@ extension TextEncoder {
       store.read(
         "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
     }
-    DynamicGraph.logLevel = .verbose
     var c = textModel(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)[0].as(
       of: FloatType.self
     ).reshaped(.HWC(2, tokenLength, 4096))
