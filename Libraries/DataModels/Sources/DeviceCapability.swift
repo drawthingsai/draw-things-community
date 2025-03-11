@@ -513,8 +513,18 @@ public struct DeviceCapability {
       {
         return false
       }
-    case .wan21_1_3b, .wan21_14b:
-      fatalError()
+    case .wan21_1_3b:
+      guard (!isHighPerformance && !(isGoodPerformance && is8BitModel)) || force else {
+        return false
+      }
+    case .wan21_14b:
+      guard
+        (!isMaxPerformance
+          && !((isMacCatalystBuild() ? isHighPerformance : isMaxPerformance) && is8BitModel))
+          || force
+      else {
+        return false
+      }
     }
     return true
   }

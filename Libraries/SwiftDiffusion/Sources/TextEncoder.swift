@@ -1004,7 +1004,7 @@ extension TextEncoder {
     let tokenLength = tokens[0].shape[0] / 2
     let (_, textModel) = UMT5ForConditionalGeneration(
       b: 2, t: tokenLength, vocabularySize: 32_128, channels: 2_048, intermediateSize: 5_120,
-      of: FloatType.self)
+      upcast: false, of: FloatType.self)
     let relativePositionBuckets = relativePositionBuckets(
       sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
     var attentionMask = Tensor<FloatType>(.CPU, .NHWC(2, 1, 1, tokenLength))
@@ -1585,6 +1585,51 @@ extension TextEncoder {
     return ([c2, pooled], [textModel])
   }
 
+  private func encodeWan(
+    tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
+    mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
+    tokenLengthUncond: Int, tokenLengthCond: Int, textModels existingTextModels: [Model?]
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let graph = tokens[0].graph
+    let tokenLength = tokens[0].shape[0] / 2
+    let (_, textModel) = UMT5ForConditionalGeneration(
+      b: 2, t: tokenLength, vocabularySize: 256_384, channels: 4_096, intermediateSize: 10_240,
+      upcast: true, of: FloatType.self)
+    let relativePositionBuckets = relativePositionBuckets(
+      sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
+    var attentionMask = Tensor<FloatType>(.CPU, .NHWC(2, 1, 1, tokenLength))
+    for i in 0..<tokenLength {
+      attentionMask[0, 0, 0, i] = i < tokenLengthUncond ? 0 : -FloatType.greatestFiniteMagnitude
+      attentionMask[1, 0, 0, i] = i < tokenLengthCond ? 0 : -FloatType.greatestFiniteMagnitude
+    }
+    let tokensTensorGPU = tokens[0].toGPU(0)
+    let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
+    let attentionMaskGPU = graph.variable(attentionMask.toGPU(0))
+    textModel.compile(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)
+    // Move UMT5 XXL to on-demand.
+    // TensorData.makeExternalData(for: filePaths[0], graph: graph)
+    graph.openStore(
+      filePaths[0], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[0])
+    ) { store in
+      store.read(
+        "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
+    }
+    DynamicGraph.logLevel = .verbose
+    var c = textModel(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)[0].as(
+      of: FloatType.self
+    ).reshaped(.HWC(2, tokenLength, 4096))
+    var encoderMask = Tensor<FloatType>(.CPU, .HWC(2, tokenLength, 1))
+    for i in 0..<tokenLength {
+      encoderMask[0, i, 0] = i < tokenLengthUncond ? 1 : 0
+      encoderMask[1, i, 0] = i < tokenLengthCond ? 1 : 0
+    }
+    c = c .* graph.variable(encoderMask.toGPU(0))
+    return ([c], [textModel])
+  }
+
   public func encode(
     tokenLengthUncond: Int, tokenLengthCond: Int,
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
@@ -1647,7 +1692,10 @@ extension TextEncoder {
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         injectedTextEmbeddings: injectedTextEmbeddings, textModels: existingTextModels)
     case .wan21_1_3b, .wan21_14b:
-      fatalError()
+      return encodeWan(
+        tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
+        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        textModels: existingTextModels)
     case .wurstchenStageC, .wurstchenStageB:
       return encodeWurstchen(
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,

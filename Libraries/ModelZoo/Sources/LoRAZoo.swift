@@ -406,8 +406,10 @@ public struct LoRAZoo: DownloadZoo {
       return " (FLUX.1)"
     case .hunyuanVideo:
       return " (Hunyuan Video)"
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b:
       return " (Wan v2.1 1.3B)"
+    case .wan21_14b:
+      return " (Wan v2.1 14B)"
     }
   }
 

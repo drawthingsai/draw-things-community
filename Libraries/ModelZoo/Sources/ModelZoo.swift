@@ -41,8 +41,10 @@ public struct ModelZoo: DownloadZoo {
       return "FLUX.1"
     case .hunyuanVideo:
       return "Hunyuan Video"
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b:
       return "Wan v2.1 1.3B"
+    case .wan21_14b:
+      return "Wan v2.1 14B"
     }
   }
 
@@ -1086,8 +1088,10 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 10 * 1_024 * 1_024 * 1_024
       case .hunyuanVideo:
         return fileSize < 11 * 1_024 * 1_024 * 1_024
-      case .wan21_1_3b, .wan21_14b:
-        fatalError()
+      case .wan21_1_3b:
+        return fileSize < 2 * 1_024 * 1_024 * 1_024
+      case .wan21_14b:
+        return fileSize < 11 * 1_024 * 1_024 * 1_024
       }
     }
     return false
@@ -1128,8 +1132,10 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 16 * 1_024 * 1_024 * 1_024
       case .hunyuanVideo:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
-      case .wan21_1_3b, .wan21_14b:
-        fatalError()
+      case .wan21_1_3b:
+        return fileSize < 2 * 1_024 * 1_024 * 1_024
+      case .wan21_14b:
+        return fileSize < 15 * 1_024 * 1_024 * 1_024
       }
     }
     return false

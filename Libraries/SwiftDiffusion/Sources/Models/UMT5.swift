@@ -9,9 +9,11 @@ private func UMT5TextEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   return tokenEmbed
 }
 
-private func UMT5LayerSelfAttention(k: Int, h: Int, b: Int, t: Int, outFeatures: Int) -> (
-  Model, Model, Model, Model, Model
-) {
+private func UMT5LayerSelfAttention(k: Int, h: Int, b: Int, t: Int, outFeatures: Int, upcast: Bool)
+  -> (
+    Model, Model, Model, Model, Model
+  )
+{
   let x = Input()
   let positionBias = Input()
   let tokeys = Dense(count: k * h, noBias: true, name: "k")
@@ -28,6 +30,10 @@ private func UMT5LayerSelfAttention(k: Int, h: Int, b: Int, t: Int, outFeatures:
   var out = dot * values
   out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b * t, h * k])
   let unifyheads = Dense(count: outFeatures, noBias: true, name: "o")
+  if upcast {
+    let scaleFactor: Float = 8
+    out = (1 / scaleFactor) * out
+  }
   out = unifyheads(out)
   return (tokeys, toqueries, tovalues, unifyheads, Model([x, positionBias], [out]))
 }
@@ -46,20 +52,27 @@ private func UMT5DenseGatedActDense(hiddenSize: Int, intermediateSize: Int) -> (
 }
 
 private func UMT5Block(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, outFeatures: Int, intermediateSize: Int
+  prefix: String, k: Int, h: Int, b: Int, t: Int, outFeatures: Int, intermediateSize: Int,
+  upcast: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let attentionMask = Input()
   let relativePositionBuckets = Input()
   let relativePositionEmbedding = Embedding(
-    FloatType.self, vocabularySize: 32, embeddingSize: 32, name: "relative_position_embedding")
+    FloatType.self, vocabularySize: 32, embeddingSize: h, name: "relative_position_embedding")
   let positionBias =
-    relativePositionEmbedding(relativePositionBuckets).reshaped([1, t, t, 32])
+    relativePositionEmbedding(relativePositionBuckets).reshaped([1, t, t, h])
     .permuted(0, 3, 1, 2) + attentionMask
   let norm1 = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm1")
   let (tokeys, toqueries, tovalues, unifyheads, attention) = UMT5LayerSelfAttention(
-    k: k, h: h, b: b, t: t, outFeatures: outFeatures)
-  var out = x + attention(norm1(x).to(FloatType.dataType), positionBias).to(of: x)
+    k: k, h: h, b: b, t: t, outFeatures: outFeatures, upcast: upcast)
+  var out: Model.IO
+  if upcast {
+    let scaleFactor: Float = 8
+    out = x + scaleFactor * attention(norm1(x).to(FloatType.dataType), positionBias).to(of: x)
+  } else {
+    out = x + attention(norm1(x).to(FloatType.dataType), positionBias).to(of: x)
+  }
   let norm2 = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm1")
   let (wi_0, wi_1, wo, ff) = UMT5DenseGatedActDense(
     hiddenSize: outFeatures, intermediateSize: intermediateSize)
@@ -84,7 +97,7 @@ private func UMT5Block(
 }
 
 func UMT5ForConditionalGeneration<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  b: Int, t: Int, vocabularySize: Int, channels: Int, intermediateSize: Int,
+  b: Int, t: Int, vocabularySize: Int, channels: Int, intermediateSize: Int, upcast: Bool,
   of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -97,7 +110,7 @@ func UMT5ForConditionalGeneration<FloatType: TensorNumeric & BinaryFloatingPoint
   for i in 0..<24 {
     let (mapper, block) = UMT5Block(
       prefix: "encoder.block.\(i)", k: 64, h: channels / 64, b: b, t: t, outFeatures: channels,
-      intermediateSize: intermediateSize)
+      intermediateSize: intermediateSize, upcast: upcast ? i >= 12 : false)
     out = block(out, attentionMask, relativePositionBuckets)
     mappers.append(mapper)
   }

@@ -1095,8 +1095,11 @@ extension LocalImageGenerator {
       result.7 = tokenLengthsUncond - 95  // Remove the leading template.
       result.8 = tokenLengthsCond - 95
       return result
-    case .wan21_1_3b, .wan21_14b:
-      fatalError()
+    case .wan21_14b, .wan21_1_3b:
+      return tokenize(
+        graph: graph, tokenizer: tokenizerUMT5, text: text, negativeText: negativeText,
+        paddingToken: 0, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
+        startLength: 0, maxLength: 0, paddingLength: 0)
     case .wurstchenStageC, .wurstchenStageB:
       // The difference between this and SDXL: paddingToken is no long '!' (indexed by 0) but unknown.
       return tokenize(
