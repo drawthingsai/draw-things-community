@@ -58,10 +58,12 @@ extension FirstStage {
       latentsMean.count >= 4, latentsStd.count >= 4
     {
       let mean = graph.variable(
-        Tensor<FloatType>(latentsMean.map { FloatType($0) }, .GPU(0), .NHWC(1, 1, 1, 4)))
+        Tensor<FloatType>(
+          latentsMean.map { FloatType($0) }, .GPU(0), .NHWC(1, 1, 1, latentsMean.count)))
       let std = graph.variable(
         Tensor<FloatType>(
-          latentsStd.map { FloatType($0 / scalingFactor) }, .GPU(0), .NHWC(1, 1, 1, 4)))
+          latentsStd.map { FloatType($0 / scalingFactor) }, .GPU(0),
+          .NHWC(1, 1, 1, latentsStd.count)))
       z = std .* x + mean
     } else if let shiftFactor = latentsScaling.shiftFactor {
       z = x / scalingFactor + shiftFactor
@@ -244,7 +246,49 @@ extension FirstStage {
       }
       outputChannels = 3
     case .wan21_1_3b, .wan21_14b:
-      fatalError()
+      var startDepth = shape[0]
+      var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
+      var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
+      /*
+      let sizeLimit = highMemoryCapacity ? 32 : 20
+      if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > 15 {
+        // We turn on tiled decoding forcefully.
+        if !tiledDecoding {
+          decodingTileOverlap = 4
+        }
+        tiledDecoding = true
+        startWidth = min(startWidth, sizeLimit)
+        startHeight = min(startHeight, sizeLimit)
+        decodingTileSize.width = startWidth
+        decodingTileSize.height = startHeight
+        startDepth = min(startDepth, 15)
+        decodingTileSize.depth = startDepth
+      }
+      */
+      decoder =
+        existingDecoder
+        ?? WanDecoderCausal3D(
+          channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
+          startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true
+        ).1
+      if existingDecoder == nil {
+        decoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          decoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: z[0..<startDepth, 0..<startHeight, 0..<startWidth, 0..<shape[3]]))
+        } else {
+          decoder.compile(
+            inputs: z[0..<startDepth, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("decoder", model: decoder, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 3
+      causalAttentionMask = nil
     case .kandinsky21:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
