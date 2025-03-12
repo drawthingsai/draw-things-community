@@ -531,6 +531,7 @@ extension ModelPreloader {
           ).toGPU(0)
         )
         var cArr = [c]
+        var conditions: [DynamicGraph.AnyTensor] = cArr
         if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: modelPath, version: modelVersion, dualAttentionLayers: [],
@@ -552,7 +553,7 @@ extension ModelPreloader {
             targetSize: (width: 1024, height: 1024), aestheticScore: 6,
             negativeOriginalSize: (width: 768, height: 768),
             negativeAestheticScore: 2.5, fpsId: 5, motionBucketId: 127, condAug: 0.02)
-          cArr =
+          conditions =
             vector
             + fixedEncoder.encode(
               isCfgEnabled: true, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
@@ -571,7 +572,7 @@ extension ModelPreloader {
             injectIPAdapterLengths: [], injectControlModels: []), lora: lora,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          inputs: x, t, cArr, tokenLengthUncond: 77, tokenLengthCond: 77, isCfgEnabled: true,
+          inputs: x, t, conditions, tokenLengthUncond: 77, tokenLengthCond: 77, isCfgEnabled: true,
           extraProjection: nil,
           injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>(
             injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],

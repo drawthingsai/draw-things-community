@@ -197,7 +197,7 @@ extension UNetFixedEncoder {
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )]
-  ) -> ([DynamicGraph.Tensor<FloatType>], ModelWeightMapper?) {
+  ) -> ([DynamicGraph.AnyTensor], ModelWeightMapper?) {
     let graph = textEncoding[0].graph
     let lora = lora.filter { $0.version == version }
     let externalData: DynamicGraph.Store.Codec =

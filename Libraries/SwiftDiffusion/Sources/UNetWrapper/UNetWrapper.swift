@@ -54,7 +54,7 @@ extension UNetWrapper {
     lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
+    _ c: [DynamicGraph.AnyTensor], tokenLengthUncond: Int, tokenLengthCond: Int,
     isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration
@@ -94,7 +94,7 @@ extension UNetWrapper {
   public func callAsFunction(
     timestep t: Float,
     inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
+    _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
       _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]

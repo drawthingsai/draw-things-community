@@ -35,7 +35,7 @@ extension UNetFromCoreML {
     lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
+    _ c: [DynamicGraph.AnyTensor], tokenLengthUncond: Int, tokenLengthCond: Int,
     isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration
@@ -310,7 +310,7 @@ extension UNetFromCoreML {
   public func callAsFunction(
     timestep: Float,
     inputs xT: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
+    _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
       _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
@@ -349,8 +349,10 @@ extension UNetFromCoreML {
       let startWidth = xT.shape[2]
       if batchSize == 1 {
         var xTSlice = xT.permuted(0, 3, 1, 2).rawValue.copied().toCPU()
-        var hiddenStates = c.transposed(1, 2).reshaped(.NHWC(c.shape[0], conditionalLength, 1, 77))
-          .rawValue.toCPU()
+        var hiddenStates = DynamicGraph.Tensor<FloatType>(c).transposed(1, 2).reshaped(
+          .NHWC(c.shape[0], conditionalLength, 1, 77)
+        )
+        .rawValue.toCPU()
         if xT.shape[0] != insideBatch {
           let oldXTSlice = xTSlice
           xTSlice = Tensor<FloatType>(.CPU, .NCHW(insideBatch, channels, startHeight, startWidth))
@@ -384,7 +386,7 @@ extension UNetFromCoreML {
         batch = MLArrayBatchProvider(array: [inputs])
       } else {
         let xTtensor = xT.permuted(0, 3, 1, 2).rawValue.copied().toCPU()
-        let cTensor = c.transposed(1, 2).reshaped(
+        let cTensor = DynamicGraph.Tensor<FloatType>(c).transposed(1, 2).reshaped(
           .NHWC(c.shape[0], conditionalLength, 1, 77)
         )
         .rawValue.toCPU()

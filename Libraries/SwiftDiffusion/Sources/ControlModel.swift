@@ -2561,18 +2561,22 @@ extension ControlModel {
 
 extension ControlModel {
   private func sliceInputs(
-    _ inputs: [DynamicGraph.Tensor<FloatType>], originalShape: TensorShape, inputStartYPad: Int,
+    _ inputs: [DynamicGraph.AnyTensor], originalShape: TensorShape, inputStartYPad: Int,
     inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int
-  ) -> [DynamicGraph.Tensor<FloatType>] {
+  ) -> [DynamicGraph.AnyTensor] {
     return inputs.enumerated().map {
       // For FLUX.1, if it is the first one, we need to handle its slicing (rotary encoding).
       if $0.0 == 0 && version == .flux1 {
         let shape = $0.1.shape
         let tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
         let graph = $0.1.graph
-        let tokenEncoding = $0.1[0..<shape[0], 0..<tokenLength, 0..<shape[2], 0..<shape[3]].copied()
-        let imageEncoding = $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]]
-          .copied().reshaped(.NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+        let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+          0..<shape[0], 0..<tokenLength, 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+          0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]
+        ]
+        .copied().reshaped(.NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
         let h = inputEndYPad / 2 - inputStartYPad / 2
         let w = inputEndXPad / 2 - inputStartXPad / 2
         let sliceEncoding = imageEncoding[

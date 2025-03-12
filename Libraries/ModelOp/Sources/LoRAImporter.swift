@@ -306,7 +306,7 @@ public enum LoRAImporter {
             tiledDiffusion: TiledConfiguration(
               isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
             injectedControls: []
-          ).0.map({ $0.toCPU() })
+          ).0.map({ DynamicGraph.Tensor<FloatType>($0).toCPU() })
       case .flux1:
         cArr =
           [

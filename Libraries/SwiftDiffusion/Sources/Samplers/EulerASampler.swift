@@ -207,6 +207,7 @@ extension EulerASampler: Sampler {
       tokenLengthUncond = tokenLengthCond
     }
     let oldC = c
+    var conditions: [DynamicGraph.AnyTensor] = c
     let fixedEncoder = UNetFixedEncoder<FloatType>(
       filePath: filePath, version: version, dualAttentionLayers: dualAttentionLayers,
       usesFlashAttention: usesFlashAttention,
@@ -251,7 +252,7 @@ extension EulerASampler: Sampler {
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
         tiledDiffusion: tiledDiffusion, injectedControls: injectedControls)
-      c = vector + encodings
+      conditions = vector + encodings
       injectedControlsC = injectedControls.map {
         $0.model.encode(
           isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
@@ -296,11 +297,11 @@ extension EulerASampler: Sampler {
         .emptyInjectedControlsAndAdapters(
           injecteds: injectedControls, step: 0, version: version, inputs: xIn,
           tiledDiffusion: tiledDiffusion)
-      let newC: [DynamicGraph.Tensor<FloatType>]
+      let newC: [DynamicGraph.AnyTensor]
       if version == .svdI2v {
-        newC = Array(c[0..<(1 + (c.count - 1) / 2)])
+        newC = Array(conditions[0..<(1 + (c.count - 1) / 2)])
       } else {
-        newC = c
+        newC = conditions
       }
       let _ = unet.compileModel(
         filePath: filePath, externalOnDemand: externalOnDemand, version: version, qkNorm: qkNorm,
@@ -428,7 +429,7 @@ extension EulerASampler: Sampler {
               negativeOriginalSize: negativeOriginalSize,
               negativeAestheticScore: negativeAestheticScore, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug)
-            c =
+            conditions =
               vector
               + fixedEncoder.encode(
                 isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
@@ -456,11 +457,11 @@ extension EulerASampler: Sampler {
             .emptyInjectedControlsAndAdapters(
               injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn,
               tiledDiffusion: tiledDiffusion)
-          let newC: [DynamicGraph.Tensor<FloatType>]
+          let newC: [DynamicGraph.AnyTensor]
           if version == .svdI2v {
-            newC = Array(c[0..<(1 + (c.count - 1) / 2)])
+            newC = Array(conditions[0..<(1 + (c.count - 1) / 2)])
           } else {
-            newC = c
+            newC = conditions
           }
           let _ = unet.compileModel(
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
@@ -493,10 +494,11 @@ extension EulerASampler: Sampler {
         let t = unet.timeEmbed(
           graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
           version: currentModelVersion)
-        let c = UNetExtractConditions(
+        let conditions = UNetExtractConditions(
           of: FloatType.self,
           graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize,
-          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, conditions: c,
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+          conditions: conditions,
           version: currentModelVersion, isCfgEnabled: isCfgEnabled)
         let et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
@@ -521,7 +523,7 @@ extension EulerASampler: Sampler {
               isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
-          let cCond = Array(c[0..<(1 + (c.count - 1) / 2)])
+          let cCond = Array(conditions[0..<(1 + (c.count - 1) / 2)])
           var etCond = unet(
             timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
@@ -534,7 +536,7 @@ extension EulerASampler: Sampler {
             / discretization.timesteps
           if isCfgEnabled {
             xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)].full(0)
-            let cUncond = Array([c[0]] + c[(1 + (c.count - 1) / 2)...])
+            let cUncond = Array([conditions[0]] + conditions[(1 + (c.count - 1) / 2)...])
             let etUncond = unet(
               timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
@@ -583,7 +585,7 @@ extension EulerASampler: Sampler {
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           var etOut = unet(
-            timestep: cNoise, inputs: xIn, t, c, extraProjection: extraProjection,
+            timestep: cNoise, inputs: xIn, t, conditions, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,

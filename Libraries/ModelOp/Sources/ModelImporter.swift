@@ -618,7 +618,7 @@ public final class ModelImporter {
             tiledDiffusion: TiledConfiguration(
               isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
             injectedControls: []
-          ).0.map({ $0.toCPU() })
+          ).0.map({ DynamicGraph.Tensor<FloatType>($0).toCPU() })
         if modelVersion == .svdI2v {
           // Only take the first half (positive part).
           cArr = Array(cArr[0..<(1 + (cArr.count - 1) / 2)])

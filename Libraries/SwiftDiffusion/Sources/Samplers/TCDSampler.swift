@@ -160,6 +160,7 @@ extension TCDSampler: Sampler {
       }
     }
     let oldC = c
+    var conditions: [DynamicGraph.AnyTensor] = c
     let fixedEncoder = UNetFixedEncoder<FloatType>(
       filePath: filePath, version: version, dualAttentionLayers: dualAttentionLayers,
       usesFlashAttention: usesFlashAttention,
@@ -205,7 +206,7 @@ extension TCDSampler: Sampler {
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
         tiledDiffusion: tiledDiffusion, injectedControls: injectedControls)
-      c = vector + encodings
+      conditions = vector + encodings
       injectedControlsC = injectedControls.map {
         $0.model.encode(
           isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
@@ -248,11 +249,11 @@ extension TCDSampler: Sampler {
         .emptyInjectedControlsAndAdapters(
           injecteds: injectedControls, step: 0, version: version, inputs: xIn,
           tiledDiffusion: tiledDiffusion)
-      let newC: [DynamicGraph.Tensor<FloatType>]
+      let newC: [DynamicGraph.AnyTensor]
       if version == .svdI2v {
-        newC = Array(c[0..<(1 + (c.count - 1) / 2)])
+        newC = Array(conditions[0..<(1 + (c.count - 1) / 2)])
       } else {
-        newC = c
+        newC = conditions
       }
       let _ = unet.compileModel(
         filePath: filePath, externalOnDemand: externalOnDemand, version: version, qkNorm: qkNorm,
@@ -354,7 +355,7 @@ extension TCDSampler: Sampler {
               negativeOriginalSize: negativeOriginalSize,
               negativeAestheticScore: negativeAestheticScore, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug)
-            c =
+            conditions =
               vector
               + fixedEncoder.encode(
                 isCfgEnabled: false, textGuidanceScale: textGuidanceScale,
@@ -382,11 +383,11 @@ extension TCDSampler: Sampler {
             .emptyInjectedControlsAndAdapters(
               injecteds: injectedControls, step: 0, version: refiner.version, inputs: xIn,
               tiledDiffusion: tiledDiffusion)
-          let newC: [DynamicGraph.Tensor<FloatType>]
+          let newC: [DynamicGraph.AnyTensor]
           if version == .svdI2v {
-            newC = Array(c[0..<(1 + (c.count - 1) / 2)])
+            newC = Array(conditions[0..<(1 + (c.count - 1) / 2)])
           } else {
-            newC = c
+            newC = conditions
           }
           let _ = unet.compileModel(
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
@@ -418,10 +419,11 @@ extension TCDSampler: Sampler {
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: batchSize, timestep: cNoise, version: currentModelVersion)
-        let c = UNetExtractConditions(
+        let conditions = UNetExtractConditions(
           of: FloatType.self,
           graph: graph, index: i - indexOffset, batchSize: batchSize,
-          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, conditions: c,
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+          conditions: conditions,
           version: currentModelVersion, isCfgEnabled: false)
         xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
         let injectedIPAdapters = ControlModel<FloatType>
@@ -440,11 +442,11 @@ extension TCDSampler: Sampler {
             isCfgEnabled: false, index: i - startStep.integral,
             mainUNetAndWeightMapper: unet.modelAndWeightMapper,
             controlNets: &controlNets)
-        let newC: [DynamicGraph.Tensor<FloatType>]
+        let newC: [DynamicGraph.AnyTensor]
         if version == .svdI2v {
-          newC = Array(c[0..<(1 + (c.count - 1) / 2)])
+          newC = Array(conditions[0..<(1 + (c.count - 1) / 2)])
         } else {
-          newC = c
+          newC = conditions
         }
         var etOut = unet(
           timestep: cNoise, inputs: xIn, t, newC, extraProjection: extraProjection,

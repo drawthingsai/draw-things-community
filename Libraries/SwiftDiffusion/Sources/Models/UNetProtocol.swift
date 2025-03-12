@@ -52,7 +52,7 @@ public protocol UNetProtocol {
     lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
+    _ c: [DynamicGraph.AnyTensor], tokenLengthUncond: Int, tokenLengthCond: Int,
     isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration
@@ -61,7 +61,7 @@ public protocol UNetProtocol {
   func callAsFunction(
     timestep: Float,
     inputs: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>?,
-    _: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
+    _: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
       _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
@@ -128,10 +128,10 @@ extension UNetProtocol {
 
 public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint>(
   of: FloatType.Type = FloatType.self, graph: DynamicGraph, index: Int, batchSize: Int,
-  tokenLengthUncond: Int, tokenLengthCond: Int, conditions: [DynamicGraph.Tensor<FloatType>],
+  tokenLengthUncond: Int, tokenLengthCond: Int, conditions: [DynamicGraph.AnyTensor],
   version: ModelVersion, isCfgEnabled: Bool
 )
-  -> [DynamicGraph.Tensor<FloatType>]
+  -> [DynamicGraph.AnyTensor]
 {
   switch version {
   case .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
@@ -141,15 +141,19 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
     return [conditions[0]]
       + conditions[1..<conditions.count].map {
         let shape = $0.shape
-        return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
-          .copied()
+        return DynamicGraph.Tensor<FloatType>($0)[
+          (index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]
+        ]
+        .copied()
       }
   case .flux1:
     return conditions[0..<2]
       + conditions[2..<conditions.count].map {
         let shape = $0.shape
-        return $0[(index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]]
-          .copied()
+        return DynamicGraph.Tensor<FloatType>($0)[
+          (index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]
+        ]
+        .copied()
       }
   case .hunyuanVideo:
     return conditions[0..<2]
@@ -157,11 +161,15 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         let shape = $0.1.shape
         if !isCfgEnabled {
           if $0.0 == 0 {
-            return $0.1[(index * tokenLengthCond)..<((index + 1) * tokenLengthCond), 0..<shape[1]]
-              .reshaped(.HWC(1, tokenLengthCond, shape[1])).copied()
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              (index * tokenLengthCond)..<((index + 1) * tokenLengthCond), 0..<shape[1]
+            ]
+            .reshaped(.HWC(1, tokenLengthCond, shape[1])).copied()
           }
-          return $0.1[index..<(index + 1), 0..<shape[1], 0..<shape[2]]
-            .copied()
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            index..<(index + 1), 0..<shape[1], 0..<shape[2]
+          ]
+          .copied()
         } else {
           // Note that for Hunyuan, batchSize is num of frames.
           precondition(batchSize % 2 == 0)
@@ -169,17 +177,21 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
             let timesteps = shape[0] / (tokenLengthUncond + tokenLengthCond)
             return Functional.concat(
               axis: 1,
-              $0.1[(index * tokenLengthUncond)..<((index + 1) * tokenLengthUncond), 0..<shape[1]]
-                .reshaped(.HWC(1, tokenLengthUncond, shape[1])),
-              $0.1[
+              DynamicGraph.Tensor<FloatType>($0.1)[
+                (index * tokenLengthUncond)..<((index + 1) * tokenLengthUncond), 0..<shape[1]
+              ]
+              .reshaped(.HWC(1, tokenLengthUncond, shape[1])),
+              DynamicGraph.Tensor<FloatType>($0.1)[
                 (index * tokenLengthCond + tokenLengthUncond * timesteps)..<((index + 1)
                   * tokenLengthCond + tokenLengthUncond * timesteps), 0..<shape[1]
               ].reshaped(.HWC(1, tokenLengthCond, shape[1])))
           }
           let timesteps = shape[0] / 2
           return Functional.concat(
-            axis: 0, $0.1[index..<(index + 1), 0..<shape[1], 0..<shape[2]],
-            $0.1[(index + timesteps)..<(index + timesteps + 1), 0..<shape[1], 0..<shape[2]])
+            axis: 0,
+            DynamicGraph.Tensor<FloatType>($0.1)[index..<(index + 1), 0..<shape[1], 0..<shape[2]],
+            DynamicGraph.Tensor<FloatType>($0.1)[
+              (index + timesteps)..<(index + timesteps + 1), 0..<shape[1], 0..<shape[2]])
         }
       }
   case .wan21_1_3b, .wan21_14b:
@@ -190,20 +202,36 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
     for i in 0..<layers {
       let shape = conditions[1 + i * 8].shape
       extractedConditions.append(contentsOf: [
-        conditions[1 + i * 8][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-        conditions[1 + i * 8 + 1][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-        conditions[1 + i * 8 + 2][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+        DynamicGraph.Tensor<FloatType>(conditions[1 + i * 8])[
+          index..<(index + 1), 0..<1, 0..<shape[2]
+        ].copied(),
+        DynamicGraph.Tensor<FloatType>(conditions[1 + i * 8 + 1])[
+          index..<(index + 1), 0..<1, 0..<shape[2]
+        ].copied(),
+        DynamicGraph.Tensor<FloatType>(conditions[1 + i * 8 + 2])[
+          index..<(index + 1), 0..<1, 0..<shape[2]
+        ].copied(),
         conditions[1 + i * 8 + 3],
         conditions[1 + i * 8 + 4],
-        conditions[1 + i * 8 + 5][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-        conditions[1 + i * 8 + 6][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-        conditions[1 + i * 8 + 7][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+        DynamicGraph.Tensor<FloatType>(conditions[1 + i * 8 + 5])[
+          index..<(index + 1), 0..<1, 0..<shape[2]
+        ].copied(),
+        DynamicGraph.Tensor<FloatType>(conditions[1 + i * 8 + 6])[
+          index..<(index + 1), 0..<1, 0..<shape[2]
+        ].copied(),
+        DynamicGraph.Tensor<FloatType>(conditions[1 + i * 8 + 7])[
+          index..<(index + 1), 0..<1, 0..<shape[2]
+        ].copied(),
       ])
     }
     let shape = conditions[conditions.count - 2].shape
     extractedConditions.append(contentsOf: [
-      conditions[conditions.count - 2][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
-      conditions[conditions.count - 1][index..<(index + 1), 0..<1, 0..<shape[2]].copied(),
+      DynamicGraph.Tensor<FloatType>(conditions[conditions.count - 2])[
+        index..<(index + 1), 0..<1, 0..<shape[2]
+      ].copied(),
+      DynamicGraph.Tensor<FloatType>(conditions[conditions.count - 1])[
+        index..<(index + 1), 0..<1, 0..<shape[2]
+      ].copied(),
     ])
     return extractedConditions
   }
@@ -299,7 +327,7 @@ extension UNetFromNNC {
     lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
+    _ c: [DynamicGraph.AnyTensor], tokenLengthUncond: Int, tokenLengthCond: Int,
     isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
@@ -812,7 +840,7 @@ extension UNetFromNNC {
         fatalError()
       }
     }
-    var inputs = [DynamicGraph.Tensor<FloatType>]()
+    var inputs = [DynamicGraph.AnyTensor]()
     if let extraProjection = extraProjection {
       inputs.append(extraProjection.reshaped(.WC(batchSize, 384 * 4)))
     } else if let timestep = timestep {
@@ -1027,9 +1055,9 @@ extension UNetFromNNC {
   }
 
   private func sliceInputs(
-    _ inputs: [DynamicGraph.Tensor<FloatType>], originalShape: TensorShape, xyTiles: Int,
+    _ inputs: [DynamicGraph.AnyTensor], originalShape: TensorShape, xyTiles: Int,
     index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int
-  ) -> [DynamicGraph.Tensor<FloatType>] {
+  ) -> [DynamicGraph.AnyTensor] {
     return inputs.enumerated().map {
       // For FLUX.1, if it is the first one, we need to handle its slicing (rotary encoding).
       switch version {
@@ -1038,11 +1066,15 @@ extension UNetFromNNC {
           let shape = $0.1.shape
           let tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
           let graph = $0.1.graph
-          let tokenEncoding = $0.1[0..<shape[0], 0..<tokenLength, 0..<shape[2], 0..<shape[3]]
-            .copied()
-          let imageEncoding = $0.1[0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]]
-            .copied().reshaped(
-              .NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+          let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], 0..<tokenLength, 0..<shape[2], 0..<shape[3]
+          ]
+          .copied()
+          let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]
+          ]
+          .copied().reshaped(
+            .NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
           let h = inputEndYPad / 2 - inputStartYPad / 2
           let w = inputEndXPad / 2 - inputStartXPad / 2
           let sliceEncoding = imageEncoding[
@@ -1059,7 +1091,7 @@ extension UNetFromNNC {
       case .hunyuanVideo:
         if $0.0 == 0 {
           let shape = $0.1.shape
-          let imageEncoding = $0.1.reshaped(
+          let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1).reshaped(
             .NHWC(originalShape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
           let h = inputEndYPad / 2 - inputStartYPad / 2
           let w = inputEndXPad / 2 - inputStartXPad / 2
@@ -1072,11 +1104,11 @@ extension UNetFromNNC {
           let tokenLength =
             shape[1] - originalShape[0] * (originalShape[1] / 2) * (originalShape[2] / 2)
           let graph = $0.1.graph
-          let imageEncoding = $0.1[
+          let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
             0..<shape[0], 0..<(shape[1] - tokenLength), 0..<shape[2], 0..<shape[3]
           ].copied().reshaped(
             .NHWC(originalShape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
-          let tokenEncoding = $0.1[
+          let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
             0..<shape[0], (shape[1] - tokenLength)..<shape[1], 0..<shape[2], 0..<shape[3]
           ]
           .copied()
@@ -1111,14 +1143,14 @@ extension UNetFromNNC {
           {
             // This may have issues with 3x3 convolution downsampling with strides, but luckily in UNet we deal with, these don't exist.
             let scaleFactor = originalShape[1] / shape[1]
-            return $0.1[
+            return DynamicGraph.Tensor<FloatType>($0.1)[
               0..<shape[0], (inputStartYPad / scaleFactor)..<(inputEndYPad / scaleFactor),
               (inputStartXPad / scaleFactor)..<(inputEndXPad / scaleFactor), 0..<shape[3]
             ].copied()
           }
         }
       } else if originalShape[0] * xyTiles == shape[0] {
-        return $0.1[
+        return DynamicGraph.Tensor<FloatType>($0.1)[
           (index * originalShape[0])..<((index + 1) * originalShape[0]), 0..<shape[1], 0..<shape[2],
           0..<shape[3]
         ].copied()
@@ -1129,7 +1161,7 @@ extension UNetFromNNC {
 
   private func compile(
     _ unet: ModelBuilderOrModel, tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
-    inputs: [DynamicGraph.Tensor<FloatType>]
+    inputs: [DynamicGraph.AnyTensor]
   ) {
     if isCfgEnabled {
       switch version {
@@ -1139,14 +1171,17 @@ extension UNetFromNNC {
             let shape = $0.1.shape
             switch $0.0 {
             case 0:
-              return $0.1[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+              return DynamicGraph.Tensor<FloatType>($0.1)[
+                0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
             case 1...2:
               return $0.1
             case 3:
-              return $0.1[0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]]
-                .copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[
+                0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]
+              ]
+              .copied()
             default:
-              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]]
+              return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
             }
           })
       case .wan21_1_3b, .wan21_14b:
@@ -1155,11 +1190,12 @@ extension UNetFromNNC {
             let shape = $0.1.shape
             switch $0.0 {
             case 0:
-              return $0.1[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+              return DynamicGraph.Tensor<FloatType>($0.1)[
+                0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
             case 1, 3:
               return $0.1
             default:
-              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]]
+              return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
             }
           })
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
@@ -1173,7 +1209,7 @@ extension UNetFromNNC {
   private func callAsFunction(
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     inputs firstInput: DynamicGraph.Tensor<FloatType>,
-    _ restInputs: [DynamicGraph.Tensor<FloatType>]
+    _ restInputs: [DynamicGraph.AnyTensor]
   ) -> DynamicGraph.Tensor<FloatType> {
     if isCfgEnabled {
       switch version {
@@ -1195,16 +1231,17 @@ extension UNetFromNNC {
               return $0.1
             case 1:
               let imageLength = shape[1] - tokenLength
-              return $0.1[
+              return DynamicGraph.Tensor<FloatType>($0.1)[
                 0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
               ].copied()
             case 2:
-              return $0.1[
+              return DynamicGraph.Tensor<FloatType>($0.1)[
                 0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
                 0..<shape[2]
               ].copied()
             default:
-              return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[1..<2, 0..<shape[1], 0..<shape[2]]
+                .copied()
             }
           }
           etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
@@ -1221,13 +1258,16 @@ extension UNetFromNNC {
               return $0.1
             case 1:
               let imageLength = shape[1] - tokenLength
-              return $0.1[
+              return DynamicGraph.Tensor<FloatType>($0.1)[
                 0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
               ].copied()
             case 2:
-              return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[
+                0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
+              ].copied()
             default:
-              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
+                .copied()
             }
           }
           etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
@@ -1241,13 +1281,16 @@ extension UNetFromNNC {
               return $0.1
             case 1:
               let imageLength = shape[1] - tokenLength
-              return $0.1[
+              return DynamicGraph.Tensor<FloatType>($0.1)[
                 0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
               ].copied()
             case 2:
-              return $0.1[0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]].copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[
+                0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
+              ].copied()
             default:
-              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
+                .copied()
             }
           }
           etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
@@ -1266,16 +1309,17 @@ extension UNetFromNNC {
               return $0.1
             case 1:
               let imageLength = shape[1] - tokenLength
-              return $0.1[
+              return DynamicGraph.Tensor<FloatType>($0.1)[
                 0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
               ].copied()
             case 2:
-              return $0.1[
+              return DynamicGraph.Tensor<FloatType>($0.1)[
                 0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
                 0..<shape[2]
               ].copied()
             default:
-              return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[1..<2, 0..<shape[1], 0..<shape[2]]
+                .copied()
             }
           }
           etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
@@ -1295,7 +1339,8 @@ extension UNetFromNNC {
             case 0, 2:
               return $0.1
             default:
-              return $0.1[0..<1, 0..<shape[1], 0..<shape[2]].copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
+                .copied()
             }
           })[0].as(of: FloatType.self)
         let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
@@ -1308,7 +1353,8 @@ extension UNetFromNNC {
             case 0, 2:
               return $0.1
             default:
-              return $0.1[1..<2, 0..<shape[1], 0..<shape[2]].copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[1..<2, 0..<shape[1], 0..<shape[2]]
+                .copied()
             }
           })[0].as(of: FloatType.self)
         return Functional.concat(axis: 0, etUncond, etCond)
@@ -1322,7 +1368,7 @@ extension UNetFromNNC {
 
   private func internalDiffuse(
     xyTiles: Int, index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int,
-    inputEndXPad: Int, xT: DynamicGraph.Tensor<FloatType>, inputs: [DynamicGraph.Tensor<FloatType>],
+    inputEndXPad: Int, xT: DynamicGraph.Tensor<FloatType>, inputs: [DynamicGraph.AnyTensor],
     injectedControlsAndAdapters: (
       _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
@@ -1351,7 +1397,7 @@ extension UNetFromNNC {
 
   private func tiledDiffuse(
     tiledDiffusion: TiledConfiguration, xT: DynamicGraph.Tensor<FloatType>,
-    inputs: [DynamicGraph.Tensor<FloatType>],
+    inputs: [DynamicGraph.AnyTensor],
     injectedControlsAndAdapters: (
       _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
@@ -1464,7 +1510,7 @@ extension UNetFromNNC {
   public func callAsFunction(
     timestep _: Float,
     inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.Tensor<FloatType>], extraProjection: DynamicGraph.Tensor<FloatType>?,
+    _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
       _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
