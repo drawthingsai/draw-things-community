@@ -1190,9 +1190,10 @@ extension UNetFromNNC {
               return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
             }
           })
+        return
       case .wan21_1_3b, .wan21_14b:
         unet.compile(
-          inputs: inputs.enumerated().map {
+          inputs: inputs.enumerated().compactMap {
             let shape = $0.1.shape
             switch $0.0 {
             case 0:
@@ -1201,10 +1202,13 @@ extension UNetFromNNC {
             case 1...7, (inputs.count - 2)..<inputs.count:
               return $0.1
             default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+              if $0.0 % 2 == 0 {
+                return $0.1
+              }
+              return nil
             }
           })
+        return
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
         break
@@ -1340,16 +1344,15 @@ extension UNetFromNNC {
           .copied()
         etUncond = unet!(
           inputs: xUncond,
-          restInputs.enumerated().map {
-            let shape = $0.1.shape
+          restInputs.enumerated().compactMap {
             switch $0.0 {
             case 0..<7, (restInputs.count - 2)..<restInputs.count:
               return $0.1
             default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]
-              ]
-              .copied()
+              if $0.0 % 2 == 1 {
+                return $0.1
+              }
+              return nil
             }
           })[0].as(of: FloatType.self)
         etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
@@ -1360,16 +1363,15 @@ extension UNetFromNNC {
           .copied()
         etCond = unet!(
           inputs: xCond,
-          restInputs.enumerated().map {
-            let shape = $0.1.shape
+          restInputs.enumerated().compactMap {
             switch $0.0 {
             case 0..<7, (restInputs.count - 2)..<restInputs.count:
               return $0.1
             default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                1..<2, 0..<shape[1], 0..<shape[2], 0..<shape[3]
-              ]
-              .copied()
+              if $0.0 % 2 == 0 {
+                return $0.1
+              }
+              return nil
             }
           })[0].as(of: FloatType.self)
         return Functional.concat(axis: 0, etUncond, etCond)

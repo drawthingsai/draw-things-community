@@ -891,7 +891,20 @@ extension UNetFixedEncoder {
       ) { store in
         store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
       }
-      let conditions: [DynamicGraph.AnyTensor] = unetFixed(inputs: c, timeEmbeds)
+      var conditions: [DynamicGraph.AnyTensor] = unetFixed(inputs: c, timeEmbeds)
+      conditions = conditions.enumerated().flatMap {
+        switch $0.offset {
+        case 0..<6, (conditions.count - 2)..<conditions.count:
+          return [$0.element]
+        default:  // Need to separate them into two elements.
+          let shape = $0.element.shape
+          let value = DynamicGraph.Tensor<FloatType>($0.element)
+          return [
+            value[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+            value[1..<2, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+          ]
+        }
+      }
       return ([graph.variable(rot)] + conditions, nil)
     case .wan21_14b:
       let h = startHeight / 2
@@ -922,7 +935,20 @@ extension UNetFixedEncoder {
       ) { store in
         store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
       }
-      let conditions: [DynamicGraph.AnyTensor] = unetFixed(inputs: c, timeEmbeds)
+      var conditions: [DynamicGraph.AnyTensor] = unetFixed(inputs: c, timeEmbeds)
+      conditions = conditions.enumerated().flatMap {
+        switch $0.offset {
+        case 0..<6, (conditions.count - 2)..<conditions.count:
+          return [$0.element]
+        default:  // Need to separate them into two elements.
+          let shape = $0.element.shape
+          let value = DynamicGraph.Tensor<FloatType>($0.element)
+          return [
+            value[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+            value[1..<2, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+          ]
+        }
+      }
       return ([graph.variable(rot)] + conditions, nil)
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
