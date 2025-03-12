@@ -873,7 +873,26 @@ extension UNetFixedEncoder {
       var c = graph.variable(.GPU(0), .HWC(2, 512, 4_096), of: FloatType.self)
       c.full(0)
       c[0..<2, 0..<c0.shape[1], 0..<4096] = c0
-      return ([c, graph.variable(rot)], nil)
+      var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: Float.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          timeEmbedding(
+            timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
+      }
+      let unetFixed = WanFixed(
+        timesteps: timesteps.count, batchSize: 2, channels: 1_536, layers: 30, textLength: 512
+      ).1
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: [c, timeEmbeds])
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+      }
+      let conditions: [DynamicGraph.AnyTensor] = unetFixed(inputs: c, timeEmbeds)
+      return ([graph.variable(rot)] + conditions, nil)
     case .wan21_14b:
       let h = startHeight / 2
       let w = startWidth / 2
@@ -885,7 +904,26 @@ extension UNetFixedEncoder {
       var c = graph.variable(.GPU(0), .HWC(2, 512, 4_096), of: FloatType.self)
       c.full(0)
       c[0..<2, 0..<c0.shape[1], 0..<4096] = c0
-      return ([c, graph.variable(rot)], nil)
+      var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: Float.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          timeEmbedding(
+            timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
+      }
+      let unetFixed = WanFixed(
+        timesteps: timesteps.count, batchSize: 2, channels: 5_120, layers: 40, textLength: 512
+      ).1
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: [c, timeEmbeds])
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+      }
+      let conditions: [DynamicGraph.AnyTensor] = unetFixed(inputs: c, timeEmbeds)
+      return ([graph.variable(rot)] + conditions, nil)
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
       let effnetHeight = textEncoding[textEncoding.count - 1].shape[1]

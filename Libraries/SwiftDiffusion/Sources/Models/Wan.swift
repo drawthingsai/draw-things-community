@@ -68,9 +68,8 @@ private func WanAttentionBlock(
   prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, intermediateSize: Int
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
-  let context = Input()
-  let c = (0..<6).map { _ in Input() }
   let rot = Input()
+  let c = (0..<6).map { _ in Input() }
   let modulations = (0..<6).map {
     Parameter<Float>(.GPU(0), .HWC(1, 1, k * h), name: "attn_ada_ln_\($0)")
   }
@@ -98,16 +97,12 @@ private func WanAttentionBlock(
   out = x + chunks[2] .* out.to(of: x)
   let xNorm3 = LayerNorm(epsilon: 1e-6, axis: [2], name: "x_norm_3")
   xOut = xNorm3(out).to(.Float16)
-  let contextToKeys = Dense(count: k * h, name: "c_k")
   let xToContextQueries = Dense(count: k * h, name: "x_c_q")
-  let contextToValues = Dense(count: k * h, name: "c_v")
-  var cK = contextToKeys(context)
-  let contextNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "c_norm_k")
-  cK = contextNormK(cK).reshaped([b, t, h, k])
+  let cK = Input()
   var cQ = xToContextQueries(xOut)
   let contextNormQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_c_norm_q")
   cQ = contextNormQ(cQ).reshaped([b, hw, h, k])
-  let cV = contextToValues(context).reshaped([b, t, h, k])
+  let cV = Input()
   let crossAttention = ScaledDotProductAttention(
     scale: 1 / Float(k).squareRoot(), flags: [.Float16])
   let crossOut = crossAttention(cQ, cK, cV).reshaped([b, hw, k * h])
@@ -121,7 +116,7 @@ private func WanAttentionBlock(
   let mapper: ModelWeightMapper = { _ in
     return ModelWeightMapping()
   }
-  return (mapper, Model([x, context, rot] + c, [out]))
+  return (mapper, Model([x, rot] + c + [cK, cV], [out]))
 }
 
 private func TimeEmbedder(channels: Int, name: String) -> (Model, Model, Model) {
@@ -150,31 +145,27 @@ func Wan(
   let imgIn = Convolution(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  let txt = Input()
-  let (cLinear1, cLinear2, contextEmbedder) = MLPEmbedder(channels: channels, name: "c")
-  let context = contextEmbedder(txt)
-  let t = Input()
   let rot = Input()
-  let (timeInMlp0, timeInMlp2, timeIn) = TimeEmbedder(channels: channels, name: "t")
-  let vector = timeIn(t).reshaped([1, 1, channels]).to(.Float32)
-  let vectorIn = vector.swish()
-  let timeProjections = (0..<6).map { Dense(count: channels, name: "ada_ln_\($0)") }
-  let tOut = timeProjections.map { $0(vectorIn) }
+  let tOut = (0..<6).map { _ in Input() }
   let h = height / 2
   let w = width / 2
   var mappers = [ModelWeightMapper]()
   var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
+  var contextIn = [Input]()
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlock(
       prefix: "blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength, hw: time * h * w,
       intermediateSize: intermediateSize)
-    out = block([out, context, rot] + tOut)
+    let contextK = Input()
+    let contextV = Input()
+    out = block([out, rot] + tOut + [contextK, contextV])
+    contextIn.append(contentsOf: [contextK, contextV])
     mappers.append(mapper)
   }
-  let scale = Parameter<Float>(.GPU(0), .HWC(1, 1, channels), name: "ada_ln_0")
-  let shift = Parameter<Float>(.GPU(0), .HWC(1, 1, channels), name: "ada_ln_1")
+  let scale = Input()
+  let shift = Input()
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  out = ((1 + scale + vector) .* normFinal(out) + (vector + shift)).to(.Float16)
+  out = (scale .* normFinal(out) + shift).to(.Float16)
   let projOut = Dense(count: 2 * 2 * 16, name: "linear")
   out = projOut(out).reshaped([time, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
     .reshaped([
@@ -187,5 +178,55 @@ func Wan(
     }
     return mapping
   }
-  return (mapper, Model([x, t, txt, rot], [out]))
+  return (mapper, Model([x, rot] + tOut + contextIn + [scale, shift], [out]))
+}
+
+private func WanAttentionBlockFixed(
+  prefix: String, k: Int, h: Int, b: Int, t: Int
+) -> (ModelWeightMapper, Model) {
+  let context = Input()
+  // Now run attention.
+  let contextToKeys = Dense(count: k * h, name: "c_k")
+  let contextToValues = Dense(count: k * h, name: "c_v")
+  var cK = contextToKeys(context)
+  let contextNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "c_norm_k")
+  cK = contextNormK(cK).reshaped([b, t, h, k])
+  let cV = contextToValues(context).reshaped([b, t, h, k])
+  let mapper: ModelWeightMapper = { _ in
+    return ModelWeightMapping()
+  }
+  return (mapper, Model([context], [cK, cV]))
+}
+
+func WanFixed(timesteps: Int, batchSize: Int, channels: Int, layers: Int, textLength: Int) -> (
+  ModelWeightMapper, Model
+) {
+  let txt = Input()
+  let (cLinear1, cLinear2, contextEmbedder) = MLPEmbedder(channels: channels, name: "c")
+  let context = contextEmbedder(txt)
+  let t = Input()
+  let (timeInMlp0, timeInMlp2, timeIn) = TimeEmbedder(channels: channels, name: "t")
+  let vector = timeIn(t).reshaped([timesteps, 1, channels])
+  let vectorIn = vector.swish()
+  let timeProjections = (0..<6).map { Dense(count: channels, name: "ada_ln_\($0)") }
+  var outs = timeProjections.map { $0(vectorIn).identity().identity().identity() }  // Have duplicate name ada_ln_0 / ada_ln_1, now have to push the order to make sure the proper weights are loaded :(.
+  var mappers = [ModelWeightMapper]()
+  for i in 0..<layers {
+    let (mapper, block) = WanAttentionBlockFixed(
+      prefix: "blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: textLength)
+    outs.append(block(context))
+    mappers.append(mapper)
+  }
+  let scale = Parameter<Float>(.GPU(0), .HWC(1, 1, channels), name: "ada_ln_0")
+  let shift = Parameter<Float>(.GPU(0), .HWC(1, 1, channels), name: "ada_ln_1")
+  outs.append(1 + scale + vector)
+  outs.append(vector + shift)
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    return mapping
+  }
+  return (mapper, Model([txt, t], outs))
 }

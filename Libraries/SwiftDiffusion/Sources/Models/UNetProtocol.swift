@@ -95,14 +95,8 @@ extension UNetProtocol {
             embeddingSize: timeEmbeddingSize,
             maxPeriod: 10_000)
         ).toGPU(0))
-    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo:
+    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       return nil
-    case .wan21_1_3b, .wan21_14b:
-      return graph.variable(
-        Tensor<FloatType>(
-          from: timeEmbedding(
-            timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
-        ).toGPU(0))
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
         timesteps: timestep, batchSize: batchSize, embeddingSize: 64, maxPeriod: 10_000)
@@ -195,7 +189,19 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         }
       }
   case .wan21_1_3b, .wan21_14b:
-    return conditions
+    return conditions[0..<1]
+      + conditions[1..<7].map({
+        let shape = $0.shape
+        return DynamicGraph.Tensor<Float>($0)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      }) + conditions[7..<(conditions.count - 2)]
+      + conditions[(conditions.count - 2)...].map({
+        let shape = $0.shape
+        return DynamicGraph.Tensor<Float>($0)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      })
   case .pixart:
     var extractedConditions = [conditions[0]]
     let layers = (conditions.count - 3) / 8
@@ -1192,10 +1198,11 @@ extension UNetFromNNC {
             case 0:
               return DynamicGraph.Tensor<FloatType>($0.1)[
                 0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-            case 1, 3:
+            case 1...7, (inputs.count - 2)..<inputs.count:
               return $0.1
             default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
+              return DynamicGraph.Tensor<FloatType>($0.1)[
+                0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
             }
           })
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
@@ -1336,13 +1343,19 @@ extension UNetFromNNC {
           restInputs.enumerated().map {
             let shape = $0.1.shape
             switch $0.0 {
-            case 0, 2:
+            case 0..<7, (restInputs.count - 2)..<restInputs.count:
               return $0.1
             default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
-                .copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[
+                0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]
+              ]
+              .copied()
             }
           })[0].as(of: FloatType.self)
+        etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etUncond, etUncond)
+        }
         let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
         etCond = unet!(
@@ -1350,11 +1363,13 @@ extension UNetFromNNC {
           restInputs.enumerated().map {
             let shape = $0.1.shape
             switch $0.0 {
-            case 0, 2:
+            case 0..<7, (restInputs.count - 2)..<restInputs.count:
               return $0.1
             default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[1..<2, 0..<shape[1], 0..<shape[2]]
-                .copied()
+              return DynamicGraph.Tensor<FloatType>($0.1)[
+                1..<2, 0..<shape[1], 0..<shape[2], 0..<shape[3]
+              ]
+              .copied()
             }
           })[0].as(of: FloatType.self)
         return Functional.concat(axis: 0, etUncond, etCond)
