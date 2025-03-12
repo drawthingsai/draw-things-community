@@ -788,11 +788,12 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
+      let textLength = c[7].shape[1]
       unet = ModelBuilderOrModel.model(
         Wan(
           channels: 1_536, layers: 30, intermediateSize: 8_960,
           time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-          textLength: 512
+          textLength: textLength
         ).1)
     case .wan21_14b:
       tiledWidth =
@@ -801,11 +802,12 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
+      let textLength = c[7].shape[1]
       unet = ModelBuilderOrModel.model(
         Wan(
           channels: 5_120, layers: 40, intermediateSize: 13_824,
           time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-          textLength: 512
+          textLength: textLength
         ).1)
     }
     // Need to assign version now such that sliceInputs will have the correct version.

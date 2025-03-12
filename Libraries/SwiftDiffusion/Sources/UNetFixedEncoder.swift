@@ -870,7 +870,8 @@ extension UNetFixedEncoder {
           height: h, width: w, time: batchSize, channels: 128)
       ).toGPU(0)
       let c0 = textEncoding[0]
-      var c = graph.variable(.GPU(0), .HWC(2, 512, 4_096), of: FloatType.self)
+      let textLength = max(c0.shape[1], 512)
+      var c = graph.variable(.GPU(0), .HWC(2, textLength, 4_096), of: FloatType.self)
       c.full(0)
       c[0..<2, 0..<c0.shape[1], 0..<4096] = c0
       var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: Float.self)
@@ -882,7 +883,8 @@ extension UNetFixedEncoder {
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
       }
       let unetFixed = WanFixed(
-        timesteps: timesteps.count, batchSize: 2, channels: 1_536, layers: 30, textLength: 512
+        timesteps: timesteps.count, batchSize: 2, channels: 1_536, layers: 30,
+        textLength: textLength
       ).1
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c, timeEmbeds])
@@ -914,7 +916,8 @@ extension UNetFixedEncoder {
           height: h, width: w, time: batchSize, channels: 128)
       ).toGPU(0)
       let c0 = textEncoding[0]
-      var c = graph.variable(.GPU(0), .HWC(2, 512, 4_096), of: FloatType.self)
+      let textLength = max(c0.shape[1], 512)
+      var c = graph.variable(.GPU(0), .HWC(2, textLength, 4_096), of: FloatType.self)
       c.full(0)
       c[0..<2, 0..<c0.shape[1], 0..<4096] = c0
       var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: Float.self)
@@ -926,7 +929,8 @@ extension UNetFixedEncoder {
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
       }
       let unetFixed = WanFixed(
-        timesteps: timesteps.count, batchSize: 2, channels: 5_120, layers: 40, textLength: 512
+        timesteps: timesteps.count, batchSize: 2, channels: 5_120, layers: 40,
+        textLength: textLength
       ).1
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c, timeEmbeds])
