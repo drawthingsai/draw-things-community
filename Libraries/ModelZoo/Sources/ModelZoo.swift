@@ -369,6 +369,8 @@ public struct ModelZoo: DownloadZoo {
     "umt5_xxl_encoder_q8p.ckpt": "72ef62d22c09a3b764ac9e6fe0100f4029619fb3ff8ccec3432e509487b29831",
     "wan_v2.1_video_vae_f16.ckpt":
       "4c518b128b3c1f2ea164aa46269d8875b4be3661d1fc0fba2709d03fa94e418b",
+    "wan_v2.1_14b_720p_q8p.ckpt":
+      "b21d70e196e5dfd4c3238607c9c3a13150d4aae04848245ed57241b83ee586bd",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -398,6 +400,11 @@ public struct ModelZoo: DownloadZoo {
     Specification(
       name: "Wan 2.1 T2V 1.3B (8-bit)", file: "wan_v2.1_1.3b_480p_q8p.ckpt", prefix: "",
       version: .wan21_1_3b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt"
+    ),
+    Specification(
+      name: "Wan 2.1 T2V 14B", file: "wan_v2.1_14b_720p_q8p.ckpt", prefix: "",
+      version: .wan21_14b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
       autoencoder: "wan_v2.1_video_vae_f16.ckpt"
     ),
     Specification(

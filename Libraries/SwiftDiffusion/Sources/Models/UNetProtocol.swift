@@ -761,7 +761,18 @@ extension UNetFromNNC {
           textLength: 512
         ).1)
     case .wan21_14b:
-      fatalError()
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      unet = ModelBuilderOrModel.model(
+        Wan(
+          channels: 5_120, layers: 40, intermediateSize: 13_824,
+          time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
+          textLength: 512
+        ).1)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version

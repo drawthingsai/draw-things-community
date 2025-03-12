@@ -875,7 +875,17 @@ extension UNetFixedEncoder {
       c[0..<2, 0..<c0.shape[1], 0..<4096] = c0
       return ([c, graph.variable(rot)], nil)
     case .wan21_14b:
-      fatalError()
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let rot = Tensor<FloatType>(
+        from: WanRotaryPositionEmbedding(
+          height: h, width: w, time: batchSize, channels: 128)
+      ).toGPU(0)
+      let c0 = textEncoding[0]
+      var c = graph.variable(.GPU(0), .HWC(2, 512, 4_096), of: FloatType.self)
+      c.full(0)
+      c[0..<2, 0..<c0.shape[1], 0..<4096] = c0
+      return ([c, graph.variable(rot)], nil)
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
       let effnetHeight = textEncoding[textEncoding.count - 1].shape[1]
