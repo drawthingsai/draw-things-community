@@ -344,8 +344,10 @@ extension FirstStage {
       isCancelled.store(true, ordering: .releasing)
       decoder.cancel()
     }
-    // Hunyuan just do the decoding with the batch.
-    guard batchSize > 1 && version != .hunyuanVideo else {
+    // Hunyuan / Wan just do the decoding with the batch.
+    guard
+      batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
+    else {
       if highPrecision {
         let result: DynamicGraph.Tensor<Float>
         if tiledDecoding {

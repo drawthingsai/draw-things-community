@@ -264,7 +264,7 @@ func WanDecoderCausal3D(
             ).contiguous()
             let more = out.reshaped(
               [(depth - 1), height, width, channel], offset: [1, 0, 0, 0],
-              strides: [height * width * channel, width * channel, 1]
+              strides: [height * width * channel, width * channel, channel, 1]
             ).contiguous()
             var expanded = timeConvs[channels.count - i - 1](
               more.padded(.zero, begin: [2, 0, 0, 0], end: [0, 0, 0, 0]).reshaped([
