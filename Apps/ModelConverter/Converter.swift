@@ -129,6 +129,8 @@ struct Converter: ParsableCommand {
       if autoencoder == nil {
         autoencoder = "hunyuan_video_vae_f16.ckpt"
       }
+    case .wan21_1_3b, .wan21_14b:
+      fatalError()
     case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow:
       fatalError()
     }
