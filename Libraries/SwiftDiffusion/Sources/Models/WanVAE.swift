@@ -49,10 +49,12 @@ private struct ResnetBlockCausal3D {
         ]))
     }
     if !inputsOnly {
-      conv1Inputs = pre.reshaped(
+      let inputs = pre.reshaped(
         [2, height, width, inChannels], offset: [depth - 2, 0, 0, 0],
         strides: [height * width * inChannels, width * inChannels, inChannels, 1]
-      ).contiguous()
+      ).copied()
+      conv1Inputs = inputs
+      out.add(dependencies: [inputs])  // This makes sure the copy is done before the convolution, freeing the activations holds there.
     } else {
       conv1Inputs = nil
     }
@@ -71,15 +73,17 @@ private struct ResnetBlockCausal3D {
           1, depth + 2, height + 2, width + 2, outChannels,
         ]))
     }
-    out = out.reshaped([depth, height, width, outChannels])
     if !inputsOnly {
-      conv2Inputs = pre.reshaped(
+      let inputs = pre.reshaped(
         [2, height, width, outChannels], offset: [depth - 2, 0, 0, 0],
         strides: [height * width * outChannels, width * outChannels, outChannels, 1]
-      ).contiguous()
+      ).copied()
+      conv2Inputs = inputs
+      out.add(dependencies: [inputs])  // This makes sure the copy is done before the convolution, freeing the activations holds there.
     } else {
       conv2Inputs = nil
     }
+    out = out.reshaped([depth, height, width, outChannels])
     if let ninShortcut = ninShortcut {
       out = ninShortcut(x) + out
     } else {
@@ -161,6 +165,7 @@ func WanDecoderCausal3D(
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_out")
   let normOut = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_out")
+  var last: Model.IO? = nil
   var finalOut: Model.IO? = nil
   var midBlock1Builder = ResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
   let midAttn1Builder = AttnBlockCausal3D(inChannels: previousChannel)
@@ -208,12 +213,12 @@ func WanDecoderCausal3D(
         [min(startDepth - (d - 1), 4), startHeight, startWidth, 16],
         offset: [d - 1, 0, 0, 0],
         strides: [startHeight * startWidth * 16, startWidth * 16, 16, 1]
-      ).contiguous()
-      if let last = finalOut {
+      ).contiguous().padded(.zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0])
+      if let last = last {
         out.add(dependencies: [last])
       }
       out = convIn(
-        out.padded(.zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+        out.reshaped([
           1, min(startDepth - (d - 1), 4), startHeight + 2, startWidth + 2, 16,
         ])
       ).reshaped([min(startDepth - (d - 1), 4) - 2, startHeight, startWidth, previousChannel])
@@ -271,10 +276,12 @@ func WanDecoderCausal3D(
                 1, depth + 1, height, width, channel,
               ]))
             if !inputsOnly {
-              timeInputs[channels.count - i - 1] = out.reshaped(
+              let inputs = out.reshaped(
                 [2, height, width, channel], offset: [depth - 2, 0, 0, 0],
                 strides: [height * width * channel, width * channel, channel, 1]
-              ).contiguous()
+              ).copied()
+              timeInputs[channels.count - i - 1] = inputs
+              expanded.add(dependencies: [inputs])
             }
             let upLayer = k
             let mapper: ModelWeightMapper = { _ in
@@ -295,10 +302,12 @@ func WanDecoderCausal3D(
                 1, depth + 2, height, width, channel,
               ]))
             if !inputsOnly {
-              timeInputs[channels.count - i - 1] = out.reshaped(
+              let inputs = out.reshaped(
                 [2, height, width, channel], offset: [depth - 2, 0, 0, 0],
                 strides: [height * width * channel, width * channel, channel, 1]
-              ).contiguous()
+              ).copied()
+              timeInputs[channels.count - i - 1] = inputs
+              expanded.add(dependencies: [inputs])
             }
             let upLayer = k
             let mapper: ModelWeightMapper = { _ in
@@ -334,27 +343,33 @@ func WanDecoderCausal3D(
         ).reshaped([
           1, depth + 2, height + 2, width + 2, channels[0],
         ])
-      ).reshaped([
-        depth, height, width, paddingFinalConvLayer ? 4 : 3,
-      ])
+      )
     } else {
       out = convOut(
         pre.padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
           1, depth + 2, height + 2, width + 2, channels[0],
         ])
-      ).reshaped([
-        depth, height, width, paddingFinalConvLayer ? 4 : 3,
-      ])
+      )
     }
     if !inputsOnly {
-      convOutInputs = pre.reshaped(
+      let inputs = pre.reshaped(
         [2, height, width, channels[0]], offset: [depth - 2, 0, 0, 0],
         strides: [height * width * channels[0], width * channels[0], channels[0], 1]
-      ).contiguous()
+      ).copied()
+      convOutInputs = inputs
+      out.add(dependencies: [inputs])
     }
     if let otherOut = finalOut {
+      out = out.reshaped([
+        depth, height, width, paddingFinalConvLayer ? 4 : 3,
+      ])
       finalOut = Functional.concat(axis: 0, otherOut, out, flags: [.disableOpt])
+      last = finalOut
     } else {
+      last = out
+      out = out.reshaped([
+        depth, height, width, paddingFinalConvLayer ? 4 : 3,
+      ])
       finalOut = out
     }
   }
