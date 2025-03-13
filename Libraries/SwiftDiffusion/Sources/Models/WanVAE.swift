@@ -60,7 +60,7 @@ private struct ResnetBlockCausal3D {
     pre = out.swish()
     if let conv2Inputs = conv2Inputs {
       out = conv2(
-        Functional.concat(axis: 1, conv2Inputs, pre, flags: [.disableOpt]).padded(
+        Functional.concat(axis: 0, conv2Inputs, pre, flags: [.disableOpt]).padded(
           .zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
         ).reshaped([
           1, depth + 2, height + 2, width + 2, outChannels,
