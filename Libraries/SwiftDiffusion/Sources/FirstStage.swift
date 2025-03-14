@@ -249,9 +249,8 @@ extension FirstStage {
       var startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
-      /*
-      let sizeLimit = highMemoryCapacity ? 32 : 20
-      if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > 15 {
+      let sizeLimit = highMemoryCapacity ? 104 : 64
+      if startWidth > sizeLimit || startHeight > sizeLimit {
         // We turn on tiled decoding forcefully.
         if !tiledDecoding {
           decodingTileOverlap = 4
@@ -261,10 +260,8 @@ extension FirstStage {
         startHeight = min(startHeight, sizeLimit)
         decodingTileSize.width = startWidth
         decodingTileSize.height = startHeight
-        startDepth = min(startDepth, 15)
         decodingTileSize.depth = startDepth
       }
-      */
       decoder =
         existingDecoder
         ?? WanDecoderCausal3D(
