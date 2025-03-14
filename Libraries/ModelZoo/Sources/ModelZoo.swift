@@ -395,17 +395,23 @@ public struct ModelZoo: DownloadZoo {
     Specification(
       name: "Wan 2.1 T2V 1.3B", file: "wan_v2.1_1.3b_480p_f16.ckpt", prefix: "",
       version: .wan21_1_3b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
-      autoencoder: "wan_v2.1_video_vae_f16.ckpt"
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 12,
+      note:
+        "[Wan2.1 T2V 1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0."
     ),
     Specification(
       name: "Wan 2.1 T2V 1.3B (8-bit)", file: "wan_v2.1_1.3b_480p_q8p.ckpt", prefix: "",
       version: .wan21_1_3b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
-      autoencoder: "wan_v2.1_video_vae_f16.ckpt"
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 12,
+      note:
+        "[Wan2.1 T2V 1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0."
     ),
     Specification(
       name: "Wan 2.1 T2V 14B", file: "wan_v2.1_14b_720p_q8p.ckpt", prefix: "",
-      version: .wan21_14b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
-      autoencoder: "wan_v2.1_video_vae_f16.ckpt"
+      version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 16,
+      note:
+        "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
     ),
     Specification(
       name: "FLUX.1 [schnell]", file: "flux_1_schnell_q8p.ckpt", prefix: "",
