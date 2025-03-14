@@ -246,7 +246,7 @@ extension FirstStage {
       }
       outputChannels = 3
     case .wan21_1_3b, .wan21_14b:
-      var startDepth = shape[0]
+      let startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       let sizeLimit = highMemoryCapacity ? 104 : 64

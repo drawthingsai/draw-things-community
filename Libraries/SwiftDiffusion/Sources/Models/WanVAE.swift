@@ -195,6 +195,7 @@ func WanDecoderCausal3D(
   }
   var timeInputs: [Model.IO?] = Array(repeating: nil, count: channels.count - 2)
   var convOutInputs: Model.IO? = nil
+  var outs = [Model.IO]()
   for d in stride(from: 0, to: max(startDepth - 1, 1), by: 2) {
     previousChannel = channels[channels.count - 1]
     var out: Model.IO
@@ -359,21 +360,18 @@ func WanDecoderCausal3D(
       convOutInputs = inputs
       out.add(dependencies: [inputs])
     }
-    if let otherOut = finalOut {
-      out = out.reshaped([
+    last = out
+    outs.append(
+      out.reshaped([
         depth, height, width, paddingFinalConvLayer ? 4 : 3,
-      ])
-      finalOut = Functional.concat(axis: 0, otherOut, out, flags: [.disableOpt])
-      last = finalOut
-    } else {
-      last = out
-      out = out.reshaped([
-        depth, height, width, paddingFinalConvLayer ? 4 : 3,
-      ])
-      finalOut = out
-    }
+      ]))
   }
-  let out = finalOut!
+  let out: Model.IO
+  if outs.count > 1 {
+    out = Concat(axis: 0)(outs)
+  } else {
+    out = outs[0]
+  }
   let mapper: ModelWeightMapper = { _ in
     return ModelWeightMapping()
   }
@@ -391,7 +389,6 @@ func WanEncoderCausal3D(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_in")
-  var out = convIn(x.padded(.zero, begin: [0, 0, 2, 1, 1], end: [0, 0, 0, 1, 1]))
   var mappers = [ModelWeightMapper]()
   var height = startHeight
   var width = startWidth
@@ -403,97 +400,170 @@ func WanEncoderCausal3D(
       depth = (depth - 1) * 2 + 1
     }
   }
-  var k = 0
+  var downBlockBuilders = [ResnetBlockCausal3D]()
+  var timeConvs = [Convolution]()
+  var downsampleConv2d = [Convolution]()
   for (i, channel) in channels.enumerated() {
     for _ in 0..<numRepeat {
-      var builder = ResnetBlockCausal3D(outChannels: channel, shortcut: previousChannel != channel)
-      let (mapper, blockOut) = builder(
-        input: out,
-        prefix: "encoder.downsamples.\(k)", inChannels: previousChannel,
-        outChannels: channel,
-        shortcut: previousChannel != channel, depth: depth, height: height, width: width,
-        inputsOnly: true)
-      mappers.append(mapper)
-      out = blockOut
+      downBlockBuilders.append(
+        ResnetBlockCausal3D(outChannels: channel, shortcut: previousChannel != channel))
       previousChannel = channel
-      k += 1
     }
     if i < channels.count - 1 {
-      height /= 2
-      width /= 2
-      let conv2d = Convolution(
-        groups: 1, filters: channel, filterSize: [1, 3, 3],
-        hint: Hint(
-          stride: [1, 2, 2], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
-        format: .OIHW, name: "downsample")
-      out = conv2d(out.padded(.zero, begin: [0, 0, 0, 0, 0], end: [0, 0, 0, 1, 1]))
-      let downLayer = k
-      let mapper: ModelWeightMapper = { _ in
-        return ModelWeightMapping()
-      }
-      mappers.append(mapper)
-      if i > 0 && depth > 1 {
-        let first = out.reshaped(
-          [1, channel, 1, height, width],
-          strides: [depth * height * width, depth * height * width, height * width, width, 1]
-        ).contiguous()
-        let timeConv = Convolution(
-          groups: 1, filters: channel, filterSize: [3, 1, 1],
+      downsampleConv2d.append(
+        Convolution(
+          groups: 1, filters: channel, filterSize: [3, 3],
           hint: Hint(
-            stride: [2, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
-          format: .OIHW, name: "time_conv")
-        let shrunk = timeConv(out)
-        let upLayer = k
+            stride: [2, 2], border: Hint.Border(begin: [0, 0], end: [0, 0])),
+          format: .OIHW, name: "downsample"))
+      if i > 0 && startDepth > 1 {
+        timeConvs.append(
+          Convolution(
+            groups: 1, filters: channel, filterSize: [3, 1, 1],
+            hint: Hint(
+              stride: [2, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+            format: .OIHW, name: "time_conv"))
+      }
+    }
+  }
+  var timeInputs: [Model.IO?] = Array(repeating: nil, count: channels.count - 2)
+  var midBlock1Builder = ResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
+  var midAttn1Builder = AttnBlockCausal3D(inChannels: previousChannel)
+  var midBlock2Builder = ResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
+  let normOut = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_out")
+  let endHeight = height
+  let endWidth = width
+  let endDepth = depth
+  var outs = [Model.IO]()
+  for d in stride(from: 0, to: max(startDepth - 1, 1), by: 2) {
+    previousChannel = channels[0]
+    height = endHeight
+    width = endWidth
+    var out: Model.IO
+    if d == 0 {
+      depth = min(endDepth, 9)
+      out = x.reshaped(
+        [depth, height, width, 3],
+        strides: [height * width * 3, width * 3, 3, 1]
+      ).padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0])
+    } else {
+      depth = min(endDepth - (d * 4 + 1), 8)
+      out = x.reshaped(
+        [depth + 2, height, width, 3], offset: [d * 4 - 1, 0, 0, 0],
+        strides: [height * width * 3, width * 3, 3, 1]
+      ).padded(.zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0])
+    }
+    if let last = outs.last {
+      out.add(dependencies: [last])
+    }
+    out = convIn(out.reshaped([depth + 2, height, width, previousChannel]))
+    let inputsOnly = startDepth - 1 - d <= 2  // This is the last one.
+    var j = 0
+    var k = 0
+    for (i, channel) in channels.enumerated() {
+      for _ in 0..<numRepeat {
+        let (mapper, blockOut) = downBlockBuilders[j](
+          input: out,
+          prefix: "encoder.downsamples.\(k)", inChannels: previousChannel,
+          outChannels: channel,
+          shortcut: previousChannel != channel, depth: depth, height: height, width: width,
+          inputsOnly: inputsOnly)
+        mappers.append(mapper)
+        out = blockOut
+        previousChannel = channel
+        j += 1
+        k += 1
+      }
+      if i < channels.count - 1 {
+        height /= 2
+        width /= 2
+        out = downsampleConv2d[i](out.padded(.zero, begin: [0, 0, 0, 0], end: [0, 1, 1, 0]))
+        let downLayer = k
         let mapper: ModelWeightMapper = { _ in
           return ModelWeightMapping()
         }
         mappers.append(mapper)
-        depth = (depth - 1) / 2 + 1
-        out = Functional.concat(axis: 2, first, shrunk)
+        if i > 0 && startDepth > 1 {
+          if d == 0 {
+            let first = out.reshaped(
+              [1, height, width, channel],
+              strides: [height * width * channel, width * channel, channel, 1]
+            ).contiguous()
+            let shrunk = timeConvs[i - 1](out.reshaped([1, depth, height, width, channel]))
+              .reshaped([(depth - 1) / 2, height, width, channel])
+            if !inputsOnly {
+              let input = out.reshaped(
+                [1, height, width, channel], offset: [depth - 1, height, width, channel],
+                strides: [height * width * channel, width * channel, channel, 1]
+              ).copied()
+              timeInputs[i] = input
+              shrunk.add(dependencies: [input])
+            }
+            let upLayer = k
+            let mapper: ModelWeightMapper = { _ in
+              return ModelWeightMapping()
+            }
+            mappers.append(mapper)
+            depth = (depth - 1) / 2 + 1
+            out = Functional.concat(axis: 0, first, shrunk)
+          } else if let timeInput = timeInputs[i] {
+            let shrunk = timeConvs[i - 1](
+              Functional.concat(axis: 0, timeInput, out).reshaped([
+                1, depth, height, width, channel,
+              ]))
+            if !inputsOnly {
+              let input = out.reshaped(
+                [1, height, width, channel], offset: [depth - 1, height, width, channel],
+                strides: [height * width * channel, width * channel, channel, 1]
+              ).copied()
+              timeInputs[i] = input
+              shrunk.add(dependencies: [input])
+            }
+            depth = depth / 2
+            out = shrunk.reshaped([depth / 2, height, width, channel])
+          }
+        }
+        k += 1
       }
-      k += 1
     }
+    let (midBlockMapper1, midBlock1Out) = midBlock1Builder(
+      input: out,
+      prefix: "encoder.middle.0", inChannels: previousChannel,
+      outChannels: previousChannel,
+      shortcut: false, depth: depth, height: height, width: width, inputsOnly: inputsOnly)
+    out = midBlock1Out
+    let (midAttnMapper1, midAttn1) = midAttn1Builder(
+      prefix: "encoder.middle.1", inChannels: previousChannel, depth: depth,
+      height: height, width: width)
+    out = midAttn1(out)
+    let (midBlockMapper2, midBlock2Out) = midBlock2Builder(
+      input: out,
+      prefix: "encoder.middle.2", inChannels: previousChannel,
+      outChannels: previousChannel,
+      shortcut: false, depth: depth, height: height, width: width, inputsOnly: inputsOnly)
+    out = midBlock2Out
+    out = normOut(out.reshaped([depth, height, width, previousChannel]))
+    out = out.swish()
+    outs.append(out)
   }
-  var midBlock1Builder = ResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
-  let (midBlockMapper1, midBlock1Out) = midBlock1Builder(
-    input: out,
-    prefix: "encoder.middle.0", inChannels: previousChannel,
-    outChannels: previousChannel,
-    shortcut: false, depth: depth, height: height, width: width, inputsOnly: true)
-  out = midBlock1Out
-  var midAttn1Builder = AttnBlockCausal3D(inChannels: previousChannel)
-  let (midAttnMapper1, midAttn1) = midAttn1Builder(
-    prefix: "encoder.middle.1", inChannels: previousChannel, depth: depth,
-    height: height, width: width)
-  out = midAttn1(out)
-  var midBlock2Builder = ResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
-  let (midBlockMapper2, midBlock2Out) = midBlock2Builder(
-    input: out,
-    prefix: "encoder.middle.2", inChannels: previousChannel,
-    outChannels: previousChannel,
-    shortcut: false, depth: depth, height: height, width: width, inputsOnly: true)
-  out = midBlock2Out
-  let normOut = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_out")
-  out = normOut(out.reshaped([previousChannel, depth, height, width])).reshaped([
-    1, previousChannel, depth, height, width,
-  ])
-  out = out.swish()
+  var out = Concat(axis: 0)(outs)
   let convOut = Convolution(
     groups: 1, filters: 32, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_out")
-  out = convOut(out.padded(.zero, begin: [0, 0, 2, 1, 1], end: [0, 0, 0, 1, 1]))
+  out = convOut(
+    out.padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+      1, depth, height, width, 32,
+    ])
+  ).reshaped([depth, height, width, 32])
   let quantConv = Convolution(
-    groups: 1, filters: 32, filterSize: [1, 1, 1], format: .OIHW, name: "quant_conv")
+    groups: 1, filters: 32, filterSize: [1, 1], format: .OIHW, name: "quant_conv")
   out = quantConv(out)
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping.merge(midBlockMapper1(format)) { v, _ in v }
-    mapping.merge(midAttnMapper1(format)) { v, _ in v }
-    mapping.merge(midBlockMapper2(format)) { v, _ in v }
     return mapping
   }
   return (mapper, Model([x], [out]))
