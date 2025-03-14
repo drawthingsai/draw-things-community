@@ -789,12 +789,25 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
       let textLength = c[7].shape[1]
-      unet = ModelBuilderOrModel.model(
-        Wan(
-          channels: 1_536, layers: 30, intermediateSize: 8_960,
-          time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-          textLength: textLength
-        ).1)
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unet = ModelBuilderOrModel.model(
+          LoRAWan(
+            channels: 1_536, layers: 30, intermediateSize: 8_960,
+            time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
+            textLength: textLength, LoRAConfiguration: configuration
+          ).1)
+      } else {
+        unet = ModelBuilderOrModel.model(
+          Wan(
+            channels: 1_536, layers: 30, intermediateSize: 8_960,
+            time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
+            textLength: textLength
+          ).1)
+      }
     case .wan21_14b:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -803,12 +816,23 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
       let textLength = c[7].shape[1]
-      unet = ModelBuilderOrModel.model(
-        Wan(
-          channels: 5_120, layers: 40, intermediateSize: 13_824,
-          time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-          textLength: textLength
-        ).1)
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        unet = ModelBuilderOrModel.model(
+          LoRAWan(
+            channels: 5_120, layers: 40, intermediateSize: 13_824,
+            time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
+            textLength: textLength, LoRAConfiguration: configuration
+          ).1)
+      } else {
+        unet = ModelBuilderOrModel.model(
+          Wan(
+            channels: 5_120, layers: 40, intermediateSize: 13_824,
+            time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
+            textLength: textLength
+          ).1)
+      }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -945,11 +969,14 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<(20 + 40)).map {
                   return ($0, $0)
                 })
+            case .wan21_1_3b, .wan21_14b:
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<40).map {
+                  return ($0, $0)
+                })
             case .auraflow:
               fatalError()
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
-              fatalError()
-            case .wan21_1_3b, .wan21_14b:
               fatalError()
             }
           }()

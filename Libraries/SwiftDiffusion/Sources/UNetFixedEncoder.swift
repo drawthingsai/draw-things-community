@@ -882,16 +882,71 @@ extension UNetFixedEncoder {
           ).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
       }
-      let unetFixed = WanFixed(
-        timesteps: timesteps.count, batchSize: 2, channels: 1_536, layers: 30,
-        textLength: textLength
-      ).1
+      let unetFixed: Model
+      let lora = Array(
+        (OrderedDictionary<String, LoRAConfiguration>(
+          lora.filter({ $0.version == version }).map {
+            ($0.file, $0)
+          }
+        ) {
+          LoRAConfiguration(
+            file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
+            modifier: $0.modifier)
+        })
+        .values
+      ).filter { $0.weight != 0 }
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unetFixed =
+          LoRAWanFixed(
+            timesteps: timesteps.count, batchSize: 2, channels: 1_536, layers: 30,
+            textLength: textLength, LoRAConfiguration: configuration
+          ).1
+      } else {
+        unetFixed =
+          WanFixed(
+            timesteps: timesteps.count, batchSize: 2, channels: 1_536, layers: 30,
+            textLength: textLength
+          ).1
+      }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c, timeEmbeds])
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
-        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        if !lora.isEmpty {
+          if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<40).map {
+                return ($0, $0)
+              })
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, format, shape in
+                return loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                  store: store, dataType: dataType, format: format, shape: shape)
+              }
+            }
+          } else {
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, _, _, shape in
+                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              }
+            }
+          }
+        } else {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
       }
       var conditions: [DynamicGraph.AnyTensor] = unetFixed(inputs: c, timeEmbeds)
       conditions = conditions.enumerated().flatMap {
@@ -928,16 +983,71 @@ extension UNetFixedEncoder {
           ).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
       }
-      let unetFixed = WanFixed(
-        timesteps: timesteps.count, batchSize: 2, channels: 5_120, layers: 40,
-        textLength: textLength
-      ).1
+      let unetFixed: Model
+      let lora = Array(
+        (OrderedDictionary<String, LoRAConfiguration>(
+          lora.filter({ $0.version == version }).map {
+            ($0.file, $0)
+          }
+        ) {
+          LoRAConfiguration(
+            file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
+            modifier: $0.modifier)
+        })
+        .values
+      ).filter { $0.weight != 0 }
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      {
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unetFixed =
+          LoRAWanFixed(
+            timesteps: timesteps.count, batchSize: 2, channels: 5_120, layers: 40,
+            textLength: textLength, LoRAConfiguration: configuration
+          ).1
+      } else {
+        unetFixed =
+          WanFixed(
+            timesteps: timesteps.count, batchSize: 2, channels: 5_120, layers: 40,
+            textLength: textLength
+          ).1
+      }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c, timeEmbeds])
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
-        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        if !lora.isEmpty {
+          if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<40).map {
+                return ($0, $0)
+              })
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, format, shape in
+                return loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                  store: store, dataType: dataType, format: format, shape: shape)
+              }
+            }
+          } else {
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, _, _, shape in
+                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              }
+            }
+          }
+        } else {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
       }
       var conditions: [DynamicGraph.AnyTensor] = unetFixed(inputs: c, timeEmbeds)
       conditions = conditions.enumerated().flatMap {
