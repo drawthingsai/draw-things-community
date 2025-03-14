@@ -174,9 +174,14 @@ public struct DeviceCapability {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
     return physicalMemory >= 33_285_996_544  // This is 31 * 1024 * 1024 * 1024.
   }()
-  public static let isHighMemoryCapacity: Bool = {
+  public static let memoryCapacity: MemoryCapacity = {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
-    return physicalMemory >= 24_696_061_952  // This is 23 * 1024 * 1024 * 1024.
+    if physicalMemory >= 24_696_061_952 {  // This is 23 * 1024 * 1024 * 1024.
+      return .high
+    } else if physicalMemory >= 7_516_192_768 {  // This is 7 * 1024 * 1024 * 1024.
+      return .medium
+    }
+    return .low
   }()
   public static func isVerifiedScale(_ scale: Scale) -> Bool {
     // Only for low performance devices, we need to gate against anything above 512x512.

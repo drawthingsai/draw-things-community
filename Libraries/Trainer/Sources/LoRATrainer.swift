@@ -202,7 +202,7 @@ public struct LoRATrainer {
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
-      alternativeDecoderVersion: nil, highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+      alternativeDecoderVersion: nil, memoryCapacity: DeviceCapability.memoryCapacity)
     let graph = DynamicGraph()
     var processedInputs = [ProcessedInput]()
     let (_, zeroCLIPTokens, _, _, _) = tokenizers[0].tokenize(
@@ -752,7 +752,7 @@ public struct LoRATrainer {
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
-      alternativeDecoderVersion: nil, highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+      alternativeDecoderVersion: nil, memoryCapacity: DeviceCapability.memoryCapacity)
     let graph = DynamicGraph()
     let imageWidth = Int(scale.widthScale) * 64
     let imageHeight = Int(scale.heightScale) * 64
@@ -1594,7 +1594,7 @@ public struct LoRATrainer {
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
-      alternativeDecoderVersion: nil, highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+      alternativeDecoderVersion: nil, memoryCapacity: DeviceCapability.memoryCapacity)
     graph.maxConcurrency = .limit(1)
     var dataFrame = dataFrame
     let cotrainUNet = unetLearningRate.upperBound > 0

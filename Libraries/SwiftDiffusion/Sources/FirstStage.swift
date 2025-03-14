@@ -1,6 +1,12 @@
 import Atomics
 import NNC
 
+public enum MemoryCapacity {
+  case high
+  case medium
+  case low
+}
+
 public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePath: String
   public let version: ModelVersion
@@ -14,7 +20,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let latentsScaling:
     (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?)
   private let highPrecisionFallback: Bool
-  private let highMemoryCapacity: Bool  // If this device has more than 24GiB RAM.
+  private let memoryCapacity: MemoryCapacity  // If this device has more than 24GiB RAM, 8GiB - 24GiB, less than 8GiB
   private let isCancelled = ManagedAtomic<Bool>(false)
   public init(
     filePath: String, version: ModelVersion,
@@ -23,7 +29,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     tiledDecoding: TiledConfiguration,
     tiledDiffusion: TiledConfiguration, externalOnDemand: Bool, alternativeUsesFlashAttention: Bool,
     alternativeFilePath: String?, alternativeDecoderVersion: AlternativeDecoderVersion?,
-    highMemoryCapacity: Bool
+    memoryCapacity: MemoryCapacity
   ) {
     self.filePath = filePath
     self.version = version
@@ -36,7 +42,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.alternativeUsesFlashAttention = alternativeUsesFlashAttention
     self.alternativeFilePath = alternativeFilePath
     self.alternativeDecoderVersion = alternativeDecoderVersion
-    self.highMemoryCapacity = highMemoryCapacity
+    self.memoryCapacity = memoryCapacity
   }
 }
 
@@ -196,7 +202,7 @@ extension FirstStage {
       var startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
-      let sizeLimit = highMemoryCapacity ? 32 : 20
+      let sizeLimit = memoryCapacity == .high ? 32 : 20
       if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > 15 {
         // We turn on tiled decoding forcefully.
         if !tiledDecoding {
@@ -249,7 +255,15 @@ extension FirstStage {
       let startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
-      let sizeLimit = highMemoryCapacity ? 104 : 64
+      let sizeLimit: Int
+      switch memoryCapacity {
+      case .high:
+        sizeLimit = 1024  // Practically unlimited.
+      case .medium:
+        sizeLimit = 104
+      case .low:
+        sizeLimit = 48
+      }
       if startWidth > sizeLimit || startHeight > sizeLimit {
         // We turn on tiled decoding forcefully.
         if !tiledDecoding {
@@ -660,7 +674,7 @@ extension FirstStage {
       var startDepth = (shape[0] - 1) / 4 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
-      let sizeLimit = highMemoryCapacity ? 32 : 20
+      let sizeLimit = memoryCapacity == .high ? 32 : 20
       if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > 15 {
         // We turn on tiled decoding forcefully.
         if !tiledEncoding {
@@ -714,7 +728,15 @@ extension FirstStage {
       let startDepth = (shape[0] - 1) / 4 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
-      let sizeLimit = highMemoryCapacity ? 104 : 64
+      let sizeLimit: Int
+      switch memoryCapacity {
+      case .high:
+        sizeLimit = 1024  // Practically unlimited.
+      case .medium:
+        sizeLimit = 104
+      case .low:
+        sizeLimit = 48
+      }
       if startWidth > sizeLimit || startHeight > sizeLimit {
         // We turn on tiled decoding forcefully.
         if !tiledEncoding {

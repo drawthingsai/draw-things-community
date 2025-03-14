@@ -2955,7 +2955,7 @@ extension LocalImageGenerator {
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
-        highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+        memoryCapacity: DeviceCapability.memoryCapacity)
       var batchSize = batchSize
       switch modelVersion {
       case .svdI2v:
@@ -3089,7 +3089,7 @@ extension LocalImageGenerator {
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
-        highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+        memoryCapacity: DeviceCapability.memoryCapacity)
 
       if DeviceCapability.isLowPerformance {
         graph.garbageCollect()
@@ -3847,7 +3847,7 @@ extension LocalImageGenerator {
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
-        highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+        memoryCapacity: DeviceCapability.memoryCapacity)
       // Check if strength is 0.
       guard initTimestep.roundedDownStartStep < sampling.steps && configuration.strength > 0 else {
         let image = faceRestoreImage(image, configuration: configuration)
@@ -3995,7 +3995,7 @@ extension LocalImageGenerator {
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion,
-          highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+          memoryCapacity: DeviceCapability.memoryCapacity)
         let (sample, encodedImage) = modelPreloader.consumeFirstStageSample(
           firstStage.sample(
             image,
@@ -5052,7 +5052,7 @@ extension LocalImageGenerator {
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
-        highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+        memoryCapacity: DeviceCapability.memoryCapacity)
       let firstPassImage: DynamicGraph.Tensor<FloatType>
       if modelVersion == .wurstchenStageC {
         // Try to resize the input image so we can encode with EfficientNetv2s properly.
@@ -5224,7 +5224,7 @@ extension LocalImageGenerator {
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion,
-          highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+          memoryCapacity: DeviceCapability.memoryCapacity)
         let (sample, _) = modelPreloader.consumeFirstStageSample(
           firstStage.sample(
             image,
@@ -5763,7 +5763,7 @@ extension LocalImageGenerator {
         externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
-        highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+        memoryCapacity: DeviceCapability.memoryCapacity)
       let firstPassImage: DynamicGraph.Tensor<FloatType>
       if modelVersion == .wurstchenStageC {
         // Try to resize the input image so we can encode with EfficientNetv2s properly.
@@ -6047,7 +6047,7 @@ extension LocalImageGenerator {
           externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion,
-          highMemoryCapacity: DeviceCapability.isHighMemoryCapacity)
+          memoryCapacity: DeviceCapability.memoryCapacity)
         let (sample, _) = modelPreloader.consumeFirstStageSample(
           firstStage.sample(
             image,
