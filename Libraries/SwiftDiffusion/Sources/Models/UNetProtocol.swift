@@ -1099,32 +1099,33 @@ extension UNetFromNNC {
       case .hunyuanVideo:
         if $0.0 == 0 {
           let shape = $0.1.shape
+          let t = shape[1] / ((originalShape[1] / 2) * (originalShape[2] / 2))
           let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1).reshaped(
-            .NHWC(originalShape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+            .NHWC(t, originalShape[1] / 2, originalShape[2] / 2, shape[3]))
           let h = inputEndYPad / 2 - inputStartYPad / 2
           let w = inputEndXPad / 2 - inputStartXPad / 2
           return imageEncoding[
-            0..<originalShape[0], (inputStartYPad / 2)..<(inputEndYPad / 2),
+            0..<t, (inputStartYPad / 2)..<(inputEndYPad / 2),
             (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[3]
-          ].copied().reshaped(.NHWC(shape[0], originalShape[0] * h * w, 1, shape[3]))
+          ].copied().reshaped(.NHWC(shape[0], t * h * w, 1, shape[3]))
         } else if $0.0 == 1 {
           let shape = $0.1.shape
+          let t = inputs[0].shape[1] / ((originalShape[1] / 2) * (originalShape[2] / 2))
           let tokenLength =
-            shape[1] - originalShape[0] * (originalShape[1] / 2) * (originalShape[2] / 2)
+            shape[1] - t * (originalShape[1] / 2) * (originalShape[2] / 2)
           let graph = $0.1.graph
           let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
             0..<shape[0], 0..<(shape[1] - tokenLength), 0..<shape[2], 0..<shape[3]
           ].copied().reshaped(
-            .NHWC(originalShape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+            .NHWC(t, originalShape[1] / 2, originalShape[2] / 2, shape[3]))
           let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
             0..<shape[0], (shape[1] - tokenLength)..<shape[1], 0..<shape[2], 0..<shape[3]
           ]
           .copied()
-          let t = originalShape[0]
           let h = inputEndYPad / 2 - inputStartYPad / 2
           let w = inputEndXPad / 2 - inputStartXPad / 2
           let sliceEncoding = imageEncoding[
-            0..<originalShape[0], (inputStartYPad / 2)..<(inputEndYPad / 2),
+            0..<t, (inputStartYPad / 2)..<(inputEndYPad / 2),
             (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[3]
           ].copied().reshaped(.NHWC(shape[0], t * h * w, 1, shape[3]))
           var finalEncoding = graph.variable(
@@ -1139,7 +1140,18 @@ extension UNetFromNNC {
         .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
         break
       case .wan21_1_3b, .wan21_14b:
-        fatalError()
+        if $0.0 == 0 {
+          let shape = $0.1.shape
+          let t = shape[1] / ((originalShape[1] / 2) * (originalShape[2] / 2))
+          let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1).reshaped(
+            .NHWC(t, originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+          let h = inputEndYPad / 2 - inputStartYPad / 2
+          let w = inputEndXPad / 2 - inputStartXPad / 2
+          return imageEncoding[
+            0..<t, (inputStartYPad / 2)..<(inputEndYPad / 2),
+            (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[3]
+          ].copied().reshaped(.NHWC(shape[0], t * h * w, 1, shape[3]))
+        }
       }
       let shape = $0.1.shape
       guard shape.count == 4 else { return $0.1 }
