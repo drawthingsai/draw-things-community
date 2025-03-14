@@ -166,7 +166,6 @@ func WanDecoderCausal3D(
     format: .OIHW, name: "conv_out")
   let normOut = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_out")
   var last: Model.IO? = nil
-  var finalOut: Model.IO? = nil
   var midBlock1Builder = ResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
   let midAttn1Builder = AttnBlockCausal3D(inChannels: previousChannel)
   var midBlock2Builder = ResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
@@ -435,6 +434,7 @@ func WanEncoderCausal3D(
   let endWidth = width
   let endDepth = depth
   var outs = [Model.IO]()
+  let input = x.copied()  // s4nnc cannot bind tensor properly with offsets. Making a copy to workaround this issue.
   for d in stride(from: 0, to: max(startDepth - 1, 1), by: 2) {
     previousChannel = channels[0]
     height = endHeight
@@ -442,21 +442,23 @@ func WanEncoderCausal3D(
     var out: Model.IO
     if d == 0 {
       depth = min(endDepth, 9)
-      out = x.reshaped(
+      out = input.reshaped(
         [depth, height, width, 3],
         strides: [height * width * 3, width * 3, 3, 1]
-      ).padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0])
+      ).contiguous().padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0])
     } else {
       depth = min(endDepth - (d * 4 + 1), 8)
-      out = x.reshaped(
+      out = input.reshaped(
         [depth + 2, height, width, 3], offset: [d * 4 - 1, 0, 0, 0],
         strides: [height * width * 3, width * 3, 3, 1]
-      ).padded(.zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0])
+      ).contiguous().padded(.zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0])
     }
     if let last = outs.last {
       out.add(dependencies: [last])
     }
-    out = convIn(out.reshaped([depth + 2, height, width, previousChannel]))
+    out = convIn(out.reshaped([1, depth + 2, height + 2, width + 2, 3])).reshaped([
+      depth, height, width, previousChannel,
+    ])
     let inputsOnly = startDepth - 1 - d <= 2  // This is the last one.
     var j = 0
     var k = 0
@@ -493,10 +495,10 @@ func WanEncoderCausal3D(
               .reshaped([(depth - 1) / 2, height, width, channel])
             if !inputsOnly {
               let input = out.reshaped(
-                [1, height, width, channel], offset: [depth - 1, height, width, channel],
+                [1, height, width, channel], offset: [depth - 1, 0, 0, 0],
                 strides: [height * width * channel, width * channel, channel, 1]
               ).copied()
-              timeInputs[i] = input
+              timeInputs[i - 1] = input
               shrunk.add(dependencies: [input])
             }
             let upLayer = k
@@ -506,21 +508,21 @@ func WanEncoderCausal3D(
             mappers.append(mapper)
             depth = (depth - 1) / 2 + 1
             out = Functional.concat(axis: 0, first, shrunk)
-          } else if let timeInput = timeInputs[i] {
+          } else if let timeInput = timeInputs[i - 1] {
             let shrunk = timeConvs[i - 1](
-              Functional.concat(axis: 0, timeInput, out).reshaped([
-                1, depth, height, width, channel,
+              Functional.concat(axis: 0, timeInput, out, flags: [.disableOpt]).reshaped([
+                1, depth + 1, height, width, channel,
               ]))
             if !inputsOnly {
               let input = out.reshaped(
-                [1, height, width, channel], offset: [depth - 1, height, width, channel],
+                [1, height, width, channel], offset: [depth - 1, 0, 0, 0],
                 strides: [height * width * channel, width * channel, channel, 1]
               ).copied()
-              timeInputs[i] = input
+              timeInputs[i - 1] = input
               shrunk.add(dependencies: [input])
             }
             depth = depth / 2
-            out = shrunk.reshaped([depth / 2, height, width, channel])
+            out = shrunk.reshaped([depth, height, width, channel])
           }
         }
         k += 1
@@ -546,6 +548,9 @@ func WanEncoderCausal3D(
     out = out.swish()
     outs.append(out)
   }
+  height = startHeight
+  width = startWidth
+  depth = startDepth
   var out = Concat(axis: 0)(outs)
   let convOut = Convolution(
     groups: 1, filters: 32, filterSize: [3, 3, 3],
@@ -553,7 +558,7 @@ func WanEncoderCausal3D(
     format: .OIHW, name: "conv_out")
   out = convOut(
     out.padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
-      1, depth, height, width, 32,
+      1, depth + 2, height + 2, width + 2, previousChannel,
     ])
   ).reshaped([depth, height, width, 32])
   let quantConv = Convolution(

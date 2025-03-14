@@ -515,10 +515,12 @@ extension FirstStage {
       latentsMean.count >= 4, latentsStd.count >= 4
     {
       let mean = graph.variable(
-        Tensor<FloatType>(latentsMean.map { FloatType($0) }, .GPU(0), .NHWC(1, 1, 1, 4)))
+        Tensor<FloatType>(
+          latentsMean.map { FloatType($0) }, .GPU(0), .NHWC(1, 1, 1, latentsMean.count)))
       let invStd = graph.variable(
         Tensor<FloatType>(
-          latentsStd.map { FloatType(scalingFactor / $0) }, .GPU(0), .NHWC(1, 1, 1, 4)))
+          latentsStd.map { FloatType(scalingFactor / $0) }, .GPU(0),
+          .NHWC(1, 1, 1, latentsStd.count)))
       return invStd .* (x - mean)
     } else if let shiftFactor = latentsScaling.shiftFactor {
       return (x - shiftFactor) * scalingFactor
@@ -709,7 +711,46 @@ extension FirstStage {
       }
       outputChannels = 32
     case .wan21_1_3b, .wan21_14b:
-      fatalError()
+      let startDepth = (shape[0] - 1) / 4 + 1
+      var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
+      var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
+      let sizeLimit = highMemoryCapacity ? 104 : 64
+      if startWidth > sizeLimit || startHeight > sizeLimit {
+        // We turn on tiled decoding forcefully.
+        if !tiledEncoding {
+          encodingTileOverlap = 4
+        }
+        tiledEncoding = true
+        startWidth = min(startWidth, sizeLimit)
+        startHeight = min(startHeight, sizeLimit)
+        encodingTileSize.width = startWidth
+        encodingTileSize.height = startHeight
+        encodingTileSize.depth = startDepth
+      }
+      encoder =
+        existingEncoder
+        ?? WanEncoderCausal3D(
+          channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
+          startHeight: startHeight, startDepth: startDepth
+        ).1
+      if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          encoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: x[0..<batchSize, 0..<(startHeight * 8), 0..<(startWidth * 8), 0..<shape[3]]))
+        } else {
+          encoder.compile(
+            inputs: x[0..<batchSize, 0..<(startHeight * 8), 0..<(startWidth * 8), 0..<shape[3]])
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("encoder", model: encoder, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 32
+      causalAttentionMask = nil
     case .kandinsky21:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight
@@ -782,7 +823,9 @@ extension FirstStage {
       isCancelled.store(true, ordering: .releasing)
       encoder.cancel()
     }
-    guard batchSize > 1 && version != .hunyuanVideo else {
+    guard
+      batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
+    else {
       if highPrecision {
         if tiledEncoding {
           return (
@@ -1177,11 +1220,10 @@ extension FirstStage {
           tileOverlap: tileOverlap * scaleFactor.spatial)
         encodedRawValues.append(
           encoder(
-            inputs:
-              z[
-                0..<batchSize, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
-                0..<channels
-              ].copied(), (causalAttentionMask.map { [$0] } ?? []))[0].as(of: T.self).rawValue
+            inputs: z[
+              0..<batchSize, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
+              0..<channels
+            ].copied(), (causalAttentionMask.map { [$0] } ?? []))[0].as(of: T.self).rawValue
             .toCPU())
         guard !isCancelled.load(ordering: .acquiring) else {
           return graph.variable(
