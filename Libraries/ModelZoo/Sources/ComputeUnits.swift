@@ -36,9 +36,9 @@ public enum ComputeUnits {
     case .hunyuanVideo:
       return 3.53 * 0.8
     case .wan21_1_3b:
-      return 2.35 * 0.8
+      return 1.175 * 0.8
     case .wan21_14b:
-      return 5.65 * 0.8
+      return 2.825 * 0.8
     }
   }
 
