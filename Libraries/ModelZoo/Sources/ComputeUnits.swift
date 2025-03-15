@@ -28,17 +28,17 @@ public enum ComputeUnits {
     case .sd3Large:
       return 2.35
     case .svdI2v:
-      return 1.76
+      return 1.76 * 0.8
     case .wurstchenStageC:
       return 1.18
     case .wurstchenStageB:
       return 1.18
     case .hunyuanVideo:
-      return 3.53
+      return 3.53 * 0.8
     case .wan21_1_3b:
-      return 2.35
+      return 2.35 * 0.8
     case .wan21_14b:
-      return 5.65
+      return 5.65 * 0.8
     }
   }
 
