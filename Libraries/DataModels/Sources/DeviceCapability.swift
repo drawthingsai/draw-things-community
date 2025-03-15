@@ -172,7 +172,7 @@ public struct DeviceCapability {
   }()
   public static let isUltraPerformance: Bool = {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
-    return physicalMemory >= 33_285_996_544  // This is 31 * 1024 * 1024 * 1024.
+    return physicalMemory >= 24_696_061_952  // This is 23 * 1024 * 1024 * 1024.
   }()
   public static let memoryCapacity: MemoryCapacity = {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
@@ -524,9 +524,7 @@ public struct DeviceCapability {
       }
     case .wan21_14b:
       guard
-        (!isMaxPerformance
-          && !((isMacCatalystBuild() ? isHighPerformance : isMaxPerformance) && is8BitModel))
-          || force
+        (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force
       else {
         return false
       }
