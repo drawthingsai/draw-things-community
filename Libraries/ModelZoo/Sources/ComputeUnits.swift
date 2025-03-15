@@ -6,27 +6,27 @@ public enum ComputeUnits {
   private static func modelCoefficient(_ modelVersion: ModelVersion) -> Double {
     switch modelVersion {
     case .v1:
-      return 1.0
+      return 0.5
     case .v2:
-      return 1.06
+      return 0.5294117647
     case .sdxlBase:
-      return 1.18
+      return 0.5882352941
     case .kandinsky21:
-      return 1.53
+      return 0.7647058824
     case .sdxlRefiner:
-      return 1.18
+      return 0.5588235294
     case .ssd1b:
-      return 0.83
+      return 0.4117647059
     case .sd3:
-      return 1.05
+      return 0.5294117647
     case .pixart:
-      return 0.83
+      return 0.4117647059
     case .auraflow:
-      return 2.05
+      return 1.029411765
     case .flux1:
-      return 2.6
+      return 2.588235294
     case .sd3Large:
-      return 2.35
+      return 1.176470588
     case .svdI2v:
       return 1.76 * 0.8
     case .wurstchenStageC:
@@ -34,11 +34,11 @@ public enum ComputeUnits {
     case .wurstchenStageB:
       return 1.18
     case .hunyuanVideo:
-      return 3.53 * 0.8
+      return 3.529411765 * 0.8
     case .wan21_1_3b:
-      return 1.175 * 0.8
+      return 1.176470588 * 0.8
     case .wan21_14b:
-      return 2.825 * 0.8
+      return 2.823529412 * 0.8
     }
   }
 
