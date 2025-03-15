@@ -260,7 +260,7 @@ extension LCMSampler: Sampler {
           tiledDiffusion: tiledDiffusion)
       let newC: [DynamicGraph.AnyTensor]
       if version == .svdI2v {
-        newC = Array(conditions[0..<(1 + (c.count - 1) / 2)])
+        newC = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
       } else {
         newC = conditions
       }
@@ -422,7 +422,7 @@ extension LCMSampler: Sampler {
               tiledDiffusion: tiledDiffusion)
           let newC: [DynamicGraph.AnyTensor]
           if version == .svdI2v {
-            newC = Array(conditions[0..<(1 + (c.count - 1) / 2)])
+            newC = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
           } else {
             newC = conditions
           }
@@ -482,7 +482,7 @@ extension LCMSampler: Sampler {
             controlNets: &controlNets)
         let newC: [DynamicGraph.AnyTensor]
         if version == .svdI2v {
-          newC = Array(conditions[0..<(1 + (c.count - 1) / 2)])
+          newC = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
         } else {
           newC = conditions
         }

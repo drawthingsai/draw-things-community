@@ -375,7 +375,7 @@ extension UniPCSampler: Sampler {
           tiledDiffusion: tiledDiffusion)
       let newC: [DynamicGraph.AnyTensor]
       if version == .svdI2v {
-        newC = Array(conditions[0..<(1 + (c.count - 1) / 2)])
+        newC = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
       } else {
         newC = conditions
       }
@@ -509,7 +509,7 @@ extension UniPCSampler: Sampler {
               tiledDiffusion: tiledDiffusion)
           let newC: [DynamicGraph.AnyTensor]
           if version == .svdI2v {
-            newC = Array(conditions[0..<(1 + (c.count - 1) / 2)])
+            newC = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
           } else {
             newC = conditions
           }
@@ -574,7 +574,7 @@ extension UniPCSampler: Sampler {
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
 
-          let cCond = Array(conditions[0..<(1 + (c.count - 1) / 2)])
+          let cCond = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
           var etCond = unet(
             timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
@@ -587,7 +587,7 @@ extension UniPCSampler: Sampler {
             / discretization.timesteps
           if isCfgEnabled {
             xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)].full(0)
-            let cUncond = Array([conditions[0]] + conditions[(1 + (c.count - 1) / 2)...])
+            let cUncond = Array([conditions[0]] + conditions[(1 + (conditions.count - 1) / 2)...])
             let etUncond = unet(
               timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
