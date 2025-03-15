@@ -28,7 +28,7 @@ public enum ComputeUnits {
     case .sd3Large:
       return 1.176470588
     case .svdI2v:
-      return 1.76 * 0.8
+      return 0.88 * 0.8
     case .wurstchenStageC:
       return 1.18
     case .wurstchenStageB:
