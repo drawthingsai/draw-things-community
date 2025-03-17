@@ -280,7 +280,8 @@ extension FirstStage {
         existingDecoder
         ?? WanDecoderCausal3D(
           channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
-          startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true
+          startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true,
+          format: .NHWC
         ).1
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -753,7 +754,7 @@ extension FirstStage {
         existingEncoder
         ?? WanEncoderCausal3D(
           channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
-          startHeight: startHeight, startDepth: startDepth
+          startHeight: startHeight, startDepth: startDepth, format: .NHWC
         ).1
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)
