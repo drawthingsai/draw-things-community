@@ -608,7 +608,7 @@ extension ControlModel {
         let vaeEncoding = graph.withNoGrad {
           let encoder = Encoder(
             channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: tiledWidth,
-            startHeight: tiledHeight, usesFlashAttention: false
+            startHeight: tiledHeight, usesFlashAttention: false, format: .NHWC
           ).0
           let input: DynamicGraph.Tensor<FloatType>
           if shape[1] != tiledHeight * 8 || shape[2] != tiledWidth * 8 {

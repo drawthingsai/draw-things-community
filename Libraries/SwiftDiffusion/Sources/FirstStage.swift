@@ -125,8 +125,9 @@ extension FirstStage {
         existingDecoder
         ?? Decoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, highPrecisionKeysAndValues: highPrecisionKeysAndValues,
-          usesFlashAttention: false, paddingFinalConvLayer: true
+          startHeight: startHeight, inputChannels: 4,
+          highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: false,
+          paddingFinalConvLayer: true, format: .NHWC
         ).0
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -179,9 +180,9 @@ extension FirstStage {
         existingDecoder
         ?? Decoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, highPrecisionKeysAndValues: highPrecisionKeysAndValues,
-          usesFlashAttention: false, paddingFinalConvLayer: true,
-          quantLayer: false
+          startHeight: startHeight, inputChannels: 16,
+          highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: false,
+          paddingFinalConvLayer: true, format: .NHWC, quantLayer: false
         ).0
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -625,7 +626,7 @@ extension FirstStage {
         existingEncoder
         ?? Encoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, usesFlashAttention: false
+          startHeight: startHeight, usesFlashAttention: false, format: .NHWC
         ).0
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)
@@ -652,7 +653,8 @@ extension FirstStage {
         existingEncoder
         ?? Encoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, usesFlashAttention: false, quantLayer: false, outputChannels: 16
+          startHeight: startHeight, usesFlashAttention: false, format: .NHWC, quantLayer: false,
+          outputChannels: 16
         ).0
       // Don't use FP32 for SD3 / FLUX.1 encoding pass.
       if existingEncoder == nil {

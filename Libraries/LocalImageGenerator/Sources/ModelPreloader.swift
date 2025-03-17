@@ -613,8 +613,9 @@ extension ModelPreloader {
         let z = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 4), of: FloatType.self)
         let decoder = Decoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
-          usesFlashAttention: false, paddingFinalConvLayer: true
+          startHeight: startHeight, inputChannels: 4,
+          highPrecisionKeysAndValues: highPrecisionForAutoencoder, usesFlashAttention: false,
+          paddingFinalConvLayer: true, format: .NHWC
         ).0
         decoder.compile(inputs: z)
         graph.openStore(
@@ -643,7 +644,7 @@ extension ModelPreloader {
           .GPU(0), .NHWC(1, startHeight * 8, startWidth * 8, 3), of: FloatType.self)
         let encoder = Encoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, usesFlashAttention: false
+          startHeight: startHeight, usesFlashAttention: false, format: .NHWC
         ).0
         encoder.compile(inputs: x)
         graph.openStore(
