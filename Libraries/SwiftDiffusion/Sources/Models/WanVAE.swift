@@ -960,7 +960,9 @@ func NCHWWanDecoderCausal3D(
   }
   var out: Model.IO
   if outs.count > 1 {
-    out = Concat(axis: 1)(outs)
+    let concat = Concat(axis: 1)
+    concat.flags = [.disableOpt]
+    out = concat(outs)
   } else {
     out = outs[0]
   }
@@ -1152,7 +1154,9 @@ private func NCHWWanEncoderCausal3D(
   depth = startDepth
   var out: Model.IO
   if outs.count > 1 {
-    out = Concat(axis: 1)(outs)
+    let concat = Concat(axis: 1)
+    concat.flags = [.disableOpt]
+    out = concat(outs)
   } else {
     out = outs[0]
   }
