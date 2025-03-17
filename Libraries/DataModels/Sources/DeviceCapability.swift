@@ -73,6 +73,13 @@ public struct DeviceCapability {
       return false
     #endif
   }()
+  public static let isNHWCPreferred: Bool = {
+    #if canImport(Metal)
+      return true
+    #else
+      return false
+    #endif
+  }()
   public static let isMFASupported: Bool = {
     #if !canImport(Metal)
       return true

@@ -21,6 +21,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?)
   private let highPrecisionFallback: Bool
   private let memoryCapacity: MemoryCapacity  // If this device has more than 24GiB RAM, 8GiB - 24GiB, less than 8GiB
+  private let isNHWCPreferred: Bool
   private let isCancelled = ManagedAtomic<Bool>(false)
   public init(
     filePath: String, version: ModelVersion,
@@ -29,7 +30,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     tiledDecoding: TiledConfiguration,
     tiledDiffusion: TiledConfiguration, externalOnDemand: Bool, alternativeUsesFlashAttention: Bool,
     alternativeFilePath: String?, alternativeDecoderVersion: AlternativeDecoderVersion?,
-    memoryCapacity: MemoryCapacity
+    memoryCapacity: MemoryCapacity, isNHWCPreferred: Bool
   ) {
     self.filePath = filePath
     self.version = version
@@ -43,6 +44,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.alternativeFilePath = alternativeFilePath
     self.alternativeDecoderVersion = alternativeDecoderVersion
     self.memoryCapacity = memoryCapacity
+    self.isNHWCPreferred = isNHWCPreferred
   }
 }
 
@@ -281,7 +283,7 @@ extension FirstStage {
         ?? WanDecoderCausal3D(
           channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true,
-          format: .NHWC
+          format: isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -754,7 +756,7 @@ extension FirstStage {
         existingEncoder
         ?? WanEncoderCausal3D(
           channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
-          startHeight: startHeight, startDepth: startDepth, format: .NHWC
+          startHeight: startHeight, startDepth: startDepth, format: isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)
