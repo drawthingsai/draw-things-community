@@ -551,7 +551,12 @@ private func NHWCWanEncoderCausal3D(
   height = startHeight
   width = startWidth
   depth = startDepth
-  var out = Concat(axis: 0)(outs)
+  var out: Model.IO
+  if outs.count > 1 {
+    out = Concat(axis: 0)(outs)
+  } else {
+    out = outs[0]
+  }
   let convOut = Convolution(
     groups: 1, filters: 32, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
@@ -1145,7 +1150,12 @@ private func NCHWWanEncoderCausal3D(
   height = startHeight
   width = startWidth
   depth = startDepth
-  var out = Concat(axis: 1)(outs)
+  var out: Model.IO
+  if outs.count > 1 {
+    out = Concat(axis: 1)(outs)
+  } else {
+    out = outs[0]
+  }
   let convOut = Convolution(
     groups: 1, filters: 32, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
@@ -1156,7 +1166,8 @@ private func NCHWWanEncoderCausal3D(
     ])
   ).reshaped([1, 32, depth, height, width])
   let quantConv = Convolution(
-    groups: 1, filters: 32, filterSize: [1, 1, 1], format: .OIHW, name: "quant_conv")
+    groups: 1, filters: 32, filterSize: [1, 1, 1], hint: Hint(stride: [1, 1, 1]), format: .OIHW,
+    name: "quant_conv")
   out = quantConv(out).permuted(0, 2, 3, 4, 1).contiguous().reshaped(
     .NHWC(depth, height, width, 32))
   let mapper: ModelWeightMapper = { format in
