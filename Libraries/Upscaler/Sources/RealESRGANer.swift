@@ -10,14 +10,16 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let nativeScaleFactor: UpscaleFactor
   private let forcedScaleFactor: UpscaleFactor
   private let numberOfBlocks: Int
+  private let isNHWCPreferred: Bool
   public init(
     filePath: String, nativeScaleFactor: UpscaleFactor, forcedScaleFactor: UpscaleFactor,
-    numberOfBlocks: Int
+    numberOfBlocks: Int, isNHWCPreferred: Bool
   ) {
     self.filePath = filePath
     self.nativeScaleFactor = nativeScaleFactor
     self.forcedScaleFactor = forcedScaleFactor
     self.numberOfBlocks = numberOfBlocks
+    self.isNHWCPreferred = isNHWCPreferred
   }
 
   public static func downscale(
@@ -106,13 +108,23 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
       ).1
     var z: DynamicGraph.Tensor<FloatType>
     if nativeScaleFactor == .x2 {  // Need to do pixel unshuffle.
-      z = x.reshaped(format: .NHWC, shape: [batchSize, height / 2, 2, width / 2, 2, 3]).permuted(
-        0, 1, 3, 5, 2, 4
-      ).copied().reshaped(.NHWC(batchSize, height / 2, width / 2, 12))
+      if isNHWCPreferred {
+        z = x.reshaped(format: .NHWC, shape: [batchSize, height / 2, 2, width / 2, 2, 3]).permuted(
+          0, 1, 3, 5, 2, 4
+        ).copied().reshaped(.NHWC(batchSize, height / 2, width / 2, 12))
+      } else {
+        z = x.reshaped(format: .NHWC, shape: [batchSize, height / 2, 2, width / 2, 2, 3]).permuted(
+          0, 5, 2, 4, 1, 3
+        ).copied().reshaped(.NCHW(batchSize, 12, height / 2, width / 2))
+      }
       height = height / 2
       width = width / 2
     } else {
-      z = x
+      if isNHWCPreferred {
+        z = x
+      } else {
+        z = x.permuted(0, 3, 1, 2).copied().reshaped(.NCHW(batchSize, 3, height, width))
+      }
     }
     z = (0.5 * (z + 1)).clamped(0...1)
     let yTiles = (height + tileSize - 1) / tileSize
@@ -121,12 +133,20 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
     let inputShape = input.shape
     if !hasRRDBNet {
       // Load model from parameters.
-      z = graph.variable(
-        .GPU(0),
-        .NHWC(
-          1, min(tileSize + 2 * overlapping, height),
-          min(tileSize + 2 * overlapping, width), inputShape[3]))
-      rrdbnet.maxConcurrency = .limit(4)
+      if isNHWCPreferred {
+        z = graph.variable(
+          .GPU(0),
+          .NHWC(
+            1, min(tileSize + 2 * overlapping, height),
+            min(tileSize + 2 * overlapping, width), inputShape[3]))
+      } else {
+        z = graph.variable(
+          .GPU(0),
+          .NCHW(
+            1, inputShape[1], min(tileSize + 2 * overlapping, height),
+            min(tileSize + 2 * overlapping, width)))
+      }
+      rrdbnet.maxConcurrency = .limit(6)
       rrdbnet.compile(inputs: z)
       let legacyMapping: [String: Int] = [
         "conv_first": 0,
@@ -299,11 +319,21 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
             .bilinear, widthScale: Float(upscaleFactor) / 4, heightScale: Float(upscaleFactor) / 4)(
               result)
         }
-        return (
-          (result * 2 - 1)
-            .reshaped(.NHWC(1, height * upscaleFactor, width * upscaleFactor, 3)).copied().toCPU(),
-          rrdbnet
-        )
+        if isNHWCPreferred {
+          return (
+            (result * 2 - 1)
+              .reshaped(.NHWC(1, height * upscaleFactor, width * upscaleFactor, 3)).copied()
+              .toCPU(),
+            rrdbnet
+          )
+        } else {
+          return (
+            (result * 2 - 1).permuted(0, 2, 3, 1)
+              .reshaped(.NHWC(1, height * upscaleFactor, width * upscaleFactor, 3)).copied()
+              .toCPU(),
+            rrdbnet
+          )
+        }
       }
       var output = graph.variable(
         .CPU, .NHWC(batchSize, height * upscaleFactor, width * upscaleFactor, 3), of: FloatType.self
@@ -316,9 +346,15 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
             .bilinear, widthScale: Float(upscaleFactor) / 4, heightScale: Float(upscaleFactor) / 4)(
               result)
         }
-        output[i..<(i + 1), 0..<(height * upscaleFactor), 0..<(width * upscaleFactor), 0..<3] =
-          (result * 2 - 1)
-          .reshaped(.NHWC(1, height * upscaleFactor, width * upscaleFactor, 3)).copied().toCPU()
+        if isNHWCPreferred {
+          output[i..<(i + 1), 0..<(height * upscaleFactor), 0..<(width * upscaleFactor), 0..<3] =
+            (result * 2 - 1)
+            .reshaped(.NHWC(1, height * upscaleFactor, width * upscaleFactor, 3)).copied().toCPU()
+        } else {
+          output[i..<(i + 1), 0..<(height * upscaleFactor), 0..<(width * upscaleFactor), 0..<3] =
+            (result * 2 - 1).permuted(0, 2, 3, 1)
+            .reshaped(.NHWC(1, height * upscaleFactor, width * upscaleFactor, 3)).copied().toCPU()
+        }
       }
       return (output, rrdbnet)
     }
@@ -364,10 +400,18 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
             let outputEndX = inputEndX * upscaleFactor
             let outputStartXTile = (inputStartX - inputStartXPad) * upscaleFactor
             let outputEndXTile = outputStartXTile + (inputEndX - inputStartX) * upscaleFactor
-            let z = input[
-              i..<(i + 1), inputStartYPad..<inputEndYPad,
-              inputStartXPad..<inputEndXPad, 0..<inputShape[3]
-            ].copied()
+            let z: DynamicGraph.Tensor<FloatType>
+            if isNHWCPreferred {
+              z = input[
+                i..<(i + 1), inputStartYPad..<inputEndYPad,
+                inputStartXPad..<inputEndXPad, 0..<inputShape[3]
+              ].copied()
+            } else {
+              z = input[
+                i..<(i + 1), 0..<inputShape[1],
+                inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad
+              ].copied()
+            }
             var outputTile = rrdbnet(inputs: z)[0].as(of: FloatType.self)
             if upscaleFactor != 4 {
               outputTile = Upsample(
@@ -375,10 +419,17 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
                 heightScale: Float(upscaleFactor) / 4)(outputTile)
             }
             outputTile = outputTile * 2 - 1
-            output[i..<(i + 1), outputStartY..<outputEndY, outputStartX..<outputEndX, 0..<3] =
-              outputTile[
-                0..<1, outputStartYTile..<outputEndYTile, outputStartXTile..<outputEndXTile, 0..<3
-              ].copied().toCPU()
+            if isNHWCPreferred {
+              output[i..<(i + 1), outputStartY..<outputEndY, outputStartX..<outputEndX, 0..<3] =
+                outputTile[
+                  0..<1, outputStartYTile..<outputEndYTile, outputStartXTile..<outputEndXTile, 0..<3
+                ].copied().toCPU()
+            } else {
+              output[i..<(i + 1), outputStartY..<outputEndY, outputStartX..<outputEndX, 0..<3] =
+                outputTile[
+                  0..<1, 0..<3, outputStartYTile..<outputEndYTile, outputStartXTile..<outputEndXTile
+                ].copied().permuted(0, 2, 3, 1).copied().toCPU()
+            }
           }
         }
       }
@@ -403,8 +454,14 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
           let outputEndX = inputEndX * upscaleFactor
           let outputStartXTile = (inputStartX - inputStartXPad) * upscaleFactor
           let outputEndXTile = outputStartXTile + (inputEndX - inputStartX) * upscaleFactor
-          let z = input[i..<(i + 1), 0..<height, inputStartXPad..<inputEndXPad, 0..<inputShape[3]]
-            .copied()
+          let z: DynamicGraph.Tensor<FloatType>
+          if isNHWCPreferred {
+            z = input[i..<(i + 1), 0..<height, inputStartXPad..<inputEndXPad, 0..<inputShape[3]]
+              .copied()
+          } else {
+            z = input[i..<(i + 1), 0..<inputShape[1], 0..<height, inputStartXPad..<inputEndXPad]
+              .copied()
+          }
           var outputTile = rrdbnet(inputs: z)[0].as(of: FloatType.self)
           if upscaleFactor != 4 {
             outputTile = Upsample(
@@ -412,10 +469,17 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
             )(outputTile)
           }
           outputTile = outputTile * 2 - 1
-          output[i..<(i + 1), 0..<(height * upscaleFactor), outputStartX..<outputEndX, 0..<3] =
-            outputTile[
-              0..<1, 0..<(height * upscaleFactor), outputStartXTile..<outputEndXTile, 0..<3
-            ].copied().toCPU()
+          if isNHWCPreferred {
+            output[i..<(i + 1), 0..<(height * upscaleFactor), outputStartX..<outputEndX, 0..<3] =
+              outputTile[
+                0..<1, 0..<(height * upscaleFactor), outputStartXTile..<outputEndXTile, 0..<3
+              ].copied().toCPU()
+          } else {
+            output[i..<(i + 1), 0..<(height * upscaleFactor), outputStartX..<outputEndX, 0..<3] =
+              outputTile[
+                0..<1, 0..<3, 0..<(height * upscaleFactor), outputStartXTile..<outputEndXTile
+              ].copied().permuted(0, 2, 3, 1).copied().toCPU()
+          }
         }
       }
     } else {
@@ -440,8 +504,14 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
           let outputEndY = inputEndY * upscaleFactor
           let outputStartYTile = (inputStartY - inputStartYPad) * upscaleFactor
           let outputEndYTile = outputStartYTile + (inputEndY - inputStartY) * upscaleFactor
-          let z = input[i..<(i + 1), inputStartYPad..<inputEndYPad, 0..<width, 0..<inputShape[3]]
-            .copied()
+          let z: DynamicGraph.Tensor<FloatType>
+          if isNHWCPreferred {
+            z = input[i..<(i + 1), inputStartYPad..<inputEndYPad, 0..<width, 0..<inputShape[3]]
+              .copied()
+          } else {
+            z = input[i..<(i + 1), 0..<inputShape[1], inputStartYPad..<inputEndYPad, 0..<width]
+              .copied()
+          }
           var outputTile = rrdbnet(inputs: z)[0].as(of: FloatType.self)
           if upscaleFactor != 4 {
             outputTile = Upsample(
@@ -449,10 +519,17 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
             )(outputTile)
           }
           outputTile = outputTile * 2 - 1
-          output[i..<(i + 1), outputStartY..<outputEndY, 0..<(width * upscaleFactor), 0..<3] =
-            outputTile[
-              0..<1, outputStartYTile..<outputEndYTile, 0..<(width * upscaleFactor), 0..<3
-            ].copied().toCPU()
+          if isNHWCPreferred {
+            output[i..<(i + 1), outputStartY..<outputEndY, 0..<(width * upscaleFactor), 0..<3] =
+              outputTile[
+                0..<1, outputStartYTile..<outputEndYTile, 0..<(width * upscaleFactor), 0..<3
+              ].copied().toCPU()
+          } else {
+            output[i..<(i + 1), outputStartY..<outputEndY, 0..<(width * upscaleFactor), 0..<3] =
+              outputTile[
+                0..<1, 0..<3, outputStartYTile..<outputEndYTile, 0..<(width * upscaleFactor)
+              ].copied().permuted(0, 2, 3, 1).copied().toCPU()
+          }
         }
       }
     }

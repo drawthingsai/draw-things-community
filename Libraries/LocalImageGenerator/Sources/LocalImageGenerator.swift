@@ -1261,7 +1261,8 @@ extension LocalImageGenerator {
     let numberOfBlocks = UpscalerZoo.numberOfBlocksForModel(upscaler)
     let realESRGANer = RealESRGANer<FloatType>(
       filePath: upscalerFilePath, nativeScaleFactor: nativeScaleFactor,
-      forcedScaleFactor: forcedScaleFactor, numberOfBlocks: numberOfBlocks)
+      forcedScaleFactor: forcedScaleFactor, numberOfBlocks: numberOfBlocks,
+      isNHWCPreferred: DeviceCapability.isNHWCPreferred)
     let shape = image.shape
     if shape[3] > 3 {
       let graph = image.graph
@@ -1326,7 +1327,8 @@ extension LocalImageGenerator {
     return graph.withNoGrad {
       let realESRGANer = RealESRGANer<FloatType>(
         filePath: upscalerFilePath, nativeScaleFactor: nativeScaleFactor,
-        forcedScaleFactor: forcedScaleFactor, numberOfBlocks: numberOfBlocks)
+        forcedScaleFactor: forcedScaleFactor, numberOfBlocks: numberOfBlocks,
+        isNHWCPreferred: DeviceCapability.isNHWCPreferred)
       var rrdbnet: Model? = nil
       var results = [Tensor<FloatType>]()
       for image in images {

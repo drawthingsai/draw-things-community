@@ -2,9 +2,11 @@ import NNC
 
 typealias ModelWeightMapper = () -> [String: [String]]
 
-func ResidualDenseBlock(prefix: [String], numberOfFeatures: Int, numberOfGrowChannels: Int) -> (
-  ModelWeightMapper, Model
-) {
+private func ResidualDenseBlock(prefix: [String], numberOfFeatures: Int, numberOfGrowChannels: Int)
+  -> (
+    ModelWeightMapper, Model
+  )
+{
   let x = Input()
   let conv1 = Convolution(
     groups: 1, filters: numberOfGrowChannels, filterSize: [3, 3],
@@ -70,7 +72,7 @@ func ResidualDenseBlock(prefix: [String], numberOfFeatures: Int, numberOfGrowCha
   return (mapper, Model([x], [out]))
 }
 
-func RRDB(prefix: [String], numberOfFeatures: Int, numberOfGrowChannels: Int) -> (
+private func RRDB(prefix: [String], numberOfFeatures: Int, numberOfGrowChannels: Int) -> (
   ModelWeightMapper, Model
 ) {
   let x = Input()
