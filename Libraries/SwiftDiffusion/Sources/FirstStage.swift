@@ -224,7 +224,7 @@ extension FirstStage {
         ?? DecoderCausal3D(
           channels: [128, 256, 512, 512], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true,
-          format: .NHWC
+          format: isNHWCPreferred ? .NHWC : .NCHW
         ).1
       var mask = Tensor<Float>(
         Array(repeating: 0, count: startDepth * startDepth), .CPU,
@@ -700,7 +700,7 @@ extension FirstStage {
         existingEncoder
         ?? EncoderCausal3D(
           channels: [128, 256, 512, 512], numRepeat: 2, startWidth: startWidth,
-          startHeight: startHeight, startDepth: startDepth, format: .NHWC
+          startHeight: startHeight, startDepth: startDepth, format: isNHWCPreferred ? .NHWC : .NCHW
         ).1
       var mask = Tensor<Float>(
         Array(repeating: 0, count: startDepth * startDepth), .CPU,
