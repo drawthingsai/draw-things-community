@@ -190,6 +190,13 @@ public struct DeviceCapability {
     }
     return .low
   }()
+  public static let RealESRGANerTileSize: Int = {  // Metal have problem to upscale to 2048x2048, hence doing this for 1024x1024 on Metal. CUDA doesn't have this issue and will benefit from larger tiles.
+    #if canImport(Metal)
+      return 256
+    #else
+      return 512
+    #endif
+  }()
   public static func isVerifiedScale(_ scale: Scale) -> Bool {
     // Only for low performance devices, we need to gate against anything above 512x512.
     if !isLowPerformance || scale.widthScale * scale.heightScale <= 64 {

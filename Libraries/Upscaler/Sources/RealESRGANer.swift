@@ -11,15 +11,17 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let forcedScaleFactor: UpscaleFactor
   private let numberOfBlocks: Int
   private let isNHWCPreferred: Bool
+  private let tileSize: Int
   public init(
     filePath: String, nativeScaleFactor: UpscaleFactor, forcedScaleFactor: UpscaleFactor,
-    numberOfBlocks: Int, isNHWCPreferred: Bool
+    numberOfBlocks: Int, isNHWCPreferred: Bool, tileSize: Int
   ) {
     self.filePath = filePath
     self.nativeScaleFactor = nativeScaleFactor
     self.forcedScaleFactor = forcedScaleFactor
     self.numberOfBlocks = numberOfBlocks
     self.isNHWCPreferred = isNHWCPreferred
+    self.tileSize = tileSize
   }
 
   public static func downscale(
@@ -91,8 +93,7 @@ public struct RealESRGANer<FloatType: TensorNumeric & BinaryFloatingPoint> {
   }
 
   public func upscale(
-    _ x: DynamicGraph.Tensor<FloatType>, rrdbnet: Model? = nil, tileSize: Int = 256,
-    overlapping: Int = 16
+    _ x: DynamicGraph.Tensor<FloatType>, rrdbnet: Model? = nil, overlapping: Int = 16
   ) -> (DynamicGraph.Tensor<FloatType>, Model) {
     let shape = x.shape
     let batchSize = shape[0]

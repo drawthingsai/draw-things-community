@@ -1262,7 +1262,8 @@ extension LocalImageGenerator {
     let realESRGANer = RealESRGANer<FloatType>(
       filePath: upscalerFilePath, nativeScaleFactor: nativeScaleFactor,
       forcedScaleFactor: forcedScaleFactor, numberOfBlocks: numberOfBlocks,
-      isNHWCPreferred: DeviceCapability.isNHWCPreferred)
+      isNHWCPreferred: DeviceCapability.isNHWCPreferred,
+      tileSize: DeviceCapability.RealESRGANerTileSize)
     let shape = image.shape
     if shape[3] > 3 {
       let graph = image.graph
@@ -1328,7 +1329,8 @@ extension LocalImageGenerator {
       let realESRGANer = RealESRGANer<FloatType>(
         filePath: upscalerFilePath, nativeScaleFactor: nativeScaleFactor,
         forcedScaleFactor: forcedScaleFactor, numberOfBlocks: numberOfBlocks,
-        isNHWCPreferred: DeviceCapability.isNHWCPreferred)
+        isNHWCPreferred: DeviceCapability.isNHWCPreferred,
+        tileSize: DeviceCapability.RealESRGANerTileSize)
       var rrdbnet: Model? = nil
       var results = [Tensor<FloatType>]()
       for image in images {
