@@ -434,7 +434,7 @@ private func NHWCWanEncoderCausal3D(
   let endWidth = width
   let endDepth = depth
   var outs = [Model.IO]()
-  let input = x.copied()  // s4nnc cannot bind tensor properly with offsets. Making a copy to workaround this issue.
+  let input = x
   for d in stride(from: 0, to: max(startDepth - 1, 1), by: 2) {
     previousChannel = channels[0]
     height = endHeight
