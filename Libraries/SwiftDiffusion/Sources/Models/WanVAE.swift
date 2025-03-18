@@ -1031,7 +1031,7 @@ private func NCHWWanEncoderCausal3D(
   let endWidth = width
   let endDepth = depth
   var outs = [Model.IO]()
-  let input = x.permuted(3, 0, 1, 2).contiguous().reshaped(.NCHW(3, endDepth, endHeight, endWidth))  // s4nnc cannot bind tensor properly with offsets. Making a copy to workaround this issue.
+  let input = x.permuted(3, 0, 1, 2).contiguous().reshaped(.NCHW(3, endDepth, endHeight, endWidth))
   for d in stride(from: 0, to: max(startDepth - 1, 1), by: 2) {
     previousChannel = channels[0]
     height = endHeight
