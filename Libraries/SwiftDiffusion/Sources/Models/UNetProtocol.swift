@@ -819,6 +819,8 @@ extension UNetFromNNC {
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       {
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
         unet = ModelBuilderOrModel.model(
           LoRAWan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
@@ -985,8 +987,9 @@ extension UNetFromNNC {
             version: version
           ) { controlModelLoader in
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
-              store.read(
-                modelKey, model: unet.unwrapped, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+              try! store.read(
+                modelKey, model: unet.unwrapped, strict: true,
+                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
               ) {
                 name, dataType, format, shape in
                 if let result = controlModelLoader.loadMergedWeight(name: name) {

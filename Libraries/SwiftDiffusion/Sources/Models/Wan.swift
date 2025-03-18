@@ -294,7 +294,8 @@ private func LoRAWanAttentionBlock(
   out = x + chunks[2] .* out.to(of: x)
   let xNorm3 = LayerNorm(epsilon: 1e-6, axis: [2], name: "x_norm_3")
   xOut = xNorm3(out).to(.Float16)
-  let xToContextQueries = Dense(count: k * h, name: "x_c_q")
+  let xToContextQueries = LoRADense(
+    count: k * h, configuration: configuration, index: layerIndex, name: "x_c_q")
   let cK = Input()
   var cQ = xToContextQueries(xOut)
   let contextNormQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_c_norm_q")
