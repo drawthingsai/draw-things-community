@@ -1615,7 +1615,7 @@ extension TextEncoder {
       externalStore: TensorData.externalStore(filePath: filePaths[0])
     ) { store in
       store.read(
-        "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
+        "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
     }
     var c = textModel(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)[0].as(
       of: FloatType.self
