@@ -406,7 +406,7 @@ public struct ModelZoo: DownloadZoo {
       version: .wan21_1_3b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
       autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 12,
       note:
-        "[Wan2.1 T2V 1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 832×480. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 6.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs."
+        "[Wan2.1 T2V 1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 6.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs."
     ),
     Specification(
       name: "Wan 2.1 T2V 14B", file: "wan_v2.1_14b_720p_q8p.ckpt", prefix: "",
