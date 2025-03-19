@@ -444,7 +444,7 @@ private func NCHWAttnBlockCausal3D(
   let x = Input()
   let causalAttentionMask = Input()
   let norm = GroupNorm(axis: 0, groups: 32, epsilon: 1e-6, reduce: [1, 2, 3], name: "attn_norm")
-  var out = norm(x)
+  var out = norm(x).reshaped([1, inChannels, depth, height, width])
   let hw = width * height * depth
   let tokeys = Convolution(
     groups: 1, filters: inChannels, filterSize: [1, 1, 1], hint: Hint(stride: [1, 1, 1]),
