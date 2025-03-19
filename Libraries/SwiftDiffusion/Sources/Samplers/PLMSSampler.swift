@@ -462,7 +462,7 @@ extension PLMSSampler: Sampler {
         let t = unet.timeEmbed(
           graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
           version: currentModelVersion)
-        let c = UNetExtractConditions(
+        let conditions = UNetExtractConditions(
           of: FloatType.self,
           graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
