@@ -798,7 +798,7 @@ extension UNetFromNNC {
           LoRAWan(
             channels: 1_536, layers: 30, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, LoRAConfiguration: configuration
+            textLength: textLength, injectImage: false, LoRAConfiguration: configuration
           ).1)
       } else {
         unet = ModelBuilderOrModel.model(
@@ -825,7 +825,7 @@ extension UNetFromNNC {
           LoRAWan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, LoRAConfiguration: configuration
+            textLength: textLength, injectImage: false, LoRAConfiguration: configuration
           ).1)
       } else {
         unet = ModelBuilderOrModel.model(
