@@ -788,6 +788,7 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
+      let injectImage = c.count > 9 + 4 * 30
       let textLength = c[7].shape[1]
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
@@ -798,14 +799,14 @@ extension UNetFromNNC {
           LoRAWan(
             channels: 1_536, layers: 30, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: false, LoRAConfiguration: configuration
+            textLength: textLength, injectImage: injectImage, LoRAConfiguration: configuration
           ).1)
       } else {
         unet = ModelBuilderOrModel.model(
           Wan(
             channels: 1_536, layers: 30, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: false
+            textLength: textLength, injectImage: injectImage
           ).1)
       }
     case .wan21_14b:
@@ -815,6 +816,7 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
+      let injectImage = c.count > 9 + 4 * 40
       let textLength = c[7].shape[1]
       if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
@@ -825,14 +827,14 @@ extension UNetFromNNC {
           LoRAWan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: false, LoRAConfiguration: configuration
+            textLength: textLength, injectImage: injectImage, LoRAConfiguration: configuration
           ).1)
       } else {
         unet = ModelBuilderOrModel.model(
           Wan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: false
+            textLength: textLength, injectImage: injectImage
           ).1)
       }
     }
@@ -1236,6 +1238,12 @@ extension UNetFromNNC {
           })
         return
       case .wan21_1_3b, .wan21_14b:
+        let injectImage: Bool
+        if version == .wan21_1_3b {
+          injectImage = inputs.count > 10 + 4 * 30
+        } else {
+          injectImage = inputs.count > 10 + 4 * 40
+        }
         unet.compile(
           inputs: inputs.enumerated().compactMap {
             let shape = $0.1.shape
@@ -1246,10 +1254,17 @@ extension UNetFromNNC {
             case 1...7, (inputs.count - 2)..<inputs.count:
               return $0.1
             default:
-              if $0.0 % 2 == 0 {
+              if injectImage {
+                if ($0.0 - 8) % 6 == 1 || ($0.0 - 8) % 6 == 3 {
+                  return nil  // Remove positive ones.
+                }
                 return $0.1
+              } else {
+                if $0.0 % 2 == 0 {
+                  return $0.1
+                }
+                return nil
               }
-              return nil
             }
           })
         return
@@ -1381,6 +1396,12 @@ extension UNetFromNNC {
         }
         return Functional.concat(axis: 0, etUncond, etCond)
       case .wan21_1_3b, .wan21_14b:
+        let injectImage: Bool
+        if version == .wan21_1_3b {
+          injectImage = restInputs.count > 9 + 4 * 30
+        } else {
+          injectImage = restInputs.count > 9 + 4 * 40
+        }
         let shape = firstInput.shape
         let etUncond: DynamicGraph.Tensor<FloatType>
         let etCond: DynamicGraph.Tensor<FloatType>
@@ -1393,10 +1414,17 @@ extension UNetFromNNC {
             case 0..<7, (restInputs.count - 2)..<restInputs.count:
               return $0.1
             default:
-              if $0.0 % 2 == 1 {
+              if injectImage {
+                if ($0.0 - 7) % 6 == 1 || ($0.0 - 7) % 6 == 3 {
+                  return nil  // Remove negative ones.
+                }
                 return $0.1
+              } else {
+                if $0.0 % 2 == 1 {
+                  return $0.1
+                }
+                return nil
               }
-              return nil
             }
           })[0].as(of: FloatType.self)
         etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
@@ -1412,10 +1440,17 @@ extension UNetFromNNC {
             case 0..<7, (restInputs.count - 2)..<restInputs.count:
               return $0.1
             default:
-              if $0.0 % 2 == 0 {
+              if injectImage {
+                if ($0.0 - 7) % 6 == 0 || ($0.0 - 7) % 6 == 2 {
+                  return nil  // Remove negative ones.
+                }
                 return $0.1
+              } else {
+                if $0.0 % 2 == 0 {
+                  return $0.1
+                }
+                return nil
               }
-              return nil
             }
           })[0].as(of: FloatType.self)
         return Functional.concat(axis: 0, etUncond, etCond)

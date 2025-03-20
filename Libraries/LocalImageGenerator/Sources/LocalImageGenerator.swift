@@ -2480,9 +2480,32 @@ extension LocalImageGenerator {
     }
   }
 
+  private func expandImageForEncoding(
+    batchSize: Int, version: ModelVersion, image: DynamicGraph.Tensor<FloatType>
+  ) -> (Int, DynamicGraph.Tensor<FloatType>) {
+    switch version {
+    case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+      .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1:
+      return (1, image)
+    case .wan21_14b, .wan21_1_3b:
+      let shape = image.shape
+      guard shape[0] < (batchSize - 1) * 4 + 1 else {
+        return (
+          batchSize,
+          image[0..<(batchSize - 1) * 4 + 1, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+        )
+      }
+      let graph = image.graph
+      var expandedImage = graph.variable(
+        .GPU(0), .NHWC((batchSize - 1) * 4 + 1, shape[1], shape[2], shape[3]), of: FloatType.self)
+      expandedImage.full(0)
+      expandedImage[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] = image
+      return (batchSize, expandedImage)
+    }
+  }
+
   private func concatMaskWithMaskedImage(
-    batchSize: Int,
-    version: ModelVersion, encodedImage: DynamicGraph.Tensor<FloatType>,
+    batchSize: Int, version: ModelVersion, encodedImage: DynamicGraph.Tensor<FloatType>,
     encodedMask: DynamicGraph.Tensor<FloatType>, imageNegMask: DynamicGraph.Tensor<FloatType>?
   ) -> DynamicGraph.Tensor<FloatType> {
     let graph = encodedImage.graph
@@ -2509,7 +2532,18 @@ extension LocalImageGenerator {
         encodedImage[0..<min(shape[0], batchSize), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
       return result
     case .wan21_1_3b, .wan21_14b:
-      fatalError()
+      // For this mask, it contains 4 channels, each channel represent a frame (4x compression). First frame will use all 4 channels.
+      let shape = encodedImage.shape
+      let maskShape = encodedMask.shape
+      var result = graph.variable(
+        encodedImage.kind, format: encodedImage.format,
+        shape: [shape[0], shape[1], shape[2], 4 + shape[3]], of: FloatType.self)
+      result.full(0)
+      result[0..<shape[0], 0..<shape[1], 0..<shape[2], 4..<(4 + shape[3])] = encodedImage
+      for i in 0..<4 {
+        result[0..<maskShape[0], 0..<shape[1], 0..<shape[2], i..<(i + 1)] = encodedMask
+      }
+      return result
     case .flux1:
       let shape = encodedImage.shape
       var result = graph.variable(
@@ -2892,11 +2926,15 @@ extension LocalImageGenerator {
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
         lora: lora)
+      let image = image.map {
+        downscaleImageAndToGPU(graph.variable($0), scaleFactor: imageScaleFactor)
+      }
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
-          injectedEmbeddings: injectedEmbeddings, image: [], lengthsOfUncond: lengthsOfUncond,
+          injectedEmbeddings: injectedEmbeddings, image: image.map { [$0] } ?? [],
+          lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
         textEncoder: textEncoder)
@@ -2930,9 +2968,6 @@ extension LocalImageGenerator {
       guard feedback(.textEncoded, signposts, nil) else { return (nil, 1) }
       var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
       var mask: DynamicGraph.Tensor<FloatType>? = nil
-      let image = image.map {
-        downscaleImageAndToGPU(graph.variable($0), scaleFactor: imageScaleFactor)
-      }
       var firstPassImage: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modifier == .double
         || modifier == .depth || modifier == .canny || canInjectControls
@@ -2973,7 +3008,7 @@ extension LocalImageGenerator {
       }
       if modifier == .inpainting || modifier == .editing || modifier == .double {
         // Only apply the image fill logic (for image encoding purpose) when it is inpainting or editing.
-        let firstPassImage =
+        var firstPassImage =
           firstPassImage
           ?? {
             let image = graph.variable(
@@ -2982,6 +3017,9 @@ extension LocalImageGenerator {
             image.full(0)
             return image
           }()
+        let imageSize: Int
+        (imageSize, firstPassImage) = expandImageForEncoding(
+          batchSize: batchSize, version: modelVersion, image: firstPassImage)
         let encodedImage = modelPreloader.consumeFirstStageEncode(
           firstStage.encode(
             firstPassImage,
@@ -2992,18 +3030,19 @@ extension LocalImageGenerator {
         if modifier == .inpainting {
           maskedImage = firstStage.scale(
             encodedImage[
-              0..<1, 0..<firstPassStartHeight, 0..<firstPassStartWidth, 0..<firstPassChannels
+              0..<imageSize, 0..<firstPassStartHeight, 0..<firstPassStartWidth,
+              0..<firstPassChannels
             ].copied())
           mask = graph.variable(
             .GPU(0), .NHWC(1, firstPassStartHeight, firstPassStartWidth, 1), of: FloatType.self)
           mask?.full(1)
           maskedImage = concatMaskWithMaskedImage(
-            batchSize: batchSize,
-            version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
+            batchSize: batchSize, version: modelVersion, encodedImage: maskedImage!,
+            encodedMask: mask!, imageNegMask: nil
           )
         } else {
           maskedImage = encodedImage[
-            0..<1, 0..<firstPassStartHeight, 0..<firstPassStartWidth, 0..<firstPassChannels
+            0..<imageSize, 0..<firstPassStartHeight, 0..<firstPassStartWidth, 0..<firstPassChannels
           ].copied()
         }
         guard feedback(.imageEncoded, signposts, nil) else { return (nil, 1) }
@@ -3194,7 +3233,7 @@ extension LocalImageGenerator {
       }
       if modifier == .inpainting || modifier == .editing || modifier == .double {
         // TODO: Support this properly for Wurstchen models.
-        let image =
+        var image =
           (image.flatMap {
             if $0.shape[1] == startHeight * 8 && $0.shape[2] == startWidth * 8 {
               return $0
@@ -3208,6 +3247,9 @@ extension LocalImageGenerator {
             image.full(0)
             return image
           }()
+        let imageSize: Int
+        (imageSize, image) = expandImageForEncoding(
+          batchSize: batchSize, version: modelVersion, image: image)
         let encodedImage = modelPreloader.consumeFirstStageEncode(
           firstStage.encode(
             image,
@@ -3217,16 +3259,19 @@ extension LocalImageGenerator {
         )
         if modifier == .inpainting {
           maskedImage = firstStage.scale(
-            encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<firstPassChannels].copied())
+            encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<firstPassChannels]
+              .copied())
           mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
           mask?.full(1)
           maskedImage = concatMaskWithMaskedImage(
-            batchSize: batchSize,
-            version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
+            batchSize: batchSize, version: modelVersion, encodedImage: maskedImage!,
+            encodedMask: mask!, imageNegMask: nil
           )
         } else {
-          maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<firstPassChannels]
-            .copied()
+          maskedImage = encodedImage[
+            0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<firstPassChannels
+          ]
+          .copied()
         }
       }
       guard feedback(.secondPassImageEncoded, signposts, nil) else { return (nil, 1) }
@@ -3688,7 +3733,7 @@ extension LocalImageGenerator {
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
-    guard initTimestep.startStep > 0 || modelVersion == .svdI2v else {
+    guard initTimestep.startStep > 0 || modelVersion == .svdI2v else {  // TODO: This check should be removed as text only should be capable of handling svdI2v too.
       return generateTextOnly(
         image, scaleFactor: imageScaleFactor,
         depth: depth, hints: hints, custom: custom, shuffles: shuffles, poses: poses,
@@ -3863,7 +3908,7 @@ extension LocalImageGenerator {
         // Because we just run the upscaler, there is no more than 1 image generation, return directly.
         return ([result], scaleFactor)
       }
-      let firstPassImage: DynamicGraph.Tensor<FloatType>
+      var firstPassImage: DynamicGraph.Tensor<FloatType>
       if modelVersion == .wurstchenStageC {
         // Try to resize the input image so we can encode with EfficientNetv2s properly.
         if image.shape[1] != startHeight * 32 || image.shape[2] != startWidth * 32 {
@@ -3886,6 +3931,9 @@ extension LocalImageGenerator {
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
         break
       }
+      let imageSize: Int
+      (imageSize, firstPassImage) = expandImageForEncoding(
+        batchSize: batchSize, version: modelVersion, image: firstPassImage)
       let (sample, encodedImage) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
           firstPassImage,
@@ -3896,14 +3944,15 @@ extension LocalImageGenerator {
       var mask: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting {
         maskedImage = firstStage.scale(
-          encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
+          encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
         mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
         mask?.full(1)
         maskedImage = concatMaskWithMaskedImage(
           batchSize: batchSize,
           version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil)
       } else if modifier == .editing || modelVersion == .svdI2v {
-        maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+        maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
+          .copied()
       }
       guard feedback(.imageEncoded, signposts, nil) else { return (nil, 1) }
       let noise = randomLatentNoise(

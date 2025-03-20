@@ -1586,6 +1586,7 @@ extension TextEncoder {
   }
 
   private func encodeWan(
+    image: [DynamicGraph.Tensor<FloatType>],
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
     tokenLengthUncond: Int, tokenLengthCond: Int, textModels existingTextModels: [Model?]
@@ -1626,7 +1627,52 @@ extension TextEncoder {
       encoderMask[1, i, 0] = i < tokenLengthCond ? 1 : 0
     }
     c = c .* graph.variable(encoderMask.toGPU(0))
-    return ([c], [textModel])
+    guard var input = image.first, filePaths.count >= 2 else {
+      return ([c], [textModel])
+    }
+    // Use OpenCLIP model to get clip embedding of the input image.
+    let vit: Model
+    let mean = graph.variable(
+      Tensor<FloatType>(
+        [
+          FloatType(2 * 0.48145466 - 1), FloatType(2 * 0.4578275 - 1),
+          FloatType(2 * 0.40821073 - 1),
+        ], .GPU(0), .NHWC(1, 1, 1, 3)))
+    let invStd = graph.variable(
+      Tensor<FloatType>(
+        [
+          FloatType(0.5 / 0.26862954), FloatType(0.5 / 0.26130258), FloatType(0.5 / 0.27577711),
+        ],
+        .GPU(0), .NHWC(1, 1, 1, 3)))
+    let inputHeight = input.shape[1]
+    let inputWidth = input.shape[2]
+    precondition(input.shape[3] == 3)
+    if inputHeight != 224 || inputWidth != 224 {
+      input =
+        (Upsample(
+          .bilinear, widthScale: Float(224) / Float(inputWidth),
+          heightScale: Float(224) / Float(inputHeight))(input) - mean) .* invStd
+    } else {
+      input = (input - mean) .* invStd
+    }
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand ? .externalOnDemand : .externalData
+    if existingTextModels.count >= 1, let existingTextModel = existingTextModels[0] {
+      vit = existingTextModel
+    } else {
+      vit = VisionTransformer(
+        FloatType.self, grid: 16, width: 1280, layers: 31, heads: 16, batchSize: 1,
+        noFinalLayerNorm: true)
+      vit.compile(inputs: input)
+      graph.openStore(
+        filePaths[1], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[1])
+      ) {
+        $0.read("vision_model", model: vit, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+      }
+    }
+    let imageEmbeds = vit(inputs: input)[0].as(of: FloatType.self).reshaped(.HWC(1, 257, 1280))
+    return ([c, imageEmbeds], [textModel])
   }
 
   public func encode(
@@ -1692,6 +1738,7 @@ extension TextEncoder {
         injectedTextEmbeddings: injectedTextEmbeddings, textModels: existingTextModels)
     case .wan21_1_3b, .wan21_14b:
       return encodeWan(
+        image: image,
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         textModels: existingTextModels)

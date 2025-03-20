@@ -862,7 +862,7 @@ extension UNetFixedEncoder {
       return (
         [graph.variable(rot0), graph.variable(rot1)] + conditions, nil
       )
-    case .wan21_1_3b:
+    case .wan21_1_3b, .wan21_14b:
       let h = startHeight / 2
       let w = startWidth / 2
       let rot = Tensor<FloatType>(
@@ -882,6 +882,8 @@ extension UNetFixedEncoder {
           ).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
       }
+      let injectImage = textEncoding.count >= 2
+      let c1: DynamicGraph.Tensor<FloatType>? = injectImage ? textEncoding[1] : nil
       let unetFixed: Model
       let lora = Array(
         (OrderedDictionary<String, LoRAConfiguration>(
@@ -905,20 +907,36 @@ extension UNetFixedEncoder {
       {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
-        unetFixed =
-          LoRAWanFixed(
-            timesteps: timesteps.count, batchSize: 2, channels: 1_536, layers: 30,
-            textLength: textLength, injectImage: false, LoRAConfiguration: configuration
-          ).1
+        if version == .wan21_1_3b {
+          unetFixed =
+            LoRAWanFixed(
+              timesteps: timesteps.count, batchSize: (2, 1), channels: 1_536, layers: 30,
+              textLength: textLength, injectImage: injectImage, LoRAConfiguration: configuration
+            ).1
+        } else {
+          unetFixed =
+            LoRAWanFixed(
+              timesteps: timesteps.count, batchSize: (2, 1), channels: 5_120, layers: 40,
+              textLength: textLength, injectImage: injectImage, LoRAConfiguration: configuration
+            ).1
+        }
       } else {
-        unetFixed =
-          WanFixed(
-            timesteps: timesteps.count, batchSize: 2, channels: 1_536, layers: 30,
-            textLength: textLength, injectImage: false
-          ).1
+        if version == .wan21_1_3b {
+          unetFixed =
+            WanFixed(
+              timesteps: timesteps.count, batchSize: (2, 1), channels: 1_536, layers: 30,
+              textLength: textLength, injectImage: injectImage
+            ).1
+        } else {
+          unetFixed =
+            WanFixed(
+              timesteps: timesteps.count, batchSize: (2, 1), channels: 5_120, layers: 40,
+              textLength: textLength, injectImage: injectImage
+            ).1
+        }
       }
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: [c, timeEmbeds])
+      unetFixed.compile(inputs: [c, timeEmbeds] + (c1.map { [$0] } ?? []))
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
@@ -948,114 +966,17 @@ extension UNetFixedEncoder {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
-      var conditions: [DynamicGraph.AnyTensor] = unetFixed(inputs: c, timeEmbeds)
+      var conditions: [DynamicGraph.AnyTensor] = unetFixed(
+        inputs: c, [timeEmbeds] + (c1.map { [$0] } ?? []))
       conditions = conditions.enumerated().flatMap {
         switch $0.offset {
         case 0..<6, (conditions.count - 2)..<conditions.count:
           return [$0.element]
         default:  // Need to separate them into two elements.
           let shape = $0.element.shape
-          let value = DynamicGraph.Tensor<FloatType>($0.element)
-          return [
-            value[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
-            value[1..<2, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
-          ]
-        }
-      }
-      return ([graph.variable(rot)] + conditions, nil)
-    case .wan21_14b:
-      let h = startHeight / 2
-      let w = startWidth / 2
-      let rot = Tensor<FloatType>(
-        from: WanRotaryPositionEmbedding(
-          height: h, width: w, time: batchSize, channels: 128)
-      ).toGPU(0)
-      let c0 = textEncoding[0]
-      let textLength = max(c0.shape[1], 512)
-      var c = graph.variable(.GPU(0), .HWC(2, textLength, 4_096), of: FloatType.self)
-      c.full(0)
-      c[0..<2, 0..<c0.shape[1], 0..<4096] = c0
-      var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: Float.self)
-      for (i, timestep) in timesteps.enumerated() {
-        let timeEmbed = graph.variable(
-          timeEmbedding(
-            timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000
-          ).toGPU(0))
-        timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
-      }
-      let unetFixed: Model
-      let lora = Array(
-        (OrderedDictionary<String, LoRAConfiguration>(
-          lora.filter({ $0.version == version }).map {
-            ($0.file, $0)
+          guard shape[0] > 1 else {
+            return [$0.element]
           }
-        ) {
-          LoRAConfiguration(
-            file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
-            modifier: $0.modifier)
-        })
-        .values
-      ).filter { $0.weight != 0 }
-      let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
-        graph, of: lora.map { $0.file }, modelFile: filePath)
-      let isLoHa = lora.contains { $0.isLoHa }
-      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
-      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
-        && canRunLoRASeparately
-      {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
-        configuration.keys = keys
-        unetFixed =
-          LoRAWanFixed(
-            timesteps: timesteps.count, batchSize: 2, channels: 5_120, layers: 40,
-            textLength: textLength, injectImage: false, LoRAConfiguration: configuration
-          ).1
-      } else {
-        unetFixed =
-          WanFixed(
-            timesteps: timesteps.count, batchSize: 2, channels: 5_120, layers: 40,
-            textLength: textLength, injectImage: false
-          ).1
-      }
-      unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: [c, timeEmbeds])
-      graph.openStore(
-        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-      ) { store in
-        if !lora.isEmpty {
-          if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
-            let mapping: [Int: Int] = [Int: Int](
-              uniqueKeysWithValues: (0..<40).map {
-                return ($0, $0)
-              })
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
-                name, dataType, format, shape in
-                return loader.concatenateLoRA(
-                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                  store: store, dataType: dataType, format: format, shape: shape)
-              }
-            }
-          } else {
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
-                name, _, _, shape in
-                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
-              }
-            }
-          }
-        } else {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
-        }
-      }
-      var conditions: [DynamicGraph.AnyTensor] = unetFixed(inputs: c, timeEmbeds)
-      conditions = conditions.enumerated().flatMap {
-        switch $0.offset {
-        case 0..<6, (conditions.count - 2)..<conditions.count:
-          return [$0.element]
-        default:  // Need to separate them into two elements.
-          let shape = $0.element.shape
           let value = DynamicGraph.Tensor<FloatType>($0.element)
           return [
             value[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),

@@ -215,7 +215,7 @@ func Wan(
 }
 
 private func WanAttentionBlockFixed(
-  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), injectImage: Bool
+  prefix: String, k: Int, h: Int, b: (Int, Int), t: (Int, Int), injectImage: Bool
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   // Now run attention.
@@ -223,8 +223,8 @@ private func WanAttentionBlockFixed(
   let contextToValues = Dense(count: k * h, name: "c_v")
   var cK = contextToKeys(context)
   let contextNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "c_norm_k")
-  cK = contextNormK(cK).reshaped([b, t.0, h, k])
-  let cV = contextToValues(context).reshaped([b, t.0, h, k])
+  cK = contextNormK(cK).reshaped([b.0, t.0, h, k])
+  let cV = contextToValues(context).reshaped([b.0, t.0, h, k])
   var ins = [context]
   var outs = [cK, cV]
   if injectImage {
@@ -233,8 +233,8 @@ private func WanAttentionBlockFixed(
     let contextImgToValues = Dense(count: k * h, name: "c_img_v")
     var cImgK = contextImgToKeys(contextImg)
     let contextImgNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "c_img_norm_k")
-    cImgK = contextImgNormK(cImgK).reshaped([b, t.1, h, k])
-    let cImgV = contextImgToValues(contextImg).reshaped([b, t.1, h, k])
+    cImgK = contextImgNormK(cImgK).reshaped([b.1, t.1, h, k])
+    let cImgV = contextImgToValues(contextImg).reshaped([b.1, t.1, h, k])
     ins.append(contextImg)
     outs.append(contentsOf: [cImgK, cImgV])
   }
@@ -245,7 +245,8 @@ private func WanAttentionBlockFixed(
 }
 
 func WanFixed(
-  timesteps: Int, batchSize: Int, channels: Int, layers: Int, textLength: Int, injectImage: Bool
+  timesteps: Int, batchSize: (Int, Int), channels: Int, layers: Int, textLength: Int,
+  injectImage: Bool
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -486,7 +487,7 @@ func LoRAWan(
 }
 
 private func LoRAWanAttentionBlockFixed(
-  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), injectImage: Bool, layerIndex: Int,
+  prefix: String, k: Int, h: Int, b: (Int, Int), t: (Int, Int), injectImage: Bool, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
@@ -497,8 +498,8 @@ private func LoRAWanAttentionBlockFixed(
     count: k * h, configuration: configuration, index: layerIndex, name: "c_v")
   var cK = contextToKeys(context)
   let contextNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "c_norm_k")
-  cK = contextNormK(cK).reshaped([b, t.0, h, k])
-  let cV = contextToValues(context).reshaped([b, t.0, h, k])
+  cK = contextNormK(cK).reshaped([b.0, t.0, h, k])
+  let cV = contextToValues(context).reshaped([b.0, t.0, h, k])
   var ins = [context]
   var outs = [cK, cV]
   if injectImage {
@@ -509,8 +510,8 @@ private func LoRAWanAttentionBlockFixed(
       count: k * h, configuration: configuration, index: layerIndex, name: "c_img_v")
     var cImgK = contextImgToKeys(contextImg)
     let contextImgNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "c_img_norm_k")
-    cImgK = contextImgNormK(cImgK).reshaped([b, t.1, h, k])
-    let cImgV = contextImgToValues(contextImg).reshaped([b, t.1, h, k])
+    cImgK = contextImgNormK(cImgK).reshaped([b.1, t.1, h, k])
+    let cImgV = contextImgToValues(contextImg).reshaped([b.1, t.1, h, k])
     ins.append(contextImg)
     outs.append(contentsOf: [cImgK, cImgV])
   }
@@ -521,7 +522,8 @@ private func LoRAWanAttentionBlockFixed(
 }
 
 func LoRAWanFixed(
-  timesteps: Int, batchSize: Int, channels: Int, layers: Int, textLength: Int, injectImage: Bool,
+  timesteps: Int, batchSize: (Int, Int), channels: Int, layers: Int, textLength: Int,
+  injectImage: Bool,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   ModelWeightMapper, Model
