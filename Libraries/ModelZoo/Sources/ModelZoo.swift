@@ -375,6 +375,10 @@ public struct ModelZoo: DownloadZoo {
       "1214836d630469223b0ad833fb9eed850059313f5ca8002fe2a0394f5039f3fc",
     "open_clip_xlm_roberta_large_vit_h14_f16.ckpt":
       "362c9940a36acce5a4e13b9167d5daebd005ac026443cd37b7955ac0acd72083",
+    "wan_v2.1_14b_i2v_480p_q8p.ckpt":
+      "ad9ba7c4db022abd89e9d9f02061f65335b6c222b075cb67831ea5118ecf480a",
+    "wan_v2.1_14b_i2v_720p_q8p.ckpt":
+      "eacd5ab2d91f982e68c5a786735a88f504c303e34907604c89a01f2083654a6d",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -426,11 +430,19 @@ public struct ModelZoo: DownloadZoo {
     ),
     Specification(
       name: "Wan 2.1 I2V 14B 480p", file: "wan_v2.1_14b_i2v_480p_q8p.ckpt", prefix: "",
+      version: .wan21_14b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", modifier: .inpainting,
+      clipEncoder: "open_clip_xlm_roberta_large_vit_h14_f16.ckpt", hiresFixScale: 12,
+      note:
+        "[Wan2.1 I2V 14B 480P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0."
+    ),
+    Specification(
+      name: "Wan 2.1 I2V 14B 720p", file: "wan_v2.1_14b_i2v_720p_q8p.ckpt", prefix: "",
       version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
       autoencoder: "wan_v2.1_video_vae_f16.ckpt", modifier: .inpainting,
       clipEncoder: "open_clip_xlm_roberta_large_vit_h14_f16.ckpt", hiresFixScale: 16,
       note:
-        "[Wan2.1 I2V 14B 480P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.1 I2V 14B 720P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
     ),
     Specification(
       name: "FLUX.1 [schnell]", file: "flux_1_schnell_q8p.ckpt", prefix: "",
