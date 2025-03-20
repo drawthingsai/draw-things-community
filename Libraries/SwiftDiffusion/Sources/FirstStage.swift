@@ -266,7 +266,7 @@ extension FirstStage {
       case .medium:
         sizeLimit = 104
       case .low:
-        sizeLimit = 48
+        sizeLimit = 32
       }
       if startWidth > sizeLimit || startHeight > sizeLimit {
         // We turn on tiled decoding forcefully.
@@ -743,7 +743,7 @@ extension FirstStage {
       case .medium:
         sizeLimit = 104
       case .low:
-        sizeLimit = 48
+        sizeLimit = 32
       }
       if startWidth > sizeLimit || startHeight > sizeLimit {
         // We turn on tiled decoding forcefully.

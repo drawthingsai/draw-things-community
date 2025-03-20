@@ -908,13 +908,13 @@ extension UNetFixedEncoder {
         unetFixed =
           LoRAWanFixed(
             timesteps: timesteps.count, batchSize: 2, channels: 1_536, layers: 30,
-            textLength: textLength, LoRAConfiguration: configuration
+            textLength: textLength, injectImage: false, LoRAConfiguration: configuration
           ).1
       } else {
         unetFixed =
           WanFixed(
             timesteps: timesteps.count, batchSize: 2, channels: 1_536, layers: 30,
-            textLength: textLength
+            textLength: textLength, injectImage: false
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)
@@ -1009,13 +1009,13 @@ extension UNetFixedEncoder {
         unetFixed =
           LoRAWanFixed(
             timesteps: timesteps.count, batchSize: 2, channels: 5_120, layers: 40,
-            textLength: textLength, LoRAConfiguration: configuration
+            textLength: textLength, injectImage: false, LoRAConfiguration: configuration
           ).1
       } else {
         unetFixed =
           WanFixed(
             timesteps: timesteps.count, batchSize: 2, channels: 5_120, layers: 40,
-            textLength: textLength
+            textLength: textLength, injectImage: false
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)

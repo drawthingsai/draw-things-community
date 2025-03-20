@@ -805,7 +805,7 @@ extension UNetFromNNC {
           Wan(
             channels: 1_536, layers: 30, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength
+            textLength: textLength, injectImage: false
           ).1)
       }
     case .wan21_14b:
@@ -832,7 +832,7 @@ extension UNetFromNNC {
           Wan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength
+            textLength: textLength, injectImage: false
           ).1)
       }
     }
