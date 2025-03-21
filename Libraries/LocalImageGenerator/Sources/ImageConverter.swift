@@ -644,220 +644,248 @@ public enum ImageConverter {
     }
   }
   #if canImport(UIKit)
-    public static func image(fromLatent tensor: Tensor<FloatType>, version: ModelVersion)
-      -> UIImage?
+    public static func images(fromLatent tensor: Tensor<FloatType>, version: ModelVersion)
+      -> [UIImage]
     {
-      let imageHeight = tensor.shape[1]
-      let imageWidth = tensor.shape[2]
-      let channels = tensor.shape[3]
-      guard channels == 4 || channels == 3 || channels == 16 else { return nil }
-      let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: imageWidth * imageHeight * 4)
-      tensor.withUnsafeBytes {
-        guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
-        switch version {
-        case .v1, .v2, .svdI2v:
-          for i in 0..<imageHeight * imageWidth {
-            // We need to do some computations from the latent values.
-            let (v0, v1, v2, v3) = (fp16[i * 4], fp16[i * 4 + 1], fp16[i * 4 + 2], fp16[i * 4 + 3])
-            let r = 49.5210 * v0 + 29.0283 * v1 - 23.9673 * v2 - 39.4981 * v3 + 99.9368
-            let g = 41.1373 * v0 + 42.4951 * v1 + 24.7349 * v2 - 50.8279 * v3 + 99.8421
-            let b = 40.2919 * v0 + 18.9304 * v1 + 30.0236 * v2 - 81.9976 * v3 + 99.5384
-            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
-            bytes[i * 4 + 3] = 255
-          }
-        case .sd3, .sd3Large:
-          for i in 0..<imageHeight * imageWidth {
-            let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
-              fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3], fp16[i * 16 + 4],
-              fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
-              fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
-              fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
-            )
-            // TBD, I may want to regress these coefficients myself.
-            let r: FloatType =
-              (-0.0922 * v0 + 0.0311 * v1 + 0.1994 * v2 + 0.0856 * v3 + 0.0587 * v4 - 0.0006 * v5
-                + 0.0978 * v6 - 0.0042 * v7 - 0.0194 * v8 - 0.0488 * v9 + 0.0922 * v10 - 0.0278
-                * v11 + 0.0332 * v12 - 0.0069 * v13 - 0.0596 * v14 - 0.1448 * v15 + 0.2394) * 127.5
-              + 127.5
-            let g: FloatType =
-              (-0.0175 * v0 + 0.0633 * v1 + 0.0927 * v2 + 0.0339 * v3 + 0.0272 * v4 + 0.1104 * v5
-                + 0.0306 * v6 + 0.1038 * v7 + 0.0020 * v8 + 0.0130 * v9 + 0.0988 * v10 + 0.0524
-                * v11 + 0.0456 * v12 - 0.0030 * v13 - 0.0465 * v14 - 0.1463 * v15 + 0.2135) * 127.5
-              + 127.5
-            let b: FloatType =
-              (0.0749 * v0 + 0.0954 * v1 + 0.0458 * v2 + 0.0902 * v3 - 0.0496 * v4 + 0.0309 * v5
-                + 0.0427 * v6 + 0.1358 * v7 + 0.0669 * v8 - 0.0268 * v9 + 0.0951 * v10 - 0.0542
-                * v11 + 0.0895 * v12 - 0.0810 * v13 - 0.0293 * v14 - 0.1189 * v15 + 0.1925) * 127.5
-              + 127.5
-            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
-            bytes[i * 4 + 3] = 255
-          }
-        case .flux1:
-          for i in 0..<imageHeight * imageWidth {
-            let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
-              fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3], fp16[i * 16 + 4],
-              fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
-              fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
-              fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
-            )
-            // TBD, I may want to regress these coefficients myself.
-            let r: FloatType =
-              (-0.0346 * v0 + 0.0034 * v1 + 0.0275 * v2 - 0.0174 * v3 + 0.0859 * v4 + 0.0004 * v5
-                + 0.0405 * v6 - 0.0236 * v7 - 0.0245 * v8 + 0.1008 * v9 - 0.0515 * v10 + 0.0428
-                * v11 + 0.0817 * v12 - 0.1264 * v13 - 0.0280 * v14 - 0.1262 * v15 - 0.0329) * 127.5
-              + 127.5
-            let g: FloatType =
-              (0.0244 * v0 + 0.0210 * v1 - 0.0668 * v2 + 0.0160 * v3 + 0.0721 * v4 + 0.0383 * v5
-                + 0.0861 * v6 - 0.0185 * v7 + 0.0250 * v8 + 0.0755 * v9 + 0.0201 * v10 - 0.0012
-                * v11 + 0.0765 * v12 - 0.0522 * v13 - 0.0881 * v14 - 0.0982 * v15 - 0.0718) * 127.5
-              + 127.5
-            let b: FloatType =
-              (0.0681 * v0 + 0.0687 * v1 - 0.0433 * v2 + 0.0617 * v3 + 0.0329 * v4 + 0.0115 * v5
-                + 0.0915 * v6 - 0.0259 * v7 + 0.1180 * v8 - 0.0421 * v9 + 0.0011 * v10 - 0.0036
-                * v11 + 0.0749 * v12 - 0.1103 * v13 - 0.0499 * v14 - 0.0778 * v15 - 0.0851) * 127.5
-              + 127.5
-            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
-            bytes[i * 4 + 3] = 255
-          }
-        case .hunyuanVideo:
-          // Need to update the coefficients.
-          for i in 0..<imageHeight * imageWidth {
-            let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
-              fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3], fp16[i * 16 + 4],
-              fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
-              fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
-              fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
-            )
-            // TBD, I may want to regress these coefficients myself.
-            let r: FloatType =
-              (-0.0395 * v0 + 0.0696 * v1 + 0.0135 * v2 + 0.0108 * v3 - 0.0209 * v4 - 0.0804 * v5
-                - 0.0991 * v6 - 0.0646 * v7 - 0.0696 * v8 - 0.0799 * v9 + 0.1166 * v10 + 0.1165
-                * v11 - 0.2315 * v12 - 0.0270 * v13 - 0.0616 * v14 + 0.0249 * v15 + 0.0249) * 127.5
-              + 127.5
-            let g: FloatType =
-              (-0.0331 * v0 + 0.0795 * v1 - 0.0945 * v2 - 0.0250 * v3 + 0.0032 * v4 - 0.0254 * v5
-                + 0.0271 * v6 - 0.0422 * v7 - 0.0595 * v8 - 0.0208 * v9 + 0.1627 * v10 + 0.0432
-                * v11 - 0.1920 * v12 + 0.0401 * v13 - 0.0997 * v14 - 0.0469 * v15 - 0.0192) * 127.5
-              + 127.5
-            let b: FloatType =
-              (0.0445 * v0 + 0.0518 * v1 - 0.0282 * v2 - 0.0765 * v3 + 0.0224 * v4 - 0.0639 * v5
-                - 0.0669 * v6 - 0.0400 * v7 - 0.0894 * v8 - 0.0375 * v9 + 0.0962 * v10 + 0.0407
-                * v11 - 0.1355 * v12 - 0.0821 * v13 - 0.0727 * v14 - 0.1703 * v15 - 0.0761) * 127.5
-              + 127.5
-            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
-            bytes[i * 4 + 3] = 255
-          }
-        case .wan21_1_3b, .wan21_14b:
-          // Need to update the coefficients.
-          for i in 0..<imageHeight * imageWidth {
-            let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
-              fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3], fp16[i * 16 + 4],
-              fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
-              fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
-              fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
-            )
-            // TBD, I may want to regress these coefficients myself.
-            let r: FloatType =
-              (-0.1299 * v0 + 0.0671 * v1 + 0.3568 * v2 + 0.0372 * v3 + 0.0313 * v4 + 0.0296 * v5
-                - 0.3477 * v6 + 0.0166 * v7 - 0.0412 * v8 - 0.1293 * v9 + 0.0680 * v10 + 0.0032
-                * v11 - 0.1251 * v12 + 0.0060 * v13 + 0.3477 * v14 + 0.1984 * v15 - 0.1835) * 127.5
-              + 127.5
-            let g: FloatType =
-              (-0.1692 * v0 + 0.0406 * v1 + 0.2548 * v2 + 0.2344 * v3 + 0.0189 * v4 - 0.0956 * v5
-                - 0.4059 * v6 + 0.1902 * v7 + 0.0267 * v8 + 0.0740 * v9 + 0.3019 * v10 + 0.0581
-                * v11 + 0.0927 * v12 - 0.0633 * v13 + 0.2275 * v14 + 0.0913 * v15 - 0.0868) * 127.5
-              + 127.5
-            let b: FloatType =
-              (0.2932 * v0 + 0.0442 * v1 + 0.1747 * v2 + 0.1420 * v3 - 0.0328 * v4 - 0.0665 * v5
-                - 0.2925 * v6 + 0.1975 * v7 - 0.1364 * v8 + 0.1636 * v9 + 0.1128 * v10 + 0.0639
-                * v11 + 0.1699 * v12 + 0.0005 * v13 + 0.2950 * v14 + 0.1861 * v15 - 0.336) * 127.5
-              + 127.5
-            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
-            bytes[i * 4 + 3] = 255
-          }
-        case .sdxlBase, .sdxlRefiner, .ssd1b, .pixart, .auraflow:
-          for i in 0..<imageHeight * imageWidth {
-            // We need to do some computations from the latent values.
-            let (v0, v1, v2, v3) = (fp16[i * 4], fp16[i * 4 + 1], fp16[i * 4 + 2], fp16[i * 4 + 3])
-            let r = 47.195 * v0 - 29.114 * v1 + 11.883 * v2 - 38.063 * v3 + 141.64
-            let g = 53.237 * v0 - 1.4623 * v1 + 12.991 * v2 - 28.043 * v3 + 127.46
-            let b = 58.182 * v0 + 4.3734 * v1 - 3.3735 * v2 - 26.722 * v3 + 114.5
-            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
-            bytes[i * 4 + 3] = 255
-          }
-        case .kandinsky21:
-          for i in 0..<imageHeight * imageWidth {
-            // We need to do some computations from the latent values.
-            let (v0, v1, v2, v3) = (
-              Float(fp16[i * 4]), Float(fp16[i * 4 + 1]), Float(fp16[i * 4 + 2]),
-              Float(fp16[i * 4 + 3])
-            )
-            let L = -0.051509 * v0 + 0.039954 * v1 + 0.039893 * v2 - 0.087302 * v3 + 0.88591
-            let a = -0.028686 * v0 - 0.0061331 * v1 - 0.016837 * v2 + 0.016139 * v3 + 0.0018263
-            let b = -0.0068242 * v0 + 0.0068562 * v1 - 0.03415 * v2 + 0.00056286 * v3 + 0.0096209
-            var (sr, sg, sb) = OKlabToLinearsRGB(L: L, a: a, b: b)
-            sr = linearsRGBTosRGB(x: sr) * 255
-            sg = linearsRGBTosRGB(x: sg) * 255
-            sb = linearsRGBTosRGB(x: sb) * 255
-            bytes[i * 4] = UInt8(min(max(Int(sr.isFinite ? sr : 0), 0), 255))
-            bytes[i * 4 + 1] = UInt8(min(max(Int(sg.isFinite ? sg : 0), 0), 255))
-            bytes[i * 4 + 2] = UInt8(min(max(Int(sb.isFinite ? sb : 0), 0), 255))
-            bytes[i * 4 + 3] = 255
-          }
-        case .wurstchenStageC, .wurstchenStageB:
-          if channels == 3 {
-            for i in 0..<imageHeight * imageWidth {
-              // We need to do some computations from the latent values.
-              let (r, g, b) = (fp16[i * 3], fp16[i * 3 + 1], fp16[i * 3 + 2])
-              bytes[i * 4] = UInt8(
-                min(max(Int(r.isFinite ? (Float(r) * 255).rounded() : 0), 0), 255))
-              bytes[i * 4 + 1] = UInt8(
-                min(max(Int(g.isFinite ? (Float(g) * 255).rounded() : 0), 0), 255))
-              bytes[i * 4 + 2] = UInt8(
-                min(max(Int(b.isFinite ? (Float(b) * 255).rounded() : 0), 0), 255))
-              bytes[i * 4 + 3] = 255
-            }
-          } else {
+      let shape = tensor.shape
+      let batchSize = shape[0]
+      let imageHeight = shape[1]
+      let imageWidth = shape[2]
+      let channels = shape[3]
+      guard channels == 4 || channels == 3 || channels == 16 else { return [] }
+      return tensor.withUnsafeBytes {
+        guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return [] }
+        var images = [UIImage]()
+        for b in 0..<batchSize {
+          let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: imageWidth * imageHeight * 4)
+          let fp16 = fp16 + b * imageHeight * imageWidth * channels
+          switch version {
+          case .v1, .v2, .svdI2v:
             for i in 0..<imageHeight * imageWidth {
               // We need to do some computations from the latent values.
               let (v0, v1, v2, v3) = (
                 fp16[i * 4], fp16[i * 4 + 1], fp16[i * 4 + 2], fp16[i * 4 + 3]
               )
-              let r = 10.175 * v0 - 20.807 * v1 - 27.834 * v2 - 2.0577 * v3 + 143.39
-              let g = 21.07 * v0 - 4.3022 * v1 - 11.258 * v2 - 18.8 * v3 + 131.53
-              let b = 7.8454 * v0 - 2.3713 * v1 - 0.45565 * v2 - 41.648 * v3 + 120.76
+              let r = 49.5210 * v0 + 29.0283 * v1 - 23.9673 * v2 - 39.4981 * v3 + 99.9368
+              let g = 41.1373 * v0 + 42.4951 * v1 + 24.7349 * v2 - 50.8279 * v3 + 99.8421
+              let b = 40.2919 * v0 + 18.9304 * v1 + 30.0236 * v2 - 81.9976 * v3 + 99.5384
               bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
               bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
               bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
               bytes[i * 4 + 3] = 255
             }
+          case .sd3, .sd3Large:
+            for i in 0..<imageHeight * imageWidth {
+              let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
+                fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3],
+                fp16[i * 16 + 4],
+                fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
+                fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
+                fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
+              )
+              // TBD, I may want to regress these coefficients myself.
+              let r: FloatType =
+                (-0.0922 * v0 + 0.0311 * v1 + 0.1994 * v2 + 0.0856 * v3 + 0.0587 * v4 - 0.0006 * v5
+                  + 0.0978 * v6 - 0.0042 * v7 - 0.0194 * v8 - 0.0488 * v9 + 0.0922 * v10 - 0.0278
+                  * v11 + 0.0332 * v12 - 0.0069 * v13 - 0.0596 * v14 - 0.1448 * v15 + 0.2394)
+                * 127.5
+                + 127.5
+              let g: FloatType =
+                (-0.0175 * v0 + 0.0633 * v1 + 0.0927 * v2 + 0.0339 * v3 + 0.0272 * v4 + 0.1104 * v5
+                  + 0.0306 * v6 + 0.1038 * v7 + 0.0020 * v8 + 0.0130 * v9 + 0.0988 * v10 + 0.0524
+                  * v11 + 0.0456 * v12 - 0.0030 * v13 - 0.0465 * v14 - 0.1463 * v15 + 0.2135)
+                * 127.5
+                + 127.5
+              let b: FloatType =
+                (0.0749 * v0 + 0.0954 * v1 + 0.0458 * v2 + 0.0902 * v3 - 0.0496 * v4 + 0.0309 * v5
+                  + 0.0427 * v6 + 0.1358 * v7 + 0.0669 * v8 - 0.0268 * v9 + 0.0951 * v10 - 0.0542
+                  * v11 + 0.0895 * v12 - 0.0810 * v13 - 0.0293 * v14 - 0.1189 * v15 + 0.1925)
+                * 127.5
+                + 127.5
+              bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+              bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+              bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+              bytes[i * 4 + 3] = 255
+            }
+          case .flux1:
+            for i in 0..<imageHeight * imageWidth {
+              let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
+                fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3],
+                fp16[i * 16 + 4],
+                fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
+                fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
+                fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
+              )
+              // TBD, I may want to regress these coefficients myself.
+              let r: FloatType =
+                (-0.0346 * v0 + 0.0034 * v1 + 0.0275 * v2 - 0.0174 * v3 + 0.0859 * v4 + 0.0004 * v5
+                  + 0.0405 * v6 - 0.0236 * v7 - 0.0245 * v8 + 0.1008 * v9 - 0.0515 * v10 + 0.0428
+                  * v11 + 0.0817 * v12 - 0.1264 * v13 - 0.0280 * v14 - 0.1262 * v15 - 0.0329)
+                * 127.5
+                + 127.5
+              let g: FloatType =
+                (0.0244 * v0 + 0.0210 * v1 - 0.0668 * v2 + 0.0160 * v3 + 0.0721 * v4 + 0.0383 * v5
+                  + 0.0861 * v6 - 0.0185 * v7 + 0.0250 * v8 + 0.0755 * v9 + 0.0201 * v10 - 0.0012
+                  * v11 + 0.0765 * v12 - 0.0522 * v13 - 0.0881 * v14 - 0.0982 * v15 - 0.0718)
+                * 127.5
+                + 127.5
+              let b: FloatType =
+                (0.0681 * v0 + 0.0687 * v1 - 0.0433 * v2 + 0.0617 * v3 + 0.0329 * v4 + 0.0115 * v5
+                  + 0.0915 * v6 - 0.0259 * v7 + 0.1180 * v8 - 0.0421 * v9 + 0.0011 * v10 - 0.0036
+                  * v11 + 0.0749 * v12 - 0.1103 * v13 - 0.0499 * v14 - 0.0778 * v15 - 0.0851)
+                * 127.5
+                + 127.5
+              bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+              bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+              bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+              bytes[i * 4 + 3] = 255
+            }
+          case .hunyuanVideo:
+            // Need to update the coefficients.
+            for i in 0..<imageHeight * imageWidth {
+              let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
+                fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3],
+                fp16[i * 16 + 4],
+                fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
+                fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
+                fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
+              )
+              // TBD, I may want to regress these coefficients myself.
+              let r: FloatType =
+                (-0.0395 * v0 + 0.0696 * v1 + 0.0135 * v2 + 0.0108 * v3 - 0.0209 * v4 - 0.0804 * v5
+                  - 0.0991 * v6 - 0.0646 * v7 - 0.0696 * v8 - 0.0799 * v9 + 0.1166 * v10 + 0.1165
+                  * v11 - 0.2315 * v12 - 0.0270 * v13 - 0.0616 * v14 + 0.0249 * v15 + 0.0249)
+                * 127.5
+                + 127.5
+              let g: FloatType =
+                (-0.0331 * v0 + 0.0795 * v1 - 0.0945 * v2 - 0.0250 * v3 + 0.0032 * v4 - 0.0254 * v5
+                  + 0.0271 * v6 - 0.0422 * v7 - 0.0595 * v8 - 0.0208 * v9 + 0.1627 * v10 + 0.0432
+                  * v11 - 0.1920 * v12 + 0.0401 * v13 - 0.0997 * v14 - 0.0469 * v15 - 0.0192)
+                * 127.5
+                + 127.5
+              let b: FloatType =
+                (0.0445 * v0 + 0.0518 * v1 - 0.0282 * v2 - 0.0765 * v3 + 0.0224 * v4 - 0.0639 * v5
+                  - 0.0669 * v6 - 0.0400 * v7 - 0.0894 * v8 - 0.0375 * v9 + 0.0962 * v10 + 0.0407
+                  * v11 - 0.1355 * v12 - 0.0821 * v13 - 0.0727 * v14 - 0.1703 * v15 - 0.0761)
+                * 127.5
+                + 127.5
+              bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+              bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+              bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+              bytes[i * 4 + 3] = 255
+            }
+          case .wan21_1_3b, .wan21_14b:
+            // Need to update the coefficients.
+            for i in 0..<imageHeight * imageWidth {
+              let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
+                fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3],
+                fp16[i * 16 + 4],
+                fp16[i * 16 + 5], fp16[i * 16 + 6], fp16[i * 16 + 7], fp16[i * 16 + 8],
+                fp16[i * 16 + 9], fp16[i * 16 + 10], fp16[i * 16 + 11], fp16[i * 16 + 12],
+                fp16[i * 16 + 13], fp16[i * 16 + 14], fp16[i * 16 + 15]
+              )
+              // TBD, I may want to regress these coefficients myself.
+              let r: FloatType =
+                (-0.1299 * v0 + 0.0671 * v1 + 0.3568 * v2 + 0.0372 * v3 + 0.0313 * v4 + 0.0296 * v5
+                  - 0.3477 * v6 + 0.0166 * v7 - 0.0412 * v8 - 0.1293 * v9 + 0.0680 * v10 + 0.0032
+                  * v11 - 0.1251 * v12 + 0.0060 * v13 + 0.3477 * v14 + 0.1984 * v15 - 0.1835)
+                * 127.5
+                + 127.5
+              let g: FloatType =
+                (-0.1692 * v0 + 0.0406 * v1 + 0.2548 * v2 + 0.2344 * v3 + 0.0189 * v4 - 0.0956 * v5
+                  - 0.4059 * v6 + 0.1902 * v7 + 0.0267 * v8 + 0.0740 * v9 + 0.3019 * v10 + 0.0581
+                  * v11 + 0.0927 * v12 - 0.0633 * v13 + 0.2275 * v14 + 0.0913 * v15 - 0.0868)
+                * 127.5
+                + 127.5
+              let b: FloatType =
+                (0.2932 * v0 + 0.0442 * v1 + 0.1747 * v2 + 0.1420 * v3 - 0.0328 * v4 - 0.0665 * v5
+                  - 0.2925 * v6 + 0.1975 * v7 - 0.1364 * v8 + 0.1636 * v9 + 0.1128 * v10 + 0.0639
+                  * v11 + 0.1699 * v12 + 0.0005 * v13 + 0.2950 * v14 + 0.1861 * v15 - 0.336) * 127.5
+                + 127.5
+              bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+              bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+              bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+              bytes[i * 4 + 3] = 255
+            }
+          case .sdxlBase, .sdxlRefiner, .ssd1b, .pixart, .auraflow:
+            for i in 0..<imageHeight * imageWidth {
+              // We need to do some computations from the latent values.
+              let (v0, v1, v2, v3) = (
+                fp16[i * 4], fp16[i * 4 + 1], fp16[i * 4 + 2], fp16[i * 4 + 3]
+              )
+              let r = 47.195 * v0 - 29.114 * v1 + 11.883 * v2 - 38.063 * v3 + 141.64
+              let g = 53.237 * v0 - 1.4623 * v1 + 12.991 * v2 - 28.043 * v3 + 127.46
+              let b = 58.182 * v0 + 4.3734 * v1 - 3.3735 * v2 - 26.722 * v3 + 114.5
+              bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+              bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+              bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+              bytes[i * 4 + 3] = 255
+            }
+          case .kandinsky21:
+            for i in 0..<imageHeight * imageWidth {
+              // We need to do some computations from the latent values.
+              let (v0, v1, v2, v3) = (
+                Float(fp16[i * 4]), Float(fp16[i * 4 + 1]), Float(fp16[i * 4 + 2]),
+                Float(fp16[i * 4 + 3])
+              )
+              let L = -0.051509 * v0 + 0.039954 * v1 + 0.039893 * v2 - 0.087302 * v3 + 0.88591
+              let a = -0.028686 * v0 - 0.0061331 * v1 - 0.016837 * v2 + 0.016139 * v3 + 0.0018263
+              let b = -0.0068242 * v0 + 0.0068562 * v1 - 0.03415 * v2 + 0.00056286 * v3 + 0.0096209
+              var (sr, sg, sb) = OKlabToLinearsRGB(L: L, a: a, b: b)
+              sr = linearsRGBTosRGB(x: sr) * 255
+              sg = linearsRGBTosRGB(x: sg) * 255
+              sb = linearsRGBTosRGB(x: sb) * 255
+              bytes[i * 4] = UInt8(min(max(Int(sr.isFinite ? sr : 0), 0), 255))
+              bytes[i * 4 + 1] = UInt8(min(max(Int(sg.isFinite ? sg : 0), 0), 255))
+              bytes[i * 4 + 2] = UInt8(min(max(Int(sb.isFinite ? sb : 0), 0), 255))
+              bytes[i * 4 + 3] = 255
+            }
+          case .wurstchenStageC, .wurstchenStageB:
+            if channels == 3 {
+              for i in 0..<imageHeight * imageWidth {
+                // We need to do some computations from the latent values.
+                let (r, g, b) = (fp16[i * 3], fp16[i * 3 + 1], fp16[i * 3 + 2])
+                bytes[i * 4] = UInt8(
+                  min(max(Int(r.isFinite ? (Float(r) * 255).rounded() : 0), 0), 255))
+                bytes[i * 4 + 1] = UInt8(
+                  min(max(Int(g.isFinite ? (Float(g) * 255).rounded() : 0), 0), 255))
+                bytes[i * 4 + 2] = UInt8(
+                  min(max(Int(b.isFinite ? (Float(b) * 255).rounded() : 0), 0), 255))
+                bytes[i * 4 + 3] = 255
+              }
+            } else {
+              for i in 0..<imageHeight * imageWidth {
+                // We need to do some computations from the latent values.
+                let (v0, v1, v2, v3) = (
+                  fp16[i * 4], fp16[i * 4 + 1], fp16[i * 4 + 2], fp16[i * 4 + 3]
+                )
+                let r = 10.175 * v0 - 20.807 * v1 - 27.834 * v2 - 2.0577 * v3 + 143.39
+                let g = 21.07 * v0 - 4.3022 * v1 - 11.258 * v2 - 18.8 * v3 + 131.53
+                let b = 7.8454 * v0 - 2.3713 * v1 - 0.45565 * v2 - 41.648 * v3 + 120.76
+                bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+                bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+                bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+                bytes[i * 4 + 3] = 255
+              }
+            }
           }
+          images.append(
+            UIImage(
+              cgImage: CGImage(
+                width: imageWidth, height: imageHeight, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: 4 * imageWidth, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(
+                  rawValue: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.noneSkipLast.rawValue),
+                provider: CGDataProvider(
+                  dataInfo: nil, data: bytes, size: imageWidth * imageHeight * 4,
+                  releaseData: { _, p, _ in
+                    p.deallocate()
+                  })!, decode: nil, shouldInterpolate: false,
+                intent: CGColorRenderingIntent.defaultIntent)!))
         }
+        return images
       }
-      return UIImage(
-        cgImage: CGImage(
-          width: imageWidth, height: imageHeight, bitsPerComponent: 8, bitsPerPixel: 32,
-          bytesPerRow: 4 * imageWidth, space: CGColorSpaceCreateDeviceRGB(),
-          bitmapInfo: CGBitmapInfo(
-            rawValue: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.noneSkipLast.rawValue),
-          provider: CGDataProvider(
-            dataInfo: nil, data: bytes, size: imageWidth * imageHeight * 4,
-            releaseData: { _, p, _ in
-              p.deallocate()
-            })!, decode: nil, shouldInterpolate: false,
-          intent: CGColorRenderingIntent.defaultIntent)!)
     }
   #endif
   #if canImport(UIKit)
