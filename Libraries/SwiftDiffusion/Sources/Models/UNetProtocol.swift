@@ -1416,7 +1416,7 @@ extension UNetFromNNC {
             default:
               if injectImage {
                 if ($0.0 - 7) % 6 == 1 || ($0.0 - 7) % 6 == 3 {
-                  return nil  // Remove negative ones.
+                  return nil  // Remove positive ones.
                 }
                 return $0.1
               } else {
