@@ -371,18 +371,18 @@ public struct ModelZoo: DownloadZoo {
       "4c518b128b3c1f2ea164aa46269d8875b4be3661d1fc0fba2709d03fa94e418b",
     "wan_v2.1_14b_720p_q8p.ckpt":
       "b21d70e196e5dfd4c3238607c9c3a13150d4aae04848245ed57241b83ee586bd",
-    "wan_v2.1_14b_720p_q5p_svd.ckpt":
-      "1214836d630469223b0ad833fb9eed850059313f5ca8002fe2a0394f5039f3fc",
+    "wan_v2.1_14b_720p_q6p_svd.ckpt":
+      "bc421931cd177c25d419123ca5f569b45d6942716e867520481a97f6bb988896",
     "open_clip_xlm_roberta_large_vit_h14_f16.ckpt":
       "362c9940a36acce5a4e13b9167d5daebd005ac026443cd37b7955ac0acd72083",
     "wan_v2.1_14b_i2v_480p_q8p.ckpt":
       "ad9ba7c4db022abd89e9d9f02061f65335b6c222b075cb67831ea5118ecf480a",
     "wan_v2.1_14b_i2v_720p_q8p.ckpt":
       "eacd5ab2d91f982e68c5a786735a88f504c303e34907604c89a01f2083654a6d",
-    "wan_v2.1_14b_i2v_480p_q5p_svd.ckpt":
-      "a7b8898b9862211f4f638a729b8f394734bf402ab64d19f984527a68c915f67c",
-    "wan_v2.1_14b_i2v_720p_q5p_svd.ckpt":
-      "70d350d8a27f0ef5980defeb45d63c1cd2add603cb3098b7e5a7454e639821cc",
+    "wan_v2.1_14b_i2v_480p_q6p_svd.ckpt":
+      "dba1a4fe5c29eb33479759b00ed309c32cc63d92663c7bd74c3d0aedd2dbd0b9",
+    "wan_v2.1_14b_i2v_720p_q6p_svd.ckpt":
+      "16bc54134e4e16998df12713722d8cd1038f2cdd0955023835d2801bae720c54",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -426,9 +426,17 @@ public struct ModelZoo: DownloadZoo {
         "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs."
     ),
     Specification(
-      name: "Wan 2.1 T2V 14B (5-bit, SVDQuant)", file: "wan_v2.1_14b_720p_q5p_svd.ckpt", prefix: "",
+      name: "Wan 2.1 T2V 14B (6-bit, SVDQuant)", file: "wan_v2.1_14b_720p_q6p_svd.ckpt", prefix: "",
       version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
       autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 16, builtinLora: true,
+      note:
+        "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+    ),
+    Specification(
+      name: "Wan 2.1 T2V 14B (5-bit, SVDQuant)", file: "wan_v2.1_14b_720p_q5p_svd.ckpt", prefix: "",
+      version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", deprecated: true, hiresFixScale: 16,
+      builtinLora: true,
       note:
         "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
     ),
@@ -441,7 +449,7 @@ public struct ModelZoo: DownloadZoo {
         "[Wan2.1 I2V 14B 480P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0."
     ),
     Specification(
-      name: "Wan 2.1 I2V 14B 480p (5-bit, SVDQuant)", file: "wan_v2.1_14b_i2v_480p_q5p_svd.ckpt",
+      name: "Wan 2.1 I2V 14B 480p (6-bit, SVDQuant)", file: "wan_v2.1_14b_i2v_480p_q6p_svd.ckpt",
       prefix: "",
       version: .wan21_14b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
       autoencoder: "wan_v2.1_video_vae_f16.ckpt", modifier: .inpainting,
@@ -459,7 +467,7 @@ public struct ModelZoo: DownloadZoo {
         "[Wan2.1 I2V 14B 720P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
     ),
     Specification(
-      name: "Wan 2.1 I2V 14B 720p (5-bit, SVDQuant)", file: "wan_v2.1_14b_i2v_720p_q5p_svd.ckpt",
+      name: "Wan 2.1 I2V 14B 720p (6-bit, SVDQuant)", file: "wan_v2.1_14b_i2v_720p_q6p_svd.ckpt",
       prefix: "",
       version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
       autoencoder: "wan_v2.1_video_vae_f16.ckpt", modifier: .inpainting,
