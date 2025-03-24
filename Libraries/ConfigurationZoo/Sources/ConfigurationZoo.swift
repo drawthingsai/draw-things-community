@@ -150,4 +150,31 @@ public struct ConfigurationZoo {
     self.availableSpecifications = availableSpecifications
     specificationMapping[specification.name] = specification
   }
+
+  public static func remove(by nameToRemove: String) {
+    dispatchPrecondition(condition: .onQueue(.main))
+    var customSpecifications = [[String: Any]]()
+    let jsonFile = filePathForModelDownloaded("custom_configs.json")
+    if let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) {
+      if let jsonSpecifications = try? JSONSerialization.jsonObject(with: jsonData)
+        as? [[String: Any]]
+      {
+        customSpecifications.append(contentsOf: jsonSpecifications)
+      }
+    }
+    customSpecifications = customSpecifications.filter {
+      guard let name = $0["name"] as? String else { return false }
+      return name != nameToRemove
+    }
+    guard
+      let jsonData = try? JSONSerialization.data(
+        withJSONObject: customSpecifications, options: [.prettyPrinted, .sortedKeys])
+    else { return }
+    try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
+    // Modify these two are not thread safe. availableSpecifications are OK. specificationMapping is particularly problematic (as it is access on both main thread and a background thread).
+    var availableSpecifications = availableSpecifications
+    availableSpecifications = availableSpecifications.filter { $0.name != nameToRemove }
+    self.availableSpecifications = availableSpecifications
+    specificationMapping[nameToRemove] = nil
+  }
 }
