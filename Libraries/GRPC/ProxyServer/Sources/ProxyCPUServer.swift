@@ -724,8 +724,8 @@ public class ProxyCPUServer {
     self.workers = workers
     self.controlConfigs = ControlConfigs(
       throttlePolicy: [
-        "5_min": 10, "10_min": 15, "1_hour": 60,
-        "24_hour": 1000,
+        "15_min": 300, "10_min": 200, "5_min": 100, "1_hour": 1000, "1_min": 30,
+        "24_hour": 10000,
       ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath,
       nonceSizeLimit: nonceSizeLimit)
 
