@@ -187,7 +187,7 @@ private func MLPProj(inChannels: Int, outChannels: Int, name: String) -> (
   return (ln1, ln2, fc0, fc2, Model([x], [out]))
 }
 
-func Wan(
+public func Wan(
   channels: Int, layers: Int, intermediateSize: Int, time: Int, height: Int, width: Int,
   textLength: Int, injectImage: Bool
 ) -> (ModelWeightMapper, Model) {
@@ -295,7 +295,7 @@ private func WanAttentionBlockFixed(
   return (mapper, Model(ins, outs))
 }
 
-func WanFixed(
+public func WanFixed(
   timesteps: Int, batchSize: (Int, Int), channels: Int, layers: Int, textLength: Int,
   injectImage: Bool
 ) -> (
@@ -379,6 +379,38 @@ func WanFixed(
     return mapping
   }
   return (mapper, Model(ins, outs))
+}
+
+private func WanAttentionBlockFixedOutputShapes(
+  prefix: String, k: Int, h: Int, b: (Int, Int), t: (Int, Int), injectImage: Bool
+) -> [TensorShape] {
+  var xOutputShapes = (0..<2).map { _ in TensorShape([b.0, t.0, h, k]) }
+  if injectImage {
+    for _ in 0..<2 {
+      xOutputShapes.append(TensorShape([b.1, t.1, h, k]))
+    }
+  }
+  return xOutputShapes
+}
+
+public func WanFixedOutputShapes(
+  timesteps: Int, batchSize: (Int, Int), channels: Int, layers: Int, textLength: Int,
+  injectImage: Bool
+) -> [TensorShape] {
+  var outs = [TensorShape]()
+  for _ in 0..<6 {
+    outs.append(TensorShape([timesteps, 1, channels]))
+  }
+  for i in 0..<layers {
+    let outputShapes = WanAttentionBlockFixedOutputShapes(
+      prefix: "blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: (textLength, 257),
+      injectImage: injectImage)
+    outs.append(contentsOf: outputShapes)
+  }
+  outs.append(contentsOf: [
+    TensorShape([1, 1, channels]), TensorShape([1, 1, channels]),
+  ])
+  return outs
 }
 
 private func LoRAFeedForward(
