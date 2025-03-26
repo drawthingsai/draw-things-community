@@ -127,7 +127,31 @@ private func WanAttentionBlock(
   out =
     out + xFF(((1 + chunks[4]) .* xNorm2(out) + chunks[3]).to(.Float16)).to(of: out) .* chunks[5]
   let mapper: ModelWeightMapper = { _ in
-    return ModelWeightMapping()
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).modulation"] = ModelWeightElement(
+      (0..<6).map { modulations[$0].weight.name })
+    mapping["\(prefix).self_attn.q.weight"] = [xToQueries.weight.name]
+    mapping["\(prefix).self_attn.q.bias"] = [xToQueries.bias.name]
+    mapping["\(prefix).self_attn.k.weight"] = [xToKeys.weight.name]
+    mapping["\(prefix).self_attn.k.bias"] = [xToKeys.bias.name]
+    mapping["\(prefix).self_attn.v.weight"] = [xToValues.weight.name]
+    mapping["\(prefix).self_attn.v.bias"] = [xToValues.bias.name]
+    mapping["\(prefix).self_attn.norm_k.weight"] = [normK.weight.name]
+    mapping["\(prefix).self_attn.norm_q.weight"] = [normQ.weight.name]
+    mapping["\(prefix).self_attn.o.weight"] = [xUnifyheads.weight.name]
+    mapping["\(prefix).self_attn.o.bias"] = [xUnifyheads.bias.name]
+    mapping["\(prefix).cross_attn.q.weight"] = [xToContextQueries.weight.name]
+    mapping["\(prefix).cross_attn.q.bias"] = [xToContextQueries.bias.name]
+    mapping["\(prefix).cross_attn.norm_q.weight"] = [contextNormQ.weight.name]
+    mapping["\(prefix).cross_attn.o.weight"] = [contextUnifyheads.weight.name]
+    mapping["\(prefix).cross_attn.o.bias"] = [contextUnifyheads.bias.name]
+    mapping["\(prefix).norm3.weight"] = [xNorm3.weight.name]
+    mapping["\(prefix).norm3.bias"] = [xNorm3.bias.name]
+    mapping["\(prefix).ffn.0.weight"] = [xLinear1.weight.name]
+    mapping["\(prefix).ffn.0.bias"] = [xLinear1.bias.name]
+    mapping["\(prefix).ffn.2.weight"] = [xOutProjection.weight.name]
+    mapping["\(prefix).ffn.2.bias"] = [xOutProjection.bias.name]
+    return mapping
   }
   return (mapper, Model([x, rot] + c + [cK, cV] + injectedImageKVs, [out]))
 }
@@ -206,9 +230,13 @@ func Wan(
     ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
+    mapping["patch_embedding.weight"] = [imgIn.weight.name]
+    mapping["patch_embedding.bias"] = [imgIn.bias.name]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
+    mapping["head.head.weight"] = [projOut.weight.name]
+    mapping["head.head.bias"] = [projOut.bias.name]
     return mapping
   }
   return (mapper, Model([x, rot] + tOut + contextIn + [scale, shift], [out]))
@@ -227,6 +255,9 @@ private func WanAttentionBlockFixed(
   let cV = contextToValues(context).reshaped([b.0, t.0, h, k])
   var ins = [context]
   var outs = [cK, cV]
+  let cImgToKeys: Model?
+  let cImgToValues: Model?
+  let cImgNormK: Model?
   if injectImage {
     let contextImg = Input()
     let contextImgToKeys = Dense(count: k * h, name: "c_img_k")
@@ -237,9 +268,29 @@ private func WanAttentionBlockFixed(
     let cImgV = contextImgToValues(contextImg).reshaped([b.1, t.1, h, k])
     ins.append(contextImg)
     outs.append(contentsOf: [cImgK, cImgV])
+    cImgToKeys = contextImgToKeys
+    cImgToValues = contextImgToValues
+    cImgNormK = contextNormK
+  } else {
+    cImgToKeys = nil
+    cImgToValues = nil
+    cImgNormK = nil
   }
   let mapper: ModelWeightMapper = { _ in
-    return ModelWeightMapping()
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).cross_attn.k.weight"] = [contextToKeys.weight.name]
+    mapping["\(prefix).cross_attn.k.bias"] = [contextToKeys.bias.name]
+    mapping["\(prefix).cross_attn.v.weight"] = [contextToValues.weight.name]
+    mapping["\(prefix).cross_attn.v.bias"] = [contextToValues.bias.name]
+    mapping["\(prefix).cross_attn.norm_k.weight"] = [contextNormK.weight.name]
+    if let cImgToKeys = cImgToKeys, let cImgToValues = cImgToValues, let cImgNormK = cImgNormK {
+      mapping["\(prefix).cross_attn.k_img.weight"] = [cImgToKeys.weight.name]
+      mapping["\(prefix).cross_attn.k_img.bias"] = [cImgToKeys.bias.name]
+      mapping["\(prefix).cross_attn.v_img.weight"] = [cImgToValues.weight.name]
+      mapping["\(prefix).cross_attn.v_img.bias"] = [cImgToValues.bias.name]
+      mapping["\(prefix).cross_attn.norm_k_img.weight"] = [cImgNormK.weight.name]
+    }
+    return mapping
   }
   return (mapper, Model(ins, outs))
 }
@@ -261,13 +312,22 @@ func WanFixed(
   var outs = timeProjections.map { $0(vectorIn).identity().identity().identity() }  // Have duplicate name ada_ln_0 / ada_ln_1, now have to push the order to make sure the proper weights are loaded :(.
   var ins = [txt, t]
   let contextImg: Model.IO?
+  let clipLn1: Model?
+  let clipLn2: Model?
+  let clipMlp0: Model?
+  let clipMlp2: Model?
   if injectImage {
     let img = Input()
-    let (clipLn1, clipLn2, clipMlp0, clipMlp2, clipIn) = MLPProj(
+    let clipIn: Model
+    (clipLn1, clipLn2, clipMlp0, clipMlp2, clipIn) = MLPProj(
       inChannels: 1_280, outChannels: channels, name: "clip")
     contextImg = clipIn(img)
     ins.append(img)
   } else {
+    clipLn1 = nil
+    clipLn2 = nil
+    clipMlp0 = nil
+    clipMlp2 = nil
     contextImg = nil
   }
   var mappers = [ModelWeightMapper]()
@@ -288,9 +348,34 @@ func WanFixed(
   outs.append(vector + shift)
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
+    mapping["text_embedding.0.weight"] = [cLinear1.weight.name]
+    mapping["text_embedding.0.bias"] = [cLinear1.bias.name]
+    mapping["text_embedding.2.weight"] = [cLinear2.weight.name]
+    mapping["text_embedding.2.bias"] = [cLinear2.bias.name]
+    mapping["time_embedding.0.weight"] = [timeInMlp0.weight.name]
+    mapping["time_embedding.0.bias"] = [timeInMlp0.bias.name]
+    mapping["time_embedding.2.weight"] = [timeInMlp2.weight.name]
+    mapping["time_embedding.2.bias"] = [timeInMlp2.bias.name]
+    if let clipLn1 = clipLn1, let clipLn2 = clipLn2, let clipMlp0 = clipMlp0,
+      let clipMlp2 = clipMlp2
+    {
+      mapping["img_emb.proj.0.weight"] = [clipLn1.weight.name]
+      mapping["img_emb.proj.0.bias"] = [clipLn1.bias.name]
+      mapping["img_emb.proj.1.weight"] = [clipMlp0.weight.name]
+      mapping["img_emb.proj.1.bias"] = [clipMlp0.bias.name]
+      mapping["img_emb.proj.3.weight"] = [clipMlp2.weight.name]
+      mapping["img_emb.proj.3.bias"] = [clipMlp2.bias.name]
+      mapping["img_emb.proj.4.weight"] = [clipLn2.weight.name]
+      mapping["img_emb.proj.4.bias"] = [clipLn2.bias.name]
+    }
+    mapping["time_projection.1.weight"] = ModelWeightElement(
+      (0..<6).map { timeProjections[$0].weight.name })
+    mapping["time_projection.1.bias"] = ModelWeightElement(
+      (0..<6).map { timeProjections[$0].bias.name })
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
+    mapping["head.modulation"] = [shift.weight.name, scale.weight.name]
     return mapping
   }
   return (mapper, Model(ins, outs))
