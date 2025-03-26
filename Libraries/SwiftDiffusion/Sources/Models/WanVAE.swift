@@ -474,7 +474,7 @@ private func NHWCWanEncoderCausal3D(
   }
   var timeInputs: [Model.IO?] = Array(repeating: nil, count: channels.count - 2)
   var midBlock1Builder = NHWCResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
-  var midAttn1Builder = NHWCAttnBlockCausal3D(inChannels: previousChannel)
+  let midAttn1Builder = NHWCAttnBlockCausal3D(inChannels: previousChannel)
   var midBlock2Builder = NHWCResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
   let normOut = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_out")
   let endHeight = height
@@ -1138,7 +1138,7 @@ private func NCHWWanEncoderCausal3D(
   }
   var timeInputs: [Model.IO?] = Array(repeating: nil, count: channels.count - 2)
   var midBlock1Builder = NCHWResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
-  var midAttn1Builder = NCHWAttnBlockCausal3D(inChannels: previousChannel)
+  let midAttn1Builder = NCHWAttnBlockCausal3D(inChannels: previousChannel)
   var midBlock2Builder = NCHWResnetBlockCausal3D(outChannels: previousChannel, shortcut: false)
   let normOut = RMSNorm(epsilon: 1e-6, axis: [0], name: "norm_out")
   let endHeight = height
