@@ -738,8 +738,19 @@ private struct NCHWResnetBlockCausal3D {
     } else {
       out = x + out
     }
-    let mapper: ModelWeightMapper = { _ in
-      return ModelWeightMapping()
+    let mapper: ModelWeightMapper = { [norm1, conv1, norm2, conv2, ninShortcut] _ in
+      var mapping = ModelWeightMapping()
+      mapping["\(prefix).residual.0.gamma"] = [norm1.weight.name]
+      mapping["\(prefix).residual.2.weight"] = [conv1.weight.name]
+      mapping["\(prefix).residual.2.bias"] = [conv1.bias.name]
+      mapping["\(prefix).residual.3.gamma"] = [norm2.weight.name]
+      mapping["\(prefix).residual.6.weight"] = [conv2.weight.name]
+      mapping["\(prefix).residual.6.bias"] = [conv2.bias.name]
+      if let ninShortcut = ninShortcut {
+        mapping["\(prefix).shortcut.weight"] = [ninShortcut.weight.name]
+        mapping["\(prefix).shortcut.bias"] = [ninShortcut.bias.name]
+      }
+      return mapping
     }
     return (mapper, out)
   }
@@ -792,8 +803,18 @@ private struct NCHWAttnBlockCausal3D {
       + projOut(out.transposed(0, 1).reshaped([1, inChannels, depth, height, width])).reshaped([
         inChannels, depth, height, width,
       ])
-    let mapper: ModelWeightMapper = { _ in
-      return ModelWeightMapping()
+    let mapper: ModelWeightMapper = { [norm, toqueries, tokeys, tovalues, projOut] _ in
+      var mapping = ModelWeightMapping()
+      mapping["\(prefix).norm.gamma"] = [norm.weight.name]
+      mapping["\(prefix).to_qkv.weight"] = [
+        toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
+      ]
+      mapping["\(prefix).to_qkv.bias"] = [
+        toqueries.bias.name, tokeys.bias.name, tovalues.bias.name,
+      ]
+      mapping["\(prefix).proj.weight"] = [projOut.weight.name]
+      mapping["\(prefix).proj.bias"] = [projOut.bias.name]
+      return mapping
     }
     return (mapper, Model([x], [out]))
   }
@@ -853,6 +874,7 @@ func NCHWWanDecoderCausal3D(
   var timeInputs: [Model.IO?] = Array(repeating: nil, count: channels.count - 2)
   var convOutInputs: Model.IO? = nil
   var outs = [Model.IO]()
+  var mappers = [ModelWeightMapper]()
   for d in stride(from: 0, to: max(startDepth - 1, 1), by: 2) {
     previousChannel = channels[channels.count - 1]
     var out: Model.IO
@@ -890,18 +912,20 @@ func NCHWWanDecoderCausal3D(
       prefix: "decoder.middle.0", inChannels: previousChannel,
       outChannels: previousChannel, shortcut: false, depth: depth, height: height,
       width: width, inputsOnly: inputsOnly)
+    mappers.append(midBlockMapper1)
     out = midBlock1Out
     let (midAttnMapper1, midAttn1) = midAttn1Builder(
       prefix: "decoder.middle.1", inChannels: previousChannel, depth: depth,
       height: height, width: width)
+    mappers.append(midAttnMapper1)
     out = midAttn1(out)
     let (midBlockMapper2, midBlock2Out) = midBlock2Builder(
       input: out,
       prefix: "decoder.middle.2", inChannels: previousChannel,
       outChannels: previousChannel, shortcut: false, depth: depth, height: height,
       width: width, inputsOnly: inputsOnly)
+    mappers.append(midBlockMapper2)
     out = midBlock2Out
-    var mappers = [ModelWeightMapper]()
     var j = 0
     var k = 0
     for (i, channel) in channels.enumerated().reversed() {
@@ -929,7 +953,8 @@ func NCHWWanDecoderCausal3D(
               [channel, (depth - 1), height, width], offset: [0, 1, 0, 0],
               strides: [depth * height * width, height * width, width, 1]
             ).contiguous()
-            var expanded = timeConvs[channels.count - i - 1](
+            let timeConv = timeConvs[channels.count - i - 1]
+            var expanded = timeConv(
               more.padded(.zero, begin: [0, 2, 0, 0], end: [0, 0, 0, 0]).reshaped([
                 1, channel, depth + 1, height, width,
               ]))
@@ -943,7 +968,10 @@ func NCHWWanDecoderCausal3D(
             }
             let upLayer = k
             let mapper: ModelWeightMapper = { _ in
-              return ModelWeightMapping()
+              var mapping = ModelWeightMapping()
+              mapping["decoder.upsamples.\(upLayer).time_conv.weight"] = [timeConv.weight.name]
+              mapping["decoder.upsamples.\(upLayer).time_conv.bias"] = [timeConv.bias.name]
+              return mapping
             }
             mappers.append(mapper)
             expanded = expanded.reshaped([2, channel, depth - 1, height, width]).permuted(
@@ -955,7 +983,8 @@ func NCHWWanDecoderCausal3D(
             out = out.reshaped([channel, depth, height, width])
           } else if let timeInput = timeInputs[channels.count - i - 1] {
             let more = out.reshaped([channel, depth, height, width])
-            let expanded = timeConvs[channels.count - i - 1](
+            let timeConv = timeConvs[channels.count - i - 1]
+            let expanded = timeConv(
               Functional.concat(axis: 1, timeInput, more, flags: [.disableOpt]).reshaped([
                 1, channel, depth + 2, height, width,
               ]))
@@ -969,7 +998,10 @@ func NCHWWanDecoderCausal3D(
             }
             let upLayer = k
             let mapper: ModelWeightMapper = { _ in
-              return ModelWeightMapping()
+              var mapping = ModelWeightMapping()
+              mapping["decoder.upsamples.\(upLayer).time_conv.weight"] = [timeConv.weight.name]
+              mapping["decoder.upsamples.\(upLayer).time_conv.bias"] = [timeConv.bias.name]
+              return mapping
             }
             mappers.append(mapper)
             out = expanded.reshaped([2, channel, depth, height, width]).permuted(1, 2, 0, 3, 4)
@@ -983,12 +1015,16 @@ func NCHWWanDecoderCausal3D(
         width *= 2
         height *= 2
         previousChannel = channel / 2
-        out = upsampleConv2d[channels.count - i - 1](out).reshaped([
+        let conv2d = upsampleConv2d[channels.count - i - 1]
+        out = conv2d(out).reshaped([
           previousChannel, depth, height, width,
         ])
         let upLayer = k
         let mapper: ModelWeightMapper = { _ in
-          return ModelWeightMapping()
+          var mapping = ModelWeightMapping()
+          mapping["decoder.upsamples.\(upLayer).resample.1.weight"] = [conv2d.weight.name]
+          mapping["decoder.upsamples.\(upLayer).resample.1.bias"] = [conv2d.bias.name]
+          return mapping
         }
         mappers.append(mapper)
         k += 1
@@ -1035,8 +1071,19 @@ func NCHWWanDecoderCausal3D(
   }
   out = out.permuted(1, 2, 3, 0).contiguous().reshaped(
     .NHWC((startDepth - 1) * 4 + 1, startHeight * 8, startWidth * 8, paddingFinalConvLayer ? 4 : 3))
-  let mapper: ModelWeightMapper = { _ in
-    return ModelWeightMapping()
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    mapping["conv2.weight"] = [postQuantConv.weight.name]
+    mapping["conv2.bias"] = [postQuantConv.bias.name]
+    mapping["decoder.conv1.weight"] = [convIn.weight.name]
+    mapping["decoder.conv1.bias"] = [convIn.bias.name]
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    mapping["decoder.head.0.gamma"] = [normOut.weight.name]
+    mapping["decoder.head.2.weight"] = [convOut.weight.name]
+    mapping["decoder.head.2.bias"] = [convOut.bias.name]
+    return mapping
   }
   return (mapper, Model([x], [out]))
 }
@@ -1141,7 +1188,8 @@ private func NCHWWanEncoderCausal3D(
         k += 1
       }
       if i < channels.count - 1 {
-        out = downsampleConv2d[i](
+        let conv2d = downsampleConv2d[i]
+        out = conv2d(
           out.padded(.zero, begin: [0, 0, 0, 0], end: [0, 0, 1, 1]).reshaped([
             1, previousChannel, depth, height + 1, width + 1,
           ]))
@@ -1150,7 +1198,12 @@ private func NCHWWanEncoderCausal3D(
         out = out.reshaped([channel, depth, height, width])
         let downLayer = k
         let mapper: ModelWeightMapper = { _ in
-          return ModelWeightMapping()
+          var mapping = ModelWeightMapping()
+          mapping[
+            "encoder.downsamples.\(downLayer).resample.1.weight"
+          ] = [conv2d.weight.name]
+          mapping["encoder.downsamples.\(downLayer).resample.1.bias"] = [conv2d.bias.name]
+          return mapping
         }
         mappers.append(mapper)
         if i > 0 && startDepth > 1 {
@@ -1159,7 +1212,8 @@ private func NCHWWanEncoderCausal3D(
               [channel, 1, height, width],
               strides: [depth * height * width, height * width, width, 1]
             ).contiguous()
-            let shrunk = timeConvs[i - 1](out.reshaped([1, channel, depth, height, width]))
+            let timeConv = timeConvs[i - 1]
+            let shrunk = timeConv(out.reshaped([1, channel, depth, height, width]))
               .reshaped([channel, (depth - 1) / 2, height, width])
             if !inputsOnly {
               let input = out.reshaped(
@@ -1171,7 +1225,10 @@ private func NCHWWanEncoderCausal3D(
             }
             let upLayer = k
             let mapper: ModelWeightMapper = { _ in
-              return ModelWeightMapping()
+              var mapping = ModelWeightMapping()
+              mapping["encoder.downsamples.\(upLayer).time_conv.weight"] = [timeConv.weight.name]
+              mapping["encoder.downsamples.\(upLayer).time_conv.bias"] = [timeConv.bias.name]
+              return mapping
             }
             mappers.append(mapper)
             depth = (depth - 1) / 2 + 1
@@ -1201,16 +1258,19 @@ private func NCHWWanEncoderCausal3D(
       prefix: "encoder.middle.0", inChannels: previousChannel,
       outChannels: previousChannel,
       shortcut: false, depth: depth, height: height, width: width, inputsOnly: inputsOnly)
+    mappers.append(midBlockMapper1)
     out = midBlock1Out
     let (midAttnMapper1, midAttn1) = midAttn1Builder(
       prefix: "encoder.middle.1", inChannels: previousChannel, depth: depth,
       height: height, width: width)
+    mappers.append(midAttnMapper1)
     out = midAttn1(out)
     let (midBlockMapper2, midBlock2Out) = midBlock2Builder(
       input: out,
       prefix: "encoder.middle.2", inChannels: previousChannel,
       outChannels: previousChannel,
       shortcut: false, depth: depth, height: height, width: width, inputsOnly: inputsOnly)
+    mappers.append(midBlockMapper2)
     out = midBlock2Out
     out = normOut(out.reshaped([previousChannel, depth, height, width]))
     out = out.swish()
@@ -1243,9 +1303,16 @@ private func NCHWWanEncoderCausal3D(
     .NHWC(depth, height, width, 32))
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
+    mapping["encoder.conv1.weight"] = [convIn.weight.name]
+    mapping["encoder.conv1.bias"] = [convIn.bias.name]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
+    mapping["encoder.head.0.gamma"] = [normOut.weight.name]
+    mapping["encoder.head.2.weight"] = [convOut.weight.name]
+    mapping["encoder.head.2.bias"] = [convOut.bias.name]
+    mapping["conv1.weight"] = [quantConv.weight.name]
+    mapping["conv1.bias"] = [quantConv.bias.name]
     return mapping
   }
   return (mapper, Model([x], [out]))
