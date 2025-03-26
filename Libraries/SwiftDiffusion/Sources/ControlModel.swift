@@ -1319,6 +1319,7 @@ extension ControlModel {
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         fatalError()
       }
+      pulidFixed.maxConcurrency = .limit(4)
       pulidFixed.compile(inputs: batchedImagePromptEmbeds[0])
       graph.openStore(
         filePaths[0], flags: .readOnly,
