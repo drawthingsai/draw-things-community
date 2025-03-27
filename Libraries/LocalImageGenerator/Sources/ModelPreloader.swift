@@ -1192,6 +1192,23 @@ extension ModelPreloader {
     }
     return x.0
   }
+  func consumeFirstStageEncode(
+    _ x: ([DynamicGraph.Tensor<FloatType>], Model), firstStage: FirstStage<FloatType>,
+    scale: DeviceCapability.Scale
+  )
+    -> [DynamicGraph.Tensor<FloatType>]
+  {
+    if (mode == .preload || mode == .yes) && isEnabled {
+      firstStageEncoder = x.1
+      firstStageEncoderFilePath = firstStage.filePath
+      firstStageEncoderExternalOnDemand = firstStage.externalOnDemand
+      firstStageEncoderVersion = firstStage.version
+      firstStageEncoderScale = scale
+      firstStageEncoderHighPrecision = firstStage.highPrecisionKeysAndValues
+      firstStageEncoderTiledDiffusion = firstStage.tiledDecoding
+    }
+    return x.0
+  }
   func retrieveFirstStageDecoder(firstStage: FirstStage<FloatType>, scale: DeviceCapability.Scale)
     -> Model?
   {

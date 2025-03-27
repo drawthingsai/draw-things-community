@@ -5091,7 +5091,7 @@ extension LocalImageGenerator {
         injectEmbeddings: !injectedEmbeddings.isEmpty,
         externalOnDemand: textEncoderExternalOnDemand, maxLength: tokenLength, clipSkip: clipSkip,
         lora: lora)
-      var image = downscaleImageAndToGPU(
+      let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
@@ -5139,7 +5139,7 @@ extension LocalImageGenerator {
         alternativeDecoderVersion: alternativeDecoderVersion,
         memoryCapacity: DeviceCapability.memoryCapacity,
         isNHWCPreferred: DeviceCapability.isNHWCPreferred)
-      let firstPassImage: DynamicGraph.Tensor<FloatType>
+      var firstPassImage: DynamicGraph.Tensor<FloatType>
       if modelVersion == .wurstchenStageC {
         // Try to resize the input image so we can encode with EfficientNetv2s properly.
         if image.shape[1] != startHeight * 32 || image.shape[2] != startWidth * 32 {
@@ -5152,9 +5152,23 @@ extension LocalImageGenerator {
       } else {
         firstPassImage = image
       }
+      var batchSize = batchSize
+      switch modelVersion {
+      case .svdI2v:
+        batchSize = Int(configuration.numFrames)
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
+      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+        break
+      }
+      let imageSize: Int
+      let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
+      (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
+        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
       let (sample, _) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
-          firstPassImage,
+          firstPassImageForSample ?? firstPassImage,
           encoder: modelPreloader.retrieveFirstStageEncoder(
             firstStage: firstStage, scale: imageScale), cancellation: cancellation),
         firstStage: firstStage, scale: imageScale)
@@ -5170,7 +5184,7 @@ extension LocalImageGenerator {
           heightScale: Float(startWidth * 8) / Float(depthWidth))(depthImage)
       }
       let injectedControls = generateInjectedControls(
-        graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
+        graph: graph, startHeight: startHeight, startWidth: startWidth, image: firstPassImage,
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
         mask: imageNegMask2,
         controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
@@ -5181,33 +5195,24 @@ extension LocalImageGenerator {
         || modelVersion == .svdI2v
       {
         if modelVersion != .svdI2v {
-          image = image .* graph.variable(imageNegMask2.toGPU(0))
+          firstPassImage = firstPassImage .* graph.variable(imageNegMask2.toGPU(0))
         }
         let encodedImage = modelPreloader.consumeFirstStageEncode(
           firstStage.encode(
-            image,
+            firstPassImage,
             encoder: modelPreloader.retrieveFirstStageEncoder(
               firstStage: firstStage, scale: imageScale), cancellation: cancellation),
           firstStage: firstStage, scale: imageScale
         )
         if modifier == .inpainting {
           maskedImage = firstStage.scale(
-            encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
+            encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
         } else {
-          maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+          maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
+            .copied()
         }
       }
       guard feedback(.imageEncoded, signposts, nil) else { return nil }
-      var batchSize = batchSize
-      switch modelVersion {
-      case .svdI2v:
-        batchSize = Int(configuration.numFrames)
-      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
-        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
-      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
-        break
-      }
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth, channels: channels, seed: configuration.seed,
@@ -5245,7 +5250,7 @@ extension LocalImageGenerator {
           heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
       }
       let imageCond = encodeImageCond(
-        image: image, depth: depthImage, custom: customImage, modifier: modifier,
+        image: firstPassImage, depth: depthImage, custom: customImage, modifier: modifier,
         version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       var initMaskMaybe: DynamicGraph.Tensor<FloatType>? = initMask
       var initNegMaskMaybe: DynamicGraph.Tensor<FloatType>? = initNegMask
@@ -5852,7 +5857,7 @@ extension LocalImageGenerator {
         alternativeDecoderVersion: alternativeDecoderVersion,
         memoryCapacity: DeviceCapability.memoryCapacity,
         isNHWCPreferred: DeviceCapability.isNHWCPreferred)
-      let firstPassImage: DynamicGraph.Tensor<FloatType>
+      var firstPassImage: DynamicGraph.Tensor<FloatType>
       if modelVersion == .wurstchenStageC {
         // Try to resize the input image so we can encode with EfficientNetv2s properly.
         if image.shape[1] != startHeight * 32 || image.shape[2] != startWidth * 32 {
@@ -5865,9 +5870,23 @@ extension LocalImageGenerator {
       } else {
         firstPassImage = image
       }
+      var batchSize = batchSize
+      switch modelVersion {
+      case .svdI2v:
+        batchSize = Int(configuration.numFrames)
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
+      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+        break
+      }
+      let imageSize: Int
+      let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
+      (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
+        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
       let (sample, _) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
-          firstPassImage,
+          firstPassImageForSample ?? firstPassImage,
           encoder: modelPreloader.retrieveFirstStageEncoder(
             firstStage: firstStage, scale: imageScale), cancellation: cancellation),
         firstStage: firstStage, scale: imageScale)
@@ -5876,19 +5895,18 @@ extension LocalImageGenerator {
       if modifier == .inpainting || modifier == .editing || modifier == .double
         || modelVersion == .svdI2v
       {
-        var batch: DynamicGraph.Tensor<FloatType>
+        var batch = [DynamicGraph.Tensor<FloatType>]()
         if modelVersion == .svdI2v {
-          batch = image
+          batch = [firstPassImage]
         } else {
-          batch = graph.variable(
-            .GPU(0), .NHWC(2, startHeight * 8, startWidth * 8, 3), of: FloatType.self)
-          batch[0..<1, 0..<(startHeight * 8), 0..<(startWidth * 8), 0..<3] = image
-            .* graph.variable(imageNegMask1.toGPU(0))
+          batch.append(firstPassImage .* graph.variable(imageNegMask1.toGPU(0)))
           if let imageNegMask2 = imageNegMask2 {
-            batch[1..<2, 0..<(startHeight * 8), 0..<(startWidth * 8), 0..<3] = image
-              .* graph.variable(imageNegMask2.toGPU(0))
+            batch.append(firstPassImage .* graph.variable(imageNegMask2.toGPU(0)))
           } else {
-            batch[1..<2, 0..<(startHeight * 8), 0..<(startWidth * 8), 0..<3].full(0)
+            let shape = firstPassImage.shape
+            let batch1 = graph.variable(.GPU(0), format: .NHWC, shape: shape, of: FloatType.self)
+            batch1.full(0)
+            batch.append(batch1)
           }
         }
         let encodedBatch = modelPreloader.consumeFirstStageEncode(
@@ -5900,15 +5918,19 @@ extension LocalImageGenerator {
         )
         if modifier == .inpainting {
           maskedImage1 = firstStage.scale(
-            encodedBatch[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
+            encodedBatch[0][0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
           maskedImage2 = firstStage.scale(
-            encodedBatch[1..<2, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
+            encodedBatch[1][0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
         } else if modelVersion == .svdI2v {
-          maskedImage1 = encodedBatch
-          maskedImage2 = encodedBatch
+          maskedImage1 = encodedBatch[0]
+          maskedImage2 = encodedBatch[0]
         } else {
-          maskedImage1 = encodedBatch[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
-          maskedImage2 = encodedBatch[1..<2, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+          maskedImage1 = encodedBatch[0][
+            0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels
+          ].copied()
+          maskedImage2 = encodedBatch[0][
+            0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels
+          ].copied()
         }
       }
       guard feedback(.imageEncoded, signposts, nil) else { return nil }
@@ -5934,7 +5956,7 @@ extension LocalImageGenerator {
           heightScale: Float(startWidth * 8) / Float(depthWidth))(depthImage)
       }
       var injectedControls = generateInjectedControls(
-        graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
+        graph: graph, startHeight: startHeight, startWidth: startWidth, image: firstPassImage,
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
         mask: imageNegMask1,
         controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,
@@ -5945,16 +5967,6 @@ extension LocalImageGenerator {
           (ControlNetZoo.modifierForModel($0) ?? ControlHintType(from: control.inputOverride))
             == .inpaint
         } ?? false
-      }
-      var batchSize = batchSize
-      switch modelVersion {
-      case .svdI2v:
-        batchSize = Int(configuration.numFrames)
-      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
-        batchSize = ((Int(configuration.numFrames) - 1) / 4) + 1
-      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
-        break
       }
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize, startHeight: startHeight,
@@ -5972,7 +5984,7 @@ extension LocalImageGenerator {
           heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
       }
       let imageCond = encodeImageCond(
-        image: image, depth: depthImage, custom: customImage, modifier: modifier,
+        image: firstPassImage, depth: depthImage, custom: customImage, modifier: modifier,
         version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       var initMask1Maybe: DynamicGraph.Tensor<FloatType>? = initMask1
       var initNegMaskMaybe: DynamicGraph.Tensor<FloatType>? = initNegMask
@@ -6067,7 +6079,7 @@ extension LocalImageGenerator {
             return imageNegMask2.rawValue.toCPU()
           }()
         injectedControls = generateInjectedControls(
-          graph: graph, startHeight: startHeight, startWidth: startWidth, image: image,
+          graph: graph, startHeight: startHeight, startWidth: startWidth, image: firstPassImage,
           depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
           mask: imageNegMask2,
           controls: configuration.controls, version: modelVersion, tiledDiffusion: tiledDiffusion,

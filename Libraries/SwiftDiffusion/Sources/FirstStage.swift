@@ -564,6 +564,23 @@ extension FirstStage {
     return (result, encoder)
   }
 
+  public func encode(
+    _ x: [DynamicGraph.Tensor<FloatType>], encoder existingEncoder: Model?,
+    cancellation: (@escaping () -> Void) -> Void
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], Model)
+  {
+    precondition(!x.isEmpty)
+    var encoder = existingEncoder
+    return (
+      x.map {
+        let result: DynamicGraph.Tensor<FloatType>
+        (result, encoder) = encode($0, encoder: encoder, cancellation: cancellation)
+        return result
+      }, encoder!
+    )
+  }
+
   private func encode(
     _ x: DynamicGraph.Tensor<FloatType>, encoder existingEncoder: Model?, highPrecision: Bool,
     cancellation: (@escaping () -> Void) -> Void
