@@ -49,10 +49,10 @@ extension ModelWeightElement {
     }
     switch format {
     case .O:
-      let squeezedDim = tensor.shape.compactMap { $0 == 1 ? nil : $0 }
-      tensor = tensor.reshaped(format: tensor.format, shape: TensorShape(squeezedDim))
-      let shape = tensor.shape
       if self.count > 1 {
+        let squeezedDim = tensor.shape.compactMap { $0 == 1 ? nil : $0 }
+        tensor = tensor.reshaped(format: tensor.format, shape: TensorShape(squeezedDim))
+        let shape = tensor.shape
         switch self.format {
         case .O:
           let count = shape[0] / self.count

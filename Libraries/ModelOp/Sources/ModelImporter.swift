@@ -270,7 +270,7 @@ public final class ModelImporter {
           $0.contains("blocks.39.cross_attn.v_img.")
         } ? .inpainting : .none
       inputDim = 16
-      expectedTotalAccess = 1870
+      expectedTotalAccess = 1306 + (modifier == .inpainting ? 208 : 0)
       isDiffusersFormat = false
     } else if isWan21_1_3B {
       modelVersion = .wan21_1_3b
@@ -279,7 +279,7 @@ public final class ModelImporter {
           $0.contains("blocks.29.cross_attn.v_img.")
         } ? .inpainting : .none
       inputDim = 16
-      expectedTotalAccess = 1870
+      expectedTotalAccess = 986 + (modifier == .inpainting ? 158 : 0)
       isDiffusersFormat = false
     } else {
       throw UnpickleError.tensorNotFound
@@ -1194,7 +1194,6 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .sd3Large:
-          print("keys \($0.keys.count)")
           if $0.keys.count != 1981 {
             throw Error.tensorWritesFailed
           }
@@ -1207,11 +1206,11 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .wan21_1_3b:
-          if $0.keys.count != 986 || $0.keys.count != 1144 {
+          if $0.keys.count != 986 && $0.keys.count != 1144 {
             throw Error.tensorWritesFailed
           }
         case .wan21_14b:
-          if $0.keys.count != 1306 || $0.keys.count != 1514 {
+          if $0.keys.count != 1306 && $0.keys.count != 1514 {
             throw Error.tensorWritesFailed
           }
         case .auraflow:

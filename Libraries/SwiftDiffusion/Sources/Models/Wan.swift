@@ -270,7 +270,7 @@ private func WanAttentionBlockFixed(
     outs.append(contentsOf: [cImgK, cImgV])
     cImgToKeys = contextImgToKeys
     cImgToValues = contextImgToValues
-    cImgNormK = contextNormK
+    cImgNormK = contextImgNormK
   } else {
     cImgToKeys = nil
     cImgToValues = nil
@@ -664,7 +664,7 @@ private func LoRAWanAttentionBlockFixed(
     outs.append(contentsOf: [cImgK, cImgV])
     cImgToKeys = contextImgToKeys
     cImgToValues = contextImgToValues
-    cImgNormK = contextNormK
+    cImgNormK = contextImgNormK
   } else {
     cImgToKeys = nil
     cImgToValues = nil
