@@ -2480,6 +2480,18 @@ extension LocalImageGenerator {
     }
   }
 
+  private func isI2v(version: ModelVersion, modifier: SamplerModifier) -> Bool {
+    switch version {
+    case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+      .ssd1b, .wurstchenStageB, .wurstchenStageC, .flux1:
+      return false
+    case .svdI2v:
+      return true
+    case .wan21_14b, .wan21_1_3b, .hunyuanVideo:
+      return modifier == .inpainting
+    }
+  }
+
   private func expandImageForEncoding(
     batchSize: Int, version: ModelVersion, modifier: SamplerModifier,
     image: DynamicGraph.Tensor<FloatType>
@@ -5194,7 +5206,7 @@ extension LocalImageGenerator {
       if modifier == .inpainting || modifier == .editing || modifier == .double
         || modelVersion == .svdI2v
       {
-        if modelVersion != .svdI2v {
+        if !isI2v(version: modelVersion, modifier: modifier) {
           firstPassImage = firstPassImage .* graph.variable(imageNegMask2.toGPU(0))
         }
         let encodedImage = modelPreloader.consumeFirstStageEncode(
@@ -5896,7 +5908,7 @@ extension LocalImageGenerator {
         || modelVersion == .svdI2v
       {
         var batch = [DynamicGraph.Tensor<FloatType>]()
-        if modelVersion == .svdI2v {
+        if isI2v(version: modelVersion, modifier: modifier) {
           batch = [firstPassImage]
         } else {
           batch.append(firstPassImage .* graph.variable(imageNegMask1.toGPU(0)))
@@ -5920,7 +5932,9 @@ extension LocalImageGenerator {
           maskedImage1 = firstStage.scale(
             encodedBatch[0][0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
           maskedImage2 = firstStage.scale(
-            encodedBatch[1][0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
+            encodedBatch[encodedBatch.count - 1][
+              0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels
+            ].copied())
         } else if modelVersion == .svdI2v {
           maskedImage1 = encodedBatch[0]
           maskedImage2 = encodedBatch[0]
