@@ -130,7 +130,14 @@ struct Converter: ParsableCommand {
         autoencoder = "hunyuan_video_vae_f16.ckpt"
       }
     case .wan21_1_3b, .wan21_14b:
-      fatalError()
+      textEncoder = "umt5_xxl_encoder_q8p.ckpt"
+      if modifier == .inpainting {
+        clipEncoder = "open_clip_xlm_roberta_large_vit_h14_f16.ckpt"
+      }
+      clipEncoder = "clip_vit_l14_f16.ckpt"
+      if autoencoder == nil {
+        autoencoder = "wan_v2.1_video_vae_f16.ckpt"
+      }
     case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow:
       fatalError()
     }
