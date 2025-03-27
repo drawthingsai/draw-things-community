@@ -368,7 +368,7 @@ public enum LoRAImporter {
       case .wan21_14b:
         let rot = Tensor<FloatType>(
           from: WanRotaryPositionEmbedding(
-            height: 65, width: 65, time: 1, channels: 128)
+            height: 64, width: 64, time: 1, channels: 128)
         )
         cArr =
           [graph.variable(rot)]
@@ -618,9 +618,7 @@ public enum LoRAImporter {
           || $0.contains("transformer_blocks_22_ff_context_")
       }
       let isPixArtSigmaXL = stateDict.keys.contains {
-        ($0.contains("blocks_27_cross_attn_kv_") || $0.contains("transformer_blocks_27_attn2_to_"))
-          && !($0.contains("single_transformer_blocks_27_attn2_to_"))
-          && !($0.contains("single_blocks_27_cross_attn_kv_"))
+        $0.contains("blocks_27_cross_attn_kv_") || $0.contains("transformer_blocks_27_attn2_to_")
       }
       let isFlux1 = stateDict.keys.contains {
         $0.contains("double_blocks.18.img_attn.qkv.")

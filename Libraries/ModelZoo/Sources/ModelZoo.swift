@@ -1176,7 +1176,7 @@ public struct ModelZoo: DownloadZoo {
       case .wan21_1_3b:
         return fileSize < 2 * 1_024 * 1_024 * 1_024
       case .wan21_14b:
-        return fileSize < 13 * 1_024 * 1_024 * 1_024
+        return fileSize < 13 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
       }
     }
     return false

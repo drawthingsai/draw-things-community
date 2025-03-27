@@ -39,7 +39,6 @@ extension ModelWeightElement {
     graph: DynamicGraph, to store: DynamicGraph.Store, tensor: Tensor<FloatType>, format: Format,
     isDiagonalUp: Bool, isDiagonalDown: Bool, renamer: (String) -> String
   ) {
-    let shape = tensor.shape
     var tensor = tensor
     if scale != 1 {
       // Scale the tensor if needed.
@@ -50,6 +49,9 @@ extension ModelWeightElement {
     }
     switch format {
     case .O:
+      let squeezedDim = tensor.shape.compactMap { $0 == 1 ? nil : $0 }
+      tensor = tensor.reshaped(format: tensor.format, shape: TensorShape(squeezedDim))
+      let shape = tensor.shape
       if self.count > 1 {
         switch self.format {
         case .O:

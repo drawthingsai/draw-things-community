@@ -132,8 +132,7 @@ public final class ModelImporter {
     var isPixArtSigmaXL =
       !isSD3Large
       && stateDict.keys.contains {
-        ($0.contains("blocks.27.") || $0.contains("transformer_blocks.27."))
-          && !($0.contains("single_transformer_blocks.27.")) && !($0.contains("single_blocks.27."))
+        $0.contains("blocks.27.cross_attn.kv_") || $0.contains("transformer_blocks.27.attn2.to_")
       }
     var isHunyuan = stateDict.keys.contains {
       $0.contains("double_blocks.19.img_attn_qkv.")
@@ -144,6 +143,14 @@ public final class ModelImporter {
       && stateDict.keys.contains {
         $0.contains("double_blocks.18.img_attn.qkv.")
           || $0.contains("single_transformer_blocks.37.")
+      }
+    var isWan21_14B = stateDict.keys.contains {
+      $0.contains("blocks.39.cross_attn.v.")
+    }
+    var isWan21_1_3B =
+      !isWan21_14B
+      && stateDict.keys.contains {
+        $0.contains("blocks.29.cross_attn.v.")
       }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
@@ -210,6 +217,8 @@ public final class ModelImporter {
       isSD3Large = false
       isFlux1 = false
       isHunyuan = false
+      isWan21_14B = false
+      isWan21_1_3B = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -254,6 +263,24 @@ public final class ModelImporter {
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("single_transformer_blocks.39.")
       }
+    } else if isWan21_14B {
+      modelVersion = .wan21_14b
+      modifier =
+        stateDict.keys.contains {
+          $0.contains("blocks.39.cross_attn.v_img.")
+        } ? .inpainting : .none
+      inputDim = 16
+      expectedTotalAccess = 1870
+      isDiffusersFormat = false
+    } else if isWan21_1_3B {
+      modelVersion = .wan21_1_3b
+      modifier =
+        stateDict.keys.contains {
+          $0.contains("blocks.29.cross_attn.v_img.")
+        } ? .inpainting : .none
+      inputDim = 16
+      expectedTotalAccess = 1870
+      isDiffusersFormat = false
     } else {
       throw UnpickleError.tensorNotFound
     }
@@ -556,7 +583,8 @@ public final class ModelImporter {
       conditionalLength = 4096
       batchSize = 1
     case .wan21_1_3b, .wan21_14b:
-      fatalError()
+      conditionalLength = 4096
+      batchSize = 1
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -650,8 +678,32 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .wan21_1_3b, .wan21_14b:
-        fatalError()
+      case .wan21_1_3b:
+        let rot = Tensor<FloatType>(
+          from: WanRotaryPositionEmbedding(
+            height: 64, width: 64, time: 1, channels: 128)
+        )
+        cArr =
+          [graph.variable(rot)]
+          + WanFixedOutputShapes(
+            timesteps: 1, batchSize: (1, 1), channels: 1_536, layers: 30, textLength: 512,
+            injectImage: true
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
+      case .wan21_14b:
+        let rot = Tensor<FloatType>(
+          from: WanRotaryPositionEmbedding(
+            height: 64, width: 64, time: 1, channels: 128)
+        )
+        cArr =
+          [graph.variable(rot)]
+          + WanFixedOutputShapes(
+            timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, textLength: 512,
+            injectImage: true
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -781,8 +833,20 @@ public final class ModelImporter {
           usesFlashAttention: .scaleMerged)
         (unetFixedMapper, unetFixed) = HunyuanFixed(
           timesteps: batchSize, channels: 3072, layers: (20, 40), textLength: (0, 20))
-      case .wan21_1_3b, .wan21_14b:
-        fatalError()
+      case .wan21_1_3b:
+        (unetMapper, unet) = Wan(
+          channels: 1_536, layers: 30, intermediateSize: 8_960, time: 1, height: 64, width: 64,
+          textLength: 512, injectImage: true)
+        (unetFixedMapper, unetFixed) = WanFixed(
+          timesteps: 1, batchSize: (1, 1), channels: 1_536, layers: 30, textLength: 512,
+          injectImage: true)
+      case .wan21_14b:
+        (unetMapper, unet) = Wan(
+          channels: 5_120, layers: 40, intermediateSize: 13_824, time: 1, height: 64, width: 64,
+          textLength: 512, injectImage: true)
+        (unetFixedMapper, unetFixed) = WanFixed(
+          timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, textLength: 512,
+          injectImage: true)
       case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
@@ -851,7 +915,12 @@ public final class ModelImporter {
         ]
         tEmb = nil
       case .wan21_1_3b, .wan21_14b:
-        fatalError()
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 4096), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 257, 1280), of: FloatType.self),
+        ]
+        tEmb = nil
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -988,7 +1057,7 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(.generativeModels)
             modelPrefix = "stage_c"
             modelPrefixFixed = "stage_c_fixed"
-          case .pixart:
+          case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -997,35 +1066,6 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .sd3, .sd3Large:
-            let inputs: [DynamicGraph.Tensor<FloatType>] =
-              [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
-            unet.compile(inputs: inputs)
-            unetFixed.compile(inputs: crossattn)
-            UNetMapping = unetMapper(isDiffusersFormat ? .diffusers : .generativeModels)
-            UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
-            modelPrefix = "dit"
-            modelPrefixFixed = "dit"
-          case .flux1:
-            let inputs: [DynamicGraph.Tensor<FloatType>] =
-              [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
-            unet.compile(inputs: inputs)
-            unetFixed.compile(inputs: crossattn)
-            UNetMapping = unetMapper(isDiffusersFormat ? .diffusers : .generativeModels)
-            UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
-            modelPrefix = "dit"
-            modelPrefixFixed = "dit"
-          case .hunyuanVideo:
-            let inputs: [DynamicGraph.Tensor<FloatType>] =
-              [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
-            unet.compile(inputs: inputs)
-            unetFixed.compile(inputs: crossattn)
-            UNetMapping = unetMapper(isDiffusersFormat ? .diffusers : .generativeModels)
-            UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
-            modelPrefix = "dit"
-            modelPrefixFixed = "dit"
-          case .wan21_1_3b, .wan21_14b:
-            fatalError()
           case .auraflow:
             fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1166,8 +1206,14 @@ public final class ModelImporter {
           if $0.keys.count != 1870 {
             throw Error.tensorWritesFailed
           }
-        case .wan21_1_3b, .wan21_14b:
-          fatalError()
+        case .wan21_1_3b:
+          if $0.keys.count != 986 || $0.keys.count != 1144 {
+            throw Error.tensorWritesFailed
+          }
+        case .wan21_14b:
+          if $0.keys.count != 1306 || $0.keys.count != 1514 {
+            throw Error.tensorWritesFailed
+          }
         case .auraflow:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
