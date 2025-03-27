@@ -618,8 +618,9 @@ public enum LoRAImporter {
           || $0.contains("transformer_blocks_22_ff_context_")
       }
       let isPixArtSigmaXL = stateDict.keys.contains {
-        ($0.contains("blocks_27_") || $0.contains("transformer_blocks_27_"))
-          && !($0.contains("single_transformer_blocks_27_")) && !($0.contains("single_blocks_27_"))
+        ($0.contains("blocks_27_cross_attn_kv_") || $0.contains("transformer_blocks_27_attn2_to_"))
+          && !($0.contains("single_transformer_blocks_27_attn2_to_"))
+          && !($0.contains("single_blocks_27_cross_attn_kv_"))
       }
       let isFlux1 = stateDict.keys.contains {
         $0.contains("double_blocks.18.img_attn.qkv.")
