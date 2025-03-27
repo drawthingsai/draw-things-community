@@ -2481,26 +2481,43 @@ extension LocalImageGenerator {
   }
 
   private func expandImageForEncoding(
-    batchSize: Int, version: ModelVersion, image: DynamicGraph.Tensor<FloatType>
-  ) -> (Int, DynamicGraph.Tensor<FloatType>) {
+    batchSize: Int, version: ModelVersion, modifier: SamplerModifier,
+    image: DynamicGraph.Tensor<FloatType>
+  ) -> (Int, DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>?) {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1:
-      return (1, image)
+      return (1, image, nil)
     case .wan21_14b, .wan21_1_3b:
       let shape = image.shape
       guard shape[0] < (batchSize - 1) * 4 + 1 else {
-        return (
-          batchSize,
-          image[0..<(batchSize - 1) * 4 + 1, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
-        )
+        let copied = image[0..<(batchSize - 1) * 4 + 1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        if modifier == .inpainting {
+          return (batchSize, copied, copied)
+        } else {
+          return (batchSize, copied, nil)
+        }
       }
       let graph = image.graph
+      let decodedSize = (batchSize - 1) * 4 + 1
+      var repeatedImage = graph.variable(
+        .GPU(0), .NHWC(decodedSize, shape[1], shape[2], shape[3]), of: FloatType.self)
+      // Replicate images throughout.
+      for i in stride(from: 0, to: decodedSize, by: shape[0]) {
+        repeatedImage[
+          i..<min(i + shape[0], decodedSize), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = image[
+            0..<min(shape[0], decodedSize - i), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+          ].copied()
+      }
+      guard modifier == .inpainting else {
+        return (batchSize, repeatedImage, nil)
+      }
       var expandedImage = graph.variable(
-        .GPU(0), .NHWC((batchSize - 1) * 4 + 1, shape[1], shape[2], shape[3]), of: FloatType.self)
+        .GPU(0), .NHWC(decodedSize, shape[1], shape[2], shape[3]), of: FloatType.self)
       expandedImage.full(0)
       expandedImage[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] = image
-      return (batchSize, expandedImage)
+      return (batchSize, expandedImage, repeatedImage)
     }
   }
 
@@ -3018,8 +3035,8 @@ extension LocalImageGenerator {
             return image
           }()
         let imageSize: Int
-        (imageSize, firstPassImage) = expandImageForEncoding(
-          batchSize: batchSize, version: modelVersion, image: firstPassImage)
+        (imageSize, firstPassImage, _) = expandImageForEncoding(
+          batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
         let encodedImage = modelPreloader.consumeFirstStageEncode(
           firstStage.encode(
             firstPassImage,
@@ -3248,8 +3265,8 @@ extension LocalImageGenerator {
             return image
           }()
         let imageSize: Int
-        (imageSize, image) = expandImageForEncoding(
-          batchSize: batchSize, version: modelVersion, image: image)
+        (imageSize, image, _) = expandImageForEncoding(
+          batchSize: batchSize, version: modelVersion, modifier: modifier, image: image)
         let encodedImage = modelPreloader.consumeFirstStageEncode(
           firstStage.encode(
             image,
@@ -3932,14 +3949,25 @@ extension LocalImageGenerator {
         break
       }
       let imageSize: Int
-      (imageSize, firstPassImage) = expandImageForEncoding(
-        batchSize: batchSize, version: modelVersion, image: firstPassImage)
-      let (sample, encodedImage) = modelPreloader.consumeFirstStageSample(
+      let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
+      (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
+        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
+      var sample: DynamicGraph.Tensor<FloatType>
+      let encodedImage: DynamicGraph.Tensor<FloatType>
+      (sample, encodedImage) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
           firstPassImage,
           encoder: modelPreloader.retrieveFirstStageEncoder(
             firstStage: firstStage, scale: imageScale), cancellation: cancellation),
         firstStage: firstStage, scale: imageScale)
+      if let firstPassImageForSample = firstPassImageForSample {
+        (sample, _) = modelPreloader.consumeFirstStageSample(
+          firstStage.sample(
+            firstPassImageForSample,
+            encoder: modelPreloader.retrieveFirstStageEncoder(
+              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+          firstStage: firstStage, scale: imageScale)
+      }
       var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
       var mask: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting {
