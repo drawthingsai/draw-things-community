@@ -1069,7 +1069,7 @@ public enum LoRAImporter {
         let total = stateDict.count
         var diagonalUpMatrixKeys = Set<String>()
         var diagonalDownsForRedefine = [(String, String, ModelWeightElement)]()
-        for (i, (key, descriptor)) in stateDict.enumerated() {
+        for (i, (key, descriptor)) in stateDict.sorted(by: { $0.key < $1.key }).enumerated() {
           let parts = key.components(separatedBy: "_")
           guard parts.count > 2 else { continue }
           let te2 = parts[1] == "te2"
@@ -1299,7 +1299,7 @@ public enum LoRAImporter {
           }
           progress(Float(i + 1) / Float(total * 2))
         }
-        for (i, (key, descriptor)) in stateDict.enumerated() {
+        for (i, (key, descriptor)) in stateDict.sorted(by: { $0.key < $1.key }).enumerated() {
           let parts = key.components(separatedBy: "_")
           guard parts.count > 2 else { continue }
           let te2 = parts[1] == "te2"

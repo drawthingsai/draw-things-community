@@ -1084,7 +1084,7 @@ public final class ModelImporter {
                 store.write("__encoder_hid_proj__[t-0-1]", tensor: tensor)
               }
             }
-            for (key, value) in UNetMapping {
+            for (key, value) in UNetMapping.sorted(by: { $0.key < $1.key }) {
               guard let tensorDescriptor = stateDict[key] else {
                 continue
               }
@@ -1132,7 +1132,7 @@ public final class ModelImporter {
                 }
               }
             }
-            for (key, value) in UNetMappingFixed {
+            for (key, value) in UNetMappingFixed.sorted(by: { $0.key < $1.key }) {
               guard let tensorDescriptor = stateDict[key] else {
                 continue
               }
