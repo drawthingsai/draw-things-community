@@ -145,12 +145,12 @@ public final class ModelImporter {
           || $0.contains("single_transformer_blocks.37.")
       }
     var isWan21_14B = stateDict.keys.contains {
-      $0.contains("blocks.39.cross_attn.v.")
+      $0.contains("blocks.39.cross_attn.v.") || $0.contains("blocks.39.attn2.to_v.")
     }
     var isWan21_1_3B =
       !isWan21_14B
       && stateDict.keys.contains {
-        $0.contains("blocks.29.cross_attn.v.")
+        $0.contains("blocks.29.cross_attn.v.") || $0.contains("blocks.29.attn2.to_v.")
       }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
@@ -267,20 +267,24 @@ public final class ModelImporter {
       modelVersion = .wan21_14b
       modifier =
         stateDict.keys.contains {
-          $0.contains("blocks.39.cross_attn.v_img.")
+          $0.contains("blocks.39.cross_attn.v_img.") || $0.contains("blocks.39.attn2.add_v_proj.")
         } ? .inpainting : .none
       inputDim = 16
       expectedTotalAccess = 1306 + (modifier == .inpainting ? 208 : 0)
-      isDiffusersFormat = false
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("blocks.39.attn2.to_v.")
+      }
     } else if isWan21_1_3B {
       modelVersion = .wan21_1_3b
       modifier =
         stateDict.keys.contains {
-          $0.contains("blocks.29.cross_attn.v_img.")
+          $0.contains("blocks.29.cross_attn.v_img.") || $0.contains("blocks.29.attn2.add_v_proj.")
         } ? .inpainting : .none
       inputDim = 16
       expectedTotalAccess = 986 + (modifier == .inpainting ? 158 : 0)
-      isDiffusersFormat = false
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("blocks.29.attn2.to_v.")
+      }
     } else {
       throw UnpickleError.tensorNotFound
     }
