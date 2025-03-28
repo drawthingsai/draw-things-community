@@ -4636,7 +4636,11 @@ extension LocalImageGenerator {
         cancellation: cancellation, feedback: feedback)
     }
     // If no sophisticated mask, nothing to be done.
-    if exists0 && !exists1 && !exists2 && !exists3 {
+    // If only 3, meaning we are going to retain everything (???) then we just go as if image generation.
+    // If only 0, meaning whatever, then we just go as if image generation.
+    if (exists0 && !exists1 && !exists2 && !exists3)
+      || (!exists0 && !exists1 && !exists2 && exists3)
+    {
       return generateImageOnly(
         image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
         shuffles: shuffles, poses: poses, text: text,
@@ -4661,12 +4665,6 @@ extension LocalImageGenerator {
     }
     if let upscaler = configuration.upscaler, UpscalerZoo.isModelDownloaded(upscaler) {
       signposts.insert(.imageUpscaled)
-    }
-    // If only 3, meaning we are going to retain everything, just return.
-    if !exists0 && !exists1 && !exists2 && exists3 {
-      let images = faceRestoreImages([image], configuration: configuration)
-      let (result, scaleFactor) = upscaleImages(images, configuration: configuration)
-      return (result, scaleFactor)
     }
     // Either we missing 1s, or we are in transparent mode (where 1 is ignored), go into here.
     if !exists1 || alternativeDecoderVersion == .transparent {

@@ -205,17 +205,41 @@ public struct ImageGeneratorUtils {
     // See detail explanation below.
     // This effectively tells whether we have any skip all (3, or in some conditions 0 can skip all).
     // It should be exists3 || (!(exists0 && exists1 && exists2 && exists3) && exists2) but can be simplified to below.
+    // The conditions are not to have inpainting:
+    // !exists2 && alternativeDecoderVersion == .transparent
+    // exists0 && !exists1 && !exists2 && !exists3
+    // !exists0 && !exists1 && !exists2 && exists3
+    // !exists0 && exists1 && !exists2 && !exists3
+    var exists0 = false
+    var exists1 = false
+    var exists3 = false
     for y in 0..<imageHeight {
       for x in 0..<imageWidth {
         let byteMask = (binaryMask[y, x] & 7)
-        if byteMask == 3 && alternativeDecoderVersion != .transparent {
+        if byteMask == 2 || byteMask == 4 {  // 4 is the same as 2.
           return true
-        } else if byteMask == 2 || byteMask == 4 {  // 4 is the same as 2.
-          return true
+        } else if byteMask == 3 && !exists3 {
+          exists3 = true
+        } else if byteMask == 1 && !exists1 {
+          exists1 = true
+        } else if byteMask == 0 && !exists0 {
+          exists0 = true
         }
       }
     }
-    return false
+    if alternativeDecoderVersion == .transparent {
+      return false
+    }
+    if exists0 && !exists1 && !exists3 {
+      return false
+    }
+    if !exists0 && !exists1 && exists3 {
+      return false
+    }
+    if !exists0 && exists1 && !exists3 {
+      return false
+    }
+    return true
   }
 
   public static func expectedSignposts(
