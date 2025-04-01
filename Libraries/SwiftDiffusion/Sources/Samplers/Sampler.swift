@@ -71,30 +71,9 @@ public struct SamplerOutput<FloatType: TensorNumeric & BinaryFloatingPoint, UNet
   }
 }
 
+@inlinable
 public func isNaN<T: TensorNumeric & BinaryFloatingPoint>(_ x: Tensor<T>) -> Bool {
-  let shape = x.shape
-  if shape.count == 2 {
-    for b in 0..<shape[0] {
-      for i in 0..<shape[1] {
-        if x[b, i].isNaN {
-          return true
-        }
-      }
-    }
-  } else {
-    for b in 0..<shape[0] {
-      for i in 0..<shape[1] {
-        for j in 0..<shape[2] {
-          for k in 0..<shape[3] {
-            if x[b, i, j, k].isNaN {
-              return true
-            }
-          }
-        }
-      }
-    }
-  }
-  return false
+  return x.isNaN
 }
 
 func clipDenoised<T: TensorNumeric & BinaryFloatingPoint>(_ x: DynamicGraph.Tensor<T>)
