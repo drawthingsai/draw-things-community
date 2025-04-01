@@ -26,6 +26,7 @@ where UNet.FloatType == FloatType {
   public let stochasticSamplingGamma: Float
   public let conditioning: Denoiser.Conditioning
   public let tiledDiffusion: TiledConfiguration
+  public let teaCache: TeaCacheConfiguration
   private let discretization: Discretization
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
@@ -35,7 +36,8 @@ where UNet.FloatType == FloatType {
     lora: [LoRAConfiguration],
     isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
     stochasticSamplingGamma: Float, conditioning: Denoiser.Conditioning,
-    tiledDiffusion: TiledConfiguration, discretization: Discretization
+    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
+    discretization: Discretization
   ) {
     self.filePath = filePath
     self.modifier = modifier
@@ -57,6 +59,7 @@ where UNet.FloatType == FloatType {
     self.stochasticSamplingGamma = stochasticSamplingGamma
     self.conditioning = conditioning
     self.tiledDiffusion = tiledDiffusion
+    self.teaCache = teaCache
     self.discretization = discretization
   }
 }
@@ -269,7 +272,7 @@ extension TCDSampler: Sampler {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: false, extraProjection: extraProjection,
         injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-        tiledDiffusion: tiledDiffusion)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache)
     }
     let noise: DynamicGraph.Tensor<FloatType> = graph.variable(
       .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
@@ -406,7 +409,7 @@ extension TCDSampler: Sampler {
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: false, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-            tiledDiffusion: tiledDiffusion)
+            tiledDiffusion: tiledDiffusion, teaCache: teaCache)
           refinerKickIn = -1
           unets.append(unet)
         }
@@ -451,7 +454,7 @@ extension TCDSampler: Sampler {
         var etOut = unet(
           timestep: cNoise, inputs: xIn, t, newC, extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+          injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, isCfgEnabled: false, tiledDiffusion: tiledDiffusion,
           controlNets: &controlNets)
         if channels < etOut.shape[3] {

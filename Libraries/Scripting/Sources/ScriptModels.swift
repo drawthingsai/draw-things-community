@@ -146,6 +146,10 @@ public final class JSGenerationConfiguration: Codable {
   public let speedUpWithGuidanceEmbed: Bool
   public let guidanceEmbed: Float32
   public let resolutionDependentShift: Bool
+  public let teaCache: Bool
+  public let teaCacheStart: Int32
+  public let teaCacheEnd: Int32
+  public let teaCacheThreshold: Float32
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -217,6 +221,10 @@ public final class JSGenerationConfiguration: Codable {
     speedUpWithGuidanceEmbed = configuration.speedUpWithGuidanceEmbed
     guidanceEmbed = configuration.guidanceEmbed
     resolutionDependentShift = configuration.resolutionDependentShift
+    teaCacheStart = configuration.teaCacheStart
+    teaCacheEnd = configuration.teaCacheEnd
+    teaCacheThreshold = configuration.teaCacheThreshold
+    teaCache = configuration.teaCache
   }
 
   public func createGenerationConfiguration() -> GenerationConfiguration {
@@ -262,7 +270,11 @@ public final class JSGenerationConfiguration: Codable {
       openClipGText: openClipGText,
       speedUpWithGuidanceEmbed: speedUpWithGuidanceEmbed,
       guidanceEmbed: guidanceEmbed,
-      resolutionDependentShift: resolutionDependentShift
+      resolutionDependentShift: resolutionDependentShift,
+      teaCacheStart: teaCacheStart,
+      teaCacheEnd: teaCacheEnd,
+      teaCacheThreshold: teaCacheThreshold,
+      teaCache: teaCache
     )
   }
 }

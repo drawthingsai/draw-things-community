@@ -173,7 +173,11 @@ public struct Invocation {
       openClipGText: parameters.openClipGTextParameter.value,
       speedUpWithGuidanceEmbed: parameters.speedUpWithGuidanceEmbedParameter.value,
       guidanceEmbed: parameters.guidanceEmbedParameter.float32Value(),
-      resolutionDependentShift: parameters.resolutionDependentShiftParameter.value
+      resolutionDependentShift: parameters.resolutionDependentShiftParameter.value,
+      teaCacheStart: parameters.teaCacheStartParameter.int32Value(),
+      teaCacheEnd: parameters.teaCacheEndParameter.int32Value(),
+      teaCacheThreshold: parameters.teaCacheThresholdParameter.float32Value(),
+      teaCache: parameters.teaCacheParameter.value
     )
     self.prompt = try unwrapOrThrow(
       parameters.promptParameter.value, errorMessage: "Missing prompt")
@@ -242,6 +246,10 @@ extension Invocation: CustomDebugStringConvertible {
       ("speedUpWithGuidanceEmbed", configuration.speedUpWithGuidanceEmbed as Any),
       ("guidanceEmbed", configuration.guidanceEmbed as Any),
       ("resolutionDependentShift", configuration.resolutionDependentShift as Any),
+      ("teaCacheStart", configuration.teaCacheStart),
+      ("teaCacheEnd", configuration.teaCacheEnd),
+      ("teaCacheThreshold", configuration.teaCacheThreshold),
+      ("teaCache", configuration.teaCache as Any),
     ]
     return pairs.map { (name, value) in
       "\(name): \(value)"

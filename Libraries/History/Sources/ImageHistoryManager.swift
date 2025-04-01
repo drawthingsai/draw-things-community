@@ -519,7 +519,10 @@ public final class ImageHistoryManager {
       openClipGText: imageHistory.openClipGText,
       speedUpWithGuidanceEmbed: imageHistory.speedUpWithGuidanceEmbed,
       guidanceEmbed: imageHistory.guidanceEmbed,
-      resolutionDependentShift: imageHistory.resolutionDependentShift
+      resolutionDependentShift: imageHistory.resolutionDependentShift,
+      teaCacheStart: imageHistory.teaCacheStart,
+      teaCacheEnd: imageHistory.teaCacheEnd,
+      teaCacheThreshold: imageHistory.teaCacheThreshold
     )
     _profileData = imageHistory.profileData
     dataStored = imageData.sorted(by: { $0.index < $1.index }).map {
@@ -766,7 +769,10 @@ public final class ImageHistoryManager {
       openClipGText: configuration.openClipGText,
       speedUpWithGuidanceEmbed: configuration.speedUpWithGuidanceEmbed,
       guidanceEmbed: configuration.guidanceEmbed,
-      resolutionDependentShift: configuration.resolutionDependentShift
+      resolutionDependentShift: configuration.resolutionDependentShift,
+      teaCacheStart: configuration.teaCacheStart,
+      teaCacheEnd: configuration.teaCacheEnd,
+      teaCacheThreshold: configuration.teaCacheThreshold
     )
     let imageVersion = uniqueVersion()
     nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)

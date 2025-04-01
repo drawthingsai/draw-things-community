@@ -144,6 +144,10 @@ table GenerationConfiguration {
   speed_up_with_guidance_embed: bool = true;
   guidance_embed: float = 3.5;
   resolution_dependent_shift: bool = true;
+  tea_cache_start: int = 5;
+  tea_cache_end: int = -1;
+  tea_cache_threshold: float = 0.06;
+  tea_cache: bool = false;
 }
 
 root_type GenerationConfiguration;

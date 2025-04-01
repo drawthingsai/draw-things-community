@@ -95,20 +95,22 @@ public final class Parameters {
     motionScaleParameter, maskBlurOutsetParameter, stage2StepsParameter, decodingTileWidthParameter,
     decodingTileHeightParameter, decodingTileOverlapParameter, diffusionTileWidthParameter,
     diffusionTileHeightParameter, diffusionTileOverlapParameter,
-    upscalerScaleFactorParameter: IntParameter
+    upscalerScaleFactorParameter, teaCacheStartParameter, teaCacheEndParameter: IntParameter
   public let guidanceScaleParameter, strengthParameter, imageGuidanceScaleParameter,
     maskBlurParameter,
     clipWeightParameter, hiresFixStrengthParameter, refinerStartParameter, aestheticScoreParameter,
     negativeAestheticScoreParameter, guidingFrameNoiseParameter,
     startFrameGuidanceParameter, sharpnessParameter, shiftParameter, stage2CfgParameter,
-    stage2ShiftParameter, stochasticSamplingGammaParameter, guidanceEmbedParameter: DoubleParameter
+    stage2ShiftParameter, stochasticSamplingGammaParameter, guidanceEmbedParameter,
+    teaCacheThresholdParameter: DoubleParameter
   let seedModeParameter: EnumParameter<SeedMode>
   let samplerParameter: EnumParameter<SamplerType>
   let negativePromptForImagePriorParameter, hiresFixParameter,
     zeroNegativePromptParameter, tiledDecodingParameter,
     preserveOriginalAfterInpaintParameter, tiledDiffusionParameter,
     t5TextEncoderParameter, separateClipLParameter, separateOpenClipGParameter,
-    speedUpWithGuidanceEmbedParameter, resolutionDependentShiftParameter: BoolParameter
+    speedUpWithGuidanceEmbedParameter, resolutionDependentShiftParameter,
+    teaCacheParameter: BoolParameter
   let lorasParameter: JSONParameter<[JSLoRA]>
   let controlsParameter: JSONParameter<[JSControl]>
 
@@ -144,7 +146,7 @@ public final class Parameters {
     guidanceScaleParameter = DoubleParameter(
       titleKey: "guidance", explanationKey: "text_guidance_detail_cli",
       defaultValue: Double(defaultConfiguration.guidanceScale),
-      range: 0...25,
+      range: 0...50,
       commandLineFlag: "guidance-scale", additionalJsonKeys: ["cfg_scale"])
     seedModeParameter = EnumParameter<SeedMode>(
       titleKey: "seed_mode", explanationKey: "seed_mode_detail",
@@ -296,7 +298,7 @@ public final class Parameters {
       defaultValue: defaultConfiguration.refinerModel, commandLineFlag: "refiner-model")
     numFramesParameter = IntParameter(
       titleKey: "num_frames", explanationKey: "num_frames_detail",
-      defaultValue: Int(defaultConfiguration.numFrames), range: 1...25,
+      defaultValue: Int(defaultConfiguration.numFrames), range: 1...201,
       commandLineFlag: "num-frames")
     fpsParameter = IntParameter(
       titleKey: "fps", explanationKey: "fps_detail",
@@ -393,6 +395,22 @@ public final class Parameters {
       explanationKey: "resolution_dependent_shift_detail",
       commandLineFlag: "resolution-dependent-shift",
       defaultValue: defaultConfiguration.resolutionDependentShift)
+    teaCacheStartParameter = IntParameter(
+      titleKey: "tea_cache_start", explanationKey: nil,
+      defaultValue: Int(defaultConfiguration.teaCacheStart),
+      range: 0...1000, commandLineFlag: "tea-cache-start")
+    teaCacheEndParameter = IntParameter(
+      titleKey: "tea_cache_end", explanationKey: nil,
+      defaultValue: Int(defaultConfiguration.teaCacheEnd),
+      range: 0...1000, commandLineFlag: "tea-cache-end")
+    teaCacheThresholdParameter = DoubleParameter(
+      titleKey: "tea_cache_threshold", explanationKey: "tea_cache_threshold_detail",
+      defaultValue: Double(defaultConfiguration.teaCacheThreshold),
+      range: 0...1, commandLineFlag: "tea-cache-threshold")
+    teaCacheParameter = BoolParameter(
+      titleKey: "tea_cache", explanationKey: "tea_cache_detail",
+      commandLineFlag: "tea-cache",
+      defaultValue: defaultConfiguration.teaCache)
   }
 
   public func allParameters() -> [Parameter] {
@@ -465,6 +483,10 @@ public final class Parameters {
       speedUpWithGuidanceEmbedParameter,
       guidanceEmbedParameter,
       resolutionDependentShiftParameter,
+      teaCacheStartParameter,
+      teaCacheEndParameter,
+      teaCacheThresholdParameter,
+      teaCacheParameter,
     ]
   }
 }

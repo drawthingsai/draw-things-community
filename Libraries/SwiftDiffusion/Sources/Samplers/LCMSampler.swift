@@ -25,6 +25,7 @@ where UNet.FloatType == FloatType {
   public let canRunLoRASeparately: Bool
   public let conditioning: Denoiser.Conditioning
   public let tiledDiffusion: TiledConfiguration
+  public let teaCache: TeaCacheConfiguration
   private let discretization: Discretization
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
@@ -33,8 +34,8 @@ where UNet.FloatType == FloatType {
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
     isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
-    conditioning: Denoiser.Conditioning,
-    tiledDiffusion: TiledConfiguration, discretization: Discretization
+    conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
+    teaCache: TeaCacheConfiguration, discretization: Discretization
   ) {
     self.filePath = filePath
     self.modifier = modifier
@@ -55,6 +56,7 @@ where UNet.FloatType == FloatType {
     self.canRunLoRASeparately = canRunLoRASeparately
     self.conditioning = conditioning
     self.tiledDiffusion = tiledDiffusion
+    self.teaCache = teaCache
     self.discretization = discretization
   }
 }
@@ -278,7 +280,7 @@ extension LCMSampler: Sampler {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: false, extraProjection: extraProjection,
         injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-        tiledDiffusion: tiledDiffusion)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache)
     }
     var noise: DynamicGraph.Tensor<FloatType>? = nil
     if mask != nil || version == .kandinsky21 {
@@ -443,7 +445,7 @@ extension LCMSampler: Sampler {
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: false, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-            tiledDiffusion: tiledDiffusion)
+            tiledDiffusion: tiledDiffusion, teaCache: teaCache)
           refinerKickIn = -1
           unets.append(unet)
         }
@@ -490,7 +492,7 @@ extension LCMSampler: Sampler {
           timestep: cNoise, inputs: xIn, t.map { $0 + cfgCond }, newC,
           extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+          injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, isCfgEnabled: false, tiledDiffusion: tiledDiffusion,
           controlNets: &controlNets)
 

@@ -57,7 +57,7 @@ extension UNetWrapper {
     _ c: [DynamicGraph.AnyTensor], tokenLengthUncond: Int, tokenLengthCond: Int,
     isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
-    tiledDiffusion: TiledConfiguration
+    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration
   ) -> Bool {
     #if !os(Linux)
 
@@ -71,7 +71,7 @@ extension UNetWrapper {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
         extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
-        tiledDiffusion: tiledDiffusion)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache)
       {
         preferCoreML = true
         return true
@@ -87,7 +87,7 @@ extension UNetWrapper {
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       isCfgEnabled: isCfgEnabled,
       extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
-      tiledDiffusion: tiledDiffusion)
+      tiledDiffusion: tiledDiffusion, teaCache: teaCache)
     return true
   }
 
@@ -103,7 +103,7 @@ extension UNetWrapper {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
@@ -113,7 +113,7 @@ extension UNetWrapper {
         return unetFromCoreML(
           timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+          injectedIPAdapters: injectedIPAdapters, step: step, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
           tiledDiffusion: tiledDiffusion, controlNets: &controlNets)
       }
@@ -122,7 +122,7 @@ extension UNetWrapper {
     return unetFromNNC(
       timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
       injectedControlsAndAdapters: injectedControlsAndAdapters,
-      injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+      injectedIPAdapters: injectedIPAdapters, step: step, tokenLengthUncond: tokenLengthUncond,
       tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled, tiledDiffusion: tiledDiffusion,
       controlNets: &controlNets)
   }

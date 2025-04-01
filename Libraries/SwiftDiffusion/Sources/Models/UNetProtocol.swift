@@ -55,7 +55,8 @@ public protocol UNetProtocol {
     _ c: [DynamicGraph.AnyTensor], tokenLengthUncond: Int, tokenLengthCond: Int,
     isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
-    tiledDiffusion: TiledConfiguration
+    tiledDiffusion: TiledConfiguration,
+    teaCache: TeaCacheConfiguration
   ) -> Bool
 
   func callAsFunction(
@@ -70,7 +71,7 @@ public protocol UNetProtocol {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType>
@@ -243,71 +244,73 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
   }
 }
 
-public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetProtocol {
-  enum ModelBuilderOrModel {
-    case modelBuilder(ModelBuilder<Void>)
-    case model(Model)
-    public var unwrapped: AnyModel {
-      switch self {
-      case .model(let model):
-        return model
-      case .modelBuilder(let modelBuilder):
-        return modelBuilder
-      }
-    }
-    public var maxConcurrency: StreamContext.Concurrency {
-      get {
-        switch self {
-        case .model(let model):
-          return model.maxConcurrency
-        case .modelBuilder(let modelBuilder):
-          return modelBuilder.maxConcurrency
-        }
-      }
-      set {
-        switch self {
-        case .model(let model):
-          model.maxConcurrency = newValue
-        case .modelBuilder(let modelBuilder):
-          modelBuilder.maxConcurrency = newValue
-        }
-      }
-    }
-    public func cancel() {
-      switch self {
-      case .model(let model):
-        model.cancel()
-      case .modelBuilder(let modelBuilder):
-        modelBuilder.cancel()
-      }
-    }
-    public func compile(inputs: [DynamicGraph_Any], isEager: Bool = false) {
-      switch self {
-      case .model(let model):
-        model.compile(inputs: inputs, isEager: isEager)
-      case .modelBuilder(let modelBuilder):
-        modelBuilder.compile(inputs: inputs, isEager: isEager)
-      }
-    }
-    public func compile(inputs: DynamicGraph_Any..., isEager: Bool = false) {
-      compile(inputs: inputs, isEager: isEager)
-    }
-    public func callAsFunction<T: DynamicGraph.AnyTensorGroup>(
-      inputs firstInput: T, _ restInputs: [DynamicGraph_Any], streamContext: StreamContext? = nil
-    ) -> [T.AnyTensor] {
-      switch self {
-      case .model(let model):
-        return model(inputs: firstInput, restInputs, streamContext: streamContext)
-      case .modelBuilder(let modelBuilder):
-        return modelBuilder(inputs: firstInput, restInputs, streamContext: streamContext)
-      }
-    }
-    public func callAsFunction<T: DynamicGraph.AnyTensorGroup>(
-      inputs firstInput: T, _ restInputs: DynamicGraph_Any..., streamContext: StreamContext? = nil
-    ) -> [T.AnyTensor] {
-      return self(inputs: firstInput, restInputs, streamContext: streamContext)
+enum ModelBuilderOrModel {
+  case modelBuilder(ModelBuilder<Void>)
+  case model(Model)
+  public var unwrapped: AnyModel {
+    switch self {
+    case .model(let model):
+      return model
+    case .modelBuilder(let modelBuilder):
+      return modelBuilder
     }
   }
+  public var maxConcurrency: StreamContext.Concurrency {
+    get {
+      switch self {
+      case .model(let model):
+        return model.maxConcurrency
+      case .modelBuilder(let modelBuilder):
+        return modelBuilder.maxConcurrency
+      }
+    }
+    set {
+      switch self {
+      case .model(let model):
+        model.maxConcurrency = newValue
+      case .modelBuilder(let modelBuilder):
+        modelBuilder.maxConcurrency = newValue
+      }
+    }
+  }
+  public func cancel() {
+    switch self {
+    case .model(let model):
+      model.cancel()
+    case .modelBuilder(let modelBuilder):
+      modelBuilder.cancel()
+    }
+  }
+  public func compile(inputs: [DynamicGraph_Any], isEager: Bool = false) {
+    switch self {
+    case .model(let model):
+      model.compile(inputs: inputs, isEager: isEager)
+    case .modelBuilder(let modelBuilder):
+      modelBuilder.compile(inputs: inputs, isEager: isEager)
+    }
+  }
+  public func compile(inputs: DynamicGraph_Any..., isEager: Bool = false) {
+    compile(inputs: inputs, isEager: isEager)
+  }
+  public func callAsFunction<T: DynamicGraph.AnyTensorGroup>(
+    inputs firstInput: T, _ restInputs: [DynamicGraph_Any], streamContext: StreamContext? = nil
+  ) -> [T.AnyTensor] {
+    switch self {
+    case .model(let model):
+      return model(inputs: firstInput, restInputs, streamContext: streamContext)
+    case .modelBuilder(let modelBuilder):
+      return modelBuilder(inputs: firstInput, restInputs, streamContext: streamContext)
+    }
+  }
+  public func callAsFunction<T: DynamicGraph.AnyTensorGroup>(
+    inputs firstInput: T, _ restInputs: DynamicGraph_Any..., streamContext: StreamContext? = nil
+  ) -> [T.AnyTensor] {
+    return self(inputs: firstInput, restInputs, streamContext: streamContext)
+  }
+}
+
+public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetProtocol {
+  var teaCache: TeaCache<FloatType>? = nil
   var unet: ModelBuilderOrModel? = nil
   var previewer: Model? = nil
   var unetWeightMapper: ModelWeightMapper? = nil
@@ -337,7 +340,8 @@ extension UNetFromNNC {
     isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
-    tiledDiffusion: TiledConfiguration
+    tiledDiffusion: TiledConfiguration,
+    teaCache teaCacheConfiguration: TeaCacheConfiguration
   ) -> Bool {
     guard unet == nil else { return true }
     isCancelled.store(false, ordering: .releasing)
@@ -371,6 +375,7 @@ extension UNetFromNNC {
     let isLoHa = lora.contains { $0.isLoHa }
     var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
     let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+    let isTeaCacheEnabled = teaCacheConfiguration.threshold > 0
     switch version {
     case .v1:
       tiledWidth =
@@ -799,15 +804,39 @@ extension UNetFromNNC {
           LoRAWan(
             channels: 1_536, layers: 30, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage, LoRAConfiguration: configuration
+            textLength: textLength, injectImage: injectImage, outputResidual: isTeaCacheEnabled,
+            inputResidual: false, LoRAConfiguration: configuration
           ).1)
+        if isTeaCacheEnabled {
+          teaCache = TeaCache(
+            modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
+            threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            reducedModel: LoRAWan(
+              channels: 1_536, layers: 0, intermediateSize: 8_960,
+              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+              width: tiledWidth, textLength: textLength, injectImage: injectImage,
+              outputResidual: false, inputResidual: true, LoRAConfiguration: configuration
+            ).1)
+        }
       } else {
         unet = ModelBuilderOrModel.model(
           Wan(
             channels: 1_536, layers: 30, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage
+            textLength: textLength, injectImage: injectImage, outputResidual: isTeaCacheEnabled,
+            inputResidual: false
           ).1)
+        if isTeaCacheEnabled {
+          teaCache = TeaCache(
+            modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
+            threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            reducedModel: Wan(
+              channels: 1_536, layers: 0, intermediateSize: 8_960,
+              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+              width: tiledWidth, textLength: textLength, injectImage: injectImage,
+              outputResidual: false, inputResidual: true
+            ).1)
+        }
       }
     case .wan21_14b:
       tiledWidth =
@@ -827,14 +856,16 @@ extension UNetFromNNC {
           LoRAWan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage, LoRAConfiguration: configuration
+            textLength: textLength, injectImage: injectImage, outputResidual: false,
+            inputResidual: false, LoRAConfiguration: configuration
           ).1)
       } else {
         unet = ModelBuilderOrModel.model(
           Wan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage
+            textLength: textLength, injectImage: injectImage, outputResidual: false,
+            inputResidual: false
           ).1)
       }
     }
@@ -1244,29 +1275,30 @@ extension UNetFromNNC {
         } else {
           injectImage = inputs.count > 10 + 4 * 40
         }
-        unet.compile(
-          inputs: inputs.enumerated().compactMap {
-            let shape = $0.1.shape
-            switch $0.0 {
-            case 0:
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-            case 1...7, (inputs.count - 2)..<inputs.count:
-              return $0.1
-            default:
-              if injectImage {
-                if ($0.0 - 8) % 6 == 1 || ($0.0 - 8) % 6 == 3 {
-                  return nil  // Remove positive ones.
-                }
-                return $0.1
-              } else {
-                if $0.0 % 2 == 0 {
-                  return $0.1
-                }
-                return nil
+        let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 0:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          case 1...7, (inputs.count - 2)..<inputs.count:
+            return $0.1
+          default:
+            if injectImage {
+              if ($0.0 - 8) % 6 == 1 || ($0.0 - 8) % 6 == 3 {
+                return nil  // Remove positive ones.
               }
+              return $0.1
+            } else {
+              if $0.0 % 2 == 0 {
+                return $0.1
+              }
+              return nil
             }
-          })
+          }
+        }
+        unet.compile(inputs: inputs)
+        teaCache?.compile(model: unet, inputs: inputs)
         return
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
@@ -1277,6 +1309,7 @@ extension UNetFromNNC {
   }
 
   private func callAsFunction(
+    step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     inputs firstInput: DynamicGraph.Tensor<FloatType>,
     _ restInputs: [DynamicGraph.AnyTensor]
@@ -1396,6 +1429,9 @@ extension UNetFromNNC {
         }
         return Functional.concat(axis: 0, etUncond, etCond)
       case .wan21_1_3b, .wan21_14b:
+        let shouldUseCache =
+          teaCache?.shouldUseCacheForTimeEmbedding(Array(restInputs[1..<7]), step: step, marker: 0)
+          ?? false
         let injectImage: Bool
         if version == .wan21_1_3b {
           injectImage = restInputs.count > 9 + 4 * 30
@@ -1407,52 +1443,70 @@ extension UNetFromNNC {
         let etCond: DynamicGraph.Tensor<FloatType>
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        etUncond = unet!(
-          inputs: xUncond,
-          restInputs.enumerated().compactMap {
-            switch $0.0 {
-            case 0..<7, (restInputs.count - 2)..<restInputs.count:
-              return $0.1
-            default:
-              if injectImage {
-                if ($0.0 - 7) % 6 == 1 || ($0.0 - 7) % 6 == 3 {
-                  return nil  // Remove positive ones.
-                }
-                return $0.1
-              } else {
-                if $0.0 % 2 == 1 {
-                  return $0.1
-                }
-                return nil
+        let restInputsUncond: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+          switch $0.0 {
+          case 0..<7, (restInputs.count - 2)..<restInputs.count:
+            return $0.1
+          default:
+            if injectImage {
+              if ($0.0 - 7) % 6 == 1 || ($0.0 - 7) % 6 == 3 {
+                return nil  // Remove positive ones.
               }
+              return $0.1
+            } else {
+              if $0.0 % 2 == 1 {
+                return $0.1
+              }
+              return nil
             }
-          })[0].as(of: FloatType.self)
+          }
+        }
+        if shouldUseCache,
+          let uncond = teaCache!(model: unet!, inputs: xUncond, restInputsUncond, marker: 0)
+        {
+          etUncond = uncond
+        } else {
+          let result = unet!(
+            inputs: xUncond, restInputsUncond
+          )
+          etUncond = result[0].as(of: FloatType.self)
+          teaCache?.cache(outputs: result, marker: 0)
+        }
         etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
         guard !isCancelled.load(ordering: .acquiring) else {
           return Functional.concat(axis: 0, etUncond, etUncond)
         }
         let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        etCond = unet!(
-          inputs: xCond,
-          restInputs.enumerated().compactMap {
-            switch $0.0 {
-            case 0..<7, (restInputs.count - 2)..<restInputs.count:
-              return $0.1
-            default:
-              if injectImage {
-                if ($0.0 - 7) % 6 == 0 || ($0.0 - 7) % 6 == 2 {
-                  return nil  // Remove negative ones.
-                }
-                return $0.1
-              } else {
-                if $0.0 % 2 == 0 {
-                  return $0.1
-                }
-                return nil
+        let restInputsCond: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+          switch $0.0 {
+          case 0..<7, (restInputs.count - 2)..<restInputs.count:
+            return $0.1
+          default:
+            if injectImage {
+              if ($0.0 - 7) % 6 == 0 || ($0.0 - 7) % 6 == 2 {
+                return nil  // Remove negative ones.
               }
+              return $0.1
+            } else {
+              if $0.0 % 2 == 0 {
+                return $0.1
+              }
+              return nil
             }
-          })[0].as(of: FloatType.self)
+          }
+        }
+        if shouldUseCache,
+          let cond = teaCache!(model: unet!, inputs: xCond, restInputsCond, marker: 1)
+        {
+          etCond = cond
+        } else {
+          let result = unet!(
+            inputs: xCond, restInputsCond
+          )
+          etCond = result[0].as(of: FloatType.self)
+          teaCache?.cache(outputs: result, marker: 1)
+        }
         return Functional.concat(axis: 0, etUncond, etCond)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
@@ -1472,7 +1526,8 @@ extension UNetFromNNC {
       injectedControls: [DynamicGraph.Tensor<FloatType>],
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
-    ), tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool, controlNets: inout [Model?]
+    ), step: Int, tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     let shape = xT.shape
     let xT = xT[
@@ -1487,6 +1542,7 @@ extension UNetFromNNC {
       index: index, inputStartYPad: inputStartYPad,
       inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad)
     return self(
+      step: step,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       isCfgEnabled: isCfgEnabled, inputs: xT, inputs + injectedAttentionKVs)
   }
@@ -1501,7 +1557,8 @@ extension UNetFromNNC {
       injectedControls: [DynamicGraph.Tensor<FloatType>],
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
-    ), tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool, controlNets: inout [Model?]
+    ), step: Int, tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     guard let xTileWeightsAndIndexes = xTileWeightsAndIndexes,
       let yTileWeightsAndIndexes = yTileWeightsAndIndexes
@@ -1510,6 +1567,7 @@ extension UNetFromNNC {
         injectedControlsAndAdapters(
           xT, 0, 0, 0, 0, &controlNets)
       return self(
+        step: step,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
         inputs: xT, inputs + injectedControls + injectedT2IAdapters + injectedAttentionKVs)
@@ -1554,7 +1612,7 @@ extension UNetFromNNC {
             xyTiles: xTiles * yTiles, index: y * xTiles + x, inputStartYPad: inputStartYPad,
             inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
             xT: xT, inputs: inputs, injectedControlsAndAdapters: injectedControlsAndAdapters,
-            tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+            step: step, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, controlNets: &controlNets))
         guard !isCancelled.load(ordering: .acquiring) else {
           return graph.variable(
@@ -1615,7 +1673,7 @@ extension UNetFromNNC {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>],
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
@@ -1626,11 +1684,12 @@ extension UNetFromNNC {
       if tiledDiffusion.isEnabled {
         return tiledDiffuse(
           tiledDiffusion: tiledDiffusion, xT: xT, inputs: [embGPU, c[0]],
-          injectedControlsAndAdapters: injectedControlsAndAdapters,
+          injectedControlsAndAdapters: injectedControlsAndAdapters, step: step,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
       } else {
         return self(
+          step: step,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: isCfgEnabled, inputs: xT, [embGPU, c[0]])
       }
@@ -1683,7 +1742,7 @@ extension UNetFromNNC {
     if tiledDiffusion.isEnabled {
       return tiledDiffuse(
         tiledDiffusion: tiledDiffusion, xT: xT, inputs: (timestep.map { [$0] } ?? []) + c,
-        injectedControlsAndAdapters: injectedControlsAndAdapters,
+        injectedControlsAndAdapters: injectedControlsAndAdapters, step: step,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
     } else {
@@ -1691,6 +1750,7 @@ extension UNetFromNNC {
         injectedControlsAndAdapters(
           xT, 0, 0, 0, 0, &controlNets)
       return self(
+        step: step,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, inputs: xT,
         (timestep.map { [$0] } ?? []) + c + injectedControls + injectedT2IAdapters

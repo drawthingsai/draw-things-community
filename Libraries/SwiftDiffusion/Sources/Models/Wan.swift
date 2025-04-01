@@ -216,18 +216,31 @@ private func MLPProj(inChannels: Int, outChannels: Int, name: String) -> (
 
 public func Wan(
   channels: Int, layers: Int, intermediateSize: Int, time: Int, height: Int, width: Int,
-  textLength: Int, injectImage: Bool
+  textLength: Int, injectImage: Bool, outputResidual: Bool, inputResidual: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let imgIn = Convolution(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  let rot = Input()
-  let tOut = (0..<6).map { _ in Input() }
   let h = height / 2
   let w = width / 2
   var mappers = [ModelWeightMapper]()
   var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
+  let imgInX = out
+  let residualIn: Input?
+  if inputResidual {
+    let residual = Input()
+    residualIn = residual
+    out = out + residual
+  } else {
+    residualIn = nil
+  }
+  var rotAndtOut = [Input]()
+  if layers > 0 {
+    let rot = Input()
+    let tOut = (0..<6).map { _ in Input() }
+    rotAndtOut = [rot] + tOut
+  }
   var contextIn = [Input]()
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlock(
@@ -239,12 +252,18 @@ public func Wan(
     if injectImage {
       let contextImgK = Input()
       let contextImgV = Input()
-      out = block([out, rot] + tOut + [contextK, contextV, contextImgK, contextImgV])
+      out = block([out] + rotAndtOut + [contextK, contextV, contextImgK, contextImgV])
       contextIn.append(contentsOf: [contextImgK, contextImgV])
     } else {
-      out = block([out, rot] + tOut + [contextK, contextV])
+      out = block([out] + rotAndtOut + [contextK, contextV])
     }
     mappers.append(mapper)
+  }
+  let residualOut: Model.IO?
+  if outputResidual {
+    residualOut = out - imgInX
+  } else {
+    residualOut = nil
   }
   let scale = Input()
   let shift = Input()
@@ -277,7 +296,12 @@ public func Wan(
     }
     return mapping
   }
-  return (mapper, Model([x, rot] + tOut + contextIn + [scale, shift], [out]))
+  return (
+    mapper,
+    Model(
+      [x] + (residualIn.map { [$0] } ?? []) + rotAndtOut + contextIn + [scale, shift],
+      [out] + (residualOut.map { [$0] } ?? []))
+  )
 }
 
 private func WanAttentionBlockFixed(
@@ -689,18 +713,32 @@ private func LoRAMLPProj(
 
 func LoRAWan(
   channels: Int, layers: Int, intermediateSize: Int, time: Int, height: Int, width: Int,
-  textLength: Int, injectImage: Bool, LoRAConfiguration: LoRANetworkConfiguration
+  textLength: Int, injectImage: Bool, outputResidual: Bool, inputResidual: Bool,
+  LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let imgIn = LoRAConvolution(
     groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  let rot = Input()
-  let tOut = (0..<6).map { _ in Input() }
   let h = height / 2
   let w = width / 2
   var mappers = [ModelWeightMapper]()
   var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
+  let imgInX = out
+  let residualIn: Input?
+  if inputResidual {
+    let residual = Input()
+    residualIn = residual
+    out = out + residual
+  } else {
+    residualIn = nil
+  }
+  var rotAndtOut = [Input]()
+  if layers > 0 {
+    let rot = Input()
+    let tOut = (0..<6).map { _ in Input() }
+    rotAndtOut = [rot] + tOut
+  }
   var contextIn = [Input]()
   for i in 0..<layers {
     let (mapper, block) = LoRAWanAttentionBlock(
@@ -713,12 +751,18 @@ func LoRAWan(
     if injectImage {
       let contextImgK = Input()
       let contextImgV = Input()
-      out = block([out, rot] + tOut + [contextK, contextV, contextImgK, contextImgV])
+      out = block([out] + rotAndtOut + [contextK, contextV, contextImgK, contextImgV])
       contextIn.append(contentsOf: [contextImgK, contextImgV])
     } else {
-      out = block([out, rot] + tOut + [contextK, contextV])
+      out = block([out] + rotAndtOut + [contextK, contextV])
     }
     mappers.append(mapper)
+  }
+  let residualOut: Model.IO?
+  if outputResidual {
+    residualOut = out - imgInX
+  } else {
+    residualOut = nil
   }
   let scale = Input()
   let shift = Input()
@@ -752,7 +796,12 @@ func LoRAWan(
     }
     return mapping
   }
-  return (mapper, Model([x, rot] + tOut + contextIn + [scale, shift], [out]))
+  return (
+    mapper,
+    Model(
+      [x] + (residualIn.map { [$0] } ?? []) + rotAndtOut + contextIn + [scale, shift],
+      [out] + (residualOut.map { [$0] } ?? []))
+  )
 }
 
 private func LoRAWanAttentionBlockFixed(

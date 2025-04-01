@@ -26,6 +26,7 @@ where UNet.FloatType == FloatType {
   public let canRunLoRASeparately: Bool
   public let conditioning: Denoiser.Conditioning
   public let tiledDiffusion: TiledConfiguration
+  public let teaCache: TeaCacheConfiguration
   private let discretization: Discretization
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
@@ -36,7 +37,7 @@ where UNet.FloatType == FloatType {
     classifierFreeGuidance: Bool, isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool,
     canRunLoRASeparately: Bool,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
-    discretization: Discretization
+    teaCache: TeaCacheConfiguration, discretization: Discretization
   ) {
     self.filePath = filePath
     self.modifier = modifier
@@ -58,6 +59,7 @@ where UNet.FloatType == FloatType {
     self.canRunLoRASeparately = canRunLoRASeparately
     self.conditioning = conditioning
     self.tiledDiffusion = tiledDiffusion
+    self.teaCache = teaCache
     self.discretization = discretization
   }
 }
@@ -319,7 +321,7 @@ extension DPMPP2MSampler: Sampler {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
         injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-        tiledDiffusion: tiledDiffusion)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache)
     }
     var noise: DynamicGraph.Tensor<FloatType>? = nil
     if mask != nil {
@@ -483,7 +485,7 @@ extension DPMPP2MSampler: Sampler {
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-            tiledDiffusion: tiledDiffusion)
+            tiledDiffusion: tiledDiffusion, teaCache: teaCache)
           refinerKickIn = -1
           unets.append(unet)
         }
@@ -530,7 +532,7 @@ extension DPMPP2MSampler: Sampler {
           var etCond = unet(
             timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
-            injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+            injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
             tiledDiffusion: tiledDiffusion,
             controlNets: &controlNets)
@@ -543,7 +545,7 @@ extension DPMPP2MSampler: Sampler {
             let etUncond = unet(
               timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
-              injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+              injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
               tiledDiffusion: tiledDiffusion,
               controlNets: &controlNets)
@@ -590,7 +592,7 @@ extension DPMPP2MSampler: Sampler {
           var etOut = unet(
             timestep: cNoise, inputs: xIn, t, conditions, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
-            injectedIPAdapters: injectedIPAdapters, tokenLengthUncond: tokenLengthUncond,
+            injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
             tiledDiffusion: tiledDiffusion,
             controlNets: &controlNets)
