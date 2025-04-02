@@ -1304,6 +1304,11 @@ extension UNetFromNNC {
         return
       }
     case .wan21_1_3b, .wan21_14b:
+      guard isCfgEnabled else {
+        unet.compile(inputs: inputs)
+        teaCache?.compile(model: unet, inputs: inputs)
+        return
+      }
       let injectImage: Bool
       if version == .wan21_1_3b {
         injectImage = inputs.count > 10 + 4 * 30
@@ -1472,6 +1477,21 @@ extension UNetFromNNC {
         teaCache?.shouldUseCacheForTimeEmbedding(
           Array(restInputs[1..<7]), model: unet!, step: step, marker: 0, of: Float.self)
         ?? false
+      guard isCfgEnabled else {
+        let et: DynamicGraph.Tensor<FloatType>
+        if shouldUseCache,
+          let result = teaCache!(model: unet!, inputs: firstInput, restInputs, marker: 0)
+        {
+          et = result
+        } else {
+          let result = unet!(
+            inputs: firstInput, restInputs
+          )
+          et = result[0].as(of: FloatType.self)
+          teaCache?.cache(outputs: result, marker: 0)
+        }
+        return et
+      }
       let injectImage: Bool
       if version == .wan21_1_3b {
         injectImage = restInputs.count > 9 + 4 * 30

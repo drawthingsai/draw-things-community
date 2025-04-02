@@ -871,9 +871,10 @@ extension UNetFixedEncoder {
       ).toGPU(0)
       let c0 = textEncoding[0]
       let textLength = max(c0.shape[1], 512)
-      var c = graph.variable(.GPU(0), .HWC(2, textLength, 4_096), of: FloatType.self)
+      var c = graph.variable(
+        .GPU(0), .HWC(isCfgEnabled ? 2 : 1, textLength, 4_096), of: FloatType.self)
       c.full(0)
-      c[0..<2, 0..<c0.shape[1], 0..<4096] = c0
+      c[0..<(isCfgEnabled ? 2 : 1), 0..<c0.shape[1], 0..<4096] = c0
       var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: Float.self)
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(
@@ -910,13 +911,15 @@ extension UNetFixedEncoder {
         if version == .wan21_1_3b {
           unetFixed =
             LoRAWanFixed(
-              timesteps: timesteps.count, batchSize: (2, 1), channels: 1_536, layers: 30,
+              timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 1_536,
+              layers: 30,
               textLength: textLength, injectImage: injectImage, LoRAConfiguration: configuration
             ).1
         } else {
           unetFixed =
             LoRAWanFixed(
-              timesteps: timesteps.count, batchSize: (2, 1), channels: 5_120, layers: 40,
+              timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 5_120,
+              layers: 40,
               textLength: textLength, injectImage: injectImage, LoRAConfiguration: configuration
             ).1
         }
@@ -924,13 +927,15 @@ extension UNetFixedEncoder {
         if version == .wan21_1_3b {
           unetFixed =
             WanFixed(
-              timesteps: timesteps.count, batchSize: (2, 1), channels: 1_536, layers: 30,
+              timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 1_536,
+              layers: 30,
               textLength: textLength, injectImage: injectImage
             ).1
         } else {
           unetFixed =
             WanFixed(
-              timesteps: timesteps.count, batchSize: (2, 1), channels: 5_120, layers: 40,
+              timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 5_120,
+              layers: 40,
               textLength: textLength, injectImage: injectImage
             ).1
         }
