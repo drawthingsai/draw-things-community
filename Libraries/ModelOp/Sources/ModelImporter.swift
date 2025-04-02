@@ -827,7 +827,8 @@ public final class ModelImporter {
         (unetMapper, unet) = Flux1(
           batchSize: batchSize, tokenLength: 256, height: 64, width: 64, channels: 3072,
           layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: true,
-          injectControls: false, injectIPAdapterLengths: [:])
+          injectControls: false, injectIPAdapterLengths: [:], outputResidual: false,
+          inputResidual: false)
         (unetFixedMapper, unetFixed) = Flux1Fixed(
           batchSize: (batchSize, batchSize), channels: 3072, layers: (19, 38),
           contextPreloaded: true, guidanceEmbed: true)

@@ -429,33 +429,64 @@ private func SingleTransformerBlock(
   return (mapper, Model([x, rot] + xChunks, [out]))
 }
 
-public func Flux1(
-  batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel, contextPreloaded: Bool, injectControls: Bool,
-  injectIPAdapterLengths: [Int: [Int]]
-) -> (ModelWeightMapper, Model) {
+public func Flux1Norm1(batchSize: Int, height: Int, width: Int, channels: Int) -> Model {
   let x = Input()
-  let contextIn = Input()
-  let rot = Input()
   let h = height / 2
   let w = width / 2
   let xEmbedder = Convolution(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+  let xChunks = (0..<2).map { _ in Input() }
+  let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  out = xChunks[1] .* xNorm1(out).to(.Float16) + xChunks[0]
+  return Model([x] + xChunks, [out])
+}
+
+public func Flux1(
+  batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
+  usesFlashAttention: FlashAttentionLevel, contextPreloaded: Bool, injectControls: Bool,
+  injectIPAdapterLengths: [Int: [Int]], outputResidual: Bool, inputResidual: Bool
+) -> (ModelWeightMapper, Model) {
+  let x = Input()
+  let h = height / 2
+  let w = width / 2
+  let xEmbedder = Convolution(
+    groups: 1, filters: channels, filterSize: [2, 2],
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+  let imgInX = out
   var adaLNChunks = [Input]()
   var injectedControls = [Input]()
   var injectedIPAdapters = [Input]()
+  let residualIn: Input?
+  if inputResidual {
+    let residual = Input()
+    residualIn = residual
+    out = out + residual
+  } else {
+    residualIn = nil
+  }
   var mappers = [ModelWeightMapper]()
   let contextEmbedder: Model?
-  var context: Model.IO
-  if !contextPreloaded {
-    let embedder = Dense(count: channels, name: "context_embedder")
-    context = embedder(contextIn).to(.Float32)
-    contextEmbedder = embedder
+  var context: Model.IO?
+  let rotAndContextIn: [Input]
+  if layers.0 > 0 || layers.1 > 0 {
+    let contextIn = Input()
+    let rot = Input()
+    if !contextPreloaded {
+      let embedder = Dense(count: channels, name: "context_embedder")
+      context = embedder(contextIn).to(.Float32)
+      contextEmbedder = embedder
+    } else {
+      context = contextIn.to(.Float32)
+      contextEmbedder = nil
+    }
+    rotAndContextIn = [rot, contextIn]
   } else {
-    context = contextIn.to(.Float32)
+    context = nil
     contextEmbedder = nil
+    rotAndContextIn = []
   }
   for i in 0..<layers.0 {
     let contextChunks = (0..<6).map { _ in Input() }
@@ -466,7 +497,7 @@ public func Flux1(
       hw: h * w, contextBlockPreOnly: false, upcast: i > (layers.0 - 3),
       usesFlashAttention: usesFlashAttention
     )
-    let blockOut = block([context, out, rot] + contextChunks + xChunks)
+    let blockOut = block([context!, out, rotAndContextIn[0]] + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
     if injectControls {
@@ -493,14 +524,16 @@ public func Flux1(
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
-  out = Functional.concat(axis: 1, context, out)
+  if let context = context {
+    out = Functional.concat(axis: 1, context, out)
+  }
   for i in 0..<layers.1 {
     let xChunks = (0..<3).map { _ in Input() }
     let (mapper, block) = SingleTransformerBlock(
       prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize, t: tokenLength,
       hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
-    out = block([out, rot] + xChunks)
+    out = block([out, rotAndContextIn[0]] + xChunks)
     if injectControls {
       let injectedControl = Input()
       let injectedControlFP32 = injectedControl.to(.Float32)
@@ -557,6 +590,12 @@ public func Flux1(
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
   }
+  let residualOut: Model.IO?
+  if outputResidual {
+    residualOut = out - imgInX
+  } else {
+    residualOut = nil
+  }
   let shift = Input()
   let scale = Input()
   adaLNChunks.append(contentsOf: [shift, scale])
@@ -595,8 +634,10 @@ public func Flux1(
     }
     return mapping
   }
+  var inputs: [Input] = [x] + (residualIn.map { [$0] } ?? []) + rotAndContextIn
+  inputs = inputs + adaLNChunks + injectedIPAdapters + injectedControls
   return (
-    mapper, Model([x, rot, contextIn] + adaLNChunks + injectedIPAdapters + injectedControls, [out])
+    mapper, Model(inputs, [out] + (residualOut.map { [$0] } ?? []))
   )
 }
 
@@ -945,7 +986,8 @@ private func LoRASingleTransformerBlock(
 public func LoRAFlux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
   usesFlashAttention: FlashAttentionLevel, contextPreloaded: Bool, injectControls: Bool,
-  injectIPAdapterLengths: [Int: [Int]], LoRAConfiguration: LoRANetworkConfiguration, useConvolutionForPatchify: Bool = true
+  injectIPAdapterLengths: [Int: [Int]], LoRAConfiguration: LoRANetworkConfiguration,
+  useConvolutionForPatchify: Bool = true
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let contextIn = Input()
@@ -1093,9 +1135,10 @@ public func LoRAFlux1(
   out = projOut(out)
   // Unpatchify
   if useConvolutionForPatchify {
-    out = out.reshaped([batchSize, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([
-      batchSize, h * 2, w * 2, 16,
-    ])
+    out = out.reshaped([batchSize, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous()
+      .reshaped([
+        batchSize, h * 2, w * 2, 16,
+      ])
   }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()

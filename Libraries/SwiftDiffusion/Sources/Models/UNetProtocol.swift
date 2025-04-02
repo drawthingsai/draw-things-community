@@ -750,8 +750,25 @@ extension UNetFromNNC {
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             contextPreloaded: true,
             injectControls: injectControlsAndAdapters.injectControls,
-            injectIPAdapterLengths: injectIPAdapterLengths
+            injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: isTeaCacheEnabled,
+            inputResidual: false
           ).1)
+        if isTeaCacheEnabled {
+          teaCache = TeaCache(
+            modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
+            threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            reducedModel: Flux1(
+              batchSize: batchSize, tokenLength: tokenLength,
+              height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              contextPreloaded: true,
+              injectControls: injectControlsAndAdapters.injectControls,
+              injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: false,
+              inputResidual: true
+            ).1,
+            inferModel: Flux1Norm1(
+              batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 3072))
+        }
       }
     case .hunyuanVideo:
       tiledWidth =
@@ -1246,9 +1263,9 @@ extension UNetFromNNC {
     _ unet: ModelBuilderOrModel, tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     inputs: [DynamicGraph.AnyTensor]
   ) {
-    if isCfgEnabled {
-      switch version {
-      case .hunyuanVideo:
+    switch version {
+    case .hunyuanVideo:
+      if isCfgEnabled {
         unet.compile(
           inputs: inputs.enumerated().map {
             let shape = $0.1.shape
@@ -1268,42 +1285,46 @@ extension UNetFromNNC {
             }
           })
         return
-      case .wan21_1_3b, .wan21_14b:
-        let injectImage: Bool
-        if version == .wan21_1_3b {
-          injectImage = inputs.count > 10 + 4 * 30
-        } else {
-          injectImage = inputs.count > 10 + 4 * 40
-        }
-        let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
-          let shape = $0.1.shape
-          switch $0.0 {
-          case 0:
-            return DynamicGraph.Tensor<FloatType>($0.1)[
-              0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-          case 1...7, (inputs.count - 2)..<inputs.count:
-            return $0.1
-          default:
-            if injectImage {
-              if ($0.0 - 8) % 6 == 1 || ($0.0 - 8) % 6 == 3 {
-                return nil  // Remove positive ones.
-              }
-              return $0.1
-            } else {
-              if $0.0 % 2 == 0 {
-                return $0.1
-              }
-              return nil
+      }
+    case .wan21_1_3b, .wan21_14b:
+      let injectImage: Bool
+      if version == .wan21_1_3b {
+        injectImage = inputs.count > 10 + 4 * 30
+      } else {
+        injectImage = inputs.count > 10 + 4 * 40
+      }
+      let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
+        let shape = $0.1.shape
+        switch $0.0 {
+        case 0:
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+        case 1...7, (inputs.count - 2)..<inputs.count:
+          return $0.1
+        default:
+          if injectImage {
+            if ($0.0 - 8) % 6 == 1 || ($0.0 - 8) % 6 == 3 {
+              return nil  // Remove positive ones.
             }
+            return $0.1
+          } else {
+            if $0.0 % 2 == 0 {
+              return $0.1
+            }
+            return nil
           }
         }
-        unet.compile(inputs: inputs)
-        teaCache?.compile(model: unet, inputs: inputs)
-        return
-      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
-        break
       }
+      unet.compile(inputs: inputs)
+      teaCache?.compile(model: unet, inputs: inputs)
+      return
+    case .flux1:
+      unet.compile(inputs: inputs)
+      teaCache?.compile(model: unet, inputs: inputs)
+      return
+    case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+      break
     }
     unet.compile(inputs: inputs)
   }
@@ -1314,9 +1335,9 @@ extension UNetFromNNC {
     inputs firstInput: DynamicGraph.Tensor<FloatType>,
     _ restInputs: [DynamicGraph.AnyTensor]
   ) -> DynamicGraph.Tensor<FloatType> {
-    if isCfgEnabled {
-      switch version {
-      case .hunyuanVideo:
+    switch version {
+    case .hunyuanVideo:
+      if isCfgEnabled {
         let shape = firstInput.shape
         let tokenLength = max(tokenLengthUncond, tokenLengthCond)
         let etUncond: DynamicGraph.Tensor<FloatType>
@@ -1428,90 +1449,109 @@ extension UNetFromNNC {
           etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
         }
         return Functional.concat(axis: 0, etUncond, etCond)
-      case .wan21_1_3b, .wan21_14b:
-        let shouldUseCache =
-          teaCache?.shouldUseCacheForTimeEmbedding(Array(restInputs[1..<7]), step: step, marker: 0)
-          ?? false
-        let injectImage: Bool
-        if version == .wan21_1_3b {
-          injectImage = restInputs.count > 9 + 4 * 30
-        } else {
-          injectImage = restInputs.count > 9 + 4 * 40
-        }
-        let shape = firstInput.shape
-        let etUncond: DynamicGraph.Tensor<FloatType>
-        let etCond: DynamicGraph.Tensor<FloatType>
-        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-          .copied()
-        let restInputsUncond: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
-          switch $0.0 {
-          case 0..<7, (restInputs.count - 2)..<restInputs.count:
-            return $0.1
-          default:
-            if injectImage {
-              if ($0.0 - 7) % 6 == 1 || ($0.0 - 7) % 6 == 3 {
-                return nil  // Remove positive ones.
-              }
-              return $0.1
-            } else {
-              if $0.0 % 2 == 1 {
-                return $0.1
-              }
-              return nil
-            }
-          }
-        }
-        if shouldUseCache,
-          let uncond = teaCache!(model: unet!, inputs: xUncond, restInputsUncond, marker: 0)
-        {
-          etUncond = uncond
-        } else {
-          let result = unet!(
-            inputs: xUncond, restInputsUncond
-          )
-          etUncond = result[0].as(of: FloatType.self)
-          teaCache?.cache(outputs: result, marker: 0)
-        }
-        etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
-        guard !isCancelled.load(ordering: .acquiring) else {
-          return Functional.concat(axis: 0, etUncond, etUncond)
-        }
-        let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-          .copied()
-        let restInputsCond: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
-          switch $0.0 {
-          case 0..<7, (restInputs.count - 2)..<restInputs.count:
-            return $0.1
-          default:
-            if injectImage {
-              if ($0.0 - 7) % 6 == 0 || ($0.0 - 7) % 6 == 2 {
-                return nil  // Remove negative ones.
-              }
-              return $0.1
-            } else {
-              if $0.0 % 2 == 0 {
-                return $0.1
-              }
-              return nil
-            }
-          }
-        }
-        if shouldUseCache,
-          let cond = teaCache!(model: unet!, inputs: xCond, restInputsCond, marker: 1)
-        {
-          etCond = cond
-        } else {
-          let result = unet!(
-            inputs: xCond, restInputsCond
-          )
-          etCond = result[0].as(of: FloatType.self)
-          teaCache?.cache(outputs: result, marker: 1)
-        }
-        return Functional.concat(axis: 0, etUncond, etCond)
-      case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
-        break
       }
+    case .wan21_1_3b, .wan21_14b:
+      let shouldUseCache =
+        teaCache?.shouldUseCacheForTimeEmbedding(
+          Array(restInputs[1..<7]), model: unet!, step: step, marker: 0, of: Float.self)
+        ?? false
+      let injectImage: Bool
+      if version == .wan21_1_3b {
+        injectImage = restInputs.count > 9 + 4 * 30
+      } else {
+        injectImage = restInputs.count > 9 + 4 * 40
+      }
+      let shape = firstInput.shape
+      let etUncond: DynamicGraph.Tensor<FloatType>
+      let etCond: DynamicGraph.Tensor<FloatType>
+      let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+        .copied()
+      let restInputsUncond: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+        switch $0.0 {
+        case 0..<7, (restInputs.count - 2)..<restInputs.count:
+          return $0.1
+        default:
+          if injectImage {
+            if ($0.0 - 7) % 6 == 1 || ($0.0 - 7) % 6 == 3 {
+              return nil  // Remove positive ones.
+            }
+            return $0.1
+          } else {
+            if $0.0 % 2 == 1 {
+              return $0.1
+            }
+            return nil
+          }
+        }
+      }
+      if shouldUseCache,
+        let uncond = teaCache!(model: unet!, inputs: xUncond, restInputsUncond, marker: 0)
+      {
+        etUncond = uncond
+      } else {
+        let result = unet!(
+          inputs: xUncond, restInputsUncond
+        )
+        etUncond = result[0].as(of: FloatType.self)
+        teaCache?.cache(outputs: result, marker: 0)
+      }
+      etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+      guard !isCancelled.load(ordering: .acquiring) else {
+        return Functional.concat(axis: 0, etUncond, etUncond)
+      }
+      let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+        .copied()
+      let restInputsCond: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+        switch $0.0 {
+        case 0..<7, (restInputs.count - 2)..<restInputs.count:
+          return $0.1
+        default:
+          if injectImage {
+            if ($0.0 - 7) % 6 == 0 || ($0.0 - 7) % 6 == 2 {
+              return nil  // Remove negative ones.
+            }
+            return $0.1
+          } else {
+            if $0.0 % 2 == 0 {
+              return $0.1
+            }
+            return nil
+          }
+        }
+      }
+      if shouldUseCache,
+        let cond = teaCache!(model: unet!, inputs: xCond, restInputsCond, marker: 1)
+      {
+        etCond = cond
+      } else {
+        let result = unet!(
+          inputs: xCond, restInputsCond
+        )
+        etCond = result[0].as(of: FloatType.self)
+        teaCache?.cache(outputs: result, marker: 1)
+      }
+      return Functional.concat(axis: 0, etUncond, etCond)
+    case .flux1:
+      let shouldUseCache =
+        teaCache?.shouldUseCacheForTimeEmbedding(
+          [firstInput] + restInputs, model: unet!, step: step, marker: 0, of: FloatType.self)
+        ?? false
+      let et: DynamicGraph.Tensor<FloatType>
+      if shouldUseCache,
+        let result = teaCache!(model: unet!, inputs: firstInput, restInputs, marker: 0)
+      {
+        et = result
+      } else {
+        let result = unet!(
+          inputs: firstInput, restInputs
+        )
+        et = result[0].as(of: FloatType.self)
+        teaCache?.cache(outputs: result, marker: 0)
+      }
+      return et
+    case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+      break
     }
     return unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
   }
