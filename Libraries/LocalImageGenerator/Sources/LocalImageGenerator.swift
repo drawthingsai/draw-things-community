@@ -2836,9 +2836,12 @@ extension LocalImageGenerator {
     }
     let teaCache =
       ModelZoo.teaCacheCoefficientsForModel(file).map {
-        let teaCacheStart = Int(configuration.teaCacheStart)
-        let teaCacheEnd =
-          configuration.teaCacheEnd < 0 ? Int(configuration.steps) : Int(configuration.teaCacheEnd)
+        var teaCacheEnd =
+          configuration.teaCacheEnd < 0
+          ? Int(configuration.steps) + 1 + Int(configuration.teaCacheEnd)
+          : Int(configuration.teaCacheEnd)
+        let teaCacheStart = min(max(Int(configuration.teaCacheStart), 0), Int(configuration.steps))
+        teaCacheEnd = min(max(max(teaCacheStart, teaCacheEnd), 0), Int(configuration.steps))
         return TeaCacheConfiguration(
           coefficients: $0,
           steps: min(teaCacheStart, teaCacheEnd)...max(teaCacheStart, teaCacheEnd),
@@ -3758,9 +3761,12 @@ extension LocalImageGenerator {
       variant: .diffusionMapping, injectedControls: 0)
     let teaCache =
       ModelZoo.teaCacheCoefficientsForModel(file).map {
-        let teaCacheStart = Int(configuration.teaCacheStart)
-        let teaCacheEnd =
-          configuration.teaCacheEnd < 0 ? Int(configuration.steps) : Int(configuration.teaCacheEnd)
+        var teaCacheEnd =
+          configuration.teaCacheEnd < 0
+          ? Int(configuration.steps) + 1 + Int(configuration.teaCacheEnd)
+          : Int(configuration.teaCacheEnd)
+        let teaCacheStart = min(max(Int(configuration.teaCacheStart), 0), Int(configuration.steps))
+        teaCacheEnd = min(max(max(teaCacheStart, teaCacheEnd), 0), Int(configuration.steps))
         return TeaCacheConfiguration(
           coefficients: $0,
           steps: min(teaCacheStart, teaCacheEnd)...max(teaCacheStart, teaCacheEnd),
@@ -5037,9 +5043,12 @@ extension LocalImageGenerator {
       variant: .diffusionMapping, injectedControls: 0)
     let teaCache =
       ModelZoo.teaCacheCoefficientsForModel(file).map {
-        let teaCacheStart = Int(configuration.teaCacheStart)
-        let teaCacheEnd =
-          configuration.teaCacheEnd < 0 ? Int(configuration.steps) : Int(configuration.teaCacheEnd)
+        var teaCacheEnd =
+          configuration.teaCacheEnd < 0
+          ? Int(configuration.steps) + 1 + Int(configuration.teaCacheEnd)
+          : Int(configuration.teaCacheEnd)
+        let teaCacheStart = min(max(Int(configuration.teaCacheStart), 0), Int(configuration.steps))
+        teaCacheEnd = min(max(max(teaCacheStart, teaCacheEnd), 0), Int(configuration.steps))
         return TeaCacheConfiguration(
           coefficients: $0,
           steps: min(teaCacheStart, teaCacheEnd)...max(teaCacheStart, teaCacheEnd),
@@ -5766,9 +5775,12 @@ extension LocalImageGenerator {
       variant: .diffusionMapping, injectedControls: 0)
     let teaCache =
       ModelZoo.teaCacheCoefficientsForModel(file).map {
-        let teaCacheStart = Int(configuration.teaCacheStart)
-        let teaCacheEnd =
-          configuration.teaCacheEnd < 0 ? Int(configuration.steps) : Int(configuration.teaCacheEnd)
+        var teaCacheEnd =
+          configuration.teaCacheEnd < 0
+          ? Int(configuration.steps) + 1 + Int(configuration.teaCacheEnd)
+          : Int(configuration.teaCacheEnd)
+        let teaCacheStart = min(max(Int(configuration.teaCacheStart), 0), Int(configuration.steps))
+        teaCacheEnd = min(max(max(teaCacheStart, teaCacheEnd), 0), Int(configuration.steps))
         return TeaCacheConfiguration(
           coefficients: $0,
           steps: min(teaCacheStart, teaCacheEnd)...max(teaCacheStart, teaCacheEnd),
