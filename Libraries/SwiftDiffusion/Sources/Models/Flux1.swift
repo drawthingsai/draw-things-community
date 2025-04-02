@@ -983,15 +983,31 @@ private func LoRASingleTransformerBlock(
   return (mapper, Model([x, rot] + xChunks, [out]))
 }
 
+public func LoRAFlux1Norm1(
+  batchSize: Int, height: Int, width: Int, channels: Int,
+  LoRAConfiguration: LoRANetworkConfiguration
+) -> Model {
+  let x = Input()
+  let h = height / 2
+  let w = width / 2
+  let xEmbedder = LoRAConvolution(
+    groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+  let xChunks = (0..<2).map { _ in Input() }
+  let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  out = xChunks[1] .* xNorm1(out).to(.Float16) + xChunks[0]
+  return Model([x] + xChunks, [out])
+}
+
 public func LoRAFlux1(
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
   usesFlashAttention: FlashAttentionLevel, contextPreloaded: Bool, injectControls: Bool,
-  injectIPAdapterLengths: [Int: [Int]], LoRAConfiguration: LoRANetworkConfiguration,
+  injectIPAdapterLengths: [Int: [Int]], outputResidual: Bool, inputResidual: Bool,
+  LoRAConfiguration: LoRANetworkConfiguration,
   useConvolutionForPatchify: Bool = true
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
-  let contextIn = Input()
-  let rot = Input()
   let h = height / 2
   let w = width / 2
   let xEmbedder: Model
@@ -1005,20 +1021,39 @@ public func LoRAFlux1(
     xEmbedder = LoRADense(count: channels, configuration: LoRAConfiguration, name: "x_embedder")
     out = xEmbedder(x).to(.Float32)
   }
+  let imgInX = out
   var adaLNChunks = [Input]()
   var injectedControls = [Input]()
   var injectedIPAdapters = [Input]()
+  let residualIn: Input?
+  if inputResidual {
+    let residual = Input()
+    residualIn = residual
+    out = out + residual
+  } else {
+    residualIn = nil
+  }
   var mappers = [ModelWeightMapper]()
   let contextEmbedder: Model?
-  var context: Model.IO
-  if !contextPreloaded {
-    let embedder = LoRADense(
-      count: channels, configuration: LoRAConfiguration, name: "context_embedder")
-    context = embedder(contextIn).to(.Float32)
-    contextEmbedder = embedder
+  var context: Model.IO?
+  let rotAndContextIn: [Input]
+  if layers.0 > 0 || layers.1 > 0 {
+    let contextIn = Input()
+    let rot = Input()
+    if !contextPreloaded {
+      let embedder = LoRADense(
+        count: channels, configuration: LoRAConfiguration, name: "context_embedder")
+      context = embedder(contextIn).to(.Float32)
+      contextEmbedder = embedder
+    } else {
+      context = contextIn.to(.Float32)
+      contextEmbedder = nil
+    }
+    rotAndContextIn = [rot, contextIn]
   } else {
-    context = contextIn.to(.Float32)
+    context = nil
     contextEmbedder = nil
+    rotAndContextIn = []
   }
   for i in 0..<layers.0 {
     let contextChunks = (0..<6).map { _ in Input() }
@@ -1028,7 +1063,7 @@ public func LoRAFlux1(
       hw: h * w, contextBlockPreOnly: false, upcast: i > 16,
       usesFlashAttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration
     )
-    let blockOut = block([context, out, rot] + contextChunks + xChunks)
+    let blockOut = block([context!, out, rotAndContextIn[0]] + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
     if LoRAConfiguration.gradientCheckpointingTransformerLayer {
@@ -1058,14 +1093,16 @@ public func LoRAFlux1(
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
-  out = Functional.concat(axis: 1, context, out)
+  if let context = context {
+    out = Functional.concat(axis: 1, context, out)
+  }
   for i in 0..<layers.1 {
     let xChunks = (0..<3).map { _ in Input() }
     let (mapper, block) = LoRASingleTransformerBlock(
       prefix: "single_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: tokenLength,
       hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention,
       layerIndex: i + layers.0, configuration: LoRAConfiguration)
-    out = block([out, rot] + xChunks)
+    out = block([out, rotAndContextIn[0]] + xChunks)
     if LoRAConfiguration.gradientCheckpointingTransformerLayer {
       block.gradientCheckpointing = true
     }
@@ -1125,6 +1162,12 @@ public func LoRAFlux1(
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
   }
+  let residualOut: Model.IO?
+  if outputResidual {
+    residualOut = out - imgInX
+  } else {
+    residualOut = nil
+  }
   let shift = Input()
   let scale = Input()
   adaLNChunks.append(contentsOf: [shift, scale])
@@ -1155,11 +1198,11 @@ public func LoRAFlux1(
     mapping["final_layer.linear.bias"] = [projOut.bias.name]
     return mapping
   }
+  var inputs: [Input] = [x] + (residualIn.map { [$0] } ?? []) + rotAndContextIn
+  inputs = inputs + adaLNChunks + injectedIPAdapters + injectedControls
   return (
     mapper,
-    Model(
-      [x, rot, contextIn] + adaLNChunks + injectedIPAdapters + injectedControls, [out],
-      trainable: false)
+    Model(inputs, [out] + (residualOut.map { [$0] } ?? []), trainable: false)
   )
 }
 

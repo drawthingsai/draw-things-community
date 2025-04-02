@@ -1232,7 +1232,8 @@ public struct LoRATrainer {
         batchSize: 1, tokenLength: paddedTextEncodingLength, height: size.height,
         width: size.width, channels: 3072,
         layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: false,
-        injectControls: false, injectIPAdapterLengths: [:], LoRAConfiguration: configuration,
+        injectControls: false, injectIPAdapterLengths: [:], outputResidual: false,
+        inputResidual: false, LoRAConfiguration: configuration,
         useConvolutionForPatchify: false
       ).1
     }

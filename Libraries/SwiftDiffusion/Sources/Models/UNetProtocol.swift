@@ -739,9 +739,26 @@ extension UNetFromNNC {
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             contextPreloaded: true,
             injectControls: injectControlsAndAdapters.injectControls,
-            injectIPAdapterLengths: injectIPAdapterLengths,
-            LoRAConfiguration: configuration
+            injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: isTeaCacheEnabled,
+            inputResidual: false, LoRAConfiguration: configuration
           ).1)
+        if isTeaCacheEnabled {
+          teaCache = TeaCache(
+            modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
+            threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            reducedModel: LoRAFlux1(
+              batchSize: batchSize, tokenLength: tokenLength,
+              height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              contextPreloaded: true,
+              injectControls: injectControlsAndAdapters.injectControls,
+              injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: false,
+              inputResidual: true, LoRAConfiguration: configuration
+            ).1,
+            inferModel: LoRAFlux1Norm1(
+              batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 3072,
+              LoRAConfiguration: configuration))
+        }
       } else {
         unet = ModelBuilderOrModel.model(
           Flux1(
