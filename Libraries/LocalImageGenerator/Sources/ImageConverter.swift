@@ -909,6 +909,7 @@ public enum ImageConverter {
         }
         let model = configuration.model ?? ModelZoo.defaultSpecification.file
         let modelVersion = ModelZoo.versionForModel(model)
+        let hasTeaCache = ModelZoo.teaCacheCoefficientsForModel(model) != nil
         let modifier = ImageGeneratorUtils.modifierForModel(
           model, LoRAs: configuration.loras.compactMap(\.file))
         let seedMode: String
@@ -1083,6 +1084,21 @@ public enum ImageConverter {
           json["diffusion_tile_overlap"] = configuration.diffusionTileOverlap * 64
           description +=
             ", Tiled Diffusion Enabled: \(configuration.diffusionTileWidth * 64)x\(configuration.diffusionTileHeight * 64) [\(configuration.diffusionTileOverlap * 64)]"
+        }
+        if hasTeaCache && configuration.teaCache && configuration.teaCacheThreshold > 0 {
+          json["tea_cache"] = configuration.teaCache
+          json["tea_cache_start"] = configuration.teaCacheStart
+          json["tea_cache_end"] = configuration.teaCacheEnd
+          json["tea_cache_threshold"] = configuration.teaCacheThreshold
+          var teaCacheEnd =
+            configuration.teaCacheEnd < 0
+            ? Int32(configuration.steps) + 1 + configuration.teaCacheEnd : configuration.teaCacheEnd
+          let teaCacheStart = min(
+            max(configuration.teaCacheStart, 0), Int32(configuration.steps))
+          teaCacheEnd = min(
+            max(max(teaCacheStart, teaCacheEnd), 0), Int32(configuration.steps))
+          description +=
+            ", TeaCache Enabled: \(min(teaCacheStart, teaCacheEnd)) - \(max(teaCacheStart, teaCacheEnd)), \(configuration.teaCacheThreshold.formatted(.number.precision(.fractionLength(2))))"
         }
         if configuration.sampler == .TCD {
           json["stochastic_sampling_gamma"] = configuration.stochasticSamplingGamma
