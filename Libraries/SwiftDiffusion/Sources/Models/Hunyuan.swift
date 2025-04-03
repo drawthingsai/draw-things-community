@@ -1178,7 +1178,7 @@ func LoRAHunyuan(
   if layers.0 > 0 || layers.1 > 0 {
     let rot = Input()
     let contextIn = Input()
-    var context = contextIn.to(.Float32)
+    context = contextIn.to(.Float32)
     rotAndContextIn = [rot, contextIn]
   } else {
     context = nil
