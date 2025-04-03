@@ -1153,9 +1153,18 @@ public struct ModelZoo: DownloadZoo {
   public static func teaCacheCoefficientsForModel(_ name: String) -> (
     Float, Float, Float, Float, Float
   )? {
-    guard let specification = specificationForModel(name),
-      let coefficients = specification.teaCacheCoefficients
-    else { return nil }
+    guard let specification = specificationForModel(name) else { return nil }
+    guard let coefficients = specification.teaCacheCoefficients else {
+      switch specification.version {
+      case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+        .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b:
+        return nil
+      case .flux1:
+        return (4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01)
+      case .hunyuanVideo:
+        return (7.33226126e+02, -4.01131952e+02, 6.75869174e+01, -3.14987800e+00, 9.61237896e-02)
+      }
+    }
     return (coefficients[0], coefficients[1], coefficients[2], coefficients[3], coefficients[4])
   }
 
