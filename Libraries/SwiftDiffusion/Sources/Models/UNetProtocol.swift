@@ -734,7 +734,7 @@ extension UNetFromNNC {
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
           LoRAFlux1(
-            batchSize: batchSize, tokenLength: tokenLength,
+            batchSize: isTeaCacheEnabled ? 1 : batchSize, tokenLength: tokenLength,
             height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             contextPreloaded: true,
@@ -747,7 +747,7 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             reducedModel: LoRAFlux1(
-              batchSize: batchSize, tokenLength: tokenLength,
+              batchSize: 1, tokenLength: tokenLength,
               height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
               usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
               contextPreloaded: true,
@@ -756,13 +756,13 @@ extension UNetFromNNC {
               inputResidual: true, LoRAConfiguration: configuration
             ).1,
             inferModel: LoRAFlux1Norm1(
-              batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 3072,
+              batchSize: 1, height: tiledHeight, width: tiledWidth, channels: 3072,
               LoRAConfiguration: configuration))
         }
       } else {
         unet = ModelBuilderOrModel.model(
           Flux1(
-            batchSize: batchSize, tokenLength: tokenLength,
+            batchSize: isTeaCacheEnabled ? 1 : batchSize, tokenLength: tokenLength,
             height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             contextPreloaded: true,
@@ -775,7 +775,7 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             reducedModel: Flux1(
-              batchSize: batchSize, tokenLength: tokenLength,
+              batchSize: 1, tokenLength: tokenLength,
               height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
               usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
               contextPreloaded: true,
@@ -784,7 +784,7 @@ extension UNetFromNNC {
               inputResidual: true
             ).1,
             inferModel: Flux1Norm1(
-              batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 3072))
+              batchSize: 1, height: tiledHeight, width: tiledWidth, channels: 3072))
         }
       }
     case .hunyuanVideo:
@@ -1379,9 +1379,19 @@ extension UNetFromNNC {
       teaCache?.compile(model: unet, inputs: inputs)
       return
     case .flux1:
-      unet.compile(inputs: inputs)
-      teaCache?.compile(model: unet, inputs: inputs)
-      return
+      if let teaCache = teaCache {
+        let inputs = inputs.map {
+          var shape = $0.shape
+          guard shape[0] > 1 else {
+            return $0
+          }
+          shape[0] = 1
+          return DynamicGraph.Tensor<FloatType>($0).reshaped(format: $0.format, shape: shape)
+        }
+        unet.compile(inputs: inputs)
+        teaCache.compile(model: unet, inputs: inputs)
+        return
+      }
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
@@ -1446,6 +1456,7 @@ extension UNetFromNNC {
               .copied()
           }
         }
+        // While xCond == xUncond, the pooled condition (used for adaptive layernorm) is different between cond / uncond branches, therefore, we need to check this for both cond / uncond branches.
         let shouldUseCacheCond =
           teaCache?.shouldUseCacheForTimeEmbedding(
             [xCond] + otherConds, model: unet!, step: step, marker: 0, of: FloatType.self) ?? false
@@ -1670,23 +1681,57 @@ extension UNetFromNNC {
       }
       return Functional.concat(axis: 0, etUncond, etCond)
     case .flux1:
-      let shouldUseCache =
-        teaCache?.shouldUseCacheForTimeEmbedding(
-          [firstInput] + restInputs, model: unet!, step: step, marker: 0, of: FloatType.self)
-        ?? false
-      let et: DynamicGraph.Tensor<FloatType>
-      if shouldUseCache,
-        let result = teaCache!(model: unet!, inputs: firstInput, restInputs, marker: 0)
-      {
-        et = result
-      } else {
-        let result = unet!(
-          inputs: firstInput, restInputs
-        )
-        et = result[0].as(of: FloatType.self)
-        teaCache?.cache(outputs: result, marker: 0)
+      if let teaCache = teaCache {
+        let shape = firstInput.shape
+        let batchSize = shape[0]
+        guard batchSize > 1 else {
+          let shouldUseCache = teaCache.shouldUseCacheForTimeEmbedding(
+            [firstInput] + restInputs, model: unet!, step: step, marker: 0, of: FloatType.self)
+          let et: DynamicGraph.Tensor<FloatType>
+          if shouldUseCache,
+            let result = teaCache(model: unet!, inputs: firstInput, restInputs, marker: 0)
+          {
+            et = result
+          } else {
+            let result = unet!(
+              inputs: firstInput, restInputs
+            )
+            et = result[0].as(of: FloatType.self)
+            teaCache.cache(outputs: result, marker: 0)
+          }
+          return et
+        }
+        let graph = firstInput.graph
+        var et = graph.variable(like: firstInput)
+        for i in 0..<batchSize {
+          let x0 = firstInput[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+          let others = restInputs.map {
+            var shape = $0.shape
+            guard shape[0] > 1 else { return $0 }
+            shape[0] = 1
+            return DynamicGraph.Tensor<FloatType>($0).reshaped(
+              format: $0.format, shape: shape, offset: [i]
+            ).copied()
+          }
+          let shouldUseCache =
+            teaCache.shouldUseCacheForTimeEmbedding(
+              [x0] + others, model: unet!, step: step, marker: i, of: FloatType.self)
+          let et0: DynamicGraph.Tensor<FloatType>
+          if shouldUseCache,
+            let result = teaCache(model: unet!, inputs: x0, others, marker: i)
+          {
+            et0 = result
+          } else {
+            let result = unet!(
+              inputs: x0, others
+            )
+            et0 = result[0].as(of: FloatType.self)
+            teaCache.cache(outputs: result, marker: i)
+          }
+          et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = et0
+        }
+        return et
       }
-      return et
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
