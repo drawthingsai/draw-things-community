@@ -53,8 +53,10 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     if let inferModel = inferModel {
       if !inferModelParameterShared {
         switch model {
-        case .modelBuilder(_):
-          fatalError()
+        case .modelBuilder(let model):
+          inferModel.parameters.share(from: model.parameters) { inferModelName, _ in
+            return .continue(inferModelName)
+          }
         case .model(let model):
           inferModel.parameters.share(from: model.parameters) { inferModelName, _ in
             return .continue(inferModelName)
@@ -62,7 +64,15 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
         }
         inferModelParameterShared = true
       }
-      t = [inferModel(inputs: t[0], Array(t[3..<5]))[0]]
+      switch modelVersion {
+      case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+        .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_14b, .wan21_1_3b:
+        fatalError()
+      case .hunyuanVideo:
+        t = [inferModel(inputs: t[0], Array(t[4..<6]))[0]]
+      case .flux1:
+        t = [inferModel(inputs: t[0], Array(t[3..<5]))[0]]
+      }
     }
     guard let lastT = lastTs[marker], steps.contains(step) else {
       lastTs[marker] = t
@@ -98,8 +108,15 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public func compile(model: ModelBuilderOrModel, inputs: [DynamicGraph.AnyTensor]) {
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .hunyuanVideo:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large:
       fatalError()
+    case .hunyuanVideo:
+      if let inferModel = inferModel {
+        inferModel.compile(inputs: [inputs[0]] + Array(inputs[4..<6]))
+      }
+      reducedModel.compile(inputs: [
+        inputs[0], inputs[0], inputs[inputs.count - 2], inputs[inputs.count - 1],
+      ])
     case .flux1:
       if let inferModel = inferModel {
         inferModel.compile(inputs: [inputs[0]] + Array(inputs[3..<5]))
@@ -127,8 +144,10 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     }
     if !reducedModelParameterShared {
       switch model {
-      case .modelBuilder(_):
-        fatalError()
+      case .modelBuilder(let model):
+        reducedModel.parameters.share(from: model.parameters) { reducedModelName, _ in
+          return .continue(reducedModelName)
+        }
       case .model(let model):
         reducedModel.parameters.share(from: model.parameters) { reducedModelName, _ in
           return .continue(reducedModelName)

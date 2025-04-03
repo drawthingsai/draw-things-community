@@ -433,22 +433,53 @@ private func SingleTransformerBlock(
   return (mapper, Model([x, rot] + xChunks, [out]))
 }
 
-public func Hunyuan(
-  time: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel
-) -> (ModelWeightMapper, Model) {
+public func HunyuanNorm1(time: Int, height: Int, width: Int, channels: Int) -> Model {
   let x = Input()
-  let rot = Input()
+  let h = height / 2
+  let w = width / 2
   let imgIn = Convolution(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  let contextIn = Input()
+  var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
+  let xChunks = (0..<2).map { _ in Input() }
+  let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  out = xChunks[1] .* xNorm1(out).to(.Float16) + xChunks[0]
+  return Model([x] + xChunks, [out])
+}
+
+public func Hunyuan(
+  time: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: (Int, Int),
+  usesFlashAttention: FlashAttentionLevel, outputResidual: Bool, inputResidual: Bool
+) -> (ModelWeightMapper, Model) {
+  let x = Input()
+  let imgIn = Convolution(
+    groups: 1, filters: channels, filterSize: [2, 2],
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   var adaLNChunks = [Input]()
   var mappers = [ModelWeightMapper]()
-  var context = contextIn.to(.Float32)
+  var context: Model.IO?
+  var rotAndContextIn: [Input]
+  if layers.0 > 0 || layers.1 > 0 {
+    let rot = Input()
+    let contextIn = Input()
+    context = contextIn.to(.Float32)
+    rotAndContextIn = [rot, contextIn]
+  } else {
+    context = nil
+    rotAndContextIn = []
+  }
   let h = height / 2
   let w = width / 2
   var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
+  let imgInX = out
+  let residualIn: Input?
+  if inputResidual {
+    let residual = Input()
+    residualIn = residual
+    out = out + residual
+  } else {
+    residualIn = nil
+  }
   for i in 0..<layers.0 {
     let contextChunks = (0..<6).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
@@ -456,23 +487,31 @@ public func Hunyuan(
       prefix: "double_blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength,
       hw: time * h * w,
       contextBlockPreOnly: false, upcast: true, usesFlashAttention: usesFlashAttention)
-    let blockOut = block([out, context, rot] + contextChunks + xChunks)
+    let blockOut = block([out, context!, rotAndContextIn[0]] + contextChunks + xChunks)
     out = blockOut[0]
     context = blockOut[1]
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
-  let rot2 = Input()
-  out = Functional.concat(axis: 1, out, context)
+  if let context = context {
+    rotAndContextIn.insert(Input(), at: 1)
+    out = Functional.concat(axis: 1, out, context)
+  }
   for i in 0..<layers.1 {
     let xChunks = (0..<3).map { _ in Input() }
     let (mapper, block) = SingleTransformerBlock(
       prefix: "single_blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength,
       hw: time * h * w,
       contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
-    out = block([out, rot2] + xChunks)
+    out = block([out, rotAndContextIn[1]] + xChunks)
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
+  }
+  let residualOut: Model.IO?
+  if outputResidual {
+    residualOut = out - imgInX
+  } else {
+    residualOut = nil
   }
   let shift = Input()
   let scale = Input()
@@ -495,7 +534,12 @@ public func Hunyuan(
     mapping["final_layer.linear.bias"] = [projOut.bias.name]
     return mapping
   }
-  return (mapper, Model([x, rot, rot2, contextIn] + adaLNChunks, [out]))
+  return (
+    mapper,
+    Model(
+      [x] + (residualIn.map { [$0] } ?? []) + rotAndContextIn + adaLNChunks,
+      [out] + (residualOut.map { [$0] } ?? []))
+  )
 }
 
 private func JointTransformerBlockFixed(
@@ -1102,22 +1146,56 @@ private func LoRASingleTransformerBlock(
   return (mapper, Model([x, rot] + xChunks, [out]))
 }
 
-func LoRAHunyuan(
-  time: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: (Int, Int),
-  usesFlashAttention: FlashAttentionLevel, LoRAConfiguration: LoRANetworkConfiguration
-) -> (ModelWeightMapper, Model) {
+public func LoRAHunyuanNorm1(
+  time: Int, height: Int, width: Int, channels: Int, LoRAConfiguration: LoRANetworkConfiguration
+) -> Model {
   let x = Input()
-  let rot = Input()
+  let h = height / 2
+  let w = width / 2
   let imgIn = LoRAConvolution(
     groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  let contextIn = Input()
+  var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
+  let xChunks = (0..<2).map { _ in Input() }
+  let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  out = xChunks[1] .* xNorm1(out).to(.Float16) + xChunks[0]
+  return Model([x] + xChunks, [out])
+}
+
+func LoRAHunyuan(
+  time: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: (Int, Int),
+  usesFlashAttention: FlashAttentionLevel, outputResidual: Bool, inputResidual: Bool,
+  LoRAConfiguration: LoRANetworkConfiguration
+) -> (ModelWeightMapper, Model) {
+  let x = Input()
+  let imgIn = LoRAConvolution(
+    groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   var adaLNChunks = [Input]()
   var mappers = [ModelWeightMapper]()
-  var context = contextIn.to(.Float32)
+  var context: Model.IO?
+  var rotAndContextIn: [Input]
+  if layers.0 > 0 || layers.1 > 0 {
+    let rot = Input()
+    let contextIn = Input()
+    var context = contextIn.to(.Float32)
+    rotAndContextIn = [rot, contextIn]
+  } else {
+    context = nil
+    rotAndContextIn = []
+  }
   let h = height / 2
   let w = width / 2
   var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
+  let imgInX = out
+  let residualIn: Input?
+  if inputResidual {
+    let residual = Input()
+    residualIn = residual
+    out = out + residual
+  } else {
+    residualIn = nil
+  }
   for i in 0..<layers.0 {
     let contextChunks = (0..<6).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
@@ -1125,14 +1203,16 @@ func LoRAHunyuan(
       prefix: "double_blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength,
       hw: time * h * w, contextBlockPreOnly: false, upcast: true,
       usesFlashAttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration)
-    let blockOut = block([out, context, rot] + contextChunks + xChunks)
+    let blockOut = block([out, context!, rotAndContextIn[0]] + contextChunks + xChunks)
     out = blockOut[0]
     context = blockOut[1]
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
-  let rot2 = Input()
-  out = Functional.concat(axis: 1, out, context)
+  if let context = context {
+    rotAndContextIn.insert(Input(), at: 1)
+    out = Functional.concat(axis: 1, out, context)
+  }
   for i in 0..<layers.1 {
     let xChunks = (0..<3).map { _ in Input() }
     let (mapper, block) = LoRASingleTransformerBlock(
@@ -1140,9 +1220,15 @@ func LoRAHunyuan(
       hw: time * h * w, contextBlockPreOnly: i == layers.1 - 1,
       usesFlashAttention: usesFlashAttention, layerIndex: i + layers.0,
       configuration: LoRAConfiguration)
-    out = block([out, rot2] + xChunks)
+    out = block([out, rotAndContextIn[1]] + xChunks)
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
+  }
+  let residualOut: Model.IO?
+  if outputResidual {
+    residualOut = out - imgInX
+  } else {
+    residualOut = nil
   }
   let shift = Input()
   let scale = Input()
@@ -1166,7 +1252,12 @@ func LoRAHunyuan(
     mapping["final_layer.linear.bias"] = [projOut.bias.name]
     return mapping
   }
-  return (mapper, Model([x, rot, rot2, contextIn] + adaLNChunks, [out]))
+  return (
+    mapper,
+    Model(
+      [x] + (residualIn.map { [$0] } ?? []) + rotAndContextIn + adaLNChunks,
+      [out] + (residualOut.map { [$0] } ?? []))
+  )
 }
 
 private func LoRAJointTransformerBlockFixed(

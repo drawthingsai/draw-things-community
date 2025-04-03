@@ -835,7 +835,7 @@ public final class ModelImporter {
       case .hunyuanVideo:
         (unetMapper, unet) = Hunyuan(
           time: 1, height: 64, width: 64, textLength: 20, channels: 3072, layers: (20, 40),
-          usesFlashAttention: .scaleMerged)
+          usesFlashAttention: .scaleMerged, outputResidual: false, inputResidual: false)
         (unetFixedMapper, unetFixed) = HunyuanFixed(
           timesteps: batchSize, channels: 3072, layers: (20, 40), textLength: (0, 20))
       case .wan21_1_3b:

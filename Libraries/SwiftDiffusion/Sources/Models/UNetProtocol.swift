@@ -806,9 +806,26 @@ extension UNetFromNNC {
               textLength: $0[3].shape[1],
               channels: 3072, layers: (20, 40),
               usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              outputResidual: isTeaCacheEnabled, inputResidual: false,
               LoRAConfiguration: configuration
             ).1
           })
+        if isTeaCacheEnabled {
+          teaCache = TeaCache(
+            modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
+            threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            reducedModel: LoRAHunyuan(
+              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+              width: tiledWidth,
+              textLength: 0,
+              channels: 3072, layers: (0, 0),
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              outputResidual: false, inputResidual: true, LoRAConfiguration: configuration
+            ).1,
+            inferModel: HunyuanNorm1(
+              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+              width: tiledWidth, channels: 3072))
+        }
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
           ModelBuilder {
@@ -816,9 +833,26 @@ extension UNetFromNNC {
               time: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: $0[3].shape[1],
               channels: 3072, layers: (20, 40),
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              outputResidual: isTeaCacheEnabled, inputResidual: false
             ).1
           })
+        if isTeaCacheEnabled {
+          teaCache = TeaCache(
+            modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
+            threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            reducedModel: Hunyuan(
+              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+              width: tiledWidth,
+              textLength: 0,
+              channels: 3072, layers: (0, 0),
+              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              outputResidual: false, inputResidual: true
+            ).1,
+            inferModel: HunyuanNorm1(
+              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+              width: tiledWidth, channels: 3072))
+        }
       }
     case .wan21_1_3b:
       tiledWidth =
@@ -1282,27 +1316,31 @@ extension UNetFromNNC {
   ) {
     switch version {
     case .hunyuanVideo:
-      if isCfgEnabled {
-        unet.compile(
-          inputs: inputs.enumerated().map {
-            let shape = $0.1.shape
-            switch $0.0 {
-            case 0:
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-            case 1...2:
-              return $0.1
-            case 3:
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]
-              ]
-              .copied()
-            default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
-            }
-          })
+      guard isCfgEnabled else {
+        unet.compile(inputs: inputs)
+        teaCache?.compile(model: unet, inputs: inputs)
         return
       }
+      let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().map {
+        let shape = $0.1.shape
+        switch $0.0 {
+        case 0:
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+        case 1...2:
+          return $0.1
+        case 3:
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]
+          ]
+          .copied()
+        default:
+          return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
+        }
+      }
+      unet.compile(inputs: inputs)
+      teaCache?.compile(model: unet, inputs: inputs)
+      return
     case .wan21_1_3b, .wan21_14b:
       guard isCfgEnabled else {
         unet.compile(inputs: inputs)
@@ -1359,119 +1397,182 @@ extension UNetFromNNC {
   ) -> DynamicGraph.Tensor<FloatType> {
     switch version {
     case .hunyuanVideo:
-      if isCfgEnabled {
-        let shape = firstInput.shape
-        let tokenLength = max(tokenLengthUncond, tokenLengthCond)
-        let etUncond: DynamicGraph.Tensor<FloatType>
-        let etCond: DynamicGraph.Tensor<FloatType>
-        if tokenLengthCond > tokenLengthUncond {
-          // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
-          let xCond = firstInput[
-            (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
-          ]
-          .copied()
-          let otherConds = restInputs.enumerated().map {
-            let shape = $0.1.shape
-            switch $0.0 {
-            case 0:
-              return $0.1
-            case 1:
-              let imageLength = shape[1] - tokenLength
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
-              ].copied()
-            case 2:
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
-                0..<shape[2]
-              ].copied()
-            default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[1..<2, 0..<shape[1], 0..<shape[2]]
-                .copied()
-            }
-          }
-          etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
-          etCond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
-          guard !isCancelled.load(ordering: .acquiring) else {
-            return Functional.concat(axis: 0, etCond, etCond)
-          }
-          let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-            .copied()
-          let otherUnconds = restInputs.enumerated().map {
-            let shape = $0.1.shape
-            switch $0.0 {
-            case 0:
-              return $0.1
-            case 1:
-              let imageLength = shape[1] - tokenLength
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
-              ].copied()
-            case 2:
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
-              ].copied()
-            default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
-                .copied()
-            }
-          }
-          etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+      guard isCfgEnabled else {
+        let shouldUseCache =
+          teaCache?.shouldUseCacheForTimeEmbedding(
+            [firstInput] + restInputs, model: unet!, step: step, marker: 0, of: FloatType.self)
+          ?? false
+        let et: DynamicGraph.Tensor<FloatType>
+        if shouldUseCache,
+          let result = teaCache!(model: unet!, inputs: firstInput, restInputs, marker: 0)
+        {
+          et = result
         } else {
-          let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-            .copied()
-          let otherUnconds = restInputs.enumerated().map {
-            let shape = $0.1.shape
-            switch $0.0 {
-            case 0:
-              return $0.1
-            case 1:
-              let imageLength = shape[1] - tokenLength
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
-              ].copied()
-            case 2:
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
-              ].copied()
-            default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
-                .copied()
-            }
-          }
-          etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
-          etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
-          guard !isCancelled.load(ordering: .acquiring) else {
-            return Functional.concat(axis: 0, etUncond, etUncond)
-          }
-          let xCond = firstInput[
-            (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
-          ]
-          .copied()
-          let otherConds = restInputs.enumerated().map {
-            let shape = $0.1.shape
-            switch $0.0 {
-            case 0:
-              return $0.1
-            case 1:
-              let imageLength = shape[1] - tokenLength
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
-              ].copied()
-            case 2:
-              return DynamicGraph.Tensor<FloatType>($0.1)[
-                0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
-                0..<shape[2]
-              ].copied()
-            default:
-              return DynamicGraph.Tensor<FloatType>($0.1)[1..<2, 0..<shape[1], 0..<shape[2]]
-                .copied()
-            }
-          }
-          etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+          let result = unet!(
+            inputs: firstInput, restInputs
+          )
+          et = result[0].as(of: FloatType.self)
+          teaCache?.cache(outputs: result, marker: 0)
         }
-        return Functional.concat(axis: 0, etUncond, etCond)
+        return et
       }
+      let shape = firstInput.shape
+      let tokenLength = max(tokenLengthUncond, tokenLengthCond)
+      let etUncond: DynamicGraph.Tensor<FloatType>
+      let etCond: DynamicGraph.Tensor<FloatType>
+      if tokenLengthCond > tokenLengthUncond {
+        // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ]
+        .copied()
+        let otherConds = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 0:
+            return $0.1
+          case 1:
+            let imageLength = shape[1] - tokenLength
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
+            ].copied()
+          case 2:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+              0..<shape[2]
+            ].copied()
+          default:
+            return DynamicGraph.Tensor<FloatType>($0.1)[1..<2, 0..<shape[1], 0..<shape[2]]
+              .copied()
+          }
+        }
+        let shouldUseCacheCond =
+          teaCache?.shouldUseCacheForTimeEmbedding(
+            [xCond] + otherConds, model: unet!, step: step, marker: 0, of: FloatType.self) ?? false
+        if shouldUseCacheCond,
+          let result = teaCache!(model: unet!, inputs: xCond, otherConds, marker: 0)
+        {
+          etCond = result
+        } else {
+          let result = unet!(inputs: xCond, otherConds)
+          etCond = result[0].as(of: FloatType.self)
+          teaCache?.cache(outputs: result, marker: 0)
+        }
+        etCond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etCond, etCond)
+        }
+        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        let otherUnconds = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 0:
+            return $0.1
+          case 1:
+            let imageLength = shape[1] - tokenLength
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
+            ].copied()
+          case 2:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
+            ].copied()
+          default:
+            return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
+              .copied()
+          }
+        }
+        let shouldUseCacheUncond =
+          teaCache?.shouldUseCacheForTimeEmbedding(
+            [xUncond] + otherUnconds, model: unet!, step: step, marker: 1, of: FloatType.self)
+          ?? false
+        if shouldUseCacheUncond,
+          let result = teaCache!(model: unet!, inputs: xUncond, otherUnconds, marker: 1)
+        {
+          etUncond = result
+        } else {
+          let result = unet!(inputs: xUncond, otherUnconds)
+          etUncond = result[0].as(of: FloatType.self)
+          teaCache?.cache(outputs: result, marker: 1)
+        }
+      } else {
+        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        let otherUnconds = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 0:
+            return $0.1
+          case 1:
+            let imageLength = shape[1] - tokenLength
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], 0..<(imageLength + tokenLengthUncond), 0..<shape[2], 0..<shape[3]
+            ].copied()
+          case 2:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
+            ].copied()
+          default:
+            return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
+              .copied()
+          }
+        }
+        let shouldUseCacheUncond =
+          teaCache?.shouldUseCacheForTimeEmbedding(
+            [xUncond] + otherUnconds, model: unet!, step: step, marker: 1, of: FloatType.self)
+          ?? false
+        if shouldUseCacheUncond,
+          let result = teaCache!(model: unet!, inputs: xUncond, otherUnconds, marker: 1)
+        {
+          etUncond = result
+        } else {
+          let result = unet!(inputs: xUncond, otherUnconds)
+          etUncond = result[0].as(of: FloatType.self)
+          teaCache?.cache(outputs: result, marker: 1)
+        }
+        etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etUncond, etUncond)
+        }
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ]
+        .copied()
+        let otherConds = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 0:
+            return $0.1
+          case 1:
+            let imageLength = shape[1] - tokenLength
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], 0..<(imageLength + tokenLengthCond), 0..<shape[2], 0..<shape[3]
+            ].copied()
+          case 2:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+              0..<shape[2]
+            ].copied()
+          default:
+            return DynamicGraph.Tensor<FloatType>($0.1)[1..<2, 0..<shape[1], 0..<shape[2]]
+              .copied()
+          }
+        }
+        let shouldUseCacheCond =
+          teaCache?.shouldUseCacheForTimeEmbedding(
+            [xCond] + otherConds, model: unet!, step: step, marker: 0, of: FloatType.self) ?? false
+        if shouldUseCacheCond,
+          let result = teaCache!(model: unet!, inputs: xCond, otherConds, marker: 0)
+        {
+          etCond = result
+        } else {
+          let result = unet!(inputs: xCond, otherConds)
+          etCond = result[0].as(of: FloatType.self)
+          teaCache?.cache(outputs: result, marker: 0)
+        }
+      }
+      return Functional.concat(axis: 0, etUncond, etCond)
     case .wan21_1_3b, .wan21_14b:
       let shouldUseCache =
         teaCache?.shouldUseCacheForTimeEmbedding(
