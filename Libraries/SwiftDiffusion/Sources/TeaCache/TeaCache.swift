@@ -69,9 +69,9 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
         .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_14b, .wan21_1_3b:
         fatalError()
       case .hunyuanVideo:
-        t = [inferModel(inputs: t[0], Array(t[4..<6]))[0]]
+        t = [inferModel(inputs: t[0], Array(t[(4 + 6)..<(6 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
       case .flux1:
-        t = [inferModel(inputs: t[0], Array(t[3..<5]))[0]]
+        t = [inferModel(inputs: t[0], Array(t[(3 + 6)..<(5 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
       }
     }
     guard let lastT = lastTs[marker], steps.contains(step) else {
@@ -112,14 +112,14 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       fatalError()
     case .hunyuanVideo:
       if let inferModel = inferModel {
-        inferModel.compile(inputs: [inputs[0]] + Array(inputs[4..<6]))
+        inferModel.compile(inputs: [inputs[0]] + Array(inputs[(4 + 6)..<(6 + 6)]))
       }
       reducedModel.compile(inputs: [
         inputs[0], inputs[0], inputs[inputs.count - 2], inputs[inputs.count - 1],
       ])
     case .flux1:
       if let inferModel = inferModel {
-        inferModel.compile(inputs: [inputs[0]] + Array(inputs[3..<5]))
+        inferModel.compile(inputs: [inputs[0]] + Array(inputs[(3 + 6)..<(5 + 6)]))
       }
       reducedModel.compile(inputs: [
         inputs[0], inputs[0], inputs[inputs.count - 2], inputs[inputs.count - 1],
