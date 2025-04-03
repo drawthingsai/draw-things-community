@@ -49,7 +49,9 @@ public enum TensorData {
               continue
             }
             codec.subtract([.externalData, .jit, .externalOnDemand])
-            guard let tensor = store.read(key, codec: codec.union([.jit, .externalData])) else {
+            guard
+              let tensor = store.read(key, kind: .CPU, codec: codec.union([.jit, .externalData]))
+            else {
               continue
             }
             // Move this tensor to main SQLite file.
@@ -88,7 +90,9 @@ public enum TensorData {
                 continue
               }
               codec.subtract([.externalData, .jit, .externalOnDemand])
-              guard let tensor = store.read(key, codec: codec.union([.jit, .externalData])) else {
+              guard
+                let tensor = store.read(key, kind: .CPU, codec: codec.union([.jit, .externalData]))
+              else {
                 continue
               }
               // Move this tensor to main SQLite file.
@@ -111,7 +115,9 @@ public enum TensorData {
             guard var codec = store.codec(for: key) else { continue }
             // Only keep the other attributes for codec.
             codec.subtract([.externalData, .jit, .externalOnDemand])
-            guard let tensor = store.read(key, codec: codec.union([.jit])) else { continue }
+            guard let tensor = store.read(key, kind: .CPU, codec: codec.union([.jit])) else {
+              continue
+            }
             let shape = tensor.shape
             // Now, check if we want ot move it to external storage. We check the shape of the tensor.
             let squeezedDims = shape.reduce(0) { return $0 + ($1 > 1 ? 1 : 0) }  // Check how many axis this tensor has.

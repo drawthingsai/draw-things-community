@@ -143,7 +143,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
       let store = store.1
       guard
         let loadedTensor = store.read(
-          originalPrefix + (isUp ? "__up__" : "__down__"),
+          originalPrefix + (isUp ? "__up__" : "__down__"), kind: .CPU,
           codec: [.q6p, .q8p, .ezm7, .externalData])
       else { continue }
       let formattedTensor = Tensor<FloatType>(from: loadedTensor).reshaped(
@@ -158,7 +158,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
         } else {
           guard
             let loraMid = store.read(
-              originalPrefix + "__mid__", codec: [.q6p, .q8p, .ezm7, .externalData])
+              originalPrefix + "__mid__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
           else {
             let shape1 = min(tensorShape[1], formattedTensor.shape[1])
             tensor[oldRank..<(oldRank + newRank), 0..<shape1] =
@@ -192,7 +192,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
         } else {
           guard
             let loraMid = store.read(
-              originalPrefix + "__mid__", codec: [.q6p, .q8p, .ezm7, .externalData])
+              originalPrefix + "__mid__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
           else {
             let shape1 = min(tensorShape[1], formattedTensor.shape[1])
             tensor[oldRank..<(oldRank + newRank), 0..<shape1] =
@@ -228,7 +228,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     // Only use this method for shape that has 4-element.
     guard
       let original =
-        (store.read(name, codec: [.q6p, .q8p, .ezm7, .externalData]).map {
+        (store.read(name, kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]).map {
           graph.variable(Tensor<FloatType>(from: $0).toGPU(0))
         })
     else { return nil }
@@ -321,7 +321,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     }
     guard
       let original =
-        (store.read(name, codec: [.q6p, .q8p, .ezm7, .externalData]).map {
+        (store.read(name, kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]).map {
           Tensor<FloatType>(from: $0)
         })
     else {
@@ -369,13 +369,13 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
         if isLoHa {
           guard
             let loHaW1A = store.read(
-              prefix + name + "__w1_a__", codec: [.q6p, .q8p, .ezm7, .externalData]),
+              prefix + name + "__w1_a__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]),
             let loHaW1B = store.read(
-              prefix + name + "__w1_b__", codec: [.q6p, .q8p, .ezm7, .externalData]),
+              prefix + name + "__w1_b__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]),
             let loHaW2A = store.read(
-              prefix + name + "__w2_a__", codec: [.q6p, .q8p, .ezm7, .externalData]),
+              prefix + name + "__w2_a__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]),
             let loHaW2B = store.read(
-              prefix + name + "__w2_b__", codec: [.q6p, .q8p, .ezm7, .externalData])
+              prefix + name + "__w2_b__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
           else { continue }
           let w1ATensor = Tensor<FloatType>(from: loHaW1A)
           let w1A = graph.variable(
@@ -414,11 +414,13 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
         } else {
           guard
             let loraUp = store.read(
-              prefix + name + "__up__", codec: [.q6p, .q8p, .ezm7, .externalData]),
+              prefix + name + "__up__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]),
             let loraDown = store.read(
-              prefix + name + "__down__", codec: [.q6p, .q8p, .ezm7, .externalData])
+              prefix + name + "__down__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
           else {
-            guard let diff = store.read(prefix + name, codec: [.q6p, .q8p, .ezm7, .externalData])
+            guard
+              let diff = store.read(
+                prefix + name, kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
             else { continue }
             if original == nil {
               original = loadOriginal(graph, name: name, store: mainStore, shape: shape)
@@ -445,7 +447,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             ).toGPU(0))
           guard
             let loraMid = store.read(
-              prefix + name + "__mid__", codec: [.q6p, .q8p, .ezm7, .externalData])
+              prefix + name + "__mid__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
           else {
             if original == nil {
               original = loadOriginal(graph, name: name, store: mainStore, shape: shape)
@@ -479,22 +481,23 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
         if isLoHa {
           guard
             let loHaW1A = store.read(
-              prefix + name + "__w1_a__", codec: [.q6p, .q8p, .ezm7, .externalData]),
+              prefix + name + "__w1_a__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]),
             let loHaW1B = store.read(
-              prefix + name + "__w1_b__", codec: [.q6p, .q8p, .ezm7, .externalData]),
+              prefix + name + "__w1_b__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]),
             let loHaW2A = store.read(
-              prefix + name + "__w2_a__", codec: [.q6p, .q8p, .ezm7, .externalData]),
+              prefix + name + "__w2_a__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]),
             let loHaW2B = store.read(
-              prefix + name + "__w2_b__", codec: [.q6p, .q8p, .ezm7, .externalData])
+              prefix + name + "__w2_b__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
           else { continue }
           let w1A = graph.variable(Tensor<FloatType>(from: loHaW1A).toGPU(0))
           let w1B = graph.variable(Tensor<FloatType>(from: loHaW1B).toGPU(0))
           let w2A = graph.variable(Tensor<FloatType>(from: loHaW2A).toGPU(0))
           let w2B = graph.variable(Tensor<FloatType>(from: loHaW2B).toGPU(0))
           if original == nil {
-            original = mainStore.read(name, codec: [.q6p, .q8p, .ezm7, .externalData]).map {
-              graph.variable(Tensor<FloatType>(from: $0).toGPU(0))
-            }
+            original = mainStore.read(name, kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
+              .map {
+                graph.variable(Tensor<FloatType>(from: $0).toGPU(0))
+              }
           }
           original = original.map {
             addWeight(original: $0, diff: (w1A * w1B) .* (w2A * w2B), weight: weight)
@@ -502,14 +505,18 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
         } else {
           guard
             let loraUp = store.read(
-              prefix + name + "__up__", codec: [.q6p, .q8p, .ezm7, .externalData]),
+              prefix + name + "__up__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]),
             let loraDown = store.read(
-              prefix + name + "__down__", codec: [.q6p, .q8p, .ezm7, .externalData])
+              prefix + name + "__down__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
           else {
-            guard let diff = store.read(prefix + name, codec: [.q6p, .q8p, .ezm7, .externalData])
+            guard
+              let diff = store.read(
+                prefix + name, kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
             else { continue }
             if original == nil {
-              original = mainStore.read(name, codec: [.q6p, .q8p, .ezm7, .externalData]).map {
+              original = mainStore.read(
+                name, kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]
+              ).map {
                 graph.variable(Tensor<FloatType>(from: $0).toGPU(0))
               }
             }
@@ -523,10 +530,12 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
           let down = graph.variable(Tensor<FloatType>(from: loraDown).toGPU(0))
           guard
             let loraMid = store.read(
-              prefix + name + "__mid__", codec: [.q6p, .q8p, .ezm7, .externalData])
+              prefix + name + "__mid__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
           else {
             if original == nil {
-              original = mainStore.read(name, codec: [.q6p, .q8p, .ezm7, .externalData]).map {
+              original = mainStore.read(
+                name, kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData]
+              ).map {
                 graph.variable(Tensor<FloatType>(from: $0).toGPU(0))
               }
             }
@@ -545,9 +554,10 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
           ).transposed(0, 1)
           midDown = midDown.reshaped(.NC(midDown.shape[0], midDown.shape[1...].reduce(1, *)))
           if original == nil {
-            original = mainStore.read(name, codec: [.q6p, .q8p, .ezm7, .externalData]).map {
-              graph.variable(Tensor<FloatType>(from: $0).toGPU(0))
-            }
+            original = mainStore.read(name, kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
+              .map {
+                graph.variable(Tensor<FloatType>(from: $0).toGPU(0))
+              }
           }
           original = original.map {
             addWeight(original: $0, diff: up * midDown, weight: weight)
