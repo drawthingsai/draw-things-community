@@ -874,7 +874,13 @@ extension UNetFixedEncoder {
       var c = graph.variable(
         .GPU(0), .HWC(isCfgEnabled ? 2 : 1, textLength, 4_096), of: FloatType.self)
       c.full(0)
-      c[0..<(isCfgEnabled ? 2 : 1), 0..<c0.shape[1], 0..<4096] = c0
+      if isCfgEnabled {
+        c[0..<2, 0..<c0.shape[1], 0..<4096] = c0
+      } else {
+        c[0..<1, 0..<c0.shape[1], 0..<4096] = c0[
+          (c0.shape[0] - 1)..<c0.shape[0], 0..<c0.shape[1], 0..<4096
+        ].copied()
+      }
       var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: Float.self)
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(
