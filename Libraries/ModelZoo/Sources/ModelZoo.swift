@@ -757,11 +757,15 @@ public struct ModelZoo: DownloadZoo {
     return modelZooUrl.appendingPathComponent(name).path
   }
 
-  public static var externalUrl: URL? = nil {
+  public static var externalUrls: [URL] = [URL]() {
     didSet {
       #if (os(macOS) || (os(iOS) && targetEnvironment(macCatalyst)))
-        oldValue?.stopAccessingSecurityScopedResource()
-        let _ = externalUrl?.startAccessingSecurityScopedResource()
+        for url in oldValue {
+          url.stopAccessingSecurityScopedResource()
+        }
+        for url in externalUrls {
+          let _ = url.startAccessingSecurityScopedResource()
+        }
       #endif
     }
   }
@@ -847,7 +851,7 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public static func filePathForModelDownloaded(_ name: String) -> String {
-    guard let externalUrl = externalUrl else {
+    guard let externalUrl = externalUrls.first else {
       return filePathForOtherModelDownloaded(name)
     }
     // If it exists at internal storage, prefer that.
@@ -890,10 +894,15 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public static func isModelInExternalUrl(_ name: String) -> Bool {
-    guard let externalUrl = externalUrl else {
+    guard !externalUrls.isEmpty else {
       return false
     }
-    return FileManager.default.fileExists(atPath: externalUrl.appendingPathComponent(name).path)
+    for externalUrl in externalUrls {
+      if FileManager.default.fileExists(atPath: externalUrl.appendingPathComponent(name).path) {
+        return true
+      }
+    }
+    return false
   }
 
   public static func isModelDownloaded(_ name: String, memorizedBy: Set<String>) -> Bool {
@@ -901,7 +910,7 @@ public struct ModelZoo: DownloadZoo {
       return true
     }
     let fileManager = FileManager.default
-    if let externalUrl = externalUrl {
+    for externalUrl in externalUrls {
       let filePath = externalUrl.appendingPathComponent(name).path
       if fileManager.fileExists(atPath: filePath) {
         return true

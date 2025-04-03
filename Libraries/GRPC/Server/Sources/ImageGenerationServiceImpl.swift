@@ -426,7 +426,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         {
           fileUrls.append(contentsOf: urls)
         }
-        if let externalUrl = ModelZoo.externalUrl,
+        if let externalUrl = ModelZoo.externalUrls.first,
           let urls = try? fileManager.contentsOfDirectory(
             at: externalUrl, includingPropertiesForKeys: [.fileSizeKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants, .skipsSubdirectoryDescendants])

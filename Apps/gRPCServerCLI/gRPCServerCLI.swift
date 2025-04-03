@@ -313,7 +313,7 @@ struct gRPCServerCLI: ParsableCommand {
       // }
     }
 
-    ModelZoo.externalUrl = URL(fileURLWithPath: modelsDirectory)
+    ModelZoo.externalUrls = [URL(fileURLWithPath: modelsDirectory)]
     if noFlashAttention {
       DeviceCapability.isMFAEnabled.store(false, ordering: .releasing)
     }
