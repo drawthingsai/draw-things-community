@@ -51,6 +51,15 @@ public struct RemoteImageGenerator: ImageGenerator {
     self.requestExceedLimitHandler = requestExceedLimitHandler
   }
 
+  public struct TransferDataCallback {
+    public var beginUpload: (Int) -> Void
+    public init(beginUpload: @escaping (Int) -> Void) {
+      self.beginUpload = beginUpload
+    }
+  }
+
+  public var transferDataCallback: TransferDataCallback? = nil
+
   public func generate(
     _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],
@@ -143,7 +152,12 @@ public struct RemoteImageGenerator: ImageGenerator {
     request.contents = []
     let encodedBlob = try? request.serializedData()
     request.contents = Array(contents.values)
-
+    let totalBytes =
+      (encodedBlob?.count ?? 0)
+      + request.contents.reduce(0) { partialResult, content in
+        return partialResult + content.count
+      }
+    transferDataCallback?.beginUpload(totalBytes)
     let bearer: String?
     if let encodedBlob = encodedBlob, !encodedBlob.isEmpty,
       let authenticationHandler = authenticationHandler

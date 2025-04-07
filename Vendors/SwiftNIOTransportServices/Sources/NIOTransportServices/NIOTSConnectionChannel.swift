@@ -507,6 +507,11 @@
 
       parameters.includePeerToPeer = self.enablePeerToPeer
 
+      let monitoringOptions = NWProtocolFramer.Options(definition: MonitoringFramer.definition)
+
+      // Insert the framer at the top of the protocol stack
+      parameters.defaultProtocolStack.applicationProtocols.insert(monitoringOptions, at: 0)
+
       let connection = NWConnection(to: target, using: parameters)
       connection.stateUpdateHandler = self.stateUpdateHandler(newState:)
       connection.betterPathUpdateHandler = self.betterPathHandler
