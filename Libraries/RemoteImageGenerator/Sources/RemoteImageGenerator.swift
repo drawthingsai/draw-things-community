@@ -53,8 +53,10 @@ public struct RemoteImageGenerator: ImageGenerator {
 
   public struct TransferDataCallback {
     public var beginUpload: (Int) -> Void
-    public init(beginUpload: @escaping (Int) -> Void) {
+    public var beginDownload: (Int) -> Void
+    public init(beginUpload: @escaping (Int) -> Void, beginDownload: @escaping (Int) -> Void) {
       self.beginUpload = beginUpload
+      self.beginDownload = beginDownload
     }
   }
 
@@ -190,6 +192,9 @@ public struct RemoteImageGenerator: ImageGenerator {
         }
         logger.info("Received generated image data")
         tensors.append(contentsOf: imageTensors)
+      }
+      if response.hasDownloadSize && response.downloadSize > 0 {
+        transferDataCallback?.beginDownload(Int(response.downloadSize))
       }
       if response.hasCurrentSignpost {
         let currentSignpost = ImageGeneratorSignpost(
