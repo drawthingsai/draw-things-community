@@ -52,15 +52,15 @@ private func SigLIPResidualAttentionBlock(
 }
 
 func SigLIPVisionTransformer<T: TensorNumeric & BinaryFloatingPoint>(
-  _ dataType: T.Type,
-  gridX: Int, gridY: Int, width: Int, layers: Int, heads: Int, MLP: Int, batchSize: Int,
-  usesFlashAttention: Bool, approximate: GELU.Approximate
+  _ dataType: T.Type, gridX: Int, gridY: Int, filterSize: Int, width: Int, layers: Int, heads: Int,
+  MLP: Int, batchSize: Int, usesFlashAttention: Bool, approximate: GELU.Approximate
 ) -> Model {
   let x = Input()
   let posEmbed = Parameter<T>(
-    .GPU(0), .HWC(1, 27 * 27, width), initBound: 1, name: "pos_embed")
+    .GPU(0), .HWC(1, gridX * gridY, width), initBound: 1, name: "pos_embed")
   let conv1 = Convolution(
-    groups: 1, filters: width, filterSize: [14, 14], hint: Hint(stride: [14, 14]), format: .OIHW)
+    groups: 1, filters: width, filterSize: [filterSize, filterSize],
+    hint: Hint(stride: [filterSize, filterSize]), format: .OIHW)
   var out = conv1(x).reshaped([batchSize, gridX * gridY, width])
   out = out + posEmbed
   for i in 0..<layers {

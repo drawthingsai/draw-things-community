@@ -33,7 +33,7 @@ struct Converter: ParsableCommand {
   }
 
   mutating func run() throws {
-    ModelZoo.externalUrl = URL(fileURLWithPath: outputDirectory)
+    ModelZoo.externalUrls = [URL(fileURLWithPath: outputDirectory)]
     let fileName = Importer.cleanup(filename: name)
     let importer = ModelImporter(
       filePath: file, modelName: fileName,

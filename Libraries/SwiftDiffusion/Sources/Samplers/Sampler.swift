@@ -30,6 +30,7 @@ public enum ImageEncoderVersion: String, Codable {
   case openClipH14 = "open_clip_h14"
   case eva02L14_336 = "eva02_l14_336"
   case siglipL27_384 = "siglip_l27_384"
+  case siglip2L27_512 = "siglip2_l27_512"
 }
 
 public enum AlternativeDecoderVersion: String, Codable {

@@ -1609,13 +1609,15 @@ extension LocalImageGenerator {
       switch imageEncoderVersion {
       case .siglipL27_384:
         imageSize = 378
+      case .siglip2L27_512:
+        imageSize = 512
       case .clipL14_336, .eva02L14_336:
         imageSize = 336
       case .openClipH14:
         imageSize = 224
       }
       switch imageEncoderVersion {
-      case .siglipL27_384:
+      case .siglipL27_384, .siglip2L27_512:
         // siglip normalizes with simply 0.5, 0.5, hence in the range of -1, 1.
         if inputHeight != imageSize || inputWidth != imageSize {
           rgbResults.append(

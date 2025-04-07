@@ -24,7 +24,7 @@ struct Converter: ParsableCommand {
   }
 
   mutating func run() throws {
-    ModelZoo.externalUrl = URL(fileURLWithPath: outputDirectory)
+    ModelZoo.externalUrls = [URL(fileURLWithPath: outputDirectory)]
     let cleanup = Importer.cleanup(filename: name)
     let fileName = cleanup + "_ti_f16.ckpt"
     let (textEmbeddingLength, modelVersion) = try EmbeddingImporter.import(

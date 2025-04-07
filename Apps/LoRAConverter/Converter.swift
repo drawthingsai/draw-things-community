@@ -32,7 +32,7 @@ struct Converter: ParsableCommand {
   }
 
   mutating func run() throws {
-    ModelZoo.externalUrl = URL(fileURLWithPath: outputDirectory)
+    ModelZoo.externalUrls = [URL(fileURLWithPath: outputDirectory)]
     let fileName = Importer.cleanup(filename: name) + "_lora_f16.ckpt"
     let scaleFactor = scaleFactor ?? 1.0
     let (modelVersion, didImportTIEmbedding, textEmbeddingLength, isLoHa) = try LoRAImporter.import(

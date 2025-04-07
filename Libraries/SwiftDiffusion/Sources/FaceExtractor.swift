@@ -80,6 +80,8 @@ extension FaceExtractor {
     switch imageEncoderVersion {
     case .siglipL27_384:
       imageSize = 378
+    case .siglip2L27_512:
+      imageSize = 512
     case .clipL14_336, .eva02L14_336:
       imageSize = 336
     case .openClipH14:

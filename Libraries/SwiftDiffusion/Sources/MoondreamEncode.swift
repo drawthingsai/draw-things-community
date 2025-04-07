@@ -118,9 +118,9 @@ extension MoondreamEncode {
         vit =
           existingVit
           ?? SigLIPVisionTransformer(
-            FloatType.self, gridX: 27, gridY: 27, width: 1152, layers: 27, heads: 16, MLP: 4304,
-            batchSize: 1,
-            usesFlashAttention: usesFlashAttention, approximate: .none)
+            FloatType.self, gridX: 27, gridY: 27, filterSize: 14, width: 1152, layers: 27,
+            heads: 16, MLP: 4304, batchSize: 1, usesFlashAttention: usesFlashAttention,
+            approximate: .none)
       case .moondream2_240520:
         let patchCount =
           patchShape.map {
@@ -129,9 +129,9 @@ extension MoondreamEncode {
         vit =
           existingVit
           ?? SigLIPVisionTransformer(
-            FloatType.self, gridX: 27, gridY: 27, width: 1152, layers: 27, heads: 16, MLP: 4304,
-            batchSize: 1 + patchCount,
-            usesFlashAttention: usesFlashAttention, approximate: .tanh)
+            FloatType.self, gridX: 27, gridY: 27, filterSize: 14, width: 1152, layers: 27,
+            heads: 16, MLP: 4304, batchSize: 1 + patchCount, usesFlashAttention: usesFlashAttention,
+            approximate: .tanh)
         if let patch = x.1 {
           input = graph.variable(.GPU(0), .NHWC(1 + patchCount, 378, 378, 3))
           input[0..<1, 0..<378, 0..<378, 0..<3] = x.0

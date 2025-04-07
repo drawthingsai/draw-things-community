@@ -32,8 +32,14 @@ extension ImageEncoder {
         modelKey = "vision_model"
       case .siglipL27_384:
         vit = SigLIPVisionTransformer(
-          FloatType.self, gridX: 27, gridY: 27, width: 1152, layers: 27, heads: 16, MLP: 4304,
-          batchSize: 1, usesFlashAttention: false, approximate: .tanh)
+          FloatType.self, gridX: 27, gridY: 27, filterSize: 14, width: 1152, layers: 27, heads: 16,
+          MLP: 4304, batchSize: 1, usesFlashAttention: false, approximate: .tanh)
+        otherInputs = []
+        modelKey = "vit"
+      case .siglip2L27_512:
+        vit = SigLIPVisionTransformer(
+          FloatType.self, gridX: 32, gridY: 32, filterSize: 16, width: 1152, layers: 27, heads: 16,
+          MLP: 4304, batchSize: 1, usesFlashAttention: false, approximate: .tanh)
         otherInputs = []
         modelKey = "vit"
       case .eva02L14_336:
@@ -59,6 +65,8 @@ extension ImageEncoder {
           return [output[0].reshaped(.HWC(1, 577, 1024))]
         case .siglipL27_384:
           return [output[0].reshaped(.HWC(1, 729, 1152))]
+        case .siglip2L27_512:
+          return [output[0].reshaped(.HWC(1, 1024, 1152))]
         case .eva02L14_336:
           return output.map {
             let shape = $0.shape

@@ -764,6 +764,8 @@ extension ControlModel {
       switch imageEncoderVersion {
       case .siglipL27_384:
         imageSize = 378
+      case .siglip2L27_512:
+        imageSize = 512
       case .clipL14_336, .eva02L14_336:
         imageSize = 336
       case .openClipH14:
@@ -1360,13 +1362,20 @@ extension ControlModel {
       let imageEncoder = ImageEncoder<FloatType>(
         filePath: filePaths[1], version: imageEncoderVersion)
       let imageSize: Int
+      let promptLength: Int
       switch imageEncoderVersion {
       case .clipL14_336, .eva02L14_336:
         imageSize = 336
+        promptLength = 24 * 24
       case .openClipH14:
         imageSize = 224
+        promptLength = 16 * 16
       case .siglipL27_384:
         imageSize = 378
+        promptLength = 27 * 27
+      case .siglip2L27_512:
+        imageSize = 512
+        promptLength = 32 * 32
       }
       let zeroEmbeds = graph.variable(
         .GPU(0), .NHWC(1, imageSize, imageSize, 3), of: FloatType.self)
@@ -1391,14 +1400,15 @@ extension ControlModel {
         redux(inputs: $0)[0].as(of: FloatType.self)
       }
       let batchedImagePromptEmbeds = (0..<inputs.count).map { i in
-        var imagePromptEmbed = graph.variable(.GPU(0), .HWC(2, 729, 4096), of: FloatType.self)
+        var imagePromptEmbed = graph.variable(
+          .GPU(0), .HWC(2, promptLength, 4096), of: FloatType.self)
         switch controlMode {
         case .control:
-          imagePromptEmbed[0..<1, 0..<729, 0..<4096] = imagePromptEmbeds[inputs.count]  // The zero prompt embed for negative.
+          imagePromptEmbed[0..<1, 0..<promptLength, 0..<4096] = imagePromptEmbeds[inputs.count]  // The zero prompt embed for negative.
         case .balanced, .prompt:  // For balanced / prompt, to decrease contrast, use the same embed for both positive / negative.
-          imagePromptEmbed[0..<1, 0..<729, 0..<4096] = imagePromptEmbeds[i]  // The positive prompt embed for negative.
+          imagePromptEmbed[0..<1, 0..<promptLength, 0..<4096] = imagePromptEmbeds[i]  // The positive prompt embed for negative.
         }
-        imagePromptEmbed[1..<2, 0..<729, 0..<4096] = imagePromptEmbeds[i]
+        imagePromptEmbed[1..<2, 0..<promptLength, 0..<4096] = imagePromptEmbeds[i]
         return imagePromptEmbed
       }
       return zip(batchedImagePromptEmbeds, inputs).map { (imagePromptEmbed, input) in
@@ -1416,6 +1426,8 @@ extension ControlModel {
         imageSize = 224
       case .siglipL27_384:
         imageSize = 378
+      case .siglip2L27_512:
+        imageSize = 512
       }
       let zeroEmbeds = graph.variable(
         .GPU(0), .NHWC(1, imageSize, imageSize, 3), of: FloatType.self)
