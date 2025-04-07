@@ -272,16 +272,6 @@ public struct ImageGenerationRequest: @unchecked Sendable {
   /// Clears the value of `sharedSecret`. Subsequent reads from it will return its default value.
   public mutating func clearSharedSecret() {_uniqueStorage()._sharedSecret = nil}
 
-  /// The size of final image will be sent in the next payload.
-  public var downloadSize: Int64 {
-    get {return _storage._downloadSize ?? 0}
-    set {_uniqueStorage()._downloadSize = newValue}
-  }
-  /// Returns true if `downloadSize` has been explicitly set.
-  public var hasDownloadSize: Bool {return _storage._downloadSize != nil}
-  /// Clears the value of `downloadSize`. Subsequent reads from it will return its default value.
-  public mutating func clearDownloadSize() {_uniqueStorage()._downloadSize = nil}
-
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -557,6 +547,16 @@ public struct ImageGenerationResponse: @unchecked Sendable {
   /// Tags to track which server responded to the generation request.
   public var tags: [String] = []
 
+  /// The size of final image will be sent in the next payload.
+  public var downloadSize: Int64 {
+    get {return _downloadSize ?? 0}
+    set {_downloadSize = newValue}
+  }
+  /// Returns true if `downloadSize` has been explicitly set.
+  public var hasDownloadSize: Bool {return self._downloadSize != nil}
+  /// Clears the value of `downloadSize`. Subsequent reads from it will return its default value.
+  public mutating func clearDownloadSize() {self._downloadSize = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -564,6 +564,7 @@ public struct ImageGenerationResponse: @unchecked Sendable {
   fileprivate var _currentSignpost: ImageGenerationSignpostProto? = nil
   fileprivate var _previewImage: Data? = nil
   fileprivate var _scaleFactor: Int32? = nil
+  fileprivate var _downloadSize: Int64? = nil
 }
 
 public struct FileChunk: @unchecked Sendable {
@@ -940,7 +941,6 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     11: .same(proto: "device"),
     12: .same(proto: "contents"),
     13: .same(proto: "sharedSecret"),
-    14: .same(proto: "downloadSize"),
   ]
 
   fileprivate class _StorageClass {
@@ -957,7 +957,6 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     var _device: DeviceType = .phone
     var _contents: [Data] = []
     var _sharedSecret: String? = nil
-    var _downloadSize: Int64? = nil
 
     #if swift(>=5.10)
       // This property is used as the initial default value for new instances of the type.
@@ -985,7 +984,6 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
       _device = source._device
       _contents = source._contents
       _sharedSecret = source._sharedSecret
-      _downloadSize = source._downloadSize
     }
   }
 
@@ -1017,7 +1015,6 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
         case 11: try { try decoder.decodeSingularEnumField(value: &_storage._device) }()
         case 12: try { try decoder.decodeRepeatedBytesField(value: &_storage._contents) }()
         case 13: try { try decoder.decodeSingularStringField(value: &_storage._sharedSecret) }()
-        case 14: try { try decoder.decodeSingularInt64Field(value: &_storage._downloadSize) }()
         default: break
         }
       }
@@ -1069,9 +1066,6 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
       try { if let v = _storage._sharedSecret {
         try visitor.visitSingularStringField(value: v, fieldNumber: 13)
       } }()
-      try { if let v = _storage._downloadSize {
-        try visitor.visitSingularInt64Field(value: v, fieldNumber: 14)
-      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1094,7 +1088,6 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
         if _storage._device != rhs_storage._device {return false}
         if _storage._contents != rhs_storage._contents {return false}
         if _storage._sharedSecret != rhs_storage._sharedSecret {return false}
-        if _storage._downloadSize != rhs_storage._downloadSize {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -1582,6 +1575,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     4: .same(proto: "previewImage"),
     5: .same(proto: "scaleFactor"),
     6: .same(proto: "tags"),
+    7: .same(proto: "downloadSize"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -1596,6 +1590,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
       case 4: try { try decoder.decodeSingularBytesField(value: &self._previewImage) }()
       case 5: try { try decoder.decodeSingularInt32Field(value: &self._scaleFactor) }()
       case 6: try { try decoder.decodeRepeatedStringField(value: &self.tags) }()
+      case 7: try { try decoder.decodeSingularInt64Field(value: &self._downloadSize) }()
       default: break
       }
     }
@@ -1624,6 +1619,9 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     if !self.tags.isEmpty {
       try visitor.visitRepeatedStringField(value: self.tags, fieldNumber: 6)
     }
+    try { if let v = self._downloadSize {
+      try visitor.visitSingularInt64Field(value: v, fieldNumber: 7)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1634,6 +1632,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     if lhs._previewImage != rhs._previewImage {return false}
     if lhs._scaleFactor != rhs._scaleFactor {return false}
     if lhs.tags != rhs.tags {return false}
+    if lhs._downloadSize != rhs._downloadSize {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

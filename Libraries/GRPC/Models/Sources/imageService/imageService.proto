@@ -60,7 +60,6 @@ message ImageGenerationRequest {
   DeviceType device = 11; // The type of the device uses.
   repeated bytes contents = 12; // The image data as array of bytes. It is addressed by its sha256 content. This is modeled as content-addressable storage.
   optional string sharedSecret = 13; // The secret use to authenticate if needed.
-  optional int64 downloadSize = 14; // The size of final image will be sent in the next payload.
 }
 
 message HintProto {
@@ -115,6 +114,7 @@ message ImageGenerationResponse {
   optional bytes previewImage = 4;      // preview generating image data as bytes.
   optional int32 scaleFactor = 5; // The scale factor of the image.
   repeated string tags = 6; // Tags to track which server responded to the generation request.
+  optional int64 downloadSize = 7; // The size of final image will be sent in the next payload.
 }
 
 message FileChunk {

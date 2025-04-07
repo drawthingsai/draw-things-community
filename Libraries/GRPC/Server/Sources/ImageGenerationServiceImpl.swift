@@ -313,6 +313,15 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             return tensor.data(using: codec)
           } ?? []
         self.logger.info("Image processed")
+        let totalBytes = imageDatas.reduce(0) { partialResult, imageData in
+          return partialResult + imageData.count
+        }
+        if totalBytes > 0 {
+          let projectionResponse = ImageGenerationResponse.with {
+            $0.downloadSize = Int64(totalBytes)
+          }
+          context.sendResponse(projectionResponse, promise: nil)
+        }
 
         let finalResponse = ImageGenerationResponse.with {
           if !imageDatas.isEmpty {
