@@ -12,10 +12,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Swift
-RUN curl -O https://download.swift.org/swift-5.10.1-release/ubuntu2204/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu22.04.tar.gz \
-    && tar xzf swift-5.10.1-RELEASE-ubuntu22.04.tar.gz \
-    && rm swift-5.10.1-RELEASE-ubuntu22.04.tar.gz \
-    && mv swift-5.10.1-RELEASE-ubuntu22.04 /usr/local/swift
+RUN curl -O https://download.swift.org/swift-6.0.3-release/ubuntu2204/swift-6.0.3-RELEASE/swift-6.0.3-RELEASE-ubuntu22.04.tar.gz \
+    && tar xzf swift-6.0.3-RELEASE-ubuntu22.04.tar.gz \
+    && rm swift-6.0.3-RELEASE-ubuntu22.04.tar.gz \
+    && mv swift-6.0.3-RELEASE-ubuntu22.04 /usr/local/swift
 
 # Add Swift to PATH permanently
 ENV PATH="/usr/local/swift/usr/bin:${PATH}"
