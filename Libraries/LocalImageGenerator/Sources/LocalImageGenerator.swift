@@ -2534,6 +2534,7 @@ extension LocalImageGenerator {
   }
 
   private func concatMaskWithMaskedImage(
+    hasImage: Bool,
     batchSize: Int, version: ModelVersion, encodedImage: DynamicGraph.Tensor<FloatType>,
     encodedMask: DynamicGraph.Tensor<FloatType>, imageNegMask: DynamicGraph.Tensor<FloatType>?
   ) -> DynamicGraph.Tensor<FloatType> {
@@ -2563,14 +2564,13 @@ extension LocalImageGenerator {
     case .wan21_1_3b, .wan21_14b:
       // For this mask, it contains 4 channels, each channel represent a frame (4x compression). First frame will use all 4 channels.
       let shape = encodedImage.shape
-      let maskShape = encodedMask.shape
       var result = graph.variable(
         encodedImage.kind, format: encodedImage.format,
         shape: [shape[0], shape[1], shape[2], 4 + shape[3]], of: FloatType.self)
       result.full(0)
       result[0..<shape[0], 0..<shape[1], 0..<shape[2], 4..<(4 + shape[3])] = encodedImage
-      for i in 0..<4 {
-        result[0..<maskShape[0], 0..<shape[1], 0..<shape[2], i..<(i + 1)] = encodedMask
+      if hasImage {
+        result[0..<1, 0..<shape[1], 0..<shape[2], 0..<4].full(1)
       }
       return result
     case .flux1:
@@ -2745,12 +2745,13 @@ extension LocalImageGenerator {
     if !poses.isEmpty {
       hasHints.insert(.pose)
     }
+    let hasImage = image != nil
     let (
       canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, _, injectIPAdapterLengths,
       canInjectedControls
     ) =
       ImageGeneratorUtils.canInjectControls(
-        hasImage: image != nil, hasDepth: depth != nil, hasHints: hasHints,
+        hasImage: hasImage, hasDepth: depth != nil, hasHints: hasHints,
         hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls,
         version: modelVersion)
@@ -3079,6 +3080,7 @@ extension LocalImageGenerator {
             .GPU(0), .NHWC(1, firstPassStartHeight, firstPassStartWidth, 1), of: FloatType.self)
           mask?.full(1)
           maskedImage = concatMaskWithMaskedImage(
+            hasImage: hasImage,
             batchSize: batchSize, version: modelVersion, encodedImage: maskedImage!,
             encodedMask: mask!, imageNegMask: nil
           )
@@ -3306,6 +3308,7 @@ extension LocalImageGenerator {
           mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
           mask?.full(1)
           maskedImage = concatMaskWithMaskedImage(
+            hasImage: hasImage,
             batchSize: batchSize, version: modelVersion, encodedImage: maskedImage!,
             encodedMask: mask!, imageNegMask: nil
           )
@@ -4014,7 +4017,7 @@ extension LocalImageGenerator {
         mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
         mask?.full(1)
         maskedImage = concatMaskWithMaskedImage(
-          batchSize: batchSize,
+          hasImage: true, batchSize: batchSize,
           version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil)
       } else if modifier == .editing || modelVersion == .svdI2v {
         maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
@@ -4137,7 +4140,7 @@ extension LocalImageGenerator {
           mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
           mask?.full(1)
           maskedImage = concatMaskWithMaskedImage(
-            batchSize: batchSize,
+            hasImage: true, batchSize: batchSize,
             version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
           )
         } else if modifier == .editing || modelVersion == .svdI2v {
@@ -5305,7 +5308,7 @@ extension LocalImageGenerator {
       var initNegMaskMaybe: DynamicGraph.Tensor<FloatType>? = initNegMask
       if modifier == .inpainting {
         maskedImage = concatMaskWithMaskedImage(
-          batchSize: batchSize,
+          hasImage: true, batchSize: batchSize,
           version: modelVersion, encodedImage: maskedImage!, encodedMask: initMask,
           imageNegMask: graph.variable(imageNegMask2.toGPU(0)))
         if !configuration.preserveOriginalAfterInpaint {
@@ -6054,7 +6057,7 @@ extension LocalImageGenerator {
       var initNegMaskMaybe: DynamicGraph.Tensor<FloatType>? = initNegMask
       if modifier == .inpainting {
         maskedImage1 = concatMaskWithMaskedImage(
-          batchSize: batchSize,
+          hasImage: true, batchSize: batchSize,
           version: modelVersion, encodedImage: maskedImage1!, encodedMask: initMask1,
           imageNegMask: graph.variable(imageNegMask1.toGPU(0)))
         if configuration.preserveOriginalAfterInpaint {
@@ -6155,7 +6158,7 @@ extension LocalImageGenerator {
       var initNegMask2Maybe: DynamicGraph.Tensor<FloatType>? = initNegMask2
       if modifier == .inpainting {
         maskedImage2 = concatMaskWithMaskedImage(
-          batchSize: batchSize,
+          hasImage: true, batchSize: batchSize,
           version: modelVersion, encodedImage: maskedImage2!, encodedMask: initMask2!,
           imageNegMask: imageNegMask2.map { graph.variable($0.toGPU(0)) })
         if !configuration.preserveOriginalAfterInpaint {
