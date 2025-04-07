@@ -60,6 +60,7 @@ message ImageGenerationRequest {
   DeviceType device = 11; // The type of the device uses.
   repeated bytes contents = 12; // The image data as array of bytes. It is addressed by its sha256 content. This is modeled as content-addressable storage.
   optional string sharedSecret = 13; // The secret use to authenticate if needed.
+  optional int64 downloadSize = 14; // The size of final image will be sent in the next payload.
 }
 
 message HintProto {
