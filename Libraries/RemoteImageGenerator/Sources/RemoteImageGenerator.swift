@@ -229,12 +229,17 @@ public struct RemoteImageGenerator: ImageGenerator {
     callInstance.status.whenComplete { result in
       switch result {
       case .success(let status):
-        logger.info("Stream completed with status: \(status)")
-        if status.code == GRPCStatus.Code.permissionDenied, let message = status.message,
-          message.contains("throttlePolicy"),
-          let requestExceedLimitHandler = requestExceedLimitHandler
-        {
-          requestExceedLimitHandler()
+        switch status {
+        case .ok:
+          logger.info("Stream completed with status: \(status)")
+        default:
+          logger.info("Stream failed with status: \(status)")
+          if status.code == GRPCStatus.Code.permissionDenied, let message = status.message,
+            message.contains("throttlePolicy"),
+            let requestExceedLimitHandler = requestExceedLimitHandler
+          {
+            requestExceedLimitHandler()
+          }
         }
       case .failure(let error):
         logger.error("Stream failed with error: \(error)")
