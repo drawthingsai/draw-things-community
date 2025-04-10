@@ -463,6 +463,9 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         let textualInversions = TextualInversionZoo.availableSpecifications.filter {
           return TextualInversionZoo.isModelDownloaded($0.file)
         }
+        let upscalers = UpscalerZoo.availableSpecifications.filter {
+          return UpscalerZoo.isModelDownloaded($0.file)
+        }
         $0.override = MetadataOverride.with {
           let jsonEncoder = JSONEncoder()
           jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
@@ -470,6 +473,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
           $0.loras = (try? jsonEncoder.encode(loras)) ?? Data()
           $0.controlNets = (try? jsonEncoder.encode(controlNets)) ?? Data()
           $0.textualInversions = (try? jsonEncoder.encode(textualInversions)) ?? Data()
+          $0.upscalers = (try? jsonEncoder.encode(upscalers)) ?? Data()
         }
       }
     }
