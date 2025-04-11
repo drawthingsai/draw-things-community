@@ -54,6 +54,12 @@ public struct ModelZoo: DownloadZoo {
     case rf(Denoiser.Parameterization.RF)
   }
 
+  public enum ApiFileFormat: String, Codable {
+    case mp4 = "mp4"
+    case png = "png"
+    case jpg = "jpg"
+  }
+
   public struct Specification: Codable {
     public struct MMDiT: Codable {
       public var qkNorm: Bool
@@ -61,6 +67,109 @@ public struct ModelZoo: DownloadZoo {
       public init(qkNorm: Bool, dualAttentionLayers: [Int]) {
         self.qkNorm = qkNorm
         self.dualAttentionLayers = dualAttentionLayers
+      }
+    }
+    public enum ConfigValue: Codable {
+      case string(String)
+      case int(Int)
+      case bool(Bool)
+
+      public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let stringValue = try? container.decode(String.self) {
+          self = .string(stringValue)
+        } else if let intValue = try? container.decode(Int.self) {
+          self = .int(intValue)
+        } else if let boolValue = try? container.decode(Bool.self) {
+          self = .bool(boolValue)
+        } else {
+          throw DecodingError.dataCorruptedError(
+            in: container, debugDescription: "Cannot decode value")
+        }
+      }
+
+      public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .int(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        }
+      }
+      public var value: Any {
+        switch self {
+        case .string(let value): return value
+        case .int(let value): return value
+        case .bool(let value): return value
+        }
+      }
+    }
+
+    public struct RemoteApiModelConfig: Codable {
+      public var endpoint: String
+      public var url: String
+      public var remoteApiModelConfigMapping: [String: String]
+
+      public var ephemeralApiSecret: Bool
+      public var requestType: String
+      public var taskIdPath: String
+      public var statusUrlTemplate: String
+      public var resultUrlsPath: String
+      public var statusPath: String
+      public var successStatus: String
+      public var failureStatus: String
+      public var pendingStatuses: [String]
+      public var errorMsgPath: String?
+      public var apiKey: String?
+      public var apiSecret: String?
+      public var apiFileFormat: ApiFileFormat
+
+      public var pollingInterval: TimeInterval
+      public var passThroughConfig: [String: ConfigValue]?
+      public var settingsSections: [String]
+      public var customImageSizeRatios: [String]?
+      public init(
+        endpoint: String,
+        url: String,
+        remoteApiModelConfigMapping: [String: String],
+        ephemeralApiSecret: Bool,
+        requestType: String,
+        taskIdPath: String,
+        statusUrlTemplate: String,
+        resultUrlsPath: String,
+        statusPath: String,
+        successStatus: String,
+        failureStatus: String,
+        pendingStatuses: [String],
+        errorMsgPath: String? = nil,
+        apiKey: String? = nil,
+        apiSecret: String? = nil,
+        apiFileFormat: ApiFileFormat,
+        pollingInterval: TimeInterval = 5.0,
+        passThroughConfig: [String: ConfigValue]? = nil,
+        settingsSections: [String],
+        customImageSizeRatios: [String]? = nil
+      ) {
+        self.endpoint = endpoint
+        self.url = url
+        self.remoteApiModelConfigMapping = remoteApiModelConfigMapping
+        self.ephemeralApiSecret = ephemeralApiSecret
+        self.requestType = requestType
+        self.taskIdPath = taskIdPath
+        self.statusUrlTemplate = statusUrlTemplate
+        self.resultUrlsPath = resultUrlsPath
+        self.statusPath = statusPath
+        self.successStatus = successStatus
+        self.failureStatus = failureStatus
+        self.pendingStatuses = pendingStatuses
+        self.errorMsgPath = errorMsgPath
+        self.apiSecret = apiSecret
+        self.apiKey = apiKey
+        self.apiFileFormat = apiFileFormat
+        self.pollingInterval = pollingInterval
+        self.settingsSections = settingsSections
+        self.passThroughConfig = passThroughConfig
+        self.customImageSizeRatios = customImageSizeRatios
       }
     }
     public var name: String
@@ -95,6 +204,7 @@ public struct ModelZoo: DownloadZoo {
     public var builtinLora: Bool?
     public var note: String?
     public var teaCacheCoefficients: [Float]?
+    public var remoteApiModelConfig: RemoteApiModelConfig?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -108,7 +218,8 @@ public struct ModelZoo: DownloadZoo {
       latentsStd: [Float]? = nil, latentsScalingFactor: Float? = nil, stageModels: [String]? = nil,
       textEncoderVersion: TextEncoderVersion? = nil, guidanceEmbed: Bool? = nil,
       paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil,
-      builtinLora: Bool? = nil, note: String? = nil, teaCacheCoefficients: [Float]? = nil
+      builtinLora: Bool? = nil, note: String? = nil, teaCacheCoefficients: [Float]? = nil,
+      remoteApiModelConfig: RemoteApiModelConfig? = nil
     ) {
       self.name = name
       self.file = file
@@ -141,6 +252,7 @@ public struct ModelZoo: DownloadZoo {
       self.mmdit = mmdit
       self.builtinLora = builtinLora
       self.note = note
+      self.remoteApiModelConfig = remoteApiModelConfig
       self.teaCacheCoefficients = teaCacheCoefficients
     }
     fileprivate var predictV: Bool? = nil
@@ -622,6 +734,118 @@ public struct ModelZoo: DownloadZoo {
     Specification(
       name: "Editing (Instruct Pix2Pix)", file: "instruct_pix2pix_22000_f16.ckpt", prefix: "",
       version: .v1, defaultScale: 8, modifier: .editing, deprecated: true),
+    Specification(
+      name: "kling image api",
+      file: "kling-v1-image",
+      prefix: "",
+      version: .flux1,
+      upcastAttention: false,
+      remoteApiModelConfig: Specification.RemoteApiModelConfig(
+        endpoint: "v1/images/generations",
+        url: "https://api.klingai.com/",
+        remoteApiModelConfigMapping: [
+          "aspect_ratio": "aspectRatio",
+          "image": "image",
+          "negative_prompt": "negativeText",
+          "cfg_scale": "strength",
+          "prompt": "text",
+          "n": "batchSize",
+        ],
+        ephemeralApiSecret: true,
+        requestType: "poll",
+        taskIdPath: "data.task_id",
+        statusUrlTemplate: "{{config.endpoint}}/{{jq(data.task_id)}}",
+        resultUrlsPath: "data.task_result.images[].url",
+        statusPath: "data.task_status",
+        successStatus: "succeed",
+        failureStatus: "failed",
+        pendingStatuses: ["submitted", "processing"],
+        errorMsgPath: "data.task_status_msg",
+        apiKey: "",
+        apiSecret: "",
+        apiFileFormat: .png,
+        pollingInterval: 10,
+        passThroughConfig: ["model_name": ModelZoo.Specification.ConfigValue.string("kling-v1")],
+        settingsSections: [
+          "model", "remoteApiKey", "imageSize", "strength", "batchSize",
+        ],
+        customImageSizeRatios: ["16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "1:1"]
+      )
+    ),
+    Specification(
+      name: "kling text 2 video std api (5s)",
+      file: "kling-v1-text-2-video-std",
+      prefix: "",
+      version: .flux1,
+      upcastAttention: false,
+      remoteApiModelConfig: Specification.RemoteApiModelConfig(
+        endpoint: "v1/videos/text2video",
+        url: "https://api.klingai.com/",
+        remoteApiModelConfigMapping: [
+          "aspect_ratio": "aspectRatio",
+          "negative_prompt": "negativeText",
+          "cfg_scale": "strength",
+          "prompt": "text",
+        ],
+        ephemeralApiSecret: true,
+        requestType: "poll",
+        taskIdPath: "data.task_id",
+        statusUrlTemplate: "{{config.endpoint}}/{{jq(data.task_id)}}",
+        resultUrlsPath: "data.task_result.videos[].url",
+        statusPath: "data.task_status",
+        successStatus: "succeed",
+        failureStatus: "failed",
+        pendingStatuses: ["submitted", "processing"],
+        errorMsgPath: "data.task_status_msg",
+        apiKey: "",
+        apiSecret: "",
+        apiFileFormat: .mp4,
+        pollingInterval: 30,
+        passThroughConfig: [
+          "model_name": ModelZoo.Specification.ConfigValue.string("kling-v1"),
+          "mode": ModelZoo.Specification.ConfigValue.string("std"),
+        ],
+        settingsSections: ["model", "remoteApiKey", "imageSize", "strength"],
+        customImageSizeRatios: ["16:9", "9:16", "1:1"]
+      )
+    ),
+    Specification(
+      name: "kling image 2 video std api (5s)",
+      file: "kling-v1-image-2-video",
+      prefix: "",
+      version: .flux1,
+      upcastAttention: false,
+      remoteApiModelConfig: Specification.RemoteApiModelConfig(
+        endpoint: "v1/videos/image2video",
+        url: "https://api.klingai.com/",
+        remoteApiModelConfigMapping: [
+          "aspect_ratio": "aspectRatio",
+          "image": "image",
+          "negative_prompt": "negativeText",
+          "cfg_scale": "strength",
+          "prompt": "text",
+        ],
+        ephemeralApiSecret: true,
+        requestType: "poll",
+        taskIdPath: "data.task_id",
+        statusUrlTemplate: "{{config.endpoint}}/{{jq(data.task_id)}}",
+        resultUrlsPath: "data.task_result.videos[].url",
+        statusPath: "data.task_status",
+        successStatus: "succeed",
+        failureStatus: "failed",
+        pendingStatuses: ["submitted", "processing"],
+        errorMsgPath: "data.task_status_msg",
+        apiKey: "",
+        apiSecret: "",
+        apiFileFormat: .mp4,
+        pollingInterval: 30,
+        passThroughConfig: [
+          "model_name": ModelZoo.Specification.ConfigValue.string("kling-v1")
+        ],
+        settingsSections: ["model", "remoteApiKey", "imageSize", "strength"],
+        customImageSizeRatios: ["16:9", "9:16", "1:1"]
+      )
+    ),
   ]
 
   private static let builtinModelsAndAvailableSpecifications: (Set<String>, [Specification]) = {
@@ -638,6 +862,7 @@ public struct ModelZoo: DownloadZoo {
     else {
       return (Set(builtinSpecifications.map { $0.file }), builtinSpecifications)
     }
+
     var availableSpecifications = builtinSpecifications
     var builtinModels = Set(builtinSpecifications.map { $0.file })
     for specification in jsonSpecifications {
@@ -729,6 +954,53 @@ public struct ModelZoo: DownloadZoo {
     // Still respect the order.
     availableSpecifications.append(specification)
     self.availableSpecifications = availableSpecifications
+    specificationMapping[specification.file] = specification
+  }
+
+  public static func updateCustomSpecification(_ specification: Specification) {
+    dispatchPrecondition(condition: .onQueue(.main))
+    var customSpecifications = [Specification]()
+    let jsonFile = ModelZoo.filePathForOtherModelDownloaded("custom.json")
+
+    // Load existing specifications from custom.json
+    if let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) {
+      let jsonDecoder = JSONDecoder()
+      jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+      if let jsonSpecification = try? jsonDecoder.decode(
+        [FailableDecodable<Specification>].self, from: jsonData
+      ).compactMap({ $0.value }) {
+        customSpecifications.append(contentsOf: jsonSpecification)
+      }
+    }
+
+    // Find the index of the specification with matching file name
+    if let index = customSpecifications.firstIndex(where: { $0.name == specification.name }) {
+      // Replace the existing specification with the updated one
+      customSpecifications[index] = specification
+    } else {
+      // If no matching specification was found, just append it
+      customSpecifications.append(specification)
+    }
+
+    // Write updated specifications back to custom.json
+    let jsonEncoder = JSONEncoder()
+    jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+    jsonEncoder.outputFormatting = .prettyPrinted
+    guard let jsonData = try? jsonEncoder.encode(customSpecifications) else { return }
+    try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
+
+    // Update the in-memory cache
+    var availableSpecifications = self.availableSpecifications
+    // Replace or add the specification in the array
+    if let index = availableSpecifications.firstIndex(where: { $0.file == specification.file }) {
+      availableSpecifications[index] = specification
+    } else {
+      availableSpecifications.append(specification)
+    }
+    self.availableSpecifications = availableSpecifications
+
+    // Update the mapping dictionary
+    overrideMapping[specification.file] = specification
     specificationMapping[specification.file] = specification
   }
 
@@ -869,6 +1141,9 @@ public struct ModelZoo: DownloadZoo {
   public static func isModelDownloaded(
     _ specification: Specification, memorizedBy: Set<String> = []
   ) -> Bool {
+    if let remoteApiModelConfig = specification.remoteApiModelConfig {
+      return true
+    }
     var result =
       isModelDownloaded(specification.file, memorizedBy: memorizedBy)
       && isModelDownloaded(
@@ -904,6 +1179,14 @@ public struct ModelZoo: DownloadZoo {
       }
     }
     return false
+  }
+
+  public static func isRemoteApiModel(_ name: String) -> Bool {
+    guard let specification = specificationForModel(name) else { return false }
+    guard let remoteApiModelConfig = specification.remoteApiModelConfig else {
+      return false
+    }
+    return true
   }
 
   public static func isModelDownloaded(_ name: String, memorizedBy: Set<String>) -> Bool {

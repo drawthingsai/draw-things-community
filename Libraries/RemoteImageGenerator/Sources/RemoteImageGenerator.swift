@@ -179,6 +179,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     if let bearer = bearer {
       metadata.add(name: "authorization", value: "bearer \(bearer)")
     }
+
     let callOptions = CallOptions(customMetadata: metadata)
 
     let callInstance = client.generateImage(request, callOptions: callOptions) { response in
