@@ -58,6 +58,7 @@ public struct ModelZoo: DownloadZoo {
     case mp4 = "mp4"
     case png = "png"
     case jpg = "jpg"
+    case jpeg = "jpeg"
   }
 
   public struct Specification: Codable {
@@ -844,6 +845,168 @@ public struct ModelZoo: DownloadZoo {
         ],
         settingsSections: ["model", "remoteApiKey", "imageSize", "strength"],
         customImageSizeRatios: ["16:9", "9:16", "1:1"]
+      )
+    ),
+    Specification(
+      name: "wavespeed-ai-flux-dev",
+      file: "wavespeed-ai-flux-dev",
+      prefix: "",
+      version: .flux1,
+      upcastAttention: false,
+      remoteApiModelConfig: Specification.RemoteApiModelConfig(
+        endpoint: "api/v2/wavespeed-ai/flux-dev",
+        url: "https://api.wavespeed.ai/",
+        remoteApiModelConfigMapping: [
+          "image": "image",
+          "prompt": "text",
+          "guidance_scale": "guidanceScale",
+          "num_inference_steps": "steps",
+          "num_images": "batchSize",
+          "size": "size",
+          "seed": "seed",
+          "strength": "strength",
+        ],
+        ephemeralApiSecret: false,
+        requestType: "poll",
+        taskIdPath: "data.id",
+        statusUrlTemplate: "api/v2/predictions/{{jq(data.id)}}/result",
+        resultUrlsPath: "data.outputs[]",
+        statusPath: "data.status",
+        successStatus: "completed",
+        failureStatus: "failed",
+        pendingStatuses: ["created", "processing"],
+        errorMsgPath: "data.error",
+        apiKey: "",
+        apiSecret: "",
+        apiFileFormat: .jpeg,
+        pollingInterval: 5,
+        passThroughConfig: [
+          "enable_base64_output": ModelZoo.Specification.ConfigValue.bool(true),
+          "enable_safety_checker": ModelZoo.Specification.ConfigValue.bool(true),
+        ],
+        settingsSections: [
+          "model", "remoteApiKey", "imageSize", "strength", "batchSize", "seed", "textGuidance",
+          "steps",
+        ]
+      )
+    ),
+    Specification(
+      name: "wavespeed-ai-hidream-i1-fast",
+      file: "wavespeed-ai-hidream-i1-fast",
+      prefix: "",
+      version: .flux1,
+      upcastAttention: false,
+      remoteApiModelConfig: Specification.RemoteApiModelConfig(
+        endpoint: "api/v2/wavespeed-ai/hidream-i1-fast",
+        url: "https://api.wavespeed.ai/",
+        remoteApiModelConfigMapping: [
+          "prompt": "text",
+          "negative_prompt": "negativeText",
+          "guidance_scale": "guidanceScale",
+          "num_inference_steps": "steps",
+          "num_images": "batchSize",
+          "seed": "seed",
+        ],
+        ephemeralApiSecret: false,
+        requestType: "poll",
+        taskIdPath: "data.id",
+        statusUrlTemplate: "api/v2/predictions/{{jq(data.id)}}/result",
+        resultUrlsPath: "data.outputs[]",
+        statusPath: "data.status",
+        successStatus: "completed",
+        failureStatus: "failed",
+        pendingStatuses: ["created", "processing"],
+        errorMsgPath: "data.error",
+        apiKey: "",
+        apiSecret: "",
+        apiFileFormat: .jpeg,
+        pollingInterval: 5,
+        passThroughConfig: [
+          "enable_safety_checker": ModelZoo.Specification.ConfigValue.bool(true),
+          "sync_mode": ModelZoo.Specification.ConfigValue.bool(false),
+          "output_format": ModelZoo.Specification.ConfigValue.string("jpeg"),
+        ],
+        settingsSections: [
+          "model", "remoteApiKey", "batchSize", "seed", "textGuidance", "steps",
+        ]
+      )
+    ),
+    Specification(
+      name: "wavespeed-ai-hidream-i1-full",
+      file: "wavespeed-ai-hidream-i1-full",
+      prefix: "",
+      version: .flux1,
+      upcastAttention: false,
+      remoteApiModelConfig: Specification.RemoteApiModelConfig(
+        endpoint: "api/v2/wavespeed-ai/hidream-i1-full",
+        url: "https://api.wavespeed.ai/",
+        remoteApiModelConfigMapping: [
+          "prompt": "text",
+          "negative_prompt": "negativeText",
+          "guidance_scale": "guidanceScale",
+          "num_inference_steps": "steps",
+          "num_images": "batchSize",
+          "seed": "seed",
+        ],
+        ephemeralApiSecret: false,
+        requestType: "poll",
+        taskIdPath: "data.id",
+        statusUrlTemplate: "api/v2/predictions/{{jq(data.id)}}/result",
+        resultUrlsPath: "data.outputs[]",
+        statusPath: "data.status",
+        successStatus: "completed",
+        failureStatus: "failed",
+        pendingStatuses: ["created", "processing"],
+        errorMsgPath: "data.error",
+        apiKey: "",
+        apiSecret: "",
+        apiFileFormat: .jpeg,
+        pollingInterval: 5,
+        passThroughConfig: [
+          "enable_safety_checker": ModelZoo.Specification.ConfigValue.bool(true),
+          "sync_mode": ModelZoo.Specification.ConfigValue.bool(false),
+          "output_format": ModelZoo.Specification.ConfigValue.string("jpeg"),
+        ],
+        settingsSections: [
+          "model", "remoteApiKey", "batchSize", "seed", "textGuidance", "steps",
+        ]
+      )
+    ),
+    Specification(
+      name: "wavespeed-ai-ghibli",
+      file: "wavespeed-ai-ghibli",
+      prefix: "",
+      version: .flux1,
+      upcastAttention: false,
+      remoteApiModelConfig: Specification.RemoteApiModelConfig(
+        endpoint: "api/v2/wavespeed-ai/ghibli",
+        url: "https://api.wavespeed.ai/",
+        remoteApiModelConfigMapping: [
+          "image": "image",
+          "prompt": "text",
+          "negative_prompt": "negativeText",
+        ],
+        ephemeralApiSecret: false,
+        requestType: "poll",
+        taskIdPath: "data.id",
+        statusUrlTemplate: "api/v2/predictions/{{jq(data.id)}}/result",
+        resultUrlsPath: "data.outputs[]",
+        statusPath: "data.status",
+        successStatus: "completed",
+        failureStatus: "failed",
+        pendingStatuses: ["created", "processing"],
+        errorMsgPath: "data.error",
+        apiKey: "",
+        apiSecret: "",
+        apiFileFormat: .jpeg,
+        pollingInterval: 5,
+        passThroughConfig: [
+          "enable_safety_checker": ModelZoo.Specification.ConfigValue.bool(true),
+          "enable_base64_output": ModelZoo.Specification.ConfigValue.bool(true),
+        ],
+        settingsSections: [
+          "model", "remoteApiKey",
+        ]
       )
     ),
   ]
