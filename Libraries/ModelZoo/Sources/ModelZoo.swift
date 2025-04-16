@@ -741,6 +741,7 @@ public struct ModelZoo: DownloadZoo {
       prefix: "",
       version: .flux1,
       upcastAttention: false,
+      defaultScale: 16,
       remoteApiModelConfig: Specification.RemoteApiModelConfig(
         endpoint: "v1/images/generations",
         url: "https://api.klingai.com/",
@@ -779,6 +780,7 @@ public struct ModelZoo: DownloadZoo {
       prefix: "",
       version: .flux1,
       upcastAttention: false,
+      defaultScale: 16,
       remoteApiModelConfig: Specification.RemoteApiModelConfig(
         endpoint: "v1/videos/text2video",
         url: "https://api.klingai.com/",
@@ -816,6 +818,7 @@ public struct ModelZoo: DownloadZoo {
       prefix: "",
       version: .flux1,
       upcastAttention: false,
+      defaultScale: 16,
       remoteApiModelConfig: Specification.RemoteApiModelConfig(
         endpoint: "v1/videos/image2video",
         url: "https://api.klingai.com/",
