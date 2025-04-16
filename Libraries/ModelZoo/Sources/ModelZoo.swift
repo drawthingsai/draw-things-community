@@ -1299,6 +1299,11 @@ public struct ModelZoo: DownloadZoo {
     guard !fileManager.fileExists(atPath: otherFilePath) else {
       return otherFilePath
     }
+    for externalUrl in externalUrls {
+      if FileManager.default.fileExists(atPath: externalUrl.appendingPathComponent(name).path) {
+        return externalUrl.appendingPathComponent(name).path
+      }
+    }
     // Check external storage, return path at external storage regardless.
     let filePath = externalUrl.appendingPathComponent(name).path
     return filePath
