@@ -66,7 +66,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       }
       switch modelVersion {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_14b, .wan21_1_3b:
+        .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_14b, .wan21_1_3b, .hiDreamI1:
         fatalError()
       case .hunyuanVideo:
         t = [inferModel(inputs: t[0], Array(t[(4 + 6)..<(6 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
@@ -108,7 +108,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public func compile(model: ModelBuilderOrModel, inputs: [DynamicGraph.AnyTensor]) {
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .hiDreamI1:
       fatalError()
     case .hunyuanVideo:
       if let inferModel = inferModel {

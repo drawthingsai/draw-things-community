@@ -542,6 +542,14 @@ public struct DeviceCapability {
       else {
         return false
       }
+    case .hiDreamI1:
+      guard
+        (!isMaxPerformance
+          && !((isMacCatalystBuild() ? isHighPerformance : isMaxPerformance) && is8BitModel))
+          || force
+      else {
+        return false
+      }
     }
     return true
   }

@@ -96,7 +96,8 @@ extension UNetProtocol {
             embeddingSize: timeEmbeddingSize,
             maxPeriod: 10_000)
         ).toGPU(0))
-    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
+      .hiDreamI1:
       return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
@@ -150,6 +151,8 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         ]
         .copied()
       }
+  case .hiDreamI1:
+    fatalError()
   case .hunyuanVideo:
     return conditions[0..<2]
       + conditions[2..<conditions.count].enumerated().map {
@@ -936,6 +939,8 @@ extension UNetFromNNC {
             inputResidual: false
           ).1)
       }
+    case .hiDreamI1:
+      fatalError()
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -969,9 +974,7 @@ extension UNetFromNNC {
       case .flux1:
         c.append(contentsOf: injectedIPAdapters)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB, .hunyuanVideo:
-        fatalError()
-      case .wan21_1_3b, .wan21_14b:
+        .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
         fatalError()
       }
     }
@@ -1027,7 +1030,8 @@ extension UNetFromNNC {
       modelKey = "stage_b"
     case .wurstchenStageC:
       modelKey = "stage_c"
-    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
+      .hiDreamI1:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -1077,6 +1081,8 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<40).map {
                   return ($0, $0)
                 })
+            case .hiDreamI1:
+              fatalError()
             case .auraflow:
               fatalError()
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -1270,6 +1276,8 @@ extension UNetFromNNC {
       case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
         break
+      case .hiDreamI1:
+        fatalError()
       case .wan21_1_3b, .wan21_14b:
         if $0.0 == 0 {
           let shape = $0.1.shape
@@ -1395,6 +1403,8 @@ extension UNetFromNNC {
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
+    case .hiDreamI1:
+      fatalError()
     }
     unet.compile(inputs: inputs)
   }
@@ -1735,6 +1745,8 @@ extension UNetFromNNC {
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
+    case .hiDreamI1:
+      fatalError()
     }
     return unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
   }
@@ -1956,9 +1968,7 @@ extension UNetFromNNC {
         }
         c = newC
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB, .hunyuanVideo:
-        fatalError()
-      case .wan21_1_3b, .wan21_14b:
+        .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
         fatalError()
       }
     }
@@ -1989,7 +1999,7 @@ extension UNetFromNNC {
       }
       return x
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+      .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
       return x
     }
   }

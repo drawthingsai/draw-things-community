@@ -19,6 +19,7 @@ public enum ModelVersion: String, Codable {
   case hunyuanVideo = "hunyuan_video"
   case wan21_1_3b = "wan_v2.1_1.3b"
   case wan21_14b = "wan_v2.1_14b"
+  case hiDreamI1 = "hidream_i1"
 }
 
 public enum TextEncoderVersion: String, Codable {

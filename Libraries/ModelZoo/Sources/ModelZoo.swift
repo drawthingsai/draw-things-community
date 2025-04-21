@@ -45,6 +45,8 @@ public struct ModelZoo: DownloadZoo {
       return "Wan v2.1 1.3B"
     case .wan21_14b:
       return "Wan v2.1 14B"
+    case .hiDreamI1:
+      return "HiDream I1"
     }
   }
 
@@ -1035,7 +1037,7 @@ public struct ModelZoo: DownloadZoo {
   public static func isModelDownloaded(
     _ specification: Specification, memorizedBy: Set<String> = []
   ) -> Bool {
-    if let remoteApiModelConfig = specification.remoteApiModelConfig {
+    if let _ = specification.remoteApiModelConfig {
       return true
     }
     var result =
@@ -1077,7 +1079,7 @@ public struct ModelZoo: DownloadZoo {
 
   public static func isRemoteApiModel(_ name: String) -> Bool {
     guard let specification = specificationForModel(name) else { return false }
-    guard let remoteApiModelConfig = specification.remoteApiModelConfig else {
+    guard let _ = specification.remoteApiModelConfig else {
       return false
     }
     return true
@@ -1182,7 +1184,7 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .pixart:
       return .epsilon
-    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
       return .u(conditionScale: 1000)
     }
   }
@@ -1195,7 +1197,7 @@ public struct ModelZoo: DownloadZoo {
     switch specification.version {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b,
-      .wan21_14b:
+      .wan21_14b, .hiDreamI1:
       return .timestep
     case .svdI2v:
       return .noise
@@ -1224,7 +1226,7 @@ public struct ModelZoo: DownloadZoo {
       return .edm(.init(sigmaMax: 700.0))
     case .wurstchenStageC, .wurstchenStageB:
       return .edm(.init(sigmaMin: 0.01, sigmaMax: 99.995))
-    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
@@ -1244,6 +1246,8 @@ public struct ModelZoo: DownloadZoo {
       return 256
     case .flux1:
       return 512
+    case .hiDreamI1:
+      return 128
     case .hunyuanVideo:
       return 0
     case .wan21_1_3b, .wan21_14b:
@@ -1274,7 +1278,7 @@ public struct ModelZoo: DownloadZoo {
       return (nil, nil, 2.32558139535, nil)
     case .sd3, .sd3Large:
       return (nil, nil, 1.5305, 0.0609)
-    case .flux1:
+    case .flux1, .hiDreamI1:
       return (nil, nil, 0.3611, 0.11590)
     case .hunyuanVideo:
       return (nil, nil, 0.476986, nil)
@@ -1344,7 +1348,7 @@ public struct ModelZoo: DownloadZoo {
     guard let coefficients = specification.teaCacheCoefficients else {
       switch specification.version {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b:
+        .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .hiDreamI1:
         return nil
       case .flux1:
         return (4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01)
@@ -1411,6 +1415,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 2 * 1_024 * 1_024 * 1_024
       case .wan21_14b:
         return fileSize < 13 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
+      case .hiDreamI1:
+        return fileSize < 13 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
       }
     }
     return false
@@ -1455,6 +1461,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 2 * 1_024 * 1_024 * 1_024
       case .wan21_14b:
         return fileSize < 15 * 1_024 * 1_024 * 1_024
+      case .hiDreamI1:
+        return fileSize < 17 * 1_024 * 1_024 * 1_024
       }
     }
     return false

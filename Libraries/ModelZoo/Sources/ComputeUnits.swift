@@ -39,6 +39,8 @@ public enum ComputeUnits {
       return 1.176470588 * 0.8
     case .wan21_14b:
       return 2.823529412 * 0.8
+    case .hiDreamI1:
+      return 2.5
     }
   }
 
@@ -76,7 +78,7 @@ public enum ComputeUnits {
         version: modelVersion)
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hiDreamI1:
       batchSize = max(1, Int(configuration.batchSize)) * (isCfgEnabled ? 2 : 1)
       numFrames = 1
     case .svdI2v:

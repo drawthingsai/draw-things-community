@@ -343,6 +343,8 @@ public final class ModelImporter {
       case .wurstchenStageC, .wurstchenStageB:
         throw Error.noTextEncoder
       case .wan21_1_3b, .wan21_14b:
+        throw Error.noTextEncoder
+      case .hiDreamI1:
         fatalError()
       case .kandinsky21:
         fatalError()
@@ -414,9 +416,9 @@ public final class ModelImporter {
             filePath = ModelZoo.filePathForModelDownloaded(
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-            .wurstchenStageB, .hunyuanVideo:
+            .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
             fatalError()
-          case .wan21_1_3b, .wan21_14b:
+          case .hiDreamI1:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -455,7 +457,8 @@ public final class ModelImporter {
                 throw Error.tensorWritesFailed
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-              .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+              .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
+              .hiDreamI1:
               fatalError()
             }
           }
@@ -589,6 +592,8 @@ public final class ModelImporter {
     case .wan21_1_3b, .wan21_14b:
       conditionalLength = 4096
       batchSize = 1
+    case .hiDreamI1:
+      fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -631,9 +636,9 @@ public final class ModelImporter {
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-          .hunyuanVideo:
+          .hunyuanVideo, .wan21_1_3b, .wan21_14b:
           vectors = []
-        case .wan21_1_3b, .wan21_14b:
+        case .hiDreamI1:
           fatalError()
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -708,6 +713,8 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .hiDreamI1:
+        fatalError()
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -852,6 +859,8 @@ public final class ModelImporter {
         (unetFixedMapper, unetFixed) = WanFixed(
           timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, textLength: 512,
           injectImage: true)
+      case .hiDreamI1:
+        fatalError()
       case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
@@ -926,6 +935,8 @@ public final class ModelImporter {
           graph.variable(.CPU, .HWC(1, 257, 1280), of: FloatType.self),
         ]
         tEmb = nil
+      case .hiDreamI1:
+        fatalError()
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1071,6 +1082,8 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
+          case .hiDreamI1:
+            fatalError()
           case .auraflow:
             fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1218,6 +1231,8 @@ public final class ModelImporter {
           if $0.keys.count != 1306 && $0.keys.count != 1514 {
             throw Error.tensorWritesFailed
           }
+        case .hiDreamI1:
+          fatalError()
         case .auraflow:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
