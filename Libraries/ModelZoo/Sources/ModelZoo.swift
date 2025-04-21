@@ -187,6 +187,7 @@ public struct ModelZoo: DownloadZoo {
     public var deprecated: Bool?
     public var imageEncoder: String?
     public var clipEncoder: String?
+    public var additionalClipEncoders: [String]?
     public var t5Encoder: String?
     public var diffusionMapping: String?
     public var highPrecisionAutoencoder: Bool?
@@ -212,11 +213,11 @@ public struct ModelZoo: DownloadZoo {
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
       autoencoder: String? = nil, modifier: SamplerModifier? = nil, deprecated: Bool? = nil,
-      imageEncoder: String? = nil, clipEncoder: String? = nil, t5Encoder: String? = nil,
-      diffusionMapping: String? = nil,
-      highPrecisionAutoencoder: Bool? = nil, defaultRefiner: String? = nil,
-      isConsistencyModel: Bool? = nil, conditioning: Denoiser.Conditioning? = nil,
-      objective: Denoiser.Objective? = nil,
+      imageEncoder: String? = nil, clipEncoder: String? = nil,
+      additionalClipEncoders: [String]? = nil, t5Encoder: String? = nil,
+      diffusionMapping: String? = nil, highPrecisionAutoencoder: Bool? = nil,
+      defaultRefiner: String? = nil, isConsistencyModel: Bool? = nil,
+      conditioning: Denoiser.Conditioning? = nil, objective: Denoiser.Objective? = nil,
       noiseDiscretization: NoiseDiscretization? = nil, latentsMean: [Float]? = nil,
       latentsStd: [Float]? = nil, latentsScalingFactor: Float? = nil, stageModels: [String]? = nil,
       textEncoderVersion: TextEncoderVersion? = nil, guidanceEmbed: Bool? = nil,
@@ -236,6 +237,7 @@ public struct ModelZoo: DownloadZoo {
       self.deprecated = deprecated
       self.imageEncoder = imageEncoder
       self.clipEncoder = clipEncoder
+      self.additionalClipEncoders = additionalClipEncoders
       self.t5Encoder = t5Encoder
       self.diffusionMapping = diffusionMapping
       self.highPrecisionAutoencoder = highPrecisionAutoencoder
@@ -500,11 +502,26 @@ public struct ModelZoo: DownloadZoo {
       "dba1a4fe5c29eb33479759b00ed309c32cc63d92663c7bd74c3d0aedd2dbd0b9",
     "wan_v2.1_14b_i2v_720p_q6p_svd.ckpt":
       "16bc54134e4e16998df12713722d8cd1038f2cdd0955023835d2801bae720c54",
+    "long_clip_vit_l14_f16.ckpt":
+      "82031eaa248d543a072af378ccd6280cd3be1d07f8733c5d15f9ec4feb82501a",
+    "long_open_clip_vit_bigg14_f16.ckpt":
+      "6beca0db6c1f84b84b6facb0c2ce4abe56fb220be978ee1438064797861f949b",
+    "llama_3.1_8b_instruct_q8p.ckpt":
+      "9b0a80a78041ea4ad3c608f7255ec2186afb3ce5d504f955cfd821afc590da57",
+    "hidream_i1_dev_q8p.ckpt": "1ff76a095b8f75e3047409e1704d1fbbb6c923853a5c59cc699a7b94a5b2c83e",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
 
   public static let builtinSpecifications: [Specification] = [
+    Specification(
+      name: "HiDream I1 [dev]", file: "hidream_i1_dev_q8p.ckpt", prefix: "",
+      version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
+      additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
+      t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
+      isConsistencyModel: true, objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128,
+      hiresFixScale: 24),
     Specification(
       name: "SDXL Base (v0.9)", file: "sd_xl_base_0.9_f16.ckpt", prefix: "", version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
@@ -972,6 +989,9 @@ public struct ModelZoo: DownloadZoo {
     if let CLIPEncoder = specification.clipEncoder {
       models.append((name: name, subtitle: version, file: CLIPEncoder, sha256: nil))
     }
+    specification.additionalClipEncoders?.forEach {
+      models.append((name: name, subtitle: version, file: $0, sha256: nil))
+    }
     if let t5Encoder = specification.t5Encoder {
       models.append((name: name, subtitle: version, file: t5Encoder, sha256: nil))
     }
@@ -994,7 +1014,7 @@ public struct ModelZoo: DownloadZoo {
       if let imageEncoder = ModelZoo.imageEncoderForModel(defaultRefiner) {
         models.append((name: name, subtitle: version, file: imageEncoder, sha256: nil))
       }
-      if let CLIPEncoder = ModelZoo.CLIPEncoderForModel(defaultRefiner) {
+      ModelZoo.CLIPEncodersForModel(defaultRefiner).forEach { CLIPEncoder in
         models.append((name: name, subtitle: version, file: CLIPEncoder, sha256: nil))
       }
       if let T5Encoder = ModelZoo.T5EncoderForModel(defaultRefiner) {
@@ -1056,6 +1076,11 @@ public struct ModelZoo: DownloadZoo {
     if let clipEncoder = specification.clipEncoder {
       result = result && isModelDownloaded(clipEncoder, memorizedBy: memorizedBy)
     }
+    result =
+      result
+      && (specification.additionalClipEncoders ?? []).allSatisfy {
+        isModelDownloaded($0, memorizedBy: memorizedBy)
+      }
     if let t5Encoder = specification.t5Encoder {
       result = result && isModelDownloaded(t5Encoder, memorizedBy: memorizedBy)
     }
@@ -1132,9 +1157,10 @@ public struct ModelZoo: DownloadZoo {
     return specification.imageEncoder
   }
 
-  public static func CLIPEncoderForModel(_ name: String) -> String? {
-    guard let specification = specificationForModel(name) else { return nil }
-    return specification.clipEncoder
+  public static func CLIPEncodersForModel(_ name: String) -> [String] {
+    guard let specification = specificationForModel(name) else { return [] }
+    return (specification.clipEncoder.map { [$0] } ?? [])
+      + (specification.additionalClipEncoders ?? [])
   }
 
   public static func T5EncoderForModel(_ name: String) -> String? {
@@ -1553,6 +1579,9 @@ extension ModelZoo {
       }
       if let clipEncoder = specification.clipEncoder {
         files.insert(clipEncoder)
+      }
+      specification.additionalClipEncoders?.forEach {
+        files.insert($0)
       }
       if let t5Encoder = specification.t5Encoder {
         files.insert(t5Encoder)

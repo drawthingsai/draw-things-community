@@ -2648,8 +2648,7 @@ extension LocalImageGenerator {
           ModelZoo.isModelDownloaded($0) ? $0 : nil
         } ?? ImageGeneratorUtils.defaultTextEncoder
       ]
-      + ((ModelZoo.CLIPEncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil })
-        .map { [$0] } ?? [])
+      + ModelZoo.CLIPEncodersForModel(file).compactMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }
     textEncoderFiles +=
       ((ModelZoo.T5EncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }).map
       { [$0] } ?? [])
@@ -3596,8 +3595,7 @@ extension LocalImageGenerator {
           ModelZoo.isModelDownloaded($0) ? $0 : nil
         } ?? "clip_vit_l14_f16.ckpt"
       ]
-      + ((ModelZoo.CLIPEncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil })
-        .map { [$0] } ?? [])
+      + ModelZoo.CLIPEncodersForModel(file).compactMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }
     textEncoderFiles +=
       ((ModelZoo.T5EncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }).map
       { [$0] } ?? [])
@@ -4848,8 +4846,7 @@ extension LocalImageGenerator {
           ModelZoo.isModelDownloaded($0) ? $0 : nil
         } ?? "clip_vit_l14_f16.ckpt"
       ]
-      + ((ModelZoo.CLIPEncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil })
-        .map { [$0] } ?? [])
+      + ModelZoo.CLIPEncodersForModel(file).compactMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }
     textEncoderFiles +=
       ((ModelZoo.T5EncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }).map
       { [$0] } ?? [])
@@ -5581,8 +5578,7 @@ extension LocalImageGenerator {
           ModelZoo.isModelDownloaded($0) ? $0 : nil
         } ?? "clip_vit_l14_f16.ckpt"
       ]
-      + ((ModelZoo.CLIPEncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil })
-        .map { [$0] } ?? [])
+      + ModelZoo.CLIPEncodersForModel(file).compactMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }
     textEncoderFiles +=
       ((ModelZoo.T5EncoderForModel(file).flatMap { ModelZoo.isModelDownloaded($0) ? $0 : nil }).map
       { [$0] } ?? [])

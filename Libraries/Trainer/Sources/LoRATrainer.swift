@@ -145,7 +145,7 @@ public struct LoRATrainer {
           fatalError()
         }
       })()
-    CLIPEncoder = ModelZoo.CLIPEncoderForModel(model)
+    CLIPEncoder = ModelZoo.CLIPEncodersForModel(model).first
     paddedTextEncodingLength = min(maxTextLength, ModelZoo.paddedTextEncodingLengthForModel(model))
     self.version = version
     self.textEncoderVersion = textEncoderVersion
