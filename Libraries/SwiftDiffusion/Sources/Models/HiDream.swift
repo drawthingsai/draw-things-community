@@ -212,7 +212,7 @@ private func JointTransformerBlock(
   if !contextBlockPreOnly {
     let contextFF: Model
     (contextW1, contextW2, contextW3, contextFF) = FeedForward(
-      hiddenSize: k * h, intermediateSize: 6912, upcast: upcast, name: "c")
+      hiddenSize: k * h, intermediateSize: 6_912, upcast: upcast, name: "c")
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
     contextOut =
       contextOut
@@ -226,15 +226,16 @@ private func JointTransformerBlock(
     contextW3 = nil
   }
   let (xSharedW1, xSharedW2, xSharedW3, xSharedFF) = FeedForward(
-    hiddenSize: k * h, intermediateSize: 3584, upcast: upcast, name: "x_shared")
+    hiddenSize: k * h, intermediateSize: 3_584, upcast: upcast, name: "x_shared")
   let (xMoEGate, xMoEW1, xMoEW2, xMoEW3, xMoEFF) = MoEFeedForward(
-    segments: 4, tokenLength: hw, hiddenSize: k * h, intermediateSize: 6912, upcast: upcast,
+    segments: 4, tokenLength: b * hw, hiddenSize: k * h, intermediateSize: 6_912, upcast: upcast,
     name: "x_moe")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   let xIn = xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]
   xOut =
     xOut
-    + (xChunks[5].to(of: xOut) .* (xSharedFF(xIn) + xMoEFF(xIn))).to(of: xOut)
+    + (xChunks[5].to(of: xOut) .* (xSharedFF(xIn) + xMoEFF(xIn).reshaped([b, hw, h * k]))).to(
+      of: xOut)
   let mapper: ModelWeightMapper = { _ in
     ModelWeightMapping()
   }
@@ -286,14 +287,17 @@ private func SingleTransformerBlock(
   xOut = xIn + (xChunks[2] .* xOut).to(of: xIn)
   // Attentions are now. Now run MLP.
   let (xSharedW1, xSharedW2, xSharedW3, xSharedFF) = FeedForward(
-    hiddenSize: k * h, intermediateSize: 3584, upcast: upcast, name: "x_shared")
+    hiddenSize: k * h, intermediateSize: 3_584, upcast: upcast, name: "x_shared")
   let (xMoEGate, xMoEW1, xMoEW2, xMoEW3, xMoEFF) = MoEFeedForward(
-    segments: 4, tokenLength: xLength, hiddenSize: k * h, intermediateSize: 6912, upcast: upcast,
+    segments: 4, tokenLength: b * xLength, hiddenSize: k * h, intermediateSize: 6_912,
+    upcast: upcast,
     name: "x_moe")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   let xFFIn = xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]
   xOut =
-    xOut + (xChunks[5].to(of: xOut) .* (xSharedFF(xFFIn) + xMoEFF(xFFIn))).to(of: xOut)
+    xOut
+    + (xChunks[5].to(of: xOut) .* (xSharedFF(xFFIn) + xMoEFF(xFFIn).reshaped([b, xLength, h * k])))
+    .to(of: xOut)
   let mapper: ModelWeightMapper = { _ in
     ModelWeightMapping()
   }

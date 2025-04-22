@@ -957,7 +957,7 @@ extension UNetFromNNC {
       let llama3Length = c[3].shape[1]
       unet = ModelBuilderOrModel.model(
         HiDream(
-          batchSize: 1, height: tiledHeight, width: tiledWidth,
+          batchSize: batchSize, height: tiledHeight, width: tiledWidth,
           textLength: (t5Length, llama3Length), layers: (16, 32)
         ).0)
     }
@@ -1765,9 +1765,7 @@ extension UNetFromNNC {
         return et
       }
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
-      break
-    case .hiDreamI1:
+      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1:
       break
     }
     return unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)

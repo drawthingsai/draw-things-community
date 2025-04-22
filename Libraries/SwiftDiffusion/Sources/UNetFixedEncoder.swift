@@ -993,7 +993,7 @@ extension UNetFixedEncoder {
     case .hiDreamI1:
       let h = startHeight / 2
       let w = startWidth / 2
-      let pooled = textEncoding[0]
+      var pooled = textEncoding[0]
       let cBatchSize = pooled.shape[0]
       let t5 = textEncoding[1]
       let llama3 = Array(textEncoding[2...])
@@ -1003,6 +1003,13 @@ extension UNetFixedEncoder {
         from: HiDreamRotaryPositionEmbedding(
           height: h, width: w, tokenLength: t5Length + llama3Length * 2, channels: 128)
       ).toGPU(0)
+      if zeroNegativePrompt && isCfgEnabled {
+        let oldPooled = pooled
+        pooled = graph.variable(like: oldPooled)
+        pooled.full(0)
+        pooled[batchSize..<(batchSize * 2), 0..<2048] =
+          oldPooled[batchSize..<(batchSize * 2), 0..<2048]
+      }
       precondition(timesteps.count > 0)
       let unetFixed: Model
       (unetFixed, _) = HiDreamFixed(timesteps: cBatchSize * timesteps.count, layers: (16, 32))
@@ -1020,14 +1027,14 @@ extension UNetFixedEncoder {
         pooleds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<2048] = pooled
       }
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: [timeEmbeds, pooled, t5] + llama3)
+      unetFixed.compile(inputs: [timeEmbeds, pooleds, t5] + llama3)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
         store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
       }
       let conditions = unetFixed(
-        inputs: timeEmbeds, [pooled, t5] + llama3
+        inputs: timeEmbeds, [pooleds, t5] + llama3
       ).map { $0.as(of: FloatType.self) }
       return ([graph.variable(rot)] + conditions, nil)
     case .wurstchenStageB:
