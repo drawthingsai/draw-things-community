@@ -76,17 +76,21 @@ private func T5Block(
 }
 
 public func T5ForConditionalGeneration<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  b: Int, t: Int, of: FloatType.Type = FloatType.self
+  b: Int, t: Int, attentionMask: Bool, of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let relativePositionBuckets = Input()
+  let attentionMask = attentionMask ? Input() : nil
   let textEmbed = T5TextEmbedding(
     vocabularySize: 32_128, embeddingSize: 4_096, name: "shared", of: FloatType.self)
   var out = textEmbed(x).to(.Float32)
   let relativePositionEmbedding = Embedding(
     FloatType.self, vocabularySize: 32, embeddingSize: 64, name: "relative_position_embedding")
-  let positionBias = relativePositionEmbedding(relativePositionBuckets).reshaped([1, t, t, 64])
+  var positionBias = relativePositionEmbedding(relativePositionBuckets).reshaped([1, t, t, 64])
     .permuted(0, 3, 1, 2).contiguous()
+  if let attentionMask = attentionMask {
+    positionBias = positionBias + attentionMask
+  }
   var mappers = [ModelWeightMapper]()
   for i in 0..<24 {
     let (mapper, block) = T5Block(
@@ -109,7 +113,7 @@ public func T5ForConditionalGeneration<FloatType: TensorNumeric & BinaryFloating
     mapping["encoder.final_layer_norm.weight"] = [finalNorm.weight.name]
     return mapping
   }
-  return (mapper, Model([x, relativePositionBuckets], [out]))
+  return (mapper, Model([x, relativePositionBuckets] + (attentionMask.map { [$0] } ?? []), [out]))
 }
 
 public func relativePositionBuckets(sequenceLength: Int, numBuckets: Int, maxDistance: Int)

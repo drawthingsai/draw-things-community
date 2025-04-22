@@ -330,7 +330,9 @@ public struct LoRATrainer {
             numLayers: 12, numHeads: 12, batchSize: 1,
             intermediateSize: 3072, usesFlashAttention: true, outputPenultimate: true
           ).0,
-          T5ForConditionalGeneration(b: 1, t: paddedTextEncodingLength, of: FloatType.self).1,
+          T5ForConditionalGeneration(
+            b: 1, t: paddedTextEncodingLength, attentionMask: false, of: FloatType.self
+          ).1,
         ]
         let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
         tokensTensor.full(0)

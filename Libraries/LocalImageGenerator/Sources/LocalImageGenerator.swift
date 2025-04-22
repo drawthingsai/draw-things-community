@@ -941,9 +941,9 @@ extension LocalImageGenerator {
     // position index computation is a bit more involved if there is line-break.
     if tokenLength > 0 {
       positionTensor[0] = 0
-      positionTensor[tokenLength - 1] = 76
+      positionTensor[tokenLength - 1] = Int32(maxLength - 1)
       positionTensor[tokenLength] = 0
-      positionTensor[tokenLength * 2 - 1] = 76
+      positionTensor[tokenLength * 2 - 1] = Int32(maxLength - 1)
     }
     // For everything else, we will go through lengths of each, and assigning accordingly.
     j = startLength
@@ -952,8 +952,9 @@ extension LocalImageGenerator {
     for length in lengthsOfUncond {
       for i in 0..<length {
         var position =
-          length <= 75 ? i + 1 : Int(((Float(i) + 0.5) * 75 / Float(length) + 0.5).rounded())
-        position = min(max(position, 1), 75)
+          length <= (maxLength - 2)
+          ? i + 1 : Int(((Float(i) + 0.5) * Float(maxLength - 2) / Float(length) + 0.5).rounded())
+        position = min(max(position, 1), maxLength - 2)
         positionTensor[j] = Int32(position)
         j += 1
       }
@@ -966,7 +967,7 @@ extension LocalImageGenerator {
       if maxPosition + endLength + startLength > paddingLength {  // If it is paddingLength, we can go to later to find i
         tokenLengthUncond = prefixLength + 1
       }
-      var position = maxPosition + 1
+      var position = maxPosition + startLength
       for i in prefixLength..<(tokenLength - 1) {
         positionTensor[i] = Int32(min(position, maxLength - 1))
         position += 1
@@ -981,8 +982,9 @@ extension LocalImageGenerator {
     for length in lengthsOfCond {
       for i in 0..<length {
         var position =
-          length <= 75 ? i + 1 : Int(((Float(i) + 0.5) * 75 / Float(length) + 0.5).rounded())
-        position = min(max(position, 1), 75)
+          length <= (maxLength - 2)
+          ? i + 1 : Int(((Float(i) + 0.5) * Float(maxLength - 2) / Float(length) + 0.5).rounded())
+        position = min(max(position, 1), maxLength - 2)
         positionTensor[j] = Int32(position)
         j += 1
       }
@@ -995,7 +997,7 @@ extension LocalImageGenerator {
       if maxPosition + endLength + startLength > paddingLength {  // If it is paddingLength, we can go to later to find i
         tokenLengthCond = prefixLength + 1
       }
-      var position = maxPosition + 1
+      var position = maxPosition + startLength
       for i in prefixLength..<(tokenLength - 1) {
         positionTensor[tokenLength + i] = Int32(min(position, maxLength - 1))
         position += 1
@@ -1090,7 +1092,7 @@ extension LocalImageGenerator {
         graph: graph, tokenizer: tokenizerLlama3, text: promptWithTemplate,
         negativeText: negativePromptWithTemplate,
         paddingToken: nil, conditionalLength: 4096, modifier: .llama3, potentials: potentials,
-        startLength: 0, maxLength: 0, paddingLength: 0)
+        startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
       result.0 = llama3Tokens + result.0
       result.7 = tokenLengthsUncond - 95  // Remove the leading template.
       result.8 = tokenLengthsCond - 95
@@ -1101,7 +1103,46 @@ extension LocalImageGenerator {
         paddingToken: 0, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
     case .hiDreamI1:
-      fatalError()
+      let tokenizerV1 = tokenizerV1
+      var result = tokenize(
+        graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials,
+        maxLength: 248, paddingLength: 248)
+      let tokenizerV2 = tokenizerXL
+      let (
+        tokens, positions, embedMask, injectedEmbeddings, _, _, _, _, _, _, _
+      ) = tokenize(
+        graph: graph, tokenizer: tokenizerV2, text: openClipG ?? text, negativeText: negativeText,
+        paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials,
+        maxLength: 218, paddingLength: 218)
+      result.0 = result.0 + tokens
+      result.1 = result.1 + positions
+      result.2 = result.2 + embedMask
+      result.3 = result.3 + injectedEmbeddings
+      let (
+        t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _,
+        t5LengthsOfUncond, t5LengthsOfCond
+      ) = tokenize(
+        graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
+        paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
+        maxLength: paddedTextEncodingLength, paddingLength: paddedTextEncodingLength)
+      result.0 = result.0 + t5Tokens
+      result.2 = result.2 + t5EmbedMask
+      result.3 = result.3 + t5InjectedEmbeddings
+      let (
+        llama3Tokens, _, _, _, _, _, _, tokenLengthsUncond, tokenLengthsCond, llama3LengthsOfUncond,
+        llama3LengthsOfCond
+      ) = tokenize(
+        graph: graph, tokenizer: tokenizerLlama3, text: text, negativeText: negativeText,
+        paddingToken: 128009, conditionalLength: 4096, modifier: .llama3, potentials: potentials,
+        startLength: 0, endLength: 0, maxLength: paddedTextEncodingLength,
+        paddingLength: paddedTextEncodingLength)
+      result.0 = result.0 + llama3Tokens
+      result.7 = tokenLengthsUncond
+      result.8 = tokenLengthsCond
+      result.9 = [t5LengthsOfUncond[0] + 1, llama3LengthsOfUncond[0]]
+      result.10 = [t5LengthsOfCond[0] + 1, llama3LengthsOfCond[0]]
+      return result
     case .wurstchenStageC, .wurstchenStageB:
       // The difference between this and SDXL: paddingToken is no long '!' (indexed by 0) but unknown.
       return tokenize(

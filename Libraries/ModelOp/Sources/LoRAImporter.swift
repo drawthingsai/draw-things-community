@@ -760,7 +760,8 @@ public enum LoRAImporter {
       textModelMapping2 = [:]
     case .pixart:
       textModelMapping1 = graph.withNoGrad {
-        let (t5Mapper, t5) = T5ForConditionalGeneration(b: 1, t: 2, of: FloatType.self)
+        let (t5Mapper, t5) = T5ForConditionalGeneration(
+          b: 1, t: 2, attentionMask: false, of: FloatType.self)
         let relativePositionBuckets = relativePositionBuckets(
           sequenceLength: 2, numBuckets: 32, maxDistance: 128
         ).toGPU(0)

@@ -905,7 +905,8 @@ extension TextEncoder {
     }
     // Now load T5 encoder.
     let tokenLength = tokens[2].shape[0] / 2
-    let (_, t5) = T5ForConditionalGeneration(b: 2, t: tokenLength, of: FloatType.self)
+    let (_, t5) = T5ForConditionalGeneration(
+      b: 2, t: tokenLength, attentionMask: false, of: FloatType.self)
     let relativePositionBuckets = relativePositionBuckets(
       sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
     let tokens2TensorGPU = tokens[2].toGPU(0)
@@ -954,7 +955,8 @@ extension TextEncoder {
       (_, textModel) = LoRAT5ForConditionalGeneration(
         b: 2, t: tokenLength, LoRAConfiguration: configuration, of: FloatType.self)
     } else {
-      (_, textModel) = T5ForConditionalGeneration(b: 2, t: tokenLength, of: FloatType.self)
+      (_, textModel) = T5ForConditionalGeneration(
+        b: 2, t: tokenLength, attentionMask: false, of: FloatType.self)
     }
     let relativePositionBuckets = relativePositionBuckets(
       sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
@@ -1317,7 +1319,8 @@ extension TextEncoder {
     }
     // Now load T5 encoder.
     let tokenLength = tokens[0].shape[0] / 2
-    let (_, t5) = T5ForConditionalGeneration(b: batchSize, t: tokenLength, of: FloatType.self)
+    let (_, t5) = T5ForConditionalGeneration(
+      b: batchSize, t: tokenLength, attentionMask: false, of: FloatType.self)
     let relativePositionBuckets = relativePositionBuckets(
       sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
     let tokens2TensorGPU: DynamicGraph.Tensor<Int32>
@@ -1342,7 +1345,7 @@ extension TextEncoder {
     return ([c2, pooled], [textModel])
   }
 
-  private func encodeLlama3(
+  private func encodeHunyuan(
     tokenLengthUncond: Int, tokenLengthCond: Int,
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
@@ -1541,8 +1544,8 @@ extension TextEncoder {
     let llama3 = Llama3(
       FloatType.self, vocabularySize: 128_320, width: 4_096,
       tokenLength: (tokenLengthUncond + 95, tokenLengthCondWithoutAddition, additionalTokenLength),
-      layers: 32, MLP: 14336, heads: 32,
-      outputHiddenStates: 29, batchSize: batchSize)
+      layers: 32, MLP: 14336, heads: 32, outputHiddenStates: [30], batchSize: batchSize,
+      usesFlashAttention: true /* For now, to keep consistency on CUDA */)
     let tokens2TensorGPU: DynamicGraph.Tensor<Int32>
     if isCfgEnabled {
       tokens2TensorGPU = tokens[0].toGPU(0)
@@ -1675,6 +1678,368 @@ extension TextEncoder {
     return ([c, imageEmbeds], [textModel])
   }
 
+  private func encodeHiDreamI1(
+    tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
+    mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
+    lengthsOfUncond: [Int], lengthsOfCond: [Int], textModels existingTextModels: [Model?]
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let maxLength0 = tokens[0].shape[0] / 2
+    var causalAttentionMask0 = Tensor<FloatType>(
+      Array(repeating: 0, count: maxLength0 * maxLength0), .CPU, .NHWC(1, 1, maxLength0, maxLength0)
+    )
+    for i in 0..<(maxLength0 - 1) {
+      for j in (i + 1)..<maxLength0 {
+        causalAttentionMask0[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    let maxLength1 = tokens[1].shape[0] / 2
+    var causalAttentionMask1 = Tensor<FloatType>(
+      Array(repeating: 0, count: maxLength1 * maxLength1), .CPU, .NHWC(1, 1, maxLength1, maxLength1)
+    )
+    for i in 0..<(maxLength1 - 1) {
+      for j in (i + 1)..<maxLength1 {
+        causalAttentionMask1[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    let graph = tokens[1].graph
+    let tokens0TensorGPU = tokens[0].toGPU(0)
+    let position0TensorGPU = positions[0].toGPU(0)
+    let causalAttentionMask0GPU = graph.variable(causalAttentionMask0.toGPU())
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand ? .externalOnDemand : .externalData
+    let textModel0 =
+      CLIPTextModel(
+        FloatType.self, injectEmbeddings: false,
+        vocabularySize: 49408, maxLength: 248, maxTokenLength: maxLength0, embeddingSize: 768,
+        numLayers: 13 - min(max(clipSkip - 1, 1), 12), numHeads: 12, batchSize: 2,
+        intermediateSize: 3072, usesFlashAttention: usesFlashAttention
+      ).0
+    textModel0.compile(inputs: tokens0TensorGPU, position0TensorGPU, causalAttentionMask0GPU)
+    let c0Out: [DynamicGraph.Tensor<FloatType>]
+    let textProjection0 = graph.variable(.GPU(0), .WC(768, 768), of: FloatType.self)
+    if filePaths.count > 1 {
+      graph.openStore(
+        filePaths[1], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[1])
+      ) { store in
+        if lora.count > 0 {
+          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            store.read(
+              "text_model", model: textModel0, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+            ) { name, _, _, shape in
+              var name = name
+              if name == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-0]" {
+                name = "__text_model__[t-98-0]"
+              } else if name
+                == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-1]"
+              {
+                name = "__text_model__[t-98-1]"
+              }
+              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+            }
+          }
+        } else {
+          if clipSkip > 1 {
+            store.read(
+              "text_model", model: textModel0, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+            ) { name, _, _, _ in
+              // Retrieve the right final layer norm parameters.
+              var name = name
+              if name == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-0]" {
+                name = "__text_model__[t-98-0]"
+              } else if name
+                == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-1]"
+              {
+                name = "__text_model__[t-98-1]"
+              }
+              return .continue(name)
+            }
+          } else {
+            store.read(
+              "text_model", model: textModel0, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          }
+        }
+        store.read(
+          "text_projection", variable: textProjection0, codec: [.q6p, .q8p, .ezm7, .externalData])
+      }
+      c0Out = textModel0(
+        inputs: tokens0TensorGPU, position0TensorGPU, causalAttentionMask0GPU
+      ).map {
+        $0.as(
+          of: FloatType.self
+        )
+      }
+    } else {
+      c0Out = [
+        graph.variable(.GPU(0), .HWC(2, maxLength0, 768)),
+        graph.variable(.GPU(0), .WC(2 * maxLength0, 768)),
+      ]
+      for c in c0Out {
+        c.full(0)
+      }
+    }
+    let batchSize = isCfgEnabled ? 2 : 1
+    var pooled = graph.variable(.GPU(0), .WC(batchSize, 2048), of: FloatType.self)
+    pooled.full(0)
+    var unconditionalTokenEnd0: Int? = nil
+    var tokenEnd0: Int? = nil
+    for i in 0..<maxLength0 {
+      if tokens[0][i] == 49407 && unconditionalTokenEnd0 == nil {
+        unconditionalTokenEnd0 = i
+      }
+      if tokens[0][i + maxLength0] == 49407 && tokenEnd0 == nil {
+        tokenEnd0 = i
+      }
+    }
+    if let unconditionalTokenEnd0 = unconditionalTokenEnd0, let tokenEnd0 = tokenEnd0 {
+      if isCfgEnabled {
+        pooled[0..<1, 0..<768] =
+          c0Out[0][unconditionalTokenEnd0..<(unconditionalTokenEnd0 + 1), 0..<768] * textProjection0
+        pooled[1..<2, 0..<768] =
+          c0Out[0][(maxLength0 + tokenEnd0)..<(maxLength0 + tokenEnd0 + 1), 0..<768]
+          * textProjection0
+      } else {
+        pooled[0..<1, 0..<768] =
+          c0Out[0][(maxLength0 + tokenEnd0)..<(maxLength0 + tokenEnd0 + 1), 0..<768]
+          * textProjection0
+      }
+    }
+    // Now load OpenCLIP
+    let tokens1TensorGPU = tokens[1].toGPU(0)
+    let position1TensorGPU = positions[1].toGPU(0)
+    let causalAttentionMask1GPU = graph.variable(causalAttentionMask1.toGPU())
+    let textModel1 =
+      OpenCLIPTextModel(
+        FloatType.self, injectEmbeddings: injectEmbeddings,
+        vocabularySize: 49408, maxLength: 218, maxTokenLength: maxLength1, embeddingSize: 1280,
+        numLayers: 32 - min(max(clipSkip - 2, 0), 30), numHeads: 20, batchSize: 2,
+        intermediateSize: 5120, usesFlashAttention: usesFlashAttention
+      ).0
+    textModel1.compile(
+      inputs: tokens1TensorGPU, position1TensorGPU, causalAttentionMask1GPU)
+    let textProjection1 = graph.variable(.GPU(0), .WC(1280, 1280), of: FloatType.self)
+    let c1Out: [DynamicGraph.Tensor<FloatType>]
+    if filePaths.count > 2 {
+      graph.openStore(
+        filePaths[2], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        if lora.count > 0 {
+          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            store.read(
+              "text_model", model: textModel1, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+            ) { name, _, _, shape in
+              // Retrieve the right final layer norm parameters.
+              var name = name
+              if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-0]" {
+                name = "__text_model__[t-258-0]"
+              } else if name
+                == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-1]"
+              {
+                name = "__text_model__[t-258-1]"
+              }
+              return loader.mergeLoRA(
+                graph, name: name, store: store, shape: shape, prefix: "__te2")
+            }
+          }
+        } else if clipSkip > 1 {
+          store.read(
+            "text_model", model: textModel1, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+          ) {
+            name, _, _, _ in
+            // Retrieve the right final layer norm parameters.
+            var name = name
+            if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-0]" {
+              name = "__text_model__[t-258-0]"
+            } else if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-1]"
+            {
+              name = "__text_model__[t-258-1]"
+            }
+            return .continue(name)
+          }
+        } else {
+          store.read(
+            "text_model", model: textModel1, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
+        store.read(
+          "text_projection", variable: textProjection1, codec: [.q6p, .q8p, .ezm7, .externalData])
+      }
+      c1Out = textModel1(
+        inputs: tokens1TensorGPU, position1TensorGPU, causalAttentionMask1GPU
+      ).map {
+        $0.as(
+          of: FloatType.self
+        )
+      }
+    } else {
+      c1Out = [
+        graph.variable(.GPU(0), .HWC(2, maxLength1, 1280)),
+        graph.variable(.GPU(0), .WC(2 * maxLength1, 1280)),
+      ]
+      for c in c1Out {
+        c.full(0)
+      }
+    }
+    var unconditionalTokenEnd1: Int? = nil
+    var tokenEnd1: Int? = nil
+    for i in 0..<maxLength0 {
+      if tokens[1][i] == 49407 && unconditionalTokenEnd1 == nil {
+        unconditionalTokenEnd1 = i
+      }
+      if tokens[1][i + maxLength1] == 49407 && tokenEnd1 == nil {
+        tokenEnd1 = i
+      }
+    }
+    if let unconditionalTokenEnd1 = unconditionalTokenEnd1, let tokenEnd1 = tokenEnd1 {
+      if isCfgEnabled {
+        pooled[0..<1, 768..<2048] =
+          c1Out[0][unconditionalTokenEnd1..<(unconditionalTokenEnd1 + 1), 0..<1280]
+          * textProjection1
+        pooled[1..<2, 768..<2048] =
+          c1Out[0][(maxLength1 + tokenEnd1)..<(maxLength1 + tokenEnd1 + 1), 0..<1280]
+          * textProjection1
+      } else {
+        pooled[0..<1, 768..<2048] =
+          c1Out[0][(maxLength1 + tokenEnd1)..<(maxLength1 + tokenEnd1 + 1), 0..<1280]
+          * textProjection1
+      }
+    }
+    let c2: DynamicGraph.Tensor<FloatType>
+    if filePaths.count > 3 {
+      let tokenLength = tokens[2].shape[0] / 2
+      let (_, t5) = T5ForConditionalGeneration(
+        b: batchSize, t: tokenLength, attentionMask: tokenLength <= 128, of: FloatType.self)
+      let relativePositionBuckets = relativePositionBuckets(
+        sequenceLength: tokenLength, numBuckets: 32, maxDistance: 128)
+      let tokens2TensorGPU: DynamicGraph.Tensor<Int32>
+      let attentionMask: Tensor<FloatType>?
+      if isCfgEnabled {
+        tokens2TensorGPU = tokens[2].toGPU(0)
+        if tokenLength <= 128 {
+          var mask = Tensor<FloatType>(
+            Array(repeating: 0, count: tokenLength), .CPU, .NHWC(2, 1, 1, tokenLength)
+          )
+          if lengthsOfUncond[0] < tokenLength {
+            for i in lengthsOfUncond[0]..<tokenLength {
+              mask[0, 0, 0, i] = -FloatType.greatestFiniteMagnitude
+            }
+          }
+          if lengthsOfCond[0] < tokenLength {
+            for i in lengthsOfCond[0]..<tokenLength {
+              mask[1, 0, 0, i] = -FloatType.greatestFiniteMagnitude
+            }
+          }
+          attentionMask = mask
+        } else {
+          attentionMask = nil
+        }
+      } else {
+        tokens2TensorGPU = tokens[2][tokenLength..<(tokenLength * 2)].toGPU(0)
+        if tokenLength <= 128 {
+          var mask = Tensor<FloatType>(
+            Array(repeating: 0, count: tokenLength), .CPU, .NHWC(1, 1, 1, tokenLength)
+          )
+          if lengthsOfCond[0] < tokenLength {
+            for i in lengthsOfCond[0]..<tokenLength {
+              mask[0, 0, 0, i] = -FloatType.greatestFiniteMagnitude
+            }
+          }
+          attentionMask = mask
+        } else {
+          attentionMask = nil
+        }
+      }
+      let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
+      let attentionMaskGPU = attentionMask.map { graph.variable($0.toGPU(0)) }
+      t5.compile(
+        inputs: [tokens2TensorGPU, relativePositionBucketsGPU]
+          + (attentionMaskGPU.map { [$0] } ?? []))
+      // Move T5 to on-demand.
+      TensorData.makeExternalData(for: filePaths[3], graph: graph)
+      graph.openStore(
+        filePaths[3], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[3])
+      ) {
+        $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+      }
+      c2 = t5(
+        inputs: tokens2TensorGPU,
+        [relativePositionBucketsGPU] + (attentionMaskGPU.map { [$0] } ?? []))[0].as(
+          of: FloatType.self
+        ).reshaped(.HWC(batchSize, tokenLength, 4096))
+    } else {
+      let tokenLength = tokens[2].shape[0] / 2
+      c2 = graph.variable(.GPU(0), .HWC(batchSize, tokenLength, 4096))
+      c2.full(0)
+    }
+    // Now run llama3.
+    let tokenLength = tokens[3].shape[0] / 2
+    let llama3 = Llama3(
+      FloatType.self, vocabularySize: 128_320, width: 4_096,
+      tokenLength: (tokenLength, tokenLength, tokenLength),
+      layers: 32, MLP: 14336, heads: 32, outputHiddenStates: Set(1..<32), batchSize: batchSize,
+      usesFlashAttention: usesFlashAttention)
+    let tokens3TensorGPU: DynamicGraph.Tensor<Int32>
+    var causalAttentionMaskLlama3 = Tensor<FloatType>(
+      Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
+      .NHWC(batchSize, 1, tokenLength, tokenLength)
+    )
+    if isCfgEnabled {
+      tokens3TensorGPU = tokens[3].toGPU(0)
+      for i in 0..<tokenLength {
+        if i == tokenLength - 1 && lengthsOfUncond[1] >= tokenLength {
+          continue
+        }
+        for j in min(i + 1, lengthsOfUncond[1])..<tokenLength {
+          causalAttentionMaskLlama3[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+        }
+      }
+      for i in 0..<tokenLength {
+        if i == tokenLength - 1 && lengthsOfCond[1] >= tokenLength {
+          continue
+        }
+        for j in min(i + 1, lengthsOfCond[1])..<tokenLength {
+          causalAttentionMaskLlama3[1, 0, i, j] = -FloatType.greatestFiniteMagnitude
+        }
+      }
+    } else {
+      tokens3TensorGPU = tokens[3][tokenLength..<(tokenLength * 2)].toGPU(0)
+      for i in 0..<tokenLength {
+        if i == tokenLength - 1 && lengthsOfCond[1] >= tokenLength {
+          continue
+        }
+        for j in min(i + 1, lengthsOfCond[1])..<tokenLength {
+          causalAttentionMaskLlama3[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+        }
+      }
+    }
+    let rotaryTensorGPU = graph.variable(
+      Llama3ExtendedRotaryEmbedding(sequenceLength: tokenLength, of: FloatType.self).toGPU(0))
+    let causalAttentionMaskLlama3GPU = graph.variable(causalAttentionMaskLlama3.toGPU(0))
+    llama3.compile(
+      inputs: [tokens3TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU])
+    // Move Llama3 8B to on-demand.
+    TensorData.makeExternalData(for: filePaths[0], graph: graph)
+    graph.openStore(
+      filePaths[0], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[0])
+    ) {
+      $0.read(
+        "text_model", model: llama3, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    }
+    let c3 = llama3(
+      inputs: tokens3TensorGPU,
+      [rotaryTensorGPU, causalAttentionMaskLlama3GPU]
+    ).map {
+      $0.as(
+        of: FloatType.self
+      ).reshaped(.HWC(batchSize, tokenLength, 4096))
+    }
+    return ([pooled, c2] + c3, [])
+  }
+
   public func encode(
     tokenLengthUncond: Int, tokenLengthCond: Int,
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
@@ -1714,7 +2079,10 @@ extension TextEncoder {
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         textModels: existingTextModels)
     case .hiDreamI1:
-      fatalError()
+      return encodeHiDreamI1(
+        tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
+        lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
+        textModels: existingTextModels)
     case .kandinsky21:
       return encodeKandinsky(tokens: tokens, positions: positions)
     case .sdxlBase, .sdxlRefiner, .ssd1b:
@@ -1733,7 +2101,7 @@ extension TextEncoder {
     case .svdI2v:
       return encodeI2v(image: image, textModels: existingTextModels)
     case .hunyuanVideo:
-      return encodeLlama3(
+      return encodeHunyuan(
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
