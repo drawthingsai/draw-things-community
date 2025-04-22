@@ -365,6 +365,14 @@ new_git_repository(
     shallow_since = "1682361496 -0400",
 )
 
+new_git_repository(
+    name = "SwiftJMESPath",
+    build_file = "swift-JMESPath.BUILD",
+    commit = "c722898bdfc72cdeb4a8431812fdeec0b56e8e1d",
+    remote = "https://github.com/adam-fowler/jmespath.swift.git",
+    shallow_since = "1734034260 +0000",
+)
+
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(

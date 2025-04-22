@@ -345,5 +345,5 @@ new_git_repository(
     build_file = "swift-JMESPath.BUILD",
     commit = "c722898bdfc72cdeb4a8431812fdeec0b56e8e1d",
     remote = "https://github.com/adam-fowler/jmespath.swift.git",
-    shallow_since = "1690895253 +0200",
+    shallow_since = "1734034260 +0000",
 )
