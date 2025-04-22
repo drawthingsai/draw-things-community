@@ -508,12 +508,22 @@ public struct ModelZoo: DownloadZoo {
       "6beca0db6c1f84b84b6facb0c2ce4abe56fb220be978ee1438064797861f949b",
     "llama_3.1_8b_instruct_q8p.ckpt":
       "9b0a80a78041ea4ad3c608f7255ec2186afb3ce5d504f955cfd821afc590da57",
+    "hidream_i1_fast_q8p.ckpt": "a5f17f1a86a903b8ce8a4fe147ddd82d3c166842b5c67116eb7bf4692c22b2e8",
     "hidream_i1_dev_q8p.ckpt": "1ff76a095b8f75e3047409e1704d1fbbb6c923853a5c59cc699a7b94a5b2c83e",
+    "hidream_i1_full_q8p.ckpt": "24c76c58d296f467e458a5bec4edd512ddf697ceb6739239e8a2494e5a50cf4e",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
 
   public static let builtinSpecifications: [Specification] = [
+    Specification(
+      name: "HiDream I1 [fast]", file: "hidream_i1_fast_q8p.ckpt", prefix: "",
+      version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
+      additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
+      t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
+      isConsistencyModel: true, objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128,
+      hiresFixScale: 24),
     Specification(
       name: "HiDream I1 [dev]", file: "hidream_i1_dev_q8p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
@@ -522,6 +532,13 @@ public struct ModelZoo: DownloadZoo {
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
       objective: .u(conditionScale: 1000), guidanceEmbed: true, paddedTextEncodingLength: 128,
       hiresFixScale: 24),
+    Specification(
+      name: "HiDream I1 [full]", file: "hidream_i1_full_q8p.ckpt", prefix: "",
+      version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
+      additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
+      t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
+      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24),
     Specification(
       name: "SDXL Base (v0.9)", file: "sd_xl_base_0.9_f16.ckpt", prefix: "", version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
