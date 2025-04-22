@@ -1,7 +1,7 @@
 import Foundation
 import NNC
 
-func Llama3RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+func LlamaRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   sequenceLength: Int, of dataType: FloatType.Type = FloatType.self
 ) -> Tensor<FloatType> {
   var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, 128))
@@ -17,7 +17,7 @@ func Llama3RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   return rotary
 }
 
-func Llama3ExtendedRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+func Llama3RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   sequenceLength: Int, of dataType: FloatType.Type = FloatType.self
 ) -> Tensor<FloatType> {
   var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, 128))

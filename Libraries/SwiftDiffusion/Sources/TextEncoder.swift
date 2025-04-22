@@ -1564,7 +1564,7 @@ extension TextEncoder {
       }
     }
     let rotaryTensorGPU = graph.variable(
-      Llama3RotaryEmbedding(sequenceLength: additionalTokenLength, of: FloatType.self).toGPU(0))
+      LlamaRotaryEmbedding(sequenceLength: additionalTokenLength, of: FloatType.self).toGPU(0))
     let causalAttentionMaskLlama3GPU = graph.variable(causalAttentionMaskLlama3.toGPU(0))
     llama3.compile(
       inputs: [tokens2TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU]
@@ -2016,7 +2016,7 @@ extension TextEncoder {
       }
     }
     let rotaryTensorGPU = graph.variable(
-      Llama3ExtendedRotaryEmbedding(sequenceLength: tokenLength, of: FloatType.self).toGPU(0))
+      Llama3RotaryEmbedding(sequenceLength: tokenLength, of: FloatType.self).toGPU(0))
     let causalAttentionMaskLlama3GPU = graph.variable(causalAttentionMaskLlama3.toGPU(0))
     llama3.compile(
       inputs: [tokens3TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU])
