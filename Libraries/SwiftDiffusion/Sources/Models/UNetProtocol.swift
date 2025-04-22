@@ -96,8 +96,14 @@ extension UNetProtocol {
             embeddingSize: timeEmbeddingSize,
             maxPeriod: 10_000)
         ).toGPU(0))
-    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1:
+    case .hiDreamI1:
+      return graph.variable(
+        Tensor<FloatType>(
+          from: timeEmbedding(
+            timestep: timestep, batchSize: batchSize,
+            embeddingSize: 256, maxPeriod: 10_000)
+        ).toGPU(0))
+    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
@@ -152,7 +158,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         .copied()
       }
   case .hiDreamI1:
-    fatalError()
+    return conditions
   case .hunyuanVideo:
     return conditions[0..<2]
       + conditions[2..<conditions.count].enumerated().map {
@@ -940,7 +946,19 @@ extension UNetFromNNC {
           ).1)
       }
     case .hiDreamI1:
-      fatalError()
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      let t5Length = c[2].shape[1]
+      let llama3Length = c[3].shape[1]
+      unet = ModelBuilderOrModel.model(
+        HiDream(
+          height: tiledHeight, width: tiledWidth, textLength: (t5Length, llama3Length),
+          layers: (16, 32)
+        ).0)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -1404,7 +1422,7 @@ extension UNetFromNNC {
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
     case .hiDreamI1:
-      fatalError()
+      break
     }
     unet.compile(inputs: inputs)
   }
@@ -1746,7 +1764,7 @@ extension UNetFromNNC {
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
     case .hiDreamI1:
-      fatalError()
+      break
     }
     return unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
   }

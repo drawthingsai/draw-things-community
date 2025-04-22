@@ -1824,7 +1824,7 @@ extension TextEncoder {
     if filePaths.count > 2 {
       graph.openStore(
         filePaths[2], flags: .readOnly,
-        externalStore: TensorData.externalStore(filePath: filePaths[0])
+        externalStore: TensorData.externalStore(filePath: filePaths[2])
       ) { store in
         if lora.count > 0 {
           LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in

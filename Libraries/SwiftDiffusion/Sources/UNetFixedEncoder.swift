@@ -34,7 +34,7 @@ extension UNetFixedEncoder {
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
       return true
     case .hiDreamI1:
-      fatalError()
+      return true
     case .v1, .v2, .kandinsky21:
       return false
     }
@@ -175,20 +175,9 @@ extension UNetFixedEncoder {
     case .wurstchenStageC, .wurstchenStageB:
       // We don't need other vectors for sampling.
       return []
-    case .sd3, .sd3Large:
+    case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
+      .hiDreamI1:
       return []
-    case .pixart:
-      return []
-    case .auraflow:
-      return []
-    case .flux1:
-      return []
-    case .hunyuanVideo:
-      return []
-    case .wan21_1_3b, .wan21_14b:
-      return []
-    case .hiDreamI1:
-      fatalError()
     case .v1, .v2, .kandinsky21:
       fatalError()
     }
@@ -1002,7 +991,17 @@ extension UNetFixedEncoder {
       }
       return ([graph.variable(rot)] + conditions, nil)
     case .hiDreamI1:
-      fatalError()
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let pooled = textEncoding[0]
+      let t5 = textEncoding[1]
+      let llama3 = Array(textEncoding[2...])
+      let tokenLength = t5.shape[1] + llama3[0].shape[1] * 2
+      let rot = Tensor<FloatType>(
+        from: HiDreamRotaryPositionEmbedding(
+          height: h, width: w, tokenLength: tokenLength, channels: 128)
+      ).toGPU(0)
+      return ([graph.variable(rot)] + [pooled, t5] + llama3, nil)
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
       let effnetHeight = textEncoding[textEncoding.count - 1].shape[1]
