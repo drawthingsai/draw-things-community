@@ -141,20 +141,19 @@ private func MoEFeedForward(
   return (gate, w1, w2, w3, Model([x], [out]))
 }
 
-func JointTransformerBlock(
+private func JointTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, contextBlockPreOnly: Bool,
   upcast: Bool
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
-  let c = Input()
   let rot = Input()
-  let contextAdaLNs = (0..<(contextBlockPreOnly ? 2 : 6)).map {
-    Dense(count: k * h, name: "context_ada_ln_\($0)")
+  let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in
+    Input()
   }
-  let contextChunks = contextAdaLNs.map { $0(c) }
+  let xChunks = (0..<6).map { _ in Input() }
   let contextNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var contextOut = (1 + contextChunks[1]) .* contextNorm1(context).to(.Float16) + contextChunks[0]
+  var contextOut = contextChunks[1] .* contextNorm1(context).to(.Float16) + contextChunks[0]
   let contextToKeys = Dense(count: k * h, name: "c_k")
   let contextToQueries = Dense(count: k * h, name: "c_q")
   let contextToValues = Dense(count: k * h, name: "c_v")
@@ -165,10 +164,8 @@ func JointTransformerBlock(
   let normAddedQ = RMSNorm(epsilon: 1e-5, axis: [2], name: "c_norm_q")
   contextQ = normAddedQ(contextQ).reshaped([b, t.1, h, k])
   let contextV = contextToValues(contextOut).reshaped([b, t.1, h, k])
-  let xAdaLNs = (0..<6).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
-  let xChunks = xAdaLNs.map { $0(c) }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = (1 + xChunks[1]) .* xNorm1(x).to(.Float16) + xChunks[0]
+  var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
   let xToKeys = Dense(count: k * h, name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
@@ -221,7 +218,7 @@ func JointTransformerBlock(
       contextOut
       + (contextChunks[5].to(of: contextOut)
       .* contextFF(
-        contextNorm2(contextOut).to(.Float16) .* (1 + contextChunks[4]) + contextChunks[3])).to(
+        contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])).to(
         of: contextOut)
   } else {
     contextW1 = nil
@@ -234,7 +231,7 @@ func JointTransformerBlock(
     segments: 4, tokenLength: hw, hiddenSize: k * h, intermediateSize: 6912, upcast: upcast,
     name: "x_moe")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  let xIn = xNorm2(xOut).to(.Float16) .* (1 + xChunks[4]) + xChunks[3]
+  let xIn = xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]
   xOut =
     xOut
     + (xChunks[5].to(of: xOut) .* (xSharedFF(xIn) + xMoEFF(xIn))).to(of: xOut)
@@ -242,23 +239,21 @@ func JointTransformerBlock(
     ModelWeightMapping()
   }
   if !contextBlockPreOnly {
-    return (mapper, Model([x, context, c, rot], [xOut, contextOut]))
+    return (mapper, Model([x, context, rot] + contextChunks + xChunks, [xOut, contextOut]))
   } else {
-    return (mapper, Model([x, context, c, rot], [xOut]))
+    return (mapper, Model([x, context, rot] + contextChunks + xChunks, [xOut]))
   }
 }
 
-func SingleTransformerBlock(
+private func SingleTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, contextBlockPreOnly: Bool,
   upcast: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
-  let c = Input()
   let rot = Input()
-  let xAdaLNs = (0..<6).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
-  let xChunks = xAdaLNs.map { $0(c) }
+  let xChunks = (0..<6).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = (1 + xChunks[1]) .* xNorm1(x).to(.Float16) + xChunks[0]
+  var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
   let xToKeys = Dense(count: k * h, name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
@@ -296,27 +291,121 @@ func SingleTransformerBlock(
     segments: 4, tokenLength: xLength, hiddenSize: k * h, intermediateSize: 6912, upcast: upcast,
     name: "x_moe")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  let xFFIn = xNorm2(xOut).to(.Float16) .* (1 + xChunks[4]) + xChunks[3]
+  let xFFIn = xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]
   xOut =
     xOut + (xChunks[5].to(of: xOut) .* (xSharedFF(xFFIn) + xMoEFF(xFFIn))).to(of: xOut)
   let mapper: ModelWeightMapper = { _ in
     ModelWeightMapping()
   }
-  return (mapper, Model([x, c, rot], [xOut]))
+  return (mapper, Model([x, rot] + xChunks, [xOut]))
 }
 
-func HiDream(height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int)) -> (
-  Model, ModelWeightMapper
-) {
+func HiDream(batchSize: Int, height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int))
+  -> (
+    Model, ModelWeightMapper
+  )
+{
   let x = Input()
   let rot = Input()
   let h = height / 2
   let w = width / 2
   let imgIn = Dense(count: 2_560, name: "x_embedder")
   var out = imgIn(
-    x.reshaped([1, h, 2, w, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
-      .reshaped([1, h * w, 2 * 2 * 16])
+    x.reshaped([batchSize, h, 2, w, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
+      .reshaped([batchSize, h * w, 2 * 2 * 16])
   ).to(.Float32)
+  let encoderHiddenStates = (0..<49).map { _ in Input() }
+  var context = encoderHiddenStates[encoderHiddenStates.count - 1].to(.Float32)
+  var mappers = [ModelWeightMapper]()
+  var adaLNChunks = [Input]()
+  for i in 0..<layers.0 {
+    let contextChunks = (0..<6).map { _ in Input() }
+    let xChunks = (0..<6).map { _ in Input() }
+    let contextIn = Functional.concat(axis: 1, context, encoderHiddenStates[i].to(.Float32))
+    let (mapper, block) = JointTransformerBlock(
+      prefix: "double_stream_blocks.\(i).block", k: 128, h: 20, b: batchSize,
+      t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
+      contextBlockPreOnly: false, upcast: i > 12)
+    let blockOut = block([out, contextIn, rot] + contextChunks + xChunks)
+    out = blockOut[0]
+    context = blockOut[1]
+    adaLNChunks.append(contentsOf: contextChunks + xChunks)
+    mappers.append(mapper)
+  }
+  out = Functional.concat(axis: 1, out, context)
+  for i in 0..<layers.1 {
+    let xChunks = (0..<6).map { _ in Input() }
+    let xIn = Functional.concat(axis: 1, out, encoderHiddenStates[layers.0 + i].to(.Float32))
+    let (mapper, block) = SingleTransformerBlock(
+      prefix: "single_stream_blocks.\(i).block", k: 128, h: 20, b: batchSize,
+      t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
+      contextBlockPreOnly: i == layers.1 - 1, upcast: false)
+    out = block([xIn, rot] + xChunks)
+    adaLNChunks.append(contentsOf: xChunks)
+    mappers.append(mapper)
+  }
+  let shift = Input()
+  let scale = Input()
+  adaLNChunks.append(contentsOf: [shift, scale])
+  let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  out = scale .* normFinal(out).to(.Float16) + shift
+  let projOut = Dense(count: 2 * 2 * 16, name: "linear")
+  out = (-projOut(out)).reshaped([batchSize, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5)
+    .contiguous()
+    .reshaped([
+      batchSize, h * 2, w * 2, 16,
+    ])
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    return mapping
+  }
+  return (
+    Model([x, rot] + encoderHiddenStates + adaLNChunks, [out]), mapper
+  )
+}
+
+private func JointTransformerBlockFixed(
+  prefix: String, k: Int, h: Int, contextBlockPreOnly: Bool
+) -> (ModelWeightMapper, Model) {
+  let c = Input()
+  let contextAdaLNs = (0..<(contextBlockPreOnly ? 2 : 6)).map {
+    Dense(count: k * h, name: "context_ada_ln_\($0)")
+  }
+  var contextChunks = contextAdaLNs.map { $0(c) }
+  contextChunks[1] = 1 + contextChunks[1]
+  let xAdaLNs = (0..<6).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
+  var xChunks = xAdaLNs.map { $0(c) }
+  xChunks[1] = 1 + xChunks[1]
+  if !contextBlockPreOnly {
+    contextChunks[4] = 1 + contextChunks[4]
+  }
+  xChunks[4] = 1 + xChunks[4]
+  let mapper: ModelWeightMapper = { _ in
+    ModelWeightMapping()
+  }
+  return (mapper, Model([c], contextChunks + xChunks))
+}
+
+private func SingleTransformerBlockFixed(
+  prefix: String, k: Int, h: Int
+) -> (ModelWeightMapper, Model) {
+  let c = Input()
+  let xAdaLNs = (0..<6).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
+  var xChunks = xAdaLNs.map { $0(c) }
+  xChunks[1] = 1 + xChunks[1]
+  xChunks[4] = 1 + xChunks[4]
+  let mapper: ModelWeightMapper = { _ in
+    ModelWeightMapping()
+  }
+  return (mapper, Model([c], xChunks))
+}
+
+func HiDreamFixed(timesteps: Int, layers: (Int, Int)) -> (
+  Model, ModelWeightMapper
+) {
   let t = Input()
   let vector = Input()
   let (tMlp0, tMlp2, timeEmbedder) = MLPEmbedder(channels: 2_560, name: "t")
@@ -332,43 +421,31 @@ func HiDream(height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int)
     encoderHiddenStates.append(
       captionProjections[i](llamaEncoderHiddenStates[min(i, llamaEncoderHiddenStates.count - 1)]))
   }
-  encoderHiddenStates.append(captionProjections[48](t5EncoderHiddenStates))
-  var context = Functional.concat(
-    axis: 1, encoderHiddenStates[encoderHiddenStates.count - 1],
-    encoderHiddenStates[encoderHiddenStates.count - 2]
-  ).to(.Float32)
-  vec = vec.reshaped([1, 1, 2_560]).swish()
+  let t5HiddenStates = captionProjections[48](t5EncoderHiddenStates)
+  encoderHiddenStates.append(
+    Functional.concat(
+      axis: 1, t5HiddenStates, encoderHiddenStates[encoderHiddenStates.count - 1]
+    ))
+  vec = vec.reshaped([timesteps, 1, 2_560]).swish()
   var mappers = [ModelWeightMapper]()
+  var outs = [Model.IO]()
   for i in 0..<layers.0 {
-    let contextIn = Functional.concat(axis: 1, context, encoderHiddenStates[i].to(.Float32))
-    let (mapper, block) = JointTransformerBlock(
-      prefix: "double_stream_blocks.\(i).block", k: 128, h: 20, b: 1,
-      t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
-      contextBlockPreOnly: false, upcast: i > 12)
+    let (mapper, block) = JointTransformerBlockFixed(
+      prefix: "double_stream_blocks.\(i).block", k: 128, h: 20, contextBlockPreOnly: false)
     mappers.append(mapper)
-    let blockOut = block(out, contextIn, vec, rot)
-    out = blockOut[0]
-    context = blockOut[1]
+    let blockOut = block(vec)
+    outs.append(blockOut)
   }
-  out = Functional.concat(axis: 1, out, context)
   for i in 0..<layers.1 {
-    let xIn = Functional.concat(axis: 1, out, encoderHiddenStates[layers.0 + i].to(.Float32))
-    let (mapper, block) = SingleTransformerBlock(
-      prefix: "single_stream_blocks.\(i).block", k: 128, h: 20, b: 1,
-      t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
-      contextBlockPreOnly: i == layers.1 - 1, upcast: false)
+    let (mapper, block) = SingleTransformerBlockFixed(
+      prefix: "single_stream_blocks.\(i).block", k: 128, h: 20)
     mappers.append(mapper)
-    out = block(xIn, vec, rot)
+    let blockOut = block(vec)
+    outs.append(blockOut)
   }
   let scale = Dense(count: 2_560, name: "ada_ln_0")
   let shift = Dense(count: 2_560, name: "ada_ln_1")
-  let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  out = (1 + scale(vec)) .* normFinal(out).to(.Float16) + shift(vec)
-  let projOut = Dense(count: 2 * 2 * 16, name: "linear")
-  out = (-projOut(out)).reshaped([1, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
-    .reshaped([
-      1, h * 2, w * 2, 16,
-    ])
+  outs.append(contentsOf: [shift(vec), 1 + scale(vec)])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     for mapper in mappers {
@@ -377,6 +454,8 @@ func HiDream(height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int)
     return mapping
   }
   return (
-    Model([x, t, rot, vector, t5EncoderHiddenStates] + llamaEncoderHiddenStates, [out]), mapper
+    Model(
+      [t, vector, t5EncoderHiddenStates] + llamaEncoderHiddenStates, encoderHiddenStates + outs),
+    mapper
   )
 }

@@ -994,14 +994,42 @@ extension UNetFixedEncoder {
       let h = startHeight / 2
       let w = startWidth / 2
       let pooled = textEncoding[0]
+      let cBatchSize = pooled.shape[0]
       let t5 = textEncoding[1]
       let llama3 = Array(textEncoding[2...])
-      let tokenLength = t5.shape[1] + llama3[0].shape[1] * 2
+      let t5Length = t5.shape[1]
+      let llama3Length = llama3[0].shape[1]
       let rot = Tensor<FloatType>(
         from: HiDreamRotaryPositionEmbedding(
-          height: h, width: w, tokenLength: tokenLength, channels: 128)
+          height: h, width: w, tokenLength: t5Length + llama3Length * 2, channels: 128)
       ).toGPU(0)
-      return ([graph.variable(rot)] + [pooled, t5] + llama3, nil)
+      precondition(timesteps.count > 0)
+      let unetFixed: Model
+      (unetFixed, _) = HiDreamFixed(timesteps: cBatchSize * timesteps.count, layers: (16, 32))
+      var timeEmbeds = graph.variable(
+        .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
+      var pooleds = graph.variable(
+        .GPU(0), .WC(cBatchSize * timesteps.count, 2048), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: cBatchSize, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<256] = timeEmbed
+        pooleds[(i * cBatchSize)..<((i + 1) * cBatchSize), 0..<2048] = pooled
+      }
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: [timeEmbeds, pooled, t5] + llama3)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+      }
+      let conditions = unetFixed(
+        inputs: timeEmbeds, [pooled, t5] + llama3
+      ).map { $0.as(of: FloatType.self) }
+      return ([graph.variable(rot)] + conditions, nil)
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
       let effnetHeight = textEncoding[textEncoding.count - 1].shape[1]

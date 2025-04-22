@@ -520,7 +520,7 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
-      isConsistencyModel: true, objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128,
+      objective: .u(conditionScale: 1000), guidanceEmbed: true, paddedTextEncodingLength: 128,
       hiresFixScale: 24),
     Specification(
       name: "SDXL Base (v0.9)", file: "sd_xl_base_0.9_f16.ckpt", prefix: "", version: .sdxlBase,
@@ -1599,7 +1599,8 @@ extension ModelZoo {
   public static func isResolutionDependentShiftAvailable(
     _ version: ModelVersion, isConsistencyModel: Bool
   ) -> Bool {
-    guard version == .flux1 || version == .sd3 || version == .sd3Large else { return false }
+    guard version == .flux1 || version == .sd3 || version == .sd3Large || version == .hiDreamI1
+    else { return false }
     if isConsistencyModel {
       return false
     }

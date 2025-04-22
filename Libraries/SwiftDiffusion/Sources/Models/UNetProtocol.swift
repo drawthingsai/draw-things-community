@@ -96,14 +96,8 @@ extension UNetProtocol {
             embeddingSize: timeEmbeddingSize,
             maxPeriod: 10_000)
         ).toGPU(0))
-    case .hiDreamI1:
-      return graph.variable(
-        Tensor<FloatType>(
-          from: timeEmbedding(
-            timestep: timestep, batchSize: batchSize,
-            embeddingSize: 256, maxPeriod: 10_000)
-        ).toGPU(0))
-    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+    case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
+      .hiDreamI1:
       return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
@@ -158,7 +152,14 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         .copied()
       }
   case .hiDreamI1:
-    return conditions
+    return conditions[0..<50]
+      + conditions[50..<conditions.count].map {
+        let shape = $0.shape
+        return DynamicGraph.Tensor<FloatType>($0)[
+          (index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]
+        ]
+        .copied()
+      }
   case .hunyuanVideo:
     return conditions[0..<2]
       + conditions[2..<conditions.count].enumerated().map {
@@ -956,8 +957,8 @@ extension UNetFromNNC {
       let llama3Length = c[3].shape[1]
       unet = ModelBuilderOrModel.model(
         HiDream(
-          height: tiledHeight, width: tiledWidth, textLength: (t5Length, llama3Length),
-          layers: (16, 32)
+          batchSize: 1, height: tiledHeight, width: tiledWidth,
+          textLength: (t5Length, llama3Length), layers: (16, 32)
         ).0)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
@@ -1100,7 +1101,10 @@ extension UNetFromNNC {
                   return ($0, $0)
                 })
             case .hiDreamI1:
-              fatalError()
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<(16 + 32)).map {
+                  return ($0, $0)
+                })
             case .auraflow:
               fatalError()
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
