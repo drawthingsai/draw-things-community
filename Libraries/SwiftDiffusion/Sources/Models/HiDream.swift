@@ -325,7 +325,8 @@ func HiDream(batchSize: Int, height: Int, width: Int, textLength: (Int, Int), la
   for i in 0..<layers.0 {
     let contextChunks = (0..<6).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
-    let contextIn = Functional.concat(axis: 1, context, encoderHiddenStates[i].to(.Float32))
+    let contextIn = Functional.concat(
+      axis: 1, context, encoderHiddenStates[i].to(.Float32), flags: [.disableOpt])
     let (mapper, block) = JointTransformerBlock(
       prefix: "double_stream_blocks.\(i).block", k: 128, h: 20, b: batchSize,
       t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
@@ -339,7 +340,8 @@ func HiDream(batchSize: Int, height: Int, width: Int, textLength: (Int, Int), la
   out = Functional.concat(axis: 1, out, context)
   for i in 0..<layers.1 {
     let xChunks = (0..<6).map { _ in Input() }
-    let xIn = Functional.concat(axis: 1, out, encoderHiddenStates[layers.0 + i].to(.Float32))
+    let xIn = Functional.concat(
+      axis: 1, out, encoderHiddenStates[layers.0 + i].to(.Float32), flags: [.disableOpt])
     let (mapper, block) = SingleTransformerBlock(
       prefix: "single_stream_blocks.\(i).block", k: 128, h: 20, b: batchSize,
       t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,

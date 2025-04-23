@@ -511,6 +511,9 @@ public struct ModelZoo: DownloadZoo {
     "hidream_i1_fast_q8p.ckpt": "a5f17f1a86a903b8ce8a4fe147ddd82d3c166842b5c67116eb7bf4692c22b2e8",
     "hidream_i1_dev_q8p.ckpt": "1ff76a095b8f75e3047409e1704d1fbbb6c923853a5c59cc699a7b94a5b2c83e",
     "hidream_i1_full_q8p.ckpt": "24c76c58d296f467e458a5bec4edd512ddf697ceb6739239e8a2494e5a50cf4e",
+    "hidream_i1_fast_q5p.ckpt": "ce7254c72257edd78b821881c72e9a91afe2752a187968fc4eb3a1648ec35053",
+    "hidream_i1_dev_q5p.ckpt": "9779d730f8f2258cdf721a770c91ade978836f11510d9173075f89bc8f8be3e3",
+    "hidream_i1_full_q5p.ckpt": "a1f5371896c93c7fb55328331c226eb9bcaabf804a142f6c85f5684d5bd4c3ae",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -518,6 +521,14 @@ public struct ModelZoo: DownloadZoo {
   public static let builtinSpecifications: [Specification] = [
     Specification(
       name: "HiDream I1 [fast]", file: "hidream_i1_fast_q8p.ckpt", prefix: "",
+      version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
+      additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
+      t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
+      isConsistencyModel: true, objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128,
+      hiresFixScale: 24),
+    Specification(
+      name: "HiDream I1 [fast] (5-bit)", file: "hidream_i1_fast_q5p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
@@ -533,7 +544,22 @@ public struct ModelZoo: DownloadZoo {
       objective: .u(conditionScale: 1000), guidanceEmbed: true, paddedTextEncodingLength: 128,
       hiresFixScale: 24),
     Specification(
+      name: "HiDream I1 [dev] (5-bit)", file: "hidream_i1_dev_q5p.ckpt", prefix: "",
+      version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
+      additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
+      t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
+      objective: .u(conditionScale: 1000), guidanceEmbed: true, paddedTextEncodingLength: 128,
+      hiresFixScale: 24),
+    Specification(
       name: "HiDream I1 [full]", file: "hidream_i1_full_q8p.ckpt", prefix: "",
+      version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
+      additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
+      t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
+      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24),
+    Specification(
+      name: "HiDream I1 [full] (5-bit)", file: "hidream_i1_full_q5p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
