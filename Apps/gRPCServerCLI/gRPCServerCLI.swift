@@ -238,19 +238,22 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Debug flag for the verbose model inference logging.")
   var debug = false
 
-  @Option(name: .shortAndLong, help: "The directory path for custom models")
+  @Option(name: .shortAndLong, help: "Path to the directory containing custom model files.")
   var customModelsDirectory: String?
 
-  @Option(name: .long, help: "R2 Access Key, this would be mandatory if you setup for customModel")
+  @Option(name: .long, help: "R2 access key (required for custom models).")
   var customModelAccessKey: String?
 
-  @Option(name: .long, help: "R2 Secret Key, this would be mandatory if you setup for customModel")
+  @Option(name: .long, help: "R2 secret key (required for custom models).")
   var customModelSecretKey: String?
 
-  @Option(name: .long, help: "endpoint for custom model downloading")
+  @Option(
+    name: .long, help: "Endpoint URL to download custom models from (required for custom models).")
   var customModelEndpoint: String?
 
-  @Option(name: .long, help: "bucket for custom model downloading")
+  @Option(
+    name: .long,
+    help: "Name of the R2 bucket for custom model downloads (required for custom models).")
   var customModelBucket: String?
 
   #if os(Linux)
