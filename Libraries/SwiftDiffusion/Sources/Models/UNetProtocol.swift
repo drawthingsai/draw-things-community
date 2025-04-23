@@ -957,7 +957,7 @@ extension UNetFromNNC {
       let t5Length = c[49].shape[1] - llama3Length
       unet = ModelBuilderOrModel.model(
         HiDream(
-          batchSize: batchSize, height: tiledHeight, width: tiledWidth,
+          batchSize: 1, height: tiledHeight, width: tiledWidth,
           textLength: (t5Length, llama3Length), layers: (16, 32)
         ).0)
     }
@@ -1426,7 +1426,16 @@ extension UNetFromNNC {
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
     case .hiDreamI1:
-      break
+      let inputs = inputs.map {
+        var shape = $0.shape
+        guard shape[0] > 1 else {
+          return $0
+        }
+        shape[0] = 1
+        return DynamicGraph.Tensor<FloatType>($0).reshaped(format: $0.format, shape: shape)
+      }
+      unet.compile(inputs: inputs)
+      return
     }
     unet.compile(inputs: inputs)
   }
@@ -1764,8 +1773,31 @@ extension UNetFromNNC {
         }
         return et
       }
+    case .hiDreamI1:
+      let shape = firstInput.shape
+      let batchSize = shape[0]
+      guard batchSize > 1 else {
+        let et = unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+        return et
+      }
+      let graph = firstInput.graph
+      var et = graph.variable(like: firstInput)
+      for i in 0..<batchSize {
+        let x0 = firstInput[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+        let others = restInputs.map {
+          var shape = $0.shape
+          guard shape[0] > 1 else { return $0 }
+          shape[0] = 1
+          return DynamicGraph.Tensor<FloatType>($0).reshaped(
+            format: $0.format, shape: shape, offset: [i]
+          ).copied()
+        }
+        et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = unet!(inputs: x0, others)[0].as(
+          of: FloatType.self)
+      }
+      return et
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1:
+      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
     }
     return unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
