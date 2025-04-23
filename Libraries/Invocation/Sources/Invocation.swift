@@ -177,7 +177,9 @@ public struct Invocation {
       teaCacheStart: parameters.teaCacheStartParameter.int32Value(),
       teaCacheEnd: parameters.teaCacheEndParameter.int32Value(),
       teaCacheThreshold: parameters.teaCacheThresholdParameter.float32Value(),
-      teaCache: parameters.teaCacheParameter.value
+      teaCache: parameters.teaCacheParameter.value,
+      separateT5: parameters.separateT5Parameter.value,
+      t5Text: parameters.t5TextParameter.value
     )
     self.prompt = try unwrapOrThrow(
       parameters.promptParameter.value, errorMessage: "Missing prompt")
@@ -250,6 +252,8 @@ extension Invocation: CustomDebugStringConvertible {
       ("teaCacheEnd", configuration.teaCacheEnd),
       ("teaCacheThreshold", configuration.teaCacheThreshold),
       ("teaCache", configuration.teaCache as Any),
+      ("separateT5", configuration.separateT5),
+      ("t5Text", configuration.t5Text as Any),
     ]
     return pairs.map { (name, value) in
       "\(name): \(value)"

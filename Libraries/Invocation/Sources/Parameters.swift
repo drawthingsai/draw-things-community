@@ -86,7 +86,8 @@ public final class Parameters {
   public let defaultConfiguration: GenerationConfiguration
 
   let modelParameter, upscalerParameter, promptParameter, negativePromptParameter,
-    refinerModelParameter, clipLTextParameter, openClipGTextParameter: StringParameter
+    refinerModelParameter, clipLTextParameter, openClipGTextParameter,
+    t5TextParameter: StringParameter
   public let widthParameter, heightParameter, seedParameter, stepsParameter, batchCountParameter,
     batchSizeParameter, clipSkipParameter, imagePriorStepsParameter, hiresFixWidthParameter,
     hiresFixHeightParameter, originalWidthParameter, originalHeightParameter, cropTopParameter,
@@ -110,7 +111,7 @@ public final class Parameters {
     preserveOriginalAfterInpaintParameter, tiledDiffusionParameter,
     t5TextEncoderParameter, separateClipLParameter, separateOpenClipGParameter,
     speedUpWithGuidanceEmbedParameter, resolutionDependentShiftParameter,
-    teaCacheParameter: BoolParameter
+    teaCacheParameter, separateT5Parameter: BoolParameter
   let lorasParameter: JSONParameter<[JSLoRA]>
   let controlsParameter: JSONParameter<[JSControl]>
 
@@ -411,6 +412,13 @@ public final class Parameters {
       titleKey: "tea_cache", explanationKey: "tea_cache_detail",
       commandLineFlag: "tea-cache",
       defaultValue: defaultConfiguration.teaCache)
+    separateT5Parameter = BoolParameter(
+      titleKey: "separate_t5", explanationKey: "separate_t5_detail",
+      commandLineFlag: "separate-t5",
+      defaultValue: defaultConfiguration.separateClipL)
+    t5TextParameter = StringParameter(
+      title: "t5_text", explanation: "separate_t5_detail",
+      defaultValue: defaultConfiguration.clipLText, commandLineFlag: "t5-text")
   }
 
   public func allParameters() -> [Parameter] {
@@ -487,6 +495,8 @@ public final class Parameters {
       teaCacheEndParameter,
       teaCacheThresholdParameter,
       teaCacheParameter,
+      separateT5Parameter,
+      t5TextParameter,
     ]
   }
 }

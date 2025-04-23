@@ -167,6 +167,8 @@ table TensorHistoryNode {
   tea_cache_end: int = -1;
   tea_cache_threshold: float = 0.06;
   tea_cache: bool = false;
+  separate_t5: bool = false;
+  t5_text: string;
 }
 
 root_type TensorHistoryNode;

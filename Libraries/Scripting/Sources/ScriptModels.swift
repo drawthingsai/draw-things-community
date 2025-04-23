@@ -150,6 +150,8 @@ public final class JSGenerationConfiguration: Codable {
   public let teaCacheStart: Int32
   public let teaCacheEnd: Int32
   public let teaCacheThreshold: Float32
+  public let separateT5: Bool
+  public let t5Text: String?
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -225,6 +227,8 @@ public final class JSGenerationConfiguration: Codable {
     teaCacheEnd = configuration.teaCacheEnd
     teaCacheThreshold = configuration.teaCacheThreshold
     teaCache = configuration.teaCache
+    separateT5 = configuration.separateT5
+    t5Text = configuration.t5Text
   }
 
   public func createGenerationConfiguration() -> GenerationConfiguration {
@@ -274,7 +278,9 @@ public final class JSGenerationConfiguration: Codable {
       teaCacheStart: teaCacheStart,
       teaCacheEnd: teaCacheEnd,
       teaCacheThreshold: teaCacheThreshold,
-      teaCache: teaCache
+      teaCache: teaCache,
+      separateT5: separateT5,
+      t5Text: t5Text
     )
   }
 }
