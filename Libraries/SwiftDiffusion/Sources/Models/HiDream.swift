@@ -179,16 +179,21 @@ private func JointTransformerBlock(
   var keys = Functional.concat(axis: 1, xK, contextK)
   let values = Functional.concat(axis: 1, xV, contextV)
   var queries = Functional.concat(axis: 1, xQ, contextQ)
-  queries = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: queries, right: rot)
+  // Reshape queries because llama3 encoder doesn't participate query, just serve as kv.
+  queries =
+    (1.0 / Float(k).squareRoot().squareRoot())
+    * Functional.cmul(left: queries, right: rot).reshaped(
+      [b, t.0 + hw, h, k], strides: [(t.1 + hw) * h * k, h * k, k, 1]
+    ).contiguous()
   keys = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: keys, right: rot)
   // Now run attention.
   let out = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
     queries, keys, values
-  ).reshaped([b, t.1 + hw, h * k])
+  ).reshaped([b, t.0 + hw, h * k])
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
     contextOut = out.reshaped(
-      [b, t.0, h * k], offset: [0, hw, 0], strides: [(t.1 + hw) * h * k, h * k, 1]
+      [b, t.0, h * k], offset: [0, hw, 0], strides: [(t.0 + hw) * h * k, h * k, 1]
     )
     let unifyheads = Dense(count: k * h, name: "c_o")
     contextOut = unifyheads(contextOut)
@@ -196,7 +201,7 @@ private func JointTransformerBlock(
   } else {
     contextUnifyheads = nil
   }
-  xOut = out.reshaped([b, hw, h * k], strides: [(t.1 + hw) * h * k, h * k, 1])
+  xOut = out.reshaped([b, hw, h * k], strides: [(t.0 + hw) * h * k, h * k, 1])
   let xUnifyheads = Dense(count: k * h, name: "x_o")
   xOut = xUnifyheads(xOut)
   if !contextBlockPreOnly {
@@ -308,23 +313,19 @@ private func SingleTransformerBlock(
   let normQ = RMSNorm(epsilon: 1e-5, axis: [2], name: "x_norm_q")
   xQ = normQ(xQ).reshaped([b, hw + t.1, h, k])
   let xV = xToValues(xOut).reshaped([b, hw + t.1, h, k])
-  xQ = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xQ, right: rot)
+  // Reshape queries because llama3 encoder doesn't participate query, just serve as kv.
+  let xLength = contextBlockPreOnly ? hw : hw + t.0
+  xQ =
+    (1.0 / Float(k).squareRoot().squareRoot())
+    * Functional.cmul(left: xQ, right: rot).reshaped(
+      [b, xLength, h, k], strides: [(t.1 + hw) * h * k, h * k, k, 1]
+    ).contiguous()
   xK = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xK, right: rot)
   // Now run attention.
-  let out = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+  xOut = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
     xQ, xK, xV
-  ).reshaped([b, t.1 + hw, h * k])
-  var xIn: Model.IO = x
-  let xLength: Int
-  if contextBlockPreOnly {
-    xOut = out.reshaped([b, hw, h * k], strides: [(t.1 + hw) * h * k, h * k, 1])
-    xIn = xIn.reshaped([b, hw, h * k], strides: [(t.1 + hw) * h * k, h * k, 1]).contiguous()
-    xLength = hw
-  } else {
-    xOut = out.reshaped([b, hw + t.0, h * k], strides: [(t.1 + hw) * h * k, h * k, 1])
-    xIn = xIn.reshaped([b, hw + t.0, h * k], strides: [(t.1 + hw) * h * k, h * k, 1]).contiguous()
-    xLength = hw + t.0
-  }
+  ).reshaped([b, xLength, h * k])
+  let xIn = x.reshaped([b, xLength, h * k], strides: [(t.1 + hw) * h * k, h * k, 1]).contiguous()
   let xUnifyheads = Dense(count: k * h, name: "x_o")
   xOut = xUnifyheads(xOut)
   xOut = xIn + (xChunks[2] .* xOut).to(of: xIn)
