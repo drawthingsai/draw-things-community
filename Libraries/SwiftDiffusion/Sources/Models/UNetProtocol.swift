@@ -953,8 +953,8 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      let t5Length = c[2].shape[1]
-      let llama3Length = c[3].shape[1]
+      let llama3Length = c[48].shape[1]
+      let t5Length = c[49].shape[1] - llama3Length
       unet = ModelBuilderOrModel.model(
         HiDream(
           batchSize: batchSize, height: tiledHeight, width: tiledWidth,
