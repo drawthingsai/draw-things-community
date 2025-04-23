@@ -1983,7 +1983,7 @@ extension TextEncoder {
       usesFlashAttention: usesFlashAttention)
     let tokens3TensorGPU: DynamicGraph.Tensor<Int32>
     var causalAttentionMaskLlama3 = Tensor<FloatType>(
-      Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
+      Array(repeating: 0, count: batchSize * tokenLength * tokenLength), .CPU,
       .NHWC(batchSize, 1, tokenLength, tokenLength)
     )
     if isCfgEnabled {
