@@ -235,7 +235,52 @@ private func JointTransformerBlock(
     xOut
     + xChunks[5].to(of: xOut) .* (xSharedFF(xIn) + xMoEFF(xIn).reshaped([b, hw, h * k]))
   let mapper: ModelWeightMapper = { _ in
-    ModelWeightMapping()
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).attn1.to_q_t.weight"] = [contextToQueries.weight.name]
+    mapping["\(prefix).attn1.to_q_t.bias"] = [contextToQueries.bias.name]
+    mapping["\(prefix).attn1.to_k_t.weight"] = [contextToKeys.weight.name]
+    mapping["\(prefix).attn1.to_k_t.bias"] = [contextToKeys.bias.name]
+    mapping["\(prefix).attn1.to_v_t.weight"] = [contextToValues.weight.name]
+    mapping["\(prefix).attn1.to_v_t.bias"] = [contextToValues.bias.name]
+    mapping["\(prefix).attn1.k_rms_norm_t.weight"] = [normAddedK.weight.name]
+    mapping["\(prefix).attn1.q_rms_norm_t.weight"] = [normAddedQ.weight.name]
+    mapping["\(prefix).attn1.to_q.weight"] = [xToQueries.weight.name]
+    mapping["\(prefix).attn1.to_q.bias"] = [xToQueries.bias.name]
+    mapping["\(prefix).attn1.to_k.weight"] = [xToKeys.weight.name]
+    mapping["\(prefix).attn1.to_k.bias"] = [xToKeys.bias.name]
+    mapping["\(prefix).attn1.to_v.weight"] = [xToValues.weight.name]
+    mapping["\(prefix).attn1.to_v.bias"] = [xToValues.bias.name]
+    mapping["\(prefix).attn1.k_rms_norm.weight"] = [normK.weight.name]
+    mapping["\(prefix).attn1.q_rms_norm.weight"] = [normQ.weight.name]
+    if let contextUnifyheads = contextUnifyheads {
+      mapping["\(prefix).attn1.to_out_t.weight"] = [contextUnifyheads.weight.name]
+      mapping["\(prefix).attn1.to_out_t.bias"] = [contextUnifyheads.bias.name]
+    }
+    mapping["\(prefix).attn1.to_out.weight"] = [xUnifyheads.weight.name]
+    mapping["\(prefix).attn1.to_out.bias"] = [xUnifyheads.bias.name]
+    if let contextW1 = contextW1, let contextW2 = contextW2, let contextW3 = contextW3 {
+      mapping["\(prefix).ff_t.w1.weight"] = [contextW1.weight.name]
+      mapping["\(prefix).ff_t.w2.weight"] = [contextW2.weight.name]
+      mapping["\(prefix).ff_t.w3.weight"] = [contextW3.weight.name]
+    }
+    mapping["\(prefix).ff_i.shared_experts.w1.weight"] = [xSharedW1.weight.name]
+    mapping["\(prefix).ff_i.shared_experts.w2.weight"] = [xSharedW2.weight.name]
+    mapping["\(prefix).ff_i.shared_experts.w3.weight"] = [xSharedW3.weight.name]
+    mapping["\(prefix).ff_i.gate.weight"] = [xMoEGate.weight.name]
+    // TODO: how to express combining?
+    mapping["\(prefix).ff_i.experts.0.w1.weight"] = [xMoEW1.weight.name]
+    mapping["\(prefix).ff_i.experts.1.w1.weight"] = [xMoEW1.weight.name]
+    mapping["\(prefix).ff_i.experts.2.w1.weight"] = [xMoEW1.weight.name]
+    mapping["\(prefix).ff_i.experts.3.w1.weight"] = [xMoEW1.weight.name]
+    mapping["\(prefix).ff_i.experts.0.w2.weight"] = [xMoEW2.weight.name]
+    mapping["\(prefix).ff_i.experts.1.w2.weight"] = [xMoEW2.weight.name]
+    mapping["\(prefix).ff_i.experts.2.w2.weight"] = [xMoEW2.weight.name]
+    mapping["\(prefix).ff_i.experts.3.w2.weight"] = [xMoEW2.weight.name]
+    mapping["\(prefix).ff_i.experts.0.w3.weight"] = [xMoEW3.weight.name]
+    mapping["\(prefix).ff_i.experts.1.w3.weight"] = [xMoEW3.weight.name]
+    mapping["\(prefix).ff_i.experts.2.w3.weight"] = [xMoEW3.weight.name]
+    mapping["\(prefix).ff_i.experts.3.w3.weight"] = [xMoEW3.weight.name]
+    return mapping
   }
   if !contextBlockPreOnly {
     return (mapper, Model([x, context, rot] + contextChunks + xChunks, [xOut, contextOut]))
@@ -296,7 +341,34 @@ private func SingleTransformerBlock(
     xOut
     + xChunks[5].to(of: xOut) .* (xSharedFF(xFFIn) + xMoEFF(xFFIn).reshaped([b, xLength, h * k]))
   let mapper: ModelWeightMapper = { _ in
-    ModelWeightMapping()
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).attn1.to_q.weight"] = [xToQueries.weight.name]
+    mapping["\(prefix).attn1.to_q.bias"] = [xToQueries.bias.name]
+    mapping["\(prefix).attn1.to_k.weight"] = [xToKeys.weight.name]
+    mapping["\(prefix).attn1.to_k.bias"] = [xToKeys.bias.name]
+    mapping["\(prefix).attn1.to_v.weight"] = [xToValues.weight.name]
+    mapping["\(prefix).attn1.to_v.bias"] = [xToValues.bias.name]
+    mapping["\(prefix).attn1.k_rms_norm.weight"] = [normK.weight.name]
+    mapping["\(prefix).attn1.q_rms_norm.weight"] = [normQ.weight.name]
+    mapping["\(prefix).attn1.to_out.weight"] = [xUnifyheads.weight.name]
+    mapping["\(prefix).attn1.to_out.bias"] = [xUnifyheads.bias.name]
+    mapping["\(prefix).ff_i.shared_experts.w1.weight"] = [xSharedW1.weight.name]
+    mapping["\(prefix).ff_i.shared_experts.w2.weight"] = [xSharedW2.weight.name]
+    mapping["\(prefix).ff_i.shared_experts.w3.weight"] = [xSharedW3.weight.name]
+    mapping["\(prefix).ff_i.gate.weight"] = [xMoEGate.weight.name]
+    mapping["\(prefix).ff_i.experts.0.w1.weight"] = [xMoEW1.weight.name]
+    mapping["\(prefix).ff_i.experts.1.w1.weight"] = [xMoEW1.weight.name]
+    mapping["\(prefix).ff_i.experts.2.w1.weight"] = [xMoEW1.weight.name]
+    mapping["\(prefix).ff_i.experts.3.w1.weight"] = [xMoEW1.weight.name]
+    mapping["\(prefix).ff_i.experts.0.w2.weight"] = [xMoEW2.weight.name]
+    mapping["\(prefix).ff_i.experts.1.w2.weight"] = [xMoEW2.weight.name]
+    mapping["\(prefix).ff_i.experts.2.w2.weight"] = [xMoEW2.weight.name]
+    mapping["\(prefix).ff_i.experts.3.w2.weight"] = [xMoEW2.weight.name]
+    mapping["\(prefix).ff_i.experts.0.w3.weight"] = [xMoEW3.weight.name]
+    mapping["\(prefix).ff_i.experts.1.w3.weight"] = [xMoEW3.weight.name]
+    mapping["\(prefix).ff_i.experts.2.w3.weight"] = [xMoEW3.weight.name]
+    mapping["\(prefix).ff_i.experts.3.w3.weight"] = [xMoEW3.weight.name]
+    return mapping
   }
   return (mapper, Model([x, rot] + xChunks, [xOut]))
 }
@@ -360,9 +432,13 @@ func HiDream(batchSize: Int, height: Int, width: Int, textLength: (Int, Int), la
     ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
+    mapping["x_embedder.proj.weight"] = [imgIn.weight.name]
+    mapping["x_embedder.proj.bias"] = [imgIn.bias.name]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
+    mapping["final_layer.linear.weight"] = [projOut.weight.name]
+    mapping["final_layer.linear.bias"] = [projOut.bias.name]
     return mapping
   }
   return (
@@ -387,7 +463,18 @@ private func JointTransformerBlockFixed(
   }
   xChunks[4] = 1 + xChunks[4]
   let mapper: ModelWeightMapper = { _ in
-    ModelWeightMapping()
+    var mapping = ModelWeightMapping()
+    mapping[
+      "\(prefix).adaLN_modulation.1.weight"
+    ] = ModelWeightElement(
+      (0..<6).map { xAdaLNs[$0].weight.name }
+        + (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].weight.name })
+    mapping[
+      "\(prefix).adaLN_modulation.1.bias"
+    ] = ModelWeightElement(
+      (0..<6).map { xAdaLNs[$0].bias.name }
+        + (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].weight.name })
+    return mapping
   }
   return (mapper, Model([c], contextChunks + xChunks))
 }
@@ -401,7 +488,14 @@ private func SingleTransformerBlockFixed(
   xChunks[1] = 1 + xChunks[1]
   xChunks[4] = 1 + xChunks[4]
   let mapper: ModelWeightMapper = { _ in
-    ModelWeightMapping()
+    var mapping = ModelWeightMapping()
+    mapping[
+      "\(prefix).adaLN_modulation.1.weight"
+    ] = ModelWeightElement((0..<6).map { xAdaLNs[$0].weight.name })
+    mapping[
+      "\(prefix).adaLN_modulation.1.bias"
+    ] = ModelWeightElement((0..<6).map { xAdaLNs[$0].bias.name })
+    return mapping
   }
   return (mapper, Model([c], xChunks))
 }
@@ -451,9 +545,22 @@ func HiDreamFixed(timesteps: Int, layers: (Int, Int)) -> (
   outs.append(contentsOf: [shift(vec), 1 + scale(vec)])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
+    mapping["t_embedder.timestep_embedder.linear_1.weight"] = [tMlp0.weight.name]
+    mapping["t_embedder.timestep_embedder.linear_1.bias"] = [tMlp0.bias.name]
+    mapping["t_embedder.timestep_embedder.linear_2.weight"] = [tMlp2.weight.name]
+    mapping["t_embedder.timestep_embedder.linear_2.bias"] = [tMlp2.bias.name]
+    mapping["p_embedder.pooled_embedder.linear_1.weight"] = [pMlp0.weight.name]
+    mapping["p_embedder.pooled_embedder.linear_1.bias"] = [pMlp0.bias.name]
+    mapping["p_embedder.pooled_embedder.linear_2.weight"] = [pMlp2.weight.name]
+    mapping["p_embedder.pooled_embedder.linear_2.bias"] = [pMlp2.bias.name]
+    for i in 0..<49 {
+      mapping["caption_projection.\(i).linear.weight"] = [captionProjections[i].weight.name]
+    }
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
+    mapping["final_layer.adaLN_modulation.1.weight"] = [shift.weight.name, scale.weight.name]
+    mapping["final_layer.adaLN_modulation.1.bias"] = [shift.bias.name, scale.bias.name]
     return mapping
   }
   return (
