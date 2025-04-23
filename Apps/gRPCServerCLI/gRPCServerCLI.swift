@@ -18,6 +18,7 @@ import NIOSSL
 import NNC
 import ProxyControlClient
 import SQLiteDflat
+import ServerConfigurationRewriter
 import Utils
 
 private func createTemporaryDirectory() -> String {
@@ -237,6 +238,21 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Debug flag for the verbose model inference logging.")
   var debug = false
 
+  @Option(name: .shortAndLong, help: "The directory path for custom models")
+  var customModelsDirectory: String?
+
+  @Option(name: .long, help: "R2 Access Key, this would be mandatory if you setup for customModel")
+  var customModelAccessKey: String?
+
+  @Option(name: .long, help: "R2 Secret Key, this would be mandatory if you setup for customModel")
+  var customModelSecretKey: String?
+
+  @Option(name: .long, help: "endpoint for custom model downloading")
+  var customModelEndpoint: String?
+
+  @Option(name: .long, help: "bucket for custom model downloading")
+  var customModelBucket: String?
+
   #if os(Linux)
     @Flag(help: "Supervise the server so it restarts upon a internal crash.")
     var supervised = false
@@ -280,6 +296,39 @@ struct gRPCServerCLI: ParsableCommand {
       throw CLIError.invalidModelPath
     }
 
+    var configurationRewriter: ServerConfigurationRewriter? = nil
+    // Add the custom models directory if provided
+    if let customDir = customModelsDirectory, let accessKey = customModelAccessKey,
+      let secretKey = customModelSecretKey, let customModelBucket = customModelBucket,
+      let customModelEndpoint = customModelEndpoint
+    {
+
+      let r2Client = R2Client(
+        accessKey: accessKey,
+        secretKey: secretKey,
+        endpoint: customModelEndpoint,
+        bucket: customModelBucket
+      )
+      print("create r2Client: \(r2Client)")
+
+      let customManager = CustomModelManager(r2Client: r2Client, customDirectory: customDir)
+      configurationRewriter = ServerConfigurationRewriter(customModelManager: customManager)
+      // Check if directory exists (either it was there already or we created it)
+      if fileManager.fileExists(atPath: customDir, isDirectory: &isDirectory), isDirectory.boolValue
+      {
+        print("Using custom models directory: \(customDir)")
+      } else {
+        print("Warning: Custom models directory path is not a valid directory: \(customDir)")
+        throw CLIError.invalidModelPath
+      }
+      ModelZoo.externalUrls = [
+        URL(fileURLWithPath: modelsDirectory), URL(fileURLWithPath: customDir),
+      ]
+    } else {
+      print("skip custom models directionry")
+      ModelZoo.externalUrls = [URL(fileURLWithPath: modelsDirectory)]
+    }
+
     if !datadogAPIKey.isEmpty {
       let gpu = gpu
       let datadogAPIKey = datadogAPIKey
@@ -305,25 +354,23 @@ struct gRPCServerCLI: ParsableCommand {
         // Return a multiplexing handler that writes to all configured handlers
         return MultiplexLogHandler(handlers)
       }
-      // LoggingSystem.bootstrap {
-      //   var handler = DataDogLogHandler(
-      //     label: $0, key: datadogAPIKey, hostname: "\(name) GPU \(gpu)", region: .US5)
-      //   handler.metadata = ["gpu": "\(gpu)"]
-      //   return handler
-      // }
     }
 
-    ModelZoo.externalUrls = [URL(fileURLWithPath: modelsDirectory)]
     if noFlashAttention {
       DeviceCapability.isMFAEnabled.store(false, ordering: .releasing)
     }
     if gpu > 0 && gpu < DeviceKind.GPUs.count {
       DeviceKind.GPUs.permute(gpu)
     }
-    try self.runAndBlock(name: name, address: address, port: port, TLS: !noTLS)
+    try self.runAndBlock(
+      name: name, address: address, port: port, TLS: !noTLS,
+      configurationRewriter: configurationRewriter)
   }
 
-  func runAndBlock(name: String, address: String, port: Int, TLS: Bool) throws {
+  func runAndBlock(
+    name: String, address: String, port: Int, TLS: Bool,
+    configurationRewriter: ServerConfigurationRewriter?
+  ) throws {
 
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     defer {
@@ -332,7 +379,8 @@ struct gRPCServerCLI: ParsableCommand {
     let queue = DispatchQueue(label: "com.draw-things.edit", qos: .userInteractive)
     let localImageGenerator = createLocalImageGenerator(queue: queue)
     let imageGenerationServiceImpl = ImageGenerationServiceImpl(
-      imageGenerator: localImageGenerator, queue: queue, backupQueue: queue)
+      imageGenerator: localImageGenerator, queue: queue, backupQueue: queue,
+      configurationRewriter: configurationRewriter)
     if noResponseCompression {
       imageGenerationServiceImpl.responseCompression.store(false, ordering: .releasing)
     } else {
