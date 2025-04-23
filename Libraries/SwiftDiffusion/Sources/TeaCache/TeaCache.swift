@@ -155,9 +155,20 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       }
       reducedModelParameterShared = true
     }
+    let shift: DynamicGraph.AnyTensor
+    let scale: DynamicGraph.AnyTensor
+    switch modelVersion {
+    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
+      .hiDreamI1:
+      shift = restInputs[restInputs.count - 2]
+      scale = restInputs[restInputs.count - 1]
+    case .flux1:
+      shift = restInputs[2 + 19 * 12 + 38 * 3]
+      scale = restInputs[2 + 19 * 12 + 38 * 3 + 1]
+    }
     return reducedModel(
-      inputs: firstInput,
-      [lastResidual, restInputs[restInputs.count - 2], restInputs[restInputs.count - 1]])[0].as(
+      inputs: firstInput, lastResidual, shift, scale)[0].as(
         of: FloatType.self)
   }
 }
