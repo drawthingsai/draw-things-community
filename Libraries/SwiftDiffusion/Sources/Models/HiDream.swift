@@ -189,14 +189,14 @@ private func JointTransformerBlock(
   if !contextBlockPreOnly {
     contextOut = out.reshaped(
       [b, t.0, h * k], offset: [0, hw, 0], strides: [(t.1 + hw) * h * k, h * k, 1]
-    ).contiguous()
+    )
     let unifyheads = Dense(count: k * h, name: "c_o")
     contextOut = unifyheads(contextOut)
     contextUnifyheads = unifyheads
   } else {
     contextUnifyheads = nil
   }
-  xOut = out.reshaped([b, hw, h * k], strides: [(t.1 + hw) * h * k, h * k, 1]).contiguous()
+  xOut = out.reshaped([b, hw, h * k], strides: [(t.1 + hw) * h * k, h * k, 1])
   let xUnifyheads = Dense(count: k * h, name: "x_o")
   xOut = xUnifyheads(xOut)
   if !contextBlockPreOnly {
@@ -272,11 +272,11 @@ private func SingleTransformerBlock(
   var xIn: Model.IO = x
   let xLength: Int
   if contextBlockPreOnly {
-    xOut = out.reshaped([b, hw, h * k], strides: [(t.1 + hw) * h * k, h * k, 1]).contiguous()
+    xOut = out.reshaped([b, hw, h * k], strides: [(t.1 + hw) * h * k, h * k, 1])
     xIn = xIn.reshaped([b, hw, h * k], strides: [(t.1 + hw) * h * k, h * k, 1]).contiguous()
     xLength = hw
   } else {
-    xOut = out.reshaped([b, hw + t.0, h * k], strides: [(t.1 + hw) * h * k, h * k, 1]).contiguous()
+    xOut = out.reshaped([b, hw + t.0, h * k], strides: [(t.1 + hw) * h * k, h * k, 1])
     xIn = xIn.reshaped([b, hw + t.0, h * k], strides: [(t.1 + hw) * h * k, h * k, 1]).contiguous()
     xLength = hw + t.0
   }
