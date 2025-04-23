@@ -216,10 +216,9 @@ private func JointTransformerBlock(
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
     contextOut =
       contextOut
-      + (contextChunks[5].to(of: contextOut)
+      + contextChunks[5].to(of: contextOut)
       .* contextFF(
-        contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])).to(
-        of: contextOut)
+        contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])
   } else {
     contextW1 = nil
     contextW2 = nil
@@ -234,8 +233,7 @@ private func JointTransformerBlock(
   let xIn = xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]
   xOut =
     xOut
-    + (xChunks[5].to(of: xOut) .* (xSharedFF(xIn) + xMoEFF(xIn).reshaped([b, hw, h * k]))).to(
-      of: xOut)
+    + xChunks[5].to(of: xOut) .* (xSharedFF(xIn) + xMoEFF(xIn).reshaped([b, hw, h * k]))
   let mapper: ModelWeightMapper = { _ in
     ModelWeightMapping()
   }
@@ -296,8 +294,7 @@ private func SingleTransformerBlock(
   let xFFIn = xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]
   xOut =
     xOut
-    + (xChunks[5].to(of: xOut) .* (xSharedFF(xFFIn) + xMoEFF(xFFIn).reshaped([b, xLength, h * k])))
-    .to(of: xOut)
+    + xChunks[5].to(of: xOut) .* (xSharedFF(xFFIn) + xMoEFF(xFFIn).reshaped([b, xLength, h * k]))
   let mapper: ModelWeightMapper = { _ in
     ModelWeightMapping()
   }
