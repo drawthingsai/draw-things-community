@@ -40,7 +40,7 @@ public enum ComputeUnits {
     case .wan21_14b:
       return 2.823529412 * 0.8
     case .hiDreamI1:
-      return 2.5
+      return 2.84465488969
     }
   }
 
