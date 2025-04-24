@@ -1919,7 +1919,7 @@ extension TextEncoder {
         tokens2TensorGPU = tokens[2].toGPU(0)
         if tokenLength <= 128 {
           var mask = Tensor<FloatType>(
-            Array(repeating: 0, count: tokenLength), .CPU, .NHWC(2, 1, 1, tokenLength)
+            Array(repeating: 0, count: 2 * tokenLength), .CPU, .NHWC(2, 1, 1, tokenLength)
           )
           if lengthsOfUncond[0] < tokenLength {
             for i in lengthsOfUncond[0]..<tokenLength {
