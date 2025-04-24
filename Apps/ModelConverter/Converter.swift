@@ -138,6 +138,8 @@ struct Converter: ParsableCommand {
       if autoencoder == nil {
         autoencoder = "wan_v2.1_video_vae_f16.ckpt"
       }
+    case .hiDreamI1:
+      fatalError()
     case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow:
       fatalError()
     }
