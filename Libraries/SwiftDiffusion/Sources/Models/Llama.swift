@@ -62,7 +62,7 @@ private func SelfAttention(
   let tovalues = Dense(count: k * hk, noBias: true, name: "v_proj")
   var keys = tokeys(x).reshaped([b, t, hk, k])
   var queries = toqueries(x).reshaped([b, t, h, k])
-  let values = tovalues(x).reshaped([b, t, hk, k])
+  var values = tovalues(x).reshaped([b, t, hk, k])
   queries = Functional.cmul(left: queries, right: rot)
   keys = Functional.cmul(left: keys, right: rot)
   var out: Model.IO
@@ -72,6 +72,9 @@ private func SelfAttention(
         queries, keys, values, causalAttentionMask
       ).reshaped([b * t, h * k])
   } else {
+    values = values.transposed(1, 2)
+    queries = ((1.0 / Float(k).squareRoot()) * queries).transposed(1, 2)
+    keys = keys.transposed(1, 2)
     var outs = [Model.IO]()
     for i in 0..<hk {
       let query = queries.reshaped(
