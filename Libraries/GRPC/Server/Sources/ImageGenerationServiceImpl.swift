@@ -140,22 +140,6 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       }
     }
     let promise = eventLoop.makePromise(of: GRPCStatus.self)
-    let cancelFlag = ManagedAtomic<Bool>(false)
-    var cancellation: ProtectedValue<(() -> Void)?> = ProtectedValue(nil)
-    func cancel() {
-      cancelFlag.store(true, ordering: .releasing)
-      cancellation.modify {
-        $0?()
-        $0 = nil
-      }
-    }
-    context.closeFuture.whenComplete { _ in
-      cancel()
-    }
-    func isCancelled() -> Bool {
-      return cancelFlag.load(ordering: .acquiring)
-    }
-
     let usesBackupQueue = usesBackupQueue.load(ordering: .acquiring)
     let responseCompression = responseCompression.load(ordering: .acquiring)
     let queue = usesBackupQueue ? backupQueue : queue
@@ -173,10 +157,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
               request: request,
               promise: promise,
               context: context,
-              isCancelled: isCancelled,
-              cancellation: cancellation,
-              responseCompression: responseCompression,
-              cancel: cancel
+              responseCompression: responseCompression
             )
           }
         case .failure(let error):
@@ -198,10 +179,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
           request: request,
           promise: promise,
           context: context,
-          isCancelled: isCancelled,
-          cancellation: cancellation,
-          responseCompression: responseCompression,
-          cancel: cancel
+          responseCompression: responseCompression
         )
       }
     }
@@ -213,13 +191,24 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     request: ImageGenerationRequest,
     promise: EventLoopPromise<GRPCStatus>,
     context: StreamingResponseCallContext<ImageGenerationResponse>,
-    isCancelled: @escaping () -> Bool,
-    cancellation: ProtectedValue<(() -> Void)?>,
-    responseCompression: Bool,
-    cancel: @escaping () -> Void
+    responseCompression: Bool
   ) {
-    var cancellation = cancellation
-    self.logger.info(
+    let cancelFlag = ManagedAtomic<Bool>(false)
+    var cancellation: ProtectedValue<(() -> Void)?> = ProtectedValue(nil)
+    func cancel() {
+      cancelFlag.store(true, ordering: .releasing)
+      cancellation.modify {
+        $0?()
+        $0 = nil
+      }
+    }
+    context.closeFuture.whenComplete { _ in
+      cancel()
+    }
+    func isCancelled() -> Bool {
+      return cancelFlag.load(ordering: .acquiring)
+    }
+    logger.info(
       "Received image processing request with configuration steps: \(configuration.steps)"
     )
     let override = request.override
@@ -320,7 +309,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     var hints = [(ControlHintType, [(AnyTensor, Float)])]()
     for hintProto in request.hints {
       if let hintType = ControlHintType(rawValue: hintProto.hintType) {
-        self.logger.info("Created ControlHintType: \(hintType)")
+        logger.info("Created ControlHintType: \(hintType)")
         if hintType == .scribble {
           if let tensorData = hintProto.tensors.first?.tensor,
             let score = hintProto.tensors.first?.weight,
@@ -342,7 +331,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         }
 
       } else {
-        self.logger.error("Invalid ControlHintType \(hintProto.hintType)")
+        logger.error("Invalid ControlHintType \(hintProto.hintType)")
       }
     }
 
@@ -374,7 +363,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         images?.compactMap { tensor in
           return tensor.data(using: codec)
         } ?? []
-      self.logger.info("Image processed")
+      logger.info("Image processed")
       let totalBytes = imageDatas.reduce(0) { partialResult, imageData in
         return partialResult + imageData.count
       }
@@ -387,11 +376,11 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
 
       let finalResponse = ImageGenerationResponse.with {
         if !imageDatas.isEmpty {
-          self.logger.info("Image processed successfully")
+          logger.info("Image processed successfully")
           $0.generatedImages.append(contentsOf: imageDatas)
         } else {
           if isCancelled() {
-            self.logger.info("Image processed cancelled, generated images return nil")
+            logger.info("Image processed cancelled, generated images return nil")
           } else {
             let configurationDictionary: [String: Any]
             if let jsonData = try? JSONEncoder().encode(
@@ -402,7 +391,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             } else {
               configurationDictionary = [:]
             }
-            self.logger.error(
+            logger.error(
               "Image processed failed, failed configuration:\(configurationDictionary)")
           }
         }
@@ -412,7 +401,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       promise.succeed(.ok)
       context.statusPromise.succeed(.ok)
       let success = imageDatas.isEmpty ? false : true
-      if let delegate = self.delegate {
+      if let delegate = delegate {
         DispatchQueue.main.async {
           delegate.didCompleteGenerationResponse(success: success)
         }
@@ -420,7 +409,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     } catch (let error) {
       promise.fail(error)
       context.statusPromise.fail(error)
-      if let delegate = self.delegate {
+      if let delegate = delegate {
         DispatchQueue.main.async {
           delegate.didCompleteGenerationResponse(success: false)
         }
