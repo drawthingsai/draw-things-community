@@ -40,7 +40,7 @@ public final class LocalLoRAManager {
         do {
           // Get the file size from the downloaded temp file
           let fileAttributes = try FileManager.default.attributesOfItem(atPath: tempUrl.path)
-          guard let fileSize = fileAttributes[.size] as? Int64 else {
+          guard let _ = fileAttributes[.size] as? Int64 else {
             logger.info("Failed to determine size of downloaded file \(modelName)")
             return
           }
