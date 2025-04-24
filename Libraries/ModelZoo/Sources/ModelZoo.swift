@@ -56,13 +56,6 @@ public struct ModelZoo: DownloadZoo {
     case rf(Denoiser.Parameterization.RF)
   }
 
-  public enum ApiFileFormat: String, Codable {
-    case mp4 = "mp4"
-    case png = "png"
-    case jpg = "jpg"
-    case jpeg = "jpeg"
-  }
-
   public struct Specification: Codable {
     public struct MMDiT: Codable {
       public var qkNorm: Bool
@@ -72,43 +65,76 @@ public struct ModelZoo: DownloadZoo {
         self.dualAttentionLayers = dualAttentionLayers
       }
     }
-    public enum ConfigValue: Codable {
-      case string(String)
-      case int(Int)
-      case bool(Bool)
-
-      public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let stringValue = try? container.decode(String.self) {
-          self = .string(stringValue)
-        } else if let intValue = try? container.decode(Int.self) {
-          self = .int(intValue)
-        } else if let boolValue = try? container.decode(Bool.self) {
-          self = .bool(boolValue)
-        } else {
-          throw DecodingError.dataCorruptedError(
-            in: container, debugDescription: "Cannot decode value")
-        }
-      }
-
-      public func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .string(let value): try container.encode(value)
-        case .int(let value): try container.encode(value)
-        case .bool(let value): try container.encode(value)
-        }
-      }
-      public var value: Any {
-        switch self {
-        case .string(let value): return value
-        case .int(let value): return value
-        case .bool(let value): return value
-        }
-      }
-    }
 
     public struct RemoteApiModelConfig: Codable {
+      public enum JSONNumber: Codable {
+        case integer(Int)
+        case fraction(Double)
+
+        public init(from decoder: Decoder) throws {
+          let container = try decoder.singleValueContainer()
+          if let doubleValue = try? container.decode(Double.self) {
+            self = .fraction(doubleValue)
+          } else if let integerValue = try? container.decode(Int.self) {
+            self = .integer(integerValue)
+          } else {
+            throw DecodingError.dataCorruptedError(
+              in: container, debugDescription: "Cannot decode value")
+          }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+          var container = encoder.singleValueContainer()
+          switch self {
+          case .integer(let value): try container.encode(value)
+          case .fraction(let value): try container.encode(value)
+          }
+        }
+      }
+
+      public enum JSONValue: Codable {
+        case string(String)
+        case number(JSONNumber)
+        case bool(Bool)
+
+        public init(from decoder: Decoder) throws {
+          let container = try decoder.singleValueContainer()
+          if let stringValue = try? container.decode(String.self) {
+            self = .string(stringValue)
+          } else if let numberValue = try? container.decode(JSONNumber.self) {
+            self = .number(numberValue)
+          } else if let boolValue = try? container.decode(Bool.self) {
+            self = .bool(boolValue)
+          } else {
+            throw DecodingError.dataCorruptedError(
+              in: container, debugDescription: "Cannot decode value")
+          }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+          var container = encoder.singleValueContainer()
+          switch self {
+          case .string(let value): try container.encode(value)
+          case .number(let value): try container.encode(value)
+          case .bool(let value): try container.encode(value)
+          }
+        }
+        public var value: Any {
+          switch self {
+          case .string(let value): return value
+          case .number(let value): return value
+          case .bool(let value): return value
+          }
+        }
+      }
+
+      public enum ApiFileFormat: String, Codable {
+        case mp4 = "mp4"
+        case png = "png"
+        case jpg = "jpg"
+        case jpeg = "jpeg"
+      }
+
       public var endpoint: String
       public var url: String
       public var remoteApiModelConfigMapping: [String: String]
@@ -128,7 +154,7 @@ public struct ModelZoo: DownloadZoo {
       public var apiFileFormat: ApiFileFormat
 
       public var pollingInterval: TimeInterval
-      public var passThroughConfig: [String: ConfigValue]?
+      public var passthroughConfigs: [String: JSONValue]?
       public var settingsSections: [String]
       public var customImageSizeRatios: [String]?
       public init(
@@ -149,7 +175,7 @@ public struct ModelZoo: DownloadZoo {
         apiSecret: String? = nil,
         apiFileFormat: ApiFileFormat,
         pollingInterval: TimeInterval = 5.0,
-        passThroughConfig: [String: ConfigValue]? = nil,
+        passthroughConfigs: [String: JSONValue]? = nil,
         settingsSections: [String],
         customImageSizeRatios: [String]? = nil
       ) {
@@ -171,7 +197,7 @@ public struct ModelZoo: DownloadZoo {
         self.apiFileFormat = apiFileFormat
         self.pollingInterval = pollingInterval
         self.settingsSections = settingsSections
-        self.passThroughConfig = passThroughConfig
+        self.passthroughConfigs = passthroughConfigs
         self.customImageSizeRatios = customImageSizeRatios
       }
     }
