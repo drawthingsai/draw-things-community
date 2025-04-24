@@ -54,6 +54,7 @@ swift_library(
         "//Libraries/GRPC:GRPCImageServiceModels",
         "//Libraries/GRPC:GRPCServer",
         "//Libraries/GRPC:ProxyControlClient",
+        "//Libraries/GRPC:ServerLoRALoader",
         "//Libraries/ImageGenerator",
         "//Libraries/LocalImageGenerator",
         "//Libraries/SwiftDiffusion",
