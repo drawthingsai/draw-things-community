@@ -2,15 +2,15 @@ import DataModels
 import Foundation
 import Logging
 import ModelZoo
-import ServerConfigurationRewriting
+import ServerConfigurationRewriter
 
-public struct ServerConfigurationRewriter: ServerConfigurationRewriting {
+public struct ServerLoRALoader: ServerConfigurationRewriter {
 
-  private let customModelManager: CustomModelManager
+  private let localLoRAManager: LocalLoRAManager
   private let logger = Logger(label: "com.draw-things.image-generation-service")
 
-  public init(customModelManager: CustomModelManager) {
-    self.customModelManager = customModelManager
+  public init(localLoRAManager: LocalLoRAManager) {
+    self.localLoRAManager = localLoRAManager
   }
 
   public func newConfiguration(
@@ -34,37 +34,34 @@ public struct ServerConfigurationRewriter: ServerConfigurationRewriting {
     }
 
     self.logger.info("loRAsNeedToLoad: \(loRAsNeedToLoad)")
-
-    let results = customModelManager.batchDownloadModels(
-      loRAsNeedToLoad
-    )
-
-    // Check if any model failed to download
-    if let failedModel = results.first(where: { !$0.value })?.key {
-      self.logger.info("fail to load custom model: \(failedModel)")
-      completion(.failure(ServerConfigurationRewriteError.canNotLoadModel(failedModel)))
-      return
-    }
-
-    self.logger.info("load custom model: \(results)")
-    var configurationBuilder = GenerationConfigurationBuilder(from: configuration)
-    configurationBuilder.loras = configuration.loras.compactMap { lora in
-      guard let file = lora.file else {
-        return nil
+    localLoRAManager.downloadRemoteLoRAs(loRAsNeedToLoad) { results in
+      // Check if any model failed to download
+      if let failedModel = results.first(where: { !$0.value })?.key {
+        self.logger.info("fail to load custom model: \(failedModel)")
+        completion(.failure(ServerConfigurationRewriteError.canNotLoadModel(failedModel)))
+        return
       }
-      let sha256 = sha256HashName(loraName: file)
-      return DataModels.LoRA(file: sha256, weight: lora.weight)
+
+      self.logger.info("load custom model: \(results)")
+      var configurationBuilder = GenerationConfigurationBuilder(from: configuration)
+      configurationBuilder.loras = configuration.loras.compactMap { lora in
+        guard let file = lora.file else {
+          return nil
+        }
+        let sha256 = sha256HashName(loraName: file)
+        return DataModels.LoRA(file: sha256, weight: lora.weight)
+      }
+      let configuration = configurationBuilder.build()
+      completion(.success(configuration))
     }
-    let configuration = configurationBuilder.build()
-    completion(.success(configuration))
   }
 
   func sha256HashName(loraName: String) -> String {
     guard isSHA256LoRA(loraName: loraName) else {
       return loraName
     }
-    if let sha256LoRA = loraName.split(separator: "_", maxSplits: 1).map(String.init).first {
-      return sha256LoRA
+    if let sha256LoRA = loraName.split(separator: "_", maxSplits: 1).first {
+      return String(sha256LoRA)
     }
     return loraName
   }
@@ -77,8 +74,8 @@ public struct ServerConfigurationRewriter: ServerConfigurationRewriting {
 
     // Split the name by the first dash or underscore
     let components: [String]
-    if loraName.contains("-") {
-      components = loraName.split(separator: "_", maxSplits: 1).map(String.init)
+    if loraName.contains("_") {
+      components = loraName.split(separator: "_", maxSplits: 1).map { String($0) }
     } else {
       // If there's no separator, check if the whole string is a valid hash
       components = [loraName]

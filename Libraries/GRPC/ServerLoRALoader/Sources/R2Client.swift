@@ -7,17 +7,17 @@ import Foundation
 
 public struct R2Client {
   private let accessKey: String
-  private let secretKey: String
+  private let secret: String
   private let endpoint: String
   private let bucket: String
   private let session: URLSession
   private let debug: Bool
 
   public init(
-    accessKey: String, secretKey: String, endpoint: String, bucket: String, debug: Bool = false
+    accessKey: String, secret: String, endpoint: String, bucket: String, debug: Bool = false
   ) {
     self.accessKey = accessKey
-    self.secretKey = secretKey
+    self.secret = secret
     self.endpoint = endpoint
     self.bucket = bucket
     self.debug = debug
@@ -181,7 +181,7 @@ public struct R2Client {
     }
 
     // Convert strings to byte arrays for HMAC operations
-    let kSecretBytes = Array("AWS4\(secretKey)".utf8)
+    let kSecretBytes = Array("AWS4\(secret)".utf8)
     let dateStampBytes = Array(dateStamp.utf8)
     let regionBytes = Array("auto".utf8)
     let serviceBytes = Array("s3".utf8)

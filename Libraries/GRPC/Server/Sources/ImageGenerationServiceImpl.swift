@@ -11,7 +11,7 @@ import ModelZoo
 import NIOCore
 import NNC
 import ScriptDataModels
-import ServerConfigurationRewriting
+import ServerConfigurationRewriter
 
 extension ImageGeneratorSignpost {
   public init(from signpostProto: ImageGenerationSignpostProto) {
@@ -107,6 +107,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   private let queue: DispatchQueue
   private let backupQueue: DispatchQueue
   private let imageGenerator: ImageGenerator
+  private let serverConfigurationRewriter: ServerConfigurationRewriter?
   public weak var delegate: ImageGenerationServiceDelegate? = nil
   public var interceptors: ImageGenerationServiceServerInterceptorFactoryProtocol? = nil
   private let logger = Logger(label: "com.draw-things.image-generation-service")
@@ -114,16 +115,15 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   public let responseCompression = ManagedAtomic<Bool>(false)
   public let enableModelBrowsing = ManagedAtomic<Bool>(false)
   public var sharedSecret: String? = nil
-  private var configurationRewriter: ServerConfigurationRewriting? = nil
 
   public init(
     imageGenerator: ImageGenerator, queue: DispatchQueue, backupQueue: DispatchQueue,
-    configurationRewriter: ServerConfigurationRewriting? = nil
+    serverConfigurationRewriter: ServerConfigurationRewriter? = nil
   ) {
     self.imageGenerator = imageGenerator
     self.queue = queue
     self.backupQueue = backupQueue
-    self.configurationRewriter = configurationRewriter
+    self.serverConfigurationRewriter = serverConfigurationRewriter
     self.logger.info("ImageGenerationServiceImpl init")
   }
   // Implement the async generateImage method
@@ -159,16 +159,15 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     let usesBackupQueue = usesBackupQueue.load(ordering: .acquiring)
     let responseCompression = responseCompression.load(ordering: .acquiring)
     let queue = usesBackupQueue ? backupQueue : queue
-    queue.async { [weak self] in
-      guard let self = self else { return }
-
-      var configuration = GenerationConfiguration.from(data: request.configuration)
-      if let configurationRewriter = configurationRewriter {
-        configurationRewriter.newConfiguration(configuration: configuration) { [weak self] result in
-          guard let self = self else { return }
-
-          switch result {
-          case .success(let newConfiguration):
+    let configuration = GenerationConfiguration.from(data: request.configuration)
+    if let serverConfigurationRewriter = serverConfigurationRewriter {
+      serverConfigurationRewriter.newConfiguration(configuration: configuration) {
+        [weak self] result in
+        guard let self = self else { return }
+        switch result {
+        case .success(let newConfiguration):
+          queue.async { [weak self] in
+            guard let self = self else { return }
             self.executeImageGenerationWithConfiguration(
               configuration: newConfiguration,
               request: request,
@@ -179,18 +178,21 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
               responseCompression: responseCompression,
               cancel: cancel
             )
-          case .failure(let error):
-            promise.fail(error)
-            context.statusPromise.fail(error)
-            if let delegate = self.delegate {
-              DispatchQueue.main.async {
-                delegate.didCompleteGenerationResponse(success: false)
-              }
-            }
-            return
           }
+        case .failure(let error):
+          promise.fail(error)
+          context.statusPromise.fail(error)
+          if let delegate = self.delegate {
+            DispatchQueue.main.async {
+              delegate.didCompleteGenerationResponse(success: false)
+            }
+          }
+          return
         }
-      } else {
+      }
+    } else {
+      queue.async { [weak self] in
+        guard let self = self else { return }
         self.executeImageGenerationWithConfiguration(
           configuration: configuration,
           request: request,

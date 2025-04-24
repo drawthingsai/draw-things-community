@@ -18,7 +18,7 @@ import NIOSSL
 import NNC
 import ProxyControlClient
 import SQLiteDflat
-import ServerConfigurationRewriter
+import ServerLoRALoader
 import Utils
 
 private func createTemporaryDirectory() -> String {
@@ -238,23 +238,23 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Debug flag for the verbose model inference logging.")
   var debug = false
 
-  @Option(name: .shortAndLong, help: "Path to the directory containing custom model files.")
-  var customModelsDirectory: String?
-
-  @Option(name: .long, help: "R2 access key (required for custom models).")
-  var customModelAccessKey: String?
-
-  @Option(name: .long, help: "R2 secret key (required for custom models).")
-  var customModelSecretKey: String?
-
-  @Option(
-    name: .long, help: "Endpoint URL to download custom models from (required for custom models).")
-  var customModelEndpoint: String?
-
   @Option(
     name: .long,
-    help: "Name of the R2 bucket for custom model downloads (required for custom models).")
-  var customModelBucket: String?
+    help:
+      "Path to the directory for secondary models, typically for ones downloaded from blob store.")
+  var secondaryModelsDirectory: String?
+
+  @Option(name: .long, help: "Blob store (typically AWS S3 or Cloudflare R2) API access key.")
+  var blobStoreAccessKey: String?
+
+  @Option(name: .long, help: "Blob store (typically AWS S3 or Cloudflare R2) API secret.")
+  var blobStoreSecret: String?
+
+  @Option(name: .long, help: "Endpoint URL for the blob store.")
+  var blobStoreEndpoint: String?
+
+  @Option(name: .long, help: "The bucket for the blob store.")
+  var blobStoreBucket: String?
 
   #if os(Linux)
     @Flag(help: "Supervise the server so it restarts upon a internal crash.")
@@ -299,35 +299,36 @@ struct gRPCServerCLI: ParsableCommand {
       throw CLIError.invalidModelPath
     }
 
-    var configurationRewriter: ServerConfigurationRewriter? = nil
+    let serverLoRALoader: ServerLoRALoader?
     // Add the custom models directory if provided
-    if let customDir = customModelsDirectory, let accessKey = customModelAccessKey,
-      let secretKey = customModelSecretKey, let customModelBucket = customModelBucket,
-      let customModelEndpoint = customModelEndpoint
+    if let secondaryModelsDirectory = secondaryModelsDirectory, let accessKey = blobStoreAccessKey,
+      let secret = blobStoreSecret, let blobStoreBucket = blobStoreBucket,
+      let blobStoreEndpoint = blobStoreEndpoint
     {
 
       let r2Client = R2Client(
-        accessKey: accessKey,
-        secretKey: secretKey,
-        endpoint: customModelEndpoint,
-        bucket: customModelBucket
-      )
+        accessKey: accessKey, secret: secret, endpoint: blobStoreEndpoint, bucket: blobStoreBucket)
       print("create r2Client: \(r2Client)")
 
-      let customManager = CustomModelManager(r2Client: r2Client, customDirectory: customDir)
-      configurationRewriter = ServerConfigurationRewriter(customModelManager: customManager)
+      let localLoRAManager = LocalLoRAManager(
+        r2Client: r2Client, localDirectory: secondaryModelsDirectory)
+      serverLoRALoader = ServerLoRALoader(localLoRAManager: localLoRAManager)
       // Check if directory exists (either it was there already or we created it)
-      if fileManager.fileExists(atPath: customDir, isDirectory: &isDirectory), isDirectory.boolValue
+      if fileManager.fileExists(atPath: secondaryModelsDirectory, isDirectory: &isDirectory),
+        isDirectory.boolValue
       {
-        print("Using custom models directory: \(customDir)")
+        print("Using custom models directory: \(secondaryModelsDirectory)")
       } else {
-        print("Warning: Custom models directory path is not a valid directory: \(customDir)")
+        print(
+          "Warning: Custom models directory path is not a valid directory: \(secondaryModelsDirectory)"
+        )
         throw CLIError.invalidModelPath
       }
       ModelZoo.externalUrls = [
-        URL(fileURLWithPath: modelsDirectory), URL(fileURLWithPath: customDir),
+        URL(fileURLWithPath: modelsDirectory), URL(fileURLWithPath: secondaryModelsDirectory),
       ]
     } else {
+      serverLoRALoader = nil
       print("skip custom models directionry")
       ModelZoo.externalUrls = [URL(fileURLWithPath: modelsDirectory)]
     }
@@ -367,12 +368,12 @@ struct gRPCServerCLI: ParsableCommand {
     }
     try self.runAndBlock(
       name: name, address: address, port: port, TLS: !noTLS,
-      configurationRewriter: configurationRewriter)
+      serverLoRALoader: serverLoRALoader)
   }
 
   func runAndBlock(
     name: String, address: String, port: Int, TLS: Bool,
-    configurationRewriter: ServerConfigurationRewriter?
+    serverLoRALoader: ServerLoRALoader?
   ) throws {
 
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
@@ -383,7 +384,7 @@ struct gRPCServerCLI: ParsableCommand {
     let localImageGenerator = createLocalImageGenerator(queue: queue)
     let imageGenerationServiceImpl = ImageGenerationServiceImpl(
       imageGenerator: localImageGenerator, queue: queue, backupQueue: queue,
-      configurationRewriter: configurationRewriter)
+      serverConfigurationRewriter: serverLoRALoader)
     if noResponseCompression {
       imageGenerationServiceImpl.responseCompression.store(false, ordering: .releasing)
     } else {

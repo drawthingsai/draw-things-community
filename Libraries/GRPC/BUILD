@@ -50,7 +50,7 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":GRPCImageServiceModels",
-        ":ServerConfigurationRewriting",
+        ":ServerConfigurationRewriter",
         "//Libraries/BinaryResources",
         "//Libraries/DataModels",
         "//Libraries/ImageGenerator",
@@ -129,9 +129,9 @@ swift_library(
 )
 
 swift_library(
-    name = "ServerConfigurationRewriting",
-    srcs = glob(["ServerConfiguration/ServerConfigurationRewriting/Sources/*.swift"]),
-    module_name = "ServerConfigurationRewriting",
+    name = "ServerConfigurationRewriter",
+    srcs = glob(["ServerConfigurationRewriter/Sources/*.swift"]),
+    module_name = "ServerConfigurationRewriter",
     visibility = ["//visibility:public"],
     deps = [
         "//Libraries/DataModels",
@@ -140,12 +140,12 @@ swift_library(
 )
 
 swift_library(
-    name = "ServerConfigurationRewriter",
-    srcs = glob(["ServerConfiguration/ServerConfigurationRewriter/Sources/*.swift"]),
-    module_name = "ServerConfigurationRewriter",
+    name = "ServerLoRALoader",
+    srcs = glob(["ServerLoRALoader/Sources/*.swift"]),
+    module_name = "ServerLoRALoader",
     visibility = ["//visibility:public"],
     deps = [
-        ":ServerConfigurationRewriting",
+        ":ServerConfigurationRewriter",
         "//Libraries/DataModels",
         "//Libraries/ModelZoo",
         "@SwiftCrypto//:Crypto",

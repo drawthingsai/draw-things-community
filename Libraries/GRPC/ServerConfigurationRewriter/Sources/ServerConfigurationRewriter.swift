@@ -5,7 +5,7 @@ public enum ServerConfigurationRewriteError: Error {
   case canNotLoadModel(String)
 }
 
-public protocol ServerConfigurationRewriting {
+public protocol ServerConfigurationRewriter {
   func newConfiguration(
     configuration: GenerationConfiguration,
     completion: @escaping (Result<GenerationConfiguration, Error>) -> Void)
