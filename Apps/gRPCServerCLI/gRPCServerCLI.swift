@@ -308,7 +308,7 @@ struct gRPCServerCLI: ParsableCommand {
 
       let r2Client = R2Client(
         accessKey: accessKey, secret: secret, endpoint: blobStoreEndpoint, bucket: blobStoreBucket)
-      print("create r2Client: \(r2Client)")
+      print("Create R2Client: \(r2Client)")
 
       let localLoRAManager = LocalLoRAManager(
         r2Client: r2Client, localDirectory: secondaryModelsDirectory)
@@ -317,10 +317,10 @@ struct gRPCServerCLI: ParsableCommand {
       if fileManager.fileExists(atPath: secondaryModelsDirectory, isDirectory: &isDirectory),
         isDirectory.boolValue
       {
-        print("Using custom models directory: \(secondaryModelsDirectory)")
+        print("Using another models directory: \(secondaryModelsDirectory)")
       } else {
         print(
-          "Warning: Custom models directory path is not a valid directory: \(secondaryModelsDirectory)"
+          "Warning: Provided models directory path is not a valid directory: \(secondaryModelsDirectory)"
         )
         throw CLIError.invalidModelPath
       }
@@ -329,7 +329,6 @@ struct gRPCServerCLI: ParsableCommand {
       ]
     } else {
       serverLoRALoader = nil
-      print("skip custom models directionry")
       ModelZoo.externalUrls = [URL(fileURLWithPath: modelsDirectory)]
     }
 
