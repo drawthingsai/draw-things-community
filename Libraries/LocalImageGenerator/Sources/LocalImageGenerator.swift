@@ -2406,7 +2406,8 @@ extension LocalImageGenerator {
           return c
         }
       case .hiDreamI1:
-        fatalError()
+        // While HiDream uses CLIP, these are not meaningful because it only uses the pooling vector from CLIP.
+        break
       case .wan21_1_3b, .wan21_14b:
         fatalError()
       case .auraflow, .flux1, .kandinsky21, .pixart, .hunyuanVideo:
