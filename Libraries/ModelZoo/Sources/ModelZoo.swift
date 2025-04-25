@@ -135,6 +135,69 @@ public struct ModelZoo: DownloadZoo {
         case jpeg = "jpeg"
       }
 
+      public enum ResultPath: Codable {
+        case base64(String)
+        case url(String)
+
+        // Custom coding keys
+        private enum CodingKeys: String, CodingKey {
+          case type
+          case value
+        }
+
+        // Custom encoding
+        public func encode(to encoder: Encoder) throws {
+          var container = encoder.container(keyedBy: CodingKeys.self)
+
+          switch self {
+          case .base64(let path):
+            try container.encode("base64", forKey: .type)
+            try container.encode(path, forKey: .value)
+          case .url(let path):
+            try container.encode("url", forKey: .type)
+            try container.encode(path, forKey: .value)
+          }
+        }
+
+        // Custom decoding
+        public init(from decoder: Decoder) throws {
+          let container = try decoder.container(keyedBy: CodingKeys.self)
+
+          // Try to decode as single string first (for backward compatibility)
+          if let singleValue = try? decoder.singleValueContainer(),
+            let stringValue = try? singleValue.decode(String.self)
+          {
+            // Default to URL for string values
+            self = .url(stringValue)
+            return
+          }
+
+          // Otherwise decode as object with type and value
+          let type = try container.decode(String.self, forKey: .type)
+          let value = try container.decode(String.self, forKey: .value)
+
+          switch type {
+          case "base64":
+            self = .base64(value)
+          case "url":
+            self = .url(value)
+          default:
+            throw DecodingError.dataCorruptedError(
+              forKey: .type,
+              in: container,
+              debugDescription: "Invalid type: \(type)"
+            )
+          }
+        }
+
+        public var value: String {
+          switch self {
+          case .base64(let value): return value
+          case .url(let value): return value
+          }
+        }
+      }
+
       public var endpoint: String
       public var url: String
       public var remoteApiModelConfigMapping: [String: String]
@@ -143,7 +206,7 @@ public struct ModelZoo: DownloadZoo {
       public var requestType: String
       public var taskIdPath: String
       public var statusUrlTemplate: String
-      public var resultUrlsPath: String
+      public var resultPath: ResultPath
       public var statusPath: String
       public var successStatus: String
       public var failureStatus: String
@@ -152,7 +215,6 @@ public struct ModelZoo: DownloadZoo {
       public var apiKey: String?
       public var apiSecret: String?
       public var apiFileFormat: ApiFileFormat
-
       public var pollingInterval: TimeInterval
       public var passthroughConfigs: [String: JSONValue]?
       public var settingsSections: [String]
@@ -165,7 +227,7 @@ public struct ModelZoo: DownloadZoo {
         requestType: String,
         taskIdPath: String,
         statusUrlTemplate: String,
-        resultUrlsPath: String,
+        resultPath: ResultPath,
         statusPath: String,
         successStatus: String,
         failureStatus: String,
@@ -186,7 +248,7 @@ public struct ModelZoo: DownloadZoo {
         self.requestType = requestType
         self.taskIdPath = taskIdPath
         self.statusUrlTemplate = statusUrlTemplate
-        self.resultUrlsPath = resultUrlsPath
+        self.resultPath = resultPath
         self.statusPath = statusPath
         self.successStatus = successStatus
         self.failureStatus = failureStatus
