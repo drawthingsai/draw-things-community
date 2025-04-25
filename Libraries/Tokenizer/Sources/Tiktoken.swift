@@ -246,7 +246,8 @@ public struct TiktokenTokenizer {
   private static let tokenRegex: Any? = {
     if #available(iOS 16.0, macOS 13.0, *) {
       return try? Regex(
-        #"<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|\p{L}+|\p{N}|[^\s\p{L}\p{N}]+"#)
+        #"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]|\s[\r\n]+|\s+(?!\S)|\s+"#
+      )
     }
     return nil
   }()
