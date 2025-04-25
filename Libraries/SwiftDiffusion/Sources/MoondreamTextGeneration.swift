@@ -4,7 +4,7 @@ import Tokenizer
 
 public struct MoondreamTextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
   let filePath: String
-  let tokenizer: GPT2Tokenizer
+  let tokenizer: TiktokenTokenizer
   let usesFlashAttention: Bool
   let question: String
   let version: MoondreamEncode<T>.Version
@@ -16,7 +16,7 @@ public struct MoondreamTextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
     self.usesFlashAttention = usesFlashAttention
     self.question = question
     self.version = version
-    tokenizer = GPT2Tokenizer(vocabulary: vocabulary, merges: merges)
+    tokenizer = TiktokenTokenizer(vocabulary: vocabulary, merges: merges)
   }
 }
 
