@@ -1977,7 +1977,7 @@ extension TextEncoder {
     // Now run llama3.
     let tokenLength = tokens[3].shape[0] / 2
     let llama3 = Llama3(
-      FloatType.self, vocabularySize: 128_320, width: 4_096,
+      FloatType.self, vocabularySize: 128_256, width: 4_096,
       tokenLength: (tokenLength, tokenLength, tokenLength),
       layers: 32, MLP: 14336, heads: 32, outputHiddenStates: Set(1..<32), batchSize: batchSize,
       usesFlashAttention: usesFlashAttention)
