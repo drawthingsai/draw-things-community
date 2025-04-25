@@ -8,6 +8,7 @@ import Foundation
 import ImageGenerator
 import ModelZoo
 import NNC
+import Tokenizer
 import Upscaler
 
 #if !os(Linux)
@@ -32,7 +33,7 @@ public struct LocalImageGenerator: ImageGenerator {
   public var tokenizerT5: SentencePieceTokenizer
   public var tokenizerPileT5: SentencePieceTokenizer
   public var tokenizerChatGLM3: SentencePieceTokenizer
-  public var tokenizerLlama3: GPT2Tokenizer
+  public var tokenizerLlama3: TiktokenTokenizer
   public var tokenizerUMT5: SentencePieceTokenizer
   private let queue: DispatchQueue
   public init(
@@ -44,7 +45,7 @@ public struct LocalImageGenerator: ImageGenerator {
     tokenizerT5: SentencePieceTokenizer,
     tokenizerPileT5: SentencePieceTokenizer,
     tokenizerChatGLM3: SentencePieceTokenizer,
-    tokenizerLlama3: GPT2Tokenizer,
+    tokenizerLlama3: TiktokenTokenizer,
     tokenizerUMT5: SentencePieceTokenizer
   ) {
     self.queue = queue

@@ -1,5 +1,6 @@
 import Foundation
 import NNC
+import Tokenizer
 
 public struct MoondreamTextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
   let filePath: String

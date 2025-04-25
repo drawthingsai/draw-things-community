@@ -274,7 +274,7 @@ extension UNetFromCoreML {
       }
       do {
         let configuration = MLModelConfiguration()
-        if #available(iOS 16.0, *) {
+        if #available(iOS 16.0, macOS 13.0, *) {
           let computeUnits = CoreMLModelManager.computeUnits.load(ordering: .acquiring)
           switch computeUnits {
           case 1:

@@ -1,4 +1,5 @@
 import NNC
+import Tokenizer
 
 public struct CLIPModelWithProjection<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePaths: [String]

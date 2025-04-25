@@ -37,13 +37,13 @@ swift_library(
     module_name = "Diffusion",
     visibility = ["//visibility:public"],
     deps = [
+        "//Libraries/Tokenizer",
         "//Vendors/ZIPFoundation",
         "@SwiftNumerics//:Numerics",
         "@ccv//lib:ccv",
         "@s4nnc//nnc",
         "@swift-atomics//:SwiftAtomics",
         "@swift-fickling//:fickling",
-        "@swift-sentencepiece//:swift-sentencepiece",
     ],
 )
 

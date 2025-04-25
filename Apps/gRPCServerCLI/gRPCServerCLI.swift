@@ -61,7 +61,7 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
   let tokenizerChatGLM3 = SentencePieceTokenizer(
     data: BinaryResources.chatglm3_spiece_model, startToken: nil,
     endToken: nil, tokenShift: 0)
-  let tokenizerLlama3 = GPT2Tokenizer(
+  let tokenizerLlama3 = TiktokenTokenizer(
     vocabulary: BinaryResources.vocab_llama3_json, merges: BinaryResources.merges_llama3_txt,
     specialTokens: [
       "<|start_header_id|>": 128006, "<|end_header_id|>": 128007, "<|eot_id|>": 128009,

@@ -5,6 +5,7 @@ import ModelZoo
 import NNC
 import SFMT
 import TensorBoard
+import Tokenizer
 
 public struct LoRATrainer {
 
