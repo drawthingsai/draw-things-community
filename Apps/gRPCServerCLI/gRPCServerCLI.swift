@@ -19,6 +19,7 @@ import NNC
 import ProxyControlClient
 import SQLiteDflat
 import ServerLoRALoader
+import Tokenizer
 import Utils
 
 private func createTemporaryDirectory() -> String {
