@@ -246,7 +246,7 @@ public struct TiktokenTokenizer {
   private static let tokenRegex: Any? = {
     if #available(iOS 16.0, macOS 13.0, *) {
       return try? Regex(
-        #"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]|\s[\r\n]+|\s+(?!\S)|\s+"#
+        #"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"#
       )
     }
     return nil
@@ -255,38 +255,9 @@ public struct TiktokenTokenizer {
   private func pretokenize(_ text: String) -> [Substring] {
     if #available(iOS 16.0, macOS 13.0, *) {
       if let tokenRegex = Self.tokenRegex as? Regex<AnyRegexOutput> {
-        var tokens: [Substring] = []
-        // Use String.Index to keep track of the current position in the original string
-        var currentOffset = text.startIndex
-        text.matches(of: tokenRegex).forEach {
-          // 'range' here is the Range<String.Index> of the current match
-
-          // 1. Extract the text *before* the current match
-          // This segment goes from the currentOffset up to the start of the match.
-          let rangeBeforeMatch = currentOffset..<$0.range.lowerBound
-          if !rangeBeforeMatch.isEmpty {
-            tokens.append(text[rangeBeforeMatch])
-          }
-
-          // 2. Extract the match itself (the delimiter token)
-          // Since behavior is 'isolated', the matched pattern becomes its own token.
-          let matchSubstring = text[$0.range]
-          if !matchSubstring.isEmpty {
-            tokens.append(matchSubstring)
-          }
-
-          // 3. Update the current offset to the end of the current match
-          // The next "before" segment will start from this point.
-          currentOffset = $0.range.upperBound
+        return text.matches(of: tokenRegex).map {
+          text[$0.range]
         }
-
-        // 4. Extract any remaining text *after* the last match
-        // This handles the segment from the end of the last match to the end of the string.
-        let rangeAfterLastMatch = currentOffset..<text.endIndex
-        if !rangeAfterLastMatch.isEmpty {
-          tokens.append(text[rangeAfterLastMatch])
-        }
-        return tokens
       }
     }
     return pretokenizeNoRegex(text)
