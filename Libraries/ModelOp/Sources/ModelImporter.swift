@@ -616,7 +616,8 @@ public final class ModelImporter {
       case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .pixart,
         .sd3, .sd3Large, .auraflow:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
-          filePath: "", version: modelVersion, dualAttentionLayers: dualAttentionLayers,
+          filePath: "", version: modelVersion, modifier: .none,
+          dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: false, zeroNegativePrompt: false,
           isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false)
         cArr.insert(

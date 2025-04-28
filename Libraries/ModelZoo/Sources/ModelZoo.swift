@@ -603,6 +603,14 @@ public struct ModelZoo: DownloadZoo {
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
       objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24),
     Specification(
+      name: "HiDream E1 [full] (5-bit)", file: "hidream_e1_full_q5p.ckpt", prefix: "",
+      version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", modifier: .editing,
+      clipEncoder: "long_clip_vit_l14_f16.ckpt",
+      additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
+      t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
+      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24),
+    Specification(
       name: "SDXL Base (v0.9)", file: "sd_xl_base_0.9_f16.ckpt", prefix: "", version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
       autoencoder: "sdxl_vae_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt"),

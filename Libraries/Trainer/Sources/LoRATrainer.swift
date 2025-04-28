@@ -2780,7 +2780,8 @@ public struct LoRATrainer {
                   ).reshaped(.HWC(1, 77, 768))
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
-                filePath: "", version: version, dualAttentionLayers: [], usesFlashAttention: true,
+                filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
+                usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)
               c =
@@ -2821,7 +2822,7 @@ public struct LoRATrainer {
                   textEncoding[1][(tokenEnd)..<(tokenEnd + 1), 0..<embeddingSize.0] * textProjection
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
-                filePath: "", version: .sdxlRefiner, dualAttentionLayers: [],
+                filePath: "", version: .sdxlRefiner, modifier: .none, dualAttentionLayers: [],
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)
@@ -2855,7 +2856,8 @@ public struct LoRATrainer {
               switch textEncoderVersion {
               case .chatglm3_6b:
                 let unetFixEncoder = UNetFixedEncoder<FloatType>(
-                  filePath: "", version: version, dualAttentionLayers: [], usesFlashAttention: true,
+                  filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
+                  usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false)
                 c =
@@ -2875,7 +2877,8 @@ public struct LoRATrainer {
                 guard let te2 = sessionStore.read("cond_te2_\(textEncodingPath)")
                 else { continue }
                 let unetFixEncoder = UNetFixedEncoder<FloatType>(
-                  filePath: "", version: version, dualAttentionLayers: [], usesFlashAttention: true,
+                  filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
+                  usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false)
                 c =
@@ -2899,7 +2902,7 @@ public struct LoRATrainer {
             case .sdxlRefiner:
               guard let pooled = sessionStore.read("pool_\(textEncodingPath)") else { continue }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
-                filePath: "", version: .sdxlRefiner, dualAttentionLayers: [],
+                filePath: "", version: .sdxlRefiner, modifier: .none, dualAttentionLayers: [],
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false)

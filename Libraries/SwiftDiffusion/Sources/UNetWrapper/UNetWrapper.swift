@@ -48,22 +48,22 @@ extension UNetWrapper {
     return unetFromNNC.modelAndWeightMapper
   }
   public mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, version: ModelVersion, qkNorm: Bool,
-    dualAttentionLayers: [Int], upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>,
-    lora: [LoRAConfiguration],
+    filePath: String, externalOnDemand: Bool, version: ModelVersion, modifier: SamplerModifier,
+    qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
+    injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
-    _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.AnyTensor], tokenLengthUncond: Int, tokenLengthCond: Int,
-    isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
+    _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration
   ) -> Bool {
     #if !os(Linux)
 
       if unetFromCoreML.compileModel(
-        filePath: filePath, externalOnDemand: externalOnDemand, version: version, qkNorm: qkNorm,
-        dualAttentionLayers: dualAttentionLayers,
+        filePath: filePath, externalOnDemand: externalOnDemand, version: version,
+        modifier: modifier,
+        qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
         injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,
         isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT,
@@ -78,8 +78,8 @@ extension UNetWrapper {
       }
     #endif
     let _ = unetFromNNC.compileModel(
-      filePath: filePath, externalOnDemand: externalOnDemand, version: version, qkNorm: qkNorm,
-      dualAttentionLayers: dualAttentionLayers,
+      filePath: filePath, externalOnDemand: externalOnDemand, version: version, modifier: modifier,
+      qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
       upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
       injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,
       isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately, inputs: xT,

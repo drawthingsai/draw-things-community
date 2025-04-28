@@ -534,7 +534,7 @@ extension ModelPreloader {
         var conditions: [DynamicGraph.AnyTensor] = cArr
         if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
-            filePath: modelPath, version: modelVersion, dualAttentionLayers: [],
+            filePath: modelPath, version: modelVersion, modifier: .none, dualAttentionLayers: [],
             usesFlashAttention: useMFA,
             zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
             externalOnDemand: false)
@@ -565,7 +565,8 @@ extension ModelPreloader {
         }
         let _ = unet.compileModel(
           filePath: modelPath, externalOnDemand: externalOnDemand,
-          version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+          version: modelVersion, modifier: .none, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
           upcastAttention: upcastAttention, usesFlashAttention: useMFA,
           injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>(
             injectControls: false, injectT2IAdapters: false, injectAttentionKV: false,

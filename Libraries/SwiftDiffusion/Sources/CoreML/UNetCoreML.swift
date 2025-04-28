@@ -29,14 +29,13 @@ struct TensorNameAndBlobOffset {
 extension UNetFromCoreML {
   public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { nil }
   public mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, version: ModelVersion, qkNorm: Bool,
-    dualAttentionLayers: [Int], upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>,
-    lora: [LoRAConfiguration],
+    filePath: String, externalOnDemand: Bool, version: ModelVersion, modifier: SamplerModifier,
+    qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
+    injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
-    _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.AnyTensor], tokenLengthUncond: Int, tokenLengthCond: Int,
-    isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
+    _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration
   ) -> Bool {

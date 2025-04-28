@@ -292,7 +292,7 @@ public enum LoRAImporter {
           graph.variable(.CPU, .WC(isCfgEnabled ? 2 : 1, 1280), of: FloatType.self))
       }
       let fixedEncoder = UNetFixedEncoder<FloatType>(
-        filePath: "", version: version, dualAttentionLayers: dualAttentionLayers,
+        filePath: "", version: version, modifier: .none, dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: false, zeroNegativePrompt: false, isQuantizedModel: false,
         canRunLoRASeparately: false,
         externalOnDemand: false)

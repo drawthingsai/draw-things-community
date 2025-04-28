@@ -46,17 +46,15 @@ public protocol UNetProtocol {
   var version: ModelVersion { get }
   var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { get }
   mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, version: ModelVersion, qkNorm: Bool,
-    dualAttentionLayers: [Int], upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>,
-    lora: [LoRAConfiguration],
+    filePath: String, externalOnDemand: Bool, version: ModelVersion, modifier: SamplerModifier,
+    qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
+    injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
-    _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.AnyTensor], tokenLengthUncond: Int, tokenLengthCond: Int,
-    isCfgEnabled: Bool, extraProjection: DynamicGraph.Tensor<FloatType>?,
+    _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
-    tiledDiffusion: TiledConfiguration,
-    teaCache: TeaCacheConfiguration
+    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration
   ) -> Bool
 
   func callAsFunction(
@@ -325,6 +323,7 @@ public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
   var previewer: Model? = nil
   var unetWeightMapper: ModelWeightMapper? = nil
   var timeEmbed: Model? = nil
+  var modifier: SamplerModifier = .none
   var yTileWeightsAndIndexes: [[(weight: Float, index: Int, offset: Int)]]? = nil
   var xTileWeightsAndIndexes: [[(weight: Float, index: Int, offset: Int)]]? = nil
   let isCancelled = ManagedAtomic<Bool>(false)
@@ -340,18 +339,15 @@ extension UNetFromNNC {
     return (unet.unwrapped, unetWeightMapper)
   }
   public mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, version: ModelVersion, qkNorm: Bool,
-    dualAttentionLayers: [Int], upcastAttention: Bool,
-    usesFlashAttention: Bool, injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>,
-    lora: [LoRAConfiguration],
+    filePath: String, externalOnDemand: Bool, version: ModelVersion, modifier: SamplerModifier,
+    qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
+    injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
-    _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.AnyTensor], tokenLengthUncond: Int, tokenLengthCond: Int,
-    isCfgEnabled: Bool,
+    _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
-    tiledDiffusion: TiledConfiguration,
-    teaCache teaCacheConfiguration: TeaCacheConfiguration
+    tiledDiffusion: TiledConfiguration, teaCache teaCacheConfiguration: TeaCacheConfiguration
   ) -> Bool {
     guard unet == nil else { return true }
     isCancelled.store(false, ordering: .releasing)
@@ -957,12 +953,14 @@ extension UNetFromNNC {
       let t5Length = c[49].shape[1] - llama3Length
       unet = ModelBuilderOrModel.model(
         HiDream(
-          batchSize: 1, height: tiledHeight, width: tiledWidth,
+          batchSize: 1, height: tiledHeight,
+          width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
           textLength: (t5Length, llama3Length), layers: (16, 32)
         ).0)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
+    self.modifier = modifier
     var c = c
     if injectedIPAdapters.count > 0 {
       switch version {

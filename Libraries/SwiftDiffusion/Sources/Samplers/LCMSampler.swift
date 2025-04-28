@@ -172,7 +172,8 @@ extension LCMSampler: Sampler {
     let oldC = c
     var conditions: [DynamicGraph.AnyTensor] = c
     let fixedEncoder = UNetFixedEncoder<FloatType>(
-      filePath: filePath, version: version, dualAttentionLayers: dualAttentionLayers,
+      filePath: filePath, version: version, modifier: modifier,
+      dualAttentionLayers: dualAttentionLayers,
       usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
       canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand)
@@ -267,7 +268,8 @@ extension LCMSampler: Sampler {
         newC = conditions
       }
       let _ = unet.compileModel(
-        filePath: filePath, externalOnDemand: externalOnDemand, version: version, qkNorm: qkNorm,
+        filePath: filePath, externalOnDemand: externalOnDemand, version: version,
+        modifier: modifier, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers,
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
         injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,
@@ -377,7 +379,7 @@ extension LCMSampler: Sampler {
           unets = [nil]
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
-            dualAttentionLayers: dualAttentionLayers,
+            modifier: modifier, dualAttentionLayers: dualAttentionLayers,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
             isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
             externalOnDemand: externalOnDemand)
@@ -430,7 +432,8 @@ extension LCMSampler: Sampler {
           }
           let _ = unet.compileModel(
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
-            version: refiner.version, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+            version: refiner.version, modifier: modifier, qkNorm: qkNorm,
+            dualAttentionLayers: dualAttentionLayers,
             upcastAttention: upcastAttention,
             usesFlashAttention: usesFlashAttention,
             injectControlsAndAdapters: injectControlsAndAdapters,

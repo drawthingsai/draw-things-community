@@ -5,6 +5,7 @@ import NNC
 public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePath: String
   public let version: ModelVersion
+  public let modifier: SamplerModifier
   public let dualAttentionLayers: [Int]
   public let usesFlashAttention: Bool
   public let zeroNegativePrompt: Bool
@@ -12,12 +13,13 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let canRunLoRASeparately: Bool
   public let externalOnDemand: Bool
   public init(
-    filePath: String, version: ModelVersion, dualAttentionLayers: [Int], usesFlashAttention: Bool,
-    zeroNegativePrompt: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
-    externalOnDemand: Bool
+    filePath: String, version: ModelVersion, modifier: SamplerModifier, dualAttentionLayers: [Int],
+    usesFlashAttention: Bool, zeroNegativePrompt: Bool, isQuantizedModel: Bool,
+    canRunLoRASeparately: Bool, externalOnDemand: Bool
   ) {
     self.filePath = filePath
     self.version = version
+    self.modifier = modifier
     self.dualAttentionLayers = dualAttentionLayers
     self.usesFlashAttention = usesFlashAttention
     self.zeroNegativePrompt = zeroNegativePrompt
