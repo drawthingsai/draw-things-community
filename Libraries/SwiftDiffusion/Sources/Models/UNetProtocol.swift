@@ -1805,6 +1805,9 @@ extension UNetFromNNC {
             teaCache.cache(outputs: result, marker: index * batchSize + i)
           }
           et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = et0
+          guard !isCancelled.load(ordering: .acquiring) else {
+            return et
+          }
         }
         return et
       }
@@ -1838,6 +1841,9 @@ extension UNetFromNNC {
         }
         et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = unet!(inputs: x0, others)[0].as(
           of: FloatType.self)
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return et
+        }
       }
       if modifier == .editing {
         // remove the conditioning.
