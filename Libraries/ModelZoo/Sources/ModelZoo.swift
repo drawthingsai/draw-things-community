@@ -551,6 +551,8 @@ public struct ModelZoo: DownloadZoo {
     "hidream_i1_fast_q5p.ckpt": "ce7254c72257edd78b821881c72e9a91afe2752a187968fc4eb3a1648ec35053",
     "hidream_i1_dev_q5p.ckpt": "9779d730f8f2258cdf721a770c91ade978836f11510d9173075f89bc8f8be3e3",
     "hidream_i1_full_q5p.ckpt": "a1f5371896c93c7fb55328331c226eb9bcaabf804a142f6c85f5684d5bd4c3ae",
+    "hidream_e1_full_q8p.ckpt": "0f24a6f94cd7105a1bfea195e4ce3e064427833e97390fc1ce6bc6945c8cb93f",
+    "hidream_e1_full_q5p.ckpt": "63ff5d43c474937b3f83fe9220a2dbbea7d215fc0585db0fcf12e37ac87dc60c",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -599,6 +601,14 @@ public struct ModelZoo: DownloadZoo {
       name: "HiDream I1 [full] (5-bit)", file: "hidream_i1_full_q5p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
+      additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
+      t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
+      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24),
+    Specification(
+      name: "HiDream E1 [full]", file: "hidream_e1_full_q8p.ckpt", prefix: "",
+      version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", modifier: .editing,
+      clipEncoder: "long_clip_vit_l14_f16.ckpt",
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
       objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24),

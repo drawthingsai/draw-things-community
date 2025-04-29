@@ -1481,11 +1481,11 @@ extension UNetFromNNC {
       guard isCfgEnabled else {
         let shouldUseCache =
           teaCache?.shouldUseCacheForTimeEmbedding(
-            [firstInput] + restInputs, model: unet!, step: step, marker: 0, of: FloatType.self)
+            [firstInput] + restInputs, model: unet!, step: step, marker: index, of: FloatType.self)
           ?? false
         let et: DynamicGraph.Tensor<FloatType>
         if shouldUseCache,
-          let result = teaCache!(model: unet!, inputs: firstInput, restInputs, marker: 0)
+          let result = teaCache!(model: unet!, inputs: firstInput, restInputs, marker: index)
         {
           et = result
         } else {
@@ -1493,7 +1493,7 @@ extension UNetFromNNC {
             inputs: firstInput, restInputs
           )
           et = result[0].as(of: FloatType.self)
-          teaCache?.cache(outputs: result, marker: 0)
+          teaCache?.cache(outputs: result, marker: index)
         }
         return et
       }
@@ -1530,15 +1530,16 @@ extension UNetFromNNC {
         // While xCond == xUncond, the pooled condition (used for adaptive layernorm) is different between cond / uncond branches, therefore, we need to check this for both cond / uncond branches.
         let shouldUseCacheCond =
           teaCache?.shouldUseCacheForTimeEmbedding(
-            [xCond] + otherConds, model: unet!, step: step, marker: 0, of: FloatType.self) ?? false
+            [xCond] + otherConds, model: unet!, step: step, marker: index * 2, of: FloatType.self)
+          ?? false
         if shouldUseCacheCond,
-          let result = teaCache!(model: unet!, inputs: xCond, otherConds, marker: 0)
+          let result = teaCache!(model: unet!, inputs: xCond, otherConds, marker: index * 2)
         {
           etCond = result
         } else {
           let result = unet!(inputs: xCond, otherConds)
           etCond = result[0].as(of: FloatType.self)
-          teaCache?.cache(outputs: result, marker: 0)
+          teaCache?.cache(outputs: result, marker: index * 2)
         }
         etCond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
         guard !isCancelled.load(ordering: .acquiring) else {
@@ -1567,16 +1568,17 @@ extension UNetFromNNC {
         }
         let shouldUseCacheUncond =
           teaCache?.shouldUseCacheForTimeEmbedding(
-            [xUncond] + otherUnconds, model: unet!, step: step, marker: 1, of: FloatType.self)
+            [xUncond] + otherUnconds, model: unet!, step: step, marker: index * 2 + 1,
+            of: FloatType.self)
           ?? false
         if shouldUseCacheUncond,
-          let result = teaCache!(model: unet!, inputs: xUncond, otherUnconds, marker: 1)
+          let result = teaCache!(model: unet!, inputs: xUncond, otherUnconds, marker: index * 2 + 1)
         {
           etUncond = result
         } else {
           let result = unet!(inputs: xUncond, otherUnconds)
           etUncond = result[0].as(of: FloatType.self)
-          teaCache?.cache(outputs: result, marker: 1)
+          teaCache?.cache(outputs: result, marker: index * 2 + 1)
         }
       } else {
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
@@ -1602,16 +1604,17 @@ extension UNetFromNNC {
         }
         let shouldUseCacheUncond =
           teaCache?.shouldUseCacheForTimeEmbedding(
-            [xUncond] + otherUnconds, model: unet!, step: step, marker: 1, of: FloatType.self)
+            [xUncond] + otherUnconds, model: unet!, step: step, marker: index * 2 + 1,
+            of: FloatType.self)
           ?? false
         if shouldUseCacheUncond,
-          let result = teaCache!(model: unet!, inputs: xUncond, otherUnconds, marker: 1)
+          let result = teaCache!(model: unet!, inputs: xUncond, otherUnconds, marker: index * 2 + 1)
         {
           etUncond = result
         } else {
           let result = unet!(inputs: xUncond, otherUnconds)
           etUncond = result[0].as(of: FloatType.self)
-          teaCache?.cache(outputs: result, marker: 1)
+          teaCache?.cache(outputs: result, marker: index * 2 + 1)
         }
         etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
         guard !isCancelled.load(ordering: .acquiring) else {
@@ -1643,27 +1646,28 @@ extension UNetFromNNC {
         }
         let shouldUseCacheCond =
           teaCache?.shouldUseCacheForTimeEmbedding(
-            [xCond] + otherConds, model: unet!, step: step, marker: 0, of: FloatType.self) ?? false
+            [xCond] + otherConds, model: unet!, step: step, marker: index * 2, of: FloatType.self)
+          ?? false
         if shouldUseCacheCond,
-          let result = teaCache!(model: unet!, inputs: xCond, otherConds, marker: 0)
+          let result = teaCache!(model: unet!, inputs: xCond, otherConds, marker: index * 2)
         {
           etCond = result
         } else {
           let result = unet!(inputs: xCond, otherConds)
           etCond = result[0].as(of: FloatType.self)
-          teaCache?.cache(outputs: result, marker: 0)
+          teaCache?.cache(outputs: result, marker: index * 2)
         }
       }
       return Functional.concat(axis: 0, etUncond, etCond)
     case .wan21_1_3b, .wan21_14b:
       let shouldUseCache =
         teaCache?.shouldUseCacheForTimeEmbedding(
-          Array(restInputs[1..<7]), model: unet!, step: step, marker: 0, of: Float.self)
+          Array(restInputs[1..<7]), model: unet!, step: step, marker: index * 2, of: Float.self)
         ?? false
       guard isCfgEnabled else {
         let et: DynamicGraph.Tensor<FloatType>
         if shouldUseCache,
-          let result = teaCache!(model: unet!, inputs: firstInput, restInputs, marker: 0)
+          let result = teaCache!(model: unet!, inputs: firstInput, restInputs, marker: index * 2)
         {
           et = result
         } else {
@@ -1671,7 +1675,7 @@ extension UNetFromNNC {
             inputs: firstInput, restInputs
           )
           et = result[0].as(of: FloatType.self)
-          teaCache?.cache(outputs: result, marker: 0)
+          teaCache?.cache(outputs: result, marker: index * 2)
         }
         return et
       }
@@ -1705,7 +1709,7 @@ extension UNetFromNNC {
         }
       }
       if shouldUseCache,
-        let uncond = teaCache!(model: unet!, inputs: xUncond, restInputsUncond, marker: 0)
+        let uncond = teaCache!(model: unet!, inputs: xUncond, restInputsUncond, marker: index * 2)
       {
         etUncond = uncond
       } else {
@@ -1713,7 +1717,7 @@ extension UNetFromNNC {
           inputs: xUncond, restInputsUncond
         )
         etUncond = result[0].as(of: FloatType.self)
-        teaCache?.cache(outputs: result, marker: 0)
+        teaCache?.cache(outputs: result, marker: index * 2)
       }
       etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
       guard !isCancelled.load(ordering: .acquiring) else {
@@ -1740,7 +1744,7 @@ extension UNetFromNNC {
         }
       }
       if shouldUseCache,
-        let cond = teaCache!(model: unet!, inputs: xCond, restInputsCond, marker: 1)
+        let cond = teaCache!(model: unet!, inputs: xCond, restInputsCond, marker: index * 2 + 1)
       {
         etCond = cond
       } else {
@@ -1748,7 +1752,7 @@ extension UNetFromNNC {
           inputs: xCond, restInputsCond
         )
         etCond = result[0].as(of: FloatType.self)
-        teaCache?.cache(outputs: result, marker: 1)
+        teaCache?.cache(outputs: result, marker: index * 2 + 1)
       }
       return Functional.concat(axis: 0, etUncond, etCond)
     case .flux1:
@@ -1757,10 +1761,10 @@ extension UNetFromNNC {
         let batchSize = shape[0]
         guard batchSize > 1 else {
           let shouldUseCache = teaCache.shouldUseCacheForTimeEmbedding(
-            [firstInput] + restInputs, model: unet!, step: step, marker: 0, of: FloatType.self)
+            [firstInput] + restInputs, model: unet!, step: step, marker: index, of: FloatType.self)
           let et: DynamicGraph.Tensor<FloatType>
           if shouldUseCache,
-            let result = teaCache(model: unet!, inputs: firstInput, restInputs, marker: 0)
+            let result = teaCache(model: unet!, inputs: firstInput, restInputs, marker: index)
           {
             et = result
           } else {
@@ -1768,7 +1772,7 @@ extension UNetFromNNC {
               inputs: firstInput, restInputs
             )
             et = result[0].as(of: FloatType.self)
-            teaCache.cache(outputs: result, marker: 0)
+            teaCache.cache(outputs: result, marker: index)
           }
           return et
         }
@@ -1786,10 +1790,11 @@ extension UNetFromNNC {
           }
           let shouldUseCache =
             teaCache.shouldUseCacheForTimeEmbedding(
-              [x0] + others, model: unet!, step: step, marker: i, of: FloatType.self)
+              [x0] + others, model: unet!, step: step, marker: index * batchSize + i,
+              of: FloatType.self)
           let et0: DynamicGraph.Tensor<FloatType>
           if shouldUseCache,
-            let result = teaCache(model: unet!, inputs: x0, others, marker: i)
+            let result = teaCache(model: unet!, inputs: x0, others, marker: index * batchSize + i)
           {
             et0 = result
           } else {
@@ -1797,7 +1802,7 @@ extension UNetFromNNC {
               inputs: x0, others
             )
             et0 = result[0].as(of: FloatType.self)
-            teaCache.cache(outputs: result, marker: i)
+            teaCache.cache(outputs: result, marker: index * batchSize + i)
           }
           et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = et0
         }
