@@ -3139,6 +3139,21 @@ extension LocalImageGenerator {
             batchSize: batchSize, version: modelVersion, encodedImage: maskedImage!,
             encodedMask: mask!, imageNegMask: nil
           )
+        } else if modifier == .editing {
+          if modelVersion == .v1 {
+            maskedImage = encodedImage[
+              0..<imageSize, 0..<firstPassStartHeight, 0..<firstPassStartWidth,
+              0..<firstPassChannels
+            ]
+            .copied()
+          } else {
+            maskedImage = firstStage.scale(
+              encodedImage[
+                0..<imageSize, 0..<firstPassStartHeight, 0..<firstPassStartWidth,
+                0..<firstPassChannels
+              ]
+              .copied())
+          }
         } else {
           maskedImage = encodedImage[
             0..<imageSize, 0..<firstPassStartHeight, 0..<firstPassStartWidth, 0..<firstPassChannels
@@ -4076,7 +4091,15 @@ extension LocalImageGenerator {
         maskedImage = concatMaskWithMaskedImage(
           hasImage: true, batchSize: batchSize,
           version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil)
-      } else if modifier == .editing || modelVersion == .svdI2v {
+      } else if modifier == .editing {
+        if modelVersion == .v1 {
+          maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
+            .copied()
+        } else {
+          maskedImage = firstStage.scale(
+            encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
+        }
+      } else if modelVersion == .svdI2v {
         maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
           .copied()
       }
@@ -4200,7 +4223,16 @@ extension LocalImageGenerator {
             hasImage: true, batchSize: batchSize,
             version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
           )
-        } else if modifier == .editing || modelVersion == .svdI2v {
+        } else if modifier == .editing {
+          if modelVersion == .v1 {
+            maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels]
+              .copied()
+          } else {
+            maskedImage = firstStage.scale(
+              encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels]
+                .copied())
+          }
+        } else if modelVersion == .svdI2v {
           maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
         }
         guard feedback(.secondPassImageEncoded, signposts, nil) else { return (nil, 1) }
@@ -5317,6 +5349,14 @@ extension LocalImageGenerator {
         if modifier == .inpainting {
           maskedImage = firstStage.scale(
             encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
+        } else if modifier == .editing {
+          if modelVersion == .v1 {
+            maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
+              .copied()
+          } else {
+            maskedImage = firstStage.scale(
+              encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
+          }
         } else {
           maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
             .copied()
@@ -6047,6 +6087,17 @@ extension LocalImageGenerator {
             encodedBatch[encodedBatch.count - 1][
               0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels
             ].copied())
+        } else if modifier == .editing {
+          if modelVersion == .v1 {
+            maskedImage1 = encodedBatch[0][
+              0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels
+            ].copied()
+          } else {
+            maskedImage1 = firstStage.scale(
+              encodedBatch[0][0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+            )
+          }
+          maskedImage2 = maskedImage1
         } else if modelVersion == .svdI2v {
           maskedImage1 = encodedBatch[0]
           maskedImage2 = encodedBatch[0]
@@ -6054,9 +6105,7 @@ extension LocalImageGenerator {
           maskedImage1 = encodedBatch[0][
             0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels
           ].copied()
-          maskedImage2 = encodedBatch[0][
-            0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels
-          ].copied()
+          maskedImage2 = maskedImage1
         }
       }
       guard feedback(.imageEncoded, signposts, nil) else { return nil }

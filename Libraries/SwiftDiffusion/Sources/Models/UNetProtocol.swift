@@ -1448,13 +1448,21 @@ extension UNetFromNNC {
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
     case .hiDreamI1:
-      let inputs = inputs.map {
+      var inputs = inputs.map {
         var shape = $0.shape
         guard shape[0] > 1 else {
           return $0
         }
         shape[0] = 1
         return DynamicGraph.Tensor<FloatType>($0).reshaped(format: $0.format, shape: shape)
+      }
+      if modifier == .editing {
+        // When modifier is editing, we need to transform the input s.t. the 2 * channel becomes 2 * width.
+        let shape = inputs[0].shape
+        inputs[0] = inputs[0].as(of: FloatType.self).reshaped(
+          format: .NHWC, shape: [shape[0], shape[1], shape[2], 2, shape[3] / 2]
+        ).transposed(2, 3).reshaped(.NHWC(shape[0], shape[1], 2 * shape[2], shape[3] / 2))
+          .contiguous()
       }
       unet.compile(inputs: inputs)
       return
@@ -1463,7 +1471,7 @@ extension UNetFromNNC {
   }
 
   private func callAsFunction(
-    step: Int,
+    step: Int, index: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     inputs firstInput: DynamicGraph.Tensor<FloatType>,
     _ restInputs: [DynamicGraph.AnyTensor]
@@ -1796,7 +1804,16 @@ extension UNetFromNNC {
         return et
       }
     case .hiDreamI1:
-      let shape = firstInput.shape
+      var firstInput = firstInput
+      var shape = firstInput.shape
+      if modifier == .editing {
+        // Move the conditioning to the right side.
+        firstInput = firstInput.reshaped(
+          format: .NHWC, shape: [shape[0], shape[1], shape[2], 2, shape[3] / 2]
+        ).transposed(2, 3).reshaped(.NHWC(shape[0], shape[1], 2 * shape[2], shape[3] / 2))
+          .contiguous()
+        shape = firstInput.shape
+      }
       let batchSize = shape[0]
       guard batchSize > 1 else {
         let et = unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
@@ -1817,7 +1834,12 @@ extension UNetFromNNC {
         et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = unet!(inputs: x0, others)[0].as(
           of: FloatType.self)
       }
-      return et
+      if modifier == .editing {
+        // remove the conditioning.
+        return et[0..<shape[0], 0..<shape[1], 0..<(shape[2] / 2), 0..<shape[3]].copied()
+      } else {
+        return et
+      }
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
@@ -1851,7 +1873,7 @@ extension UNetFromNNC {
       index: index, inputStartYPad: inputStartYPad,
       inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad)
     return self(
-      step: step,
+      step: step, index: index,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       isCfgEnabled: isCfgEnabled, inputs: xT, inputs + injectedAttentionKVs)
   }
@@ -1876,7 +1898,7 @@ extension UNetFromNNC {
         injectedControlsAndAdapters(
           xT, 0, 0, 0, 0, &controlNets)
       return self(
-        step: step,
+        step: step, index: 0,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
         inputs: xT, inputs + injectedControls + injectedT2IAdapters + injectedAttentionKVs)
@@ -1998,7 +2020,7 @@ extension UNetFromNNC {
           isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
       } else {
         return self(
-          step: step,
+          step: step, index: 0,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: isCfgEnabled, inputs: xT, [embGPU, c[0]])
       }
@@ -2057,7 +2079,7 @@ extension UNetFromNNC {
         injectedControlsAndAdapters(
           xT, 0, 0, 0, 0, &controlNets)
       return self(
-        step: step,
+        step: step, index: 0,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, inputs: xT,
         (timestep.map { [$0] } ?? []) + c + injectedControls + injectedT2IAdapters

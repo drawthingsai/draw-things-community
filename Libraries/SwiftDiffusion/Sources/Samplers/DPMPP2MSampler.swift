@@ -87,7 +87,6 @@ extension DPMPP2MSampler: Sampler {
       return .success(SamplerOutput(x: x_T, unets: [nil]))
     }
     var x = x_T
-    var c0 = c[0]
     let batchSize = x.shape[0]
     let startHeight = x.shape[1]
     let startWidth = x.shape[2]
@@ -155,14 +154,27 @@ extension DPMPP2MSampler: Sampler {
         ]
         .full(0)
       }
-      let oldC = c0
-      c0 = graph.variable(
-        .GPU(0), .HWC(3 * batchSize, oldC.shape[1], oldC.shape[2]), of: FloatType.self)
-      // Expanding c.
-      c0[0..<(batchSize * 2), 0..<oldC.shape[1], 0..<oldC.shape[2]] = oldC
-      c0[(batchSize * 2)..<(batchSize * 3), 0..<oldC.shape[1], 0..<oldC.shape[2]] =
-        oldC[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]]
-      c[0] = c0
+      c = c.map {
+        let oldC = $0
+        let shape = oldC.shape
+        if shape.count == 2 {
+          var c = graph.variable(
+            .GPU(0), .WC(3 * batchSize, oldC.shape[1]), of: FloatType.self)
+          // Expanding c.
+          c[0..<(batchSize * 2), 0..<oldC.shape[1]] = oldC
+          c[(batchSize * 2)..<(batchSize * 3), 0..<oldC.shape[1]] =
+            oldC[0..<batchSize, 0..<oldC.shape[1]]
+          return c
+        } else {
+          var c = graph.variable(
+            .GPU(0), .HWC(3 * batchSize, oldC.shape[1], oldC.shape[2]), of: FloatType.self)
+          // Expanding c.
+          c[0..<(batchSize * 2), 0..<oldC.shape[1], 0..<oldC.shape[2]] = oldC
+          c[(batchSize * 2)..<(batchSize * 3), 0..<oldC.shape[1], 0..<oldC.shape[2]] =
+            oldC[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]]
+          return c
+        }
+      }
     case .double:
       let maskedImage = conditionImage!
       let maskedImageChannels = maskedImage.shape[3]

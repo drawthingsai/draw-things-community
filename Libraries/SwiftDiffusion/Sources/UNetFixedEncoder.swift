@@ -33,9 +33,7 @@ extension UNetFixedEncoder {
   static func isFixedEncoderRequired(version: ModelVersion) -> Bool {
     switch version {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
-      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
-      return true
-    case .hiDreamI1:
+      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
       return true
     case .v1, .v2, .kandinsky21:
       return false
@@ -1003,7 +1001,8 @@ extension UNetFixedEncoder {
       let llama3Length = llama3[0].shape[1]
       let rot = Tensor<FloatType>(
         from: HiDreamRotaryPositionEmbedding(
-          height: h, width: w, tokenLength: t5Length + llama3Length * 2, channels: 128)
+          height: h, width: modifier == .editing ? w * 2 : w,
+          tokenLength: t5Length + llama3Length * 2, channels: 128)
       ).toGPU(0)
       if zeroNegativePrompt && isCfgEnabled {
         let oldPooled = pooled
