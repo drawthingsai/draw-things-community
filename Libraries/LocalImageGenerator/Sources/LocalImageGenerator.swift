@@ -3382,6 +3382,21 @@ extension LocalImageGenerator {
             batchSize: batchSize, version: modelVersion, encodedImage: maskedImage!,
             encodedMask: mask!, imageNegMask: nil
           )
+        } else if modifier == .editing {
+          if modelVersion == .v1 {
+            maskedImage = encodedImage[
+              0..<imageSize, 0..<startHeight, 0..<startWidth,
+              0..<firstPassChannels
+            ]
+            .copied()
+          } else {
+            maskedImage = firstStage.scale(
+              encodedImage[
+                0..<imageSize, 0..<startHeight, 0..<startWidth,
+                0..<firstPassChannels
+              ]
+              .copied())
+          }
         } else {
           maskedImage = encodedImage[
             0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<firstPassChannels
