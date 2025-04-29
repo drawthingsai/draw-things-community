@@ -52,17 +52,20 @@ public enum ComputeUnits {
       return nil
     }
     let modelVersion: ModelVersion
+    let samplerModifier: SamplerModifier
     let isGuidanceEmbedEnabled: Bool
     let isConsistencyModel: Bool
 
     if let overrideMapping = overrideMapping, let specification = overrideMapping[model] {
       modelVersion = specification.version
+      samplerModifier = specification.modifier ?? .none
       isGuidanceEmbedEnabled =
         (specification.guidanceEmbed ?? false)
         && configuration.speedUpWithGuidanceEmbed
       isConsistencyModel = specification.isConsistencyModel ?? false
     } else {
       modelVersion = ModelZoo.versionForModel(model)
+      samplerModifier = ModelZoo.modifierForModel(model)
       isGuidanceEmbedEnabled =
         ModelZoo.guidanceEmbedForModel(model) && configuration.speedUpWithGuidanceEmbed
       isConsistencyModel = ModelZoo.isConsistencyModelForModel(model)
@@ -74,18 +77,25 @@ public enum ComputeUnits {
     let isCfgEnabled =
       (!isConsistencyModel && !isGuidanceEmbedEnabled)
       && isCfgEnabled(
-        textGuidanceScale: configuration.guidanceScale, startFrameCfg: configuration.startFrameCfg,
-        version: modelVersion)
+        textGuidanceScale: configuration.guidanceScale,
+        imageGuidanceScale: configuration.imageGuidanceScale,
+        startFrameCfg: configuration.startFrameCfg, version: modelVersion, modifier: samplerModifier
+      )
+    let (cfgChannels, _) = cfgChannelsAndInputChannels(
+      channels: 0, conditionShape: nil, isCfgEnabled: isCfgEnabled,
+      textGuidanceScale: configuration.guidanceScale,
+      imageGuidanceScale: configuration.imageGuidanceScale, version: modelVersion,
+      modifier: samplerModifier)
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hiDreamI1:
-      batchSize = max(1, Int(configuration.batchSize)) * (isCfgEnabled ? 2 : 1)
+      batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
     case .svdI2v:
-      batchSize = isCfgEnabled ? 2 : 1
+      batchSize = cfgChannels
       numFrames = Int(configuration.numFrames)
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
-      batchSize = isCfgEnabled ? 2 : 1
+      batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
     }
     let modelCoefficient = modelCoefficient(modelVersion)

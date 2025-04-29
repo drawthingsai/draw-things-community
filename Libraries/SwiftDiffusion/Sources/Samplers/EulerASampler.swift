@@ -95,102 +95,22 @@ extension EulerASampler: Sampler {
     var isCfgEnabled =
       classifierFreeGuidance
       && isCfgEnabled(
-        textGuidanceScale: textGuidanceScale, startFrameCfg: startFrameCfg, version: version)
-    let cfgChannels: Int
-    let inChannels: Int
-    if version == .svdI2v {
-      cfgChannels = 1
-      inChannels = channels * 2
-    } else {
-      switch modifier {
-      case .inpainting, .depth, .canny:
-        cfgChannels = isCfgEnabled ? 2 : 1
-        inChannels = channels + (conditionImage?.shape[3] ?? 0)
-      case .editing:
-        cfgChannels = 3
-        inChannels = channels * 2
-        isCfgEnabled = true
-      case .double:
-        cfgChannels = isCfgEnabled ? 2 : 1
-        inChannels = channels * 2
-      case .none:
-        cfgChannels = isCfgEnabled ? 2 : 1
-        inChannels = channels
-      }
-    }
+        textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
+        startFrameCfg: startFrameCfg, version: version, modifier: modifier)
+    let (cfgChannels, inChannels) = cfgChannelsAndInputChannels(
+      channels: channels, conditionShape: conditionImage?.shape, isCfgEnabled: isCfgEnabled,
+      textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
+      version: version, modifier: modifier)
     let zeroNegativePrompt = isCfgEnabled && zeroNegativePrompt
     var xIn = graph.variable(
       .GPU(0), .NHWC(cfgChannels * batchSize, startHeight, startWidth, inChannels),
       of: FloatType.self
     )
     var c = c
-    switch modifier {
-    case .inpainting, .depth, .canny:
-      if let conditionImage = conditionImage {
-        let shape = conditionImage.shape
-        for i in stride(from: 0, to: batchSize, by: shape[0]) {
-          xIn[
-            i..<(i + shape[0]), 0..<startHeight, 0..<startWidth, channels..<(channels + shape[3])] =
-            conditionImage
-          if isCfgEnabled {
-            xIn[
-              (batchSize + i)..<(batchSize + i + shape[0]), 0..<startHeight, 0..<startWidth,
-              channels..<(channels + shape[3])] = conditionImage
-          }
-        }
-      }
-    case .editing:
-      let maskedImage = conditionImage!
-      for i in 0..<batchSize {
-        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels * 2)] = maskedImage
-        xIn[
-          (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
-          channels..<(channels * 2)] =
-          maskedImage
-        xIn[
-          (batchSize * 2 + i)..<(batchSize * 2 + i + 1), 0..<startHeight, 0..<startWidth,
-          channels..<(channels * 2)
-        ]
-        .full(0)
-      }
-      c = c.map {
-        let oldC = $0
-        let shape = oldC.shape
-        if shape.count == 2 {
-          var c = graph.variable(
-            .GPU(0), .WC(3 * batchSize, oldC.shape[1]), of: FloatType.self)
-          // Expanding c.
-          c[0..<(batchSize * 2), 0..<oldC.shape[1]] = oldC
-          c[(batchSize * 2)..<(batchSize * 3), 0..<oldC.shape[1]] =
-            oldC[0..<batchSize, 0..<oldC.shape[1]]
-          return c
-        } else {
-          var c = graph.variable(
-            .GPU(0), .HWC(3 * batchSize, oldC.shape[1], oldC.shape[2]), of: FloatType.self)
-          // Expanding c.
-          c[0..<(batchSize * 2), 0..<oldC.shape[1], 0..<oldC.shape[2]] = oldC
-          c[(batchSize * 2)..<(batchSize * 3), 0..<oldC.shape[1], 0..<oldC.shape[2]] =
-            oldC[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]]
-          return c
-        }
-      }
-    case .double:
-      let maskedImage = conditionImage!
-      let maskedImageChannels = maskedImage.shape[3]
-      for i in 0..<batchSize {
-        xIn[
-          i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + maskedImageChannels)] =
-          maskedImage
-        if isCfgEnabled {
-          xIn[
-            (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
-            channels..<(channels + maskedImageChannels)] =
-            maskedImage
-        }
-      }
-    case .none:
-      break
-    }
+    updateCfgInputAndConditions(
+      xIn: &xIn, conditions: &c, conditionImage: conditionImage, batchSize: batchSize,
+      startHeight: startHeight, startWidth: startWidth, channels: channels,
+      isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale, modifier: modifier)
     var extraProjection = extraProjection
     var tokenLengthUncond = tokenLengthUncond
     if !isCfgEnabled && version != .svdI2v {
@@ -580,7 +500,7 @@ extension EulerASampler: Sampler {
           xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = input
           if isCfgEnabled {
             xIn[batchSize..<(batchSize * 2), 0..<startHeight, 0..<startWidth, 0..<channels] = input
-            if modifier == .editing {
+            if xIn.shape[0] >= batchSize * 3 {
               xIn[
                 (batchSize * 2)..<(batchSize * 3), 0..<startHeight, 0..<startWidth, 0..<channels] =
                 input
@@ -612,43 +532,11 @@ extension EulerASampler: Sampler {
           let alpha =
             0.001 * sharpness * (discretization.timesteps - timestep)
             / discretization.timesteps
-          if isCfgEnabled {
-            var etUncond = graph.variable(
-              .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
-            var etCond = graph.variable(
-              .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
-            etUncond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] =
-              etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels]
-            etCond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] =
-              etOut[batchSize..<(batchSize * 2), 0..<startHeight, 0..<startWidth, 0..<channels]
-            if let blur = blur {
-              let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
-              etCond = Functional.add(
-                left: etCondDegraded, right: etCond, leftScalar: alpha, rightScalar: 1 - alpha)
-            }
-            if modifier == .editing {
-              var etAllUncond = graph.variable(
-                .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
-              etAllUncond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] =
-                etOut[
-                  (batchSize * 2)..<(batchSize * 3), 0..<startHeight, 0..<startWidth, 0..<channels]
-              et =
-                etAllUncond + textGuidanceScale * (etCond - etUncond) + imageGuidanceScale
-                * (etUncond - etAllUncond)
-            } else {
-              et = etUncond + textGuidanceScale * (etCond - etUncond)
-            }
-          } else {
-            if channels < etOut.shape[3] {
-              etOut = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
-            }
-            if let blur = blur {
-              let etOutDegraded = blur(inputs: etOut)[0].as(of: FloatType.self)
-              etOut = Functional.add(
-                left: etOutDegraded, right: etOut, leftScalar: alpha, rightScalar: 1 - alpha)
-            }
-            et = etOut
-          }
+          et = applyCfg(
+            etOut: etOut, blur: blur, batchSize: batchSize, startHeight: startHeight,
+            startWidth: startWidth, channels: channels, isCfgEnabled: isCfgEnabled,
+            textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
+            alpha: alpha, modifier: modifier)
         }
         let sigmaUp = min(
           sigmas[i + 1],

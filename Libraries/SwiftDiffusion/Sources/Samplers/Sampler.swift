@@ -131,15 +131,6 @@ func Blur<T: TensorNumeric & BinaryFloatingPoint>(
   return model
 }
 
-public func isCfgEnabled(textGuidanceScale: Float, startFrameCfg: Float, version: ModelVersion)
-  -> Bool
-{
-  guard version == .svdI2v else {
-    return (textGuidanceScale - 1).magnitude > 1e-2
-  }
-  return (textGuidanceScale - 1).magnitude > 1e-2 || (startFrameCfg - 1).magnitude > 1e-2
-}
-
 public enum SamplerError: Error {
   case cancelled
   case isNaN
@@ -224,4 +215,229 @@ public protocol Sampler<FloatType, UNet> {
 
   // Whether we need to scale the sample at a particular intermediate step.
   func sampleScaleFactor(at step: Float, sampling: Sampling) -> Float
+}
+
+// Cfg related shared functions.
+
+public func isCfgEnabled(
+  textGuidanceScale: Float, imageGuidanceScale: Float, startFrameCfg: Float, version: ModelVersion,
+  modifier: SamplerModifier
+)
+  -> Bool
+{
+  guard version != .svdI2v else {
+    return (textGuidanceScale - 1).magnitude > 1e-3 || (startFrameCfg - 1).magnitude > 1e-3
+  }
+  guard modifier != .editing else {
+    // If both are 1, no cfg.
+    if (textGuidanceScale - 1).magnitude <= 1e-3 && (imageGuidanceScale - 1).magnitude <= 1e-3 {
+      return false
+    }
+    return true
+  }
+  return (textGuidanceScale - 1).magnitude > 1e-3
+}
+
+public func cfgChannelsAndInputChannels(
+  channels: Int, conditionShape: TensorShape?, isCfgEnabled: Bool, textGuidanceScale: Float,
+  imageGuidanceScale: Float, version: ModelVersion, modifier: SamplerModifier
+) -> (Int, Int) {
+  let cfgChannels: Int
+  let inChannels: Int
+  if version == .svdI2v {
+    cfgChannels = 1
+    inChannels = channels * 2
+  } else {
+    switch modifier {
+    case .inpainting, .depth, .canny:
+      cfgChannels = isCfgEnabled ? 2 : 1
+      inChannels = channels + (conditionShape?[3] ?? 0)
+    case .editing:
+      if isCfgEnabled {
+        // If they are the same, it degrades to guidance * (etCond - etAllUncond) + etAllUncond
+        if (textGuidanceScale - imageGuidanceScale).magnitude <= 1e-3 {
+          cfgChannels = 2
+          // If text guidance is 0, it degrades to image guidance * (etUncond - etAllUncond) + etAllUncond
+        } else if textGuidanceScale.magnitude <= 1e-3 {
+          cfgChannels = 2
+        } else {
+          cfgChannels = 3
+        }
+      } else {
+        cfgChannels = 1
+      }
+      inChannels = channels * 2
+    case .double:
+      cfgChannels = isCfgEnabled ? 2 : 1
+      inChannels = channels * 2
+    case .none:
+      cfgChannels = isCfgEnabled ? 2 : 1
+      inChannels = channels
+    }
+  }
+  return (cfgChannels, inChannels)
+}
+
+func updateCfgInputAndConditions<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  xIn: inout DynamicGraph.Tensor<FloatType>, conditions c: inout [DynamicGraph.Tensor<FloatType>],
+  conditionImage: DynamicGraph.Tensor<FloatType>?, batchSize: Int, startHeight: Int,
+  startWidth: Int, channels: Int, isCfgEnabled: Bool, textGuidanceScale: Float,
+  modifier: SamplerModifier
+) {
+  let graph = xIn.graph
+  switch modifier {
+  case .inpainting, .depth, .canny:
+    if let conditionImage = conditionImage {
+      let shape = conditionImage.shape
+      for i in stride(from: 0, to: batchSize, by: shape[0]) {
+        xIn[
+          i..<(i + shape[0]), 0..<startHeight, 0..<startWidth, channels..<(channels + shape[3])] =
+          conditionImage
+        if isCfgEnabled {
+          xIn[
+            (batchSize + i)..<(batchSize + i + shape[0]), 0..<startHeight, 0..<startWidth,
+            channels..<(channels + shape[3])] = conditionImage
+        }
+      }
+    }
+  case .editing:
+    let cfgChannels = xIn.shape[0] / batchSize
+    let maskedImage = conditionImage!
+    for i in 0..<batchSize {
+      if isCfgEnabled {
+        xIn[
+          (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
+          channels..<(channels * 2)] = maskedImage
+        if cfgChannels == 2 {
+          // In place of etUncond, now it is etAllUncond.
+          xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels * 2)].full(0)
+        } else {
+          xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels * 2)] = maskedImage
+          xIn[
+            (batchSize * 2 + i)..<(batchSize * 2 + i + 1), 0..<startHeight, 0..<startWidth,
+            channels..<(channels * 2)
+          ].full(0)
+        }
+      } else {
+        xIn[i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels * 2)] = maskedImage
+      }
+    }
+    if isCfgEnabled {
+      if cfgChannels == 2 {
+        if textGuidanceScale.magnitude <= 1e-3 {
+          // Make sure the usual etCond path took uncondition tokens.
+          c = c.map {
+            let oldC = $0
+            let shape = oldC.shape
+            if shape.count == 2 {
+              var c = graph.variable(
+                .GPU(0), .WC(2 * batchSize, oldC.shape[1]), of: FloatType.self)
+              // Expanding c. Both now took uncondition tokens.
+              c[0..<batchSize, 0..<oldC.shape[1]] =
+                oldC[0..<batchSize, 0..<oldC.shape[1]]
+              c[batchSize..<(batchSize * 2), 0..<oldC.shape[1]] =
+                oldC[0..<batchSize, 0..<oldC.shape[1]]
+              return c
+            } else {
+              var c = graph.variable(
+                .GPU(0), .HWC(2 * batchSize, oldC.shape[1], oldC.shape[2]), of: FloatType.self)
+              // Expanding c. Both now took uncondition tokens.
+              c[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]] =
+                oldC[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]]
+              c[batchSize..<(batchSize * 2), 0..<oldC.shape[1], 0..<oldC.shape[2]] =
+                oldC[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]]
+              return c
+            }
+          }
+        } else {
+          // Do nothing.
+        }
+      } else {
+        c = c.map {
+          let oldC = $0
+          let shape = oldC.shape
+          if shape.count == 2 {
+            var c = graph.variable(
+              .GPU(0), .WC(3 * batchSize, oldC.shape[1]), of: FloatType.self)
+            // Expanding c.
+            c[0..<(batchSize * 2), 0..<oldC.shape[1]] = oldC
+            c[(batchSize * 2)..<(batchSize * 3), 0..<oldC.shape[1]] =
+              oldC[0..<batchSize, 0..<oldC.shape[1]]
+            return c
+          } else {
+            var c = graph.variable(
+              .GPU(0), .HWC(3 * batchSize, oldC.shape[1], oldC.shape[2]), of: FloatType.self)
+            // Expanding c.
+            c[0..<(batchSize * 2), 0..<oldC.shape[1], 0..<oldC.shape[2]] = oldC
+            c[(batchSize * 2)..<(batchSize * 3), 0..<oldC.shape[1], 0..<oldC.shape[2]] =
+              oldC[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]]
+            return c
+          }
+        }
+      }
+    }
+  case .double:
+    let maskedImage = conditionImage!
+    let maskedImageChannels = maskedImage.shape[3]
+    for i in 0..<batchSize {
+      xIn[
+        i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + maskedImageChannels)] =
+        maskedImage
+      if isCfgEnabled {
+        xIn[
+          (batchSize + i)..<(batchSize + i + 1), 0..<startHeight, 0..<startWidth,
+          channels..<(channels + maskedImageChannels)] =
+          maskedImage
+      }
+    }
+  case .none:
+    break
+  }
+}
+
+func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  etOut: DynamicGraph.Tensor<FloatType>, blur: Model?, batchSize: Int, startHeight: Int,
+  startWidth: Int, channels: Int, isCfgEnabled: Bool, textGuidanceScale: Float,
+  imageGuidanceScale: Float, alpha: Float, modifier: SamplerModifier
+) -> DynamicGraph.Tensor<FloatType> {
+  let et: DynamicGraph.Tensor<FloatType>
+  if isCfgEnabled {
+    let etUncond = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+    var etCond = etOut[batchSize..<(batchSize * 2), 0..<startHeight, 0..<startWidth, 0..<channels]
+      .copied()
+    if let blur = blur {
+      let etCondDegraded = blur(inputs: etCond)[0].as(of: FloatType.self)
+      etCond = Functional.add(
+        left: etCondDegraded, right: etCond, leftScalar: alpha, rightScalar: 1 - alpha)
+    }
+    if modifier == .editing {
+      let cfgChannels = etOut.shape[0] / batchSize
+      if cfgChannels == 2 {
+        // This handles the case text guidance scale == 0 and text guidance == image guidance.
+        et = etUncond + imageGuidanceScale * (etCond - etUncond)
+      } else {
+        let etAllUncond =
+          etOut[
+            (batchSize * 2)..<(batchSize * 3), 0..<startHeight, 0..<startWidth, 0..<channels
+          ].copied()
+        et =
+          etAllUncond + textGuidanceScale * (etCond - etUncond) + imageGuidanceScale
+          * (etUncond - etAllUncond)
+      }
+    } else {
+      et = etUncond + textGuidanceScale * (etCond - etUncond)
+    }
+  } else {
+    var etOut = etOut
+    if channels < etOut.shape[3] {
+      etOut = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+    }
+    if let blur = blur {
+      let etOutDegraded = blur(inputs: etOut)[0].as(of: FloatType.self)
+      etOut = Functional.add(
+        left: etOutDegraded, right: etOut, leftScalar: alpha, rightScalar: 1 - alpha)
+    }
+    et = etOut
+  }
+  return et
 }
