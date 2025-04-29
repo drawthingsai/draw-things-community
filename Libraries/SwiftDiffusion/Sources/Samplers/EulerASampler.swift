@@ -522,7 +522,7 @@ extension EulerASampler: Sampler {
               isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
-          var etOut = unet(
+          let etOut = unet(
             timestep: cNoise, inputs: xIn, t, conditions, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,

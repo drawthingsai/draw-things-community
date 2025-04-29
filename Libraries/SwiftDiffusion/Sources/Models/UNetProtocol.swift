@@ -1831,7 +1831,12 @@ extension UNetFromNNC {
       let batchSize = shape[0]
       guard batchSize > 1 else {
         let et = unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
-        return et
+        if modifier == .editing {
+          // remove the conditioning.
+          return et[0..<shape[0], 0..<shape[1], 0..<(shape[2] / 2), 0..<shape[3]].copied()
+        } else {
+          return et
+        }
       }
       let graph = firstInput.graph
       var et = graph.variable(like: firstInput)

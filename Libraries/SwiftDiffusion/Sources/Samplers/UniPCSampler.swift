@@ -572,7 +572,7 @@ extension UniPCSampler: Sampler {
               isCfgEnabled: isCfgEnabled, index: i - startStep,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
-          var etOut = unet(
+          let etOut = unet(
             timestep: cNoise, inputs: xIn, t, conditions, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
