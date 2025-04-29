@@ -279,6 +279,7 @@ public final class ControlNetImporter {
     let isControlNetLoRA = stateDict.keys.contains {
       $0.hasSuffix("label_emb.0.0.down") || $0.hasSuffix("transformer_blocks.0.attn2.to_k.down")
     }
+    let isControlUnion = stateDict["control_add_embedding.linear_1.weight"] != nil
     var transformerBlocks = [Int]()
     switch modelVersion {
     case .v1:
@@ -345,7 +346,8 @@ public final class ControlNetImporter {
         (controlNet, _, controlNetMapper) = ControlNetXL(
           batchSize: 2, startWidth: 64, startHeight: 64, channels: [320, 640, 1280],
           embeddingLength: (77, 77), inputAttentionRes: inputAttentionRes,
-          middleAttentionBlocks: middleAttentionBlocks, union: true, usesFlashAttention: .none)
+          middleAttentionBlocks: middleAttentionBlocks, union: isControlUnion,
+          usesFlashAttention: .none)
         if transformerBlocks.isEmpty || transformerBlocks.contains(where: { $0 > 0 }) {
           (controlNetFixed, _, controlNetFixedMapper) = ControlNetXLFixed(
             batchSize: 2, startHeight: 64, startWidth: 64, channels: [320, 640, 1280],
@@ -361,7 +363,6 @@ public final class ControlNetImporter {
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
       fatalError()
     }
-    var isControlUnion = false
 
     if let controlNetMapper = controlNetMapper {
       try graph.openStore(ModelZoo.filePathForModelDownloaded(filename)) { store in
@@ -380,7 +381,7 @@ public final class ControlNetImporter {
             kvs = []
           }
           var cArr = [vector]
-          if !isControlNetLoRA {
+          if !isControlNetLoRA && isControlUnion {
             let controlEmb = graph.variable(.GPU(0), .WC(2, 1280), of: FloatType.self)
             let taskEmbedding = graph.variable(.GPU(0), .WC(2, 320), of: FloatType.self)
             cArr += [controlEmb, taskEmbedding]
@@ -426,7 +427,6 @@ public final class ControlNetImporter {
             }
           }
           if stateDict["control_add_embedding.linear_1.weight"] != nil {
-            isControlUnion = true
             let (controlAddEmbedding, controlAddEmbeddingMapper) = ControlAddEmbed()
             let controlType = graph.variable(.GPU(0), .WC(2, 256 * 8), of: FloatType.self)
             controlAddEmbedding.compile(inputs: controlType)
