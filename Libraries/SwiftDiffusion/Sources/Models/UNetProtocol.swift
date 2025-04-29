@@ -1026,7 +1026,7 @@ extension UNetFromNNC {
     if startWidth > tiledWidth || startHeight > tiledHeight {
       let inputs = sliceInputs(
         inputs, originalShape: shape, xyTiles: xTiles * yTiles, index: 0, inputStartYPad: 0,
-        inputEndYPad: tiledHeight, inputStartXPad: 0, inputEndXPad: tiledWidth)
+        inputEndYPad: tiledHeight, inputStartXPad: 0, inputEndXPad: tiledWidth, modifier: modifier)
       compile(
         unet, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
@@ -1221,7 +1221,8 @@ extension UNetFromNNC {
 
   private func sliceInputs(
     _ inputs: [DynamicGraph.AnyTensor], originalShape: TensorShape, xyTiles: Int,
-    index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int
+    index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int,
+    modifier: SamplerModifier
   ) -> [DynamicGraph.AnyTensor] {
     return inputs.enumerated().map {
       // For FLUX.1, if it is the first one, we need to handle its slicing (rotary encoding).
@@ -1256,20 +1257,25 @@ extension UNetFromNNC {
       case .hiDreamI1:
         if $0.0 == 0 {
           let shape = $0.1.shape
-          let tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
+          let originalWidth = modifier == .editing ? originalShape[2] * 2 : originalShape[2]
+          let tokenLength = shape[1] - (originalShape[1] / 2) * (originalWidth / 2)
           let graph = $0.1.graph
           let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
             0..<shape[0], 0..<(shape[1] - tokenLength), 0..<shape[2], 0..<shape[3]
           ].copied().reshaped(
-            .NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+            .NHWC(shape[0], originalShape[1] / 2, originalWidth / 2, shape[3]))
           let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
             0..<shape[0], (shape[1] - tokenLength)..<shape[1], 0..<shape[2], 0..<shape[3]
           ].copied()
           let h = inputEndYPad / 2 - inputStartYPad / 2
-          let w = inputEndXPad / 2 - inputStartXPad / 2
+          var w = inputEndXPad / 2 - inputStartXPad / 2
+          if modifier == .editing {
+            w = w * 2
+          }
+          // We do a continuous slice for editing.
           let sliceEncoding = imageEncoding[
             0..<shape[0], (inputStartYPad / 2)..<(inputEndYPad / 2),
-            (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[3]
+            (inputStartXPad / 2)..<(inputStartXPad / 2 + w), 0..<shape[3]
           ].copied().reshaped(.NHWC(shape[0], h * w, 1, shape[3]))
           var finalEncoding = graph.variable(
             $0.1.kind, .NHWC(shape[0], h * w + tokenLength, 1, shape[3]), of: FloatType.self)
@@ -1459,7 +1465,7 @@ extension UNetFromNNC {
       if modifier == .editing {
         // When modifier is editing, we need to transform the input s.t. the 2 * channel becomes 2 * width.
         let shape = inputs[0].shape
-        inputs[0] = inputs[0].as(of: FloatType.self).reshaped(
+        inputs[0] = inputs[0].as(of: FloatType.self).contiguous().reshaped(
           format: .NHWC, shape: [shape[0], shape[1], shape[2], 2, shape[3] / 2]
         ).transposed(2, 3).reshaped(.NHWC(shape[0], shape[1], 2 * shape[2], shape[3] / 2))
           .contiguous()
@@ -1816,7 +1822,7 @@ extension UNetFromNNC {
       var shape = firstInput.shape
       if modifier == .editing {
         // Move the conditioning to the right side.
-        firstInput = firstInput.reshaped(
+        firstInput = firstInput.contiguous().reshaped(
           format: .NHWC, shape: [shape[0], shape[1], shape[2], 2, shape[3] / 2]
         ).transposed(2, 3).reshaped(.NHWC(shape[0], shape[1], 2 * shape[2], shape[3] / 2))
           .contiguous()
@@ -1882,7 +1888,8 @@ extension UNetFromNNC {
     let inputs = sliceInputs(
       inputs + injectedControls + injectedT2IAdapters, originalShape: shape, xyTiles: xyTiles,
       index: index, inputStartYPad: inputStartYPad,
-      inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad)
+      inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
+      modifier: modifier)
     return self(
       step: step, index: index,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
