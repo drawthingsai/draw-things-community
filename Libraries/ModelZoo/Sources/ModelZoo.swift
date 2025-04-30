@@ -565,7 +565,10 @@ public struct ModelZoo: DownloadZoo {
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
       isConsistencyModel: true, objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128,
-      hiresFixScale: 24),
+      hiresFixScale: 24,
+      note:
+        "[HiDream-I1 [fast]](https://huggingface.co/HiDream-ai/HiDream-I1-Fast) is a state-of-the-art open-source image generation model known for its strong prompt adherence across diverse styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 10–20 sampling steps recommended. Text guidance is not effective for this model."
+    ),
     Specification(
       name: "HiDream I1 [fast] (5-bit)", file: "hidream_i1_fast_q5p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
@@ -573,7 +576,10 @@ public struct ModelZoo: DownloadZoo {
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
       isConsistencyModel: true, objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128,
-      hiresFixScale: 24),
+      hiresFixScale: 24,
+      note:
+        "[HiDream-I1 [fast]](https://huggingface.co/HiDream-ai/HiDream-I1-Fast) is a state-of-the-art open-source image generation model known for its strong prompt adherence across diverse styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 10–20 sampling steps recommended. Text guidance is not effective for this model."
+    ),
     Specification(
       name: "HiDream I1 [dev]", file: "hidream_i1_dev_q8p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
@@ -581,7 +587,10 @@ public struct ModelZoo: DownloadZoo {
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
       objective: .u(conditionScale: 1000), guidanceEmbed: true, paddedTextEncodingLength: 128,
-      hiresFixScale: 24),
+      hiresFixScale: 24,
+      note:
+        "[HiDream-I1 [dev]](https://huggingface.co/HiDream-ai/HiDream-I1-Dev) is a state-of-the-art open-source image generation model known for its strong prompt adherence across diverse styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 20–30 sampling steps recommended. Text guidance is not effective for this model."
+    ),
     Specification(
       name: "HiDream I1 [dev] (5-bit)", file: "hidream_i1_dev_q5p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
@@ -589,21 +598,30 @@ public struct ModelZoo: DownloadZoo {
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
       objective: .u(conditionScale: 1000), guidanceEmbed: true, paddedTextEncodingLength: 128,
-      hiresFixScale: 24),
+      hiresFixScale: 24,
+      note:
+        "[HiDream-I1 [dev]](https://huggingface.co/HiDream-ai/HiDream-I1-Dev) is a state-of-the-art open-source image generation model known for its strong prompt adherence across diverse styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 20–30 sampling steps recommended. Text guidance is not effective for this model."
+    ),
     Specification(
       name: "HiDream I1 [full]", file: "hidream_i1_full_q8p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
-      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24),
+      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24,
+      note:
+        "[HiDream-I1 [full]](https://huggingface.co/HiDream-ai/HiDream-I1-Full) is a state-of-the-art open-source image generation model known for its exceptional prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+    ),
     Specification(
       name: "HiDream I1 [full] (5-bit)", file: "hidream_i1_full_q5p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "long_clip_vit_l14_f16.ckpt",
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
-      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24),
+      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24,
+      note:
+        "[HiDream-I1 [full]](https://huggingface.co/HiDream-ai/HiDream-I1-Full) is a state-of-the-art open-source image generation model known for its exceptional prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+    ),
     Specification(
       name: "HiDream E1 [full]", file: "hidream_e1_full_q8p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
@@ -611,7 +629,10 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "long_clip_vit_l14_f16.ckpt",
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
-      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24),
+      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24,
+      note:
+        "[HiDream-E1 [full]](https://huggingface.co/HiDream-ai/HiDream-E1-Full) is an image editing model built on HiDream-I1. It is MIT-licensed and commercially friendly. Trained at 768×768 resolution using a Flow Matching objective, the model performs best with trailing samplers and 30–50 sampling steps. For optimal results, ensure the width is set to 768 and use the following prompt format: Editing Instruction: {}. Target Image Description: {}."
+    ),
     Specification(
       name: "HiDream E1 [full] (5-bit)", file: "hidream_e1_full_q5p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
@@ -619,7 +640,10 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "long_clip_vit_l14_f16.ckpt",
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
-      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24),
+      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24,
+      note:
+        "[HiDream-E1 [full]](https://huggingface.co/HiDream-ai/HiDream-E1-Full) is an image editing model built on HiDream-I1. It is MIT-licensed and commercially friendly. Trained at 768×768 resolution using a Flow Matching objective, the model performs best with trailing samplers and 30–50 sampling steps. For optimal results, ensure the width is set to 768 and use the following prompt format: Editing Instruction: {}. Target Image Description: {}."
+    ),
     Specification(
       name: "SDXL Base (v0.9)", file: "sd_xl_base_0.9_f16.ckpt", prefix: "", version: .sdxlBase,
       defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
