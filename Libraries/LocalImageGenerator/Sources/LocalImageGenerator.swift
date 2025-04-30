@@ -5351,7 +5351,7 @@ extension LocalImageGenerator {
       if modifier == .inpainting || modifier == .editing || modifier == .double
         || modelVersion == .svdI2v
       {
-        if !isI2v(version: modelVersion, modifier: modifier) {
+        if !isI2v(version: modelVersion, modifier: modifier) && modifier != .editing {
           firstPassImage = firstPassImage .* graph.variable(imageNegMask2.toGPU(0))
         }
         let encodedImage = modelPreloader.consumeFirstStageEncode(
@@ -6075,7 +6075,7 @@ extension LocalImageGenerator {
         || modelVersion == .svdI2v
       {
         var batch = [DynamicGraph.Tensor<FloatType>]()
-        if isI2v(version: modelVersion, modifier: modifier) {
+        if isI2v(version: modelVersion, modifier: modifier) && modifier != .editing {
           batch = [firstPassImage]
         } else {
           batch.append(firstPassImage .* graph.variable(imageNegMask1.toGPU(0)))
