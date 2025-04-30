@@ -181,7 +181,7 @@ extension UniPCSampler: Sampler {
     let startWidth = x.shape[2]
     let channels = x.shape[3]
     let graph = x.graph
-    var isCfgEnabled =
+    let isCfgEnabled =
       classifierFreeGuidance
       && isCfgEnabled(
         textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
