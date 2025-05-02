@@ -199,7 +199,34 @@ extension FirstStage {
           $0.read("decoder", model: decoder, codec: [.jit, externalData])
         }
       }
-      outputChannels = 3
+      if let alternativeFilePath = alternativeFilePath, alternativeDecoderVersion == .transparent {
+        let decoder = TransparentVAEDecoder(
+          startHeight: startHeight * 8, startWidth: startWidth * 8,
+          usesFlashAttention: alternativeUsesFlashAttention ? .scaleMerged : .none)
+        decoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          let pixels = graph.variable(
+            .GPU(0), .NHWC(1, startHeight * 8, startWidth * 8, 3), of: Float.self)
+          decoder.compile(
+            inputs: pixels,
+            DynamicGraph.Tensor<Float>(
+              from: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]]))
+        } else {
+          let pixels = graph.variable(
+            .GPU(0), .NHWC(1, startHeight * 8, startWidth * 8, 3), of: FloatType.self)
+          decoder.compile(inputs: pixels, z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        }
+        graph.openStore(
+          alternativeFilePath, flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: alternativeFilePath)
+        ) {
+          $0.read("decoder", model: decoder, codec: [.jit, .ezm7, externalData])
+        }
+        transparentDecoder = decoder
+        outputChannels = 4
+      } else {
+        outputChannels = 3
+      }
       causalAttentionMask = nil
     case .hunyuanVideo:
       var startDepth = shape[0]

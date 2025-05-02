@@ -140,6 +140,11 @@ public struct LoRAZoo: DownloadZoo {
       name: "Foreground to Blending",
       file: "layer_xl_fg2ble_v1.0_lora_f16.ckpt",
       prefix: "", version: .sdxlBase, modifier: .inpainting, weight: .init(value: 1)),
+    Specification(
+      name: "Transparent Image",
+      file: "layer_flux_1_transparent_lora_f16.ckpt",
+      prefix: "", version: .flux1, alternativeDecoder: "flux_1_transparent_vae_decoder_f16.ckpt",
+      alternativeDecoderVersion: .transparent, weight: .init(value: 1)),
   ]
 
   public static func isBuiltinLoRA(_ name: String) -> Bool {
