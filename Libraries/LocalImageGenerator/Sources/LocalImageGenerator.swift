@@ -2899,8 +2899,11 @@ extension LocalImageGenerator {
         return TeaCacheConfiguration(
           coefficients: $0,
           steps: min(teaCacheStart, teaCacheEnd)...max(teaCacheStart, teaCacheEnd),
-          threshold: configuration.teaCache ? configuration.teaCacheThreshold : 0)
-      } ?? TeaCacheConfiguration(coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0)
+          threshold: configuration.teaCache ? configuration.teaCacheThreshold : 0,
+          maxSkipSteps: Int(configuration.teaCacheMaxSkipSteps))
+      }
+      ?? TeaCacheConfiguration(
+        coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
@@ -3858,8 +3861,11 @@ extension LocalImageGenerator {
         return TeaCacheConfiguration(
           coefficients: $0,
           steps: min(teaCacheStart, teaCacheEnd)...max(teaCacheStart, teaCacheEnd),
-          threshold: configuration.teaCache ? configuration.teaCacheThreshold : 0)
-      } ?? TeaCacheConfiguration(coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0)
+          threshold: configuration.teaCache ? configuration.teaCacheThreshold : 0,
+          maxSkipSteps: Int(configuration.teaCacheMaxSkipSteps))
+      }
+      ?? TeaCacheConfiguration(
+        coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
@@ -5159,8 +5165,11 @@ extension LocalImageGenerator {
         return TeaCacheConfiguration(
           coefficients: $0,
           steps: min(teaCacheStart, teaCacheEnd)...max(teaCacheStart, teaCacheEnd),
-          threshold: configuration.teaCache ? configuration.teaCacheThreshold : 0)
-      } ?? TeaCacheConfiguration(coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0)
+          threshold: configuration.teaCache ? configuration.teaCacheThreshold : 0,
+          maxSkipSteps: Int(configuration.teaCacheMaxSkipSteps))
+      }
+      ?? TeaCacheConfiguration(
+        coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
@@ -5900,8 +5909,11 @@ extension LocalImageGenerator {
         return TeaCacheConfiguration(
           coefficients: $0,
           steps: min(teaCacheStart, teaCacheEnd)...max(teaCacheStart, teaCacheEnd),
-          threshold: configuration.teaCache ? configuration.teaCacheThreshold : 0)
-      } ?? TeaCacheConfiguration(coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0)
+          threshold: configuration.teaCache ? configuration.teaCacheThreshold : 0,
+          maxSkipSteps: Int(configuration.teaCacheMaxSkipSteps))
+      }
+      ?? TeaCacheConfiguration(
+        coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,

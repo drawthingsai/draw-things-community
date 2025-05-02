@@ -150,6 +150,7 @@ public final class JSGenerationConfiguration: Codable {
   public let teaCacheStart: Int32
   public let teaCacheEnd: Int32
   public let teaCacheThreshold: Float32
+  public let teaCacheMaxSkipSteps: Int32
   public let separateT5: Bool
   public let t5Text: String?
 
@@ -226,6 +227,7 @@ public final class JSGenerationConfiguration: Codable {
     teaCacheStart = configuration.teaCacheStart
     teaCacheEnd = configuration.teaCacheEnd
     teaCacheThreshold = configuration.teaCacheThreshold
+    teaCacheMaxSkipSteps = configuration.teaCacheMaxSkipSteps
     teaCache = configuration.teaCache
     separateT5 = configuration.separateT5
     t5Text = configuration.t5Text
@@ -280,7 +282,8 @@ public final class JSGenerationConfiguration: Codable {
       teaCacheThreshold: teaCacheThreshold,
       teaCache: teaCache,
       separateT5: separateT5,
-      t5Text: t5Text
+      t5Text: t5Text,
+      teaCacheMaxSkipSteps: teaCacheMaxSkipSteps
     )
   }
 }

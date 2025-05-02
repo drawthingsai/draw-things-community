@@ -150,6 +150,7 @@ table GenerationConfiguration {
   tea_cache: bool = false;
   separate_t5: bool = false;
   t5_text: string;
+  tea_cache_max_skip_steps: int = 3;
 }
 
 root_type GenerationConfiguration;

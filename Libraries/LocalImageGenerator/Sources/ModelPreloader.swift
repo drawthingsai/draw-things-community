@@ -578,7 +578,8 @@ extension ModelPreloader {
           injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>(
             injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
             injectedAttentionKVs: []), tiledDiffusion: tiledDiffusion,
-          teaCache: TeaCacheConfiguration(coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0)
+          teaCache: TeaCacheConfiguration(
+            coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
         )
         unetFilePath = modelPath
         unetExternalOnDemand = externalOnDemand

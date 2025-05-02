@@ -525,7 +525,8 @@ public final class ImageHistoryManager {
       teaCacheThreshold: imageHistory.teaCacheThreshold,
       teaCache: imageHistory.teaCache,
       separateT5: imageHistory.separateT5,
-      t5Text: imageHistory.t5Text
+      t5Text: imageHistory.t5Text,
+      teaCacheMaxSkipSteps: imageHistory.teaCacheMaxSkipSteps
     )
     _profileData = imageHistory.profileData
     dataStored = imageData.sorted(by: { $0.index < $1.index }).map {
@@ -778,7 +779,8 @@ public final class ImageHistoryManager {
       teaCacheThreshold: configuration.teaCacheThreshold,
       teaCache: configuration.teaCache,
       separateT5: configuration.separateT5,
-      t5Text: configuration.t5Text
+      t5Text: configuration.t5Text,
+      teaCacheMaxSkipSteps: configuration.teaCacheMaxSkipSteps
     )
     let imageVersion = uniqueVersion()
     nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)

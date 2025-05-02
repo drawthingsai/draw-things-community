@@ -96,7 +96,8 @@ public final class Parameters {
     motionScaleParameter, maskBlurOutsetParameter, stage2StepsParameter, decodingTileWidthParameter,
     decodingTileHeightParameter, decodingTileOverlapParameter, diffusionTileWidthParameter,
     diffusionTileHeightParameter, diffusionTileOverlapParameter,
-    upscalerScaleFactorParameter, teaCacheStartParameter, teaCacheEndParameter: IntParameter
+    upscalerScaleFactorParameter, teaCacheStartParameter, teaCacheEndParameter,
+    teaCacheMaxSkipStepsParameter: IntParameter
   public let guidanceScaleParameter, strengthParameter, imageGuidanceScaleParameter,
     maskBlurParameter,
     clipWeightParameter, hiresFixStrengthParameter, refinerStartParameter, aestheticScoreParameter,
@@ -408,6 +409,10 @@ public final class Parameters {
       titleKey: "tea_cache_threshold", explanationKey: "tea_cache_threshold_detail",
       defaultValue: Double(defaultConfiguration.teaCacheThreshold),
       range: 0...1, commandLineFlag: "tea-cache-threshold")
+    teaCacheMaxSkipStepsParameter = IntParameter(
+      titleKey: "tea_cache_max_skip_steps", explanationKey: nil,
+      defaultValue: Int(defaultConfiguration.teaCacheMaxSkipSteps),
+      range: 1...1000, commandLineFlag: "tea-cache-max-skip-steps")
     teaCacheParameter = BoolParameter(
       titleKey: "tea_cache", explanationKey: "tea_cache_detail",
       commandLineFlag: "tea-cache",
@@ -494,6 +499,7 @@ public final class Parameters {
       teaCacheStartParameter,
       teaCacheEndParameter,
       teaCacheThresholdParameter,
+      teaCacheMaxSkipStepsParameter,
       teaCacheParameter,
       separateT5Parameter,
       t5TextParameter,

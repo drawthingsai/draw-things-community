@@ -1090,6 +1090,7 @@ public enum ImageConverter {
           json["tea_cache_start"] = configuration.teaCacheStart
           json["tea_cache_end"] = configuration.teaCacheEnd
           json["tea_cache_threshold"] = configuration.teaCacheThreshold
+          json["tea_cache_max_skip_steps"] = configuration.teaCacheMaxSkipSteps
           var teaCacheEnd =
             configuration.teaCacheEnd < 0
             ? Int32(configuration.steps) + 1 + configuration.teaCacheEnd : configuration.teaCacheEnd
@@ -1098,7 +1099,7 @@ public enum ImageConverter {
           teaCacheEnd = min(
             max(max(teaCacheStart, teaCacheEnd), 0), Int32(configuration.steps))
           description +=
-            ", TeaCache Enabled: \(min(teaCacheStart, teaCacheEnd)) - \(max(teaCacheStart, teaCacheEnd)), \(configuration.teaCacheThreshold.formatted(.number.precision(.fractionLength(2))))"
+            ", TeaCache Enabled: \(min(teaCacheStart, teaCacheEnd)) - \(max(teaCacheStart, teaCacheEnd)), \(configuration.teaCacheThreshold.formatted(.number.precision(.fractionLength(2)))), \(configuration.teaCacheMaxSkipSteps)"
         }
         if configuration.sampler == .TCD {
           json["stochastic_sampling_gamma"] = configuration.stochasticSamplingGamma

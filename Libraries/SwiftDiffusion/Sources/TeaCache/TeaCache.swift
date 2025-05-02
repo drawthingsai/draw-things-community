@@ -4,12 +4,15 @@ public struct TeaCacheConfiguration {
   public var coefficients: (Float, Float, Float, Float, Float)
   public var steps: ClosedRange<Int>
   public var threshold: Float
+  public var maxSkipSteps: Int
   public init(
-    coefficients: (Float, Float, Float, Float, Float), steps: ClosedRange<Int>, threshold: Float
+    coefficients: (Float, Float, Float, Float, Float), steps: ClosedRange<Int>, threshold: Float,
+    maxSkipSteps: Int
   ) {
     self.coefficients = coefficients
     self.steps = steps
     self.threshold = threshold
+    self.maxSkipSteps = maxSkipSteps
   }
 }
 
@@ -18,22 +21,25 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let coefficients: (Float, Float, Float, Float, Float)
   private let threshold: Float
   private let steps: ClosedRange<Int>
+  private let maxSkipSteps: Int
   private let reducedModel: Model
   private let inferModel: Model?
   private var lastTs: [Int: [DynamicGraph.AnyTensor]]
   private var accumulatedRelL1Distances: [Int: Float]
   private var lastResiduals: [Int: DynamicGraph.AnyTensor]
+  private var skipSteps: [Int: Int]
   private var reducedModelParameterShared: Bool
   private var inferModelParameterShared: Bool
 
   public init(
     modelVersion: ModelVersion, coefficients: (Float, Float, Float, Float, Float), threshold: Float,
-    steps: ClosedRange<Int>, reducedModel: Model, inferModel: Model? = nil
+    steps: ClosedRange<Int>, maxSkipSteps: Int, reducedModel: Model, inferModel: Model? = nil
   ) {
     self.modelVersion = modelVersion
     self.coefficients = coefficients
     self.threshold = threshold
     self.steps = steps
+    self.maxSkipSteps = max(1, maxSkipSteps)
     self.reducedModel = reducedModel
     self.inferModel = inferModel
     lastTs = [Int: [DynamicGraph.AnyTensor]]()
@@ -41,6 +47,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     lastResiduals = [Int: DynamicGraph.Tensor<FloatType>]()
     reducedModelParameterShared = false
     inferModelParameterShared = false
+    skipSteps = [Int: Int]()
   }
 
   public func shouldUseCacheForTimeEmbedding<T: TensorNumeric & BinaryFloatingPoint>(
@@ -74,9 +81,12 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
         t = [inferModel(inputs: t[0], Array(t[(3 + 6)..<(5 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
       }
     }
-    guard let lastT = lastTs[marker], steps.contains(step) else {
+    guard let lastT = lastTs[marker], steps.contains(step),
+      skipSteps[marker, default: 0] >= maxSkipSteps
+    else {
       lastTs[marker] = t
       accumulatedRelL1Distances[marker] = 0
+      skipSteps[marker] = 0
       return false
     }
     var totalR1: Float = 0
@@ -167,6 +177,8 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       shift = restInputs[2 + 19 * 12 + 38 * 3]
       scale = restInputs[2 + 19 * 12 + 38 * 3 + 1]
     }
+    // Running the reduced model, this is skipped.
+    skipSteps[marker, default: 0] += 1
     return reducedModel(
       inputs: firstInput, lastResidual, shift, scale)[0].as(
         of: FloatType.self)

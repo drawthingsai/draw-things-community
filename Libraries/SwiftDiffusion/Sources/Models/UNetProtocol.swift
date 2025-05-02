@@ -752,6 +752,7 @@ extension UNetFromNNC {
           teaCache = TeaCache(
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: LoRAFlux1(
               batchSize: 1, tokenLength: tokenLength,
               height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
@@ -780,6 +781,7 @@ extension UNetFromNNC {
           teaCache = TeaCache(
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: Flux1(
               batchSize: 1, tokenLength: tokenLength,
               height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
@@ -820,6 +822,7 @@ extension UNetFromNNC {
           teaCache = TeaCache(
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: LoRAHunyuan(
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth,
@@ -847,6 +850,7 @@ extension UNetFromNNC {
           teaCache = TeaCache(
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: Hunyuan(
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth,
@@ -885,6 +889,7 @@ extension UNetFromNNC {
           teaCache = TeaCache(
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: LoRAWan(
               channels: 1_536, layers: 0, intermediateSize: 8_960,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
@@ -904,6 +909,7 @@ extension UNetFromNNC {
           teaCache = TeaCache(
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: Wan(
               channels: 1_536, layers: 0, intermediateSize: 8_960,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
@@ -937,6 +943,7 @@ extension UNetFromNNC {
           teaCache = TeaCache(
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: LoRAWan(
               channels: 5_120, layers: 0, intermediateSize: 13_824,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
@@ -956,6 +963,7 @@ extension UNetFromNNC {
           teaCache = TeaCache(
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: Wan(
               channels: 5_120, layers: 0, intermediateSize: 13_824,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
