@@ -82,7 +82,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       }
     }
     guard let lastT = lastTs[marker], steps.contains(step),
-      skipSteps[marker, default: 0] >= maxSkipSteps
+      skipSteps[marker, default: 0] < maxSkipSteps
     else {
       lastTs[marker] = t
       accumulatedRelL1Distances[marker] = 0
