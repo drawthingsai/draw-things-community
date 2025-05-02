@@ -109,6 +109,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     if accumulatedRelL1Distance >= threshold {
       accumulatedRelL1Distance = 0
       shouldUseCache = false
+      skipSteps[marker] = 0  // Reset skip steps in this case.
     }
     accumulatedRelL1Distances[marker] = accumulatedRelL1Distance
     lastTs[marker] = t
