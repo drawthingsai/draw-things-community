@@ -129,15 +129,24 @@ public struct ConfigurationZoo {
         customSpecifications.append(contentsOf: jsonSpecifications)
       }
     }
-    customSpecifications = customSpecifications.filter {
-      guard let name = $0["name"] as? String else { return false }
-      return name != specification.name
+    if let firstIndex = customSpecifications.firstIndex(where: {
+      $0["name"] as? String == specification.name
+    }) {
+      var dictionary = customSpecifications[firstIndex]
+      dictionary["configuration"] = specification.configuration
+      dictionary["negative"] = specification.negative
+      customSpecifications[firstIndex] = dictionary
+    } else {
+      customSpecifications = customSpecifications.filter {
+        guard let name = $0["name"] as? String else { return false }
+        return name != specification.name
+      }
+      var dictionary: [String: Any] = [
+        "name": specification.name, "configuration": specification.configuration,
+      ]
+      dictionary["negative"] = specification.negative
+      customSpecifications.append(dictionary)
     }
-    var dictionary: [String: Any] = [
-      "name": specification.name, "configuration": specification.configuration,
-    ]
-    dictionary["negative"] = specification.negative
-    customSpecifications.append(dictionary)
     guard
       let jsonData = try? JSONSerialization.data(
         withJSONObject: customSpecifications, options: [.prettyPrinted, .sortedKeys])
@@ -145,8 +154,13 @@ public struct ConfigurationZoo {
     try? jsonData.write(to: URL(fileURLWithPath: jsonFile), options: .atomic)
     // Modify these two are not thread safe. availableSpecifications are OK. specificationMapping is particularly problematic (as it is access on both main thread and a background thread).
     var availableSpecifications = availableSpecifications
-    availableSpecifications = availableSpecifications.filter { $0.name != specification.name }
-    availableSpecifications.append(specification)
+    if let firstIndex = availableSpecifications.firstIndex(where: { $0.name == specification.name })
+    {
+      availableSpecifications[firstIndex] = specification
+    } else {
+      availableSpecifications = availableSpecifications.filter { $0.name != specification.name }
+      availableSpecifications.append(specification)
+    }
     self.availableSpecifications = availableSpecifications
     specificationMapping[specification.name] = specification
   }
