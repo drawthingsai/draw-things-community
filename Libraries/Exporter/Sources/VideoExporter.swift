@@ -190,15 +190,9 @@ public final class VideoExporter {
     let imageWidth = imageSize.width
 
     let videoSettings: [String: Any] = [
-      AVVideoCodecKey: AVVideoCodecType.h264.rawValue,
+      AVVideoCodecKey: AVVideoCodecType.proRes4444.rawValue,
       AVVideoWidthKey: NSNumber(value: Float(imageWidth)),
       AVVideoHeightKey: NSNumber(value: Float(imageHeight)),
-      AVVideoCompressionPropertiesKey: [
-        AVVideoAverageBitRateKey: 9_500_000,  // 9.5 Mbps
-        AVVideoProfileLevelKey: AVVideoProfileLevelH264High41,
-        AVVideoMaxKeyFrameIntervalKey: 30,
-        AVVideoAllowFrameReorderingKey: true,
-      ],
     ]
 
     let pixelBufferAttributes = [
@@ -209,7 +203,10 @@ public final class VideoExporter {
     let pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
       assetWriterInput: videoWriterInput, sourcePixelBufferAttributes: pixelBufferAttributes)
 
-    let videoWriter = try! AVAssetWriter(outputURL: outputFileURL, fileType: .mp4)
+    guard let videoWriter = try? AVAssetWriter(outputURL: outputFileURL, fileType: .mov) else {
+      completion(false)
+      return
+    }
     videoWriter.add(videoWriterInput)
     videoWriter.startWriting()
     videoWriter.startSession(atSourceTime: .zero)
