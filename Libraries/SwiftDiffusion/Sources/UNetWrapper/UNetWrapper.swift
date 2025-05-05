@@ -48,7 +48,8 @@ extension UNetWrapper {
     return unetFromNNC.modelAndWeightMapper
   }
   public mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, version: ModelVersion, modifier: SamplerModifier,
+    filePath: String, externalOnDemand: Bool, memoryCapacity: MemoryCapacity, version: ModelVersion,
+    modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
@@ -61,7 +62,8 @@ extension UNetWrapper {
     #if !os(Linux)
 
       if unetFromCoreML.compileModel(
-        filePath: filePath, externalOnDemand: externalOnDemand, version: version,
+        filePath: filePath, externalOnDemand: externalOnDemand, memoryCapacity: memoryCapacity,
+        version: version,
         modifier: modifier,
         qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
@@ -78,7 +80,8 @@ extension UNetWrapper {
       }
     #endif
     let _ = unetFromNNC.compileModel(
-      filePath: filePath, externalOnDemand: externalOnDemand, version: version, modifier: modifier,
+      filePath: filePath, externalOnDemand: externalOnDemand, memoryCapacity: memoryCapacity,
+      version: version, modifier: modifier,
       qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
       upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
       injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,

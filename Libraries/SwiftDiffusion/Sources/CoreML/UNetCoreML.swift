@@ -29,7 +29,8 @@ struct TensorNameAndBlobOffset {
 extension UNetFromCoreML {
   public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { nil }
   public mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, version: ModelVersion, modifier: SamplerModifier,
+    filePath: String, externalOnDemand: Bool, memoryCapacity: MemoryCapacity, version: ModelVersion,
+    modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,

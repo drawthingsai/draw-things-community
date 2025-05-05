@@ -565,6 +565,7 @@ extension ModelPreloader {
         }
         let _ = unet.compileModel(
           filePath: modelPath, externalOnDemand: externalOnDemand,
+          memoryCapacity: DeviceCapability.memoryCapacity,
           version: modelVersion, modifier: .none, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           upcastAttention: upcastAttention, usesFlashAttention: useMFA,

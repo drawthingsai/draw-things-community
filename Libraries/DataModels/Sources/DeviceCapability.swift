@@ -495,10 +495,7 @@ public struct DeviceCapability {
         return false
       }
     case .flux1:
-      guard
-        (!isMaxPerformance
-          && !((isMacCatalystBuild() ? isHighPerformance : isMaxPerformance) && is8BitModel))
-          || force
+      guard (!isMaxPerformance && !(isHighPerformance && is8BitModel)) || force
       else {
         return false
       }
@@ -511,10 +508,7 @@ public struct DeviceCapability {
         return false
       }
     case .sd3Large:
-      guard
-        (!isMaxPerformance
-          && !((isMacCatalystBuild() ? isHighPerformance : isMaxPerformance) && is8BitModel))
-          || force
+      guard (!isMaxPerformance && !(isHighPerformance && is8BitModel)) || force
       else {
         return false
       }
@@ -544,7 +538,7 @@ public struct DeviceCapability {
       }
     case .hiDreamI1:
       guard
-        (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force
+        (!isUltraPerformance && !(isHighPerformance && is8BitModel)) || force
       else {
         return false
       }

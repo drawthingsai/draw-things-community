@@ -46,7 +46,8 @@ public protocol UNetProtocol {
   var version: ModelVersion { get }
   var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { get }
   mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, version: ModelVersion, modifier: SamplerModifier,
+    filePath: String, externalOnDemand: Bool, memoryCapacity: MemoryCapacity, version: ModelVersion,
+    modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
@@ -333,13 +334,33 @@ public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
   public func unloadResources() {}
 }
 
+public func externalOnDemandPartially(
+  version: ModelVersion, memoryCapacity: MemoryCapacity, externalOnDemand: Bool
+) -> Bool {
+  guard !externalOnDemand else { return false }
+  switch memoryCapacity {
+  case .high:
+    return false
+  case .medium, .low:
+    switch version {
+    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .wan21_1_3b:
+      return false
+    case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .wan21_14b:
+      return true
+    }
+  }
+}
+
 extension UNetFromNNC {
   public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? {
     guard let unet = unet, let unetWeightMapper = unetWeightMapper else { return nil }
     return (unet.unwrapped, unetWeightMapper)
   }
+
   public mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, version: ModelVersion, modifier: SamplerModifier,
+    filePath: String, externalOnDemand: Bool, memoryCapacity: MemoryCapacity, version: ModelVersion,
+    modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
@@ -1083,6 +1104,8 @@ extension UNetFromNNC {
     }
     let externalData: DynamicGraph.Store.Codec =
       externalOnDemand ? .externalOnDemand : .externalData
+    let externalOnDemandPartially = externalOnDemandPartially(
+      version: version, memoryCapacity: memoryCapacity, externalOnDemand: externalOnDemand)
     graph.openStore(
       filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
     ) { store in
@@ -1165,9 +1188,27 @@ extension UNetFromNNC {
                         * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
                     })
                 }
-                return loader.concatenateLoRA(
+                let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
                   store: store, dataType: dataType, format: format, shape: shape)
+                switch result {
+                case .continue(let updatedName, _):
+                  guard updatedName == name else {
+                    return result
+                  }
+                  if externalOnDemandPartially && name.hasSuffix("-0]")
+                    && (name.contains("c_q") || name.contains("c_k") || name.contains("c_v")
+                      || name.contains("x_q") || name.contains("x_k") || name.contains("x_v")
+                      || name.contains("x_shared") || name.contains("x_moe_w1")
+                      || name.contains("c_w1") || name.contains("x_moe_w2") || name.contains("c_w2")
+                      || name.contains("x_linear1") || name.contains("c_linear1"))
+                  {
+                    return .continue(name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit])
+                  }
+                  return result
+                case .final(_), .fail:
+                  return result
+                }
               }
             }
           }
@@ -1197,7 +1238,25 @@ extension UNetFromNNC {
                         * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
                     })
                 }
-                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+                let result = loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+                switch result {
+                case .continue(let updatedName, _):
+                  guard updatedName == name else {
+                    return result
+                  }
+                  if externalOnDemandPartially && name.hasSuffix("-0]")
+                    && (name.contains("c_q") || name.contains("c_k") || name.contains("c_v")
+                      || name.contains("x_q") || name.contains("x_k") || name.contains("x_v")
+                      || name.contains("x_shared") || name.contains("x_moe_w1")
+                      || name.contains("c_w1") || name.contains("x_moe_w2") || name.contains("c_w2")
+                      || name.contains("x_linear1") || name.contains("c_linear1"))
+                  {
+                    return .continue(name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit])
+                  }
+                  return result
+                case .final(_), .fail:
+                  return result
+                }
               }
             }
           }
@@ -1226,6 +1285,15 @@ extension UNetFromNNC {
                     ((1 / scaleFactor) * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0))
                     .rawValue.toCPU()
                 })
+            }
+            if externalOnDemandPartially && name.hasSuffix("-0]")
+              && (name.contains("c_q") || name.contains("c_k") || name.contains("c_v")
+                || name.contains("x_q") || name.contains("x_k") || name.contains("x_v")
+                || name.contains("x_shared") || name.contains("x_moe_w1") || name.contains("c_w1")
+                || name.contains("x_moe_w2") || name.contains("c_w2") || name.contains("x_linear1")
+                || name.contains("c_linear1"))
+            {
+              return .continue(name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit])
             }
             return .continue(name)
           }

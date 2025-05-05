@@ -23,6 +23,7 @@ where UNet.FloatType == FloatType {
   public let isGuidanceEmbedEnabled: Bool
   public let isQuantizedModel: Bool
   public let canRunLoRASeparately: Bool
+  public let memoryCapacity: MemoryCapacity
   public let conditioning: Denoiser.Conditioning
   public let tiledDiffusion: TiledConfiguration
   public let teaCache: TeaCacheConfiguration
@@ -34,6 +35,7 @@ where UNet.FloatType == FloatType {
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
     isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
+    memoryCapacity: MemoryCapacity,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
     teaCache: TeaCacheConfiguration, discretization: Discretization
   ) {
@@ -54,6 +56,7 @@ where UNet.FloatType == FloatType {
     self.isGuidanceEmbedEnabled = isGuidanceEmbedEnabled
     self.isQuantizedModel = isQuantizedModel
     self.canRunLoRASeparately = canRunLoRASeparately
+    self.memoryCapacity = memoryCapacity
     self.conditioning = conditioning
     self.tiledDiffusion = tiledDiffusion
     self.teaCache = teaCache
@@ -268,7 +271,8 @@ extension LCMSampler: Sampler {
         newC = conditions
       }
       let _ = unet.compileModel(
-        filePath: filePath, externalOnDemand: externalOnDemand, version: version,
+        filePath: filePath, externalOnDemand: externalOnDemand, memoryCapacity: memoryCapacity,
+        version: version,
         modifier: modifier, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers,
         upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
@@ -432,6 +436,7 @@ extension LCMSampler: Sampler {
           }
           let _ = unet.compileModel(
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
+            memoryCapacity: memoryCapacity,
             version: refiner.version, modifier: modifier, qkNorm: qkNorm,
             dualAttentionLayers: dualAttentionLayers,
             upcastAttention: upcastAttention,

@@ -136,7 +136,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .eulerA, .eulerASubstep, .eulerATrailing, .eulerAAYS:
@@ -150,7 +151,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .DDIM, .dDIMTrailing:
@@ -164,7 +166,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .PLMS:
@@ -178,7 +181,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .dPMPPSDEKarras, .dPMPPSDESubstep, .dPMPPSDETrailing, .DPMPPSDEAYS:
@@ -192,7 +196,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .uniPC:
@@ -206,7 +211,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .LCM:
@@ -220,6 +226,7 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity,
           conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
       case .TCD:
@@ -233,6 +240,7 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity,
           stochasticSamplingGamma: stochasticSamplingGamma,
           conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective))
@@ -250,7 +258,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective))
     case .DPMPP2MAYS:
@@ -267,7 +276,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing))
@@ -284,7 +294,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas))
@@ -301,7 +312,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps))
@@ -317,7 +329,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing))
@@ -332,7 +345,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .eulerATrailing:
@@ -346,7 +360,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing))
@@ -364,7 +379,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing))
@@ -381,7 +397,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas))
@@ -398,7 +415,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps))
@@ -414,7 +432,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading))
@@ -429,7 +448,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing))
@@ -444,7 +464,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading))
@@ -459,7 +480,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective))
     case .dPMPPSDETrailing:
@@ -473,7 +495,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing))
@@ -491,7 +514,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing))
@@ -508,7 +532,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas))
@@ -525,7 +550,8 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
-          canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+          canRunLoRASeparately: canRunLoRASeparately,
+          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps))
@@ -541,7 +567,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .LCM:
@@ -554,7 +581,7 @@ extension LocalImageGenerator {
         injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
     case .TCD:
@@ -567,7 +594,7 @@ extension LocalImageGenerator {
         injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         stochasticSamplingGamma: stochasticSamplingGamma,
         conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective))
@@ -582,7 +609,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: false, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearManualDiscretization(
           parameterization, objective: objective, manual: manualSubsteps))
@@ -599,7 +627,8 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: false, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, conditioning: conditioning,
+        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         discretization: Denoiser.LinearManualDiscretization(
           parameterization, objective: objective, manual: manualSubsteps))
@@ -2972,7 +3001,11 @@ extension LocalImageGenerator {
     }
     let highPrecisionForAutoencoder = ModelZoo.isHighPrecisionAutoencoderForModel(file)
     let graph = DynamicGraph()
-    if externalOnDemand {
+    if externalOnDemand
+      || externalOnDemandPartially(
+        version: modelVersion, memoryCapacity: DeviceCapability.memoryCapacity,
+        externalOnDemand: externalOnDemand)
+    {
       TensorData.makeExternalData(for: ModelZoo.filePathForModelDownloaded(file), graph: graph)
       for stageModel in ModelZoo.stageModelsForModel(file) {
         TensorData.makeExternalData(
@@ -3926,7 +3959,11 @@ extension LocalImageGenerator {
     let isHighPrecisionVAEFallbackEnabled = DeviceCapability.isHighPrecisionVAEFallbackEnabled(
       scale: imageScale)
     let graph = DynamicGraph()
-    if externalOnDemand {
+    if externalOnDemand
+      || externalOnDemandPartially(
+        version: modelVersion, memoryCapacity: DeviceCapability.memoryCapacity,
+        externalOnDemand: externalOnDemand)
+    {
       TensorData.makeExternalData(for: ModelZoo.filePathForModelDownloaded(file), graph: graph)
       for stageModel in ModelZoo.stageModelsForModel(file) {
         TensorData.makeExternalData(
@@ -5189,7 +5226,11 @@ extension LocalImageGenerator {
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     let graph = DynamicGraph()
-    if externalOnDemand {
+    if externalOnDemand
+      || externalOnDemandPartially(
+        version: modelVersion, memoryCapacity: DeviceCapability.memoryCapacity,
+        externalOnDemand: externalOnDemand)
+    {
       TensorData.makeExternalData(for: ModelZoo.filePathForModelDownloaded(file), graph: graph)
       for stageModel in ModelZoo.stageModelsForModel(file) {
         TensorData.makeExternalData(
@@ -5933,7 +5974,11 @@ extension LocalImageGenerator {
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     let graph = DynamicGraph()
-    if externalOnDemand {
+    if externalOnDemand
+      || externalOnDemandPartially(
+        version: modelVersion, memoryCapacity: DeviceCapability.memoryCapacity,
+        externalOnDemand: externalOnDemand)
+    {
       TensorData.makeExternalData(for: ModelZoo.filePathForModelDownloaded(file), graph: graph)
       for stageModel in ModelZoo.stageModelsForModel(file) {
         TensorData.makeExternalData(
