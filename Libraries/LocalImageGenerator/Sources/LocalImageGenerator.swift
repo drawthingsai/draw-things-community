@@ -1104,12 +1104,14 @@ extension LocalImageGenerator {
         paddingToken: 0, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
     case .hiDreamI1:
-      let tokenizerV1 = tokenizerV1
+      var tokenizerV1 = tokenizerV1
+      tokenizerV1.textualInversions = []
       var result = tokenize(
         graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
         paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials,
         maxLength: 248, paddingLength: 248)
-      let tokenizerV2 = tokenizerXL
+      var tokenizerV2 = tokenizerXL
+      tokenizerV2.textualInversions = []
       let (
         tokens, positions, embedMask, injectedEmbeddings, _, _, _, _, _, _, _
       ) = tokenize(
