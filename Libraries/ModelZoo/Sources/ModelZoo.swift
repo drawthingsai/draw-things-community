@@ -246,7 +246,7 @@ public struct ModelZoo: DownloadZoo {
     public var note: String?
     public var teaCacheCoefficients: [Float]?
     public var remoteApiModelConfig: RemoteApiModelConfig?
-    public var framesPerSecond: Int?
+    public var framesPerSecond: Double?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -261,7 +261,7 @@ public struct ModelZoo: DownloadZoo {
       textEncoderVersion: TextEncoderVersion? = nil, guidanceEmbed: Bool? = nil,
       paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil,
       builtinLora: Bool? = nil, note: String? = nil, teaCacheCoefficients: [Float]? = nil,
-      remoteApiModelConfig: RemoteApiModelConfig? = nil, framesPerSecond: Int? = nil
+      remoteApiModelConfig: RemoteApiModelConfig? = nil, framesPerSecond: Double? = nil
     ) {
       self.name = name
       self.file = file
@@ -1479,6 +1479,22 @@ public struct ModelZoo: DownloadZoo {
   public static func guidanceEmbedForModel(_ name: String) -> Bool {
     guard let specification = specificationForModel(name) else { return false }
     return specification.guidanceEmbed ?? false
+  }
+
+  public static func framesPerSecondForModel(_ name: String) -> Double {
+    guard let specification = specificationForModel(name) else { return 30 }
+    if let framesPerSecond = specification.framesPerSecond {
+      return framesPerSecond
+    }
+    switch specification.version {
+    case .hunyuanVideo:
+      return 30
+    case .wan21_1_3b, .wan21_14b:
+      return 16
+    case .v1, .v2, .auraflow, .flux1, .hiDreamI1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
+      .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
+      return 30
+    }
   }
 
   public static func defaultScaleForModel(_ name: String?) -> UInt16 {
