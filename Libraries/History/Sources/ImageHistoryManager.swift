@@ -1200,48 +1200,71 @@ public final class ImageHistoryManager {
       let moodboardDataDeletionRequests = moodboardData.compactMap {
         TensorMoodboardDataChangeRequest.deletionRequest($0)
       }
-      let affectedImageHistories: FetchedResult<TensorHistoryNode>
-      let affectedImageData: FetchedResult<TensorData>
-      let affectedMoodboardData: FetchedResult<TensorMoodboardData>
+      var affectedImageHistories: [TensorHistoryNode]
+      var affectedImageData: [TensorData]
+      var affectedMoodboardData: [TensorMoodboardData]
       // Now need to fix up history from this and up. If this is the only one at this time with max lineage.
       if let maxLineageImageHistory = project.fetch(for: TensorHistoryNode.self).where(
         TensorHistoryNode.logicalTime == imageHistoryLogicalTime,
         limit: .limit(1), orderBy: [TensorHistoryNode.lineage.descending]
       ).first {
         if maxLineageImageHistory.lineage > imageHistoryLineage {
-          affectedImageHistories = project.fetch(for: TensorHistoryNode.self).where(
-            TensorHistoryNode.logicalTime > imageHistoryLogicalTime
-              && TensorHistoryNode.lineage >= imageHistoryLineage
-              && TensorHistoryNode.lineage < maxLineageImageHistory.lineage)
-          affectedImageData = project.fetch(for: TensorData.self).where(
-            TensorData.logicalTime > imageHistoryLogicalTime
-              && TensorData.lineage >= imageHistoryLineage
-              && TensorData.lineage < maxLineageImageHistory.lineage)
-          affectedMoodboardData = project.fetch(for: TensorMoodboardData.self).where(
-            TensorMoodboardData.logicalTime > imageHistoryLogicalTime
-              && TensorMoodboardData.lineage >= imageHistoryLineage
-              && TensorMoodboardData.lineage < maxLineageImageHistory.lineage)
+          affectedImageHistories = Array(
+            project.fetch(for: TensorHistoryNode.self).where(
+              TensorHistoryNode.logicalTime >= imageHistoryLogicalTime
+                && TensorHistoryNode.lineage >= imageHistoryLineage
+                && TensorHistoryNode.lineage < maxLineageImageHistory.lineage))
+          affectedImageData = Array(
+            project.fetch(for: TensorData.self).where(
+              TensorData.logicalTime > imageHistoryLogicalTime
+                && TensorData.lineage >= imageHistoryLineage
+                && TensorData.lineage < maxLineageImageHistory.lineage))
+          affectedMoodboardData = Array(
+            project.fetch(for: TensorMoodboardData.self).where(
+              TensorMoodboardData.logicalTime > imageHistoryLogicalTime
+                && TensorMoodboardData.lineage >= imageHistoryLineage
+                && TensorMoodboardData.lineage < maxLineageImageHistory.lineage))
         } else {
-          affectedImageHistories = project.fetch(for: TensorHistoryNode.self).where(
-            TensorHistoryNode.logicalTime > imageHistoryLogicalTime
-              && TensorHistoryNode.lineage >= imageHistoryLineage)
-          affectedImageData = project.fetch(for: TensorData.self).where(
-            TensorData.logicalTime > imageHistoryLogicalTime
-              && TensorData.lineage >= imageHistoryLineage)
-          affectedMoodboardData = project.fetch(for: TensorMoodboardData.self).where(
-            TensorMoodboardData.logicalTime > imageHistoryLogicalTime
-              && TensorMoodboardData.lineage >= imageHistoryLineage)
+          affectedImageHistories = Array(
+            project.fetch(for: TensorHistoryNode.self).where(
+              TensorHistoryNode.logicalTime >= imageHistoryLogicalTime
+                && TensorHistoryNode.lineage >= imageHistoryLineage))
+          affectedImageData = Array(
+            project.fetch(for: TensorData.self).where(
+              TensorData.logicalTime > imageHistoryLogicalTime
+                && TensorData.lineage >= imageHistoryLineage))
+          affectedMoodboardData = Array(
+            project.fetch(for: TensorMoodboardData.self).where(
+              TensorMoodboardData.logicalTime > imageHistoryLogicalTime
+                && TensorMoodboardData.lineage >= imageHistoryLineage))
         }
       } else {
-        affectedImageHistories = project.fetch(for: TensorHistoryNode.self).where(
-          TensorHistoryNode.logicalTime > imageHistoryLogicalTime
-            && TensorHistoryNode.lineage >= imageHistoryLineage)
-        affectedImageData = project.fetch(for: TensorData.self).where(
-          TensorData.logicalTime > imageHistoryLogicalTime
-            && TensorData.lineage >= imageHistoryLineage)
-        affectedMoodboardData = project.fetch(for: TensorMoodboardData.self).where(
-          TensorMoodboardData.logicalTime > imageHistoryLogicalTime
-            && TensorMoodboardData.lineage >= imageHistoryLineage)
+        affectedImageHistories = Array(
+          project.fetch(for: TensorHistoryNode.self).where(
+            TensorHistoryNode.logicalTime >= imageHistoryLogicalTime
+              && TensorHistoryNode.lineage >= imageHistoryLineage))
+        affectedImageData = Array(
+          project.fetch(for: TensorData.self).where(
+            TensorData.logicalTime > imageHistoryLogicalTime
+              && TensorData.lineage >= imageHistoryLineage))
+        affectedMoodboardData = Array(
+          project.fetch(for: TensorMoodboardData.self).where(
+            TensorMoodboardData.logicalTime > imageHistoryLogicalTime
+              && TensorMoodboardData.lineage >= imageHistoryLineage))
+      }
+      // Remove the ones with logicalTime == imageHistoryLogicalTime from affectedImageHistories.
+      // Then mark these have different imageHistoryLineage as unrelated.
+      let unrelatedLineage = Set<Int64>(
+        affectedImageHistories.compactMap {
+          return $0.logicalTime == imageHistoryLogicalTime && $0.lineage != imageHistoryLineage
+            ? $0.lineage : nil
+        })
+      affectedImageHistories = affectedImageHistories.filter {
+        $0.logicalTime != imageHistoryLogicalTime && !unrelatedLineage.contains($0.lineage)
+      }
+      affectedImageData = affectedImageData.filter { !unrelatedLineage.contains($0.lineage) }
+      affectedMoodboardData = affectedMoodboardData.filter {
+        !unrelatedLineage.contains($0.lineage)
       }
       for imageHistory in affectedImageHistories {
         if imageHistory.lineage == oldLineage && imageHistory.logicalTime == oldLogicalTime {
