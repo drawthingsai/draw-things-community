@@ -190,6 +190,27 @@ public struct DeviceCapability {
     }
     return .low
   }()
+  public static var maxTotalWeightsCacheSize: Int = {
+    let physicalMemory = ProcessInfo.processInfo.physicalMemory
+    // This is 47 * 1024 * 1024 * 1024
+    guard physicalMemory >= 50_465_865_728 else {
+      return 0
+    }
+    // Make it half and rounded it to multiple of 8.
+    let residualMemory = physicalMemory / 1_024 / 1_024 / 1_024 / 2 / 8
+    return Int(residualMemory * 8_589_934_592)
+  }()
+  public static let isUMA: Bool = {
+    #if canImport(Metal)
+      #if arch(i386) || arch(x86_64)
+        return false
+      #else
+        return true
+      #endif
+    #else
+      return false
+    #endif
+  }()
   public static let RealESRGANerTileSize: Int = {  // Metal have problem to upscale to 2048x2048, hence doing this for 1024x1024 on Metal. CUDA doesn't have this issue and will benefit from larger tiles.
     #if canImport(Metal)
       return 256

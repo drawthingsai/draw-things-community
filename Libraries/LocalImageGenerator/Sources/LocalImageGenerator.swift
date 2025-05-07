@@ -60,7 +60,9 @@ public struct LocalImageGenerator: ImageGenerator {
     self.tokenizerChatGLM3 = tokenizerChatGLM3
     self.tokenizerLlama3 = tokenizerLlama3
     self.tokenizerUMT5 = tokenizerUMT5
-    weightsCache = WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA)
+    weightsCache = WeightsCache(
+      maxTotalCacheSize: DeviceCapability.maxTotalWeightsCacheSize,
+      memorySubsystem: DeviceCapability.isUMA ? .UMA : .dGPU)
     modelPreloader = ModelPreloader(
       queue: queue, weightsCache: weightsCache, configurations: configurations, workspace: workspace
     )
@@ -3096,7 +3098,8 @@ extension LocalImageGenerator {
         isCfgEnabled: isCfgEnabled,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
-        externalOnDemand: textEncoderExternalOnDemand, weightsCache: weightsCache,
+        externalOnDemand: textEncoderExternalOnDemand,
+        memoryCapacity: DeviceCapability.memoryCapacity, weightsCache: weightsCache,
         maxLength: tokenLength, clipSkip: clipSkip, lora: lora)
       let image = image.map {
         downscaleImageAndToGPU(graph.variable($0), scaleFactor: imageScaleFactor)
@@ -4078,7 +4081,8 @@ extension LocalImageGenerator {
         isCfgEnabled: isCfgEnabled,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
-        externalOnDemand: textEncoderExternalOnDemand, weightsCache: weightsCache,
+        externalOnDemand: textEncoderExternalOnDemand,
+        memoryCapacity: DeviceCapability.memoryCapacity, weightsCache: weightsCache,
         maxLength: tokenLength, clipSkip: clipSkip, lora: lora)
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
@@ -5338,7 +5342,8 @@ extension LocalImageGenerator {
         isCfgEnabled: isCfgEnabled,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
-        externalOnDemand: textEncoderExternalOnDemand, weightsCache: weightsCache,
+        externalOnDemand: textEncoderExternalOnDemand,
+        memoryCapacity: DeviceCapability.memoryCapacity, weightsCache: weightsCache,
         maxLength: tokenLength, clipSkip: clipSkip, lora: lora)
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
@@ -6087,7 +6092,8 @@ extension LocalImageGenerator {
         isCfgEnabled: isCfgEnabled,
         usesFlashAttention: isMFAEnabled && DeviceCapability.isMFACausalAttentionMaskSupported,
         injectEmbeddings: !injectedEmbeddings.isEmpty,
-        externalOnDemand: textEncoderExternalOnDemand, weightsCache: weightsCache,
+        externalOnDemand: textEncoderExternalOnDemand,
+        memoryCapacity: DeviceCapability.memoryCapacity, weightsCache: weightsCache,
         maxLength: tokenLength, clipSkip: clipSkip, lora: lora)
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)

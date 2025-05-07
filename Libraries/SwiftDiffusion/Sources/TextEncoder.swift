@@ -13,12 +13,13 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let clipSkip: Int
   public let lora: [LoRAConfiguration]
   public let externalOnDemand: Bool
+  public let memoryCapacity: MemoryCapacity
   private let weightsCache: WeightsCache
   public init(
     filePaths: [String], version: ModelVersion, textEncoderVersion: TextEncoderVersion?,
     isCfgEnabled: Bool, usesFlashAttention: Bool, injectEmbeddings: Bool, externalOnDemand: Bool,
-    weightsCache: WeightsCache, maxLength: Int = 77, clipSkip: Int = 1,
-    lora: [LoRAConfiguration] = []
+    memoryCapacity: MemoryCapacity, weightsCache: WeightsCache, maxLength: Int = 77,
+    clipSkip: Int = 1, lora: [LoRAConfiguration] = []
   ) {
     self.filePaths = filePaths
     self.version = version
@@ -27,6 +28,7 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.usesFlashAttention = usesFlashAttention
     self.injectEmbeddings = injectEmbeddings
     self.externalOnDemand = externalOnDemand
+    self.memoryCapacity = memoryCapacity
     self.weightsCache = weightsCache
     self.maxLength = maxLength
     self.clipSkip = clipSkip
@@ -917,13 +919,16 @@ extension TextEncoder {
     let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
     t5.compile(inputs: tokens2TensorGPU, relativePositionBucketsGPU)
     if !weightsCache.detach(filePaths[2], to: t5.parameters) {
+      // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+      let externalData: DynamicGraph.Store.Codec =
+        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
       // Move T5 to on-demand.
       TensorData.makeExternalData(for: filePaths[2], graph: graph)
       graph.openStore(
         filePaths[2], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[2])
       ) {
-        $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+        $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
       }
     }
     let c2 = t5(inputs: tokens2TensorGPU, relativePositionBucketsGPU)[0].as(
@@ -970,6 +975,9 @@ extension TextEncoder {
     let tokensTensorGPU = tokens[0].toGPU(0)
     let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
     textModel.compile(inputs: tokensTensorGPU, relativePositionBucketsGPU)
+    // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
     // Move T5 to on-demand.
     TensorData.makeExternalData(for: filePaths[0], graph: graph)
     graph.openStore(
@@ -983,7 +991,7 @@ extension TextEncoder {
           })
         LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
           store.read(
-            "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, .externalOnDemand]
+            "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
           ) {
             name, dataType, format, shape in
             return loader.concatenateLoRA(
@@ -993,7 +1001,7 @@ extension TextEncoder {
         }
       } else {
         store.read(
-          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
       }
     }
     let c = textModel(inputs: tokensTensorGPU, relativePositionBucketsGPU)[0].as(
@@ -1028,6 +1036,9 @@ extension TextEncoder {
     let attentionMaskGPU = graph.variable(attentionMask.toGPU(0))
     textModel.compile(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)
     if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+      let externalData: DynamicGraph.Store.Codec =
+        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
       // Move Pile T5 XL to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1035,7 +1046,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) { store in
         store.read(
-          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
       }
     }
     var c = textModel(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)[0].as(
@@ -1131,6 +1142,9 @@ extension TextEncoder {
     textModel.compile(
       inputs: rightAlignedTokensTensorGPU, rightAlignedRotaryEmbeddingGPU, causalAttentionMaskGPU)
     if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+      let externalData: DynamicGraph.Store.Codec =
+        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
       // Move ChatGLM3 to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1138,7 +1152,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) { store in
         store.read(
-          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
       }
     }
     let c = textModel(
@@ -1345,13 +1359,16 @@ extension TextEncoder {
     let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
     t5.compile(inputs: tokens2TensorGPU, relativePositionBucketsGPU)
     if !weightsCache.detach(filePaths[0], to: t5.parameters) {
+      // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+      let externalData: DynamicGraph.Store.Codec =
+        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
       // Move T5 to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) {
-        $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+        $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
       }
     }
     let c2 = t5(inputs: tokens2TensorGPU, relativePositionBucketsGPU)[0].as(
@@ -1586,13 +1603,16 @@ extension TextEncoder {
       inputs: [tokens2TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU]
         + (injectedTextEmbedding.flatMap { [$0] } ?? []))
     if !weightsCache.detach(filePaths[0], to: llama3.parameters) {
+      // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+      let externalData: DynamicGraph.Store.Codec =
+        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
       // Move Llama3 8B to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) {
-        $0.read("llava", model: llama3, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+        $0.read("llava", model: llama3, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
       }
     }
     let c2 = llama3(
@@ -1632,6 +1652,9 @@ extension TextEncoder {
     let attentionMaskGPU = graph.variable(attentionMask.toGPU(0))
     textModel.compile(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)
     if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+      let externalData: DynamicGraph.Store.Codec =
+        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
       // Move UMT5 XXL to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1639,7 +1662,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) { store in
         store.read(
-          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
       }
     }
     var c = textModel(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)[0].as(
@@ -1979,6 +2002,9 @@ extension TextEncoder {
         inputs: [tokens2TensorGPU, relativePositionBucketsGPU]
           + (attentionMaskGPU.map { [$0] } ?? []))
       if !weightsCache.detach(filePaths[3], to: t5.parameters) {
+        // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+        let externalData: DynamicGraph.Store.Codec =
+          externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
         // Move T5 to on-demand.
         TensorData.makeExternalData(for: filePaths[3], graph: graph)
         graph.openStore(
@@ -1986,7 +2012,7 @@ extension TextEncoder {
           externalStore: TensorData.externalStore(filePath: filePaths[3])
         ) {
           $0.read(
-            "text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+            "text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
         }
       }
       c2 = t5(
@@ -2047,6 +2073,9 @@ extension TextEncoder {
     llama3.compile(
       inputs: [tokens3TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU])
     if !weightsCache.detach(filePaths[0], to: llama3.parameters) {
+      // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+      let externalData: DynamicGraph.Store.Codec =
+        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
       // Move Llama3 8B to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -2054,7 +2083,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) {
         $0.read(
-          "text_model", model: llama3, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+          "text_model", model: llama3, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
       }
     }
     let c3 = llama3(
