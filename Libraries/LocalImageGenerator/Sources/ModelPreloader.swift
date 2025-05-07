@@ -7,6 +7,7 @@ import DiffusionUNetWrapper
 import Foundation
 import ModelZoo
 import NNC
+import WeightsCache
 
 public final class ModelPreloader {
   public enum PreloadState: Equatable {
@@ -44,6 +45,7 @@ public final class ModelPreloader {
     public private(set) var preloadState: PreloadState = .preloadDone
   #endif
   private let queue: DispatchQueue
+  private let weightsCache: WeightsCache
   private var workspace: Workspace
   private var isGenerating: Bool = false
   private var modelFile: String? = nil
@@ -118,11 +120,12 @@ public final class ModelPreloader {
   private var externalStore: Bool? = nil
   private var mergeLoRA: Int? = nil
   init(
-    queue: DispatchQueue, configurations: FetchedResult<GenerationConfiguration>,
-    workspace: Workspace
+    queue: DispatchQueue, weightsCache: WeightsCache,
+    configurations: FetchedResult<GenerationConfiguration>, workspace: Workspace
   ) {
     dispatchPrecondition(condition: .onQueue(.main))
     self.queue = queue
+    self.weightsCache = weightsCache
     self.workspace = workspace
     if let configuration = configurations.first {
       modelFile = configuration.model ?? ModelZoo.defaultSpecification.file
@@ -537,7 +540,7 @@ extension ModelPreloader {
             filePath: modelPath, version: modelVersion, modifier: .none, dualAttentionLayers: [],
             usesFlashAttention: useMFA,
             zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
-            externalOnDemand: false)
+            externalOnDemand: false, weightsCache: weightsCache)
           cArr.insert(
             graph.variable(.GPU(0), .HWC(cfgChannels * batchSize, 77, 768), of: FloatType.self),
             at: 0)
@@ -580,7 +583,8 @@ extension ModelPreloader {
             injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
             injectedAttentionKVs: []), tiledDiffusion: tiledDiffusion,
           teaCache: TeaCacheConfiguration(
-            coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
+            coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0),
+          weightsCache: weightsCache
         )
         unetFilePath = modelPath
         unetExternalOnDemand = externalOnDemand

@@ -1,6 +1,7 @@
 import Collections
 import Foundation
 import NNC
+import WeightsCache
 
 public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePath: String
@@ -12,10 +13,11 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let isQuantizedModel: Bool
   public let canRunLoRASeparately: Bool
   public let externalOnDemand: Bool
+  private let weightsCache: WeightsCache
   public init(
     filePath: String, version: ModelVersion, modifier: SamplerModifier, dualAttentionLayers: [Int],
     usesFlashAttention: Bool, zeroNegativePrompt: Bool, isQuantizedModel: Bool,
-    canRunLoRASeparately: Bool, externalOnDemand: Bool
+    canRunLoRASeparately: Bool, externalOnDemand: Bool, weightsCache: WeightsCache
   ) {
     self.filePath = filePath
     self.version = version
@@ -26,6 +28,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.isQuantizedModel = isQuantizedModel
     self.canRunLoRASeparately = canRunLoRASeparately
     self.externalOnDemand = externalOnDemand
+    self.weightsCache = weightsCache
   }
 }
 

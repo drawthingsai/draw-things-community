@@ -6,6 +6,7 @@ import NNC
 import SFMT
 import TensorBoard
 import Tokenizer
+import WeightsCache
 
 public struct LoRATrainer {
 
@@ -2783,7 +2784,7 @@ public struct LoRATrainer {
                 filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
-                externalOnDemand: false)
+                externalOnDemand: false, weightsCache: WeightsCache(maxTotalCacheSize: 0))
               c =
                 unetFixEncoder.vector(
                   textEmbedding: pooled, originalSize: input.originalSize,
@@ -2825,7 +2826,7 @@ public struct LoRATrainer {
                 filePath: "", version: .sdxlRefiner, modifier: .none, dualAttentionLayers: [],
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
-                externalOnDemand: false)
+                externalOnDemand: false, weightsCache: WeightsCache(maxTotalCacheSize: 0))
               c =
                 unetFixEncoder.vector(
                   textEmbedding: pooled, originalSize: input.originalSize,
@@ -2859,7 +2860,7 @@ public struct LoRATrainer {
                   filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
                   usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
-                  externalOnDemand: false)
+                  externalOnDemand: false, weightsCache: WeightsCache(maxTotalCacheSize: 0))
                 c =
                   unetFixEncoder.vector(
                     textEmbedding: graph.variable(Tensor<FloatType>(from: pooled).toGPU(0)),
@@ -2880,7 +2881,7 @@ public struct LoRATrainer {
                   filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
                   usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
-                  externalOnDemand: false)
+                  externalOnDemand: false, weightsCache: WeightsCache(maxTotalCacheSize: 0))
                 c =
                   unetFixEncoder.vector(
                     textEmbedding: graph.variable(Tensor<FloatType>(from: pooled).toGPU(0)),
@@ -2905,7 +2906,7 @@ public struct LoRATrainer {
                 filePath: "", version: .sdxlRefiner, modifier: .none, dualAttentionLayers: [],
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
-                externalOnDemand: false)
+                externalOnDemand: false, weightsCache: WeightsCache(maxTotalCacheSize: 0))
               c =
                 unetFixEncoder.vector(
                   textEmbedding: graph.variable(Tensor<FloatType>(from: pooled).toGPU(0)),

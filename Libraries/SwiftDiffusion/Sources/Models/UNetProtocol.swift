@@ -1,6 +1,7 @@
 import Atomics
 import Collections
 import NNC
+import WeightsCache
 
 public struct InjectedControlsAndAdapters<FloatType: TensorNumeric & BinaryFloatingPoint> {
   var injectedControls: [DynamicGraph.Tensor<FloatType>]
@@ -55,7 +56,7 @@ public protocol UNetProtocol {
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
-    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration
+    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration, weightsCache: WeightsCache
   ) -> Bool
 
   func callAsFunction(
@@ -368,7 +369,8 @@ extension UNetFromNNC {
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
-    tiledDiffusion: TiledConfiguration, teaCache teaCacheConfiguration: TeaCacheConfiguration
+    tiledDiffusion: TiledConfiguration, teaCache teaCacheConfiguration: TeaCacheConfiguration,
+    weightsCache: WeightsCache
   ) -> Bool {
     guard unet == nil else { return true }
     isCancelled.store(false, ordering: .releasing)

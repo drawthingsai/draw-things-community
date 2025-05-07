@@ -9,7 +9,7 @@ public final class WeightsCache {
   }
   private var heap: Heap<Item>
   private var map: [String: Item]
-  private let maxTotalCacheSize: Int  // Maximum number of items in the cache
+  public let maxTotalCacheSize: Int  // Maximum number of items in the cache
   private var currentTotalSize: Int  // Optional: if you also have a total size limit
 
   public init(maxTotalCacheSize: Int) {

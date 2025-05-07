@@ -1,6 +1,7 @@
 import Dflat
 import Diffusion
 import NNC
+import WeightsCache
 
 #if !os(Linux)
   import DiffusionCoreML
@@ -57,7 +58,8 @@ extension UNetWrapper {
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
-    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration
+    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
+    weightsCache: WeightsCache
   ) -> Bool {
     #if !os(Linux)
 
@@ -73,7 +75,7 @@ extension UNetWrapper {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
         extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache)
       {
         preferCoreML = true
         return true
@@ -90,7 +92,7 @@ extension UNetWrapper {
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       isCfgEnabled: isCfgEnabled,
       extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
-      tiledDiffusion: tiledDiffusion, teaCache: teaCache)
+      tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache)
     return true
   }
 

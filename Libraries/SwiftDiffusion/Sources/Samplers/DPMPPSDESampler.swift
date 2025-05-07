@@ -1,5 +1,6 @@
 import Foundation
 import NNC
+import WeightsCache
 
 public struct DPMPPSDESampler<
   FloatType: TensorNumeric & BinaryFloatingPoint, UNet: UNetProtocol,
@@ -29,6 +30,7 @@ where UNet.FloatType == FloatType {
   public let tiledDiffusion: TiledConfiguration
   public let teaCache: TeaCacheConfiguration
   private let discretization: Discretization
+  private let weightsCache: WeightsCache
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
     dualAttentionLayers: [Int], usesFlashAttention: Bool,
@@ -38,7 +40,8 @@ where UNet.FloatType == FloatType {
     classifierFreeGuidance: Bool, isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool,
     canRunLoRASeparately: Bool, memoryCapacity: MemoryCapacity,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
-    teaCache: TeaCacheConfiguration, discretization: Discretization
+    teaCache: TeaCacheConfiguration, discretization: Discretization,
+    weightsCache: WeightsCache
   ) {
     self.filePath = filePath
     self.modifier = modifier
@@ -63,6 +66,8 @@ where UNet.FloatType == FloatType {
     self.tiledDiffusion = tiledDiffusion
     self.teaCache = teaCache
     self.discretization = discretization
+
+    self.weightsCache = weightsCache
   }
 }
 
@@ -150,7 +155,8 @@ extension DPMPPSDESampler: Sampler {
       dualAttentionLayers: dualAttentionLayers,
       usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
-      canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand)
+      canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand,
+      weightsCache: weightsCache)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     let sigmas = alphasCumprod.map { discretization.sigma(from: $0) }
@@ -258,7 +264,7 @@ extension DPMPPSDESampler: Sampler {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
         injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache)
     }
     let noise = graph.variable(
       .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels), of: FloatType.self)
@@ -367,7 +373,7 @@ extension DPMPPSDESampler: Sampler {
             modifier: modifier, dualAttentionLayers: dualAttentionLayers,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
             isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
-            externalOnDemand: externalOnDemand)
+            externalOnDemand: externalOnDemand, weightsCache: weightsCache)
           if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
             let vector = fixedEncoder.vector(
               textEmbedding: oldC[oldC.count - 1], originalSize: originalSize,
@@ -429,7 +435,7 @@ extension DPMPPSDESampler: Sampler {
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-            tiledDiffusion: tiledDiffusion, teaCache: teaCache)
+            tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache)
           refinerKickIn = -1
           unets.append(unet)
         }

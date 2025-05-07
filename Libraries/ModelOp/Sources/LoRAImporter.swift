@@ -3,6 +3,7 @@ import Fickling
 import Foundation
 import ModelZoo
 import NNC
+import WeightsCache
 import ZIPFoundation
 
 public enum LoRAImporter {
@@ -294,8 +295,8 @@ public enum LoRAImporter {
       let fixedEncoder = UNetFixedEncoder<FloatType>(
         filePath: "", version: version, modifier: .none, dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: false, zeroNegativePrompt: false, isQuantizedModel: false,
-        canRunLoRASeparately: false,
-        externalOnDemand: false)
+        canRunLoRASeparately: false, externalOnDemand: false,
+        weightsCache: WeightsCache(maxTotalCacheSize: 0))
       for c in cArr {
         c.full(0)
       }

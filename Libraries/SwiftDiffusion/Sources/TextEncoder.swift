@@ -1,5 +1,6 @@
 import Collections
 import NNC
+import WeightsCache
 
 public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePaths: [String]
@@ -12,10 +13,12 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let clipSkip: Int
   public let lora: [LoRAConfiguration]
   public let externalOnDemand: Bool
+  private let weightsCache: WeightsCache
   public init(
     filePaths: [String], version: ModelVersion, textEncoderVersion: TextEncoderVersion?,
     isCfgEnabled: Bool, usesFlashAttention: Bool, injectEmbeddings: Bool, externalOnDemand: Bool,
-    maxLength: Int = 77, clipSkip: Int = 1, lora: [LoRAConfiguration] = []
+    weightsCache: WeightsCache, maxLength: Int = 77, clipSkip: Int = 1,
+    lora: [LoRAConfiguration] = []
   ) {
     self.filePaths = filePaths
     self.version = version
@@ -24,6 +27,7 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.usesFlashAttention = usesFlashAttention
     self.injectEmbeddings = injectEmbeddings
     self.externalOnDemand = externalOnDemand
+    self.weightsCache = weightsCache
     self.maxLength = maxLength
     self.clipSkip = clipSkip
     self.lora = lora.filter { $0.version == version }

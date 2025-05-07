@@ -4,6 +4,7 @@ import Fickling
 import Foundation
 import ModelZoo
 import NNC
+import WeightsCache
 import ZIPFoundation
 
 public final class ModelImporter {
@@ -619,7 +620,8 @@ public final class ModelImporter {
           filePath: "", version: modelVersion, modifier: .none,
           dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: false, zeroNegativePrompt: false,
-          isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false)
+          isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false,
+          weightsCache: WeightsCache(maxTotalCacheSize: 0))
         cArr.insert(
           graph.variable(.CPU, .HWC(batchSize, 77, 768), of: FloatType.self),
           at: 0)
