@@ -38,6 +38,7 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         "//Libraries/Tokenizer",
+        "//Libraries/WeightsCache",
         "//Vendors/ZIPFoundation",
         "@SwiftNumerics//:Numerics",
         "@ccv//lib:ccv",

@@ -27,6 +27,7 @@ Libraries/ModelZoo
 Libraries/SFMT
 Libraries/Scripting
 Libraries/SwiftDiffusion
+Libraries/WeightsCache
 Libraries/Tokenizer
 Libraries/Trainer
 Libraries/Upscaler
