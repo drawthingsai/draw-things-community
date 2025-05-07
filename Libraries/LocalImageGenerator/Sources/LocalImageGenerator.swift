@@ -60,7 +60,7 @@ public struct LocalImageGenerator: ImageGenerator {
     self.tokenizerChatGLM3 = tokenizerChatGLM3
     self.tokenizerLlama3 = tokenizerLlama3
     self.tokenizerUMT5 = tokenizerUMT5
-    weightsCache = WeightsCache(maxTotalCacheSize: 0)
+    weightsCache = WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA)
     modelPreloader = ModelPreloader(
       queue: queue, weightsCache: weightsCache, configurations: configurations, workspace: workspace
     )

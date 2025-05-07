@@ -2,6 +2,10 @@ import Collections
 import NNC
 
 public final class WeightsCache {
+  public enum MemorySubsystem {
+    case dGPU
+    case UMA
+  }
   struct Item: Comparable {
     var file: String
     var weights: [(key: String, value: AnyTensor)]
@@ -10,10 +14,12 @@ public final class WeightsCache {
   private var heap: Heap<Item>
   private var map: [String: Item]
   public let maxTotalCacheSize: Int  // Maximum number of items in the cache
+  public let memorySubsystem: MemorySubsystem
   private var currentTotalSize: Int  // Optional: if you also have a total size limit
 
-  public init(maxTotalCacheSize: Int) {
+  public init(maxTotalCacheSize: Int, memorySubsystem: MemorySubsystem) {
     self.maxTotalCacheSize = maxTotalCacheSize
+    self.memorySubsystem = memorySubsystem
     heap = Heap<Item>()
     map = [:]
     currentTotalSize = 0  // Initialize if tracking total size
@@ -105,16 +111,30 @@ extension WeightsCache.Item {
 
 extension WeightsCache {
   public func detach(_ file: String, to parameters: @autoclosure () -> Model.Parameters) -> Bool {
-    guard let weights = remove(at: file)?.weights else { return false }
-    let parameters = parameters()
-    // Note this can branch between CPU / GPU machines.
-    parameters.attach(consuming: weights)
+    switch memorySubsystem {
+    case .UMA:
+      guard let weights = remove(at: file)?.weights else { return false }
+      let parameters = parameters()
+      parameters.attach(consuming: weights)
+    case .dGPU:
+      guard let weights = self[file]?.weights else { return false }
+      let parameters = parameters()
+      parameters.attach(from: weights)
+    }
     return true
   }
 
   public func attach(_ file: String, from parameters: @autoclosure () -> Model.Parameters) {
     guard maxTotalCacheSize > 0 else { return }
-    let parameters = parameters()
-    self[file] = (size: Int(parameters.size), weights: parameters.detach(.GPU(0)))
+    switch memorySubsystem {
+    case .UMA:
+      let parameters = parameters()
+      self[file] = (size: Int(parameters.size), weights: parameters.detach(.GPU(0)))
+    case .dGPU:
+      guard self[file] == nil else { return }  // If already exists, nothing to attach.
+      let parameters = parameters()
+      // Otherwise copy to CPU.
+      self[file] = (size: Int(parameters.size), weights: parameters.detach(.CPU))
+    }
   }
 }
