@@ -27,10 +27,10 @@ public final class WeightsCache {
     set {
       guard let newValue = newValue else {
         if let index = map.index(forKey: file) {
-          let item = map.remove(at: index)
+          let item = map.remove(at: index).value
           // If this exists, now loop through heap to remove.
           heap = Heap(map.values)
-          currentTotalSize -= item.value.size
+          currentTotalSize -= item.size
         }
         return
       }
@@ -50,6 +50,14 @@ public final class WeightsCache {
       map[file] = item
       heap.insert(item)
     }
+  }
+
+  public func remove(at file: String) -> (size: Int, weights: [(key: String, value: AnyTensor)])? {
+    guard let index = map.index(forKey: file) else { return nil }
+    let item = map.remove(at: index).value
+    heap = Heap(map.values)
+    currentTotalSize -= item.size
+    return (size: item.size, weights: item.weights)
   }
 
   public func removeAll() {
@@ -92,5 +100,21 @@ extension WeightsCache.Item {
   // Conformance to Equatable (required by Comparable)
   static func == (lhs: WeightsCache.Item, rhs: WeightsCache.Item) -> Bool {
     return lhs.file == rhs.file && lhs.size == rhs.size
+  }
+}
+
+extension WeightsCache {
+  public func detach(_ file: String, to parameters: @autoclosure () -> Model.Parameters) -> Bool {
+    guard let weights = remove(at: file)?.weights else { return false }
+    let parameters = parameters()
+    // Note this can branch between CPU / GPU machines.
+    parameters.attach(consuming: weights)
+    return true
+  }
+
+  public func attach(_ file: String, from parameters: @autoclosure () -> Model.Parameters) {
+    guard maxTotalCacheSize > 0 else { return }
+    let parameters = parameters()
+    self[file] = (size: Int(parameters.size), weights: parameters.detach(.GPU(0)))
   }
 }

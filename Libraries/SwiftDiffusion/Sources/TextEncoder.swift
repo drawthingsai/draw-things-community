@@ -916,17 +916,20 @@ extension TextEncoder {
     let tokens2TensorGPU = tokens[2].toGPU(0)
     let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
     t5.compile(inputs: tokens2TensorGPU, relativePositionBucketsGPU)
-    // Move T5 to on-demand.
-    TensorData.makeExternalData(for: filePaths[2], graph: graph)
-    graph.openStore(
-      filePaths[2], flags: .readOnly,
-      externalStore: TensorData.externalStore(filePath: filePaths[2])
-    ) {
-      $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    if !weightsCache.detach(filePaths[2], to: t5.parameters) {
+      // Move T5 to on-demand.
+      TensorData.makeExternalData(for: filePaths[2], graph: graph)
+      graph.openStore(
+        filePaths[2], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[2])
+      ) {
+        $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+      }
     }
     let c2 = t5(inputs: tokens2TensorGPU, relativePositionBucketsGPU)[0].as(
       of: FloatType.self
     ).reshaped(.HWC(2, tokenLength, 4096))
+    weightsCache.attach(filePaths[2], from: t5.parameters)
     return ([c0, c1, c2, pooled], [textModel])
   }
 
@@ -1024,18 +1027,21 @@ extension TextEncoder {
     let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
     let attentionMaskGPU = graph.variable(attentionMask.toGPU(0))
     textModel.compile(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)
-    // Move Pile T5 XL to on-demand.
-    TensorData.makeExternalData(for: filePaths[0], graph: graph)
-    graph.openStore(
-      filePaths[0], flags: .readOnly,
-      externalStore: TensorData.externalStore(filePath: filePaths[0])
-    ) { store in
-      store.read(
-        "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      // Move Pile T5 XL to on-demand.
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        store.read(
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+      }
     }
     var c = textModel(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)[0].as(
       of: FloatType.self
     ).reshaped(.HWC(2, tokenLength, 2048))
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
     var encoderMask = Tensor<FloatType>(.CPU, .HWC(2, tokenLength, 1))
     for i in 0..<tokenLength {
       encoderMask[0, i, 0] = i < lengthOfUncond + 1 ? 1 : 0
@@ -1124,14 +1130,16 @@ extension TextEncoder {
     let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
     textModel.compile(
       inputs: rightAlignedTokensTensorGPU, rightAlignedRotaryEmbeddingGPU, causalAttentionMaskGPU)
-    // Move ChatGLM3 to on-demand.
-    TensorData.makeExternalData(for: filePaths[0], graph: graph)
-    graph.openStore(
-      filePaths[0], flags: .readOnly,
-      externalStore: TensorData.externalStore(filePath: filePaths[0])
-    ) { store in
-      store.read(
-        "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      // Move ChatGLM3 to on-demand.
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        store.read(
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+      }
     }
     let c = textModel(
       inputs: rightAlignedTokensTensorGPU, rightAlignedRotaryEmbeddingGPU, causalAttentionMaskGPU
@@ -1140,6 +1148,7 @@ extension TextEncoder {
         of: FloatType.self
       )
     }
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
     var pooled = graph.variable(.GPU(0), .WC(2, 4096), of: FloatType.self)
     pooled[0..<1, 0..<4096] = c[1][(tokenLength - 1)..<tokenLength, 0..<4096]
     pooled[1..<2, 0..<4096] = c[1][(tokenLength * 2 - 1)..<(tokenLength * 2), 0..<4096]
@@ -1335,17 +1344,20 @@ extension TextEncoder {
     }
     let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
     t5.compile(inputs: tokens2TensorGPU, relativePositionBucketsGPU)
-    // Move T5 to on-demand.
-    TensorData.makeExternalData(for: filePaths[0], graph: graph)
-    graph.openStore(
-      filePaths[0], flags: .readOnly,
-      externalStore: TensorData.externalStore(filePath: filePaths[0])
-    ) {
-      $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    if !weightsCache.detach(filePaths[0], to: t5.parameters) {
+      // Move T5 to on-demand.
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) {
+        $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+      }
     }
     let c2 = t5(inputs: tokens2TensorGPU, relativePositionBucketsGPU)[0].as(
       of: FloatType.self
     ).reshaped(.HWC(batchSize, tokenLength, 4096))
+    weightsCache.attach(filePaths[0], from: t5.parameters)
     return ([c2, pooled], [textModel])
   }
 
@@ -1573,13 +1585,15 @@ extension TextEncoder {
     llama3.compile(
       inputs: [tokens2TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU]
         + (injectedTextEmbedding.flatMap { [$0] } ?? []))
-    // Move Llama3 8B to on-demand.
-    TensorData.makeExternalData(for: filePaths[0], graph: graph)
-    graph.openStore(
-      filePaths[0], flags: .readOnly,
-      externalStore: TensorData.externalStore(filePath: filePaths[0])
-    ) {
-      $0.read("llava", model: llama3, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    if !weightsCache.detach(filePaths[0], to: llama3.parameters) {
+      // Move Llama3 8B to on-demand.
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) {
+        $0.read("llava", model: llama3, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+      }
     }
     let c2 = llama3(
       inputs: tokens2TensorGPU,
@@ -1589,6 +1603,7 @@ extension TextEncoder {
       ).reshaped(.HWC(batchSize, additionalTokenLength, 4096))[
         0..<batchSize, 95..<additionalTokenLength, 0..<4096
       ].copied()
+    weightsCache.attach(filePaths[0], from: llama3.parameters)
     return ([c2, pooled], [textModel])
   }
 
@@ -1616,18 +1631,21 @@ extension TextEncoder {
     let relativePositionBucketsGPU = graph.variable(relativePositionBuckets.toGPU(0))
     let attentionMaskGPU = graph.variable(attentionMask.toGPU(0))
     textModel.compile(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)
-    // Move UMT5 XXL to on-demand.
-    TensorData.makeExternalData(for: filePaths[0], graph: graph)
-    graph.openStore(
-      filePaths[0], flags: .readOnly,
-      externalStore: TensorData.externalStore(filePath: filePaths[0])
-    ) { store in
-      store.read(
-        "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      // Move UMT5 XXL to on-demand.
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        store.read(
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+      }
     }
     var c = textModel(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)[0].as(
       of: FloatType.self
     ).reshaped(.HWC(2, tokenLength, 4096))
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
     var encoderMask = Tensor<FloatType>(.CPU, .HWC(2, tokenLength, 1))
     for i in 0..<tokenLength {
       encoderMask[0, i, 0] = i < tokenLengthUncond ? 1 : 0
@@ -1960,19 +1978,23 @@ extension TextEncoder {
       t5.compile(
         inputs: [tokens2TensorGPU, relativePositionBucketsGPU]
           + (attentionMaskGPU.map { [$0] } ?? []))
-      // Move T5 to on-demand.
-      TensorData.makeExternalData(for: filePaths[3], graph: graph)
-      graph.openStore(
-        filePaths[3], flags: .readOnly,
-        externalStore: TensorData.externalStore(filePath: filePaths[3])
-      ) {
-        $0.read("text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+      if !weightsCache.detach(filePaths[3], to: t5.parameters) {
+        // Move T5 to on-demand.
+        TensorData.makeExternalData(for: filePaths[3], graph: graph)
+        graph.openStore(
+          filePaths[3], flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: filePaths[3])
+        ) {
+          $0.read(
+            "text_model", model: t5, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+        }
       }
       c2 = t5(
         inputs: tokens2TensorGPU,
         [relativePositionBucketsGPU] + (attentionMaskGPU.map { [$0] } ?? []))[0].as(
           of: FloatType.self
         ).reshaped(.HWC(batchSize, tokenLength, 4096))
+      weightsCache.attach(filePaths[3], from: t5.parameters)
     } else {
       let tokenLength = tokens[2].shape[0] / 2
       c2 = graph.variable(.GPU(0), .HWC(batchSize, tokenLength, 4096))
@@ -2024,14 +2046,16 @@ extension TextEncoder {
     let causalAttentionMaskLlama3GPU = graph.variable(causalAttentionMaskLlama3.toGPU(0))
     llama3.compile(
       inputs: [tokens3TensorGPU, rotaryTensorGPU, causalAttentionMaskLlama3GPU])
-    // Move Llama3 8B to on-demand.
-    TensorData.makeExternalData(for: filePaths[0], graph: graph)
-    graph.openStore(
-      filePaths[0], flags: .readOnly,
-      externalStore: TensorData.externalStore(filePath: filePaths[0])
-    ) {
-      $0.read(
-        "text_model", model: llama3, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+    if !weightsCache.detach(filePaths[0], to: llama3.parameters) {
+      // Move Llama3 8B to on-demand.
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) {
+        $0.read(
+          "text_model", model: llama3, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalOnDemand])
+      }
     }
     let c3 = llama3(
       inputs: tokens3TensorGPU,
@@ -2041,6 +2065,7 @@ extension TextEncoder {
         of: FloatType.self
       ).reshaped(.HWC(batchSize, tokenLength, 4096))
     }
+    weightsCache.attach(filePaths[0], from: llama3.parameters)
     return ([pooled, c2] + c3, [])
   }
 
