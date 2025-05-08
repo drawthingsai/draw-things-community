@@ -1030,7 +1030,8 @@ extension UNetFromNNC {
         HiDream(
           batchSize: 1, height: tiledHeight,
           width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
-          textLength: (t5Length, llama3Length), layers: (16, 32)
+          textLength: (t5Length, llama3Length), layers: (16, 32),
+          usesFlashAttention: usesFlashAttention
         ).0)
     }
     // Need to assign version now such that sliceInputs will have the correct version.

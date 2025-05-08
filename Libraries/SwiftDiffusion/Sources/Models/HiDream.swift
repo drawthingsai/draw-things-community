@@ -143,7 +143,7 @@ private func MoEFeedForward(
 
 private func JointTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, contextBlockPreOnly: Bool,
-  upcast: Bool
+  upcast: Bool, usesFlashAttention: Bool
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -177,7 +177,7 @@ private func JointTransformerBlock(
   xQ = normQ(xQ).reshaped([b, hw, h, k])
   let xV = xToValues(xOut).reshaped([b, hw, h, k])
   var keys = Functional.concat(axis: 1, xK, contextK)
-  let values = Functional.concat(axis: 1, xV, contextV)
+  var values = Functional.concat(axis: 1, xV, contextV)
   var queries = Functional.concat(axis: 1, xQ, contextQ)
   // Reshape queries because llama3 encoder doesn't participate query, just serve as kv.
   queries =
@@ -187,9 +187,36 @@ private func JointTransformerBlock(
     ).contiguous()
   keys = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: keys, right: rot)
   // Now run attention.
-  let out = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
-    queries, keys, values
-  ).reshaped([b, t.0 + hw, h * k])
+  let out: Model.IO
+  if usesFlashAttention {
+    out = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+      queries, keys, values
+    ).reshaped([b, t.0 + hw, h * k])
+  } else {
+    keys = keys.transposed(1, 2)
+    queries = queries.transposed(1, 2)
+    values = values.transposed(1, 2)
+    var outs = [Model.IO]()
+    for i in 0..<(b * h) {
+      let key = keys.reshaped(
+        [1, t.1 + hw, k], offset: [i, 0, 0], strides: [(t.1 + hw) * k, k, 1])
+      let query = queries.reshaped(
+        [1, t.0 + hw, k], offset: [i, 0, 0], strides: [(t.0 + hw) * k, k, 1])
+      let value = values.reshaped(
+        [1, t.1 + hw, k], offset: [i, 0, 0], strides: [(t.1 + hw) * k, k, 1])
+      var dot = Matmul(transposeB: (1, 2))(query, key)
+      if let last = outs.last {
+        dot.add(dependencies: [last])
+      }
+      dot = dot.reshaped([t.0 + hw, t.1 + hw])
+      dot = dot.softmax()
+      dot = dot.reshaped([1, t.0 + hw, t.1 + hw])
+      outs.append(dot * value)
+    }
+    out = Concat(axis: 0)(outs).reshaped([b, h, t.0 + hw, k]).transposed(1, 2).reshaped([
+      b, t.0 + hw, h * k,
+    ])
+  }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
     contextOut = out.reshaped(
@@ -296,7 +323,7 @@ private func JointTransformerBlock(
 
 private func SingleTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, contextBlockPreOnly: Bool,
-  upcast: Bool
+  upcast: Bool, usesFlashAttention: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
@@ -312,7 +339,7 @@ private func SingleTransformerBlock(
   var xQ = xToQueries(xOut)
   let normQ = RMSNorm(epsilon: 1e-5, axis: [2], name: "x_norm_q")
   xQ = normQ(xQ).reshaped([b, hw + t.1, h, k])
-  let xV = xToValues(xOut).reshaped([b, hw + t.1, h, k])
+  var xV = xToValues(xOut).reshaped([b, hw + t.1, h, k])
   // Reshape queries because llama3 encoder doesn't participate query, just serve as kv.
   let xLength = contextBlockPreOnly ? hw : hw + t.0
   xQ =
@@ -322,9 +349,34 @@ private func SingleTransformerBlock(
     ).contiguous()
   xK = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xK, right: rot)
   // Now run attention.
-  xOut = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
-    xQ, xK, xV
-  ).reshaped([b, xLength, h * k])
+  if usesFlashAttention {
+    xOut = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+      xQ, xK, xV
+    ).reshaped([b, xLength, h * k])
+  } else {
+    xK = xK.transposed(1, 2)
+    xQ = xQ.transposed(1, 2)
+    xV = xV.transposed(1, 2)
+    var outs = [Model.IO]()
+    for i in 0..<(b * h) {
+      let key = xK.reshaped([1, t.1 + hw, k], offset: [i, 0, 0], strides: [(t.1 + hw) * k, k, 1])
+      let query = xQ.reshaped(
+        [1, xLength, k], offset: [i, 0, 0], strides: [xLength * k, k, 1])
+      let value = xV.reshaped(
+        [1, t.1 + hw, k], offset: [i, 0, 0], strides: [(t.1 + hw) * k, k, 1])
+      var dot = Matmul(transposeB: (1, 2))(query, key)
+      if let last = outs.last {
+        dot.add(dependencies: [last])
+      }
+      dot = dot.reshaped([xLength, t.1 + hw])
+      dot = dot.softmax()
+      dot = dot.reshaped([1, xLength, t.1 + hw])
+      outs.append(dot * value)
+    }
+    xOut = Concat(axis: 0)(outs).reshaped([b, h, xLength, k]).transposed(1, 2).reshaped([
+      b, xLength, h * k,
+    ])
+  }
   let xIn = x.reshaped([b, xLength, h * k], strides: [(t.1 + hw) * h * k, h * k, 1]).contiguous()
   let xUnifyheads = Dense(count: k * h, name: "x_o")
   xOut = xUnifyheads(xOut)
@@ -374,7 +426,10 @@ private func SingleTransformerBlock(
   return (mapper, Model([x, rot] + xChunks, [xOut]))
 }
 
-func HiDream(batchSize: Int, height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int))
+func HiDream(
+  batchSize: Int, height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int),
+  usesFlashAttention: Bool
+)
   -> (
     Model, ModelWeightMapper
   )
@@ -400,7 +455,7 @@ func HiDream(batchSize: Int, height: Int, width: Int, textLength: (Int, Int), la
     let (mapper, block) = JointTransformerBlock(
       prefix: "double_stream_blocks.\(i).block", k: 128, h: 20, b: batchSize,
       t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
-      contextBlockPreOnly: false, upcast: i > 12)
+      contextBlockPreOnly: false, upcast: i > 12, usesFlashAttention: usesFlashAttention)
     let blockOut = block([out, contextIn, rot] + contextChunks + xChunks)
     out = blockOut[0]
     context = blockOut[1]
@@ -415,7 +470,7 @@ func HiDream(batchSize: Int, height: Int, width: Int, textLength: (Int, Int), la
     let (mapper, block) = SingleTransformerBlock(
       prefix: "single_stream_blocks.\(i).block", k: 128, h: 20, b: batchSize,
       t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
-      contextBlockPreOnly: i == layers.1 - 1, upcast: false)
+      contextBlockPreOnly: i == layers.1 - 1, upcast: false, usesFlashAttention: usesFlashAttention)
     out = block([xIn, rot] + xChunks)
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
