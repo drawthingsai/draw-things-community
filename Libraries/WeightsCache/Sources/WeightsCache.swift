@@ -9,15 +9,15 @@ public final class WeightsCache {
   struct Item: Comparable {
     var file: String
     var weights: [(key: String, value: AnyTensor)]
-    var size: Int
+    var size: UInt64
   }
   private var heap: Heap<Item>
   private var map: [String: Item]
-  public let maxTotalCacheSize: Int  // Maximum number of items in the cache
+  public let maxTotalCacheSize: UInt64  // Maximum number of items in the cache
   public let memorySubsystem: MemorySubsystem
-  private var currentTotalSize: Int  // Optional: if you also have a total size limit
+  private var currentTotalSize: UInt64  // Optional: if you also have a total size limit
 
-  public init(maxTotalCacheSize: Int, memorySubsystem: MemorySubsystem) {
+  public init(maxTotalCacheSize: UInt64, memorySubsystem: MemorySubsystem) {
     self.maxTotalCacheSize = maxTotalCacheSize
     self.memorySubsystem = memorySubsystem
     heap = Heap<Item>()
@@ -25,7 +25,7 @@ public final class WeightsCache {
     currentTotalSize = 0  // Initialize if tracking total size
   }
 
-  public subscript(file: String) -> (size: Int, weights: [(key: String, value: AnyTensor)])? {
+  public subscript(file: String) -> (size: UInt64, weights: [(key: String, value: AnyTensor)])? {
     get {
       guard let item = map[file] else { return nil }
       return (size: item.size, weights: item.weights)
@@ -58,7 +58,8 @@ public final class WeightsCache {
     }
   }
 
-  public func remove(at file: String) -> (size: Int, weights: [(key: String, value: AnyTensor)])? {
+  public func remove(at file: String) -> (size: UInt64, weights: [(key: String, value: AnyTensor)])?
+  {
     guard let index = map.index(forKey: file) else { return nil }
     let item = map.remove(at: index).value
     heap = Heap(map.values)
@@ -72,7 +73,7 @@ public final class WeightsCache {
   }
 
   // Evict the smallest item if the cache is over capacity
-  private func evict(for size: Int) {
+  private func evict(for size: UInt64) {
     // Define `maxTotalCacheSize` for this logic
     while currentTotalSize + size > maxTotalCacheSize {
       if let smallestItem = heap.popMin() {
@@ -90,7 +91,7 @@ public final class WeightsCache {
   }
 
   // Get the current total size of items in the cache
-  public var totalSize: Int {
+  public var totalSize: UInt64 {
     return currentTotalSize
   }
 }
@@ -129,12 +130,14 @@ extension WeightsCache {
     switch memorySubsystem {
     case .UMA:
       let parameters = parameters()
-      self[file] = (size: Int(parameters.size), weights: parameters.detach(.GPU(0)))
+      let size = parameters.size  // Make sure we grab size prior to detach.
+      self[file] = (size: size, weights: parameters.detach(.GPU(0)))
     case .dGPU:
       guard self[file] == nil else { return }  // If already exists, nothing to attach.
       let parameters = parameters()
+      let size = parameters.size  // Make sure we grab size prior to detach.
       // Otherwise copy to CPU.
-      self[file] = (size: Int(parameters.size), weights: parameters.detach(.CPU))
+      self[file] = (size: size, weights: parameters.detach(.CPU))
     }
   }
 }

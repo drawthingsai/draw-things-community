@@ -190,7 +190,7 @@ public struct DeviceCapability {
     }
     return .low
   }()
-  public static var maxTotalWeightsCacheSize: Int = {
+  public static var maxTotalWeightsCacheSize: UInt64 = {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
     // This is 47 * 1024 * 1024 * 1024
     guard physicalMemory >= 50_465_865_728 else {
@@ -198,7 +198,7 @@ public struct DeviceCapability {
     }
     // Make it half and rounded it to multiple of 8.
     let residualMemory = physicalMemory / 1_024 / 1_024 / 1_024 / 2 / 8
-    return Int(residualMemory * 8_589_934_592)
+    return residualMemory * 8_589_934_592
   }()
   public static let isUMA: Bool = {
     #if canImport(Metal)
