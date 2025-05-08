@@ -1192,8 +1192,8 @@ extension UNetFromNNC {
             version: version
           ) { controlModelLoader in
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
-              try! store.read(
-                modelKey, model: unet.unwrapped, strict: true,
+              store.read(
+                modelKey, model: unet.unwrapped,
                 codec: [.jit, .q6p, .q8p, .ezm7, externalData]
               ) {
                 name, dataType, format, shape in
