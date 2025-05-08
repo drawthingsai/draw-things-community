@@ -25,7 +25,6 @@ public struct UNetWrapper<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
     #else
       return unetFromNNC.version
     #endif
-
   }
   public var isLoaded: Bool {
     #if !os(Linux)
@@ -34,12 +33,22 @@ public struct UNetWrapper<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
       return unetFromNNC.isLoaded
     #endif
   }
+  public var didRunLoRASeparately: Bool {
+    #if !os(Linux)
+      if preferCoreML {
+        return unetFromCoreML.didRunLoRASeparately
+      } else {
+        return unetFromNNC.didRunLoRASeparately
+      }
+    #else
+      return unetFromNNC.didRunLoRASeparately
+    #endif
+  }
   public func unloadResources() {
     unetFromNNC.unloadResources()
     #if !os(Linux)
       unetFromCoreML.unloadResources()
     #endif
-
   }
 }
 

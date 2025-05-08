@@ -15,6 +15,7 @@ public struct UNetFromCoreML<FloatType: TensorNumeric & BinaryFloatingPoint>: UN
   public private(set) var version: ModelVersion = .v1
   public init() {}
   public var isLoaded: Bool { unetChunk1 != nil && unetChunk2 != nil }
+  public let didRunLoRASeparately: Bool = false
   public func unloadResources() {
     unetChunk1?.unloadResources()
     unetChunk2?.unloadResources()

@@ -46,6 +46,7 @@ public protocol UNetProtocol {
   func unloadResources()
   var version: ModelVersion { get }
   var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { get }
+  var didRunLoRASeparately: Bool { get }
   mutating func compileModel(
     filePath: String, externalOnDemand: Bool, memoryCapacity: MemoryCapacity, version: ModelVersion,
     modifier: SamplerModifier,
@@ -332,6 +333,7 @@ public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
   public private(set) var version: ModelVersion = .v1
   public init() {}
   public var isLoaded: Bool { unet != nil }
+  public private(set) var didRunLoRASeparately: Bool = false
   public func unloadResources() {}
 }
 
@@ -413,9 +415,10 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         unet =
           ModelBuilderOrModel.model(
             LoRAUNet(
@@ -447,9 +450,10 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         unet =
           ModelBuilderOrModel.model(
             LoRAUNetv2(
@@ -477,6 +481,7 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
       let model: Model
+      didRunLoRASeparately = false
       (model, _, unetWeightMapper) =
         UNetXL(
           batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
@@ -495,6 +500,7 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
+      didRunLoRASeparately = false
       unet = ModelBuilderOrModel.model(
         UNetKandinsky(
           batchSize: batchSize, channels: 384, outChannels: 8, channelMult: [1, 2, 3, 4],
@@ -510,9 +516,10 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
       let model: Model
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         (model, unetWeightMapper) =
           LoRAUNetXL(
             batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
@@ -548,9 +555,10 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
       let model: Model
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         (model, unetWeightMapper) =
           LoRAUNetXL(
             batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
@@ -582,9 +590,10 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
       let model: Model
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         (model, unetWeightMapper) =
           LoRAUNetXL(
             batchSize: batchSize, startHeight: tiledHeight, startWidth: tiledWidth,
@@ -614,6 +623,7 @@ extension UNetFromNNC {
       tiledWidth = startWidth
       tiledHeight = startHeight
       tileScaleFactor = 1
+      didRunLoRASeparately = false
       unet = ModelBuilderOrModel.model(
         WurstchenStageC(
           batchSize: batchSize, height: startHeight, width: startWidth,
@@ -628,6 +638,7 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 16, startHeight) : startHeight
       tileScaleFactor = 16
+      didRunLoRASeparately = false
       unet = ModelBuilderOrModel.model(
         WurstchenStageB(
           batchSize: batchSize, cIn: 4, height: tiledHeight, width: tiledWidth,
@@ -647,9 +658,10 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         unet =
           ModelBuilderOrModel.model(
             LoRAMMDiT(
@@ -676,9 +688,10 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet =
@@ -707,9 +720,10 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         unet = ModelBuilderOrModel.model(
           LoRAPixArt(
             batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152,
@@ -735,6 +749,7 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
+      didRunLoRASeparately = false
       unet = ModelBuilderOrModel.model(
         AuraFlow(
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
@@ -756,9 +771,10 @@ extension UNetFromNNC {
         injectIPAdapterLengths[19 + i] = injectControlsAndAdapters.injectIPAdapterLengths
       }
       let tokenLength = c[1].shape[1]
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
@@ -825,9 +841,10 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
@@ -896,9 +913,10 @@ extension UNetFromNNC {
       tileScaleFactor = 8
       let injectImage = c.count > 9 + 4 * 30
       let textLength = c[7].shape[1]
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
@@ -950,9 +968,10 @@ extension UNetFromNNC {
       tileScaleFactor = 8
       let injectImage = c.count > 9 + 4 * 40
       let textLength = c[7].shape[1]
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      {
+      if didRunLoRASeparately {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
@@ -1004,6 +1023,7 @@ extension UNetFromNNC {
       tileScaleFactor = 8
       let llama3Length = c[48].shape[1]
       let t5Length = c[49].shape[1] - llama3Length
+      didRunLoRASeparately = false
       unet = ModelBuilderOrModel.model(
         HiDream(
           batchSize: 1, height: tiledHeight,
@@ -1108,11 +1128,12 @@ extension UNetFromNNC {
       externalOnDemand ? .externalOnDemand : .externalData
     let externalOnDemandPartially = externalOnDemandPartially(
       version: version, memoryCapacity: memoryCapacity, externalOnDemand: externalOnDemand)
+    let loadedFromWeightsCache = weightsCache.detach(filePath, to: unet.unwrapped.parameters)
     graph.openStore(
       filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
     ) { store in
       if !lora.isEmpty && version != .kandinsky21 {
-        if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
+        if didRunLoRASeparately {
           let mapping: [Int: Int] = {
             switch version {
             case .sdxlBase:
@@ -1182,6 +1203,9 @@ extension UNetFromNNC {
                   && (name.hasSuffix("_out_proj-17-1]") || name.hasSuffix("_out_proj-18-1]")),
                   let tensor = store.read(name, codec: [.ezm7, .externalData, .q6p, .q8p])
                 {
+                  guard !loadedFromWeightsCache else {
+                    return .fail
+                  }
                   return .final(
                     graph.withNoGrad {
                       let scaleFactor: Float = 8
@@ -1197,6 +1221,9 @@ extension UNetFromNNC {
                 case .continue(let updatedName, _):
                   guard updatedName == name else {
                     return result
+                  }
+                  guard !loadedFromWeightsCache else {
+                    return .fail
                   }
                   if externalOnDemandPartially && name.hasSuffix("-0]")
                     && (name.contains("c_q") || name.contains("c_k") || name.contains("c_v")
@@ -1232,6 +1259,9 @@ extension UNetFromNNC {
                   && (name.hasSuffix("_out_proj-17-1]") || name.hasSuffix("_out_proj-18-1]")),
                   let tensor = store.read(name, codec: [.ezm7, .externalData, .q6p, .q8p])
                 {
+                  guard !loadedFromWeightsCache else {
+                    return .fail
+                  }
                   return .final(
                     graph.withNoGrad {
                       let scaleFactor: Float = 8
@@ -1245,6 +1275,9 @@ extension UNetFromNNC {
                 case .continue(let updatedName, _):
                   guard updatedName == name else {
                     return result
+                  }
+                  guard !loadedFromWeightsCache else {
+                    return .fail
                   }
                   if externalOnDemandPartially && name.hasSuffix("-0]")
                     && (name.contains("c_q") || name.contains("c_k") || name.contains("c_v")
@@ -1274,6 +1307,9 @@ extension UNetFromNNC {
             name, _, _, _ in
             if let result = controlModelLoader.loadMergedWeight(name: name) {
               return result
+            }
+            guard !loadedFromWeightsCache else {
+              return .fail
             }
             // Patch for bias weights which missing a 1/8 scale. Note that this is not needed if we merge this into the model import step like we do for Hunyuan.
             if version == .flux1

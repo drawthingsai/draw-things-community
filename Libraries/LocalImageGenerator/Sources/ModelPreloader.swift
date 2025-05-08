@@ -1310,8 +1310,20 @@ extension ModelPreloader {
       unetScale = scale
       unetTokenLengthUncond = tokenLengthUncond
       unetTokenLengthCond = tokenLengthCond
+      return x.x
     }
-    return x.x
+    switch sampler.version {
+    case .auraflow, .flux1, .hiDreamI1, .hunyuanVideo, .sd3, .sd3Large, .wan21_14b, .wan21_1_3b:
+      if let unet = x.unets[0], sampler.lora.isEmpty || unet.didRunLoRASeparately,
+        let modelAndWeightMapper = unet.modelAndWeightMapper
+      {
+        weightsCache.attach(sampler.filePath, from: modelAndWeightMapper.0.parameters)
+      }
+      return x.x
+    case .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
+      .wurstchenStageB, .wurstchenStageC:
+      return x.x
+    }
   }
 }
 

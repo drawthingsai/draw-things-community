@@ -424,12 +424,16 @@ extension UNetFixedEncoder {
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: c, timeEmbeds)
-      graph.openStore(
-        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-      ) { store in
-        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+      if !weightsCache.detach("\(filePath):[fixed]", to: unetFixed.parameters) {
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
       }
-      return (unetFixed(inputs: c, timeEmbeds).map { $0.as(of: FloatType.self) }, nil)
+      let result = unetFixed(inputs: c, timeEmbeds).map { $0.as(of: FloatType.self) }
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      return (result, nil)
     case .sd3, .sd3Large:
       var c: DynamicGraph.Tensor<FloatType>
       var pooled: DynamicGraph.Tensor<FloatType>
@@ -517,23 +521,29 @@ extension UNetFixedEncoder {
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: c, timeEmbeds, pooleds)
-      graph.openStore(
-        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-      ) { store in
-        if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
-            store.read(
-              "dit", model: unetFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
-            ) {
-              name, _, _, shape in
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+      if lora.count > 0 || !weightsCache.detach("\(filePath):[fixed]", to: unetFixed.parameters) {
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          if lora.count > 0 {
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read(
+                "dit", model: unetFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
+              ) {
+                name, _, _, shape in
+                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              }
             }
+          } else {
+            store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
           }
-        } else {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
-      return (unetFixed(inputs: c, timeEmbeds, pooleds).map { $0.as(of: FloatType.self) }, nil)
+      let result = unetFixed(inputs: c, timeEmbeds, pooleds).map { $0.as(of: FloatType.self) }
+      if lora.isEmpty {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
+      return (result, nil)
     case .wurstchenStageC:
       let batchSize = textEncoding[0].shape[0]
       let emptyImage = graph.variable(.GPU(0), .HWC(batchSize, 1, 1280), of: FloatType.self)
@@ -631,9 +641,10 @@ extension UNetFixedEncoder {
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
-      {
+      if shouldRunLoRASeparately {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         (_, unetFixed) = LoRAFlux1Fixed(
@@ -677,11 +688,13 @@ extension UNetFixedEncoder {
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c, timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? []))
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
         if !lora.isEmpty {
-          if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
+          if shouldRunLoRASeparately {
             let mapping: [Int: Int] = [Int: Int](
               uniqueKeysWithValues: (0..<(19 + 38)).map {
                 return ($0, $0)
@@ -689,9 +702,20 @@ extension UNetFixedEncoder {
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, format, shape in
-                return loader.concatenateLoRA(
+                let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
                   store: store, dataType: dataType, format: format, shape: shape)
+                switch result {
+                case .continue(let updatedName, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail  // Don't need to load.
+                  }
+                case .fail, .final(_):
+                  return result
+                }
               }
             }
           } else {
@@ -702,13 +726,16 @@ extension UNetFixedEncoder {
               }
             }
           }
-        } else {
+        } else if !loadedFromWeightsCache {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
       let conditions = unetFixed(
         inputs: c, [timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
       ).map { $0.as(of: FloatType.self) }
+      if lora.isEmpty || shouldRunLoRASeparately {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
       let h = startHeight / 2
       let w = startWidth / 2
       let rot = Tensor<FloatType>(
@@ -803,9 +830,10 @@ extension UNetFixedEncoder {
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
-      {
+      if shouldRunLoRASeparately {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unetFixed =
@@ -824,6 +852,8 @@ extension UNetFixedEncoder {
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(
         inputs: [c, timeEmbeds, expandedPooled] + (guidanceEmbeds.map { [$0] } ?? []))
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
@@ -836,9 +866,20 @@ extension UNetFixedEncoder {
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, format, shape in
-                return loader.concatenateLoRA(
+                let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
                   store: store, dataType: dataType, format: format, shape: shape)
+                switch result {
+                case .continue(let updatedName, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail  // Skip loading.
+                  }
+                case .fail, .final(_):
+                  return result
+                }
               }
             }
           } else {
@@ -849,13 +890,16 @@ extension UNetFixedEncoder {
               }
             }
           }
-        } else {
+        } else if !loadedFromWeightsCache {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
       let conditions = unetFixed(
         inputs: c, [timeEmbeds, expandedPooled] + (guidanceEmbeds.map { [$0] } ?? [])
       ).map { $0.as(of: FloatType.self) }
+      if lora.isEmpty || shouldRunLoRASeparately {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
       return (
         [graph.variable(rot0), graph.variable(rot1)] + conditions, nil
       )
@@ -906,9 +950,10 @@ extension UNetFixedEncoder {
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
-      if !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
-      {
+      if shouldRunLoRASeparately {
         let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         if version == .wan21_1_3b {
@@ -945,11 +990,13 @@ extension UNetFixedEncoder {
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c, timeEmbeds] + (c1.map { [$0] } ?? []))
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
         if !lora.isEmpty {
-          if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
+          if shouldRunLoRASeparately {
             let mapping: [Int: Int] = [Int: Int](
               uniqueKeysWithValues: (0..<40).map {
                 return ($0, $0)
@@ -957,9 +1004,20 @@ extension UNetFixedEncoder {
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, format, shape in
-                return loader.concatenateLoRA(
+                let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
                   store: store, dataType: dataType, format: format, shape: shape)
+                switch result {
+                case .continue(let updatedName, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail  // Skip loading.
+                  }
+                case .fail, .final(_):
+                  return result
+                }
               }
             }
           } else {
@@ -970,12 +1028,15 @@ extension UNetFixedEncoder {
               }
             }
           }
-        } else {
+        } else if !loadedFromWeightsCache {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
       var conditions: [DynamicGraph.AnyTensor] = unetFixed(
         inputs: c, [timeEmbeds] + (c1.map { [$0] } ?? []))
+      if lora.isEmpty || shouldRunLoRASeparately {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
       conditions = conditions.enumerated().flatMap {
         switch $0.offset {
         case 0..<6, (conditions.count - 2)..<conditions.count:
@@ -1032,14 +1093,17 @@ extension UNetFixedEncoder {
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [timeEmbeds, pooleds, t5] + llama3)
-      graph.openStore(
-        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-      ) { store in
-        store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+      if !weightsCache.detach("\(filePath):[fixed]", to: unetFixed.parameters) {
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
       }
       let conditions = unetFixed(
         inputs: timeEmbeds, [pooleds, t5] + llama3
       ).map { $0.as(of: FloatType.self) }
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       return ([graph.variable(rot)] + conditions, nil)
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]
