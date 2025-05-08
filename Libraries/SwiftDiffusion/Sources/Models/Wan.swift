@@ -140,24 +140,11 @@ private func WanAttentionBlock(
     let cK = cK.transposed(1, 2)
     cQ = (1 / Float(k).squareRoot() * cQ).transposed(1, 2)
     let cV = cV.transposed(1, 2)
-    var outs = [Model.IO]()
-    for i in 0..<(b * h) {
-      let key = cK.reshaped(
-        [1, t.0, k], offset: [i, 0, 0], strides: [t.0 * k, k, 1])
-      let query = cQ.reshaped(
-        [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
-      let value = cV.reshaped(
-        [1, t.0, k], offset: [i, 0, 0], strides: [t.0 * k, k, 1])
-      var dot = Matmul(transposeB: (1, 2))(query, key)
-      if let last = outs.last {
-        dot.add(dependencies: [last])
-      }
-      dot = dot.reshaped([hw, t.0])
-      dot = dot.softmax()
-      dot = dot.reshaped([1, hw, t.0])
-      outs.append(dot * value)
-    }
-    crossOut = Concat(axis: 0)(outs).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
+    var dot = Matmul(transposeB: (2, 3))(cQ, cK)
+    dot = dot.reshaped([b * h, hw, t.0])
+    dot = dot.softmax()
+    dot = dot.reshaped([b, h, hw, t.0])
+    crossOut = (dot * cV).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
       b, hw, h * k,
     ])
   }
@@ -174,26 +161,12 @@ private func WanAttentionBlock(
     } else {
       let cImgK = cImgK.transposed(1, 2)
       let cImgV = cImgV.transposed(1, 2)
-      var outs = [Model.IO]()
-      for i in 0..<(b * h) {
-        let key = cImgK.reshaped(
-          [1, t.1, k], offset: [i, 0, 0], strides: [t.1 * k, k, 1])
-        let query = cQ.reshaped(
-          [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
-        let value = cImgV.reshaped(
-          [1, t.1, k], offset: [i, 0, 0], strides: [t.1 * k, k, 1])
-        var dot = Matmul(transposeB: (1, 2))(query, key)
-        if let last = outs.last {
-          dot.add(dependencies: [last])
-        } else {
-          dot.add(dependencies: [crossOut])
-        }
-        dot = dot.reshaped([hw, t.1])
-        dot = dot.softmax()
-        dot = dot.reshaped([1, hw, t.1])
-        outs.append(dot * value)
-      }
-      crossOutImg = Concat(axis: 0)(outs).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
+      var dot = Matmul(transposeB: (2, 3))(cQ, cImgK)
+      dot.add(dependencies: [crossOut])
+      dot = dot.reshaped([b * h, hw, t.1])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, hw, t.1])
+      crossOutImg = (dot * cImgV).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
         b, hw, h * k,
       ])
     }
@@ -716,24 +689,11 @@ private func LoRAWanAttentionBlock(
     let cK = cK.transposed(1, 2)
     cQ = (1 / Float(k).squareRoot() * cQ).transposed(1, 2)
     let cV = cV.transposed(1, 2)
-    var outs = [Model.IO]()
-    for i in 0..<(b * h) {
-      let key = cK.reshaped(
-        [1, t.0, k], offset: [i, 0, 0], strides: [t.0 * k, k, 1])
-      let query = cQ.reshaped(
-        [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
-      let value = cV.reshaped(
-        [1, t.0, k], offset: [i, 0, 0], strides: [t.0 * k, k, 1])
-      var dot = Matmul(transposeB: (1, 2))(query, key)
-      if let last = outs.last {
-        dot.add(dependencies: [last])
-      }
-      dot = dot.reshaped([hw, t.0])
-      dot = dot.softmax()
-      dot = dot.reshaped([1, hw, t.0])
-      outs.append(dot * value)
-    }
-    crossOut = Concat(axis: 0)(outs).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
+    var dot = Matmul(transposeB: (2, 3))(cQ, cK)
+    dot = dot.reshaped([b * h, hw, t.0])
+    dot = dot.softmax()
+    dot = dot.reshaped([b, h, hw, t.0])
+    crossOut = (dot * cV).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
       b, hw, h * k,
     ])
   }
@@ -750,26 +710,12 @@ private func LoRAWanAttentionBlock(
     } else {
       let cImgK = cImgK.transposed(1, 2)
       let cImgV = cImgV.transposed(1, 2)
-      var outs = [Model.IO]()
-      for i in 0..<(b * h) {
-        let key = cImgK.reshaped(
-          [1, t.1, k], offset: [i, 0, 0], strides: [t.1 * k, k, 1])
-        let query = cQ.reshaped(
-          [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
-        let value = cImgV.reshaped(
-          [1, t.1, k], offset: [i, 0, 0], strides: [t.1 * k, k, 1])
-        var dot = Matmul(transposeB: (1, 2))(query, key)
-        if let last = outs.last {
-          dot.add(dependencies: [last])
-        } else {
-          dot.add(dependencies: [crossOut])
-        }
-        dot = dot.reshaped([hw, t.1])
-        dot = dot.softmax()
-        dot = dot.reshaped([1, hw, t.1])
-        outs.append(dot * value)
-      }
-      crossOutImg = Concat(axis: 0)(outs).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
+      var dot = Matmul(transposeB: (2, 3))(cQ, cImgK)
+      dot.add(dependencies: [crossOut])
+      dot = dot.reshaped([b * h, hw, t.1])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, hw, t.1])
+      crossOutImg = (dot * cImgV).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
         b, hw, h * k,
       ])
     }
