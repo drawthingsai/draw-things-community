@@ -10,6 +10,7 @@ public final class WeightsCache {
     var file: String
     var weights: [(key: String, value: AnyTensor)]
     var size: UInt64
+    var timestamp: Int64
   }
   private var heap: Heap<Item>
   private var map: [String: Item]
@@ -20,6 +21,7 @@ public final class WeightsCache {
     }
   }
   public let memorySubsystem: MemorySubsystem
+  private var timestamp: Int64
   private var currentTotalSize: UInt64  // Optional: if you also have a total size limit
 
   public init(maxTotalCacheSize: UInt64, memorySubsystem: MemorySubsystem) {
@@ -28,6 +30,7 @@ public final class WeightsCache {
     heap = Heap<Item>()
     map = [:]
     currentTotalSize = 0  // Initialize if tracking total size
+    timestamp = 0
   }
 
   public subscript(file: String) -> (size: UInt64, weights: [(key: String, value: AnyTensor)])? {
@@ -57,7 +60,9 @@ public final class WeightsCache {
       }
       // If this item size plus the current size is larger, need to evict first.
       evict(for: newValue.size)
-      let item = Item(file: file, weights: newValue.weights, size: newValue.size)
+      timestamp += 1
+      let item = Item(
+        file: file, weights: newValue.weights, size: newValue.size, timestamp: timestamp)
       map[file] = item
       heap.insert(item)
       currentTotalSize += newValue.size
@@ -107,7 +112,7 @@ extension WeightsCache.Item {
   static func < (lhs: WeightsCache.Item, rhs: WeightsCache.Item) -> Bool {
     // To make it a min-heap (smallest item at the top),
     // an item is "less than" another if its size is smaller.
-    return lhs.size < rhs.size
+    return lhs.size < rhs.size || (lhs.size == rhs.size && lhs.timestamp < rhs.timestamp)
   }
 
   // Conformance to Equatable (required by Comparable)
