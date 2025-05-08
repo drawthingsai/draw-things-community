@@ -136,18 +136,26 @@ extension WeightsCache {
     switch memorySubsystem {
     case .UMA:
       let parameters = parameters()
-      let size = parameters.size  // Make sure we grab size prior to detach.
+      var size = parameters.size  // Make sure we grab size prior to detach.
       let weights = parameters.detach(.GPU(0)).filter {
-        !$0.key.contains("lora_down") && !$0.key.contains("lora_up")
+        guard !$0.key.contains("lora_down") && !$0.key.contains("lora_up") else {
+          size = UInt64(max(Int(size) - $0.value.size, 0))
+          return false
+        }
+        return true
       }
       self[file] = (size: size, weights: weights)
     case .dGPU:
       guard self[file] == nil else { return }  // If already exists, nothing to attach.
       let parameters = parameters()
-      let size = parameters.size  // Make sure we grab size prior to detach.
+      var size = parameters.size  // Make sure we grab size prior to detach.
       // Otherwise copy to CPU.
       let weights = parameters.detach(.CPU).filter {
-        !$0.key.contains("lora_down") && !$0.key.contains("lora_up")
+        guard !$0.key.contains("lora_down") && !$0.key.contains("lora_up") else {
+          size = UInt64(max(Int(size) - $0.value.size, 0))
+          return false
+        }
+        return true
       }
       self[file] = (size: size, weights: weights)
     }
