@@ -170,6 +170,7 @@ private func WanAttentionBlock(
       let crossAttentionImg = ScaledDotProductAttention(
         scale: 1 / Float(k).squareRoot(), flags: [.Float16])
       crossOutImg = crossAttentionImg(cQ, cImgK, cImgV).reshaped([b, hw, k * h])
+      crossOutImg.add(dependencies: [crossOut])
     } else {
       let cImgK = cImgK.transposed(1, 2)
       let cImgV = cImgV.transposed(1, 2)
@@ -184,6 +185,8 @@ private func WanAttentionBlock(
         var dot = Matmul(transposeB: (1, 2))(query, key)
         if let last = outs.last {
           dot.add(dependencies: [last])
+        } else {
+          dot.add(dependencies: [crossOut])
         }
         dot = dot.reshaped([hw, t.1])
         dot = dot.softmax()
@@ -194,7 +197,6 @@ private func WanAttentionBlock(
         b, hw, h * k,
       ])
     }
-    crossOutImg.add(dependencies: [crossOut])
     crossOut = crossOut + crossOutImg
     injectedImageKVs = [cImgK, cImgV]
   } else {
@@ -744,6 +746,7 @@ private func LoRAWanAttentionBlock(
       let crossAttentionImg = ScaledDotProductAttention(
         scale: 1 / Float(k).squareRoot(), flags: [.Float16])
       crossOutImg = crossAttentionImg(cQ, cImgK, cImgV).reshaped([b, hw, k * h])
+      crossOutImg.add(dependencies: [crossOut])
     } else {
       let cImgK = cImgK.transposed(1, 2)
       let cImgV = cImgV.transposed(1, 2)
@@ -758,6 +761,8 @@ private func LoRAWanAttentionBlock(
         var dot = Matmul(transposeB: (1, 2))(query, key)
         if let last = outs.last {
           dot.add(dependencies: [last])
+        } else {
+          dot.add(dependencies: [crossOut])
         }
         dot = dot.reshaped([hw, t.1])
         dot = dot.softmax()
@@ -768,7 +773,6 @@ private func LoRAWanAttentionBlock(
         b, hw, h * k,
       ])
     }
-    crossOutImg.add(dependencies: [crossOut])
     crossOut = crossOut + crossOutImg
     injectedImageKVs = [cImgK, cImgV]
   } else {
