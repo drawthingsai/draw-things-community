@@ -236,6 +236,9 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Disable FlashAttention.")
   var noFlashAttention = false
 
+  @Option(name: .shortAndLong, help: "The weights cache size in GiB.")
+  var weightsCache: Int = 0
+
   @Flag(help: "Debug flag for the verbose model inference logging.")
   var debug = false
 
@@ -256,6 +259,9 @@ struct gRPCServerCLI: ParsableCommand {
 
   @Option(name: .long, help: "The bucket for the blob store.")
   var blobStoreBucket: String?
+
+  @Flag(help: "Offload some weights to CPU during inference.")
+  var cpuOffload = false
 
   #if os(Linux)
     @Flag(help: "Supervise the server so it restarts upon a internal crash.")
@@ -366,6 +372,10 @@ struct gRPCServerCLI: ParsableCommand {
     if gpu > 0 && gpu < DeviceKind.GPUs.count {
       DeviceKind.GPUs.permute(gpu)
     }
+    if cpuOffload {
+      DeviceCapability.memoryCapacity = .medium  // This will trigger logic to offload some weights to CPU during inference.
+    }
+    DeviceCapability.maxTotalWeightsCacheSize = UInt64(weightsCache) * 1_024 * 1_024 * 1_024
     try self.runAndBlock(
       name: name, address: address, port: port, TLS: !noTLS,
       serverLoRALoader: serverLoRALoader)
