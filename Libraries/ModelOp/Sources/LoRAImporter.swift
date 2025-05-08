@@ -120,14 +120,16 @@ public enum LoRAImporter {
     case .wan21_1_3b:
       (unetMapper, unet) = Wan(
         channels: 1_536, layers: 30, intermediateSize: 8_960, time: 1, height: 64, width: 64,
-        textLength: 512, injectImage: true, outputResidual: false, inputResidual: false)
+        textLength: 512, injectImage: true, usesFlashAttention: true, outputResidual: false,
+        inputResidual: false)
       (unetFixedMapper, unetFixed) = WanFixed(
         timesteps: 1, batchSize: (1, 1), channels: 1_536, layers: 30, textLength: 512,
         injectImage: true)
     case .wan21_14b:
       (unetMapper, unet) = Wan(
         channels: 5_120, layers: 40, intermediateSize: 13_824, time: 1, height: 64, width: 64,
-        textLength: 512, injectImage: true, outputResidual: false, inputResidual: false)
+        textLength: 512, injectImage: true, usesFlashAttention: true, outputResidual: false,
+        inputResidual: false)
       (unetFixedMapper, unetFixed) = WanFixed(
         timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, textLength: 512,
         injectImage: true)

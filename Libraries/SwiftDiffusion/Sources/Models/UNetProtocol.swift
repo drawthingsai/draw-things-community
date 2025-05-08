@@ -925,7 +925,8 @@ extension UNetFromNNC {
           LoRAWan(
             channels: 1_536, layers: 30, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage, outputResidual: isTeaCacheEnabled,
+            textLength: textLength, injectImage: injectImage,
+            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
             inputResidual: false, LoRAConfiguration: configuration
           ).1)
         if isTeaCacheEnabled {
@@ -937,7 +938,8 @@ extension UNetFromNNC {
               channels: 1_536, layers: 0, intermediateSize: 8_960,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, injectImage: injectImage,
-              outputResidual: false, inputResidual: true, LoRAConfiguration: configuration
+              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true,
+              LoRAConfiguration: configuration
             ).1)
         }
       } else {
@@ -945,7 +947,8 @@ extension UNetFromNNC {
           Wan(
             channels: 1_536, layers: 30, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage, outputResidual: isTeaCacheEnabled,
+            textLength: textLength, injectImage: injectImage,
+            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
             inputResidual: false
           ).1)
         if isTeaCacheEnabled {
@@ -957,7 +960,7 @@ extension UNetFromNNC {
               channels: 1_536, layers: 0, intermediateSize: 8_960,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, injectImage: injectImage,
-              outputResidual: false, inputResidual: true
+              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true
             ).1)
         }
       }
@@ -980,7 +983,8 @@ extension UNetFromNNC {
           LoRAWan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage, outputResidual: isTeaCacheEnabled,
+            textLength: textLength, injectImage: injectImage,
+            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
             inputResidual: false, LoRAConfiguration: configuration
           ).1)
         if isTeaCacheEnabled {
@@ -992,7 +996,8 @@ extension UNetFromNNC {
               channels: 5_120, layers: 0, intermediateSize: 13_824,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, injectImage: injectImage,
-              outputResidual: false, inputResidual: true, LoRAConfiguration: configuration
+              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true,
+              LoRAConfiguration: configuration
             ).1)
         }
       } else {
@@ -1000,7 +1005,8 @@ extension UNetFromNNC {
           Wan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage, outputResidual: isTeaCacheEnabled,
+            textLength: textLength, injectImage: injectImage,
+            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
             inputResidual: false
           ).1)
         if isTeaCacheEnabled {
@@ -1012,7 +1018,7 @@ extension UNetFromNNC {
               channels: 5_120, layers: 0, intermediateSize: 13_824,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, injectImage: injectImage,
-              outputResidual: false, inputResidual: true
+              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true
             ).1)
         }
       }

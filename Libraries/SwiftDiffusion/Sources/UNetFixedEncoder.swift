@@ -960,15 +960,15 @@ extension UNetFixedEncoder {
           unetFixed =
             LoRAWanFixed(
               timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 1_536,
-              layers: 30,
-              textLength: textLength, injectImage: injectImage, LoRAConfiguration: configuration
+              layers: 30, textLength: textLength, injectImage: injectImage,
+              LoRAConfiguration: configuration
             ).1
         } else {
           unetFixed =
             LoRAWanFixed(
               timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 5_120,
-              layers: 40,
-              textLength: textLength, injectImage: injectImage, LoRAConfiguration: configuration
+              layers: 40, textLength: textLength, injectImage: injectImage,
+              LoRAConfiguration: configuration
             ).1
         }
       } else {
@@ -976,15 +976,13 @@ extension UNetFixedEncoder {
           unetFixed =
             WanFixed(
               timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 1_536,
-              layers: 30,
-              textLength: textLength, injectImage: injectImage
+              layers: 30, textLength: textLength, injectImage: injectImage
             ).1
         } else {
           unetFixed =
             WanFixed(
               timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 5_120,
-              layers: 40,
-              textLength: textLength, injectImage: injectImage
+              layers: 40, textLength: textLength, injectImage: injectImage
             ).1
         }
       }

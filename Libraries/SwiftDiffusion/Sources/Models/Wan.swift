@@ -65,7 +65,8 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
 }
 
 private func WanAttentionBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, intermediateSize: Int, injectImage: Bool
+  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, intermediateSize: Int,
+  injectImage: Bool, usesFlashAttention: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
@@ -86,12 +87,39 @@ private func WanAttentionBlock(
   let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_norm_q")
   xQ = normQ(xQ).reshaped([b, hw, h, k])
   let xV = xToValues(xOut).reshaped([b, hw, h, k])
-  let queries = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xQ, right: rot)
-  let keys = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xK, right: rot)
-  let values = xV
+  var queries = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xQ, right: rot)
+  var keys = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xK, right: rot)
+  var values = xV
   // Now run attention.
-  let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-  var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+  var out: Model.IO
+  if usesFlashAttention {
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+  } else {
+    keys = keys.transposed(1, 2)
+    queries = queries.transposed(1, 2)
+    values = values.transposed(1, 2)
+    var outs = [Model.IO]()
+    for i in 0..<(b * h) {
+      let key = keys.reshaped(
+        [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+      let query = queries.reshaped(
+        [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+      let value = values.reshaped(
+        [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+      var dot = Matmul(transposeB: (1, 2))(query, key)
+      if let last = outs.last {
+        dot.add(dependencies: [last])
+      }
+      dot = dot.reshaped([hw, hw])
+      dot = dot.softmax()
+      dot = dot.reshaped([1, hw, hw])
+      outs.append(dot * value)
+    }
+    out = Concat(axis: 0)(outs).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
+      b, hw, h * k,
+    ])
+  }
   let xUnifyheads = Dense(count: k * h, name: "x_o")
   out = xUnifyheads(out)
   out = x + chunks[2] .* out.to(of: x)
@@ -103,16 +131,69 @@ private func WanAttentionBlock(
   let contextNormQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_c_norm_q")
   cQ = contextNormQ(cQ).reshaped([b, hw, h, k])
   let cV = Input()
-  let crossAttention = ScaledDotProductAttention(
-    scale: 1 / Float(k).squareRoot(), flags: [.Float16])
-  var crossOut = crossAttention(cQ, cK, cV).reshaped([b, hw, k * h])
+  var crossOut: Model.IO
+  if usesFlashAttention {
+    let crossAttention = ScaledDotProductAttention(
+      scale: 1 / Float(k).squareRoot(), flags: [.Float16])
+    crossOut = crossAttention(cQ, cK, cV).reshaped([b, hw, k * h])
+  } else {
+    let cK = cK.transposed(1, 2)
+    cQ = (1 / Float(k).squareRoot() * cQ).transposed(1, 2)
+    let cV = cV.transposed(1, 2)
+    var outs = [Model.IO]()
+    for i in 0..<(b * h) {
+      let key = cK.reshaped(
+        [1, t.0, k], offset: [i, 0, 0], strides: [t.0 * k, k, 1])
+      let query = cQ.reshaped(
+        [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+      let value = cV.reshaped(
+        [1, t.0, k], offset: [i, 0, 0], strides: [t.0 * k, k, 1])
+      var dot = Matmul(transposeB: (1, 2))(query, key)
+      if let last = outs.last {
+        dot.add(dependencies: [last])
+      }
+      dot = dot.reshaped([hw, t.0])
+      dot = dot.softmax()
+      dot = dot.reshaped([1, hw, t.0])
+      outs.append(dot * value)
+    }
+    crossOut = Concat(axis: 0)(outs).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
+      b, hw, h * k,
+    ])
+  }
   var injectedImageKVs: [Model.IO]
   if injectImage {
     let cImgK = Input()
     let cImgV = Input()
-    let crossAttentionImg = ScaledDotProductAttention(
-      scale: 1 / Float(k).squareRoot(), flags: [.Float16])
-    let crossOutImg = crossAttentionImg(cQ, cImgK, cImgV).reshaped([b, hw, k * h])
+    let crossOutImg: Model.IO
+    if usesFlashAttention {
+      let crossAttentionImg = ScaledDotProductAttention(
+        scale: 1 / Float(k).squareRoot(), flags: [.Float16])
+      crossOutImg = crossAttentionImg(cQ, cImgK, cImgV).reshaped([b, hw, k * h])
+    } else {
+      let cImgK = cImgK.transposed(1, 2)
+      let cImgV = cImgV.transposed(1, 2)
+      var outs = [Model.IO]()
+      for i in 0..<(b * h) {
+        let key = cImgK.reshaped(
+          [1, t.1, k], offset: [i, 0, 0], strides: [t.1 * k, k, 1])
+        let query = cQ.reshaped(
+          [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+        let value = cImgV.reshaped(
+          [1, t.1, k], offset: [i, 0, 0], strides: [t.1 * k, k, 1])
+        var dot = Matmul(transposeB: (1, 2))(query, key)
+        if let last = outs.last {
+          dot.add(dependencies: [last])
+        }
+        dot = dot.reshaped([hw, t.1])
+        dot = dot.softmax()
+        dot = dot.reshaped([1, hw, t.1])
+        outs.append(dot * value)
+      }
+      crossOutImg = Concat(axis: 0)(outs).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
+        b, hw, h * k,
+      ])
+    }
     crossOutImg.add(dependencies: [crossOut])
     crossOut = crossOut + crossOutImg
     injectedImageKVs = [cImgK, cImgV]
@@ -216,7 +297,8 @@ private func MLPProj(inChannels: Int, outChannels: Int, name: String) -> (
 
 public func Wan(
   channels: Int, layers: Int, intermediateSize: Int, time: Int, height: Int, width: Int,
-  textLength: Int, injectImage: Bool, outputResidual: Bool, inputResidual: Bool
+  textLength: Int, injectImage: Bool, usesFlashAttention: Bool, outputResidual: Bool,
+  inputResidual: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let imgIn = Convolution(
@@ -244,8 +326,10 @@ public func Wan(
   var contextIn = [Input]()
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlock(
-      prefix: "blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength, hw: time * h * w,
-      intermediateSize: intermediateSize, injectImage: injectImage)
+      prefix: "blocks.\(i)", k: 128, h: channels / 128, b: 1, t: (textLength, 257),
+      hw: time * h * w,
+      intermediateSize: intermediateSize, injectImage: injectImage,
+      usesFlashAttention: usesFlashAttention)
     let contextK = Input()
     let contextV = Input()
     contextIn.append(contentsOf: [contextK, contextV])
@@ -549,8 +633,8 @@ private func LoRAFeedForward(
 }
 
 private func LoRAWanAttentionBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, intermediateSize: Int, injectImage: Bool,
-  layerIndex: Int,
+  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, intermediateSize: Int,
+  injectImage: Bool, usesFlashAttention: Bool, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -575,12 +659,39 @@ private func LoRAWanAttentionBlock(
   let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_norm_q")
   xQ = normQ(xQ).reshaped([b, hw, h, k])
   let xV = xToValues(xOut).reshaped([b, hw, h, k])
-  let queries = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xQ, right: rot)
-  let keys = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xK, right: rot)
-  let values = xV
+  var queries = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xQ, right: rot)
+  var keys = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xK, right: rot)
+  var values = xV
   // Now run attention.
-  let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-  var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+  var out: Model.IO
+  if usesFlashAttention {
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+  } else {
+    keys = keys.transposed(1, 2)
+    queries = queries.transposed(1, 2)
+    values = values.transposed(1, 2)
+    var outs = [Model.IO]()
+    for i in 0..<(b * h) {
+      let key = keys.reshaped(
+        [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+      let query = queries.reshaped(
+        [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+      let value = values.reshaped(
+        [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+      var dot = Matmul(transposeB: (1, 2))(query, key)
+      if let last = outs.last {
+        dot.add(dependencies: [last])
+      }
+      dot = dot.reshaped([hw, hw])
+      dot = dot.softmax()
+      dot = dot.reshaped([1, hw, hw])
+      outs.append(dot * value)
+    }
+    out = Concat(axis: 0)(outs).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
+      b, hw, h * k,
+    ])
+  }
   let xUnifyheads = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_o")
   out = xUnifyheads(out)
@@ -594,16 +705,69 @@ private func LoRAWanAttentionBlock(
   let contextNormQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_c_norm_q")
   cQ = contextNormQ(cQ).reshaped([b, hw, h, k])
   let cV = Input()
-  let crossAttention = ScaledDotProductAttention(
-    scale: 1 / Float(k).squareRoot(), flags: [.Float16])
-  var crossOut = crossAttention(cQ, cK, cV).reshaped([b, hw, k * h])
+  var crossOut: Model.IO
+  if usesFlashAttention {
+    let crossAttention = ScaledDotProductAttention(
+      scale: 1 / Float(k).squareRoot(), flags: [.Float16])
+    crossOut = crossAttention(cQ, cK, cV).reshaped([b, hw, k * h])
+  } else {
+    let cK = cK.transposed(1, 2)
+    cQ = (1 / Float(k).squareRoot() * cQ).transposed(1, 2)
+    let cV = cV.transposed(1, 2)
+    var outs = [Model.IO]()
+    for i in 0..<(b * h) {
+      let key = cK.reshaped(
+        [1, t.0, k], offset: [i, 0, 0], strides: [t.0 * k, k, 1])
+      let query = cQ.reshaped(
+        [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+      let value = cV.reshaped(
+        [1, t.0, k], offset: [i, 0, 0], strides: [t.0 * k, k, 1])
+      var dot = Matmul(transposeB: (1, 2))(query, key)
+      if let last = outs.last {
+        dot.add(dependencies: [last])
+      }
+      dot = dot.reshaped([hw, t.0])
+      dot = dot.softmax()
+      dot = dot.reshaped([1, hw, t.0])
+      outs.append(dot * value)
+    }
+    crossOut = Concat(axis: 0)(outs).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
+      b, hw, h * k,
+    ])
+  }
   var injectedImageKVs: [Model.IO]
   if injectImage {
     let cImgK = Input()
     let cImgV = Input()
-    let crossAttentionImg = ScaledDotProductAttention(
-      scale: 1 / Float(k).squareRoot(), flags: [.Float16])
-    let crossOutImg = crossAttentionImg(cQ, cImgK, cImgV).reshaped([b, hw, k * h])
+    let crossOutImg: Model.IO
+    if usesFlashAttention {
+      let crossAttentionImg = ScaledDotProductAttention(
+        scale: 1 / Float(k).squareRoot(), flags: [.Float16])
+      crossOutImg = crossAttentionImg(cQ, cImgK, cImgV).reshaped([b, hw, k * h])
+    } else {
+      let cImgK = cImgK.transposed(1, 2)
+      let cImgV = cImgV.transposed(1, 2)
+      var outs = [Model.IO]()
+      for i in 0..<(b * h) {
+        let key = cImgK.reshaped(
+          [1, t.1, k], offset: [i, 0, 0], strides: [t.1 * k, k, 1])
+        let query = cQ.reshaped(
+          [1, hw, k], offset: [i, 0, 0], strides: [hw * k, k, 1])
+        let value = cImgV.reshaped(
+          [1, t.1, k], offset: [i, 0, 0], strides: [t.1 * k, k, 1])
+        var dot = Matmul(transposeB: (1, 2))(query, key)
+        if let last = outs.last {
+          dot.add(dependencies: [last])
+        }
+        dot = dot.reshaped([hw, t.1])
+        dot = dot.softmax()
+        dot = dot.reshaped([1, hw, t.1])
+        outs.append(dot * value)
+      }
+      crossOutImg = Concat(axis: 0)(outs).reshaped([b, h, hw, k]).transposed(1, 2).reshaped([
+        b, hw, h * k,
+      ])
+    }
     crossOutImg.add(dependencies: [crossOut])
     crossOut = crossOut + crossOutImg
     injectedImageKVs = [cImgK, cImgV]
@@ -713,8 +877,8 @@ private func LoRAMLPProj(
 
 func LoRAWan(
   channels: Int, layers: Int, intermediateSize: Int, time: Int, height: Int, width: Int,
-  textLength: Int, injectImage: Bool, outputResidual: Bool, inputResidual: Bool,
-  LoRAConfiguration: LoRANetworkConfiguration
+  textLength: Int, injectImage: Bool, usesFlashAttention: Bool, outputResidual: Bool,
+  inputResidual: Bool, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let imgIn = LoRAConvolution(
@@ -742,9 +906,10 @@ func LoRAWan(
   var contextIn = [Input]()
   for i in 0..<layers {
     let (mapper, block) = LoRAWanAttentionBlock(
-      prefix: "blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength, hw: time * h * w,
-      intermediateSize: intermediateSize, injectImage: injectImage, layerIndex: i,
-      configuration: LoRAConfiguration)
+      prefix: "blocks.\(i)", k: 128, h: channels / 128, b: 1, t: (textLength, 257),
+      hw: time * h * w,
+      intermediateSize: intermediateSize, injectImage: injectImage,
+      usesFlashAttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration)
     let contextK = Input()
     let contextV = Input()
     contextIn.append(contentsOf: [contextK, contextV])
@@ -880,8 +1045,7 @@ private func LoRAWanAttentionBlockFixed(
 
 func LoRAWanFixed(
   timesteps: Int, batchSize: (Int, Int), channels: Int, layers: Int, textLength: Int,
-  injectImage: Bool,
-  LoRAConfiguration: LoRANetworkConfiguration
+  injectImage: Bool, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   ModelWeightMapper, Model
 ) {
