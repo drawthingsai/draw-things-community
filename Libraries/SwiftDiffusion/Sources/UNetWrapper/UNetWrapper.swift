@@ -53,6 +53,10 @@ public struct UNetWrapper<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
 }
 
 extension UNetWrapper {
+  public var model: AnyModel? {
+    guard unetFromNNC.isLoaded else { return nil }
+    return unetFromNNC.model
+  }
   public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? {
     guard unetFromNNC.isLoaded else { return nil }
     return unetFromNNC.modelAndWeightMapper

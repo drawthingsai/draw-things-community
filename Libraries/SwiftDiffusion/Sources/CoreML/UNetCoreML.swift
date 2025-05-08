@@ -29,6 +29,7 @@ struct TensorNameAndBlobOffset {
 }
 
 extension UNetFromCoreML {
+  public var model: AnyModel? { nil }
   public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { nil }
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, memoryCapacity: MemoryCapacity, version: ModelVersion,

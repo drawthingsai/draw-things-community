@@ -1315,9 +1315,9 @@ extension ModelPreloader {
     switch sampler.version {
     case .auraflow, .flux1, .hiDreamI1, .hunyuanVideo, .sd3, .sd3Large, .wan21_14b, .wan21_1_3b:
       if let unet = x.unets[0], sampler.lora.isEmpty || unet.didRunLoRASeparately,
-        let modelAndWeightMapper = unet.modelAndWeightMapper
+        let model = unet.model
       {
-        weightsCache.attach(sampler.filePath, from: modelAndWeightMapper.0.parameters)
+        weightsCache.attach(sampler.filePath, from: model.parameters)
       }
       return x.x
     case .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,

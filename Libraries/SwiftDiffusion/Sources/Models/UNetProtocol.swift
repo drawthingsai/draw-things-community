@@ -45,6 +45,7 @@ public protocol UNetProtocol {
   var isLoaded: Bool { get }
   func unloadResources()
   var version: ModelVersion { get }
+  var model: AnyModel? { get }
   var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { get }
   var didRunLoRASeparately: Bool { get }
   mutating func compileModel(
@@ -356,6 +357,7 @@ public func externalOnDemandPartially(
 }
 
 extension UNetFromNNC {
+  public var model: AnyModel? { return unet?.unwrapped }
   public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? {
     guard let unet = unet, let unetWeightMapper = unetWeightMapper else { return nil }
     return (unet.unwrapped, unetWeightMapper)
