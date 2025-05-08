@@ -160,28 +160,48 @@ public struct DeviceCapability {
     return Scale(widthScale: 6, heightScale: 6)
   }()
   public static let isLowPerformance: Bool = {
-    let physicalMemory = ProcessInfo.processInfo.physicalMemory
-    // Should be 3GiB devices.
-    return physicalMemory < 3_758_096_384  // This is 3.5 * 1024 * 1024 * 1024.
+    #if !canImport(Metal)
+      return false
+    #else
+      let physicalMemory = ProcessInfo.processInfo.physicalMemory
+      // Should be 3GiB devices.
+      return physicalMemory < 3_758_096_384  // This is 3.5 * 1024 * 1024 * 1024.
+    #endif
   }()
   public static let isGoodPerformance: Bool = {
-    let physicalMemory = ProcessInfo.processInfo.physicalMemory
-    // Should be 6GiB and above devices.
-    return physicalMemory >= 5_368_709_120  // This is 5 * 1024 * 1024 * 1024.
+    #if !canImport(Metal)
+      return false
+    #else
+      let physicalMemory = ProcessInfo.processInfo.physicalMemory
+      // Should be 6GiB and above devices.
+      return physicalMemory >= 5_368_709_120  // This is 5 * 1024 * 1024 * 1024.
+    #endif
   }()
   public static let isHighPerformance: Bool = {
-    let physicalMemory = ProcessInfo.processInfo.physicalMemory
-    return physicalMemory >= 7_516_192_768  // This is 7 * 1024 * 1024 * 1024.
+    #if !canImport(Metal)
+      return false
+    #else
+      let physicalMemory = ProcessInfo.processInfo.physicalMemory
+      return physicalMemory >= 7_516_192_768  // This is 7 * 1024 * 1024 * 1024.
+    #endif
   }()
   public static let isMaxPerformance: Bool = {
-    let physicalMemory = ProcessInfo.processInfo.physicalMemory
-    return physicalMemory >= 16_106_127_360  // This is 15 * 1024 * 1024 * 1024.
+    #if !canImport(Metal)
+      return false
+    #else
+      let physicalMemory = ProcessInfo.processInfo.physicalMemory
+      return physicalMemory >= 16_106_127_360  // This is 15 * 1024 * 1024 * 1024.
+    #endif
   }()
   public static let isUltraPerformance: Bool = {
-    let physicalMemory = ProcessInfo.processInfo.physicalMemory
-    return physicalMemory >= 24_696_061_952  // This is 23 * 1024 * 1024 * 1024.
+    #if !canImport(Metal)
+      return true
+    #else
+      let physicalMemory = ProcessInfo.processInfo.physicalMemory
+      return physicalMemory >= 24_696_061_952  // This is 23 * 1024 * 1024 * 1024.
+    #endif
   }()
-  public static let memoryCapacity: MemoryCapacity = {
+  public static var memoryCapacity: MemoryCapacity = {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
     if physicalMemory >= 24_696_061_952 {  // This is 23 * 1024 * 1024 * 1024.
       return .high
@@ -191,14 +211,18 @@ public struct DeviceCapability {
     return .low
   }()
   public static var maxTotalWeightsCacheSize: UInt64 = {
-    let physicalMemory = ProcessInfo.processInfo.physicalMemory
-    // This is 47 * 1024 * 1024 * 1024
-    guard physicalMemory >= 50_465_865_728 else {
+    #if !canImport(Metal)
       return 0
-    }
-    // Make it half and rounded it to multiple of 8.
-    let residualMemory = physicalMemory / 1_024 / 1_024 / 1_024 / 2 / 8
-    return residualMemory * 8_589_934_592
+    #else
+      let physicalMemory = ProcessInfo.processInfo.physicalMemory
+      // This is 47 * 1024 * 1024 * 1024
+      guard physicalMemory >= 50_465_865_728 else {
+        return 0
+      }
+      // Make it half and rounded it to multiple of 8.
+      let residualMemory = physicalMemory / 1_024 / 1_024 / 1_024 / 2 / 8
+      return residualMemory * 8_589_934_592
+    #endif
   }()
   public static let isUMA: Bool = {
     #if canImport(Metal)
