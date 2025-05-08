@@ -3282,7 +3282,7 @@ extension LocalImageGenerator {
       guard
         let x =
           try? modelPreloader.consumeUNet(
-            (sampler.sample(
+            sampler.sample(
               x_T,
               unets: modelPreloader.retrieveUNet(
                 sampler: sampler, scale: firstPassScale, tokenLengthUncond: tokenLengthUncond,
@@ -3305,7 +3305,7 @@ extension LocalImageGenerator {
               sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(step), signposts, tensor)
-            }).get(), sampler: sampler, scale: firstPassScale, tokenLengthUncond: tokenLengthUncond,
+            }, sampler: sampler, scale: firstPassScale, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond)
       else {
         return (nil, 1)
@@ -3619,7 +3619,7 @@ extension LocalImageGenerator {
       guard
         let x =
           try? modelPreloader.consumeUNet(
-            (secondPassSampler.sample(
+            secondPassSampler.sample(
               xEnc,
               unets: modelPreloader.retrieveUNet(
                 sampler: secondPassSampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
@@ -3643,7 +3643,7 @@ extension LocalImageGenerator {
               sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.secondPassSampling(step), signposts, tensor)
-            }).get(), sampler: secondPassSampler, scale: imageScale,
+            }, sampler: secondPassSampler, scale: imageScale,
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond)
       else {
         return (nil, 1)
@@ -4256,7 +4256,7 @@ extension LocalImageGenerator {
       guard
         var x =
           try? modelPreloader.consumeUNet(
-            (sampler.sample(
+            sampler.sample(
               x_T,
               unets: modelPreloader.retrieveUNet(
                 sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
@@ -4279,7 +4279,7 @@ extension LocalImageGenerator {
               sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(step), signposts, tensor)
-            }).get(), sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
+            }, sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond)
       else {
         return (nil, 1)
@@ -4382,7 +4382,7 @@ extension LocalImageGenerator {
         guard
           let b =
             try? modelPreloader.consumeUNet(
-              (secondPassSampler.sample(
+              secondPassSampler.sample(
                 x_T,
                 unets: modelPreloader.retrieveUNet(
                   sampler: secondPassSampler, scale: imageScale,
@@ -4409,7 +4409,7 @@ extension LocalImageGenerator {
                 sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
               ) { step, tensor in
                 feedback(.secondPassSampling(step), signposts, tensor)
-              }).get(), sampler: secondPassSampler, scale: imageScale,
+              }, sampler: secondPassSampler, scale: imageScale,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond)
         else {
           return (nil, 1)
@@ -5529,7 +5529,7 @@ extension LocalImageGenerator {
       guard
         var x =
           try? modelPreloader.consumeUNet(
-            (sampler.sample(
+            sampler.sample(
               x_T,
               unets: modelPreloader.retrieveUNet(
                 sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
@@ -5553,7 +5553,7 @@ extension LocalImageGenerator {
               sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(step), signposts, tensor)
-            }).get(), sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
+            }, sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond)
       else {
         return nil
@@ -5644,7 +5644,7 @@ extension LocalImageGenerator {
         guard
           let b =
             try? modelPreloader.consumeUNet(
-              (secondPassSampler.sample(
+              secondPassSampler.sample(
                 x_T,
                 unets: modelPreloader.retrieveUNet(
                   sampler: secondPassSampler, scale: imageScale,
@@ -5671,7 +5671,7 @@ extension LocalImageGenerator {
                 sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
               ) { step, tensor in
                 feedback(.secondPassSampling(step), signposts, tensor)
-              }).get(), sampler: secondPassSampler, scale: imageScale,
+              }, sampler: secondPassSampler, scale: imageScale,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond)
         else {
           return nil
@@ -6295,32 +6295,35 @@ extension LocalImageGenerator {
           initNegMaskMaybe = nil
         }
       }
-      var intermediateResult =
-        try?
-        (sampler.sample(
-          noise,
-          unets: modelPreloader.retrieveUNet(
-            sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
-            tokenLengthCond: tokenLengthCond), sample: sample,
-          conditionImage: maskedImage1 ?? imageCond, mask: initMask1Maybe,
-          negMask: initNegMaskMaybe,
-          conditioning: c, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-          extraProjection: extraProjection, injectedControls: injectedControls,
-          textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
-          guidanceEmbed: guidanceEmbed,
-          startStep: (integral: 0, fractional: 0),
-          endStep: (integral: initTimestep.roundedUpStartStep, fractional: initTimestep.startStep),
-          originalSize: originalSize,
-          cropTopLeft: cropTopLeft, targetSize: targetSize, aestheticScore: aestheticScore,
-          negativeOriginalSize: negativeOriginalSize,
-          negativeAestheticScore: negativeAestheticScore, zeroNegativePrompt: zeroNegativePrompt,
-          refiner: refiner, fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug,
-          startFrameCfg: startFrameCfg, sharpness: sharpness, sampling: sampling,
-          cancellation: cancellation
-        ) { step, tensor in
-          feedback(.sampling(step), signposts, tensor)
-        }).get()
+      let intermediateResultWithError = sampler.sample(
+        noise,
+        unets: modelPreloader.retrieveUNet(
+          sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
+          tokenLengthCond: tokenLengthCond), sample: sample,
+        conditionImage: maskedImage1 ?? imageCond, mask: initMask1Maybe,
+        negMask: initNegMaskMaybe,
+        conditioning: c, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+        extraProjection: extraProjection, injectedControls: injectedControls,
+        textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
+        guidanceEmbed: guidanceEmbed,
+        startStep: (integral: 0, fractional: 0),
+        endStep: (integral: initTimestep.roundedUpStartStep, fractional: initTimestep.startStep),
+        originalSize: originalSize,
+        cropTopLeft: cropTopLeft, targetSize: targetSize, aestheticScore: aestheticScore,
+        negativeOriginalSize: negativeOriginalSize,
+        negativeAestheticScore: negativeAestheticScore, zeroNegativePrompt: zeroNegativePrompt,
+        refiner: refiner, fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug,
+        startFrameCfg: startFrameCfg, sharpness: sharpness, sampling: sampling,
+        cancellation: cancellation
+      ) { step, tensor in
+        feedback(.sampling(step), signposts, tensor)
+      }
+      var intermediateResult = try? intermediateResultWithError.get()
       guard let x = intermediateResult?.x else {
+        // Make sure on failure case, the model can be cached.
+        let _ = try? modelPreloader.consumeUNet(
+          intermediateResultWithError, sampler: sampler, scale: imageScale,
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond)
         return nil
       }
       let initNegMask2: DynamicGraph.Tensor<FloatType>?
@@ -6399,7 +6402,7 @@ extension LocalImageGenerator {
       guard
         var x =
           try? modelPreloader.consumeUNet(
-            (sampler.sample(
+            sampler.sample(
               x_T, unets: intermediateResult?.unets ?? [nil], sample: sample,
               conditionImage: maskedImage2 ?? imageCond, mask: initMask2Maybe,
               negMask: initNegMask2Maybe,
@@ -6423,7 +6426,7 @@ extension LocalImageGenerator {
               sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(initTimestep.roundedDownStartStep + step), signposts, tensor)
-            }).get(), sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
+            }, sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond)
       else {
         return nil
@@ -6571,7 +6574,7 @@ extension LocalImageGenerator {
         guard
           let b =
             try? modelPreloader.consumeUNet(
-              (secondPassSampler.sample(
+              secondPassSampler.sample(
                 x_T, unets: intermediateResult?.unets ?? [nil], sample: sample,
                 conditionImage: maskedImage2 ?? imageCond, mask: initMask2, negMask: initNegMask2,
                 conditioning: c,
@@ -6594,7 +6597,7 @@ extension LocalImageGenerator {
                 sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
               ) { step, tensor in
                 feedback(.sampling(initTimestep.roundedDownStartStep + step), signposts, tensor)
-              }).get(), sampler: secondPassSampler, scale: imageScale,
+              }, sampler: secondPassSampler, scale: imageScale,
               tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond)
         else {

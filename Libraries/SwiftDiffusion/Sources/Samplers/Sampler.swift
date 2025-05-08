@@ -132,7 +132,7 @@ func Blur<T: TensorNumeric & BinaryFloatingPoint>(
 }
 
 public enum SamplerError: Error {
-  case cancelled
+  case cancelled([(any UNetProtocol)?])
   case isNaN
 }
 

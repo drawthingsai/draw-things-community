@@ -340,7 +340,7 @@ extension TCDSampler: Sampler {
           }
         }
         guard feedback(i - startStep.integral, rawValue) else {
-          return .failure(SamplerError.cancelled)
+          return .failure(SamplerError.cancelled(unets))
         }
         let timestep = discretization.timestep(for: alphaCumprod)
         if Float(timestep) < refinerKickIn, let refiner = refiner {

@@ -316,7 +316,9 @@ extension PLMSSampler: Sampler {
             return .failure(SamplerError.isNaN)
           }
         }
-        guard feedback(i - startStep, rawValue) else { return .failure(SamplerError.cancelled) }
+        guard feedback(i - startStep, rawValue) else {
+          return .failure(SamplerError.cancelled(unets))
+        }
         let timestep = discretization.timestep(for: alphasCumprod[i])
         if timestep < refinerKickIn, let refiner = refiner {
           let timesteps = (i..<endStep).map {

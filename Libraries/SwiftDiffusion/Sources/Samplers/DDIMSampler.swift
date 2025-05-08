@@ -316,7 +316,7 @@ extension DDIMSampler: Sampler {
           }
         }
         guard feedback(i - startStep.integral, rawValue) else {
-          return .failure(SamplerError.cancelled)
+          return .failure(SamplerError.cancelled(unets))
         }
         let alphaCumprod: Double
         if i == startStep.integral && Float(startStep.integral) != startStep.fractional {

@@ -1283,13 +1283,14 @@ extension ModelPreloader {
     return [unet]
   }
   func consumeUNet(
-    _ x: SamplerOutput<FloatType, UNetWrapper<FloatType>>,
+    _ x: Result<SamplerOutput<FloatType, UNetWrapper<FloatType>>, Error>,
     sampler: any Sampler<FloatType, UNetWrapper<FloatType>>, scale: DeviceCapability.Scale,
     tokenLengthUncond: Int, tokenLengthCond: Int
-  )
+  ) throws
     -> DynamicGraph.Tensor<FloatType>
   {
     if (mode == .preload || mode == .yes || mode == .unet) && isEnabled {
+      let x = try x.get()
       unet = x.unets[0] ?? UNetWrapper()
       #if !targetEnvironment(macCatalyst)
         // If it is not mac, we need to unload this resource.
@@ -1314,15 +1315,23 @@ extension ModelPreloader {
     }
     switch sampler.version {
     case .auraflow, .flux1, .hiDreamI1, .hunyuanVideo, .sd3, .sd3Large, .wan21_14b, .wan21_1_3b:
-      if let unet = x.unets[0], sampler.lora.isEmpty || unet.didRunLoRASeparately,
-        let model = unet.model
+      let unet: UNetWrapper<FloatType>? = {
+        switch x {
+        case .success(let x):
+          return x.unets[0]
+        case .failure(let error):
+          guard case .cancelled(let unets) = error as? SamplerError else { return nil }
+          return unets[0] as? UNetWrapper<FloatType>
+        }
+      }()
+      if let unet = unet, sampler.lora.isEmpty || unet.didRunLoRASeparately, let model = unet.model
       {
         weightsCache.attach(sampler.filePath, from: model.parameters)
       }
-      return x.x
+      return try x.get().x
     case .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
       .wurstchenStageB, .wurstchenStageC:
-      return x.x
+      return try x.get().x
     }
   }
 }
