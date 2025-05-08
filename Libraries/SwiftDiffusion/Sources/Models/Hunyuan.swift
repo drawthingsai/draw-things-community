@@ -259,13 +259,53 @@ private func JointTransformerBlock(
   let xV = xToValues(xOut).reshaped([b, hw, h, k])
   xQ = Functional.cmul(left: xQ, right: rot)
   xK = Functional.cmul(left: xK, right: rot)
-  let keys = Functional.concat(axis: 1, xK, contextK)
-  let values = Functional.concat(axis: 1, xV, contextV)
-  let queries = Functional.concat(axis: 1, xQ, contextQ)
+  var keys = Functional.concat(axis: 1, xK, contextK)
+  var values = Functional.concat(axis: 1, xV, contextV)
+  var queries = Functional.concat(axis: 1, xQ, contextQ)
   // Now run attention.
-  let out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
-    queries, keys, values
-  ).reshaped([b, t + hw, h * k])
+  var out: Model.IO
+  switch usesFlashAttention {
+  case .none:
+    keys = keys.transposed(1, 2)
+    queries = ((1.0 / Float(k).squareRoot()) * queries)
+      .transposed(1, 2)
+    values = values.transposed(1, 2)
+    if b * h <= 256 {
+      var outs = [Model.IO]()
+      for i in 0..<(b * h) {
+        let key = keys.reshaped([1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let query = queries.reshaped(
+          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let value = values.reshaped(
+          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        var dot = Matmul(transposeB: (1, 2))(query, key)
+        if let last = outs.last {
+          dot.add(dependencies: [last])
+        }
+        dot = dot.reshaped([t + hw, t + hw])
+        dot = dot.softmax()
+        dot = dot.reshaped([1, t + hw, t + hw])
+        outs.append(dot * value)
+      }
+      out = Concat(axis: 0)(outs)
+      out = out.reshaped([b, h, t + hw, k]).transposed(1, 2).reshaped([b, t + hw, h * k])
+    } else {
+      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      dot = dot.reshaped([b * h * (t + hw), t + hw])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, (t + hw), t + hw])
+      out = dot * values
+      out = out.reshaped([b, h, (t + hw), k]).transposed(1, 2).reshaped([b, (t + hw), h * k])
+    }
+  case .scale1:
+    queries = (1.0 / Float(k).squareRoot()) * queries
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+  case .scaleMerged:
+    out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
+      queries, keys, values
+    ).reshaped([b, t + hw, h * k])
+  }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
     contextOut = out.reshaped(
@@ -392,13 +432,53 @@ private func SingleTransformerBlock(
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_q")
   xQ = normQ(xQ)
   let xV = xToValues(xOut).reshaped([b, t + hw, h, k])
-  let queries = Functional.cmul(left: xQ, right: rot)
-  let keys = Functional.cmul(left: xK, right: rot)
-  let values = xV
+  var queries = Functional.cmul(left: xQ, right: rot)
+  var keys = Functional.cmul(left: xK, right: rot)
+  var values = xV
   // Now run attention.
-  let scaledDotProductAttention = ScaledDotProductAttention(
-    scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
-  var out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+  var out: Model.IO
+  switch usesFlashAttention {
+  case .none:
+    keys = keys.transposed(1, 2)
+    queries = ((1.0 / Float(k).squareRoot()) * queries)
+      .transposed(1, 2)
+    values = values.transposed(1, 2)
+    if b * h <= 256 {
+      var outs = [Model.IO]()
+      for i in 0..<(b * h) {
+        let key = keys.reshaped([1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let query = queries.reshaped(
+          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let value = values.reshaped(
+          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        var dot = Matmul(transposeB: (1, 2))(query, key)
+        if let last = outs.last {
+          dot.add(dependencies: [last])
+        }
+        dot = dot.reshaped([t + hw, t + hw])
+        dot = dot.softmax()
+        dot = dot.reshaped([1, t + hw, t + hw])
+        outs.append(dot * value)
+      }
+      out = Concat(axis: 0)(outs)
+      out = out.reshaped([b, h, t + hw, k]).transposed(1, 2).reshaped([b, t + hw, h * k])
+    } else {
+      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      dot = dot.reshaped([b * h * (t + hw), t + hw])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, (t + hw), t + hw])
+      out = dot * values
+      out = out.reshaped([b, h, (t + hw), k]).transposed(1, 2).reshaped([b, (t + hw), h * k])
+    }
+  case .scale1:
+    queries = (1.0 / Float(k).squareRoot()) * queries
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+  case .scaleMerged:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+  }
   var xIn: Model.IO = x
   if contextBlockPreOnly {
     out = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
@@ -962,13 +1042,53 @@ private func LoRAJointTransformerBlock(
   let xV = xToValues(xOut).reshaped([b, hw, h, k])
   xQ = Functional.cmul(left: xQ, right: rot)
   xK = Functional.cmul(left: xK, right: rot)
-  let keys = Functional.concat(axis: 1, xK, contextK)
-  let values = Functional.concat(axis: 1, xV, contextV)
-  let queries = Functional.concat(axis: 1, xQ, contextQ)
+  var keys = Functional.concat(axis: 1, xK, contextK)
+  var values = Functional.concat(axis: 1, xV, contextV)
+  var queries = Functional.concat(axis: 1, xQ, contextQ)
   // Now run attention.
-  let out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
-    queries, keys, values
-  ).reshaped([b, t + hw, h * k])
+  var out: Model.IO
+  switch usesFlashAttention {
+  case .none:
+    keys = keys.transposed(1, 2)
+    queries = ((1.0 / Float(k).squareRoot()) * queries)
+      .transposed(1, 2)
+    values = values.transposed(1, 2)
+    if b * h <= 256 {
+      var outs = [Model.IO]()
+      for i in 0..<(b * h) {
+        let key = keys.reshaped([1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let query = queries.reshaped(
+          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let value = values.reshaped(
+          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        var dot = Matmul(transposeB: (1, 2))(query, key)
+        if let last = outs.last {
+          dot.add(dependencies: [last])
+        }
+        dot = dot.reshaped([t + hw, t + hw])
+        dot = dot.softmax()
+        dot = dot.reshaped([1, t + hw, t + hw])
+        outs.append(dot * value)
+      }
+      out = Concat(axis: 0)(outs)
+      out = out.reshaped([b, h, t + hw, k]).transposed(1, 2).reshaped([b, t + hw, h * k])
+    } else {
+      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      dot = dot.reshaped([b * h * (t + hw), t + hw])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, (t + hw), t + hw])
+      out = dot * values
+      out = out.reshaped([b, h, (t + hw), k]).transposed(1, 2).reshaped([b, (t + hw), h * k])
+    }
+  case .scale1:
+    queries = (1.0 / Float(k).squareRoot()) * queries
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+  case .scaleMerged:
+    out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
+      queries, keys, values
+    ).reshaped([b, t + hw, h * k])
+  }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
     contextOut = out.reshaped(
@@ -1102,13 +1222,53 @@ private func LoRASingleTransformerBlock(
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_q")
   xQ = normQ(xQ)
   let xV = xToValues(xOut).reshaped([b, t + hw, h, k])
-  let queries = Functional.cmul(left: xQ, right: rot)
-  let keys = Functional.cmul(left: xK, right: rot)
-  let values = xV
+  var queries = Functional.cmul(left: xQ, right: rot)
+  var keys = Functional.cmul(left: xK, right: rot)
+  var values = xV
   // Now run attention.
-  let scaledDotProductAttention = ScaledDotProductAttention(
-    scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
-  var out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+  var out: Model.IO
+  switch usesFlashAttention {
+  case .none:
+    keys = keys.transposed(1, 2)
+    queries = ((1.0 / Float(k).squareRoot()) * queries)
+      .transposed(1, 2)
+    values = values.transposed(1, 2)
+    if b * h <= 256 {
+      var outs = [Model.IO]()
+      for i in 0..<(b * h) {
+        let key = keys.reshaped([1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let query = queries.reshaped(
+          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let value = values.reshaped(
+          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        var dot = Matmul(transposeB: (1, 2))(query, key)
+        if let last = outs.last {
+          dot.add(dependencies: [last])
+        }
+        dot = dot.reshaped([t + hw, t + hw])
+        dot = dot.softmax()
+        dot = dot.reshaped([1, t + hw, t + hw])
+        outs.append(dot * value)
+      }
+      out = Concat(axis: 0)(outs)
+      out = out.reshaped([b, h, t + hw, k]).transposed(1, 2).reshaped([b, t + hw, h * k])
+    } else {
+      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      dot = dot.reshaped([b * h * (t + hw), t + hw])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, (t + hw), t + hw])
+      out = dot * values
+      out = out.reshaped([b, h, (t + hw), k]).transposed(1, 2).reshaped([b, (t + hw), h * k])
+    }
+  case .scale1:
+    queries = (1.0 / Float(k).squareRoot()) * queries
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+  case .scaleMerged:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+  }
   var xIn: Model.IO = x
   if contextBlockPreOnly {
     out = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
