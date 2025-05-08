@@ -55,6 +55,7 @@ public final class WeightsCache {
       let item = Item(file: file, weights: newValue.weights, size: newValue.size)
       map[file] = item
       heap.insert(item)
+      currentTotalSize += newValue.size
     }
   }
 
