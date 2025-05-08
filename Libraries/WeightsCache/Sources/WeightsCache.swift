@@ -13,7 +13,12 @@ public final class WeightsCache {
   }
   private var heap: Heap<Item>
   private var map: [String: Item]
-  public let maxTotalCacheSize: UInt64  // Maximum number of items in the cache
+  public var maxTotalCacheSize: UInt64 {  // Maximum number of items in the cache
+    didSet {
+      guard maxTotalCacheSize < oldValue else { return }
+      evict(for: 0)  // Trigger eviction logic.
+    }
+  }
   public let memorySubsystem: MemorySubsystem
   private var currentTotalSize: UInt64  // Optional: if you also have a total size limit
 

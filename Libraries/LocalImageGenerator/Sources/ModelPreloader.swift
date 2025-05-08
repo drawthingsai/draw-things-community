@@ -107,6 +107,7 @@ public final class ModelPreloader {
   private var coreMLComputeUnitSubscription: Workspace.Subscription? = nil
   private var loraUseCoreMLSubscription: Workspace.Subscription? = nil
   private var maxCoreMLCacheSizeSubscription: Workspace.Subscription? = nil
+  private var weightsCacheSizeSubscription: Workspace.Subscription? = nil
   private var externalStoreSubscription: Workspace.Subscription? = nil
   private var useMFASubscription: Workspace.Subscription? = nil
   private var mergeLoRASubscription: Workspace.Subscription? = nil
@@ -277,6 +278,21 @@ public final class ModelPreloader {
           self.updateMaxCoreMLCacheSize(value)
         case .updated(let value):
           self.updateMaxCoreMLCacheSize(value)
+        }
+      }
+    }
+    weightsCacheSizeSubscription = workspace.dictionary.subscribe(
+      "total_weights_cache", of: Int.self
+    ) { value in
+      queue.async { [weak self] in
+        guard let self = self else { return }
+        switch value {
+        case .deleted:
+          self.updateWeightsCacheSize(nil)
+        case .initial(let value):
+          self.updateWeightsCacheSize(value)
+        case .updated(let value):
+          self.updateWeightsCacheSize(value)
         }
       }
     }
@@ -1014,6 +1030,13 @@ extension ModelPreloader {
       CoreMLModelManager.removeAllConvertedModels()  // Also need to redo the CoreML model now.
       removeAllCache()
     }
+  }
+
+  func updateWeightsCacheSize(_ value: Int?) {
+    dispatchPrecondition(condition: .onQueue(queue))
+    let value =
+      value ?? Int(DeviceCapability.maxTotalWeightsCacheSize / (8 * 1_024 * 1_024 * 1_024))
+    weightsCache.maxTotalCacheSize = UInt64(max(0, value)) * 8 * 1_024 * 1_024 * 1_024  // Set it to the right value.
   }
 
   func updateExternalStore(_ value: Bool?) {
