@@ -153,6 +153,10 @@ public final class ModelImporter {
       && stateDict.keys.contains {
         $0.contains("blocks.29.cross_attn.v.") || $0.contains("blocks.29.attn2.to_v.")
       }
+    var isHiDream = stateDict.keys.contains {
+      $0.contains("double_stream_blocks.15.block.ff_i.experts.0.")
+        || $0.contains("single_stream_blocks.31.block.ff_i.experts.0.")
+    }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
     let inputDim: Int
@@ -220,6 +224,7 @@ public final class ModelImporter {
       isHunyuan = false
       isWan21_14B = false
       isWan21_1_3B = false
+      isHiDream = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -286,6 +291,12 @@ public final class ModelImporter {
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("blocks.29.attn2.to_v.")
       }
+    } else if isHiDream {
+      modelVersion = .hiDreamI1
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 1857
+      isDiffusersFormat = true  // Only Diffusers format available.
     } else {
       throw UnpickleError.tensorNotFound
     }
@@ -346,7 +357,7 @@ public final class ModelImporter {
       case .wan21_1_3b, .wan21_14b:
         throw Error.noTextEncoder
       case .hiDreamI1:
-        fatalError()
+        throw Error.noTextEncoder
       case .kandinsky21:
         fatalError()
       }
@@ -417,9 +428,7 @@ public final class ModelImporter {
             filePath = ModelZoo.filePathForModelDownloaded(
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-            .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b:
-            fatalError()
-          case .hiDreamI1:
+            .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -594,7 +603,8 @@ public final class ModelImporter {
       conditionalLength = 4096
       batchSize = 1
     case .hiDreamI1:
-      fatalError()
+      conditionalLength = 4096
+      batchSize = 1
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -639,10 +649,8 @@ public final class ModelImporter {
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-          .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+          .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
           vectors = []
-        case .hiDreamI1:
-          fatalError()
         case .kandinsky21, .v1, .v2:
           fatalError()
         }
@@ -717,7 +725,18 @@ public final class ModelImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .hiDreamI1:
-        fatalError()
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: HiDreamRotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 128, channels: 128)))
+          ]
+          + HiDreamFixedOutputShapes(
+            timesteps: 1, layers: (16, 32), textLength: 128
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -865,7 +884,10 @@ public final class ModelImporter {
           timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, textLength: 512,
           injectImage: true)
       case .hiDreamI1:
-        fatalError()
+        (unet, unetMapper) = HiDream(
+          batchSize: 1, height: 64, width: 64, textLength: (128, 128), layers: (16, 32),
+          usesFlashAttention: true)
+        (unetFixed, unetFixedMapper) = HiDreamFixed(timesteps: 1, layers: (16, 32))
       case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
@@ -941,7 +963,16 @@ public final class ModelImporter {
         ]
         tEmb = nil
       case .hiDreamI1:
-        fatalError()
+        crossattn =
+          [
+            graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+            graph.variable(.CPU, .WC(1, 2048), of: FloatType.self),
+            graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self),
+          ]
+          + (0..<32).map { _ in
+            graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self)  // Llama encoder hidden states.
+          }
+        tEmb = nil
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -994,6 +1025,15 @@ public final class ModelImporter {
           }
         }
       } else if modelVersion == .flux1 {
+        // Remove the model.diffusion_model / model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          } else if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
+          }
+        }
+      } else if modelVersion == .hiDreamI1 {
         // Remove the model.diffusion_model / model prefix.
         for (key, value) in stateDict {
           if key.hasPrefix("model.diffusion_model.") {
@@ -1078,7 +1118,7 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(.generativeModels)
             modelPrefix = "stage_c"
             modelPrefixFixed = "stage_c_fixed"
-          case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b:
+          case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1087,13 +1127,24 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .hiDreamI1:
-            fatalError()
           case .auraflow:
             fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
             fatalError()
           }
+          func reverseMapping(original: ModelWeightMapping) -> [String: [String]] {
+            var reversed: [String: [(Int, String)]] = [:]
+            for (key, values) in original {
+              for value in values {
+                reversed[value, default: []].append((values.index, key))
+              }
+            }
+            return reversed.mapValues {
+              $0.sorted(by: { $0.0 < $1.0 }).map(\.1)
+            }
+          }
+          let reverseUNetMapping = reverseMapping(original: UNetMapping)
+          let reverseUNetMappingFixed = reverseMapping(original: UNetMappingFixed)
           try store.withTransaction {
             if let encoderHidProjWeightDescriptor = stateDict["encoder_hid_proj.weight"],
               let encoderHidProjBiasDescriptor = stateDict["encoder_hid_proj.bias"]
@@ -1107,13 +1158,46 @@ public final class ModelImporter {
                 store.write("__encoder_hid_proj__[t-0-1]", tensor: tensor)
               }
             }
+            var consumed = Set<String>()
             for (key, value) in UNetMapping.sorted(by: { $0.key < $1.key }) {
-              guard let tensorDescriptor = stateDict[key] else {
+              guard let _ = stateDict[key], !consumed.contains(key) else {
                 continue
               }
-              try archive.with(tensorDescriptor) { tensor in
+              let values = value.count == 1 ? (reverseUNetMapping[value[0]] ?? [key]) : [key]
+              consumed.formUnion(values)
+              let tensorDescriptors = values.compactMap { stateDict[$0] }
+              try archive.with(tensorDescriptors) { tensors in
+                guard !tensors.isEmpty else { return }
+                let tensor: Tensor<FloatType>
+                if tensors.count == 1 {
+                  tensor = Tensor<FloatType>(from: tensors[0])
+                } else {
+                  let shape = [tensors.count] + Array(tensors[0].shape)
+                  var combined = Tensor<FloatType>(.CPU, format: .NCHW, shape: TensorShape(shape))
+                  for (i, tensor) in tensors.enumerated() {
+                    let shape = tensor.shape
+                    if shape.count == 3 {
+                      combined[
+                        i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+                        Tensor<FloatType>(from: tensor).reshaped(
+                          format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 3 {
+                      combined[i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2]] = Tensor<
+                        FloatType
+                      >(from: tensor).reshaped(
+                        format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 2 {
+                      combined[i..<(i + 1), 0..<shape[0], 0..<shape[1]] = Tensor<FloatType>(
+                        from: tensor
+                      ).reshaped(format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 1 {
+                      combined[i..<(i + 1), 0..<shape[0]] = Tensor<FloatType>(from: tensor)
+                        .reshaped(format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    }
+                  }
+                  tensor = combined
+                }
                 if value.count > 1 {
-                  let tensor = Tensor<FloatType>(from: tensor)
                   value.write(
                     graph: graph,
                     to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
@@ -1125,7 +1209,6 @@ public final class ModelImporter {
                 } else if let name = value.first {
                   // For FLUX.1 model, we can inspect x_embedder for whether it is a inpainting, depth, or canny.
                   if name == "t-x_embedder-0-0" && modelVersion == .flux1 {
-                    let tensor = Tensor<FloatType>(from: tensor)
                     let shape = tensor.shape
                     if shape[1] == 384 {
                       // This is an inpainting model.
@@ -1141,7 +1224,6 @@ public final class ModelImporter {
                     store.write(
                       "__\(modelPrefix)__[\(name)]", tensor: Tensor<FloatType>(from: f32Tensor))
                   } else {
-                    let tensor = Tensor<FloatType>(from: tensor)
                     value.write(
                       graph: graph,
                       to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
@@ -1156,11 +1238,43 @@ public final class ModelImporter {
               }
             }
             for (key, value) in UNetMappingFixed.sorted(by: { $0.key < $1.key }) {
-              guard let tensorDescriptor = stateDict[key] else {
+              guard let _ = stateDict[key], !consumed.contains(key) else {
                 continue
               }
-              try archive.with(tensorDescriptor) { tensor in
-                let tensor = Tensor<FloatType>(from: tensor)
+              let values = value.count == 1 ? (reverseUNetMappingFixed[value[0]] ?? [key]) : [key]
+              consumed.formUnion(values)
+              let tensorDescriptors = values.compactMap { stateDict[$0] }
+              try archive.with(tensorDescriptors) { tensors in
+                guard !tensors.isEmpty else { return }
+                let tensor: Tensor<FloatType>
+                if tensors.count == 1 {
+                  tensor = Tensor<FloatType>(from: tensors[0])
+                } else {
+                  let shape = [tensors.count] + Array(tensors[0].shape)
+                  var combined = Tensor<FloatType>(.CPU, format: .NCHW, shape: TensorShape(shape))
+                  for (i, tensor) in tensors.enumerated() {
+                    let shape = tensor.shape
+                    if shape.count == 3 {
+                      combined[
+                        i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+                        Tensor<FloatType>(from: tensor).reshaped(
+                          format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 3 {
+                      combined[i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2]] = Tensor<
+                        FloatType
+                      >(from: tensor).reshaped(
+                        format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 2 {
+                      combined[i..<(i + 1), 0..<shape[0], 0..<shape[1]] = Tensor<FloatType>(
+                        from: tensor
+                      ).reshaped(format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 1 {
+                      combined[i..<(i + 1), 0..<shape[0]] = Tensor<FloatType>(from: tensor)
+                        .reshaped(format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    }
+                  }
+                  tensor = combined
+                }
                 if value.count > 1 {
                   value.write(
                     graph: graph,
@@ -1237,7 +1351,9 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .hiDreamI1:
-          fatalError()
+          if $0.keys.count != 1857 {
+            throw Error.tensorWritesFailed
+          }
         case .auraflow:
           fatalError()
         case .kandinsky21, .wurstchenStageB:

@@ -451,7 +451,7 @@ private func SingleTransformerBlock(
   return (mapper, Model([x, rot] + xChunks, [xOut]))
 }
 
-func HiDream(
+public func HiDream(
   batchSize: Int, height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int),
   usesFlashAttention: Bool
 )
@@ -468,7 +468,7 @@ func HiDream(
     x.reshaped([batchSize, h, 2, w, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
       .reshaped([batchSize, h * w, 2 * 2 * 16])
   ).to(.Float32)
-  let encoderHiddenStates = (0..<49).map { _ in Input() }
+  let encoderHiddenStates = (0..<(layers.0 + layers.1 + 1)).map { _ in Input() }
   var context = encoderHiddenStates[encoderHiddenStates.count - 1].to(.Float32)
   var mappers = [ModelWeightMapper]()
   var adaLNChunks = [Input]()
@@ -554,7 +554,7 @@ private func JointTransformerBlockFixed(
       "\(prefix).adaLN_modulation.1.bias"
     ] = ModelWeightElement(
       (0..<6).map { xAdaLNs[$0].bias.name }
-        + (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].weight.name })
+        + (0..<(contextBlockPreOnly ? 2 : 6)).map { contextAdaLNs[$0].bias.name })
     return mapping
   }
   return (mapper, Model([c], contextChunks + xChunks))
@@ -581,7 +581,7 @@ private func SingleTransformerBlockFixed(
   return (mapper, Model([c], xChunks))
 }
 
-func HiDreamFixed(timesteps: Int, layers: (Int, Int)) -> (
+public func HiDreamFixed(timesteps: Int, layers: (Int, Int)) -> (
   Model, ModelWeightMapper
 ) {
   let t = Input()
@@ -591,15 +591,15 @@ func HiDreamFixed(timesteps: Int, layers: (Int, Int)) -> (
   var vec = timeEmbedder(t) + pooledEmbedder(vector)
   let t5EncoderHiddenStates = Input()
   let llamaEncoderHiddenStates = (0..<32).map { _ in Input() }
-  let captionProjections = (0..<49).map { _ in
+  let captionProjections = (0..<(layers.0 + layers.1 + 1)).map { _ in
     Dense(count: 2_560, noBias: true, name: "caption_projection")
   }
   var encoderHiddenStates = [Model.IO]()
-  for i in 0..<48 {
+  for i in 0..<(layers.0 + layers.1) {
     encoderHiddenStates.append(
       captionProjections[i](llamaEncoderHiddenStates[min(i, llamaEncoderHiddenStates.count - 1)]))
   }
-  let t5HiddenStates = captionProjections[48](t5EncoderHiddenStates)
+  let t5HiddenStates = captionProjections[layers.0 + layers.1](t5EncoderHiddenStates)
   encoderHiddenStates.append(
     Functional.concat(
       axis: 1, t5HiddenStates, encoderHiddenStates[encoderHiddenStates.count - 1]
@@ -634,7 +634,7 @@ func HiDreamFixed(timesteps: Int, layers: (Int, Int)) -> (
     mapping["p_embedder.pooled_embedder.linear_1.bias"] = [pMlp0.bias.name]
     mapping["p_embedder.pooled_embedder.linear_2.weight"] = [pMlp2.weight.name]
     mapping["p_embedder.pooled_embedder.linear_2.bias"] = [pMlp2.bias.name]
-    for i in 0..<49 {
+    for i in 0..<(layers.0 + layers.1 + 1) {
       mapping["caption_projection.\(i).linear.weight"] = [captionProjections[i].weight.name]
     }
     for mapper in mappers {
@@ -649,4 +649,48 @@ func HiDreamFixed(timesteps: Int, layers: (Int, Int)) -> (
       [t, vector, t5EncoderHiddenStates] + llamaEncoderHiddenStates, encoderHiddenStates + outs),
     mapper
   )
+}
+
+private func JointTransformerBlockFixedOutputShapes(
+  prefix: String, batchSize: Int, k: Int, h: Int, contextBlockPreOnly: Bool
+) -> [TensorShape] {
+  let contextOutputShapes = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in
+    TensorShape([batchSize, 1, k * h])
+  }
+  let xOutputShapes = (0..<6).map { _ in TensorShape([batchSize, 1, k * h]) }
+  return contextOutputShapes + xOutputShapes
+}
+
+private func SingleTransformerBlockFixedOutputShapes(
+  prefix: String, batchSize: Int, k: Int, h: Int
+) -> [TensorShape] {
+  let xOutputShapes = (0..<6).map { _ in TensorShape([batchSize, 1, k * h]) }
+  return xOutputShapes
+}
+
+public func HiDreamFixedOutputShapes(timesteps: Int, layers: (Int, Int), textLength: Int)
+  -> [TensorShape]
+{
+  var outs = [TensorShape]()
+  var encoderHiddenStates = [TensorShape]()
+  for _ in 0..<(layers.0 + layers.1) {
+    encoderHiddenStates.append(TensorShape([timesteps, textLength, 2_560]))
+  }
+  encoderHiddenStates.append(TensorShape([timesteps, textLength * 2, 2_560]))
+  for i in 0..<layers.0 {
+    let contextBlockPreOnly = i == layers.0 - 1 && layers.1 == 0
+    let outputShapes = JointTransformerBlockFixedOutputShapes(
+      prefix: "double_stream_blocks.\(i).block", batchSize: timesteps, k: 128, h: 2_560 / 128,
+      contextBlockPreOnly: contextBlockPreOnly)
+    outs.append(contentsOf: outputShapes)
+  }
+  for i in 0..<layers.1 {
+    let outputShapes = SingleTransformerBlockFixedOutputShapes(
+      prefix: "single_stream_blocks.\(i).block", batchSize: timesteps, k: 128, h: 2_560 / 128)
+    outs.append(contentsOf: outputShapes)
+  }
+  outs.append(contentsOf: [
+    TensorShape([timesteps, 1, 2_560]), TensorShape([timesteps, 1, 2_560]),
+  ])
+  return encoderHiddenStates + outs
 }
