@@ -1148,14 +1148,14 @@ extension UNetFromNNC {
       }
       if name.contains("c_q") || name.contains("c_k") || name.contains("c_v")  // context q, k, v projection
         || name.contains("x_q") || name.contains("x_k") || name.contains("x_v")  // x q, k, v projection
-        || name.contains("c_w1") || name.contains("c_w2")  // HiDream's context FFN, not the out projection.
+        || name.contains("c_w1") || name.contains("c_w2")  // HiDream's context FFN, no proj up.
         || name.contains("x_shared") || name.contains("x_moe_w1") || name.contains("x_moe_w2")  // HiDream's x FFN, including MoE, half proj up (w1), all proj down (w2).
         || name.contains("x_linear1") || name.contains("c_linear1")  // Wan 2.1, Hunyuan, FLUX.1 FFNs, proj up.
       {
         return true
       }
-      if version == .wan21_14b {  // For 14B Wan 2.1, we will be more aggressive and also offload proj down.
-        if name.contains("x_out_proj") {
+      if version == .wan21_14b {  // For 14B Wan 2.1, we will be more aggressive and also offload out projection.
+        if name.contains("c_o-") || name.contains("x_o-") {
           return true
         }
       }
