@@ -1139,7 +1139,7 @@ extension UNetFromNNC {
       version: version, memoryCapacity: memoryCapacity, externalOnDemand: externalOnDemand)
     let loadedFromWeightsCache = weightsCache.detach(filePath, to: unet.unwrapped.parameters)
 
-    func shouldOffload(name: String) {
+    func shouldOffload(name: String) -> Bool {
       guard externalOnDemandPartially else {
         return false
       }
