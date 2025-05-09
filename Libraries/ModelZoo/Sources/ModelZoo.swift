@@ -129,10 +129,8 @@ public struct ModelZoo: DownloadZoo {
       }
 
       public enum ApiFileFormat: String, Codable {
-        case mp4 = "mp4"
-        case png = "png"
-        case jpg = "jpg"
-        case jpeg = "jpeg"
+        case image = "image"
+        case video = "video"
       }
 
       public enum ResultPath: Codable {
