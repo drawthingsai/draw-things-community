@@ -1138,6 +1138,29 @@ extension UNetFromNNC {
     let externalOnDemandPartially = externalOnDemandPartially(
       version: version, memoryCapacity: memoryCapacity, externalOnDemand: externalOnDemand)
     let loadedFromWeightsCache = weightsCache.detach(filePath, to: unet.unwrapped.parameters)
+
+    func shouldOffload(name: String) {
+      guard externalOnDemandPartially else {
+        return false
+      }
+      guard name.hasSuffix("-0]") else {  // Only weights, not bias.
+        return false
+      }
+      if name.contains("c_q") || name.contains("c_k") || name.contains("c_v")  // context q, k, v projection
+        || name.contains("x_q") || name.contains("x_k") || name.contains("x_v")  // x q, k, v projection
+        || name.contains("c_w1") || name.contains("c_w2")  // HiDream's context FFN, not the out projection.
+        || name.contains("x_shared") || name.contains("x_moe_w1") || name.contains("x_moe_w2")  // HiDream's x FFN, including MoE, half proj up (w1), all proj down (w2).
+        || name.contains("x_linear1") || name.contains("c_linear1")  // Wan 2.1, Hunyuan, FLUX.1 FFNs, proj up.
+      {
+        return true
+      }
+      if version == .wan21_14b {  // For 14B Wan 2.1, we will be more aggressive and also offload proj down.
+        if name.contains("x_out_proj") {
+          return true
+        }
+      }
+      return false
+    }
     graph.openStore(
       filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
     ) { store in
@@ -1234,13 +1257,7 @@ extension UNetFromNNC {
                   guard !loadedFromWeightsCache else {
                     return .fail
                   }
-                  if externalOnDemandPartially && name.hasSuffix("-0]")
-                    && (name.contains("c_q") || name.contains("c_k") || name.contains("c_v")
-                      || name.contains("x_q") || name.contains("x_k") || name.contains("x_v")
-                      || name.contains("x_shared") || name.contains("x_moe_w1")
-                      || name.contains("c_w1") || name.contains("x_moe_w2") || name.contains("c_w2")
-                      || name.contains("x_linear1") || name.contains("c_linear1"))
-                  {
+                  if shouldOffload(name: name) {
                     return .continue(name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit])
                   }
                   return result
@@ -1288,13 +1305,7 @@ extension UNetFromNNC {
                   guard !loadedFromWeightsCache else {
                     return .fail
                   }
-                  if externalOnDemandPartially && name.hasSuffix("-0]")
-                    && (name.contains("c_q") || name.contains("c_k") || name.contains("c_v")
-                      || name.contains("x_q") || name.contains("x_k") || name.contains("x_v")
-                      || name.contains("x_shared") || name.contains("x_moe_w1")
-                      || name.contains("c_w1") || name.contains("x_moe_w2") || name.contains("c_w2")
-                      || name.contains("x_linear1") || name.contains("c_linear1"))
-                  {
+                  if shouldOffload(name: name) {
                     return .continue(name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit])
                   }
                   return result
@@ -1333,13 +1344,7 @@ extension UNetFromNNC {
                     .rawValue.toCPU()
                 })
             }
-            if externalOnDemandPartially && name.hasSuffix("-0]")
-              && (name.contains("c_q") || name.contains("c_k") || name.contains("c_v")
-                || name.contains("x_q") || name.contains("x_k") || name.contains("x_v")
-                || name.contains("x_shared") || name.contains("x_moe_w1") || name.contains("c_w1")
-                || name.contains("x_moe_w2") || name.contains("c_w2") || name.contains("x_linear1")
-                || name.contains("c_linear1"))
-            {
+            if shouldOffload(name: name) {
               return .continue(name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit])
             }
             return .continue(name)
