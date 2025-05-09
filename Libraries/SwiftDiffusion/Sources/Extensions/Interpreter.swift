@@ -17,6 +17,7 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
   public let format: Format
   public let offsets: [Int]?
   public let scale: Float
+  public let index: Int
   private let underlyingArray: [String]
 
   public typealias Element = String
@@ -31,11 +32,14 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
   public subscript(position: Index) -> Element { underlyingArray[position] }
   public subscript(x: Indices) -> SubSequence { underlyingArray[x] }
 
-  public init(_ array: [Element], format: Format = .O, offsets: [Int]? = nil, scale: Float = 1) {
+  public init(
+    _ array: [Element], format: Format = .O, offsets: [Int]? = nil, scale: Float = 1, index: Int = 0
+  ) {
     self.underlyingArray = array
     self.format = format
     self.offsets = offsets
     self.scale = scale
+    self.index = index
   }
 
   public init(arrayLiteral elements: Element...) {
@@ -43,6 +47,7 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
     self.format = .O
     self.offsets = nil
     self.scale = 1
+    self.index = 0
   }
 }
 

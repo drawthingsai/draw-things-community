@@ -299,19 +299,31 @@ private func JointTransformerBlock(
     mapping["\(prefix).ff_i.shared_experts.w2.weight"] = [xSharedW2.weight.name]
     mapping["\(prefix).ff_i.shared_experts.w3.weight"] = [xSharedW3.weight.name]
     mapping["\(prefix).ff_i.gate.weight"] = [xMoEGate.weight.name]
-    // TODO: how to express combining?
-    mapping["\(prefix).ff_i.experts.0.w1.weight"] = [xMoEW1.weight.name]
-    mapping["\(prefix).ff_i.experts.1.w1.weight"] = [xMoEW1.weight.name]
-    mapping["\(prefix).ff_i.experts.2.w1.weight"] = [xMoEW1.weight.name]
-    mapping["\(prefix).ff_i.experts.3.w1.weight"] = [xMoEW1.weight.name]
-    mapping["\(prefix).ff_i.experts.0.w2.weight"] = [xMoEW2.weight.name]
-    mapping["\(prefix).ff_i.experts.1.w2.weight"] = [xMoEW2.weight.name]
-    mapping["\(prefix).ff_i.experts.2.w2.weight"] = [xMoEW2.weight.name]
-    mapping["\(prefix).ff_i.experts.3.w2.weight"] = [xMoEW2.weight.name]
-    mapping["\(prefix).ff_i.experts.0.w3.weight"] = [xMoEW3.weight.name]
-    mapping["\(prefix).ff_i.experts.1.w3.weight"] = [xMoEW3.weight.name]
-    mapping["\(prefix).ff_i.experts.2.w3.weight"] = [xMoEW3.weight.name]
-    mapping["\(prefix).ff_i.experts.3.w3.weight"] = [xMoEW3.weight.name]
+    // We will build reverse look-up durign importing for this to work, hence the index is required to recover the order.
+    mapping["\(prefix).ff_i.experts.0.w1.weight"] = ModelWeightElement(
+      [xMoEW1.weight.name], index: 0)
+    mapping["\(prefix).ff_i.experts.1.w1.weight"] = ModelWeightElement(
+      [xMoEW1.weight.name], index: 1)
+    mapping["\(prefix).ff_i.experts.2.w1.weight"] = ModelWeightElement(
+      [xMoEW1.weight.name], index: 2)
+    mapping["\(prefix).ff_i.experts.3.w1.weight"] = ModelWeightElement(
+      [xMoEW1.weight.name], index: 3)
+    mapping["\(prefix).ff_i.experts.0.w2.weight"] = ModelWeightElement(
+      [xMoEW2.weight.name], index: 0)
+    mapping["\(prefix).ff_i.experts.1.w2.weight"] = ModelWeightElement(
+      [xMoEW2.weight.name], index: 1)
+    mapping["\(prefix).ff_i.experts.2.w2.weight"] = ModelWeightElement(
+      [xMoEW2.weight.name], index: 2)
+    mapping["\(prefix).ff_i.experts.3.w2.weight"] = ModelWeightElement(
+      [xMoEW2.weight.name], index: 3)
+    mapping["\(prefix).ff_i.experts.0.w3.weight"] = ModelWeightElement(
+      [xMoEW3.weight.name], index: 0)
+    mapping["\(prefix).ff_i.experts.1.w3.weight"] = ModelWeightElement(
+      [xMoEW3.weight.name], index: 1)
+    mapping["\(prefix).ff_i.experts.2.w3.weight"] = ModelWeightElement(
+      [xMoEW3.weight.name], index: 2)
+    mapping["\(prefix).ff_i.experts.3.w3.weight"] = ModelWeightElement(
+      [xMoEW3.weight.name], index: 3)
     return mapping
   }
   if !contextBlockPreOnly {
@@ -409,18 +421,31 @@ private func SingleTransformerBlock(
     mapping["\(prefix).ff_i.shared_experts.w2.weight"] = [xSharedW2.weight.name]
     mapping["\(prefix).ff_i.shared_experts.w3.weight"] = [xSharedW3.weight.name]
     mapping["\(prefix).ff_i.gate.weight"] = [xMoEGate.weight.name]
-    mapping["\(prefix).ff_i.experts.0.w1.weight"] = [xMoEW1.weight.name]
-    mapping["\(prefix).ff_i.experts.1.w1.weight"] = [xMoEW1.weight.name]
-    mapping["\(prefix).ff_i.experts.2.w1.weight"] = [xMoEW1.weight.name]
-    mapping["\(prefix).ff_i.experts.3.w1.weight"] = [xMoEW1.weight.name]
-    mapping["\(prefix).ff_i.experts.0.w2.weight"] = [xMoEW2.weight.name]
-    mapping["\(prefix).ff_i.experts.1.w2.weight"] = [xMoEW2.weight.name]
-    mapping["\(prefix).ff_i.experts.2.w2.weight"] = [xMoEW2.weight.name]
-    mapping["\(prefix).ff_i.experts.3.w2.weight"] = [xMoEW2.weight.name]
-    mapping["\(prefix).ff_i.experts.0.w3.weight"] = [xMoEW3.weight.name]
-    mapping["\(prefix).ff_i.experts.1.w3.weight"] = [xMoEW3.weight.name]
-    mapping["\(prefix).ff_i.experts.2.w3.weight"] = [xMoEW3.weight.name]
-    mapping["\(prefix).ff_i.experts.3.w3.weight"] = [xMoEW3.weight.name]
+    // We will build reverse look-up durign importing for this to work, hence the index is required to recover the order.
+    mapping["\(prefix).ff_i.experts.0.w1.weight"] = ModelWeightElement(
+      [xMoEW1.weight.name], index: 0)
+    mapping["\(prefix).ff_i.experts.1.w1.weight"] = ModelWeightElement(
+      [xMoEW1.weight.name], index: 1)
+    mapping["\(prefix).ff_i.experts.2.w1.weight"] = ModelWeightElement(
+      [xMoEW1.weight.name], index: 2)
+    mapping["\(prefix).ff_i.experts.3.w1.weight"] = ModelWeightElement(
+      [xMoEW1.weight.name], index: 3)
+    mapping["\(prefix).ff_i.experts.0.w2.weight"] = ModelWeightElement(
+      [xMoEW2.weight.name], index: 0)
+    mapping["\(prefix).ff_i.experts.1.w2.weight"] = ModelWeightElement(
+      [xMoEW2.weight.name], index: 1)
+    mapping["\(prefix).ff_i.experts.2.w2.weight"] = ModelWeightElement(
+      [xMoEW2.weight.name], index: 2)
+    mapping["\(prefix).ff_i.experts.3.w2.weight"] = ModelWeightElement(
+      [xMoEW2.weight.name], index: 3)
+    mapping["\(prefix).ff_i.experts.0.w3.weight"] = ModelWeightElement(
+      [xMoEW3.weight.name], index: 0)
+    mapping["\(prefix).ff_i.experts.1.w3.weight"] = ModelWeightElement(
+      [xMoEW3.weight.name], index: 1)
+    mapping["\(prefix).ff_i.experts.2.w3.weight"] = ModelWeightElement(
+      [xMoEW3.weight.name], index: 2)
+    mapping["\(prefix).ff_i.experts.3.w3.weight"] = ModelWeightElement(
+      [xMoEW3.weight.name], index: 3)
     return mapping
   }
   return (mapper, Model([x, rot] + xChunks, [xOut]))
