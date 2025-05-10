@@ -125,9 +125,9 @@ extension WeightsCache {
   public func detach(_ file: String, to parameters: @autoclosure () -> Model.Parameters) -> Bool {
     switch memorySubsystem {
     case .UMA:
-      guard let weights = remove(at: file)?.weights else { return false }
+      guard var weights = remove(at: file)?.weights else { return false }
       let parameters = parameters()
-      parameters.attach(consuming: weights)
+      parameters.attach(consuming: &weights)
     case .dGPU:
       guard let weights = self[file]?.weights else { return false }
       let parameters = parameters()
