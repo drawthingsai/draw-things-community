@@ -170,7 +170,7 @@ public struct DeviceCapability {
   }()
   public static let isGoodPerformance: Bool = {
     #if !canImport(Metal)
-      return false
+      return true
     #else
       let physicalMemory = ProcessInfo.processInfo.physicalMemory
       // Should be 6GiB and above devices.
@@ -179,7 +179,7 @@ public struct DeviceCapability {
   }()
   public static let isHighPerformance: Bool = {
     #if !canImport(Metal)
-      return false
+      return true
     #else
       let physicalMemory = ProcessInfo.processInfo.physicalMemory
       return physicalMemory >= 7_516_192_768  // This is 7 * 1024 * 1024 * 1024.
@@ -187,7 +187,7 @@ public struct DeviceCapability {
   }()
   public static let isMaxPerformance: Bool = {
     #if !canImport(Metal)
-      return false
+      return true
     #else
       let physicalMemory = ProcessInfo.processInfo.physicalMemory
       return physicalMemory >= 16_106_127_360  // This is 15 * 1024 * 1024 * 1024.
