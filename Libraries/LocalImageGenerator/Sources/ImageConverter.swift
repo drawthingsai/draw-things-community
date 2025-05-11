@@ -509,9 +509,12 @@ public enum ImageConverter {
       tensor.withUnsafeBytes {
         guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
         for i in 0..<imageHeight * imageWidth {
-          bytes[i * 4] = UInt8(min(max(Int((fp16[i * 3] + 1) * 127.5), 0), 255))
-          bytes[i * 4 + 1] = UInt8(min(max(Int((fp16[i * 3 + 1] + 1) * 127.5), 0), 255))
-          bytes[i * 4 + 2] = UInt8(min(max(Int((fp16[i * 3 + 2] + 1) * 127.5), 0), 255))
+          let r = (fp16[i * 3] + 1) * 127.5
+          let g = (fp16[i * 3 + 1] + 1) * 127.5
+          let b = (fp16[i * 3 + 2] + 1) * 127.5
+          bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+          bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+          bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
           bytes[i * 4 + 3] = 255
         }
       }
