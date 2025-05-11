@@ -3383,7 +3383,7 @@ extension LocalImageGenerator {
         }
         var batch = [Tensor<FloatType>]()
         let shape = result.shape
-        for i in 0..<batchSize {
+        for i in 0..<min(batchSize, shape[0]) {
           batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
         }
         return (batch, scaleFactor)
@@ -3698,7 +3698,7 @@ extension LocalImageGenerator {
       }
       var batch = [Tensor<FloatType>]()
       let shape = result.shape
-      for i in 0..<batchSize {
+      for i in 0..<min(batchSize, shape[0]) {
         batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
       }
       return (batch, scaleFactor)
@@ -4472,7 +4472,7 @@ extension LocalImageGenerator {
       }
       var batch = [Tensor<FloatType>]()
       let shape = result.shape
-      for i in 0..<batchSize {
+      for i in 0..<min(batchSize, shape[0]) {
         batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
       }
       return (batch, scaleFactor)
@@ -5728,7 +5728,7 @@ extension LocalImageGenerator {
       }
       var batch = [Tensor<FloatType>]()
       let shape = result.shape
-      for i in 0..<batchSize {
+      for i in 0..<min(batchSize, shape[0]) {
         batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
       }
       return batch
@@ -6656,7 +6656,7 @@ extension LocalImageGenerator {
       }
       var batch = [Tensor<FloatType>]()
       let shape = result.shape
-      for i in 0..<batchSize {
+      for i in 0..<min(batchSize, shape[0]) {
         batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
       }
       return batch
