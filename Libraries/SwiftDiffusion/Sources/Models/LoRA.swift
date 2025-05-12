@@ -31,7 +31,6 @@ public func LoRAConvolution(
   noBias: Bool = false, hint: Hint = Hint(), format: Convolution.Format? = nil, index: Int? = nil,
   name: String = ""
 ) -> Model {
-  let x = Input()
   let conv2d = Convolution(
     groups: groups, filters: filters, filterSize: filterSize, noBias: noBias, hint: hint,
     format: format, name: name)
@@ -50,6 +49,7 @@ public func LoRAConvolution(
       return conv2d
     }
   }
+  let x = Input()
   let downKey = index.map { "\(name)_lora_down-\($0)" } ?? "\(name)_lora_down"
   let upKey = index.map { "\(name)_lora_up-\($0)" } ?? "\(name)_lora_up"
   let conv2dDown = Convolution(
@@ -85,7 +85,6 @@ public func LoRADense(
   count: Int, configuration: LoRANetworkConfiguration, noBias: Bool = false,
   flags: Functional.GEMMFlag = [], index: Int? = nil, name: String = ""
 ) -> Model {
-  let x = Input()
   let dense = Dense(count: count, noBias: noBias, flags: flags, name: name)
   guard configuration.rank > 0 else {
     return dense
@@ -102,6 +101,7 @@ public func LoRADense(
       return dense
     }
   }
+  let x = Input()
   let downKey = index.map { "\(name)_lora_down-\($0)" } ?? "\(name)_lora_down"
   let upKey = index.map { "\(name)_lora_up-\($0)" } ?? "\(name)_lora_up"
   let denseDown = Dense(
@@ -130,6 +130,62 @@ public func LoRADense(
         ? denseUp(downX).to(of: x) : denseUp(downX))
   }
   return Model([x], [out])
+}
+
+public func LoRASegmentedDense(
+  segments: Int,
+  count: Int, configuration: LoRANetworkConfiguration, noBias: Bool = false,
+  flags: Functional.GEMMFlag = [], index: Int? = nil, name: String = ""
+) -> Model {
+  let dense = SegmentedDense(
+    segments: segments, count: count, noBias: noBias, flags: flags, name: name)
+  guard configuration.rank > 0 else {
+    return dense
+  }
+  if let keys = configuration.keys {
+    let key: String
+    if let index = index {
+      key = "\(name)-\(index)-"
+    } else {
+      key = "\(name)-"
+    }
+    // If cannot find existing key that matches the prefix, return vanilla dense layer.
+    if !keys.contains(where: { $0.hasPrefix(key) }) {
+      return dense
+    }
+  }
+  let x = Input()
+  let expertIds = Input()
+  let downKey = index.map { "\(name)_lora_down-\($0)" } ?? "\(name)_lora_down"
+  let upKey = index.map { "\(name)_lora_up-\($0)" } ?? "\(name)_lora_up"
+  let denseDown = SegmentedDense(
+    segments: segments,
+    count: configuration.rank, noBias: true,
+    trainable: configuration.orthonormalDown ? false : true,
+    name: name.isEmpty ? "lora_down" : downKey)
+  let denseUp = SegmentedDense(
+    segments: segments,
+    count: count, noBias: true, trainable: true, name: name.isEmpty ? "lora_up" : upKey)
+  var out = dense(x, expertIds)
+  let downX: Model.IO
+  if configuration.highPrecision {
+    downX = denseDown(x.to(.Float32), expertIds)
+  } else {
+    downX = denseDown(x, expertIds)
+  }
+  if configuration.scale != 1 {
+    out =
+      out
+      + (configuration.highPrecision
+        ? denseUp(configuration.scale * downX, expertIds).to(of: x)
+        : denseUp(configuration.scale * downX, expertIds))
+  } else {
+    out =
+      out
+      + (configuration.highPrecision
+        ? denseUp(downX, expertIds).to(of: x) : denseUp(downX, expertIds))
+  }
+  return Model([x, expertIds], [out])
 }
 
 /// Text Model
