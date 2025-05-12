@@ -156,6 +156,7 @@ public func LoRASegmentedDense(
   }
   let x = Input()
   let expertIds = Input()
+  let expertCounts = Input()
   let downKey = index.map { "\(name)_lora_down-\($0)" } ?? "\(name)_lora_down"
   let upKey = index.map { "\(name)_lora_up-\($0)" } ?? "\(name)_lora_up"
   let denseDown = SegmentedDense(
@@ -166,26 +167,27 @@ public func LoRASegmentedDense(
   let denseUp = SegmentedDense(
     segments: segments,
     count: count, noBias: true, trainable: true, name: name.isEmpty ? "lora_up" : upKey)
-  var out = dense(x, expertIds)
+  var out = dense(x, expertIds, expertCounts)
   let downX: Model.IO
   if configuration.highPrecision {
-    downX = denseDown(x.to(.Float32), expertIds)
+    downX = denseDown(x.to(.Float32), expertIds, expertCounts)
   } else {
-    downX = denseDown(x, expertIds)
+    downX = denseDown(x, expertIds, expertCounts)
   }
   if configuration.scale != 1 {
     out =
       out
       + (configuration.highPrecision
-        ? denseUp(configuration.scale * downX, expertIds).to(of: x)
-        : denseUp(configuration.scale * downX, expertIds))
+        ? denseUp(configuration.scale * downX, expertIds, expertCounts).to(of: x)
+        : denseUp(configuration.scale * downX, expertIds, expertCounts))
   } else {
     out =
       out
       + (configuration.highPrecision
-        ? denseUp(downX, expertIds).to(of: x) : denseUp(downX, expertIds))
+        ? denseUp(downX, expertIds, expertCounts).to(of: x)
+        : denseUp(downX, expertIds, expertCounts))
   }
-  return Model([x, expertIds], [out])
+  return Model([x, expertIds, expertCounts], [out])
 }
 
 /// Text Model

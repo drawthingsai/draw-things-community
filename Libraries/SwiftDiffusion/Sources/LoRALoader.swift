@@ -57,7 +57,12 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
             // This is to check if alternatively, this is the key for tensor patch.
             guard isLoRADownNetworkKey || key.hasSuffix("__down__") else { continue }
             guard let tensor = $0.read(like: key) else { continue }
-            rank = max(rank, tensor.shape[0])
+            let shape = tensor.shape
+            if shape.count == 3 {  // This is MoE, check the second to last.
+              rank = max(rank, tensor.shape[1])
+            } else {
+              rank = max(rank, tensor.shape[0])
+            }
           }
         }
         return oldRank + rank
@@ -114,7 +119,13 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     }
     // If it is these, we have to create the LoRA tensor one way or another. First create, then loop through to fill them.
     precondition(dataType == FloatType.dataType)
-    var tensor = Tensor<FloatType>(.CPU, .NC(shape[0], shape[1...].reduce(1, *)))
+    var tensor: Tensor<FloatType>
+    let isMoE = (shape.count == 3)
+    if isMoE {  // Special handling of MoE.
+      tensor = Tensor<FloatType>(.CPU, .HWC(shape[0], shape[1], shape[2...].reduce(1, *)))
+    } else {
+      tensor = Tensor<FloatType>(.CPU, .NC(shape[0], shape[1...].reduce(1, *)))
+    }
     tensor.withUnsafeMutableBytes {
       let size = shape.reduce(MemoryLayout<FloatType>.size, *)
       memset($0.baseAddress!, 0, size)
@@ -146,23 +157,42 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
           originalPrefix + (isUp ? "__up__" : "__down__"), kind: .CPU,
           codec: [.q6p, .q8p, .ezm7, .externalData])
       else { continue }
-      let formattedTensor = Tensor<FloatType>(from: loadedTensor).reshaped(
-        .NC(loadedTensor.shape[0], loadedTensor.shape[1...].reduce(1, *)))
-      let newRank = isUp ? formattedTensor.shape[1] : formattedTensor.shape[0]
+      let formattedTensor: Tensor<FloatType>
+      let newRank: Int
+      if isMoE {
+        formattedTensor = Tensor<FloatType>(from: loadedTensor).reshaped(
+          .HWC(loadedTensor.shape[0], loadedTensor.shape[1], loadedTensor.shape[2...].reduce(1, *)))
+        newRank = isUp ? formattedTensor.shape[2] : formattedTensor.shape[1]
+      } else {
+        formattedTensor = Tensor<FloatType>(from: loadedTensor).reshaped(
+          .NC(loadedTensor.shape[0], loadedTensor.shape[1...].reduce(1, *)))
+        newRank = isUp ? formattedTensor.shape[1] : formattedTensor.shape[0]
+      }
       let oldRank = rank
       rank += newRank
       if weight == 1 {
         if isUp {
-          tensor[0..<tensorShape[0], oldRank..<(oldRank + newRank)] =
-            formattedTensor[0..<tensorShape[0], 0..<newRank].toCPU()
+          if isMoE {
+            tensor[0..<tensorShape[0], 0..<tensorShape[1], oldRank..<(oldRank + newRank)] =
+              formattedTensor[0..<tensorShape[0], 0..<tensorShape[1], 0..<newRank].toCPU()
+          } else {
+            tensor[0..<tensorShape[0], oldRank..<(oldRank + newRank)] =
+              formattedTensor[0..<tensorShape[0], 0..<newRank].toCPU()
+          }
         } else {
           guard
             let loraMid = store.read(
               originalPrefix + "__mid__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
           else {
-            let shape1 = min(tensorShape[1], formattedTensor.shape[1])
-            tensor[oldRank..<(oldRank + newRank), 0..<shape1] =
-              formattedTensor[0..<newRank, 0..<shape1].toCPU()
+            if isMoE {
+              let shape2 = min(tensorShape[2], formattedTensor.shape[2])
+              tensor[0..<tensorShape[0], oldRank..<(oldRank + newRank), 0..<shape2] =
+                formattedTensor[0..<tensorShape[0], 0..<newRank, 0..<shape2].toCPU()
+            } else {
+              let shape1 = min(tensorShape[1], formattedTensor.shape[1])
+              tensor[oldRank..<(oldRank + newRank), 0..<shape1] =
+                formattedTensor[0..<newRank, 0..<shape1].toCPU()
+            }
             continue
           }
           let down = graph.variable(
@@ -185,20 +215,37 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
         let sqrtWeightDown = weight >= 0 ? weight.squareRoot() : (-weight).squareRoot()
         let sqrtWeightUp = weight >= 0 ? sqrtWeightDown : -sqrtWeightDown
         if isUp {
-          tensor[0..<tensorShape[0], oldRank..<(oldRank + newRank)] =
-            (sqrtWeightUp
-            * graph.variable(formattedTensor[0..<tensorShape[0], 0..<newRank].toGPU(0)))
-            .rawValue.toCPU()
+          if isMoE {
+            tensor[0..<tensorShape[0], 0..<tensorShape[1], oldRank..<(oldRank + newRank)] =
+              (sqrtWeightUp
+              * graph.variable(
+                formattedTensor[0..<tensorShape[0], 0..<tensorShape[1], 0..<newRank].toGPU(0)))
+              .rawValue.toCPU()
+          } else {
+            tensor[0..<tensorShape[0], oldRank..<(oldRank + newRank)] =
+              (sqrtWeightUp
+              * graph.variable(formattedTensor[0..<tensorShape[0], 0..<newRank].toGPU(0)))
+              .rawValue.toCPU()
+          }
         } else {
           guard
             let loraMid = store.read(
               originalPrefix + "__mid__", kind: .CPU, codec: [.q6p, .q8p, .ezm7, .externalData])
           else {
-            let shape1 = min(tensorShape[1], formattedTensor.shape[1])
-            tensor[oldRank..<(oldRank + newRank), 0..<shape1] =
-              (sqrtWeightDown
-              * graph.variable(formattedTensor[0..<newRank, 0..<shape1].toGPU(0)))
-              .rawValue.toCPU()
+            if isMoE {
+              let shape2 = min(tensorShape[2], formattedTensor.shape[2])
+              tensor[0..<tensorShape[0], oldRank..<(oldRank + newRank), 0..<shape2] =
+                (sqrtWeightDown
+                * graph.variable(
+                  formattedTensor[0..<tensorShape[0], 0..<newRank, 0..<shape2].toGPU(0)))
+                .rawValue.toCPU()
+            } else {
+              let shape1 = min(tensorShape[1], formattedTensor.shape[1])
+              tensor[oldRank..<(oldRank + newRank), 0..<shape1] =
+                (sqrtWeightDown
+                * graph.variable(formattedTensor[0..<newRank, 0..<shape1].toGPU(0)))
+                .rawValue.toCPU()
+            }
             continue
           }
           let down = graph.variable(

@@ -1075,7 +1075,35 @@ extension UNetFixedEncoder {
       }
       precondition(timesteps.count > 0)
       let unetFixed: Model
-      (unetFixed, _) = HiDreamFixed(timesteps: cBatchSize * timesteps.count, layers: (16, 32))
+      let lora = Array(
+        (OrderedDictionary<String, LoRAConfiguration>(
+          lora.filter({ $0.version == version }).map {
+            ($0.file, $0)
+          }
+        ) {
+          LoRAConfiguration(
+            file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
+            modifier: $0.modifier)
+        })
+        .values
+      ).filter { $0.weight != 0 }
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        && canRunLoRASeparately
+      if shouldRunLoRASeparately {
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        (unetFixed, _) = LoRAHiDreamFixed(
+          timesteps: cBatchSize * timesteps.count, layers: (16, 32),
+          LoRAConfiguration: configuration)
+      } else {
+        (unetFixed, _) = HiDreamFixed(timesteps: cBatchSize * timesteps.count, layers: (16, 32))
+      }
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
       var pooleds = graph.variable(
@@ -1091,10 +1119,45 @@ extension UNetFixedEncoder {
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [timeEmbeds, pooleds, t5] + llama3)
-      if !weightsCache.detach("\(filePath):[fixed]", to: unetFixed.parameters) {
-        graph.openStore(
-          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-        ) { store in
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !lora.isEmpty {
+          if shouldRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<48).map {
+                return ($0, $0)
+              })
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, format, shape in
+                let result = loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                  store: store, dataType: dataType, format: format, shape: shape)
+                switch result {
+                case .continue(let updatedName, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail  // Skip loading.
+                  }
+                case .fail, .final(_):
+                  return result
+                }
+              }
+            }
+          } else {
+            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, _, _, shape in
+                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              }
+            }
+          }
+        } else if !loadedFromWeightsCache {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }

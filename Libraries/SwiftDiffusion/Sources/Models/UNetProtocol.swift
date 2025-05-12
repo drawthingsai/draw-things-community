@@ -1031,14 +1031,28 @@ extension UNetFromNNC {
       tileScaleFactor = 8
       let llama3Length = c[48].shape[1]
       let t5Length = c[49].shape[1] - llama3Length
-      didRunLoRASeparately = false
-      unet = ModelBuilderOrModel.model(
-        HiDream(
-          batchSize: 1, height: tiledHeight,
-          width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
-          textLength: (t5Length, llama3Length), layers: (16, 32),
-          usesFlashAttention: usesFlashAttention
-        ).0)
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unet = ModelBuilderOrModel.model(
+          LoRAHiDream(
+            batchSize: 1, height: tiledHeight,
+            width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
+            textLength: (t5Length, llama3Length), layers: (16, 32),
+            usesFlashAttention: usesFlashAttention, LoRAConfiguration: configuration
+          ).0)
+      } else {
+        unet = ModelBuilderOrModel.model(
+          HiDream(
+            batchSize: 1, height: tiledHeight,
+            width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
+            textLength: (t5Length, llama3Length), layers: (16, 32),
+            usesFlashAttention: usesFlashAttention
+          ).0)
+      }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version

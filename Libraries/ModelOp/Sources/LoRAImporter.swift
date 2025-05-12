@@ -1212,7 +1212,9 @@ public enum LoRAImporter {
             guard parts.count > 2 else { continue }
             let newKeys = deriveUpKeys(parts)
             if let (newKey, _) = Self.findKeysAndValues(weightsMapping, keys: newKeys) {
-              mapping[newKey] = key
+              if key.hasSuffix("up.weight") {
+                mapping[newKey] = key
+              }
             }
           }
           return mapping
@@ -1510,7 +1512,9 @@ public enum LoRAImporter {
             guard parts.count > 2 else { continue }
             let newKeys = deriveDownKeys(parts)
             if let (newKey, _) = Self.findKeysAndValues(weightsMapping, keys: newKeys) {
-              mapping[newKey] = key
+              if key.hasSuffix("down.weight") {
+                mapping[newKey] = key
+              }
             }
           }
           return mapping
