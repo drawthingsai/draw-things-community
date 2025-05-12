@@ -1176,7 +1176,7 @@ public final class ModelImporter {
                   var combined = Tensor<FloatType>(.CPU, format: .NCHW, shape: TensorShape(shape))
                   for (i, tensor) in tensors.enumerated() {
                     let shape = tensor.shape
-                    if shape.count == 3 {
+                    if shape.count == 4 {
                       combined[
                         i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
                         Tensor<FloatType>(from: tensor).reshaped(

@@ -120,7 +120,7 @@ public enum LoRAExporter {
     }
     let qkNorm = false
     let dualAttentionLayers = [Int]()
-    let (modelKeysMapping2, modelKeysMapping) = LoRAImporter.modelWeightsMapping(
+    let (modelKeysMapping2, modelKeysMapping, _) = LoRAImporter.modelWeightsMapping(
       by: version, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
       format: [.generativeModels])
     let modelKeys = modelKeysMapping.keys.sorted()

@@ -12,7 +12,7 @@ public enum LoRAImporter {
   }
   public static func modelWeightsMapping(
     by version: ModelVersion, qkNorm: Bool, dualAttentionLayers: [Int], format: [ModelWeightFormat]
-  ) -> (ModelWeightMapping, ModelWeightMapping) {
+  ) -> (ModelWeightMapping, ModelWeightMapping, [String: [String]]) {
     let graph = DynamicGraph()
     var UNetMapping = ModelWeightMapping()
     var UNetMappingFixed = ModelWeightMapping()
@@ -42,7 +42,7 @@ public enum LoRAImporter {
           }
         }
       }
-      return (UNetMappingFixed, UNetMapping)
+      return (UNetMappingFixed, UNetMapping, [:])
     }
     let unet: Model
     let unetFixed: Model
@@ -133,9 +133,12 @@ public enum LoRAImporter {
       (unetFixedMapper, unetFixed) = WanFixed(
         timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, textLength: 512,
         injectImage: true)
-    case .auraflow:
-      fatalError()
     case .hiDreamI1:
+      (unet, unetMapper) = HiDream(
+        batchSize: 1, height: 64, width: 64, textLength: (128, 128), layers: (16, 32),
+        usesFlashAttention: true)
+      (unetFixed, unetFixedMapper) = HiDreamFixed(timesteps: 1, layers: (16, 32))
+    case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
@@ -185,7 +188,8 @@ public enum LoRAImporter {
         inputDim = 16
         conditionalLength = 4096
       case .hiDreamI1:
-        fatalError()
+        inputDim = 16
+        conditionalLength = 4096
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
@@ -269,7 +273,18 @@ public enum LoRAImporter {
         ]
         tEmb = nil
       case .hiDreamI1:
-        fatalError()
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        crossattn =
+          [
+            graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+            graph.variable(.CPU, .WC(1, 2048), of: FloatType.self),
+            graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self),
+          ]
+          + (0..<32).map { _ in
+            graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self)  // Llama encoder hidden states.
+          }
+        tEmb = nil
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -312,10 +327,8 @@ public enum LoRAImporter {
       case .svdI2v:
         vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
       case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-        .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+        .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
         vectors = []
-      case .hiDreamI1:
-        fatalError()
       case .kandinsky21, .v1, .v2:
         fatalError()
       }
@@ -390,16 +403,40 @@ public enum LoRAImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .hiDreamI1:
-        fatalError()
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: HiDreamRotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 128, channels: 128)))
+          ]
+          + HiDreamFixedOutputShapes(
+            timesteps: 1, layers: (16, 32), textLength: 128
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .kandinsky21, .v1, .v2:
         fatalError()
       }
       let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
       unet.compile(inputs: inputs)
+      func reverseMapping(original: ModelWeightMapping) -> [String: [String]] {
+        var reversed: [String: [(Int, String)]] = [:]
+        for (key, values) in original {
+          for value in values {
+            reversed[value, default: []].append((values.index, key))
+          }
+        }
+        return reversed.mapValues {
+          $0.sorted(by: { $0.0 < $1.0 }).map(\.1)
+        }
+      }
+      let reverseUNetMapping: [String: [String]]
       // Otherwise we use our fixed dictionary.
       if version != .sdxlBase && version != .sdxlRefiner {
         let mappingFixed = unetFixedMapper(.generativeModels)
         let mapping = unetMapper(.generativeModels)
+        reverseUNetMapping = reverseMapping(original: mapping)
         UNetMappingFixed = [:]
         for (key, value) in mappingFixed {
           guard !key.hasPrefix("diffusion_model.") else {
@@ -416,6 +453,8 @@ public enum LoRAImporter {
           }
           UNetMapping["diffusion_model.\(key)"] = value
         }
+      } else {
+        reverseUNetMapping = [:]
       }
       if format.contains(.diffusers) {
         let diffusersUNetMappingFixed = unetFixedMapper(.diffusers)
@@ -429,7 +468,7 @@ public enum LoRAImporter {
           UNetMapping.merge(diffusersUNetMapping) { v, _ in v }
         }
       }
-      return (UNetMappingFixed, UNetMapping)
+      return (UNetMappingFixed, UNetMapping, reverseUNetMapping)
     }
   }
 
@@ -621,6 +660,26 @@ public enum LoRAImporter {
         + components[components.count - 1]
       stateDict[newKey.dropLast(9) + ".diff"] = stateDict[key]
     }
+    // Fix for one more LoRA formulation (found in HiDream E1 LoRA.)
+    for key in keys {
+      guard key.hasSuffix(".lora_A.default.weight") || key.hasSuffix(".lora_B.default.weight")
+      else { continue }
+      var components = key.components(separatedBy: ".")
+      guard components.count >= 3 else { continue }
+      if components[1] == "base_model" {
+        components.remove(at: 1)
+      }
+      if components[0] == "base_model" {
+        components.remove(at: 0)
+      }
+      let newKey = components[0..<(components.count - 3)].joined(separator: "_")
+      let isUp = key.hasSuffix(".lora_B.default.weight")
+      if isUp {
+        stateDict[newKey + ".lora_up.weight"] = stateDict[key]
+      } else {
+        stateDict[newKey + ".lora_down.weight"] = stateDict[key]
+      }
+    }
     let modelVersion: ModelVersion = try {
       let isSD3Large = stateDict.keys.contains {
         $0.contains("joint_blocks_37_attn_")
@@ -650,6 +709,10 @@ public enum LoRAImporter {
       let isWan21_1_3B = stateDict.keys.contains {
         $0.contains("blocks.29.cross_attn.v.") || $0.contains("blocks_29_cross_attn_v.")
       }
+      let isHiDream = stateDict.keys.contains {
+        $0.contains("double_stream_blocks.15.block.ff_i.shared_experts.w1.")
+          || $0.contains("single_stream_blocks.31.block.ff_i.shared_experts.w1.")
+      }
       let isSDOrSDXL = stateDict.keys.contains {
         $0.hasSuffix(
           "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -666,9 +729,9 @@ public enum LoRAImporter {
       // Only confident about these if there is no ambiguity. If there are, we will use force version value.
       switch (
         isSDOrSDXL, isSD3Medium, isSD3Large, isPixArtSigmaXL, isFlux1, isHunyuan, isWan21_1_3B,
-        isWan21_14B
+        isWan21_14B, isHiDream
       ) {
-      case (true, false, false, false, false, false, false, false):
+      case (true, false, false, false, false, false, false, false, false):
         if let tokey = stateDict.first(where: {
           $0.key.hasSuffix(
             "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -717,21 +780,23 @@ public enum LoRAImporter {
           }
           throw Error.modelVersionFailed
         }
-      case (false, true, false, false, false, false, false, false):
+      case (false, true, false, false, false, false, false, false, false):
         return .sd3
-      case (false, false, true, false, false, false, false, false):
+      case (false, false, true, false, false, false, false, false, false):
         return .sd3Large
-      case (false, false, false, true, false, false, false, false):
+      case (false, false, false, true, false, false, false, false, false):
         return .pixart
-      case (false, false, false, false, true, false, false, false):
+      case (false, false, false, false, true, false, false, false, false):
         return .flux1
-      case (false, false, false, false, false, true, false, false):
+      case (false, false, false, false, false, true, false, false, false):
         return .hunyuanVideo
-      case (false, false, false, false, false, false, true, false):
+      case (false, false, false, false, false, false, true, false, false):
         return .wan21_1_3b
-      case (false, false, false, false, false, false, false, true),
-        (false, false, false, false, false, false, true, true):
+      case (false, false, false, false, false, false, false, true, false),
+        (false, false, false, false, false, false, true, true, false):
         return .wan21_14b
+      case (false, false, false, false, false, false, false, false, true):
+        return .hiDreamI1
       default:
         if let forceVersion = forceVersion {
           return forceVersion
@@ -783,7 +848,8 @@ public enum LoRAImporter {
       textModelMapping1 = [:]
       textModelMapping2 = [:]
     case .hiDreamI1:
-      fatalError()
+      textModelMapping1 = [:]
+      textModelMapping2 = [:]
     case .auraflow:
       fatalError()
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -876,7 +942,7 @@ public enum LoRAImporter {
       }
     }
     // Prepare UNet mapping.
-    var (UNetMappingFixed, UNetMapping) = modelWeightsMapping(
+    var (UNetMappingFixed, UNetMapping, reverseUNetMapping) = modelWeightsMapping(
       by: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
       format: [.diffusers, .generativeModels])
     let UNetMappingKeys = UNetMapping.keys
@@ -935,6 +1001,34 @@ public enum LoRAImporter {
             parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
             value
         }
+      }
+    }
+    let reverseUNetMappingKeys = reverseUNetMapping.keys
+    for key in reverseUNetMappingKeys {
+      guard let values = reverseUNetMapping[key] else { continue }
+      reverseUNetMapping[key] = values.map {
+        let parts = $0.components(separatedBy: ".")
+        if parts[0] == "model" {
+          if parts.count > 3 {
+            return parts[2..<(parts.count - 1)].joined(separator: "_") + "."
+              + parts[parts.count - 1]
+          }
+          if parts.count > 2 {
+            return parts[1..<(parts.count - 1)].joined(separator: "_") + "."
+              + parts[parts.count - 1]
+          }
+        } else if parts[0] == "diffusion_model" {
+          if parts.count > 2 {
+            return parts[1..<(parts.count - 1)].joined(separator: "_") + "."
+              + parts[parts.count - 1]
+          }
+        } else {
+          if parts.count > 1 {
+            return parts[0..<(parts.count - 1)].joined(separator: "_") + "."
+              + parts[parts.count - 1]
+          }
+        }
+        return $0
       }
     }
     var didImportTIEmbedding = false
@@ -1044,7 +1138,19 @@ public enum LoRAImporter {
           }
         }
       case .hiDreamI1:
-        fatalError()
+        if let tensorDescLlama = stateDict["llama"] {
+          try archive.with(tensorDescLlama) {
+            let tensor = Tensor<FloatType>(from: $0)
+            store.write("string_to_param_llama", tensor: tensor)
+            let textEmbeddingLengthLlama =
+              tensorDescLlama.shape.count > 1 ? tensorDescLlama.shape[0] : 1
+            guard textEmbeddingLengthLlama == textEmbeddingLength else {
+              textEmbeddingLength = 0
+              return
+            }
+            didImportTIEmbedding = true
+          }
+        }
       case .auraflow:
         fatalError()
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
@@ -1087,13 +1193,8 @@ public enum LoRAImporter {
       try store.withTransaction {
         let total = stateDict.count
         var diagonalUpMatrixKeys = Set<String>()
-        var diagonalDownsForRedefine = [(String, String, ModelWeightElement)]()
-        for (i, (key, descriptor)) in stateDict.sorted(by: { $0.key < $1.key }).enumerated() {
-          let parts = key.components(separatedBy: "_")
-          guard parts.count > 2 else { continue }
-          let te2 = parts[1] == "te2"
-          // Try to remove the prefixes.
-          let newKeys: [String] = (0...2).compactMap {
+        func deriveUpKeys(_ parts: [String]) -> [String] {
+          return (0...2).compactMap {
             let newParts = String(parts[$0..<parts.count].joined(separator: "_")).components(
               separatedBy: ".")  // Remove the first two.
             guard newParts.count > 1 else { return nil }
@@ -1101,8 +1202,39 @@ public enum LoRAImporter {
               .joined(
                 separator: ".") + ".weight"
           }
+        }
+        func mappingUpKeys(original: [String], weightsMapping: ModelWeightMapping) -> [String:
+          String]
+        {
+          var mapping = [String: String]()
+          for key in original.sorted(by: { $0 < $1 }) {
+            let parts = key.components(separatedBy: "_")
+            guard parts.count > 2 else { continue }
+            let newKeys = deriveUpKeys(parts)
+            if let (newKey, _) = Self.findKeysAndValues(weightsMapping, keys: newKeys) {
+              mapping[newKey] = key
+            }
+          }
+          return mapping
+        }
+        let UNetUpKeysMapping = mappingUpKeys(
+          original: Array(stateDict.keys), weightsMapping: UNetMapping)
+        var diagonalDownsForRedefine = [(String, String, ModelWeightElement)]()
+        var consumed = Set<String>()
+        for (i, (key, descriptor)) in stateDict.sorted(by: { $0.key < $1.key }).enumerated() {
+          let parts = key.components(separatedBy: "_")
+          guard parts.count > 2 else { continue }
+          let te2 = parts[1] == "te2"
+          // Try to remove the prefixes.
+          let newKeys = deriveUpKeys(parts)
           if let (newKey, unetParams) = Self.findKeysAndValues(UNetMapping, keys: newKeys) {
-            if key.hasSuffix("up.weight") {
+            if key.hasSuffix("up.weight"), !consumed.contains(newKey) {
+              let values =
+                unetParams.count == 1 ? (reverseUNetMapping[unetParams[0]] ?? [newKey]) : [newKey]
+              consumed.formUnion(values)
+              let tensorDescriptors = values.compactMap {
+                UNetUpKeysMapping[$0].flatMap { stateDict[$0] }
+              }
               let scalar = try stateDict[
                 String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -14))) + "alpha"
               ].map {
@@ -1110,9 +1242,38 @@ public enum LoRAImporter {
                   return Tensor<Float32>(from: $0)[0]
                 }
               }
-              try archive.with(descriptor) {
-                var tensor = Tensor<FloatType>(from: $0)
-                let loraDim = Float(tensor.shape[1])
+              try archive.with(tensorDescriptors) { tensors in
+                guard !tensors.isEmpty else { return }
+                var tensor: Tensor<FloatType>
+                let loraDim = Float(tensors[0].shape[1])
+                if tensors.count == 1 {
+                  tensor = Tensor<FloatType>(from: tensors[0])
+                } else {
+                  let shape = [tensors.count] + Array(tensors[0].shape)
+                  var combined = Tensor<FloatType>(.CPU, format: .NCHW, shape: TensorShape(shape))
+                  for (i, tensor) in tensors.enumerated() {
+                    let shape = tensor.shape
+                    if shape.count == 4 {
+                      combined[
+                        i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+                        Tensor<FloatType>(from: tensor).reshaped(
+                          format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 3 {
+                      combined[i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2]] = Tensor<
+                        FloatType
+                      >(from: tensor).reshaped(
+                        format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 2 {
+                      combined[i..<(i + 1), 0..<shape[0], 0..<shape[1]] = Tensor<FloatType>(
+                        from: tensor
+                      ).reshaped(format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 1 {
+                      combined[i..<(i + 1), 0..<shape[0]] = Tensor<FloatType>(from: tensor)
+                        .reshaped(format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    }
+                  }
+                  tensor = combined
+                }
                 let isDiagonalUp =
                   unetParams.count > 1 ? Self.isDiagonalUp(tensor, weights: unetParams) : false
                 if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
@@ -1318,12 +1479,8 @@ public enum LoRAImporter {
           }
           progress(Float(i + 1) / Float(total * 2))
         }
-        for (i, (key, descriptor)) in stateDict.sorted(by: { $0.key < $1.key }).enumerated() {
-          let parts = key.components(separatedBy: "_")
-          guard parts.count > 2 else { continue }
-          let te2 = parts[1] == "te2"
-          // Try to remove the prefixes.
-          let newKeys: [String] = (0...2).flatMap { (index) -> [String] in
+        func deriveDownKeys(_ parts: [String]) -> [String] {
+          return (0...2).flatMap { (index) -> [String] in
             let newParts = String(parts[index..<parts.count].joined(separator: "_")).components(
               separatedBy: ".")  // Remove the first two.
             guard newParts.count > 1 else { return [] }
@@ -1343,10 +1500,69 @@ public enum LoRAImporter {
               return [newKey]
             }
           }
+        }
+        func mappingDownKeys(original: [String], weightsMapping: ModelWeightMapping) -> [String:
+          String]
+        {
+          var mapping = [String: String]()
+          for key in original.sorted(by: { $0 < $1 }) {
+            let parts = key.components(separatedBy: "_")
+            guard parts.count > 2 else { continue }
+            let newKeys = deriveDownKeys(parts)
+            if let (newKey, _) = Self.findKeysAndValues(weightsMapping, keys: newKeys) {
+              mapping[newKey] = key
+            }
+          }
+          return mapping
+        }
+        let UNetDownKeysMapping = mappingDownKeys(
+          original: Array(stateDict.keys), weightsMapping: UNetMapping)
+        consumed.removeAll()
+        for (i, (key, descriptor)) in stateDict.sorted(by: { $0.key < $1.key }).enumerated() {
+          let parts = key.components(separatedBy: "_")
+          guard parts.count > 2 else { continue }
+          let te2 = parts[1] == "te2"
+          // Try to remove the prefixes.
+          let newKeys = deriveDownKeys(parts)
           if let (newKey, unetParams) = Self.findKeysAndValues(UNetMapping, keys: newKeys) {
-            if key.hasSuffix("down.weight") {
-              try archive.with(descriptor) {
-                var tensor = Tensor<FloatType>(from: $0)
+            if key.hasSuffix("down.weight"), !consumed.contains(newKey) {
+              let values =
+                unetParams.count == 1 ? (reverseUNetMapping[unetParams[0]] ?? [newKey]) : [newKey]
+              consumed.formUnion(values)
+              let tensorDescriptors = values.compactMap {
+                UNetDownKeysMapping[$0].flatMap { stateDict[$0] }
+              }
+              try archive.with(tensorDescriptors) { tensors in
+                guard !tensors.isEmpty else { return }
+                var tensor: Tensor<FloatType>
+                if tensors.count == 1 {
+                  tensor = Tensor<FloatType>(from: tensors[0])
+                } else {
+                  let shape = [tensors.count] + Array(tensors[0].shape)
+                  var combined = Tensor<FloatType>(.CPU, format: .NCHW, shape: TensorShape(shape))
+                  for (i, tensor) in tensors.enumerated() {
+                    let shape = tensor.shape
+                    if shape.count == 4 {
+                      combined[
+                        i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+                        Tensor<FloatType>(from: tensor).reshaped(
+                          format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 3 {
+                      combined[i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2]] = Tensor<
+                        FloatType
+                      >(from: tensor).reshaped(
+                        format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 2 {
+                      combined[i..<(i + 1), 0..<shape[0], 0..<shape[1]] = Tensor<FloatType>(
+                        from: tensor
+                      ).reshaped(format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    } else if shape.count == 1 {
+                      combined[i..<(i + 1), 0..<shape[0]] = Tensor<FloatType>(from: tensor)
+                        .reshaped(format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                    }
+                  }
+                  tensor = combined
+                }
                 let isDiagonalDown = Self.isDiagonalDown(tensor, weights: unetParams)
                 if isDiagonalDown {
                   diagonalDownsForRedefine.append(
