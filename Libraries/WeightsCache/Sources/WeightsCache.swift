@@ -78,6 +78,12 @@ public final class WeightsCache {
     return (size: item.size, weights: item.weights)
   }
 
+  private func updateTimestamp(for file: String) {
+    timestamp += 1
+    map[file]?.timestamp = timestamp
+    heap = Heap(map.values)
+  }
+
   public func removeAll() {
     map.removeAll()
     heap = Heap()
@@ -151,7 +157,11 @@ extension WeightsCache {
       }
       self[file] = (size: size, weights: weights)
     case .dGPU:
-      guard self[file] == nil else { return }  // If already exists, nothing to attach.
+      guard self[file] == nil else {
+        // If already exists, nothing to attach. But we need to update the timestamp.
+        updateTimestamp(for: file)
+        return
+      }
       let parameters = parameters()
       var size = parameters.size  // Make sure we grab size prior to detach.
       // Otherwise copy to CPU.
