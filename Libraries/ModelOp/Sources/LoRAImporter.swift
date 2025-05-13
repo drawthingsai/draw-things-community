@@ -1234,8 +1234,11 @@ public enum LoRAImporter {
               let values =
                 unetParams.count == 1 ? (reverseUNetMapping[unetParams[0]] ?? [newKey]) : [newKey]
               consumed.formUnion(values)
-              let tensorDescriptors = values.compactMap {
+              var tensorDescriptors = values.compactMap {
                 UNetUpKeysMapping[$0].flatMap { stateDict[$0] }
+              }
+              if tensorDescriptors.isEmpty {  // Fallback.
+                tensorDescriptors = [descriptor]
               }
               let scalar = try stateDict[
                 String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -14))) + "alpha"
@@ -1533,8 +1536,11 @@ public enum LoRAImporter {
               let values =
                 unetParams.count == 1 ? (reverseUNetMapping[unetParams[0]] ?? [newKey]) : [newKey]
               consumed.formUnion(values)
-              let tensorDescriptors = values.compactMap {
+              var tensorDescriptors = values.compactMap {
                 UNetDownKeysMapping[$0].flatMap { stateDict[$0] }
+              }
+              if tensorDescriptors.isEmpty {  // Fallback.
+                tensorDescriptors = [descriptor]
               }
               try archive.with(tensorDescriptors) { tensors in
                 guard !tensors.isEmpty else { return }
