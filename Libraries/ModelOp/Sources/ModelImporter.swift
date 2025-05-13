@@ -65,11 +65,12 @@ public final class ModelImporter {
     public var numberOfTensors: Int
     public var qkNorm: Bool
     public var dualAttentionLayers: [Int]
+    public var distilledGuidanceLayer: Int
     public init(
       version: ModelVersion, archive: TensorArchive, stateDict: [String: TensorDescriptor],
       modifier: SamplerModifier, inputChannels: Int, isDiffusersFormat: Bool,
       hasEncoderHidProj: Bool, hasGuidanceEmbed: Bool, qkNorm: Bool, dualAttentionLayers: [Int],
-      numberOfTensors: Int
+      distilledGuidanceLayer: Int, numberOfTensors: Int
     ) {
       self.version = version
       self.archive = archive
@@ -81,6 +82,7 @@ public final class ModelImporter {
       self.hasGuidanceEmbed = hasGuidanceEmbed
       self.qkNorm = qkNorm
       self.dualAttentionLayers = dualAttentionLayers
+      self.distilledGuidanceLayer = distilledGuidanceLayer
       self.numberOfTensors = numberOfTensors
     }
   }
@@ -162,6 +164,7 @@ public final class ModelImporter {
     let inputDim: Int
     let isDiffusersFormat: Bool
     let expectedTotalAccess: Int
+    var distilledGuidanceLayer: Int = 0
     // This is for SD v1, v2 and SDXL.
     if let tokey = stateDict[
       "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight"]
@@ -261,6 +264,13 @@ public final class ModelImporter {
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("single_transformer_blocks.37.")
       }
+      // If it is flux, check for distilled guidance layer (Chroma).
+      distilledGuidanceLayer = 0
+      while stateDict.keys.contains(where: {
+        $0.contains("distilled_guidance_layer.layers.\(distilledGuidanceLayer).")
+      }) {
+        distilledGuidanceLayer += 1
+      }
     } else if isHunyuan {
       modelVersion = .hunyuanVideo
       modifier = .none
@@ -318,7 +328,8 @@ public final class ModelImporter {
       version: modelVersion, archive: archive, stateDict: stateDict, modifier: modifier,
       inputChannels: inputDim, isDiffusersFormat: isDiffusersFormat,
       hasEncoderHidProj: hasEncoderHidProj, hasGuidanceEmbed: hasGuidanceEmbed,
-      qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers, numberOfTensors: expectedTotalAccess
+      qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+      distilledGuidanceLayer: distilledGuidanceLayer, numberOfTensors: expectedTotalAccess
     )
   }
 
@@ -335,6 +346,7 @@ public final class ModelImporter {
     let hasEncoderHidProj = inspectionResult.hasEncoderHidProj
     let qkNorm = inspectionResult.qkNorm
     let dualAttentionLayers = inspectionResult.dualAttentionLayers
+    let distilledGuidanceLayer = inspectionResult.distilledGuidanceLayer
     expectedTotalAccess = inspectionResult.numberOfTensors
     versionCheck(modelVersion)
     progress?(0.05)
@@ -659,7 +671,7 @@ public final class ModelImporter {
           vectors
           + fixedEncoder.encode(
             isCfgEnabled: true, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
-            isGuidanceEmbedEnabled: false,
+            isGuidanceEmbedEnabled: false, distilledGuidanceLayer: 0,
             textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0], batchSize: batchSize,
             startHeight: 64, startWidth: 64,
             tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
@@ -858,9 +870,14 @@ public final class ModelImporter {
           layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: true,
           injectControls: false, injectIPAdapterLengths: [:], outputResidual: false,
           inputResidual: false)
-        (unetFixedMapper, unetFixed) = Flux1Fixed(
-          batchSize: (batchSize, batchSize), channels: 3072, layers: (19, 38),
-          contextPreloaded: true, guidanceEmbed: true)
+        if distilledGuidanceLayer > 0 {
+          (unetFixedMapper, unetFixed) = ChromaFixed(
+            channels: 3072, layers: (19, 38), contextPreloaded: true)
+        } else {
+          (unetFixedMapper, unetFixed) = Flux1Fixed(
+            batchSize: (batchSize, batchSize), channels: 3072, layers: (19, 38),
+            contextPreloaded: true, guidanceEmbed: true)
+        }
       case .hunyuanVideo:
         (unetMapper, unet) = Hunyuan(
           time: 1, height: 64, width: 64, textLength: 20, channels: 3072, layers: (20, 40),
@@ -940,12 +957,19 @@ public final class ModelImporter {
         ]
         tEmb = nil
       case .flux1:
-        crossattn = [
-          graph.variable(.CPU, .HWC(batchSize, 256, 4096), of: FloatType.self),
-          graph.variable(.CPU, .WC(batchSize, 256), of: FloatType.self),
-          graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self),
-          graph.variable(.CPU, .WC(batchSize, 256), of: FloatType.self),
-        ]
+        if distilledGuidanceLayer > 0 {
+          crossattn = [
+            graph.variable(.CPU, .HWC(batchSize, 256, 4096), of: FloatType.self),
+            graph.variable(.CPU, .HWC(batchSize, 344, 64), of: FloatType.self),
+          ]
+        } else {
+          crossattn = [
+            graph.variable(.CPU, .HWC(batchSize, 256, 4096), of: FloatType.self),
+            graph.variable(.CPU, .WC(batchSize, 256), of: FloatType.self),
+            graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self),
+            graph.variable(.CPU, .WC(batchSize, 256), of: FloatType.self),
+          ]
+        }
         tEmb = nil
       case .hunyuanVideo:
         crossattn = [
@@ -1335,7 +1359,8 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .flux1:
-          if $0.keys.count != 1732 && $0.keys.count != 1728 {
+          let count = $0.keys.count
+          if count != 1732 && count != 1728 && count != 1041 + max(distilledGuidanceLayer, 1) * 4 {
             throw Error.tensorWritesFailed
           }
         case .hunyuanVideo:
@@ -1343,11 +1368,13 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .wan21_1_3b:
-          if $0.keys.count != 986 && $0.keys.count != 1144 {
+          let count = $0.keys.count
+          if count != 986 && count != 1144 {
             throw Error.tensorWritesFailed
           }
         case .wan21_14b:
-          if $0.keys.count != 1306 && $0.keys.count != 1514 {
+          let count = $0.keys.count
+          if count != 1306 && count != 1514 {
             throw Error.tensorWritesFailed
           }
         case .hiDreamI1:

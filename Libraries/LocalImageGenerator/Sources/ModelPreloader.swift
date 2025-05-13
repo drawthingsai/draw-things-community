@@ -576,7 +576,7 @@ extension ModelPreloader {
             vector
             + fixedEncoder.encode(
               isCfgEnabled: true, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
-              isGuidanceEmbedEnabled: false,
+              isGuidanceEmbedEnabled: false, distilledGuidanceLayer: 0,
               textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
               tiledDiffusion: tiledDiffusion, injectedControls: []

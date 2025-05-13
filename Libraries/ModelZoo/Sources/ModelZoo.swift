@@ -60,9 +60,11 @@ public struct ModelZoo: DownloadZoo {
     public struct MMDiT: Codable {
       public var qkNorm: Bool
       public var dualAttentionLayers: [Int]
-      public init(qkNorm: Bool, dualAttentionLayers: [Int]) {
+      public var distilledGuidanceLayer: Int?
+      public init(qkNorm: Bool, dualAttentionLayers: [Int], distilledGuidanceLayer: Int? = nil) {
         self.qkNorm = qkNorm
         self.dualAttentionLayers = dualAttentionLayers
+        self.distilledGuidanceLayer = distilledGuidanceLayer
       }
     }
 

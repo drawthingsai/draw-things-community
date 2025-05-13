@@ -22,6 +22,7 @@ where UNet.FloatType == FloatType {
   public let version: ModelVersion
   public let qkNorm: Bool
   public let dualAttentionLayers: [Int]
+  public let distilledGuidanceLayer: Int
   public let usesFlashAttention: Bool
   public let upcastAttention: Bool
   public let externalOnDemand: Bool
@@ -43,7 +44,7 @@ where UNet.FloatType == FloatType {
   private let weightsCache: WeightsCache
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
-    dualAttentionLayers: [Int], usesFlashAttention: Bool,
+    dualAttentionLayers: [Int], distilledGuidanceLayer: Int, usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
@@ -58,6 +59,7 @@ where UNet.FloatType == FloatType {
     self.version = version
     self.qkNorm = qkNorm
     self.dualAttentionLayers = dualAttentionLayers
+    self.distilledGuidanceLayer = distilledGuidanceLayer
     self.usesFlashAttention = usesFlashAttention
     self.upcastAttention = upcastAttention
     self.externalOnDemand = externalOnDemand
@@ -190,6 +192,7 @@ extension PLMSSampler: Sampler {
       let (encodings, weightMapper) = fixedEncoder.encode(
         isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
         guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+        distilledGuidanceLayer: distilledGuidanceLayer,
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
@@ -350,6 +353,7 @@ extension PLMSSampler: Sampler {
               + fixedEncoder.encode(
                 isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
                 guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+                distilledGuidanceLayer: distilledGuidanceLayer,
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
