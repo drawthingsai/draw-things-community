@@ -665,7 +665,7 @@ extension UNetFixedEncoder {
       if distilledGuidanceLayer > 0 {
         var conditionEmbeds = graph.variable(
           .GPU(0), .HWC(cBatchSize * timesteps.count, 344, 64), of: FloatType.self)
-        let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : guidanceEmbed
+        let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : 0
         let guidanceEmbed = graph.variable(
           Tensor<FloatType>(
             from: timeEmbedding(
