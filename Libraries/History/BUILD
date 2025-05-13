@@ -12,6 +12,7 @@ dflatc(
 dflatc(
     name = "tensor_history_schema",
     srcs = [
+        "Sources/clip.fbs",
         "Sources/script_session.fbs",
         "Sources/tensor_data.fbs",
         "Sources/tensor_history.fbs",
@@ -30,8 +31,8 @@ dflatc(
 swift_library(
     name = "History",
     srcs = glob(["Sources/**/*.swift"]) + [
-        ":text_history_schema",
         ":tensor_history_schema",
+        ":text_history_schema",
         ":thumbnail_history_schema",
     ],
     module_name = "History",

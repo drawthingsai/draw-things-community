@@ -1286,7 +1286,8 @@ extension LocalImageGenerator {
       ) = tokenize(
         graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
         paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
-        maxLength: paddedTextEncodingLength, paddingLength: paddedTextEncodingLength, minPadding: 1)
+        maxLength: paddedTextEncodingLength, paddingLength: paddedTextEncodingLength,
+        minPadding: paddedTextEncodingLength == 0 ? 1 : 0)
       result.0 = t5Tokens + result.0
       result.2 = t5EmbedMask + result.2
       result.3 = t5InjectedEmbeddings + result.3

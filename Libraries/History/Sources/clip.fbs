@@ -1,0 +1,6 @@
+table Clip {
+  clip_id: long (primary);
+  frames_per_second: double;
+}
+
+root_type ScriptSession;
