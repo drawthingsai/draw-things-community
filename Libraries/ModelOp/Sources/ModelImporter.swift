@@ -65,12 +65,12 @@ public final class ModelImporter {
     public var numberOfTensors: Int
     public var qkNorm: Bool
     public var dualAttentionLayers: [Int]
-    public var distilledGuidanceLayer: Int
+    public var distilledGuidanceLayers: Int
     public init(
       version: ModelVersion, archive: TensorArchive, stateDict: [String: TensorDescriptor],
       modifier: SamplerModifier, inputChannels: Int, isDiffusersFormat: Bool,
       hasEncoderHidProj: Bool, hasGuidanceEmbed: Bool, qkNorm: Bool, dualAttentionLayers: [Int],
-      distilledGuidanceLayer: Int, numberOfTensors: Int
+      distilledGuidanceLayers: Int, numberOfTensors: Int
     ) {
       self.version = version
       self.archive = archive
@@ -82,7 +82,7 @@ public final class ModelImporter {
       self.hasGuidanceEmbed = hasGuidanceEmbed
       self.qkNorm = qkNorm
       self.dualAttentionLayers = dualAttentionLayers
-      self.distilledGuidanceLayer = distilledGuidanceLayer
+      self.distilledGuidanceLayers = distilledGuidanceLayers
       self.numberOfTensors = numberOfTensors
     }
   }
@@ -164,7 +164,7 @@ public final class ModelImporter {
     let inputDim: Int
     let isDiffusersFormat: Bool
     let expectedTotalAccess: Int
-    var distilledGuidanceLayer: Int = 0
+    var distilledGuidanceLayers: Int = 0
     // This is for SD v1, v2 and SDXL.
     if let tokey = stateDict[
       "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight"]
@@ -265,11 +265,11 @@ public final class ModelImporter {
         $0.contains("single_transformer_blocks.37.")
       }
       // If it is flux, check for distilled guidance layer (Chroma).
-      distilledGuidanceLayer = 0
+      distilledGuidanceLayers = 0
       while stateDict.keys.contains(where: {
-        $0.contains("distilled_guidance_layer.layers.\(distilledGuidanceLayer).")
+        $0.contains("distilled_guidance_layer.layers.\(distilledGuidanceLayers).")
       }) {
-        distilledGuidanceLayer += 1
+        distilledGuidanceLayers += 1
       }
     } else if isHunyuan {
       modelVersion = .hunyuanVideo
@@ -329,7 +329,7 @@ public final class ModelImporter {
       inputChannels: inputDim, isDiffusersFormat: isDiffusersFormat,
       hasEncoderHidProj: hasEncoderHidProj, hasGuidanceEmbed: hasGuidanceEmbed,
       qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
-      distilledGuidanceLayer: distilledGuidanceLayer, numberOfTensors: expectedTotalAccess
+      distilledGuidanceLayers: distilledGuidanceLayers, numberOfTensors: expectedTotalAccess
     )
   }
 
@@ -346,7 +346,7 @@ public final class ModelImporter {
     let hasEncoderHidProj = inspectionResult.hasEncoderHidProj
     let qkNorm = inspectionResult.qkNorm
     let dualAttentionLayers = inspectionResult.dualAttentionLayers
-    let distilledGuidanceLayer = inspectionResult.distilledGuidanceLayer
+    let distilledGuidanceLayers = inspectionResult.distilledGuidanceLayers
     expectedTotalAccess = inspectionResult.numberOfTensors
     versionCheck(modelVersion)
     progress?(0.05)
@@ -671,7 +671,7 @@ public final class ModelImporter {
           vectors
           + fixedEncoder.encode(
             isCfgEnabled: true, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
-            isGuidanceEmbedEnabled: false, distilledGuidanceLayer: 0,
+            isGuidanceEmbedEnabled: false, distilledGuidanceLayers: 0,
             textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0], batchSize: batchSize,
             startHeight: 64, startWidth: 64,
             tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
@@ -870,9 +870,10 @@ public final class ModelImporter {
           layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: true,
           injectControls: false, injectIPAdapterLengths: [:], outputResidual: false,
           inputResidual: false)
-        if distilledGuidanceLayer > 0 {
+        if distilledGuidanceLayers > 0 {
           (unetFixedMapper, unetFixed) = ChromaFixed(
-            channels: 3072, layers: (19, 38), contextPreloaded: true)
+            channels: 3072, distilledGuidanceLayers: distilledGuidanceLayers, layers: (19, 38),
+            contextPreloaded: true)
         } else {
           (unetFixedMapper, unetFixed) = Flux1Fixed(
             batchSize: (batchSize, batchSize), channels: 3072, layers: (19, 38),
@@ -957,7 +958,7 @@ public final class ModelImporter {
         ]
         tEmb = nil
       case .flux1:
-        if distilledGuidanceLayer > 0 {
+        if distilledGuidanceLayers > 0 {
           crossattn = [
             graph.variable(.CPU, .HWC(batchSize, 256, 4096), of: FloatType.self),
             graph.variable(.CPU, .HWC(batchSize, 344, 64), of: FloatType.self),
@@ -1360,7 +1361,7 @@ public final class ModelImporter {
           }
         case .flux1:
           let count = $0.keys.count
-          if count != 1732 && count != 1728 && count != 1041 + max(distilledGuidanceLayer, 1) * 4 {
+          if count != 1732 && count != 1728 && count != 1041 + max(distilledGuidanceLayers, 1) * 4 {
             throw Error.tensorWritesFailed
           }
         case .hunyuanVideo:

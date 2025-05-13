@@ -1418,7 +1418,9 @@ private func ChromaDistillGuidanceLayer(prefix: String, layerIndex: Int) -> (
   return (mapper, Model([x], [out]))
 }
 
-public func ChromaFixed(channels: Int, layers: (Int, Int), contextPreloaded: Bool) -> (
+public func ChromaFixed(
+  channels: Int, distilledGuidanceLayers: Int, layers: (Int, Int), contextPreloaded: Bool
+) -> (
   ModelWeightMapper, Model
 ) {
   let timestep = Input()
@@ -1439,7 +1441,7 @@ public func ChromaFixed(channels: Int, layers: (Int, Int), contextPreloaded: Boo
   let inProj = Dense(count: 5_120, name: "distilled_guidance_in_proj")
   var out = inProj(timestep)
   var mappers = [ModelWeightMapper]()
-  for i in 0..<5 {
+  for i in 0..<distilledGuidanceLayers {
     let (mapper, block) = ChromaDistillGuidanceLayer(
       prefix: "distilled_guidance_layer", layerIndex: i)
     out = block(out)

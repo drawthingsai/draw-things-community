@@ -340,7 +340,7 @@ public enum LoRAImporter {
           vectors
           + fixedEncoder.encode(
             isCfgEnabled: isCfgEnabled, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
-            isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, distilledGuidanceLayer: 0,
+            isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, distilledGuidanceLayers: 0,
             textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0],
             batchSize: isCfgEnabled ? 2 : 1, startHeight: 64,
             startWidth: 64,

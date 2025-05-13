@@ -187,7 +187,7 @@ extension UNetFixedEncoder {
   }
   public func encode(
     isCfgEnabled: Bool, textGuidanceScale: Float, guidanceEmbed: Float,
-    isGuidanceEmbedEnabled: Bool, distilledGuidanceLayer: Int,
+    isGuidanceEmbedEnabled: Bool, distilledGuidanceLayers: Int,
     textEncoding: [DynamicGraph.Tensor<FloatType>],
     timesteps: [Float], batchSize: Int, startHeight: Int, startWidth: Int, tokenLengthUncond: Int,
     tokenLengthCond: Int, lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration,
@@ -623,7 +623,7 @@ extension UNetFixedEncoder {
             filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
           ) {
             return $0.read(like: "__dit__[t-guidance_embedder_0-0-1]") != nil
-          }).get()) ?? (distilledGuidanceLayer > 0)
+          }).get()) ?? (distilledGuidanceLayers > 0)
       let unetFixed: Model
       let lora = Array(
         (OrderedDictionary<String, LoRAConfiguration>(
@@ -653,8 +653,10 @@ extension UNetFixedEncoder {
           LoRAConfiguration: configuration, contextPreloaded: true,
           guidanceEmbed: isGuidanceEmbedSupported)
       } else {
-        if distilledGuidanceLayer > 0 {
-          (_, unetFixed) = ChromaFixed(channels: 3072, layers: (19, 38), contextPreloaded: true)
+        if distilledGuidanceLayers > 0 {
+          (_, unetFixed) = ChromaFixed(
+            channels: 3072, distilledGuidanceLayers: distilledGuidanceLayers, layers: (19, 38),
+            contextPreloaded: true)
         } else {
           (_, unetFixed) = Flux1Fixed(
             batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
@@ -662,7 +664,7 @@ extension UNetFixedEncoder {
         }
       }
       let restInputs: [DynamicGraph.Tensor<FloatType>]
-      if distilledGuidanceLayer > 0 {
+      if distilledGuidanceLayers > 0 {
         var conditionEmbeds = graph.variable(
           .GPU(0), .HWC(cBatchSize * timesteps.count, 344, 64), of: FloatType.self)
         let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : 0
