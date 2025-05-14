@@ -363,6 +363,7 @@ public final class ImageHistoryManager {
     var logicalTime: Int64
     var lineage: Int64
   }
+  private var maxClipId: Int64 = 0
   private var dataStored: [ImageData] = []
   private var maxLineage: Int64 = 0
   public private(set) var lineage: Int64 = 0
@@ -398,9 +399,9 @@ public final class ImageHistoryManager {
     self.project = project
     self.filePath = filePath
     guard
-      let (imageHistory, imageData, shuffleData) =
+      let (imageHistory, imageData, shuffleData, clipId) =
         (project.fetchWithinASnapshot {
-          () -> (TensorHistoryNode, [TensorData], [TensorMoodboardData])? in
+          () -> (TensorHistoryNode, [TensorData], [TensorMoodboardData], Int64)? in
           let imageHistories = project.fetch(for: TensorHistoryNode.self).all(
             limit: .limit(1),
             orderBy: [
@@ -427,10 +428,14 @@ public final class ImageHistoryManager {
           } else {
             shuffleData = []
           }
-          return (imageHistory, imageData, shuffleData)
+          let clips = project.fetch(for: Clip.self).all(
+            limit: .limit(1), orderBy: [Clip.clipId.descending])
+          let clipId = clips.first?.clipId ?? 0
+          return (imageHistory, imageData, shuffleData, clipId)
         })
     else { return }
     setImageHistory(imageHistory, imageData: imageData, shuffleData: shuffleData)
+    maxClipId = clipId
     maxLineage = lineage
     maxLogicalTime = logicalTime
     maxLogicalTimeForLineage[lineage] = maxLogicalTime
@@ -591,7 +596,8 @@ public final class ImageHistoryManager {
     }
   }
 
-  public func pushHistory(_ histories: [History]) {
+  public func pushHistory(_ histories: [History], asClip: Bool = false, framesPerSecond: Double = 0)
+  {
     dispatchPrecondition(condition: .onQueue(.main))
     guard !histories.isEmpty else { return }
     // We need to fork this history.
@@ -715,6 +721,14 @@ public final class ImageHistoryManager {
       var tensorMoodboardData: [TensorMoodboardData]
       var logicalTimeAndLineage: LogicalTimeAndLineage
       var imageVersion: Int
+      var clipId: Int64?
+    }
+    let clipId: Int64?
+    if asClip {
+      maxClipId += 1
+      clipId = maxClipId
+    } else {
+      clipId = nil
     }
     let historyNodes = histories.map { history in
       let imageData = history.imageData
@@ -828,6 +842,7 @@ public final class ImageHistoryManager {
         separateT5: configuration.separateT5,
         t5Text: configuration.t5Text,
         teaCacheMaxSkipSteps: configuration.teaCacheMaxSkipSteps,
+        clipId: clipId,
         textPrompt: history.textPrompt,
         negativeTextPrompt: history.negativeTextPrompt
       )
@@ -856,10 +871,12 @@ public final class ImageHistoryManager {
         logicalTimeAndLineage: logicalTimeAndLineage, imageVersion: imageVersion)
     }
     project.dictionary["image_seek_to", Int.self] = nil
-    project.performChanges([
-      TensorHistoryNode.self, ThumbnailHistoryNode.self, ThumbnailHistoryHalfNode.self,
-      TensorData.self, TensorMoodboardData.self,
-    ]) { transactionContext in
+    project.performChanges(
+      [
+        TensorHistoryNode.self, ThumbnailHistoryNode.self, ThumbnailHistoryHalfNode.self,
+        TensorData.self, TensorMoodboardData.self,
+      ] + (clipId != nil ? [Clip.self] : [])
+    ) { transactionContext in
       // It is OK if this is already inserted.
       for (history, historyNode) in zip(histories, historyNodes) {
         let upsertRequest = TensorHistoryNodeChangeRequest.upsertRequest(
@@ -893,6 +910,12 @@ public final class ImageHistoryManager {
         for moodItem in historyNode.tensorMoodboardData {
           let upsertRequest = TensorMoodboardDataChangeRequest.upsertRequest(moodItem)
           transactionContext.try(submit: upsertRequest)
+        }
+        if let clipId = clipId {
+          let creationRequest = ClipChangeRequest.creationRequest()
+          creationRequest.clipId = clipId
+          creationRequest.framesPerSecond = framesPerSecond
+          transactionContext.try(submit: creationRequest)
         }
       }
     } completionHandler: { _ in

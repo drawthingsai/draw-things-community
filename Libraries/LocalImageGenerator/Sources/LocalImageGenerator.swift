@@ -2928,8 +2928,7 @@ extension LocalImageGenerator {
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
     let batchSize =
-      modelVersion == .hunyuanVideo || modelVersion == .wan21_1_3b || modelVersion == .wan21_14b
-        || modelVersion == .svdI2v ? 1 : Int(configuration.batchSize)
+      ImageGeneratorUtils.isVideoModel(modelVersion) ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
@@ -3398,9 +3397,7 @@ extension LocalImageGenerator {
           let _ = feedback(.imageUpscaled, signposts, nil)
         }
         var batchSize = batchSize
-        if modelVersion == .hunyuanVideo || modelVersion == .wan21_1_3b
-          || modelVersion == .wan21_14b
-        {
+        if ImageGeneratorUtils.isVideoModel(modelVersion) {
           batchSize = Int(configuration.numFrames)
         }
         guard batchSize > 1 else {
@@ -3714,8 +3711,7 @@ extension LocalImageGenerator {
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
-      if modelVersion == .hunyuanVideo || modelVersion == .wan21_1_3b || modelVersion == .wan21_14b
-      {
+      if ImageGeneratorUtils.isVideoModel(modelVersion) {
         batchSize = Int(configuration.numFrames)
       }
       guard batchSize > 1 else {
@@ -3995,8 +3991,7 @@ extension LocalImageGenerator {
         cancellation: cancellation, feedback: feedback)
     }
     let batchSize =
-      modelVersion == .hunyuanVideo || modelVersion == .wan21_1_3b || modelVersion == .wan21_14b
-        || modelVersion == .svdI2v ? 1 : Int(configuration.batchSize)
+      ImageGeneratorUtils.isVideoModel(modelVersion) ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     precondition(strength >= 0 && strength <= 1)
     let highPrecisionForAutoencoder = ModelZoo.isHighPrecisionAutoencoderForModel(file)
@@ -4491,8 +4486,7 @@ extension LocalImageGenerator {
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
-      if modelVersion == .hunyuanVideo || modelVersion == .wan21_1_3b || modelVersion == .wan21_14b
-      {
+      if ImageGeneratorUtils.isVideoModel(modelVersion) {
         batchSize = Int(configuration.numFrames)
       }
       guard batchSize > 1 else {
@@ -5165,8 +5159,7 @@ extension LocalImageGenerator {
       }
     }
     let batchSize =
-      modelVersion == .hunyuanVideo || modelVersion == .wan21_1_3b || modelVersion == .wan21_14b
-        || modelVersion == .svdI2v ? 1 : Int(configuration.batchSize)
+      ImageGeneratorUtils.isVideoModel(modelVersion) ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
@@ -5750,8 +5743,7 @@ extension LocalImageGenerator {
       } else {
         guard feedback(.imageDecoded, signposts, nil) else { return nil }
       }
-      if modelVersion == .hunyuanVideo || modelVersion == .wan21_1_3b || modelVersion == .wan21_14b
-      {
+      if ImageGeneratorUtils.isVideoModel(modelVersion) {
         batchSize = Int(configuration.numFrames)
       }
       guard batchSize > 1 else {
@@ -5919,8 +5911,7 @@ extension LocalImageGenerator {
       }
     }
     let batchSize =
-      modelVersion == .hunyuanVideo || modelVersion == .wan21_1_3b || modelVersion == .wan21_14b
-        || modelVersion == .svdI2v ? 1 : Int(configuration.batchSize)
+      ImageGeneratorUtils.isVideoModel(modelVersion) ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
@@ -6681,8 +6672,7 @@ extension LocalImageGenerator {
       } else {
         guard feedback(.imageDecoded, signposts, nil) else { return nil }
       }
-      if modelVersion == .hunyuanVideo || modelVersion == .wan21_1_3b || modelVersion == .wan21_14b
-      {
+      if ImageGeneratorUtils.isVideoModel(modelVersion) {
         batchSize = Int(configuration.numFrames)
       }
       guard batchSize > 1 else {

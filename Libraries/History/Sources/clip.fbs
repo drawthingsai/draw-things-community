@@ -3,4 +3,4 @@ table Clip {
   frames_per_second: double;
 }
 
-root_type ScriptSession;
+root_type Clip;
