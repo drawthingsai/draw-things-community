@@ -591,8 +591,9 @@ public final class ImageHistoryManager {
     }
   }
 
-  public func pushHistory(_ history: History) {
+  public func pushHistory(_ histories: [History]) {
     dispatchPrecondition(condition: .onQueue(.main))
+    guard !histories.isEmpty else { return }
     // We need to fork this history.
     precondition(lineage <= maxLineage)
     // If logicalTime is 0, we don't need to deal with fork.
@@ -698,16 +699,6 @@ public final class ImageHistoryManager {
       maxLogicalTime = logicalTime
       maxLogicalTimeForLineage[lineage] = maxLogicalTime
     }
-    let imageData = history.imageData
-    let shuffleData = history.shuffleData ?? self.shuffleData
-    // Only moving forward if we are not empty. Otherwise just update the empty state.
-    if !imageData.isEmpty || !self.imageData.isEmpty || !shuffleData.isEmpty
-      || !self.shuffleData.isEmpty
-    {
-      logicalTime += 1
-    }
-    maxLogicalTime = logicalTime
-    maxLogicalTimeForLineage[lineage] = maxLogicalTime
     self.tensorId = nil
     self.maskId = nil
     self.depthMapId = nil
@@ -716,181 +707,221 @@ public final class ImageHistoryManager {
     self.colorPaletteId = nil
     self.customId = nil
     self.scaleFactor = 1
-    self.isGenerated = history.isGenerated
-    self.configuration = history.configuration
-    self.dataStored = history.imageData
-    self.contentOffset = history.contentOffset
-    self.scaleFactorBy120 = history.scaleFactorBy120
-    self.shuffleData = shuffleData
-    let profileData: [UInt8]? = {
-      guard let profile = history.profile else { return nil }
-      let jsonEncoder = JSONEncoder()
-      jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
-      return (try? jsonEncoder.encode(profile)).map { [UInt8]($0) }
-    }()
-    self._profileData = profileData
-    let previewId: Int64?
-    if let preview = history.preview {
-      var id: Int64 = 0
-      for item in imageData {
-        id += Int64(item.tensorId ?? 0) + Int64(item.maskId ?? 0) + Int64(item.depthMapId ?? 0)
-        id +=
-          Int64(item.scribbleId ?? 0) + Int64(item.poseId ?? 0) + Int64(item.colorPaletteId ?? 0)
-        id += Int64(item.customId ?? 0)
+    struct HistoryNode {
+      var tensorHistoryNode: TensorHistoryNode
+      var previewId: Int64?
+      var profileData: [UInt8]?
+      var tensorData: [TensorData]
+      var tensorMoodboardData: [TensorMoodboardData]
+      var logicalTimeAndLineage: LogicalTimeAndLineage
+      var imageVersion: Int
+    }
+    let historyNodes = histories.map { history in
+      let imageData = history.imageData
+      let shuffleData = history.shuffleData ?? self.shuffleData
+      // Only moving forward if we are not empty. Otherwise just update the empty state.
+      if !imageData.isEmpty || !self.imageData.isEmpty || !shuffleData.isEmpty
+        || !self.shuffleData.isEmpty
+      {
+        logicalTime += 1
       }
-      for shuffleData in shuffleData {
-        id += Int64(shuffleData.shuffleId) * Int64((shuffleData.weight * 1000).rounded())
+      maxLogicalTime = logicalTime
+      maxLogicalTimeForLineage[lineage] = maxLogicalTime
+      self.isGenerated = history.isGenerated
+      self.configuration = history.configuration
+      self.dataStored = history.imageData
+      self.contentOffset = history.contentOffset
+      self.scaleFactorBy120 = history.scaleFactorBy120
+      self.shuffleData = shuffleData
+      let profileData: [UInt8]? = {
+        guard let profile = history.profile else { return nil }
+        let jsonEncoder = JSONEncoder()
+        jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+        return (try? jsonEncoder.encode(profile)).map { [UInt8]($0) }
+      }()
+      self._profileData = profileData
+      let previewId: Int64?
+      if let preview = history.preview {
+        var id: Int64 = 0
+        for item in imageData {
+          id += Int64(item.tensorId ?? 0) + Int64(item.maskId ?? 0) + Int64(item.depthMapId ?? 0)
+          id +=
+            Int64(item.scribbleId ?? 0) + Int64(item.poseId ?? 0) + Int64(item.colorPaletteId ?? 0)
+          id += Int64(item.customId ?? 0)
+        }
+        for shuffleData in shuffleData {
+          id += Int64(shuffleData.shuffleId) * Int64((shuffleData.weight * 1000).rounded())
+        }
+        previewCache[id] = preview
+        previewId = id
+      } else {
+        previewId = nil
       }
-      previewCache[id] = preview
-      previewId = id
-    } else {
-      previewId = nil
+      self.previewId = previewId
+      let configuration = history.configuration
+      let tensorHistoryNode = TensorHistoryNode(
+        lineage: lineage, logicalTime: logicalTime, startWidth: configuration.startWidth,
+        startHeight: configuration.startHeight, seed: configuration.seed,
+        steps: configuration.steps,
+        guidanceScale: configuration.guidanceScale, strength: configuration.strength,
+        model: configuration.model, tensorId: nil, maskId: nil,
+        wallClock: Int64(Date().timeIntervalSince1970),
+        textEdits: history.textEdits.map { Int64($0) },
+        textLineage: history.textLineage, batchSize: configuration.batchSize,
+        sampler: SamplerType(from: configuration.sampler), hiresFix: configuration.hiresFix,
+        hiresFixStartWidth: configuration.hiresFixStartWidth,
+        hiresFixStartHeight: configuration.hiresFixStartHeight,
+        hiresFixStrength: configuration.hiresFixStrength,
+        upscaler: configuration.upscaler, scaleFactor: 1,
+        depthMapId: nil, generated: isGenerated,
+        imageGuidanceScale: configuration.imageGuidanceScale,
+        seedMode: SeedMode(from: configuration.seedMode), clipSkip: configuration.clipSkip,
+        controls: configuration.controls.map { Control(from: $0) }, scribbleId: nil,
+        poseId: nil, loras: configuration.loras.map { LoRA(from: $0) },
+        colorPaletteId: nil, maskBlur: configuration.maskBlur, customId: nil,
+        faceRestoration: configuration.faceRestoration,
+        clipWeight: configuration.clipWeight,
+        negativePromptForImagePrior: configuration.negativePromptForImagePrior,
+        imagePriorSteps: configuration.imagePriorSteps, dataStored: Int32(imageData.count),
+        previewId: previewId, contentOffsetX: contentOffset.x, contentOffsetY: contentOffset.y,
+        scaleFactorBy120: scaleFactorBy120, refinerModel: configuration.refinerModel,
+        originalImageHeight: configuration.originalImageHeight,
+        originalImageWidth: configuration.originalImageWidth, cropTop: configuration.cropTop,
+        cropLeft: configuration.cropLeft, targetImageHeight: configuration.targetImageHeight,
+        targetImageWidth: configuration.targetImageWidth,
+        aestheticScore: configuration.aestheticScore,
+        negativeAestheticScore: configuration.negativeAestheticScore,
+        zeroNegativePrompt: configuration.zeroNegativePrompt,
+        refinerStart: configuration.refinerStart,
+        negativeOriginalImageHeight: configuration.negativeOriginalImageHeight,
+        negativeOriginalImageWidth: configuration.negativeOriginalImageWidth,
+        shuffleDataStored: Int32(shuffleData.count), fpsId: configuration.fpsId,
+        motionBucketId: configuration.motionBucketId, condAug: configuration.condAug,
+        startFrameCfg: configuration.startFrameCfg, numFrames: configuration.numFrames,
+        maskBlurOutset: configuration.maskBlurOutset, sharpness: configuration.sharpness,
+        shift: configuration.shift, stage2Steps: configuration.stage2Steps,
+        stage2Cfg: configuration.stage2Cfg, stage2Shift: configuration.stage2Shift,
+        tiledDecoding: configuration.tiledDecoding,
+        decodingTileWidth: configuration.decodingTileWidth,
+        decodingTileHeight: configuration.decodingTileHeight,
+        decodingTileOverlap: configuration.decodingTileOverlap,
+        stochasticSamplingGamma: configuration.stochasticSamplingGamma,
+        preserveOriginalAfterInpaint: configuration.preserveOriginalAfterInpaint,
+        tiledDiffusion: configuration.tiledDiffusion,
+        diffusionTileWidth: configuration.diffusionTileWidth,
+        diffusionTileHeight: configuration.diffusionTileHeight,
+        diffusionTileOverlap: configuration.diffusionTileOverlap,
+        upscalerScaleFactor: configuration.upscalerScaleFactor,
+        scriptSessionId: history.scriptSessionId,
+        t5TextEncoder: configuration.t5TextEncoder,
+        separateClipL: configuration.separateClipL,
+        clipLText: configuration.clipLText,
+        separateOpenClipG: configuration.separateOpenClipG,
+        openClipGText: configuration.openClipGText,
+        speedUpWithGuidanceEmbed: configuration.speedUpWithGuidanceEmbed,
+        guidanceEmbed: configuration.guidanceEmbed,
+        resolutionDependentShift: configuration.resolutionDependentShift,
+        teaCacheStart: configuration.teaCacheStart,
+        teaCacheEnd: configuration.teaCacheEnd,
+        teaCacheThreshold: configuration.teaCacheThreshold,
+        teaCache: configuration.teaCache,
+        separateT5: configuration.separateT5,
+        t5Text: configuration.t5Text,
+        teaCacheMaxSkipSteps: configuration.teaCacheMaxSkipSteps,
+        textPrompt: history.textPrompt,
+        negativeTextPrompt: history.negativeTextPrompt
+      )
+      let imageVersion = uniqueVersion()
+      nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)
+      let logicalTimeAndLineage = LogicalTimeAndLineage(logicalTime: logicalTime, lineage: lineage)
+      nodeLineageCache[logicalTimeAndLineage] = (tensorHistoryNode, imageVersion)
+      let tensorData = imageData.enumerated().map {
+        TensorData(
+          lineage: lineage, logicalTime: logicalTime, index: Int64($0), x: $1.x, y: $1.y,
+          width: $1.width, height: $1.height, scaleFactorBy120: $1.scaleFactorBy120,
+          tensorId: $1.tensorId, maskId: $1.maskId, depthMapId: $1.depthMapId,
+          scribbleId: $1.scribbleId, poseId: $1.poseId, colorPaletteId: $1.colorPaletteId,
+          customId: $1.customId)
+      }
+      let tensorMoodboardData = shuffleData.enumerated().map {
+        TensorMoodboardData(
+          lineage: lineage, logicalTime: logicalTime, index: Int64($0), shuffleId: $1.shuffleId,
+          weight: $1.weight)
+      }
+      shuffleDataCache[logicalTimeAndLineage] = (tensorMoodboardData, imageVersion)
+      imageDataCache[logicalTimeAndLineage] = (tensorData, imageVersion)
+      return HistoryNode(
+        tensorHistoryNode: tensorHistoryNode, previewId: previewId, profileData: profileData,
+        tensorData: tensorData, tensorMoodboardData: tensorMoodboardData,
+        logicalTimeAndLineage: logicalTimeAndLineage, imageVersion: imageVersion)
     }
-    self.previewId = previewId
-    let configuration = history.configuration
-    let tensorHistoryNode = TensorHistoryNode(
-      lineage: lineage, logicalTime: logicalTime, startWidth: configuration.startWidth,
-      startHeight: configuration.startHeight, seed: configuration.seed, steps: configuration.steps,
-      guidanceScale: configuration.guidanceScale, strength: configuration.strength,
-      model: configuration.model, tensorId: nil, maskId: nil,
-      wallClock: Int64(Date().timeIntervalSince1970),
-      textEdits: history.textEdits.map { Int64($0) },
-      textLineage: history.textLineage, batchSize: configuration.batchSize,
-      sampler: SamplerType(from: configuration.sampler), hiresFix: configuration.hiresFix,
-      hiresFixStartWidth: configuration.hiresFixStartWidth,
-      hiresFixStartHeight: configuration.hiresFixStartHeight,
-      hiresFixStrength: configuration.hiresFixStrength,
-      upscaler: configuration.upscaler, scaleFactor: 1,
-      depthMapId: nil, generated: isGenerated,
-      imageGuidanceScale: configuration.imageGuidanceScale,
-      seedMode: SeedMode(from: configuration.seedMode), clipSkip: configuration.clipSkip,
-      controls: configuration.controls.map { Control(from: $0) }, scribbleId: nil,
-      poseId: nil, loras: configuration.loras.map { LoRA(from: $0) },
-      colorPaletteId: nil, maskBlur: configuration.maskBlur, customId: nil,
-      faceRestoration: configuration.faceRestoration,
-      clipWeight: configuration.clipWeight,
-      negativePromptForImagePrior: configuration.negativePromptForImagePrior,
-      imagePriorSteps: configuration.imagePriorSteps, dataStored: Int32(imageData.count),
-      previewId: previewId, contentOffsetX: contentOffset.x, contentOffsetY: contentOffset.y,
-      scaleFactorBy120: scaleFactorBy120, refinerModel: configuration.refinerModel,
-      originalImageHeight: configuration.originalImageHeight,
-      originalImageWidth: configuration.originalImageWidth, cropTop: configuration.cropTop,
-      cropLeft: configuration.cropLeft, targetImageHeight: configuration.targetImageHeight,
-      targetImageWidth: configuration.targetImageWidth,
-      aestheticScore: configuration.aestheticScore,
-      negativeAestheticScore: configuration.negativeAestheticScore,
-      zeroNegativePrompt: configuration.zeroNegativePrompt,
-      refinerStart: configuration.refinerStart,
-      negativeOriginalImageHeight: configuration.negativeOriginalImageHeight,
-      negativeOriginalImageWidth: configuration.negativeOriginalImageWidth,
-      shuffleDataStored: Int32(shuffleData.count), fpsId: configuration.fpsId,
-      motionBucketId: configuration.motionBucketId, condAug: configuration.condAug,
-      startFrameCfg: configuration.startFrameCfg, numFrames: configuration.numFrames,
-      maskBlurOutset: configuration.maskBlurOutset, sharpness: configuration.sharpness,
-      shift: configuration.shift, stage2Steps: configuration.stage2Steps,
-      stage2Cfg: configuration.stage2Cfg, stage2Shift: configuration.stage2Shift,
-      tiledDecoding: configuration.tiledDecoding,
-      decodingTileWidth: configuration.decodingTileWidth,
-      decodingTileHeight: configuration.decodingTileHeight,
-      decodingTileOverlap: configuration.decodingTileOverlap,
-      stochasticSamplingGamma: configuration.stochasticSamplingGamma,
-      preserveOriginalAfterInpaint: configuration.preserveOriginalAfterInpaint,
-      tiledDiffusion: configuration.tiledDiffusion,
-      diffusionTileWidth: configuration.diffusionTileWidth,
-      diffusionTileHeight: configuration.diffusionTileHeight,
-      diffusionTileOverlap: configuration.diffusionTileOverlap,
-      upscalerScaleFactor: configuration.upscalerScaleFactor,
-      scriptSessionId: history.scriptSessionId,
-      t5TextEncoder: configuration.t5TextEncoder,
-      separateClipL: configuration.separateClipL,
-      clipLText: configuration.clipLText,
-      separateOpenClipG: configuration.separateOpenClipG,
-      openClipGText: configuration.openClipGText,
-      speedUpWithGuidanceEmbed: configuration.speedUpWithGuidanceEmbed,
-      guidanceEmbed: configuration.guidanceEmbed,
-      resolutionDependentShift: configuration.resolutionDependentShift,
-      teaCacheStart: configuration.teaCacheStart,
-      teaCacheEnd: configuration.teaCacheEnd,
-      teaCacheThreshold: configuration.teaCacheThreshold,
-      teaCache: configuration.teaCache,
-      separateT5: configuration.separateT5,
-      t5Text: configuration.t5Text,
-      teaCacheMaxSkipSteps: configuration.teaCacheMaxSkipSteps,
-      textPrompt: history.textPrompt,
-      negativeTextPrompt: history.negativeTextPrompt
-    )
-    let imageVersion = uniqueVersion()
-    nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)
-    let logicalTimeAndLineage = LogicalTimeAndLineage(logicalTime: logicalTime, lineage: lineage)
-    nodeLineageCache[logicalTimeAndLineage] = (tensorHistoryNode, imageVersion)
-    let tensorData = imageData.enumerated().map {
-      TensorData(
-        lineage: lineage, logicalTime: logicalTime, index: Int64($0), x: $1.x, y: $1.y,
-        width: $1.width, height: $1.height, scaleFactorBy120: $1.scaleFactorBy120,
-        tensorId: $1.tensorId, maskId: $1.maskId, depthMapId: $1.depthMapId,
-        scribbleId: $1.scribbleId, poseId: $1.poseId, colorPaletteId: $1.colorPaletteId,
-        customId: $1.customId)
-    }
-    let tensorMoodboardData = shuffleData.enumerated().map {
-      TensorMoodboardData(
-        lineage: lineage, logicalTime: logicalTime, index: Int64($0), shuffleId: $1.shuffleId,
-        weight: $1.weight)
-    }
-    shuffleDataCache[logicalTimeAndLineage] = (tensorMoodboardData, imageVersion)
-    imageDataCache[logicalTimeAndLineage] = (tensorData, imageVersion)
     project.dictionary["image_seek_to", Int.self] = nil
     project.performChanges([
       TensorHistoryNode.self, ThumbnailHistoryNode.self, ThumbnailHistoryHalfNode.self,
       TensorData.self, TensorMoodboardData.self,
     ]) { transactionContext in
       // It is OK if this is already inserted.
-      let upsertRequest = TensorHistoryNodeChangeRequest.upsertRequest(tensorHistoryNode)
-      if let preview = history.preview, let previewId = previewId {
-        let previewData = preview.jpegData(compressionQuality: 0.75)
-        let downsampleData = downsampleImage(preview)?.jpegData(compressionQuality: 0.5)
-        let thumbnailHistoryNodeChangeRequest = ThumbnailHistoryNodeChangeRequest.creationRequest()
-        thumbnailHistoryNodeChangeRequest.id = previewId
-        thumbnailHistoryNodeChangeRequest.data = previewData.map { [UInt8]($0) } ?? []
-        let thumbnailHistoryHalfNodeChangeRequest =
-          ThumbnailHistoryHalfNodeChangeRequest.creationRequest()
-        thumbnailHistoryHalfNodeChangeRequest.id = previewId
-        thumbnailHistoryHalfNodeChangeRequest.data = downsampleData.map { [UInt8]($0) } ?? []
-        if thumbnailHistoryNodeChangeRequest.data.count > 0 {
-          let _ = try? transactionContext.submit(thumbnailHistoryNodeChangeRequest)
+      for (history, historyNode) in zip(histories, historyNodes) {
+        let upsertRequest = TensorHistoryNodeChangeRequest.upsertRequest(
+          historyNode.tensorHistoryNode)
+        if let preview = history.preview, let previewId = historyNode.previewId {
+          let previewData = preview.jpegData(compressionQuality: 0.75)
+          let downsampleData = downsampleImage(preview)?.jpegData(compressionQuality: 0.5)
+          let thumbnailHistoryNodeChangeRequest =
+            ThumbnailHistoryNodeChangeRequest.creationRequest()
+          thumbnailHistoryNodeChangeRequest.id = previewId
+          thumbnailHistoryNodeChangeRequest.data = previewData.map { [UInt8]($0) } ?? []
+          let thumbnailHistoryHalfNodeChangeRequest =
+            ThumbnailHistoryHalfNodeChangeRequest.creationRequest()
+          thumbnailHistoryHalfNodeChangeRequest.id = previewId
+          thumbnailHistoryHalfNodeChangeRequest.data = downsampleData.map { [UInt8]($0) } ?? []
+          if thumbnailHistoryNodeChangeRequest.data.count > 0 {
+            let _ = try? transactionContext.submit(thumbnailHistoryNodeChangeRequest)
+          }
+          if thumbnailHistoryHalfNodeChangeRequest.data.count > 0 {
+            let _ = try? transactionContext.submit(thumbnailHistoryHalfNodeChangeRequest)
+          }
         }
-        if thumbnailHistoryHalfNodeChangeRequest.data.count > 0 {
-          let _ = try? transactionContext.submit(thumbnailHistoryHalfNodeChangeRequest)
+        if let profileData = historyNode.profileData {
+          upsertRequest.profileData = profileData
         }
-      }
-      if let profileData = profileData {
-        upsertRequest.profileData = profileData
-      }
-      transactionContext.try(submit: upsertRequest)
-      for item in tensorData {
-        let upsertRequest = TensorDataChangeRequest.upsertRequest(item)
         transactionContext.try(submit: upsertRequest)
-      }
-      for moodItem in tensorMoodboardData {
-        let upsertRequest = TensorMoodboardDataChangeRequest.upsertRequest(moodItem)
-        transactionContext.try(submit: upsertRequest)
+        for item in historyNode.tensorData {
+          let upsertRequest = TensorDataChangeRequest.upsertRequest(item)
+          transactionContext.try(submit: upsertRequest)
+        }
+        for moodItem in historyNode.tensorMoodboardData {
+          let upsertRequest = TensorMoodboardDataChangeRequest.upsertRequest(moodItem)
+          transactionContext.try(submit: upsertRequest)
+        }
       }
     } completionHandler: { _ in
       DispatchQueue.main.async { [weak self] in
         guard let self = self else { return }
-        if let previewId = previewId {
-          self.previewCache[previewId] = nil
-        }
-        if let node = self.nodeCache[tensorHistoryNode.logicalTime], node.1 == imageVersion {
-          self.nodeCache[tensorHistoryNode.logicalTime] = nil
-        }
-        if let node = self.nodeLineageCache[logicalTimeAndLineage], node.1 == imageVersion {
-          self.nodeLineageCache[logicalTimeAndLineage] = nil
-        }
-        if let node = self.imageDataCache[logicalTimeAndLineage], node.1 == imageVersion {
-          self.imageDataCache[logicalTimeAndLineage] = nil
-        }
-        if let node = self.shuffleDataCache[logicalTimeAndLineage], node.1 == imageVersion {
-          self.shuffleDataCache[logicalTimeAndLineage] = nil
+        for historyNode in historyNodes {
+          if let previewId = historyNode.previewId {
+            self.previewCache[previewId] = nil
+          }
+          if let node = self.nodeCache[historyNode.tensorHistoryNode.logicalTime],
+            node.1 == historyNode.imageVersion
+          {
+            self.nodeCache[historyNode.tensorHistoryNode.logicalTime] = nil
+          }
+          if let node = self.nodeLineageCache[historyNode.logicalTimeAndLineage],
+            node.1 == historyNode.imageVersion
+          {
+            self.nodeLineageCache[historyNode.logicalTimeAndLineage] = nil
+          }
+          if let node = self.imageDataCache[historyNode.logicalTimeAndLineage],
+            node.1 == historyNode.imageVersion
+          {
+            self.imageDataCache[historyNode.logicalTimeAndLineage] = nil
+          }
+          if let node = self.shuffleDataCache[historyNode.logicalTimeAndLineage],
+            node.1 == historyNode.imageVersion
+          {
+            self.shuffleDataCache[historyNode.logicalTimeAndLineage] = nil
+          }
         }
       }
     }
