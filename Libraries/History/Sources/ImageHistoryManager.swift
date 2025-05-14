@@ -566,11 +566,14 @@ public final class ImageHistoryManager {
     public var scriptSessionId: UInt64?
     public var shuffleData: [ShuffleData]?
     public var profile: GenerationProfile?
+    public var textPrompt: String?
+    public var negativeTextPrompt: String?
     public init(
       imageData: [ImageData], preview: UIImage?, textEdits: Int?, textLineage: Int64?,
       configuration: GenerationConfiguration, isGenerated: Bool,
       contentOffset: (x: Int32, y: Int32), scaleFactorBy120: Int32, scriptSessionId: UInt64?,
-      shuffleData: [ShuffleData]? = nil, profile: GenerationProfile? = nil
+      shuffleData: [ShuffleData]? = nil, profile: GenerationProfile? = nil,
+      textPrompt: String? = nil, negativeTextPrompt: String? = nil
     ) {
       self.imageData = imageData
       self.preview = preview
@@ -583,6 +586,8 @@ public final class ImageHistoryManager {
       self.scriptSessionId = scriptSessionId
       self.shuffleData = shuffleData
       self.profile = profile
+      self.textPrompt = textPrompt
+      self.negativeTextPrompt = negativeTextPrompt
     }
   }
 
@@ -809,7 +814,9 @@ public final class ImageHistoryManager {
       teaCache: configuration.teaCache,
       separateT5: configuration.separateT5,
       t5Text: configuration.t5Text,
-      teaCacheMaxSkipSteps: configuration.teaCacheMaxSkipSteps
+      teaCacheMaxSkipSteps: configuration.teaCacheMaxSkipSteps,
+      textPrompt: history.textPrompt,
+      negativeTextPrompt: history.negativeTextPrompt
     )
     let imageVersion = uniqueVersion()
     nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)
