@@ -1,5 +1,6 @@
 table Clip {
   clip_id: long (primary);
+  count: int;
   frames_per_second: double;
 }
 

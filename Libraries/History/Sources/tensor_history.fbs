@@ -170,9 +170,10 @@ table TensorHistoryNode {
   separate_t5: bool = false;
   t5_text: string;
   tea_cache_max_skip_steps: int = 3;
-  clip_id: long = -1;
   text_prompt: string;
   negative_text_prompt: string;
+  clip_id: long = -1;
+  index_in_a_clip: int = 0;
 }
 
 root_type TensorHistoryNode;

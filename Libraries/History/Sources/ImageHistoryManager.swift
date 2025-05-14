@@ -730,7 +730,7 @@ public final class ImageHistoryManager {
     } else {
       clipId = nil
     }
-    let historyNodes = histories.map { history in
+    let historyNodes = histories.enumerated().map { i, history in
       let imageData = history.imageData
       let shuffleData = history.shuffleData ?? self.shuffleData
       // Only moving forward if we are not empty. Otherwise just update the empty state.
@@ -842,9 +842,10 @@ public final class ImageHistoryManager {
         separateT5: configuration.separateT5,
         t5Text: configuration.t5Text,
         teaCacheMaxSkipSteps: configuration.teaCacheMaxSkipSteps,
-        clipId: clipId,
         textPrompt: history.textPrompt,
-        negativeTextPrompt: history.negativeTextPrompt
+        negativeTextPrompt: history.negativeTextPrompt,
+        clipId: clipId,
+        indexInAClip: clipId.map { _ in Int32(i) }
       )
       let imageVersion = uniqueVersion()
       nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)
@@ -914,6 +915,7 @@ public final class ImageHistoryManager {
         if let clipId = clipId {
           let creationRequest = ClipChangeRequest.creationRequest()
           creationRequest.clipId = clipId
+          creationRequest.count = Int32(historyNodes.count)
           creationRequest.framesPerSecond = framesPerSecond
           transactionContext.try(submit: creationRequest)
         }
