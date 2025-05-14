@@ -554,12 +554,39 @@ public final class ImageHistoryManager {
     return uniqueVersion
   }
 
-  public func pushHistory(
-    imageData: [ImageData], preview: UIImage?, textEdits: Int?,
-    textLineage: Int64?, configuration: GenerationConfiguration, isGenerated: Bool,
-    contentOffset: (x: Int32, y: Int32), scaleFactorBy120: Int32, scriptSessionId: UInt64?,
-    shuffleData: [ShuffleData]? = nil, profile: GenerationProfile? = nil
-  ) {
+  public struct History {
+    public var imageData: [ImageData]
+    public var preview: UIImage?
+    public var textEdits: Int?
+    public var textLineage: Int64?
+    public var configuration: GenerationConfiguration
+    public var isGenerated: Bool
+    public var contentOffset: (x: Int32, y: Int32)
+    public var scaleFactorBy120: Int32
+    public var scriptSessionId: UInt64?
+    public var shuffleData: [ShuffleData]?
+    public var profile: GenerationProfile?
+    public init(
+      imageData: [ImageData], preview: UIImage?, textEdits: Int?, textLineage: Int64?,
+      configuration: GenerationConfiguration, isGenerated: Bool,
+      contentOffset: (x: Int32, y: Int32), scaleFactorBy120: Int32, scriptSessionId: UInt64?,
+      shuffleData: [ShuffleData]? = nil, profile: GenerationProfile? = nil
+    ) {
+      self.imageData = imageData
+      self.preview = preview
+      self.textEdits = textEdits
+      self.textLineage = textLineage
+      self.configuration = configuration
+      self.isGenerated = isGenerated
+      self.contentOffset = contentOffset
+      self.scaleFactorBy120 = scaleFactorBy120
+      self.scriptSessionId = scriptSessionId
+      self.shuffleData = shuffleData
+      self.profile = profile
+    }
+  }
+
+  public func pushHistory(_ history: History) {
     dispatchPrecondition(condition: .onQueue(.main))
     // We need to fork this history.
     precondition(lineage <= maxLineage)
@@ -666,7 +693,7 @@ public final class ImageHistoryManager {
       maxLogicalTime = logicalTime
       maxLogicalTimeForLineage[lineage] = maxLogicalTime
     }
-    let shuffleData = shuffleData ?? self.shuffleData
+    let shuffleData = history.shuffleData ?? self.shuffleData
     // Only moving forward if we are not empty. Otherwise just update the empty state.
     if !imageData.isEmpty || !self.imageData.isEmpty || !shuffleData.isEmpty
       || !self.shuffleData.isEmpty
@@ -683,21 +710,21 @@ public final class ImageHistoryManager {
     self.colorPaletteId = nil
     self.customId = nil
     self.scaleFactor = 1
-    self.isGenerated = isGenerated
-    self.configuration = configuration
-    self.dataStored = imageData
-    self.contentOffset = contentOffset
-    self.scaleFactorBy120 = scaleFactorBy120
+    self.isGenerated = history.isGenerated
+    self.configuration = history.configuration
+    self.dataStored = history.imageData
+    self.contentOffset = history.contentOffset
+    self.scaleFactorBy120 = history.scaleFactorBy120
     self.shuffleData = shuffleData
     let profileData: [UInt8]? = {
-      guard let profile = profile else { return nil }
+      guard let profile = history.profile else { return nil }
       let jsonEncoder = JSONEncoder()
       jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
       return (try? jsonEncoder.encode(profile)).map { [UInt8]($0) }
     }()
     self._profileData = profileData
     let previewId: Int64?
-    if let preview = preview {
+    if let preview = history.preview {
       var id: Int64 = 0
       for item in imageData {
         id += Int64(item.tensorId ?? 0) + Int64(item.maskId ?? 0) + Int64(item.depthMapId ?? 0)
@@ -714,13 +741,15 @@ public final class ImageHistoryManager {
       previewId = nil
     }
     self.previewId = previewId
+    let configuration = history.configuration
     let tensorHistoryNode = TensorHistoryNode(
       lineage: lineage, logicalTime: logicalTime, startWidth: configuration.startWidth,
       startHeight: configuration.startHeight, seed: configuration.seed, steps: configuration.steps,
       guidanceScale: configuration.guidanceScale, strength: configuration.strength,
       model: configuration.model, tensorId: nil, maskId: nil,
-      wallClock: Int64(Date().timeIntervalSince1970), textEdits: textEdits.map { Int64($0) },
-      textLineage: textLineage, batchSize: configuration.batchSize,
+      wallClock: Int64(Date().timeIntervalSince1970),
+      textEdits: history.textEdits.map { Int64($0) },
+      textLineage: history.textLineage, batchSize: configuration.batchSize,
       sampler: SamplerType(from: configuration.sampler), hiresFix: configuration.hiresFix,
       hiresFixStartWidth: configuration.hiresFixStartWidth,
       hiresFixStartHeight: configuration.hiresFixStartHeight,
@@ -765,7 +794,7 @@ public final class ImageHistoryManager {
       diffusionTileHeight: configuration.diffusionTileHeight,
       diffusionTileOverlap: configuration.diffusionTileOverlap,
       upscalerScaleFactor: configuration.upscalerScaleFactor,
-      scriptSessionId: scriptSessionId,
+      scriptSessionId: history.scriptSessionId,
       t5TextEncoder: configuration.t5TextEncoder,
       separateClipL: configuration.separateClipL,
       clipLText: configuration.clipLText,
@@ -808,7 +837,7 @@ public final class ImageHistoryManager {
     ]) { transactionContext in
       // It is OK if this is already inserted.
       let upsertRequest = TensorHistoryNodeChangeRequest.upsertRequest(tensorHistoryNode)
-      if let preview = preview, let previewId = previewId {
+      if let preview = history.preview, let previewId = previewId {
         let previewData = preview.jpegData(compressionQuality: 0.75)
         let downsampleData = downsampleImage(preview)?.jpegData(compressionQuality: 0.5)
         let thumbnailHistoryNodeChangeRequest = ThumbnailHistoryNodeChangeRequest.creationRequest()
