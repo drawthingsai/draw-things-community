@@ -698,9 +698,10 @@ public final class ImageHistoryManager {
       maxLogicalTime = logicalTime
       maxLogicalTimeForLineage[lineage] = maxLogicalTime
     }
+    let imageData = history.imageData
     let shuffleData = history.shuffleData ?? self.shuffleData
     // Only moving forward if we are not empty. Otherwise just update the empty state.
-    if !history.imageData.isEmpty || !self.imageData.isEmpty || !shuffleData.isEmpty
+    if !imageData.isEmpty || !self.imageData.isEmpty || !shuffleData.isEmpty
       || !self.shuffleData.isEmpty
     {
       logicalTime += 1
