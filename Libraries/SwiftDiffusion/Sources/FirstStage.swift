@@ -409,7 +409,7 @@ extension FirstStage {
         let shape = result.shape
         return (
           DynamicGraph.Tensor<FloatType>(
-            from: result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<outputChannels]),
+            from: result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<outputChannels].contiguous()),
           decoder
         )
       } else {
@@ -463,7 +463,8 @@ extension FirstStage {
           i..<(i + 1), 0..<(startHeight * scaleFactor), 0..<(startWidth * scaleFactor),
           0..<outputChannels] =
           DynamicGraph
-          .Tensor<FloatType>(from: partial[0..<1, 0..<shape[1], 0..<shape[2], 0..<outputChannels])
+          .Tensor<FloatType>(
+            from: partial[0..<1, 0..<shape[1], 0..<shape[2], 0..<outputChannels].contiguous())
       } else {
         let partial: DynamicGraph.Tensor<FloatType>
         if tiledDecoding {
