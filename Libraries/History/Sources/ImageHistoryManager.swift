@@ -700,7 +700,7 @@ public final class ImageHistoryManager {
     }
     let shuffleData = history.shuffleData ?? self.shuffleData
     // Only moving forward if we are not empty. Otherwise just update the empty state.
-    if !imageData.isEmpty || !self.imageData.isEmpty || !shuffleData.isEmpty
+    if !history.imageData.isEmpty || !self.imageData.isEmpty || !shuffleData.isEmpty
       || !self.shuffleData.isEmpty
     {
       logicalTime += 1
