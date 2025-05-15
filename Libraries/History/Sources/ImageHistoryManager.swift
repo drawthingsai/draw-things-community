@@ -356,6 +356,32 @@ extension ImageHistoryManager {
       self.weight = weight
     }
   }
+  public struct ClipData: Equatable & Hashable {
+    public struct FrameData: Equatable & Hashable {
+      public var logicalTime: Int64
+      public var lineage: Int64
+      init(logicalTime: Int64, lineage: Int64) {
+        self.logicalTime = logicalTime
+        self.lineage = lineage
+      }
+    }
+    public struct Size: Equatable & Hashable {
+      public var width: Int32
+      public var height: Int32
+      init(width: Int32, height: Int32) {
+        self.width = width
+        self.height = height
+      }
+    }
+    public var framesPerSecond: Double
+    public var size: Size
+    public var frames: [FrameData]
+    public init(framesPerSecond: Double, size: Size, frames: [FrameData]) {
+      self.framesPerSecond = framesPerSecond
+      self.size = size
+      self.frames = frames
+    }
+  }
 }
 
 public final class ImageHistoryManager {
@@ -385,6 +411,8 @@ public final class ImageHistoryManager {
   public private(set) var isGenerated: Bool = false
   public private(set) var contentOffset: (x: Int32, y: Int32) = (x: 0, y: 0)
   public private(set) var scaleFactorBy120: Int32 = 120
+  public private(set) var isVideo: Bool = false
+  public private(set) var clipData: ClipData? = nil
   private let filePath: String
   private var project: Workspace
   private var previewCache = [Int64: UIImage]()  // Keyed by tensorId + maskId
@@ -393,15 +421,16 @@ public final class ImageHistoryManager {
   private var shuffleDataCache = [LogicalTimeAndLineage: ([TensorMoodboardData], Int)]()  // Keyed by logical time and lineage
   private var nodeLineageCache = [LogicalTimeAndLineage: (TensorHistoryNode, Int)]()  // Keyed by logical time and lineage.
   private var nodeCache = [Int64: (TensorHistoryNode, Int)]()  // Keyed by logical time.
+  private var clipDataCache = [Int64: ClipData]()  // keyed by clip id
   private var maxLogicalTimeForLineage = [Int64: Int64]()  // This never cleared up and will grow, but it is OK, because we probably at around 10k lineage or somewhere around that.
   private var dynamicGraph = DynamicGraph()  // We don't do computations on this graph, it is just used to write tensors to disk.
   public init(project: Workspace, filePath: String) {
     self.project = project
     self.filePath = filePath
     guard
-      let (imageHistory, imageData, shuffleData, clipId) =
+      let (imageHistory, imageData, shuffleData, clipId, clipData) =
         (project.fetchWithinASnapshot {
-          () -> (TensorHistoryNode, [TensorData], [TensorMoodboardData], Int64)? in
+          () -> (TensorHistoryNode, [TensorData], [TensorMoodboardData], Int64, ClipData?)? in
           let imageHistories = project.fetch(for: TensorHistoryNode.self).all(
             limit: .limit(1),
             orderBy: [
@@ -431,10 +460,27 @@ public final class ImageHistoryManager {
           let clips = project.fetch(for: Clip.self).all(
             limit: .limit(1), orderBy: [Clip.clipId.descending])
           let clipId = clips.first?.clipId ?? 0
-          return (imageHistory, imageData, shuffleData, clipId)
+          let clipData: ClipData?
+          if imageHistory.clipId >= 0,
+            let clip = project.fetch(for: Clip.self).where(Clip.clipId == imageHistory.clipId).first
+          {
+            let frames = project.fetch(for: TensorHistoryNode.self).where(
+              TensorHistoryNode.clipId == clip.clipId,
+              orderBy: [TensorHistoryNode.indexInAClip.ascending])
+            clipData = ClipData(
+              framesPerSecond: clip.framesPerSecond,
+              size: ClipData.Size(width: clip.width, height: clip.height),
+              frames: frames.map {
+                return ClipData.FrameData(logicalTime: $0.logicalTime, lineage: $0.lineage)
+              })
+          } else {
+            clipData = nil
+          }
+          return (imageHistory, imageData, shuffleData, clipId, clipData)
         })
     else { return }
-    setImageHistory(imageHistory, imageData: imageData, shuffleData: shuffleData)
+    setImageHistory(
+      imageHistory, imageData: imageData, shuffleData: shuffleData, clipData: clipData)
     maxClipId = clipId
     maxLineage = lineage
     maxLogicalTime = logicalTime
@@ -448,7 +494,8 @@ public final class ImageHistoryManager {
   }
 
   private func setImageHistory(
-    _ imageHistory: TensorHistoryNode, imageData: [TensorData], shuffleData: [TensorMoodboardData]
+    _ imageHistory: TensorHistoryNode, imageData: [TensorData], shuffleData: [TensorMoodboardData],
+    clipData: ClipData?
   ) {
     lineage = imageHistory.lineage
     logicalTime = imageHistory.logicalTime
@@ -535,6 +582,7 @@ public final class ImageHistoryManager {
       t5Text: imageHistory.t5Text,
       teaCacheMaxSkipSteps: imageHistory.teaCacheMaxSkipSteps
     )
+    isVideo = imageHistory.clipId >= 0
     _profileData = imageHistory.profileData
     dataStored = imageData.sorted(by: { $0.index < $1.index }).map {
       let tensorId = $0.tensorId == 0 ? nil : $0.tensorId
@@ -553,6 +601,7 @@ public final class ImageHistoryManager {
     self.shuffleData = shuffleData.sorted(by: { $0.index < $1.index }).map {
       return ShuffleData(shuffleId: $0.shuffleId, weight: $0.weight)
     }
+    self.clipData = clipData
   }
 
   private func uniqueVersion() -> Int {
@@ -726,17 +775,19 @@ public final class ImageHistoryManager {
       var clipId: Int64?
     }
     let clipId: Int64?
-    let clipSize: (width: Int32, height: Int32)?
+    var clipData: ClipData?
     if asClip {
       maxClipId += 1
       clipId = maxClipId
-      clipSize = (
-        width: Int32(histories.first?.configuration.startWidth ?? 0) * 64,
-        height: Int32(histories.first?.configuration.startHeight ?? 0) * 64
-      )
+      clipData = ClipData(
+        framesPerSecond: framesPerSecond,
+        size: ClipData.Size(
+          width: Int32(histories.first?.configuration.startWidth ?? 0) * 64,
+          height: Int32(histories.first?.configuration.startHeight ?? 0) * 64
+        ), frames: [])
     } else {
       clipId = nil
-      clipSize = nil
+      clipData = nil
     }
     let historyNodes = histories.enumerated().map { i, history in
       let imageData = history.imageData
@@ -855,6 +906,8 @@ public final class ImageHistoryManager {
         clipId: clipId,
         indexInAClip: clipId.map { _ in Int32(i) }
       )
+      // Only needs to append
+      clipData?.frames.append(ClipData.FrameData(logicalTime: logicalTime, lineage: lineage))
       let imageVersion = uniqueVersion()
       nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)
       let logicalTimeAndLineage = LogicalTimeAndLineage(logicalTime: logicalTime, lineage: lineage)
@@ -878,6 +931,9 @@ public final class ImageHistoryManager {
         tensorHistoryNode: tensorHistoryNode, previewId: previewId, profileData: profileData,
         tensorData: tensorData, tensorMoodboardData: tensorMoodboardData,
         logicalTimeAndLineage: logicalTimeAndLineage, imageVersion: imageVersion)
+    }
+    if let clipId = clipId {
+      clipDataCache[clipId] = clipData
     }
     project.dictionary["image_seek_to", Int.self] = nil
     project.dictionary["image_seek_to_lineage", Int.self] = nil
@@ -922,13 +978,13 @@ public final class ImageHistoryManager {
           transactionContext.try(submit: upsertRequest)
         }
       }
-      if let clipId = clipId, let clipSize = clipSize {
+      if let clipId = clipId, let clipData = clipData {
         let creationRequest = ClipChangeRequest.creationRequest()
         creationRequest.clipId = clipId
         creationRequest.count = Int32(historyNodes.count)
         creationRequest.framesPerSecond = framesPerSecond
-        creationRequest.width = clipSize.width
-        creationRequest.height = clipSize.height
+        creationRequest.width = clipData.size.width
+        creationRequest.height = clipData.size.height
         transactionContext.try(submit: creationRequest)
       }
     } completionHandler: { _ in
@@ -958,6 +1014,9 @@ public final class ImageHistoryManager {
           {
             self.shuffleDataCache[historyNode.logicalTimeAndLineage] = nil
           }
+        }
+        if let clipId = clipId {
+          self.clipDataCache[clipId] = nil
         }
       }
     }
@@ -1123,7 +1182,26 @@ public final class ImageHistoryManager {
             project.fetch(for: TensorMoodboardData.self).where(
               TensorMoodboardData.logicalTime == logicalTime
                 && TensorMoodboardData.lineage == lineage))
-        setImageHistory(imageHistory, imageData: imageData, shuffleData: shuffleData)
+        let clipData =
+          imageHistory.clipId >= 0
+          ? (clipDataCache[imageHistory.clipId]
+            ?? project.fetchWithinASnapshot {
+              guard
+                let clip = project.fetch(for: Clip.self).where(Clip.clipId == imageHistory.clipId)
+                  .first
+              else { return nil }
+              let frames = project.fetch(for: TensorHistoryNode.self).where(
+                TensorHistoryNode.clipId == clip.clipId,
+                orderBy: [TensorHistoryNode.indexInAClip.ascending])
+              return ClipData(
+                framesPerSecond: clip.framesPerSecond,
+                size: ClipData.Size(width: clip.width, height: clip.height),
+                frames: frames.map {
+                  return ClipData.FrameData(logicalTime: $0.logicalTime, lineage: $0.lineage)
+                })
+            }) : nil
+        setImageHistory(
+          imageHistory, imageData: imageData, shuffleData: shuffleData, clipData: clipData)
         if let maxLogicalTime = maxLogicalTimeForLineage[lineage] {
           self.maxLogicalTime = maxLogicalTime
         } else {
@@ -1154,16 +1232,36 @@ public final class ImageHistoryManager {
           project.fetch(for: TensorMoodboardData.self).where(
             TensorMoodboardData.logicalTime == logicalTime
               && TensorMoodboardData.lineage == imageHistory.lineage))
+      let clipData =
+        imageHistory.clipId >= 0
+        ? (clipDataCache[imageHistory.clipId]
+          ?? project.fetchWithinASnapshot {
+            guard
+              let clip = project.fetch(for: Clip.self).where(Clip.clipId == imageHistory.clipId)
+                .first
+            else { return nil }
+            let frames = project.fetch(for: TensorHistoryNode.self).where(
+              TensorHistoryNode.clipId == clip.clipId,
+              orderBy: [TensorHistoryNode.indexInAClip.ascending])
+            return ClipData(
+              framesPerSecond: clip.framesPerSecond,
+              size: ClipData.Size(width: clip.width, height: clip.height),
+              frames: frames.map {
+                return ClipData.FrameData(logicalTime: $0.logicalTime, lineage: $0.lineage)
+              })
+          }) : nil
       // Even if lineage matches the requested, we may not be on the sacred lineage because  the
       // sacred lineage is shorter. Checking if the requested logicalTime is smaller than maxLogicalTime.
       guard logicalTime <= maxLogicalTime else {
-        setImageHistory(imageHistory, imageData: imageData, shuffleData: shuffleData)
+        setImageHistory(
+          imageHistory, imageData: imageData, shuffleData: shuffleData, clipData: clipData)
         project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
         project.dictionary["image_seek_to_lineage", Int.self] = lineage.map { _ in Int(self.lineage)
         }
         return false
       }
-      setImageHistory(imageHistory, imageData: imageData, shuffleData: shuffleData)
+      setImageHistory(
+        imageHistory, imageData: imageData, shuffleData: shuffleData, clipData: clipData)
     } else {
       assert(logicalTime == 0)
       configuration = nil
@@ -1554,9 +1652,9 @@ public final class ImageHistoryManager {
       DispatchQueue.main.async { [weak self] in
         guard let self = self else { return }
         if success {
-          if let (imageHistory, imageData, shuffleData) =
+          if let (imageHistory, imageData, shuffleData, clipData) =
             (project.fetchWithinASnapshot {
-              () -> (TensorHistoryNode, [TensorData], [TensorMoodboardData])? in
+              () -> (TensorHistoryNode, [TensorData], [TensorMoodboardData], ClipData?)? in
               let imageHistories = project.fetch(for: TensorHistoryNode.self).all(
                 limit: .limit(1),
                 orderBy: [
@@ -1583,7 +1681,24 @@ public final class ImageHistoryManager {
               } else {
                 shuffleData = []
               }
-              return (imageHistory, imageData, shuffleData)
+
+              let clipData: ClipData?
+              if let clip = project.fetch(for: Clip.self).where(Clip.clipId == imageHistory.clipId)
+                .first
+              {
+                let frames = project.fetch(for: TensorHistoryNode.self).where(
+                  TensorHistoryNode.clipId == clip.clipId,
+                  orderBy: [TensorHistoryNode.indexInAClip.ascending])
+                clipData = ClipData(
+                  framesPerSecond: clip.framesPerSecond,
+                  size: ClipData.Size(width: clip.width, height: clip.height),
+                  frames: frames.map {
+                    return ClipData.FrameData(logicalTime: $0.logicalTime, lineage: $0.lineage)
+                  })
+              } else {
+                clipData = nil
+              }
+              return (imageHistory, imageData, shuffleData, clipData)
             })
           {
             self.maxLineage = imageHistory.lineage
@@ -1591,7 +1706,8 @@ public final class ImageHistoryManager {
             self.maxLogicalTimeForLineage[self.lineage] = self.maxLogicalTime
             if isDeleted {
               // Just seek to the very beginning.
-              self.setImageHistory(imageHistory, imageData: imageData, shuffleData: shuffleData)
+              self.setImageHistory(
+                imageHistory, imageData: imageData, shuffleData: shuffleData, clipData: clipData)
               self.project.dictionary["image_seek_to", Int.self] = Int(imageHistory.logicalTime)
               self.project.dictionary["image_seek_to_lineage", Int.self] = Int(imageHistory.lineage)
             } else {
