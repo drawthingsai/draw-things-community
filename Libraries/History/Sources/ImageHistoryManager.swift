@@ -360,9 +360,11 @@ extension ImageHistoryManager {
     public struct FrameData: Equatable & Hashable {
       public var logicalTime: Int64
       public var lineage: Int64
-      init(logicalTime: Int64, lineage: Int64) {
+      public var previewId: Int64?
+      init(logicalTime: Int64, lineage: Int64, previewId: Int64?) {
         self.logicalTime = logicalTime
         self.lineage = lineage
+        self.previewId = previewId
       }
     }
     public struct Size: Equatable & Hashable {
@@ -471,7 +473,8 @@ public final class ImageHistoryManager {
               framesPerSecond: clip.framesPerSecond,
               size: ClipData.Size(width: clip.width, height: clip.height),
               frames: frames.map {
-                return ClipData.FrameData(logicalTime: $0.logicalTime, lineage: $0.lineage)
+                return ClipData.FrameData(
+                  logicalTime: $0.logicalTime, lineage: $0.lineage, previewId: $0.previewId)
               })
           } else {
             clipData = nil
@@ -907,7 +910,8 @@ public final class ImageHistoryManager {
         indexInAClip: clipId.map { _ in Int32(i) }
       )
       // Only needs to append
-      clipData?.frames.append(ClipData.FrameData(logicalTime: logicalTime, lineage: lineage))
+      clipData?.frames.append(
+        ClipData.FrameData(logicalTime: logicalTime, lineage: lineage, previewId: previewId))
       let imageVersion = uniqueVersion()
       nodeCache[logicalTime] = (tensorHistoryNode, imageVersion)
       let logicalTimeAndLineage = LogicalTimeAndLineage(logicalTime: logicalTime, lineage: lineage)
@@ -935,6 +939,8 @@ public final class ImageHistoryManager {
     if let clipId = clipId {
       clipDataCache[clipId] = clipData
     }
+    self.clipData = clipData
+    self.isVideo = clipId != nil
     project.dictionary["image_seek_to", Int.self] = nil
     project.dictionary["image_seek_to_lineage", Int.self] = nil
     project.performChanges(
@@ -1197,7 +1203,8 @@ public final class ImageHistoryManager {
                 framesPerSecond: clip.framesPerSecond,
                 size: ClipData.Size(width: clip.width, height: clip.height),
                 frames: frames.map {
-                  return ClipData.FrameData(logicalTime: $0.logicalTime, lineage: $0.lineage)
+                  return ClipData.FrameData(
+                    logicalTime: $0.logicalTime, lineage: $0.lineage, previewId: $0.previewId)
                 })
             }) : nil
         setImageHistory(
@@ -1247,7 +1254,8 @@ public final class ImageHistoryManager {
               framesPerSecond: clip.framesPerSecond,
               size: ClipData.Size(width: clip.width, height: clip.height),
               frames: frames.map {
-                return ClipData.FrameData(logicalTime: $0.logicalTime, lineage: $0.lineage)
+                return ClipData.FrameData(
+                  logicalTime: $0.logicalTime, lineage: $0.lineage, previewId: $0.previewId)
               })
           }) : nil
       // Even if lineage matches the requested, we may not be on the sacred lineage because  the
@@ -1693,7 +1701,8 @@ public final class ImageHistoryManager {
                   framesPerSecond: clip.framesPerSecond,
                   size: ClipData.Size(width: clip.width, height: clip.height),
                   frames: frames.map {
-                    return ClipData.FrameData(logicalTime: $0.logicalTime, lineage: $0.lineage)
+                    return ClipData.FrameData(
+                      logicalTime: $0.logicalTime, lineage: $0.lineage, previewId: $0.previewId)
                   })
               } else {
                 clipData = nil
