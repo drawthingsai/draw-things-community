@@ -55,7 +55,8 @@ public final class TextHistoryManager {
     maxLogicalTimeForLineage[lineage] = logicalTime
     maxEdits = currentEdits
     if let seekTo = project.dictionary["text_seek_to", Int.self] {
-      seek(to: seekTo)
+      let _ = seek(
+        to: seekTo, lineage: project.dictionary["text_seek_to_lineage", Int.self].map { Int64($0) })
     }
   }
 
@@ -411,6 +412,10 @@ public final class TextHistoryManager {
     // Only update where to seek to if it is on sacred lineage.
     if isSacred {
       project.dictionary["text_seek_to"] = edits
+      project.dictionary["text_seek_to_lineage", Int.self] = nil
+    } else {
+      project.dictionary["text_seek_to"] = edits
+      project.dictionary["text_seek_to_lineage", Int.self] = lineage.map { Int($0) }
     }
     return isSacred
   }

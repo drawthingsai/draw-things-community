@@ -441,7 +441,9 @@ public final class ImageHistoryManager {
     maxLogicalTimeForLineage[lineage] = maxLogicalTime
     if var seekTo = project.dictionary["image_seek_to", Int.self] {
       seekTo = min(max(0, seekTo), Int(maxLogicalTime))
-      seek(to: Int64(seekTo))
+      let _ = seek(
+        to: Int64(seekTo),
+        lineage: project.dictionary["image_seek_to_lineage", Int.self].map { Int64($0) })
     }
   }
 
@@ -878,6 +880,7 @@ public final class ImageHistoryManager {
         logicalTimeAndLineage: logicalTimeAndLineage, imageVersion: imageVersion)
     }
     project.dictionary["image_seek_to", Int.self] = nil
+    project.dictionary["image_seek_to_lineage", Int.self] = nil
     project.performChanges(
       [
         TensorHistoryNode.self, ThumbnailHistoryNode.self, ThumbnailHistoryHalfNode.self,
@@ -1097,6 +1100,7 @@ public final class ImageHistoryManager {
       ).first
     {
       precondition(imageHistory.lineage <= maxLineage)
+      let targetLineage = lineage
       if let lineage = lineage, imageHistory.lineage != lineage {
         // Need to find the imageHistory this particular lineage reference to, now we cannot record
         // which image it seek to, and we cannot update the image slider.
@@ -1131,6 +1135,10 @@ public final class ImageHistoryManager {
           maxLogicalTime = maxLogicalTimeImageHistory.logicalTime
           maxLogicalTimeForLineage[lineage] = maxLogicalTime
         }
+        project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
+        project.dictionary["image_seek_to_lineage", Int.self] = targetLineage.map { _ in
+          Int(self.lineage)
+        }
         return false
       }
       let imageData =
@@ -1150,6 +1158,9 @@ public final class ImageHistoryManager {
       // sacred lineage is shorter. Checking if the requested logicalTime is smaller than maxLogicalTime.
       guard logicalTime <= maxLogicalTime else {
         setImageHistory(imageHistory, imageData: imageData, shuffleData: shuffleData)
+        project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
+        project.dictionary["image_seek_to_lineage", Int.self] = lineage.map { _ in Int(self.lineage)
+        }
         return false
       }
       setImageHistory(imageHistory, imageData: imageData, shuffleData: shuffleData)
@@ -1175,6 +1186,7 @@ public final class ImageHistoryManager {
       _profileData = nil
     }
     project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
+    project.dictionary["image_seek_to_lineage", Int.self] = lineage.map { _ in Int(self.lineage) }
     return true
   }
 
@@ -1581,6 +1593,7 @@ public final class ImageHistoryManager {
               // Just seek to the very beginning.
               self.setImageHistory(imageHistory, imageData: imageData, shuffleData: shuffleData)
               self.project.dictionary["image_seek_to", Int.self] = Int(imageHistory.logicalTime)
+              self.project.dictionary["image_seek_to_lineage", Int.self] = Int(imageHistory.lineage)
             } else {
               let _ = self.seek(to: oldLogicalTime, lineage: oldLineage)
             }
@@ -1593,6 +1606,7 @@ public final class ImageHistoryManager {
             self.shuffleData = []
             self.maxLogicalTimeForLineage[self.lineage] = self.maxLogicalTime
             self.project.dictionary["image_seek_to", Int.self] = 0
+            self.project.dictionary["image_seek_to_lineage", Int.self] = nil
           }
         }
         completionHandler(self.logicalTime, self.lineage)
