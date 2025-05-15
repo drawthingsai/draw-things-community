@@ -724,11 +724,17 @@ public final class ImageHistoryManager {
       var clipId: Int64?
     }
     let clipId: Int64?
+    let clipSize: (width: Int32, height: Int32)?
     if asClip {
       maxClipId += 1
       clipId = maxClipId
+      clipSize = (
+        width: Int32(histories.first?.configuration.startWidth ?? 0) * 64,
+        height: Int32(histories.first?.configuration.startHeight ?? 0) * 64
+      )
     } else {
       clipId = nil
+      clipSize = nil
     }
     let historyNodes = histories.enumerated().map { i, history in
       let imageData = history.imageData
@@ -913,11 +919,13 @@ public final class ImageHistoryManager {
           transactionContext.try(submit: upsertRequest)
         }
       }
-      if let clipId = clipId {
+      if let clipId = clipId, let clipSize = clipSize {
         let creationRequest = ClipChangeRequest.creationRequest()
         creationRequest.clipId = clipId
         creationRequest.count = Int32(historyNodes.count)
         creationRequest.framesPerSecond = framesPerSecond
+        creationRequest.width = clipSize.width
+        creationRequest.height = clipSize.height
         transactionContext.try(submit: creationRequest)
       }
     } completionHandler: { _ in
