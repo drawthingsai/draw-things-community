@@ -912,13 +912,13 @@ public final class ImageHistoryManager {
           let upsertRequest = TensorMoodboardDataChangeRequest.upsertRequest(moodItem)
           transactionContext.try(submit: upsertRequest)
         }
-        if let clipId = clipId {
-          let creationRequest = ClipChangeRequest.creationRequest()
-          creationRequest.clipId = clipId
-          creationRequest.count = Int32(historyNodes.count)
-          creationRequest.framesPerSecond = framesPerSecond
-          transactionContext.try(submit: creationRequest)
-        }
+      }
+      if let clipId = clipId {
+        let creationRequest = ClipChangeRequest.creationRequest()
+        creationRequest.clipId = clipId
+        creationRequest.count = Int32(historyNodes.count)
+        creationRequest.framesPerSecond = framesPerSecond
+        transactionContext.try(submit: creationRequest)
       }
     } completionHandler: { _ in
       DispatchQueue.main.async { [weak self] in
