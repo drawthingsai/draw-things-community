@@ -1095,6 +1095,9 @@ public struct ModelZoo: DownloadZoo {
   public static func filesToDownload(_ specification: Specification)
     -> [(name: String, subtitle: String, file: String, sha256: String?)]
   {
+    guard specification.remoteApiModelConfig == nil else {
+      return []
+    }
     let model = specification.file
     let name = specification.name
     let version = ModelZoo.humanReadableNameForVersion(specification.version)
