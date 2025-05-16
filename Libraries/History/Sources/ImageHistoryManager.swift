@@ -792,6 +792,7 @@ public final class ImageHistoryManager {
       clipId = nil
       clipData = nil
     }
+    let wallClock = Int64(Date().timeIntervalSince1970 * 1_000_000)  // Change to microseconds.
     let historyNodes = histories.enumerated().map { i, history in
       let imageData = history.imageData
       let shuffleData = history.shuffleData ?? self.shuffleData
@@ -841,7 +842,7 @@ public final class ImageHistoryManager {
         steps: configuration.steps,
         guidanceScale: configuration.guidanceScale, strength: configuration.strength,
         model: configuration.model, tensorId: nil, maskId: nil,
-        wallClock: Int64(Date().timeIntervalSince1970),
+        wallClock: wallClock + Int64(i),
         textEdits: history.textEdits.map { Int64($0) },
         textLineage: history.textLineage, batchSize: configuration.batchSize,
         sampler: SamplerType(from: configuration.sampler), hiresFix: configuration.hiresFix,
