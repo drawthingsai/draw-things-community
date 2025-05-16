@@ -1145,6 +1145,30 @@ public final class ImageHistoryManager {
     }
   }
 
+  public func clipData(clipId: Int64) -> ClipData? {
+    dispatchPrecondition(condition: .onQueue(.main))
+    guard clipId >= 0 else { return nil }
+    if let clipData = clipDataCache[clipId] {
+      return clipData
+    }
+    return project.fetchWithinASnapshot {
+      guard
+        let clip = project.fetch(for: Clip.self).where(Clip.clipId == clipId)
+          .first
+      else { return nil }
+      let frames = project.fetch(for: TensorHistoryNode.self).where(
+        TensorHistoryNode.clipId == clip.clipId,
+        orderBy: [TensorHistoryNode.indexInAClip.ascending])
+      return ClipData(
+        framesPerSecond: clip.framesPerSecond,
+        size: ClipData.Size(width: clip.width, height: clip.height),
+        frames: frames.map {
+          return ClipData.FrameData(
+            logicalTime: $0.logicalTime, lineage: $0.lineage, previewId: $0.previewId)
+        })
+    }
+  }
+
   public func seek(to logicalTime: Int64) {
     guard logicalTime != self.logicalTime else {
       return
@@ -1189,25 +1213,7 @@ public final class ImageHistoryManager {
             project.fetch(for: TensorMoodboardData.self).where(
               TensorMoodboardData.logicalTime == logicalTime
                 && TensorMoodboardData.lineage == lineage))
-        let clipData =
-          imageHistory.clipId >= 0
-          ? (clipDataCache[imageHistory.clipId]
-            ?? project.fetchWithinASnapshot {
-              guard
-                let clip = project.fetch(for: Clip.self).where(Clip.clipId == imageHistory.clipId)
-                  .first
-              else { return nil }
-              let frames = project.fetch(for: TensorHistoryNode.self).where(
-                TensorHistoryNode.clipId == clip.clipId,
-                orderBy: [TensorHistoryNode.indexInAClip.ascending])
-              return ClipData(
-                framesPerSecond: clip.framesPerSecond,
-                size: ClipData.Size(width: clip.width, height: clip.height),
-                frames: frames.map {
-                  return ClipData.FrameData(
-                    logicalTime: $0.logicalTime, lineage: $0.lineage, previewId: $0.previewId)
-                })
-            }) : nil
+        let clipData = clipData(clipId: imageHistory.clipId)
         setImageHistory(
           imageHistory, imageData: imageData, shuffleData: shuffleData, clipData: clipData)
         if let maxLogicalTime = maxLogicalTimeForLineage[lineage] {
@@ -1240,25 +1246,7 @@ public final class ImageHistoryManager {
           project.fetch(for: TensorMoodboardData.self).where(
             TensorMoodboardData.logicalTime == logicalTime
               && TensorMoodboardData.lineage == imageHistory.lineage))
-      let clipData =
-        imageHistory.clipId >= 0
-        ? (clipDataCache[imageHistory.clipId]
-          ?? project.fetchWithinASnapshot {
-            guard
-              let clip = project.fetch(for: Clip.self).where(Clip.clipId == imageHistory.clipId)
-                .first
-            else { return nil }
-            let frames = project.fetch(for: TensorHistoryNode.self).where(
-              TensorHistoryNode.clipId == clip.clipId,
-              orderBy: [TensorHistoryNode.indexInAClip.ascending])
-            return ClipData(
-              framesPerSecond: clip.framesPerSecond,
-              size: ClipData.Size(width: clip.width, height: clip.height),
-              frames: frames.map {
-                return ClipData.FrameData(
-                  logicalTime: $0.logicalTime, lineage: $0.lineage, previewId: $0.previewId)
-              })
-          }) : nil
+      let clipData = clipData(clipId: imageHistory.clipId)
       // Even if lineage matches the requested, we may not be on the sacred lineage because  the
       // sacred lineage is shorter. Checking if the requested logicalTime is smaller than maxLogicalTime.
       guard logicalTime <= maxLogicalTime else {
