@@ -277,3 +277,51 @@ public final class VideoExporter {
     return pixelBuffer
   }
 }
+
+extension VideoExporter {
+  public static func frameDuration(for frameRate: Double) -> CMTime {
+    guard frameRate > 0 else {
+      return CMTimeMake(value: 1, timescale: 30)
+    }
+
+    // Handle common NTSC rates precisely if possible
+    if abs(frameRate - (30000.0 / 1001.0)) < 0.0001 {  // ~29.97
+      return CMTimeMake(value: 1001, timescale: 30000)
+    }
+    if abs(frameRate - (24000.0 / 1001.0)) < 0.0001 {  // ~23.976
+      return CMTimeMake(value: 1001, timescale: 24000)
+    }
+    if abs(frameRate - (60000.0 / 1001.0)) < 0.0001 {  // ~59.94
+      return CMTimeMake(value: 1001, timescale: 60000)
+    }
+
+    if abs(frameRate - frameRate.rounded()) < 1e-16 {
+      return CMTimeMake(value: 1, timescale: Int32(frameRate.rounded()))
+    }
+
+    // General approach: find suitable value/timescale
+    // Start with a reasonable multiplier
+    let preferredTimescale: Int32 = 60000  // Common high timescale for precision
+    let value = Int64(round(Double(preferredTimescale) / frameRate))
+
+    if value > 0 {
+      let calculatedFrameRate = Double(preferredTimescale) / Double(value)
+      // Add a check to see if the calculated rate is close enough
+      if abs(calculatedFrameRate - frameRate) / frameRate < 0.001 {  // Within 0.1% error
+        return CMTimeMake(value: value, timescale: preferredTimescale)
+      }
+    }
+
+    // Fallback: Use a simpler multiplier approach if the preferred timescale didn't work well
+    // Or if you need to handle rates with many decimal places accurately.
+    // Example: Use 10000 as multiplier
+    let multiplier: Double = 10000.0
+    let valueApprox: Int64 = Int64(multiplier)
+    let timescaleApprox: Int32 = Int32(round(frameRate * multiplier))
+
+    guard timescaleApprox > 0 else {
+      return CMTimeMake(value: 1, timescale: 30)
+    }
+    return CMTimeMake(value: valueApprox, timescale: timescaleApprox)
+  }
+}
