@@ -375,10 +375,12 @@ extension ImageHistoryManager {
         self.height = height
       }
     }
+    public var clipId: Int64
     public var framesPerSecond: Double
     public var size: Size
     public var frames: [FrameData]
-    public init(framesPerSecond: Double, size: Size, frames: [FrameData]) {
+    public init(clipId: Int64, framesPerSecond: Double, size: Size, frames: [FrameData]) {
+      self.clipId = clipId
       self.framesPerSecond = framesPerSecond
       self.size = size
       self.frames = frames
@@ -470,6 +472,7 @@ public final class ImageHistoryManager {
               TensorHistoryNode.clipId == clip.clipId,
               orderBy: [TensorHistoryNode.indexInAClip.ascending])
             clipData = ClipData(
+              clipId: clip.clipId,
               framesPerSecond: clip.framesPerSecond,
               size: ClipData.Size(width: clip.width, height: clip.height),
               frames: frames.map {
@@ -783,6 +786,7 @@ public final class ImageHistoryManager {
       maxClipId += 1
       clipId = maxClipId
       clipData = ClipData(
+        clipId: maxClipId,
         framesPerSecond: framesPerSecond,
         size: ClipData.Size(
           width: Int32(histories.first?.configuration.startWidth ?? 0) * 64,
@@ -1147,6 +1151,14 @@ public final class ImageHistoryManager {
 
   public func clipData(clipId: Int64) -> ClipData? {
     dispatchPrecondition(condition: .onQueue(.main))
+    if clipData?.clipId == clipId {
+      return clipData
+    }
+    return fetchClipData(clipId: clipId)
+  }
+
+  private func fetchClipData(clipId: Int64) -> ClipData? {
+    dispatchPrecondition(condition: .onQueue(.main))
     guard clipId >= 0 else { return nil }
     if let clipData = clipDataCache[clipId] {
       return clipData
@@ -1160,6 +1172,7 @@ public final class ImageHistoryManager {
         TensorHistoryNode.clipId == clip.clipId,
         orderBy: [TensorHistoryNode.indexInAClip.ascending])
       return ClipData(
+        clipId: clip.clipId,
         framesPerSecond: clip.framesPerSecond,
         size: ClipData.Size(width: clip.width, height: clip.height),
         frames: frames.map {
@@ -1213,7 +1226,7 @@ public final class ImageHistoryManager {
             project.fetch(for: TensorMoodboardData.self).where(
               TensorMoodboardData.logicalTime == logicalTime
                 && TensorMoodboardData.lineage == lineage))
-        let clipData = clipData(clipId: imageHistory.clipId)
+        let clipData = fetchClipData(clipId: imageHistory.clipId)
         setImageHistory(
           imageHistory, imageData: imageData, shuffleData: shuffleData, clipData: clipData)
         if let maxLogicalTime = maxLogicalTimeForLineage[lineage] {
@@ -1246,7 +1259,7 @@ public final class ImageHistoryManager {
           project.fetch(for: TensorMoodboardData.self).where(
             TensorMoodboardData.logicalTime == logicalTime
               && TensorMoodboardData.lineage == imageHistory.lineage))
-      let clipData = clipData(clipId: imageHistory.clipId)
+      let clipData = fetchClipData(clipId: imageHistory.clipId)
       // Even if lineage matches the requested, we may not be on the sacred lineage because  the
       // sacred lineage is shorter. Checking if the requested logicalTime is smaller than maxLogicalTime.
       guard logicalTime <= maxLogicalTime else {
@@ -1687,6 +1700,7 @@ public final class ImageHistoryManager {
                   TensorHistoryNode.clipId == clip.clipId,
                   orderBy: [TensorHistoryNode.indexInAClip.ascending])
                 clipData = ClipData(
+                  clipId: clip.clipId,
                   framesPerSecond: clip.framesPerSecond,
                   size: ClipData.Size(width: clip.width, height: clip.height),
                   frames: frames.map {
