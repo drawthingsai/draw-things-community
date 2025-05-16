@@ -379,7 +379,7 @@ extension ImageHistoryManager {
     public var framesPerSecond: Double
     public var size: Size
     public var frames: [FrameData]
-    public init(clipId: Int64, framesPerSecond: Double, size: Size, frames: [FrameData]) {
+    init(clipId: Int64, framesPerSecond: Double, size: Size, frames: [FrameData]) {
       self.clipId = clipId
       self.framesPerSecond = framesPerSecond
       self.size = size
@@ -1291,6 +1291,7 @@ public final class ImageHistoryManager {
       self.lineage = 0
       dataStored = []
       shuffleData = []
+      clipData = nil
       _profileData = nil
     }
     project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
@@ -1389,7 +1390,7 @@ public final class ImageHistoryManager {
   }
 
   public func deleteHistory(
-    _ imageHistory: TensorHistoryNode, completionHandler: @escaping (Int64, Int64) -> Void
+    _ imageHistory: TensorHistoryNode, completionHandler: @escaping (Int64, Int64, Int64?) -> Void
   ) {
     dispatchPrecondition(condition: .onQueue(.main))
     let project = project
@@ -1732,12 +1733,13 @@ public final class ImageHistoryManager {
             self.logicalTime = 0
             self.dataStored = []
             self.shuffleData = []
+            self.clipData = nil
             self.maxLogicalTimeForLineage[self.lineage] = self.maxLogicalTime
             self.project.dictionary["image_seek_to", Int.self] = 0
             self.project.dictionary["image_seek_to_lineage", Int.self] = nil
           }
         }
-        completionHandler(self.logicalTime, self.lineage)
+        completionHandler(self.logicalTime, self.lineage, self.clipData?.clipId)
       }
     }
   }
