@@ -389,9 +389,13 @@ extension ImageHistoryManager {
 }
 
 public final class ImageHistoryManager {
-  private struct LogicalTimeAndLineage: Equatable & Hashable {
+  public struct LogicalTimeAndLineage: Equatable & Hashable {
     var logicalTime: Int64
     var lineage: Int64
+    public init(logicalTime: Int64, lineage: Int64) {
+      self.logicalTime = logicalTime
+      self.lineage = lineage
+    }
   }
   private var maxClipId: Int64 = 0
   private var dataStored: [ImageData] = []
