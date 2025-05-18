@@ -1929,7 +1929,7 @@ extension TextEncoder {
     }
     var unconditionalTokenEnd1: Int? = nil
     var tokenEnd1: Int? = nil
-    for i in 0..<maxLength0 {
+    for i in 0..<maxLength1 {
       if tokens[1][i] == 49407 && unconditionalTokenEnd1 == nil {
         unconditionalTokenEnd1 = i
       }
