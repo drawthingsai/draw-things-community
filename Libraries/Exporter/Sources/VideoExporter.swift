@@ -8,6 +8,12 @@ public protocol VideoExporterDelegate: AnyObject {
 }
 
 public final class VideoExporter {
+  public enum Format: Int {
+    case proRes4444 = 0
+    case proRes422HQ
+    case h264
+  }
+
   public weak var delegate: VideoExporterDelegate? = nil
   private var pendingFrames = [CVPixelBuffer]()
   private lazy var videoExportQueue = DispatchQueue(
@@ -30,8 +36,10 @@ public final class VideoExporter {
       self.aborted = true
     }
   }
+  private let format: Format
   private let FILMPath: String?
-  public init(FILMPath: String?) {
+  public init(format: Format, FILMPath: String?) {
+    self.format = format
     self.FILMPath = FILMPath
   }
 
@@ -189,11 +197,33 @@ public final class VideoExporter {
     let imageHeight = imageSize.height
     let imageWidth = imageSize.width
 
-    let videoSettings: [String: Any] = [
-      AVVideoCodecKey: AVVideoCodecType.proRes4444.rawValue,
-      AVVideoWidthKey: NSNumber(value: Float(imageWidth)),
-      AVVideoHeightKey: NSNumber(value: Float(imageHeight)),
-    ]
+    let videoSettings: [String: Any]
+    switch format {
+    case .proRes4444:
+      videoSettings = [
+        AVVideoCodecKey: AVVideoCodecType.proRes4444.rawValue,
+        AVVideoWidthKey: NSNumber(value: Float(imageWidth)),
+        AVVideoHeightKey: NSNumber(value: Float(imageHeight)),
+      ]
+    case .proRes422HQ:
+      videoSettings = [
+        AVVideoCodecKey: AVVideoCodecType.proRes422HQ.rawValue,
+        AVVideoWidthKey: NSNumber(value: Float(imageWidth)),
+        AVVideoHeightKey: NSNumber(value: Float(imageHeight)),
+      ]
+    case .h264:
+      videoSettings = [
+        AVVideoCodecKey: AVVideoCodecType.h264.rawValue,
+        AVVideoWidthKey: NSNumber(value: Float(imageWidth)),
+        AVVideoHeightKey: NSNumber(value: Float(imageHeight)),
+        AVVideoCompressionPropertiesKey: [
+          AVVideoAverageBitRateKey: max(9_500_000, Int((imageWidth * imageHeight * 5).rounded())),  // 9.5 Mbps, or 5-bit per pixel, whichever is higher.
+          AVVideoProfileLevelKey: AVVideoProfileLevelH264High41,
+          AVVideoMaxKeyFrameIntervalKey: 30,
+          AVVideoAllowFrameReorderingKey: true,
+        ],
+      ]
+    }
 
     let pixelBufferAttributes = [
       kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
