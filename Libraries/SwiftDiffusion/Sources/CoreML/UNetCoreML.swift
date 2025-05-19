@@ -169,7 +169,7 @@ extension UNetFromCoreML {
         let secondWeight = fopen(secondChunkPath + "/weights/weight.bin", "r+b")
         let graph = xT.graph
         if lora.count > 0 {
-          LoRALoader<Float16>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             graph.openStore(
               filePath, flags: .readOnly,
               externalStore: TensorData.externalStore(filePath: filePath)
@@ -178,8 +178,8 @@ extension UNetFromCoreML {
                 let tensor: AnyTensor?
                 guard let tensorShape = store.read(like: key) else { continue }
                 switch loader.mergeLoRA(
-                  graph, name: key, store: store, dataType: FloatType.dataType,
-                  shape: tensorShape.shape)
+                  graph, name: key, store: store, dataType: Float16.dataType,
+                  shape: tensorShape.shape, of: Float16.self)
                 {
                 case .continue(let name, _):
                   tensor = store.read(name, codec: [.q6p, .q8p, .ezm7, .externalData])

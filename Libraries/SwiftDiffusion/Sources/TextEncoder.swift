@@ -149,7 +149,7 @@ extension TextEncoder {
       ).0
       textModel.compile(inputs: CLIPTokensTensorGPU, CLIPPositionTensorGPU, causalAttentionMaskGPU)
       if lora.count > 0 {
-        LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+        LoRALoader.openStore(graph, lora: lora) { loader in
           if clipSkip > 1 {
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
@@ -162,14 +162,16 @@ extension TextEncoder {
                 name = "__text_model__[t-98-1]"
               }
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           } else {
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
             ) { name, dataType, _, shape in
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         }
@@ -282,7 +284,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[1])
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
             ) { name, dataType, _, shape in
@@ -293,7 +295,8 @@ extension TextEncoder {
                 name = "__text_model__[t-98-1]"
               }
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         } else {
@@ -358,7 +361,7 @@ extension TextEncoder {
       externalStore: TensorData.externalStore(filePath: filePaths[0])
     ) { store in
       if lora.count > 0 {
-        LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+        LoRALoader.openStore(graph, lora: lora) { loader in
           store.read(
             "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
           ) { name, dataType, _, shape in
@@ -371,7 +374,8 @@ extension TextEncoder {
               name = "__text_model__[t-258-1]"
             }
             return loader.mergeLoRA(
-              graph, name: name, store: store, dataType: dataType, shape: shape, prefix: "__te2")
+              graph, name: name, store: store, dataType: dataType, shape: shape, of: FloatType.self,
+              prefix: "__te2")
           }
         }
       } else if clipSkip > 1 {
@@ -611,7 +615,7 @@ extension TextEncoder {
       externalStore: TensorData.externalStore(filePath: filePaths[0])
     ) { store in
       if lora.count > 0 {
-        LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+        LoRALoader.openStore(graph, lora: lora) { loader in
           store.read(
             "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
           ) { name, dataType, _, shape in
@@ -624,7 +628,8 @@ extension TextEncoder {
               name = "__text_model__[t-258-1]"
             }
             return loader.mergeLoRA(
-              graph, name: name, store: store, dataType: dataType, shape: shape, prefix: "__te2")
+              graph, name: name, store: store, dataType: dataType, shape: shape, of: FloatType.self,
+              prefix: "__te2")
           }
         }
       } else if clipSkip > 1 {
@@ -743,7 +748,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[1])
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
             ) { name, dataType, _, shape in
@@ -756,7 +761,8 @@ extension TextEncoder {
                 name = "__text_model__[t-98-1]"
               }
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         } else {
@@ -835,7 +841,7 @@ extension TextEncoder {
       externalStore: TensorData.externalStore(filePath: filePaths[0])
     ) { store in
       if lora.count > 0 {
-        LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+        LoRALoader.openStore(graph, lora: lora) { loader in
           store.read(
             "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
           ) { name, dataType, _, shape in
@@ -848,7 +854,8 @@ extension TextEncoder {
               name = "__text_model__[t-258-1]"
             }
             return loader.mergeLoRA(
-              graph, name: name, store: store, dataType: dataType, shape: shape, prefix: "__te2")
+              graph, name: name, store: store, dataType: dataType, shape: shape, of: FloatType.self,
+              prefix: "__te2")
           }
         }
       } else if clipSkip > 1 {
@@ -966,7 +973,7 @@ extension TextEncoder {
       })
       .values
     ).filter { $0.weight != 0 }
-    let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+    let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
       graph, of: lora.map { $0.file }, prefix: "__text_model__")
     let configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
     let textModel: Model
@@ -996,14 +1003,14 @@ extension TextEncoder {
           uniqueKeysWithValues: (0..<24).map {
             return ($0, $0)
           })
-        LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+        LoRALoader.openStore(graph, lora: lora) { loader in
           store.read(
             "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
           ) {
             name, dataType, format, shape in
             return loader.concatenateLoRA(
               graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-              store: store, dataType: dataType, format: format, shape: shape)
+              store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self)
           }
         }
       } else {
@@ -1253,7 +1260,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[1])
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
             ) { name, dataType, _, shape in
@@ -1266,7 +1273,8 @@ extension TextEncoder {
                 name = "__text_model__[t-98-1]"
               }
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         } else {
@@ -1467,7 +1475,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[1])
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
             ) { name, dataType, _, shape in
@@ -1480,7 +1488,8 @@ extension TextEncoder {
                 name = "__text_model__[t-98-1]"
               }
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         } else {
@@ -1779,7 +1788,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[1])
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel0, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
             ) { name, dataType, _, shape in
@@ -1792,7 +1801,8 @@ extension TextEncoder {
                 name = "__text_model__[t-98-1]"
               }
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         } else {
@@ -1881,7 +1891,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[2])
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel1, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
             ) { name, dataType, _, shape in
@@ -1895,7 +1905,8 @@ extension TextEncoder {
                 name = "__text_model__[t-258-1]"
               }
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape, prefix: "__te2")
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self, prefix: "__te2")
             }
           }
         } else if clipSkip > 1 {
@@ -2269,7 +2280,7 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             if clipSkip > 1 {
               store.read(
                 "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
@@ -2295,14 +2306,16 @@ extension TextEncoder {
                   fatalError()
                 }
                 return loader.mergeLoRA(
-                  graph, name: name, store: store, dataType: dataType, shape: shape)
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
               }
             } else {
               store.read(
                 "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
               ) { name, dataType, _, shape in
                 return loader.mergeLoRA(
-                  graph, name: name, store: store, dataType: dataType, shape: shape)
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
               }
             }
           }

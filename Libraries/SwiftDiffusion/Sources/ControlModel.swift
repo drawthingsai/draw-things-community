@@ -1916,7 +1916,7 @@ extension ControlModel {
       }
     case .controlnetlora:
       guard let weightMapper = mainUNetFixed.weightMapper else { return textEncoding }
-      let rank = LoRALoader<FloatType>.rank(
+      let rank = LoRALoader.rank(
         graph, of: [filePaths[0]], inspectFilesRequireMerge: false
       ).rank
       let configuration = LoRANetworkConfiguration(rank: rank, scale: 1, highPrecision: false)
@@ -2330,7 +2330,7 @@ extension ControlModel {
           middleAttentionBlocks = 10
         }
         if type == .controlnetlora {
-          let rank = LoRALoader<FloatType>.rank(
+          let rank = LoRALoader.rank(
             graph, of: [filePaths[0]], inspectFilesRequireMerge: false
           ).rank
           let configuration = LoRANetworkConfiguration(rank: rank, scale: 1, highPrecision: false)

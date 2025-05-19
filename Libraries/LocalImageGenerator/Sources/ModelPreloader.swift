@@ -733,7 +733,7 @@ extension ModelPreloader {
           externalStore: TensorData.externalStore(filePath: textEncoderPath)
         ) { store in
           if lora.count > 0 {
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               if clipSkip > 1 {
                 store.read("text_model", model: textModelToLoad, codec: [.jit, .externalData]) {
                   name, dataType, _, shape in
@@ -765,14 +765,14 @@ extension ModelPreloader {
                   }
                   return loader.mergeLoRA(
                     graph, name: name, store: store, dataType: dataType, shape: shape,
-                    prefix: textModelLoRAPrefix)
+                    of: FloatType.self, prefix: textModelLoRAPrefix)
                 }
               } else {
                 store.read("text_model", model: textModelToLoad, codec: [.jit, .externalData]) {
                   name, dataType, _, shape in
                   return loader.mergeLoRA(
                     graph, name: name, store: store, dataType: dataType, shape: shape,
-                    prefix: textModelLoRAPrefix)
+                    of: FloatType.self, prefix: textModelLoRAPrefix)
                 }
               }
             }

@@ -256,13 +256,14 @@ extension UNetFixedEncoder {
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "unet_fixed", model: unetBaseFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
             ) {
               name, dataType, _, shape in
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         } else {
@@ -289,14 +290,15 @@ extension UNetFixedEncoder {
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "unet_fixed", model: unetRefinerFixed,
               codec: [.q6p, .q8p, .ezm7, .jit, externalData]
             ) {
               name, dataType, _, shape in
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         } else {
@@ -385,13 +387,14 @@ extension UNetFixedEncoder {
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "dit", model: unetFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
             ) {
               name, dataType, _, shape in
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         } else {
@@ -530,13 +533,14 @@ extension UNetFixedEncoder {
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
         ) { store in
           if lora.count > 0 {
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
                 "dit", model: unetFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
               ) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
-                  graph, name: name, store: store, dataType: dataType, shape: shape)
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
               }
             }
           } else {
@@ -564,7 +568,7 @@ extension UNetFixedEncoder {
       ) { store in
         if lora.count > 0 {
           // TODO: Do the name remapping.
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "stage_c_fixed", model: stageCFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
             ) {
@@ -576,7 +580,8 @@ extension UNetFixedEncoder {
                 name = "__stage_c__" + name.dropFirst(17)
               }
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         } else {
@@ -642,7 +647,7 @@ extension UNetFixedEncoder {
         })
         .values
       ).filter { $0.weight != 0 }
-      let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
         graph, of: lora.map { $0.file }, modelFile: filePath)
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
@@ -651,7 +656,7 @@ extension UNetFixedEncoder {
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         (_, unetFixed) = LoRAFlux1Fixed(
           batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
@@ -751,12 +756,13 @@ extension UNetFixedEncoder {
               uniqueKeysWithValues: (0..<(19 + 38)).map {
                 return ($0, $0)
               })
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                  store: store, dataType: dataType, format: format, shape: shape)
+                  store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
+                )
                 switch result {
                 case .continue(let updatedName, _):
                   guard updatedName == name else { return result }
@@ -771,11 +777,12 @@ extension UNetFixedEncoder {
               }
             }
           } else {
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
-                  graph, name: name, store: store, dataType: dataType, shape: shape)
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
               }
             }
           }
@@ -876,7 +883,7 @@ extension UNetFixedEncoder {
         })
         .values
       ).filter { $0.weight != 0 }
-      let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
         graph, of: lora.map { $0.file }, modelFile: filePath)
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
@@ -885,7 +892,7 @@ extension UNetFixedEncoder {
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unetFixed =
           LoRAHunyuanFixed(
@@ -914,12 +921,13 @@ extension UNetFixedEncoder {
               uniqueKeysWithValues: (0..<(20 + 40)).map {
                 return ($0, $0)
               })
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                  store: store, dataType: dataType, format: format, shape: shape)
+                  store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
+                )
                 switch result {
                 case .continue(let updatedName, _):
                   guard updatedName == name else { return result }
@@ -934,11 +942,12 @@ extension UNetFixedEncoder {
               }
             }
           } else {
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
-                  graph, name: name, store: store, dataType: dataType, shape: shape)
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
               }
             }
           }
@@ -997,7 +1006,7 @@ extension UNetFixedEncoder {
         })
         .values
       ).filter { $0.weight != 0 }
-      let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
         graph, of: lora.map { $0.file }, modelFile: filePath)
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
@@ -1006,7 +1015,7 @@ extension UNetFixedEncoder {
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         if version == .wan21_1_3b {
           unetFixed =
@@ -1051,12 +1060,22 @@ extension UNetFixedEncoder {
               uniqueKeysWithValues: (0..<40).map {
                 return ($0, $0)
               })
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, format, shape in
-                let result = loader.concatenateLoRA(
-                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                  store: store, dataType: dataType, format: format, shape: shape)
+                let result: DynamicGraph.Store.ModelReaderResult
+                if dataType == .Float32 {
+                  // Keeping at higher precision for LoRA loading.
+                  result = loader.concatenateLoRA(
+                    graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                    store: store, dataType: dataType, format: format, shape: shape, of: Float32.self
+                  )
+                } else {
+                  result = loader.concatenateLoRA(
+                    graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                    store: store, dataType: dataType, format: format, shape: shape,
+                    of: FloatType.self)
+                }
                 switch result {
                 case .continue(let updatedName, _):
                   guard updatedName == name else { return result }
@@ -1071,11 +1090,19 @@ extension UNetFixedEncoder {
               }
             }
           } else {
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, _, shape in
-                return loader.mergeLoRA(
-                  graph, name: name, store: store, dataType: dataType, shape: shape)
+                if dataType == .Float32 {
+                  // Keeping at higher precision for LoRA loading.
+                  return loader.mergeLoRA(
+                    graph, name: name, store: store, dataType: dataType, shape: shape,
+                    of: Float32.self)
+                } else {
+                  return loader.mergeLoRA(
+                    graph, name: name, store: store, dataType: dataType, shape: shape,
+                    of: FloatType.self)
+                }
               }
             }
           }
@@ -1140,7 +1167,7 @@ extension UNetFixedEncoder {
         })
         .values
       ).filter { $0.weight != 0 }
-      let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
         graph, of: lora.map { $0.file }, modelFile: filePath)
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
@@ -1149,7 +1176,7 @@ extension UNetFixedEncoder {
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         (unetFixed, _) = LoRAHiDreamFixed(
           timesteps: cBatchSize * timesteps.count, layers: (16, 32),
@@ -1183,12 +1210,13 @@ extension UNetFixedEncoder {
               uniqueKeysWithValues: (0..<48).map {
                 return ($0, $0)
               })
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                  store: store, dataType: dataType, format: format, shape: shape)
+                  store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
+                )
                 switch result {
                 case .continue(let updatedName, _):
                   guard updatedName == name else { return result }
@@ -1203,11 +1231,12 @@ extension UNetFixedEncoder {
               }
             }
           } else {
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
-                  graph, name: name, store: store, dataType: dataType, shape: shape)
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
               }
             }
           }
@@ -1249,13 +1278,14 @@ extension UNetFixedEncoder {
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
         if lora.count > 0 {
-          LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+          LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "stage_b_fixed", model: stageBFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
             ) {
               name, dataType, _, shape in
               return loader.mergeLoRA(
-                graph, name: name, store: store, dataType: dataType, shape: shape)
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
             }
           }
         } else {

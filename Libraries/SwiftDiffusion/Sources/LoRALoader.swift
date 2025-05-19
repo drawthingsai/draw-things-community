@@ -3,7 +3,7 @@ import NNC
 
 private let LoRALoaderShapeMismatchKeys: Set<String> = Set(["__dit__[t-x_embedder-0-0]"])
 
-public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
+public struct LoRALoader {
   private static func _openStore(
     _ graph: DynamicGraph, lora: [LoRAConfiguration], index: Int,
     stores: [(file: String, DynamicGraph.Store)],
@@ -104,10 +104,10 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     keys = stores.map(\.1).map { Set($0.keys) }
   }
 
-  public func concatenateLoRA(
+  public func concatenateLoRA<FloatType: TensorNumeric & BinaryFloatingPoint>(
     _ graph: DynamicGraph, LoRAMapping: [Int: Int], filesRequireMerge: [String: Set<String>],
-    name: String,
-    store: DynamicGraph.Store, dataType: DataType, format: TensorFormat, shape: TensorShape
+    name: String, store: DynamicGraph.Store, dataType: DataType, format: TensorFormat,
+    shape: TensorShape, of: FloatType.Type = FloatType.self
   ) -> DynamicGraph.Store.ModelReaderResult {
     let filesRequireMerge: Set<String> = Set(
       filesRequireMerge.compactMap {
@@ -115,7 +115,7 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
       })
     guard name.contains("lora_up") || name.contains("lora_down") else {
       return mergeLoRA(
-        graph, name: name, store: store, dataType: dataType, shape: shape,
+        graph, name: name, store: store, dataType: dataType, shape: shape, of: FloatType.self,
         filesRequireMerge: filesRequireMerge)
     }
     // If it is these, we have to create the LoRA tensor one way or another. First create, then loop through to fill them.
@@ -292,8 +292,9 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     }
   }
 
-  private func loadOriginal(
-    _ graph: DynamicGraph, name: String, store: DynamicGraph.Store, shape: TensorShape
+  private func loadOriginal<FloatType: TensorNumeric & BinaryFloatingPoint>(
+    _ graph: DynamicGraph, name: String, store: DynamicGraph.Store, shape: TensorShape,
+    of: FloatType.Type = FloatType.self
   ) -> DynamicGraph.Tensor<FloatType>? {
     // Load tensor into a particular shape, shape it and fill with 0s if needed.
     // Only use this method for shape that has 4-element.
@@ -336,8 +337,9 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     }
   }
 
-  private func addWeight(
-    original: DynamicGraph.Tensor<FloatType>, diff: DynamicGraph.Tensor<FloatType>, weight: Float
+  private func addWeight<FloatType: TensorNumeric & BinaryFloatingPoint>(
+    original: DynamicGraph.Tensor<FloatType>, diff: DynamicGraph.Tensor<FloatType>, weight: Float,
+    of: FloatType.Type = FloatType.self
   ) -> DynamicGraph.Tensor<FloatType> {
     // Only use this method for shape that has 4-element.
     let diffCount = diff.shape.reduce(1, *)
@@ -410,9 +412,10 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     return .final(tensor)
   }
 
-  public func mergeLoRA(
+  public func mergeLoRA<FloatType: TensorNumeric & BinaryFloatingPoint>(
     _ graph: DynamicGraph, name: String, store: DynamicGraph.Store, dataType: DataType,
-    shape: TensorShape, prefix: String = "", filesRequireMerge: Set<String>? = nil
+    shape: TensorShape, of: FloatType.Type = FloatType.self, prefix: String = "",
+    filesRequireMerge: Set<String>? = nil
   )
     -> DynamicGraph.Store.ModelReaderResult
   {

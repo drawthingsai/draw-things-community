@@ -403,7 +403,7 @@ extension UNetFromNNC {
       })
       .values
     ).filter { $0.weight != 0 }
-    let (rankOfLoRA, filesRequireMerge) = LoRALoader<FloatType>.rank(
+    let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
       graph, of: lora.map { $0.file }, modelFile: filePath)
     let isLoHa = lora.contains { $0.isLoHa }
     var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
@@ -694,7 +694,7 @@ extension UNetFromNNC {
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       if didRunLoRASeparately {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet =
           ModelBuilderOrModel.model(
@@ -777,7 +777,7 @@ extension UNetFromNNC {
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       if didRunLoRASeparately {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
           LoRAFlux1(
@@ -847,7 +847,7 @@ extension UNetFromNNC {
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       if didRunLoRASeparately {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
           ModelBuilder {
@@ -919,7 +919,7 @@ extension UNetFromNNC {
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       if didRunLoRASeparately {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
           LoRAWan(
@@ -977,7 +977,7 @@ extension UNetFromNNC {
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       if didRunLoRASeparately {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
           LoRAWan(
@@ -1035,7 +1035,7 @@ extension UNetFromNNC {
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       if didRunLoRASeparately {
-        let keys = LoRALoader<FloatType>.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
           LoRAHiDream(
@@ -1235,7 +1235,7 @@ extension UNetFromNNC {
             graph, injectControlModels: injectControlsAndAdapters.injectControlModels,
             version: version
           ) { controlModelLoader in
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
                 modelKey, model: unet.unwrapped,
                 codec: [.jit, .q6p, .q8p, .ezm7, externalData]
@@ -1260,9 +1260,19 @@ extension UNetFromNNC {
                         * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
                     })
                 }
-                let result = loader.concatenateLoRA(
-                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                  store: store, dataType: dataType, format: format, shape: shape)
+                let result: DynamicGraph.Store.ModelReaderResult
+                if dataType == .Float32 {
+                  // Keeping at higher precision for LoRA loading.
+                  result = loader.concatenateLoRA(
+                    graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                    store: store, dataType: dataType, format: format, shape: shape, of: Float32.self
+                  )
+                } else {
+                  result = loader.concatenateLoRA(
+                    graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                    store: store, dataType: dataType, format: format, shape: shape,
+                    of: FloatType.self)
+                }
                 switch result {
                 case .continue(let updatedName, _):
                   guard updatedName == name else {
@@ -1286,7 +1296,7 @@ extension UNetFromNNC {
             graph, injectControlModels: injectControlsAndAdapters.injectControlModels,
             version: version
           ) { controlModelLoader in
-            LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
+            LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
                 modelKey, model: unet.unwrapped, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
               ) {
@@ -1310,8 +1320,17 @@ extension UNetFromNNC {
                         * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
                     })
                 }
-                let result = loader.mergeLoRA(
-                  graph, name: name, store: store, dataType: dataType, shape: shape)
+                let result: DynamicGraph.Store.ModelReaderResult
+                if dataType == .Float32 {
+                  // Keeping at higher precision for LoRA loading.
+                  result = loader.mergeLoRA(
+                    graph, name: name, store: store, dataType: dataType, shape: shape,
+                    of: Float32.self)
+                } else {
+                  result = loader.mergeLoRA(
+                    graph, name: name, store: store, dataType: dataType, shape: shape,
+                    of: FloatType.self)
+                }
                 switch result {
                 case .continue(let updatedName, _):
                   guard updatedName == name else {
