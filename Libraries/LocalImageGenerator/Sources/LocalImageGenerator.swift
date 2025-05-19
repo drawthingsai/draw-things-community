@@ -4909,7 +4909,7 @@ extension LocalImageGenerator {
     if let upscaler = configuration.upscaler, UpscalerZoo.isModelDownloaded(upscaler) {
       signposts.insert(.imageUpscaled)
     }
-    // Either we missing 1s, or we are in transparent mode (where 1 is ignored), go into here.
+    // Either we're missing 1s, or we are in transparent mode (where 1 is ignored), go into here.
     if !exists1 || alternativeDecoderVersion == .transparent {
       // mask3 is not a typo. if no 1 exists, we only have mask3 relevant here if exists1 is missing.
       guard
