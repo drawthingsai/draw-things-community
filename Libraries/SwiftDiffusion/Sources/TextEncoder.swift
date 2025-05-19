@@ -1818,8 +1818,7 @@ extension TextEncoder {
       }
     } else {
       c0Out = [
-        graph.variable(.GPU(0), .HWC(2, maxLength0, 768)),
-        graph.variable(.GPU(0), .WC(2 * maxLength0, 768)),
+        graph.variable(.GPU(0), .WC(2 * maxLength0, 768))
       ]
       for c in c0Out {
         c.full(0)
@@ -1920,8 +1919,7 @@ extension TextEncoder {
       }
     } else {
       c1Out = [
-        graph.variable(.GPU(0), .HWC(2, maxLength1, 1280)),
-        graph.variable(.GPU(0), .WC(2 * maxLength1, 1280)),
+        graph.variable(.GPU(0), .WC(2 * maxLength1, 1280))
       ]
       for c in c1Out {
         c.full(0)
