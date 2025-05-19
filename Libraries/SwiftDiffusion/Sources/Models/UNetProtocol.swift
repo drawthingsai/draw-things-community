@@ -1290,7 +1290,7 @@ extension UNetFromNNC {
               store.read(
                 modelKey, model: unet.unwrapped, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
               ) {
-                name, _, _, shape in
+                name, dataType, _, shape in
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
                   return result
                 }
@@ -1310,7 +1310,8 @@ extension UNetFromNNC {
                         * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
                     })
                 }
-                let result = loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+                let result = loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape)
                 switch result {
                 case .continue(let updatedName, _):
                   guard updatedName == name else {

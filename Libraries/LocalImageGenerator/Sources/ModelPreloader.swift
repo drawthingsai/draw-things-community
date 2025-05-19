@@ -736,7 +736,7 @@ extension ModelPreloader {
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
               if clipSkip > 1 {
                 store.read("text_model", model: textModelToLoad, codec: [.jit, .externalData]) {
-                  name, _, _, shape in
+                  name, dataType, _, shape in
                   // Retrieve the right final layer norm parameters.
                   var name = name
                   switch modelVersion {
@@ -764,13 +764,15 @@ extension ModelPreloader {
                     fatalError()
                   }
                   return loader.mergeLoRA(
-                    graph, name: name, store: store, shape: shape, prefix: textModelLoRAPrefix)
+                    graph, name: name, store: store, dataType: dataType, shape: shape,
+                    prefix: textModelLoRAPrefix)
                 }
               } else {
                 store.read("text_model", model: textModelToLoad, codec: [.jit, .externalData]) {
-                  name, _, _, shape in
+                  name, dataType, _, shape in
                   return loader.mergeLoRA(
-                    graph, name: name, store: store, shape: shape, prefix: textModelLoRAPrefix)
+                    graph, name: name, store: store, dataType: dataType, shape: shape,
+                    prefix: textModelLoRAPrefix)
                 }
               }
             }

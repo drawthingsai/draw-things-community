@@ -153,7 +153,7 @@ extension TextEncoder {
           if clipSkip > 1 {
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-            ) { name, _, _, shape in
+            ) { name, dataType, _, shape in
               // Retrieve the right final layer norm parameters.
               var name = name
               if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
@@ -161,13 +161,15 @@ extension TextEncoder {
               } else if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-1]" {
                 name = "__text_model__[t-98-1]"
               }
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           } else {
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-            ) { name, _, _, shape in
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+            ) { name, dataType, _, shape in
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         }
@@ -283,14 +285,15 @@ extension TextEncoder {
           LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-            ) { name, _, _, shape in
+            ) { name, dataType, _, shape in
               var name = name
               if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
                 name = "__text_model__[t-98-0]"
               } else if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-1]" {
                 name = "__text_model__[t-98-1]"
               }
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         } else {
@@ -358,7 +361,7 @@ extension TextEncoder {
         LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
           store.read(
             "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-          ) { name, _, _, shape in
+          ) { name, dataType, _, shape in
             // Retrieve the right final layer norm parameters.
             var name = name
             if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-0]" {
@@ -367,7 +370,8 @@ extension TextEncoder {
             {
               name = "__text_model__[t-258-1]"
             }
-            return loader.mergeLoRA(graph, name: name, store: store, shape: shape, prefix: "__te2")
+            return loader.mergeLoRA(
+              graph, name: name, store: store, dataType: dataType, shape: shape, prefix: "__te2")
           }
         }
       } else if clipSkip > 1 {
@@ -610,7 +614,7 @@ extension TextEncoder {
         LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
           store.read(
             "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-          ) { name, _, _, shape in
+          ) { name, dataType, _, shape in
             // Retrieve the right final layer norm parameters.
             var name = name
             if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-0]" {
@@ -619,7 +623,8 @@ extension TextEncoder {
             {
               name = "__text_model__[t-258-1]"
             }
-            return loader.mergeLoRA(graph, name: name, store: store, shape: shape, prefix: "__te2")
+            return loader.mergeLoRA(
+              graph, name: name, store: store, dataType: dataType, shape: shape, prefix: "__te2")
           }
         }
       } else if clipSkip > 1 {
@@ -741,7 +746,7 @@ extension TextEncoder {
           LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-            ) { name, _, _, shape in
+            ) { name, dataType, _, shape in
               var name = name
               if name == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-0]" {
                 name = "__text_model__[t-98-0]"
@@ -750,7 +755,8 @@ extension TextEncoder {
               {
                 name = "__text_model__[t-98-1]"
               }
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         } else {
@@ -832,7 +838,7 @@ extension TextEncoder {
         LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
           store.read(
             "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-          ) { name, _, _, shape in
+          ) { name, dataType, _, shape in
             // Retrieve the right final layer norm parameters.
             var name = name
             if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-0]" {
@@ -841,7 +847,8 @@ extension TextEncoder {
             {
               name = "__text_model__[t-258-1]"
             }
-            return loader.mergeLoRA(graph, name: name, store: store, shape: shape, prefix: "__te2")
+            return loader.mergeLoRA(
+              graph, name: name, store: store, dataType: dataType, shape: shape, prefix: "__te2")
           }
         }
       } else if clipSkip > 1 {
@@ -1249,7 +1256,7 @@ extension TextEncoder {
           LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-            ) { name, _, _, shape in
+            ) { name, dataType, _, shape in
               var name = name
               if name == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-0]" {
                 name = "__text_model__[t-98-0]"
@@ -1258,7 +1265,8 @@ extension TextEncoder {
               {
                 name = "__text_model__[t-98-1]"
               }
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         } else {
@@ -1462,7 +1470,7 @@ extension TextEncoder {
           LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-            ) { name, _, _, shape in
+            ) { name, dataType, _, shape in
               var name = name
               if name == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-0]" {
                 name = "__text_model__[t-98-0]"
@@ -1471,7 +1479,8 @@ extension TextEncoder {
               {
                 name = "__text_model__[t-98-1]"
               }
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         } else {
@@ -1773,7 +1782,7 @@ extension TextEncoder {
           LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel0, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-            ) { name, _, _, shape in
+            ) { name, dataType, _, shape in
               var name = name
               if name == "__text_model__[t-\(98 - (min(max(clipSkip - 1, 1), 12) - 1) * 8)-0]" {
                 name = "__text_model__[t-98-0]"
@@ -1782,7 +1791,8 @@ extension TextEncoder {
               {
                 name = "__text_model__[t-98-1]"
               }
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         } else {
@@ -1874,7 +1884,7 @@ extension TextEncoder {
           LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
             store.read(
               "text_model", model: textModel1, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-            ) { name, _, _, shape in
+            ) { name, dataType, _, shape in
               // Retrieve the right final layer norm parameters.
               var name = name
               if name == "__text_model__[t-\(258 - (min(max(clipSkip - 1, 1), 31) - 1) * 8)-0]" {
@@ -1885,7 +1895,7 @@ extension TextEncoder {
                 name = "__text_model__[t-258-1]"
               }
               return loader.mergeLoRA(
-                graph, name: name, store: store, shape: shape, prefix: "__te2")
+                graph, name: name, store: store, dataType: dataType, shape: shape, prefix: "__te2")
             }
           }
         } else if clipSkip > 1 {
@@ -2263,7 +2273,7 @@ extension TextEncoder {
             if clipSkip > 1 {
               store.read(
                 "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-              ) { name, _, _, shape in
+              ) { name, dataType, _, shape in
                 // Retrieve the right final layer norm parameters.
                 var name = name
                 switch version {
@@ -2284,13 +2294,15 @@ extension TextEncoder {
                   .wan21_1_3b, .wan21_14b, .hiDreamI1:
                   fatalError()
                 }
-                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape)
               }
             } else {
               store.read(
                 "text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
-              ) { name, _, _, shape in
-                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              ) { name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape)
               }
             }
           }

@@ -260,8 +260,9 @@ extension UNetFixedEncoder {
             store.read(
               "unet_fixed", model: unetBaseFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
             ) {
-              name, _, _, shape in
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              name, dataType, _, shape in
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         } else {
@@ -293,8 +294,9 @@ extension UNetFixedEncoder {
               "unet_fixed", model: unetRefinerFixed,
               codec: [.q6p, .q8p, .ezm7, .jit, externalData]
             ) {
-              name, _, _, shape in
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              name, dataType, _, shape in
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         } else {
@@ -387,8 +389,9 @@ extension UNetFixedEncoder {
             store.read(
               "dit", model: unetFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
             ) {
-              name, _, _, shape in
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              name, dataType, _, shape in
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         } else {
@@ -531,8 +534,9 @@ extension UNetFixedEncoder {
               store.read(
                 "dit", model: unetFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
               ) {
-                name, _, _, shape in
-                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+                name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape)
               }
             }
           } else {
@@ -564,14 +568,15 @@ extension UNetFixedEncoder {
             store.read(
               "stage_c_fixed", model: stageCFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
             ) {
-              name, _, _, shape in
+              name, dataType, _, shape in
               var name = name
               if name.hasPrefix("__stage_c_fixed__")
                 && (name.contains(".keys") || name.contains(".values"))
               {
                 name = "__stage_c__" + name.dropFirst(17)
               }
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         } else {
@@ -768,8 +773,9 @@ extension UNetFixedEncoder {
           } else {
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
-                name, _, _, shape in
-                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+                name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape)
               }
             }
           }
@@ -930,8 +936,9 @@ extension UNetFixedEncoder {
           } else {
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
-                name, _, _, shape in
-                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+                name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape)
               }
             }
           }
@@ -1066,8 +1073,9 @@ extension UNetFixedEncoder {
           } else {
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
-                name, _, _, shape in
-                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+                name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape)
               }
             }
           }
@@ -1197,8 +1205,9 @@ extension UNetFixedEncoder {
           } else {
             LoRALoader<FloatType>.openStore(graph, lora: lora) { loader in
               store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
-                name, _, _, shape in
-                return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+                name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape)
               }
             }
           }
@@ -1244,8 +1253,9 @@ extension UNetFixedEncoder {
             store.read(
               "stage_b_fixed", model: stageBFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
             ) {
-              name, _, _, shape in
-              return loader.mergeLoRA(graph, name: name, store: store, shape: shape)
+              name, dataType, _, shape in
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape)
             }
           }
         } else {

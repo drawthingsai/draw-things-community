@@ -115,10 +115,10 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
       })
     guard name.contains("lora_up") || name.contains("lora_down") else {
       return mergeLoRA(
-        graph, name: name, store: store, shape: shape, filesRequireMerge: filesRequireMerge)
+        graph, name: name, store: store, dataType: dataType, shape: shape,
+        filesRequireMerge: filesRequireMerge)
     }
     // If it is these, we have to create the LoRA tensor one way or another. First create, then loop through to fill them.
-    precondition(dataType == FloatType.dataType)
     var tensor: Tensor<FloatType>
     let isMoE = (shape.count == 3)
     if isMoE {  // Special handling of MoE.
@@ -133,7 +133,20 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
     let components = name.split(separator: "-")
     guard components.count >= 3, let index = Int(components[2]),
       let originalIndex = LoRAMapping[index]
-    else { return .final(tensor) }
+    else {
+      if dataType == FloatType.dataType {
+        return .final(tensor)
+      } else {
+        switch dataType {
+        case .Float32:
+          return .final(Tensor<Float32>(from: tensor))
+        case .Float16:
+          return .final(Tensor<Float16>(from: tensor))
+        case .UInt8, .Int32, .Int64, .Float64:
+          fatalError()
+        }
+      }
+    }
     var infix = components[1].replacingOccurrences(of: "lora_up", with: "").replacingOccurrences(
       of: "lora_down", with: "")
     // In case infix has _, remove them.
@@ -265,7 +278,18 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
         }
       }
     }
-    return .final(tensor)
+    if dataType == FloatType.dataType {
+      return .final(tensor)
+    } else {
+      switch dataType {
+      case .Float32:
+        return .final(Tensor<Float32>(from: tensor))
+      case .Float16:
+        return .final(Tensor<Float16>(from: tensor))
+      case .UInt8, .Int32, .Int64, .Float64:
+        fatalError()
+      }
+    }
   }
 
   private func loadOriginal(
@@ -387,8 +411,8 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
   }
 
   public func mergeLoRA(
-    _ graph: DynamicGraph, name: String, store: DynamicGraph.Store, shape: TensorShape,
-    prefix: String = "", filesRequireMerge: Set<String>? = nil
+    _ graph: DynamicGraph, name: String, store: DynamicGraph.Store, dataType: DataType,
+    shape: TensorShape, prefix: String = "", filesRequireMerge: Set<String>? = nil
   )
     -> DynamicGraph.Store.ModelReaderResult
   {
@@ -613,6 +637,17 @@ public struct LoRALoader<FloatType: TensorNumeric & BinaryFloatingPoint> {
       }
     }
     guard let original = original else { return .continue(name) }
-    return .final(original.rawValue.toCPU())
+    if dataType == FloatType.dataType {
+      return .final(original.rawValue.toCPU())
+    } else {
+      switch dataType {
+      case .Float32:
+        return .final(Tensor<Float32>(from: original.rawValue).toCPU())
+      case .Float16:
+        return .final(Tensor<Float16>(from: original.rawValue).toCPU())
+      case .Float64, .Int64, .Int32, .UInt8:
+        fatalError()
+      }
+    }
   }
 }
