@@ -244,7 +244,7 @@ public final class Parameters {
       range: 128...2048, commandLineFlag: "hires-fix-height",
       additionalJsonKeys: ["firstphase_height"])
     hiresFixStrengthParameter = DoubleParameter(
-      titleKey: "hires_second_pass_strength_detail", explanationKey: nil,
+      titleKey: "hires_second_pass_strength", explanationKey: nil,
       defaultValue: Double(defaultConfiguration.hiresFixStrength), range: 0.0...1.0,
       commandLineFlag: "hires-fix-strength")
     originalWidthParameter = IntParameter(
