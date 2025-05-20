@@ -29,6 +29,7 @@ where UNet.FloatType == FloatType {
   public let conditioning: Denoiser.Conditioning
   public let tiledDiffusion: TiledConfiguration
   public let teaCache: TeaCacheConfiguration
+  public let causalInference: Int
   private let discretization: Discretization
   private let weightsCache: WeightsCache
   public init(
@@ -40,7 +41,7 @@ where UNet.FloatType == FloatType {
     isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
     memoryCapacity: MemoryCapacity,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
-    teaCache: TeaCacheConfiguration, discretization: Discretization,
+    teaCache: TeaCacheConfiguration, causalInference: Int, discretization: Discretization,
     weightsCache: WeightsCache
   ) {
     self.filePath = filePath
@@ -65,6 +66,7 @@ where UNet.FloatType == FloatType {
     self.conditioning = conditioning
     self.tiledDiffusion = tiledDiffusion
     self.teaCache = teaCache
+    self.causalInference = causalInference
     self.discretization = discretization
 
     self.weightsCache = weightsCache
@@ -295,7 +297,8 @@ extension LCMSampler: Sampler {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: false, extraProjection: extraProjection,
         injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+        weightsCache: weightsCache)
     }
     var noise: DynamicGraph.Tensor<FloatType>? = nil
     if mask != nil || version == .kandinsky21 {
@@ -463,7 +466,8 @@ extension LCMSampler: Sampler {
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: false, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-            tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache)
+            tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+            weightsCache: weightsCache)
           refinerKickIn = -1
           unets.append(unet)
         }

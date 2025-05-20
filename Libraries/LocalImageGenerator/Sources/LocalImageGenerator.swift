@@ -80,8 +80,8 @@ extension LocalImageGenerator {
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration], isGuidanceEmbedEnabled: Bool,
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, stochasticSamplingGamma: Float,
     conditioning: Denoiser.Conditioning, parameterization: Denoiser.Parameterization,
-    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration, weightsCache: WeightsCache,
-    of: FloatType.Type
+    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration, causalInference: Int,
+    weightsCache: WeightsCache, of: FloatType.Type
   ) -> any Sampler<FloatType, UNetWrapper<FloatType>> {
     let manualSubsteps: (Int) -> [Int] = {
       switch $0 {
@@ -147,7 +147,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .eulerA, .eulerASubstep, .eulerATrailing, .eulerAAYS:
@@ -164,7 +164,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .DDIM, .dDIMTrailing:
@@ -181,7 +181,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .PLMS:
@@ -198,7 +198,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .dPMPPSDEKarras, .dPMPPSDESubstep, .dPMPPSDETrailing, .DPMPPSDEAYS:
@@ -215,7 +215,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .uniPC:
@@ -232,7 +232,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .LCM:
@@ -249,6 +249,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity,
           conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .TCD:
@@ -266,6 +267,7 @@ extension LocalImageGenerator {
           memoryCapacity: DeviceCapability.memoryCapacity,
           stochasticSamplingGamma: stochasticSamplingGamma,
           conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       }
@@ -284,7 +286,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .DPMPP2MAYS:
@@ -304,7 +306,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing),
           weightsCache: weightsCache)
@@ -324,7 +326,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas),
           weightsCache: weightsCache)
@@ -344,7 +346,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
           weightsCache: weightsCache)
@@ -362,7 +364,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
@@ -379,7 +381,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .eulerATrailing:
@@ -395,7 +397,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
@@ -416,7 +418,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing),
           weightsCache: weightsCache)
@@ -436,7 +438,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas),
           weightsCache: weightsCache)
@@ -456,7 +458,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
           weightsCache: weightsCache)
@@ -474,7 +476,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading),
         weightsCache: weightsCache)
@@ -491,7 +493,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
@@ -508,7 +510,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading),
         weightsCache: weightsCache)
@@ -525,7 +527,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .dPMPPSDETrailing:
@@ -541,7 +543,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
@@ -562,7 +564,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing),
           weightsCache: weightsCache)
@@ -582,7 +584,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas),
           weightsCache: weightsCache)
@@ -602,7 +604,7 @@ extension LocalImageGenerator {
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
           memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
           weightsCache: weightsCache)
@@ -620,7 +622,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .LCM:
@@ -635,6 +637,7 @@ extension LocalImageGenerator {
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .TCD:
@@ -650,6 +653,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         stochasticSamplingGamma: stochasticSamplingGamma,
         conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .eulerASubstep:
@@ -665,7 +669,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearManualDiscretization(
           parameterization, objective: objective, manual: manualSubsteps),
         weightsCache: weightsCache)
@@ -684,7 +688,7 @@ extension LocalImageGenerator {
         isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
         conditioning: conditioning,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearManualDiscretization(
           parameterization, objective: objective, manual: manualSubsteps),
         weightsCache: weightsCache)
@@ -2996,6 +3000,8 @@ extension LocalImageGenerator {
       }
       ?? TeaCacheConfiguration(
         coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
+    let causalInference =
+      configuration.causalInferenceEnabled ? Int(configuration.causalInference) : 0
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
@@ -3011,7 +3017,8 @@ extension LocalImageGenerator {
       canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
-      tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache,
+      tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+      weightsCache: weightsCache,
       of: FloatType.self)
     let initTimestep = sampler.timestep(for: hiresFixStrength, sampling: sampling)
     let hiresFixEnabled =
@@ -3581,7 +3588,8 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately,
         stochasticSamplingGamma: configuration.stochasticSamplingGamma,
         conditioning: conditioning, parameterization: denoiserParameterization,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+        weightsCache: weightsCache,
         of: FloatType.self)
       let startStep: (integral: Int, fractional: Float)
       let xEnc: DynamicGraph.Tensor<FloatType>
@@ -3964,6 +3972,8 @@ extension LocalImageGenerator {
       }
       ?? TeaCacheConfiguration(
         coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
+    let causalInference =
+      configuration.causalInferenceEnabled ? Int(configuration.causalInference) : 0
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
@@ -3979,7 +3989,8 @@ extension LocalImageGenerator {
       canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
-      tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache,
+      tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+      weightsCache: weightsCache,
       of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     guard initTimestep.startStep > 0 || modelVersion == .svdI2v else {  // TODO: This check should be removed as text only should be capable of handling svdI2v too.
@@ -4379,7 +4390,8 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
           conditioning: conditioning, parameterization: denoiserParameterization,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+          weightsCache: weightsCache,
           of: FloatType.self
         )
         let noise = randomLatentNoise(
@@ -5275,6 +5287,8 @@ extension LocalImageGenerator {
       }
       ?? TeaCacheConfiguration(
         coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
+    let causalInference =
+      configuration.causalInferenceEnabled ? Int(configuration.causalInference) : 0
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
@@ -5290,7 +5304,8 @@ extension LocalImageGenerator {
       canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
-      tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache,
+      tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+      weightsCache: weightsCache,
       of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     let graph = DynamicGraph()
@@ -5632,7 +5647,8 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
           conditioning: conditioning, parameterization: denoiserParameterization,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+          weightsCache: weightsCache,
           of: FloatType.self
         )
         let noise = randomLatentNoise(
@@ -6027,6 +6043,8 @@ extension LocalImageGenerator {
       }
       ?? TeaCacheConfiguration(
         coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
+    let causalInference =
+      configuration.causalInferenceEnabled ? Int(configuration.causalInference) : 0
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
@@ -6042,7 +6060,8 @@ extension LocalImageGenerator {
       canRunLoRASeparately: canRunLoRASeparately,
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
-      tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache,
+      tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+      weightsCache: weightsCache,
       of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     let graph = DynamicGraph()
@@ -6503,7 +6522,8 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
           conditioning: conditioning, parameterization: denoiserParameterization,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+          weightsCache: weightsCache,
           of: FloatType.self
         )
         let noise = randomLatentNoise(

@@ -1104,6 +1104,10 @@ public enum ImageConverter {
           description +=
             ", TeaCache Enabled: \(min(teaCacheStart, teaCacheEnd)) - \(max(teaCacheStart, teaCacheEnd)), \(configuration.teaCacheThreshold.formatted(.number.precision(.fractionLength(2)))), \(configuration.teaCacheMaxSkipSteps)"
         }
+        if configuration.causalInferenceEnabled && configuration.causalInference > 0 {
+          json["causal_inference"] = configuration.causalInference
+          description += ", Causal Inference: \(configuration.causalInference)"
+        }
         if configuration.sampler == .TCD {
           json["stochastic_sampling_gamma"] = configuration.stochasticSamplingGamma
           description += ", Strategic Stochastic Sampling: \(configuration.stochasticSamplingGamma)"

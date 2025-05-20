@@ -72,7 +72,7 @@ extension UNetWrapper {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
-    weightsCache: WeightsCache
+    causalInference: Int, weightsCache: WeightsCache
   ) -> Bool {
     #if !os(Linux)
 
@@ -88,7 +88,8 @@ extension UNetWrapper {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
         extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+        weightsCache: weightsCache)
       {
         preferCoreML = true
         return true
@@ -105,7 +106,8 @@ extension UNetWrapper {
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       isCfgEnabled: isCfgEnabled,
       extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
-      tiledDiffusion: tiledDiffusion, teaCache: teaCache, weightsCache: weightsCache)
+      tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+      weightsCache: weightsCache)
     return true
   }
 

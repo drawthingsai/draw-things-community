@@ -65,8 +65,8 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
 }
 
 private func WanAttentionBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, intermediateSize: Int,
-  injectImage: Bool, usesFlashAttention: Bool
+  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int, causalInference: Int,
+  intermediateSize: Int, injectImage: Bool, usesFlashAttention: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
@@ -93,8 +93,32 @@ private func WanAttentionBlock(
   // Now run attention.
   var out: Model.IO
   if usesFlashAttention {
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-    out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+    if causalInference > 0 && causalInference < time {
+      var outs = [Model.IO]()
+      precondition(b == 1)
+      let frames = hw / time * causalInference
+      for i in 0..<((time + causalInference - 1) / causalInference) {
+        let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+        let query = queries.reshaped(
+          [b, min(hw - i * frames, frames), h, k], offset: [0, i * frames, 0, 0],
+          strides: [hw * h * k, h * k, k, 1])
+        let key = keys.reshaped(
+          [b, min(hw, (i + 1) * frames), h, k], offset: [0, 0, 0, 0],
+          strides: [hw * h * k, h * k, k, 1])
+        let value = values.reshaped(
+          [b, min(hw, (i + 1) * frames), h, k], offset: [0, 0, 0, 0],
+          strides: [hw * h * k, h * k, k, 1])
+        let out = scaledDotProductAttention(query, key, value)
+        if let last = outs.last {
+          out.add(dependencies: [last])
+        }
+        outs.append(out)
+      }
+      out = Concat(axis: 1)(outs).reshaped([b, hw, k * h])
+    } else {
+      let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+      out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+    }
   } else {
     keys = keys.transposed(1, 2)
     queries = queries.transposed(1, 2)
@@ -272,8 +296,8 @@ private func MLPProj(inChannels: Int, outChannels: Int, name: String) -> (
 
 public func Wan(
   channels: Int, layers: Int, intermediateSize: Int, time: Int, height: Int, width: Int,
-  textLength: Int, injectImage: Bool, usesFlashAttention: Bool, outputResidual: Bool,
-  inputResidual: Bool
+  textLength: Int, causalInference: Int, injectImage: Bool, usesFlashAttention: Bool,
+  outputResidual: Bool, inputResidual: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let imgIn = Convolution(
@@ -302,7 +326,7 @@ public func Wan(
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlock(
       prefix: "blocks.\(i)", k: 128, h: channels / 128, b: 1, t: (textLength, 257),
-      hw: time * h * w,
+      hw: time * h * w, time: time, causalInference: causalInference,
       intermediateSize: intermediateSize, injectImage: injectImage,
       usesFlashAttention: usesFlashAttention)
     let contextK = Input()
@@ -608,8 +632,8 @@ private func LoRAFeedForward(
 }
 
 private func LoRAWanAttentionBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, intermediateSize: Int,
-  injectImage: Bool, usesFlashAttention: Bool, layerIndex: Int,
+  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int, causalInference: Int,
+  intermediateSize: Int, injectImage: Bool, usesFlashAttention: Bool, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -640,8 +664,32 @@ private func LoRAWanAttentionBlock(
   // Now run attention.
   var out: Model.IO
   if usesFlashAttention {
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-    out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+    if causalInference > 0 && causalInference < time {
+      var outs = [Model.IO]()
+      precondition(b == 1)
+      let frames = hw / time * causalInference
+      for i in 0..<((time + causalInference - 1) / causalInference) {
+        let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+        let query = queries.reshaped(
+          [b, min(hw - i * frames, frames), h, k], offset: [0, i * frames, 0, 0],
+          strides: [hw * h * k, h * k, k, 1])
+        let key = keys.reshaped(
+          [b, min(hw, (i + 1) * frames), h, k], offset: [0, 0, 0, 0],
+          strides: [hw * h * k, h * k, k, 1])
+        let value = values.reshaped(
+          [b, min(hw, (i + 1) * frames), h, k], offset: [0, 0, 0, 0],
+          strides: [hw * h * k, h * k, k, 1])
+        let out = scaledDotProductAttention(query, key, value)
+        if let last = outs.last {
+          out.add(dependencies: [last])
+        }
+        outs.append(out)
+      }
+      out = Concat(axis: 1)(outs).reshaped([b, hw, k * h])
+    } else {
+      let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+      out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
+    }
   } else {
     keys = keys.transposed(1, 2)
     queries = queries.transposed(1, 2)
@@ -827,8 +875,8 @@ private func LoRAMLPProj(
 
 func LoRAWan(
   channels: Int, layers: Int, intermediateSize: Int, time: Int, height: Int, width: Int,
-  textLength: Int, injectImage: Bool, usesFlashAttention: Bool, outputResidual: Bool,
-  inputResidual: Bool, LoRAConfiguration: LoRANetworkConfiguration
+  textLength: Int, causalInference: Int, injectImage: Bool, usesFlashAttention: Bool,
+  outputResidual: Bool, inputResidual: Bool, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let imgIn = LoRAConvolution(
@@ -857,7 +905,7 @@ func LoRAWan(
   for i in 0..<layers {
     let (mapper, block) = LoRAWanAttentionBlock(
       prefix: "blocks.\(i)", k: 128, h: channels / 128, b: 1, t: (textLength, 257),
-      hw: time * h * w,
+      hw: time * h * w, time: time, causalInference: causalInference,
       intermediateSize: intermediateSize, injectImage: injectImage,
       usesFlashAttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration)
     let contextK = Input()

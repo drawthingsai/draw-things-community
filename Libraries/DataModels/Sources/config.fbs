@@ -151,6 +151,8 @@ table GenerationConfiguration {
   separate_t5: bool = false;
   t5_text: string;
   tea_cache_max_skip_steps: int = 3;
+  causal_inference_enabled: bool = false;
+  causal_inference: int = 3;
 }
 
 root_type GenerationConfiguration;

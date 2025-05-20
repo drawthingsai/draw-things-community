@@ -58,7 +58,8 @@ public protocol UNetProtocol {
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
-    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration, weightsCache: WeightsCache
+    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration, causalInference: Int,
+    weightsCache: WeightsCache
   ) -> Bool
 
   func callAsFunction(
@@ -374,7 +375,7 @@ extension UNetFromNNC {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration, teaCache teaCacheConfiguration: TeaCacheConfiguration,
-    weightsCache: WeightsCache
+    causalInference: Int, weightsCache: WeightsCache
   ) -> Bool {
     guard unet == nil else { return true }
     isCancelled.store(false, ordering: .releasing)
@@ -925,7 +926,7 @@ extension UNetFromNNC {
           LoRAWan(
             channels: 1_536, layers: 30, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage,
+            textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
             inputResidual: false, LoRAConfiguration: configuration
           ).1)
@@ -937,7 +938,8 @@ extension UNetFromNNC {
             reducedModel: LoRAWan(
               channels: 1_536, layers: 0, intermediateSize: 8_960,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth, textLength: textLength, injectImage: injectImage,
+              width: tiledWidth, textLength: textLength, causalInference: causalInference,
+              injectImage: injectImage,
               usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true,
               LoRAConfiguration: configuration
             ).1)
@@ -947,7 +949,7 @@ extension UNetFromNNC {
           Wan(
             channels: 1_536, layers: 30, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage,
+            textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
             inputResidual: false
           ).1)
@@ -959,7 +961,8 @@ extension UNetFromNNC {
             reducedModel: Wan(
               channels: 1_536, layers: 0, intermediateSize: 8_960,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth, textLength: textLength, injectImage: injectImage,
+              width: tiledWidth, textLength: textLength, causalInference: causalInference,
+              injectImage: injectImage,
               usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true
             ).1)
         }
@@ -983,7 +986,7 @@ extension UNetFromNNC {
           LoRAWan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage,
+            textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
             inputResidual: false, LoRAConfiguration: configuration
           ).1)
@@ -995,7 +998,8 @@ extension UNetFromNNC {
             reducedModel: LoRAWan(
               channels: 5_120, layers: 0, intermediateSize: 13_824,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth, textLength: textLength, injectImage: injectImage,
+              width: tiledWidth, textLength: textLength, causalInference: causalInference,
+              injectImage: injectImage,
               usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true,
               LoRAConfiguration: configuration
             ).1)
@@ -1005,7 +1009,7 @@ extension UNetFromNNC {
           Wan(
             channels: 5_120, layers: 40, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
-            textLength: textLength, injectImage: injectImage,
+            textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
             inputResidual: false
           ).1)
@@ -1017,7 +1021,8 @@ extension UNetFromNNC {
             reducedModel: Wan(
               channels: 5_120, layers: 0, intermediateSize: 13_824,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth, textLength: textLength, injectImage: injectImage,
+              width: tiledWidth, textLength: textLength, causalInference: causalInference,
+              injectImage: injectImage,
               usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true
             ).1)
         }

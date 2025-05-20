@@ -179,7 +179,10 @@ public struct Invocation {
       teaCacheThreshold: parameters.teaCacheThresholdParameter.float32Value(),
       teaCache: parameters.teaCacheParameter.value,
       separateT5: parameters.separateT5Parameter.value,
-      t5Text: parameters.t5TextParameter.value
+      t5Text: parameters.t5TextParameter.value,
+      teaCacheMaxSkipSteps: parameters.teaCacheMaxSkipStepsParameter.int32Value(),
+      causalInferenceEnabled: parameters.causalInferenceParameter.int32Value() > 0,
+      causalInference: parameters.causalInferenceParameter.int32Value()
     )
     self.prompt = try unwrapOrThrow(
       parameters.promptParameter.value, errorMessage: "Missing prompt")

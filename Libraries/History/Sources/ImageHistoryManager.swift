@@ -590,7 +590,9 @@ public final class ImageHistoryManager {
       teaCache: imageHistory.teaCache,
       separateT5: imageHistory.separateT5,
       t5Text: imageHistory.t5Text,
-      teaCacheMaxSkipSteps: imageHistory.teaCacheMaxSkipSteps
+      teaCacheMaxSkipSteps: imageHistory.teaCacheMaxSkipSteps,
+      causalInferenceEnabled: imageHistory.causalInferenceEnabled,
+      causalInference: imageHistory.causalInference
     )
     isVideo = imageHistory.clipId >= 0
     _profileData = imageHistory.profileData
@@ -916,7 +918,9 @@ public final class ImageHistoryManager {
         textPrompt: history.textPrompt,
         negativeTextPrompt: history.negativeTextPrompt,
         clipId: clipId,
-        indexInAClip: clipId.map { _ in Int32(i) }
+        indexInAClip: clipId.map { _ in Int32(i) },
+        causalInferenceEnabled: configuration.causalInferenceEnabled,
+        causalInference: configuration.causalInference
       )
       // Only needs to append
       clipData?.frames.append(

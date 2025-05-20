@@ -42,7 +42,7 @@ extension UNetFromCoreML {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
-    weightsCache: WeightsCache
+    causalInference: Int, weightsCache: WeightsCache
   ) -> Bool {
     #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
       // We cannot handle upcast attention, yet.

@@ -97,7 +97,7 @@ public final class Parameters {
     decodingTileHeightParameter, decodingTileOverlapParameter, diffusionTileWidthParameter,
     diffusionTileHeightParameter, diffusionTileOverlapParameter,
     upscalerScaleFactorParameter, teaCacheStartParameter, teaCacheEndParameter,
-    teaCacheMaxSkipStepsParameter: IntParameter
+    teaCacheMaxSkipStepsParameter, causalInferenceParameter: IntParameter
   public let guidanceScaleParameter, strengthParameter, imageGuidanceScaleParameter,
     maskBlurParameter,
     clipWeightParameter, hiresFixStrengthParameter, refinerStartParameter, aestheticScoreParameter,
@@ -234,12 +234,12 @@ public final class Parameters {
       commandLineFlag: "hires-fix",
       additionalJsonKeys: ["enable_hr"], defaultValue: defaultConfiguration.hiresFix)
     hiresFixWidthParameter = IntParameter(
-      titleKey: "hires_first_pass_width_explanation", explanationKey: nil,
+      titleKey: "hires_first_pass_width", explanationKey: nil,
       defaultValue: Int(defaultConfiguration.hiresFixStartWidth * 64),
       range: 128...2048,
       commandLineFlag: "hires-fix-width", additionalJsonKeys: ["firstphase_width"])
     hiresFixHeightParameter = IntParameter(
-      titleKey: "hires_first_pass_height_explanation", explanationKey: nil,
+      titleKey: "hires_first_pass_height", explanationKey: nil,
       defaultValue: Int(defaultConfiguration.hiresFixStartHeight * 64),
       range: 128...2048, commandLineFlag: "hires-fix-height",
       additionalJsonKeys: ["firstphase_height"])
@@ -424,6 +424,11 @@ public final class Parameters {
     t5TextParameter = StringParameter(
       title: "t5_text", explanation: "separate_t5_detail",
       defaultValue: defaultConfiguration.clipLText, commandLineFlag: "t5-text")
+    causalInferenceParameter = IntParameter(
+      titleKey: "causal_inference", explanationKey: nil,
+      defaultValue: Int(
+        defaultConfiguration.causalInferenceEnabled ? defaultConfiguration.causalInference : 0),
+      range: 0...1000, commandLineFlag: "causal-inference")
   }
 
   public func allParameters() -> [Parameter] {
@@ -503,6 +508,7 @@ public final class Parameters {
       teaCacheParameter,
       separateT5Parameter,
       t5TextParameter,
+      causalInferenceParameter,
     ]
   }
 }
