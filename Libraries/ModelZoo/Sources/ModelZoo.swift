@@ -129,6 +129,30 @@ public struct ModelZoo: DownloadZoo {
           }
         }
       }
+      public indirect enum CustomRequestBodyValue: Codable {
+        case string(String)
+        case dictionary([String: CustomRequestBodyValue])
+
+        public init(from decoder: Decoder) throws {
+          let container = try decoder.singleValueContainer()
+          if let stringValue = try? container.decode(String.self) {
+            self = .string(stringValue)
+          } else if let dictValue = try? container.decode([String: CustomRequestBodyValue].self) {
+            self = .dictionary(dictValue)
+          } else {
+            throw DecodingError.dataCorruptedError(
+              in: container, debugDescription: "Cannot decode CustomRequestBodyValue")
+          }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+          var container = encoder.singleValueContainer()
+          switch self {
+          case .string(let value): try container.encode(value)
+          case .dictionary(let value): try container.encode(value)
+          }
+        }
+      }
 
       public enum ApiFileFormat: String, Codable {
         case image = "image"
@@ -169,7 +193,7 @@ public struct ModelZoo: DownloadZoo {
       public var settingsSections: [String]
       public var customImageSizeRatios: [String]?
       public var tokenConfig: [String: String]?
-      public var customRequestBody: [String: [String: String]]?
+      public var customRequestBody: [String: CustomRequestBodyValue]?
       public var downloadUrlSuffix: String?
       public init(
         endpoint: String,
@@ -193,7 +217,7 @@ public struct ModelZoo: DownloadZoo {
         settingsSections: [String],
         customImageSizeRatios: [String]? = nil,
         tokenConfig: [String: String]? = nil,
-        customRequestBody: [String: [String: String]]? = nil,
+        customRequestBody: [String: CustomRequestBodyValue]? = nil,
         downloadUrlSuffix: String? = nil
       ) {
         self.endpoint = endpoint
