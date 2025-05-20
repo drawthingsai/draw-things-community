@@ -168,6 +168,9 @@ public struct ModelZoo: DownloadZoo {
       public var passthroughConfigs: [String: JSONValue]?
       public var settingsSections: [String]
       public var customImageSizeRatios: [String]?
+      public var tokenConfig: [String: String]?
+      public var customRequestBody: [String: [String: String]]?
+      public var downloadUrlSuffix: String?
       public init(
         endpoint: String,
         url: String,
@@ -188,7 +191,10 @@ public struct ModelZoo: DownloadZoo {
         pollingInterval: TimeInterval = 5.0,
         passthroughConfigs: [String: JSONValue]? = nil,
         settingsSections: [String],
-        customImageSizeRatios: [String]? = nil
+        customImageSizeRatios: [String]? = nil,
+        tokenConfig: [String: String]? = nil,
+        customRequestBody: [String: [String: String]]? = nil,
+        downloadUrlSuffix: String? = nil
       ) {
         self.endpoint = endpoint
         self.url = url
@@ -210,6 +216,9 @@ public struct ModelZoo: DownloadZoo {
         self.settingsSections = settingsSections
         self.passthroughConfigs = passthroughConfigs
         self.customImageSizeRatios = customImageSizeRatios
+        self.tokenConfig = tokenConfig
+        self.customRequestBody = customRequestBody
+        self.downloadUrlSuffix = downloadUrlSuffix
       }
     }
     public var name: String
