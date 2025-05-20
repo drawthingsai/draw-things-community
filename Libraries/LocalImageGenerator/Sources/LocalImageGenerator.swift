@@ -707,8 +707,8 @@ extension LocalImageGenerator {
   public func generate(
     _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],
-    text: String, negativeText: String, configuration: GenerationConfiguration, keywords: [String],
-    cancellation: (@escaping () -> Void) -> Void,
+    text: String, negativeText: String, configuration: GenerationConfiguration,
+    fileMapping: [String: String], keywords: [String], cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>]?, Int) {

@@ -65,8 +65,8 @@ public struct RemoteImageGenerator: ImageGenerator {
   public func generate(
     _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],
-    text: String, negativeText: String, configuration: GenerationConfiguration, keywords: [String],
-    cancellation: (@escaping () -> Void) -> Void,
+    text: String, negativeText: String, configuration: GenerationConfiguration,
+    fileMapping: [String: String], keywords: [String], cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
       -> Bool
   ) throws -> ([Tensor<FloatType>]?, Int) {
@@ -74,7 +74,23 @@ public struct RemoteImageGenerator: ImageGenerator {
     guard let client = client.client else {
       throw RemoteImageGeneratorError.notConnected
     }
-    let metadataOverride = ImageGeneratorUtils.metadataOverride(configuration)
+    var metadataOverride = ImageGeneratorUtils.metadataOverride(configuration)
+    var configuration = configuration
+    // Replacing local LoRA to the LoRA name that is mapped.
+    if !configuration.loras.isEmpty, !fileMapping.isEmpty {
+      var configurationBuilder = GenerationConfigurationBuilder(from: configuration)
+      for i in 0..<metadataOverride.loras.count {
+        if let value = fileMapping[metadataOverride.loras[i].file] {
+          metadataOverride.loras[i].file = value
+        }
+      }
+      for i in 0..<configurationBuilder.loras.count {
+        if let value = (configurationBuilder.loras[i].file.flatMap { fileMapping[$0] }) {
+          configurationBuilder.loras[i].file = value
+        }
+      }
+      configuration = configurationBuilder.build()
+    }
     var overrideProto = MetadataOverride()
     let jsonEncoder = JSONEncoder()
     jsonEncoder.keyEncodingStrategy = .convertToSnakeCase

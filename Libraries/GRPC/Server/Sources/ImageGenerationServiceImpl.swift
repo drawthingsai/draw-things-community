@@ -351,6 +351,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       let (images, scaleFactor) = try self.imageGenerator.generate(
         image, scaleFactor: Int(request.scaleFactor), mask: mask, hints: hints,
         text: request.prompt, negativeText: request.negativePrompt, configuration: configuration,
+        fileMapping: [:],
         keywords: request.keywords,
         cancellation: { cancellationBlock in
           cancellation.modify {
