@@ -72,6 +72,10 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
       return false
     }
 
+    guard !loraName.hasSuffix(".ckpt") else {
+      return false
+    }
+
     // Split the name by the first dash or underscore
     let components: [String]
     if loraName.contains("_") {
@@ -87,7 +91,7 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
     }
 
     // Check if the potential hash is 64 characters long (SHA256 length)
-    guard potentialHash.count == 64 else {
+    guard potentialHash.count == 64, potentialHash.allSatisfy({ $0.isHexDigit }) else {
       return false
     }
 
