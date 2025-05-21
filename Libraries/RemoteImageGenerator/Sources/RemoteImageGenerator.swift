@@ -81,12 +81,12 @@ public struct RemoteImageGenerator: ImageGenerator {
       var configurationBuilder = GenerationConfigurationBuilder(from: configuration)
       for i in 0..<metadataOverride.loras.count {
         if let value = fileMapping[metadataOverride.loras[i].file] {
-          metadataOverride.loras[i].file = value
+          metadataOverride.loras[i].file = String(value.split(separator: "_")[0])  // Map to sha256 only.
         }
       }
       for i in 0..<configurationBuilder.loras.count {
         if let value = (configurationBuilder.loras[i].file.flatMap { fileMapping[$0] }) {
-          configurationBuilder.loras[i].file = value
+          configurationBuilder.loras[i].file = value  // Still contains the full name.
         }
       }
       configuration = configurationBuilder.build()
