@@ -1689,6 +1689,104 @@ public func LoRAFlux1Fixed(
   )
 }
 
+private func LoRAChromaDistillGuidanceLayer(
+  prefix: String, layerIndex: Int, configuration: LoRANetworkConfiguration
+) -> (
+  ModelWeightMapper, Model
+) {
+  let x = Input()
+  let (mlp0, mlp2, mlp) = LoRAMLPEmbedder(
+    channels: 5_120, configuration: configuration, name: "distilled_guidance")
+  let norm = RMSNorm(epsilon: 1e-6, axis: [2], name: "distilled_guidance_norm")
+  let out = x + mlp(norm(x))
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).layers.\(layerIndex).in_layer.weight"] = [mlp0.weight.name]
+    mapping["\(prefix).layers.\(layerIndex).in_layer.bias"] = [mlp0.bias.name]
+    mapping["\(prefix).layers.\(layerIndex).out_layer.weight"] = [mlp2.weight.name]
+    mapping["\(prefix).layers.\(layerIndex).out_layer.bias"] = [mlp2.bias.name]
+    mapping["\(prefix).norms.\(layerIndex).scale"] = [norm.weight.name]
+    return mapping
+  }
+  return (mapper, Model([x], [out]))
+}
+
+public func LoRAChromaFixed(
+  channels: Int, distilledGuidanceLayers: Int, layers: (Int, Int),
+  LoRAConfiguration: LoRANetworkConfiguration, contextPreloaded: Bool
+) -> (
+  ModelWeightMapper, Model
+) {
+  let timestep = Input()
+  var outs = [Model.IO]()
+  let contextIn: Input?
+  let contextEmbedder: Model?
+  if contextPreloaded {
+    let cIn = Input()
+    let embedder = LoRADense(
+      count: channels, configuration: LoRAConfiguration, name: "context_embedder")
+    let context = embedder(cIn)
+    outs.append(context)
+    contextIn = cIn
+    contextEmbedder = embedder
+  } else {
+    contextIn = nil
+    contextEmbedder = nil
+  }
+  let inProj = LoRADense(
+    count: 5_120, configuration: LoRAConfiguration, name: "distilled_guidance_in_proj")
+  var out = inProj(timestep)
+  var mappers = [ModelWeightMapper]()
+  for i in 0..<distilledGuidanceLayers {
+    let (mapper, block) = LoRAChromaDistillGuidanceLayer(
+      prefix: "distilled_guidance_layer", layerIndex: i, configuration: LoRAConfiguration)
+    out = block(out)
+    mappers.append(mapper)
+  }
+  let outProj = LoRADense(
+    count: channels, configuration: LoRAConfiguration, name: "distilled_guidance_out_proj")
+  out = outProj(out)
+  let mods = out.chunked(layers.0 * 12 + layers.1 * 3 + 2, axis: 1)
+  for i in 0..<layers.0 {
+    var contextMods = Array(
+      mods[(layers.1 * 3 + layers.0 * 6 + i * 6)..<(layers.1 * 3 + layers.0 * 6 + (i + 1) * 6)])
+    contextMods[1] = contextMods[1] + 1
+    contextMods[4] = contextMods[4] + 1
+    outs.append(contentsOf: contextMods)
+    var xMods = Array(mods[(layers.1 * 3 + i * 6)..<(layers.1 * 3 + (i + 1) * 6)])
+    xMods[1] = xMods[1] + 1
+    xMods[4] = xMods[4] + 1
+    outs.append(contentsOf: xMods)
+  }
+  for i in 0..<layers.1 {
+    var xMods = Array(mods[(i * 3)..<((i + 1) * 3)])
+    xMods[1] = xMods[1] + 1
+    outs.append(contentsOf: xMods)
+  }
+  let shift = mods[layers.0 * 12 + layers.1 * 3]
+  let scale = mods[layers.0 * 12 + layers.1 * 3 + 1]
+  outs.append(contentsOf: [shift, 1 + scale])
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    if let contextEmbedder = contextEmbedder {
+      mapping["txt_in.weight"] = [contextEmbedder.weight.name]
+      mapping["txt_in.bias"] = [contextEmbedder.bias.name]
+    }
+    mapping["distilled_guidance_layer.in_proj.weight"] = [inProj.weight.name]
+    mapping["distilled_guidance_layer.in_proj.bias"] = [inProj.bias.name]
+    mapping["distilled_guidance_layer.out_proj.weight"] = [outProj.weight.name]
+    mapping["distilled_guidance_layer.out_proj.bias"] = [outProj.bias.name]
+    return mapping
+  }
+  return (
+    mapper,
+    Model((contextIn.map { [$0] } ?? []) + [timestep], outs)
+  )
+}
+
 public func ControlNetFlux1(
   union: Bool,
   batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),

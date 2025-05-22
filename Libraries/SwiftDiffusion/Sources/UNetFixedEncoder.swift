@@ -658,10 +658,16 @@ extension UNetFixedEncoder {
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
-        (_, unetFixed) = LoRAFlux1Fixed(
-          batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
-          LoRAConfiguration: configuration, contextPreloaded: true,
-          guidanceEmbed: isGuidanceEmbedSupported)
+        if distilledGuidanceLayers > 0 {
+          (_, unetFixed) = LoRAChromaFixed(
+            channels: 3072, distilledGuidanceLayers: distilledGuidanceLayers, layers: (19, 38),
+            LoRAConfiguration: configuration, contextPreloaded: true)
+        } else {
+          (_, unetFixed) = LoRAFlux1Fixed(
+            batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
+            LoRAConfiguration: configuration, contextPreloaded: true,
+            guidanceEmbed: isGuidanceEmbedSupported)
+        }
       } else {
         if distilledGuidanceLayers > 0 {
           (_, unetFixed) = ChromaFixed(
