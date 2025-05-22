@@ -40,7 +40,8 @@ final class JSMask: Codable {
 
 public func jsonObject(from object: Encodable) throws -> Any {
   let data = try JSONEncoder().encode(object)
-  return try JSONSerialization.jsonObject(with: data)
+  return try JSONSerialization.jsonObject(
+    with: data, options: [.mutableContainers, .mutableLeaves])
 }
 
 public func swiftObject<T: Decodable>(jsonObject: Any, type: T.Type) throws -> T {
