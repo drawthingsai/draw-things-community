@@ -6,6 +6,13 @@ import Foundation
 #endif
 
 public struct R2Client {
+  public enum Error: Swift.Error {
+    case invalidURL
+    case missingFileURL
+    case invalidHTTPResponse
+    case httpError(_: Int)
+  }
+
   private let accessKey: String
   private let secret: String
   private let endpoint: String
@@ -25,16 +32,12 @@ public struct R2Client {
   }
 
   // Update your R2Client.downloadObject method with better error handling
-  public func downloadObject(key: String, completion: @escaping (Result<URL, Error>) -> Void)
+  public func downloadObject(key: String, completion: @escaping (Result<URL, Swift.Error>) -> Void)
     -> URLSessionDownloadTask?
   {
     // Create the request URL
     guard let url = URL(string: "\(endpoint)/\(bucket)/\(key)") else {
-      completion(
-        .failure(
-          NSError(
-            domain: "R2Error", code: 1001,
-            userInfo: [NSLocalizedDescriptionKey: "Invalid URL construction"])))
+      completion(.failure(Error.invalidURL))
       return nil
     }
     if self.debug {
@@ -64,20 +67,12 @@ public struct R2Client {
       }
 
       guard let tempUrl = tempUrl else {
-        completion(
-          .failure(
-            NSError(
-              domain: "R2Error", code: 1004,
-              userInfo: [NSLocalizedDescriptionKey: "No temporary file URL received"])))
+        completion(.failure(Error.missingFileURL))
         return
       }
 
       guard let httpResponse = response as? HTTPURLResponse else {
-        completion(
-          .failure(
-            NSError(
-              domain: "R2Error", code: 1002,
-              userInfo: [NSLocalizedDescriptionKey: "Invalid HTTP response"])))
+        completion(.failure(Error.invalidHTTPResponse))
         return
       }
       if self.debug {
@@ -103,11 +98,7 @@ public struct R2Client {
           }
         }
 
-        completion(
-          .failure(
-            NSError(
-              domain: "R2Error", code: httpResponse.statusCode,
-              userInfo: [NSLocalizedDescriptionKey: errorMessage])))
+        completion(.failure(Error.httpError(httpResponse.statusCode)))
         return
       }
 

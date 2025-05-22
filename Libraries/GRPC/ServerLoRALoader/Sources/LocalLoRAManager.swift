@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 import Logging
 
@@ -7,6 +8,11 @@ import Logging
 
 /// Utility functions for managing custom model directories with size limits
 public final class LocalLoRAManager {
+
+  public enum Error: Swift.Error {
+    case noAttributes
+    case contentHashMismatch
+  }
 
   private let logger = Logger(label: "com.draw-things.local-lora-manager")
   private let r2Client: R2Client
@@ -43,7 +49,7 @@ public final class LocalLoRAManager {
           let fileAttributes = try FileManager.default.attributesOfItem(atPath: tempUrl.path)
           guard let _ = fileAttributes[.size] as? Int64 else {
             logger.info("Failed to determine size of downloaded file \(modelName)")
-            return
+            throw Error.noAttributes
           }
           // only using the prefix hash as the file name, for example
           // "072ef94e15252e963a0bc77702f8db329ef2ce0e2245ed487ee61aeca1cdb69d_d71b5bbc-0a6b-4b50-8c6f-3691b80bc2ee" --> "072ef94e15252e963a0bc77702f8db329ef2ce0e2245ed487ee61aeca1cdb69d"
@@ -55,6 +61,14 @@ public final class LocalLoRAManager {
             at: destinationUrl.deletingLastPathComponent(),
             withIntermediateDirectories: true
           )
+
+          let fileData = try Data(contentsOf: tempUrl, options: .mappedIfSafe)
+          let hash = SHA256.hash(data: fileData)
+          let sha256 = hash.compactMap { String(format: "%02x", $0) }.joined()
+          guard sha256 == modelName else {
+            logger.info("Mismatch content hash \(modelName) \(sha256)")
+            throw Error.contentHashMismatch
+          }
           // Move downloaded file to destination
           try FileManager.default.moveItem(at: tempUrl, to: destinationUrl)
           logger.info(
