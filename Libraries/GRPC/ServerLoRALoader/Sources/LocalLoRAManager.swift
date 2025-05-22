@@ -33,11 +33,11 @@ public final class LocalLoRAManager {
     let modelName = modelNames[index]
     let dirURL = URL(fileURLWithPath: localDirectory)
     let logger = logger
-    logger.info("downloading custom model \(modelName)")
+    logger.info("Downloading LoRA \(modelName)")
     let task = r2Client.downloadObject(key: modelName) { result in
       switch result {
       case .success(let tempUrl):
-        logger.info("Download model \(modelName) at \(tempUrl)")
+        logger.info("Downloaded LoRA \(modelName) at \(tempUrl)")
         do {
           // Get the file size from the downloaded temp file
           let fileAttributes = try FileManager.default.attributesOfItem(atPath: tempUrl.path)
@@ -46,7 +46,7 @@ public final class LocalLoRAManager {
             return
           }
           // only using the prefix hash as the file name, for example
-          // "072ef94e15252e963a0bc77702f8db329ef2ce0e2245ed487ee61aeca1cdb69d-d71b5bbc-0a6b-4b50-8c6f-3691b80bc2ee" --> "072ef94e15252e963a0bc77702f8db329ef2ce0e2245ed487ee61aeca1cdb69d"
+          // "072ef94e15252e963a0bc77702f8db329ef2ce0e2245ed487ee61aeca1cdb69d_d71b5bbc-0a6b-4b50-8c6f-3691b80bc2ee" --> "072ef94e15252e963a0bc77702f8db329ef2ce0e2245ed487ee61aeca1cdb69d"
           let modelName = modelName.components(separatedBy: "_").first ?? modelName
           // Create destination URL
           let destinationUrl = dirURL.appendingPathComponent(modelName)
@@ -58,7 +58,7 @@ public final class LocalLoRAManager {
           // Move downloaded file to destination
           try FileManager.default.moveItem(at: tempUrl, to: destinationUrl)
           logger.info(
-            "Successfully downloaded model \(modelName) to custom directory\(self.localDirectory)")
+            "Successfully moved model \(modelName) to custom directory \(self.localDirectory)")
           results[modelName] = true
         } catch {
           logger.info("Failed to save model \(modelName): \(error.localizedDescription)")

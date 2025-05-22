@@ -20,7 +20,7 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
   ) {
 
     let configLoras: [String] = configuration.loras.compactMap { $0.file }
-    self.logger.info("loras: \(configLoras)")
+    self.logger.info("Received LoRAs: \(configLoras)")
     let loRAsNeedToLoad = configLoras.filter { file in
       // Won't trigger download for non-SHA256 LoRA.
       guard isSHA256LoRA(loraName: file) else { return false }
