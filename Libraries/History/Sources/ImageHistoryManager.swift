@@ -496,10 +496,11 @@ public final class ImageHistoryManager {
     maxLogicalTime = logicalTime
     maxLogicalTimeForLineage[lineage] = maxLogicalTime
     if var seekTo = project.dictionary["image_seek_to", Int.self] {
-      seekTo = min(max(0, seekTo), Int(maxLogicalTime))
-      let _ = seek(
-        to: Int64(seekTo),
-        lineage: project.dictionary["image_seek_to_lineage", Int.self].map { Int64($0) })
+      let lineage = project.dictionary["image_seek_to_lineage", Int.self].map { Int64($0) }
+      if lineage == nil {
+        seekTo = min(max(0, seekTo), Int(maxLogicalTime))
+      }
+      let _ = seek(to: Int64(seekTo), lineage: lineage)
     }
   }
 
