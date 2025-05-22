@@ -22,6 +22,7 @@ public final class LocalLoRAManager {
   /// - Returns: A tuple with success status and the downloaded file size
   private func downloadRemoteLoRA(
     _ modelNames: [String], index: Int, results: [String: Bool],
+    cancellation: @escaping (@escaping () -> Void) -> Void,
     completion: @escaping ([String: Bool]) -> Void
   ) {
     guard index < modelNames.count else {
@@ -33,7 +34,7 @@ public final class LocalLoRAManager {
     let dirURL = URL(fileURLWithPath: localDirectory)
     let logger = logger
     logger.info("downloading custom model \(modelName)")
-    r2Client.downloadObject(key: modelName) { result in
+    let task = r2Client.downloadObject(key: modelName) { result in
       switch result {
       case .success(let tempUrl):
         logger.info("Download model \(modelName) at \(tempUrl)")
@@ -64,11 +65,17 @@ public final class LocalLoRAManager {
           results[modelName] = false
         }
         self.downloadRemoteLoRA(
-          modelNames, index: index + 1, results: results, completion: completion)
+          modelNames, index: index + 1, results: results, cancellation: cancellation,
+          completion: completion)
       case .failure(let error):
         logger.info("Error downloading model \(modelName): \(error.localizedDescription)")
         results[modelName] = false
       }
+    }
+    if let task = task {
+      cancellation({
+        task.cancel()
+      })
     }
   }
 
@@ -77,8 +84,10 @@ public final class LocalLoRAManager {
   ///   - modelNames: Array of model names to download
   /// - Returns: Dictionary mapping model names to download success status
   public func downloadRemoteLoRAs(
-    _ modelNames: [String], completion: @escaping ([String: Bool]) -> Void
+    _ modelNames: [String], cancellation: @escaping (@escaping () -> Void) -> Void,
+    completion: @escaping ([String: Bool]) -> Void
   ) {
-    downloadRemoteLoRA(modelNames, index: 0, results: [:], completion: completion)
+    downloadRemoteLoRA(
+      modelNames, index: 0, results: [:], cancellation: cancellation, completion: completion)
   }
 }

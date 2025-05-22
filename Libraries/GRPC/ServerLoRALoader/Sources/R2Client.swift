@@ -25,7 +25,9 @@ public struct R2Client {
   }
 
   // Update your R2Client.downloadObject method with better error handling
-  public func downloadObject(key: String, completion: @escaping (Result<URL, Error>) -> Void) {
+  public func downloadObject(key: String, completion: @escaping (Result<URL, Error>) -> Void)
+    -> URLSessionDownloadTask?
+  {
     // Create the request URL
     guard let url = URL(string: "\(endpoint)/\(bucket)/\(key)") else {
       completion(
@@ -33,7 +35,7 @@ public struct R2Client {
           NSError(
             domain: "R2Error", code: 1001,
             userInfo: [NSLocalizedDescriptionKey: "Invalid URL construction"])))
-      return
+      return nil
     }
     if self.debug {
       print("Attempting to download from URL: \(url.absoluteString)")
@@ -114,6 +116,8 @@ public struct R2Client {
     }
 
     task.resume()
+
+    return task
   }
 
   private func signRequest(_ request: inout URLRequest, key: String, date: String) {

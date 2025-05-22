@@ -126,6 +126,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     self.serverConfigurationRewriter = serverConfigurationRewriter
     self.logger.info("ImageGenerationServiceImpl init")
   }
+
   // Implement the async generateImage method
   public func generateImage(
     request: ImageGenerationRequest,
@@ -145,19 +146,37 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     let queue = usesBackupQueue ? backupQueue : queue
     let configuration = GenerationConfiguration.from(data: request.configuration)
     if let serverConfigurationRewriter = serverConfigurationRewriter {
+      let cancelFlag = ManagedAtomic<Bool>(false)
+      var cancellation: ProtectedValue<(() -> Void)?> = ProtectedValue(nil)
+      func cancel() {
+        cancelFlag.store(true, ordering: .releasing)
+        cancellation.modify {
+          $0?()
+          $0 = nil
+        }
+      }
+      context.closeFuture.whenComplete { _ in
+        cancel()
+      }
       serverConfigurationRewriter.newConfiguration(configuration: configuration) {
+        cancellationBlock in
+        cancellation.modify {
+          $0 = cancellationBlock
+        }
+      } completion: {
         [weak self] result in
         guard let self = self else { return }
+        cancellation.modify {
+          $0 = nil
+        }
         switch result {
         case .success(let newConfiguration):
           queue.async { [weak self] in
             guard let self = self else { return }
-            self.executeImageGenerationWithConfiguration(
-              configuration: newConfiguration,
-              request: request,
-              promise: promise,
-              context: context,
-              responseCompression: responseCompression
+            self.generateImage(
+              configuration: newConfiguration, request: request, promise: promise, context: context,
+              responseCompression: responseCompression, cancelFlag: cancelFlag,
+              cancellation: &cancellation, cancel: cancel
             )
           }
         case .failure(let error):
@@ -174,11 +193,8 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     } else {
       queue.async { [weak self] in
         guard let self = self else { return }
-        self.executeImageGenerationWithConfiguration(
-          configuration: configuration,
-          request: request,
-          promise: promise,
-          context: context,
+        self.generateImage(
+          configuration: configuration, request: request, promise: promise, context: context,
           responseCompression: responseCompression
         )
       }
@@ -186,7 +202,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     return promise.futureResult
   }
 
-  private func executeImageGenerationWithConfiguration(
+  private func generateImage(
     configuration: GenerationConfiguration,
     request: ImageGenerationRequest,
     promise: EventLoopPromise<GRPCStatus>,
@@ -205,6 +221,22 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     context.closeFuture.whenComplete { _ in
       cancel()
     }
+    generateImage(
+      configuration: configuration, request: request, promise: promise, context: context,
+      responseCompression: responseCompression, cancelFlag: cancelFlag, cancellation: &cancellation,
+      cancel: cancel)
+  }
+
+  private func generateImage(
+    configuration: GenerationConfiguration,
+    request: ImageGenerationRequest,
+    promise: EventLoopPromise<GRPCStatus>,
+    context: StreamingResponseCallContext<ImageGenerationResponse>,
+    responseCompression: Bool,
+    cancelFlag: ManagedAtomic<Bool>,
+    cancellation: inout ProtectedValue<(() -> Void)?>,
+    cancel: @escaping () -> Void
+  ) {
     func isCancelled() -> Bool {
       return cancelFlag.load(ordering: .acquiring)
     }

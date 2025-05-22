@@ -8,6 +8,7 @@ public enum ServerConfigurationRewriteError: Error {
 public protocol ServerConfigurationRewriter {
   func newConfiguration(
     configuration: GenerationConfiguration,
+    cancellation: @escaping (@escaping () -> Void) -> Void,
     completion: @escaping (Result<GenerationConfiguration, Error>) -> Void)
 
 }
