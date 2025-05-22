@@ -408,7 +408,10 @@ extension UNetFromNNC {
       graph, of: lora.map { $0.file }, modelFile: filePath)
     let isLoHa = lora.contains { $0.isLoHa }
     var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
-    let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+    let externalOnDemandPartially = externalOnDemandPartially(
+      version: version, memoryCapacity: memoryCapacity, externalOnDemand: externalOnDemand)
+    let runLoRASeparatelyIsPreferred =
+      isQuantizedModel || externalOnDemand || externalOnDemandPartially
     let isTeaCacheEnabled = teaCacheConfiguration.threshold > 0
     switch version {
     case .v1:
@@ -1154,8 +1157,6 @@ extension UNetFromNNC {
     }
     let externalData: DynamicGraph.Store.Codec =
       externalOnDemand ? .externalOnDemand : .externalData
-    let externalOnDemandPartially = externalOnDemandPartially(
-      version: version, memoryCapacity: memoryCapacity, externalOnDemand: externalOnDemand)
     let loadedFromWeightsCache = weightsCache.detach(filePath, to: unet.unwrapped.parameters)
 
     func shouldOffload(name: String) -> Bool {
