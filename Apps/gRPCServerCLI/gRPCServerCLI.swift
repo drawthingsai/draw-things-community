@@ -306,6 +306,33 @@ struct gRPCServerCLI: ParsableCommand {
       throw CLIError.invalidModelPath
     }
 
+    if !datadogAPIKey.isEmpty {
+      let gpu = gpu
+      let datadogAPIKey = datadogAPIKey
+      let name = name
+
+      LoggingSystem.bootstrap { label in
+        // Create a multiplexing log handler that will send logs to multiple destinations
+        var handlers: [LogHandler] = []
+
+        // Always add the console log handler for local visibility
+        handlers.append(StreamLogHandler.standardOutput(label: label))
+
+        // If Datadog API key is provided, add the Datadog handler
+        var datadogHandler = DataDogLogHandler(
+          label: label,
+          key: datadogAPIKey,
+          hostname: "\(name) GPU \(gpu)",
+          region: .US5
+        )
+        datadogHandler.metadata = ["gpu": "\(gpu)"]
+        handlers.append(datadogHandler)
+
+        // Return a multiplexing handler that writes to all configured handlers
+        return MultiplexLogHandler(handlers)
+      }
+    }
+
     let serverLoRALoader: ServerLoRALoader?
     // Add the custom models directory if provided
     if let secondaryModelsDirectory = secondaryModelsDirectory, let accessKey = blobStoreAccessKey,
@@ -337,33 +364,6 @@ struct gRPCServerCLI: ParsableCommand {
     } else {
       serverLoRALoader = nil
       ModelZoo.externalUrls = [URL(fileURLWithPath: modelsDirectory)]
-    }
-
-    if !datadogAPIKey.isEmpty {
-      let gpu = gpu
-      let datadogAPIKey = datadogAPIKey
-      let name = name
-
-      LoggingSystem.bootstrap { label in
-        // Create a multiplexing log handler that will send logs to multiple destinations
-        var handlers: [LogHandler] = []
-
-        // Always add the console log handler for local visibility
-        handlers.append(StreamLogHandler.standardOutput(label: label))
-
-        // If Datadog API key is provided, add the Datadog handler
-        var datadogHandler = DataDogLogHandler(
-          label: label,
-          key: datadogAPIKey,
-          hostname: "\(name) GPU \(gpu)",
-          region: .US5
-        )
-        datadogHandler.metadata = ["gpu": "\(gpu)"]
-        handlers.append(datadogHandler)
-
-        // Return a multiplexing handler that writes to all configured handlers
-        return MultiplexLogHandler(handlers)
-      }
     }
 
     if noFlashAttention {
