@@ -22,6 +22,8 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
     let configLoras: [String] = configuration.loras.compactMap { $0.file }
     self.logger.info("loras: \(configLoras)")
     let loRAsNeedToLoad = configLoras.filter { file in
+      // Won't trigger download for non-SHA256 LoRA.
+      guard isSHA256LoRA(loraName: file) else { return false }
       let sha256 = sha256HashName(loraName: file)
       if ModelZoo.isModelDownloaded(sha256) {
         return false
@@ -41,21 +43,21 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
     let configuration = configurationBuilder.build()
 
     guard loRAsNeedToLoad.count > 0 else {
-      self.logger.info("no loRAs NeedToLoad")
+      self.logger.info("No loRAs need to load.")
       completion(.success(configuration))
       return
     }
 
-    self.logger.info("loRAsNeedToLoad: \(loRAsNeedToLoad)")
+    self.logger.info("LoRAs need to load: \(loRAsNeedToLoad)")
     localLoRAManager.downloadRemoteLoRAs(loRAsNeedToLoad, cancellation: cancellation) { results in
       // Check if any model failed to download
       if let failedModel = results.first(where: { !$0.value })?.key {
-        self.logger.info("fail to load custom model: \(failedModel)")
+        self.logger.info("Fail to download LoRA: \(failedModel)")
         completion(.failure(ServerConfigurationRewriteError.canNotLoadModel(failedModel)))
         return
       }
 
-      self.logger.info("load custom model: \(results)")
+      self.logger.info("Downloaded LoRAs: \(results)")
       completion(.success(configuration))
     }
   }
