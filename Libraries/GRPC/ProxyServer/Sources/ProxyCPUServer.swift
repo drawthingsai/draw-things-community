@@ -89,11 +89,13 @@ extension Worker {
 
       let status = try await callInstance.status.get()
       task.promise.succeed(status)
+      task.context.statusPromise.succeed(status)
 
     } catch {
       logger.error("forward response error \(error)")
 
       task.promise.fail(error)
+      task.context.statusPromise.fail(error)
     }
   }
 }
