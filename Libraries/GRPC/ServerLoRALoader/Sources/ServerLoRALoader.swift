@@ -28,9 +28,20 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
       return true
     }
 
+    var configurationBuilder = GenerationConfigurationBuilder(from: configuration)
+    // Remove the suffix no matter if it needs download or not.
+    configurationBuilder.loras = configuration.loras.compactMap { lora in
+      guard let file = lora.file else {
+        return nil
+      }
+      let sha256 = sha256HashName(loraName: file)
+      return DataModels.LoRA(file: sha256, weight: lora.weight)
+    }
+    let configuration = configurationBuilder.build()
+
     guard loRAsNeedToLoad.count > 0 else {
       self.logger.info("no loRAs NeedToLoad")
-      completion(.success(configurationLorasWithoutSuffix(configuration)))
+      completion(.success(configuration))
       return
     }
 
@@ -44,22 +55,8 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
       }
 
       self.logger.info("load custom model: \(results)")
-      completion(.success(configurationLorasWithoutSuffix(configuration)))
+      completion(.success(configuration))
     }
-  }
-
-  func configurationLorasWithoutSuffix(_ configuration: GenerationConfiguration)
-    -> GenerationConfiguration
-  {
-    var configurationBuilder = GenerationConfigurationBuilder(from: configuration)
-    configurationBuilder.loras = configuration.loras.compactMap { lora in
-      guard let file = lora.file else {
-        return nil
-      }
-      let sha256 = sha256HashName(loraName: file)
-      return DataModels.LoRA(file: sha256, weight: lora.weight)
-    }
-    return configurationBuilder.build()
   }
 
   func sha256HashName(loraName: String) -> String {
