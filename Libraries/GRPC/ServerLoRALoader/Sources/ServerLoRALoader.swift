@@ -43,7 +43,7 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
     let configuration = configurationBuilder.build()
 
     guard loRAsNeedToLoad.count > 0 else {
-      self.logger.info("No loRAs need to load.")
+      self.logger.info("loaded loras: \(configLoras)")
       completion(.success(configuration))
       return
     }
