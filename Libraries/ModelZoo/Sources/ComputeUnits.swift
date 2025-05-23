@@ -46,7 +46,9 @@ public enum ComputeUnits {
 
   public static func from(
     _ configuration: GenerationConfiguration,
-    overrideMapping: [String: ModelZoo.Specification]? = nil
+    overrideMapping: (
+      model: [String: ModelZoo.Specification], lora: [String: LoRAZoo.Specification]
+    )? = nil
   ) -> Int? {
     guard let model = configuration.model else {
       return nil
@@ -56,9 +58,21 @@ public enum ComputeUnits {
     let isGuidanceEmbedEnabled: Bool
     let isConsistencyModel: Bool
 
-    if let overrideMapping = overrideMapping, let specification = overrideMapping[model] {
+    if let overrideMapping = overrideMapping, let specification = overrideMapping.model[model] {
       modelVersion = specification.version
-      samplerModifier = specification.modifier ?? .none
+      var modifier = specification.modifier ?? .none
+      if modifier == .none {
+        for lora in configuration.loras {
+          guard let file = lora.file, let specification = overrideMapping.lora[file],
+            let loraModifier = specification.modifier
+          else { continue }
+          if loraModifier != .none {
+            modifier = loraModifier
+            break
+          }
+        }
+      }
+      samplerModifier = modifier
       isGuidanceEmbedEnabled =
         (specification.guidanceEmbed ?? false)
         && configuration.speedUpWithGuidanceEmbed
@@ -86,6 +100,8 @@ public enum ComputeUnits {
       textGuidanceScale: configuration.guidanceScale,
       imageGuidanceScale: configuration.imageGuidanceScale, version: modelVersion,
       modifier: samplerModifier)
+    let modelCoefficient = modelCoefficient(modelVersion)
+    var root = Double(Int(configuration.startWidth) * 64 * Int(configuration.startHeight) * 64)
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hiDreamI1:
@@ -94,13 +110,26 @@ public enum ComputeUnits {
     case .svdI2v:
       batchSize = cfgChannels
       numFrames = Int(configuration.numFrames)
-    case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+    case .hunyuanVideo:
       batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
+    case .wan21_1_3b, .wan21_14b:
+      batchSize = cfgChannels
+      numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
+      if configuration.causalInferenceEnabled && configuration.causalInference > 0
+        && configuration.causalInference < numFrames
+      {
+        // A perfect causal inference would be 1/2 cheaper than non-causal variant. But given causal inference for these models are based on full frames, it is not 1/2, it needs to add batch these extra edges.
+        let sequenceLength = root * Double(numFrames)
+        let lowerTriangle = sequenceLength * sequenceLength * 0.5
+        let upperRidgeLength = root * Double(configuration.causalInference)
+        let upperRidge = upperRidgeLength * upperRidgeLength * 0.5
+        let totalArea =
+          lowerTriangle + upperRidge * Double(configuration.causalInference) / Double(numFrames)
+        root = root * (totalArea / (sequenceLength * sequenceLength))
+      }
     }
-    let modelCoefficient = modelCoefficient(modelVersion)
-    let root = Double(
-      Int(configuration.startWidth) * 64 * Int(configuration.startHeight) * 64 * numFrames)
+    root = root * Double(numFrames)
     let scalingFactor: Double = 0.00000922917
 
     return Int(

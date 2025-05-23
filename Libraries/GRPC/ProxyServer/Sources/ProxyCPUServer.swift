@@ -561,7 +561,14 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
           [FailableDecodable<ModelZoo.Specification>].self, from: override.models
         ).compactMap({ $0.value })) ?? []
       let modelOverrideMapping = Dictionary(overrideModels.map { ($0.file, $0) }) { v, _ in v }
-      guard let cost = ComputeUnits.from(configuration, overrideMapping: modelOverrideMapping)
+      let overrideLoras =
+        (try? jsonDecoder.decode(
+          [FailableDecodable<LoRAZoo.Specification>].self, from: override.loras
+        ).compactMap({ $0.value })) ?? []
+      let loraOverrideMapping = Dictionary(overrideLoras.map { ($0.file, $0) }) { v, _ in v }
+      guard
+        let cost = ComputeUnits.from(
+          configuration, overrideMapping: (model: modelOverrideMapping, lora: loraOverrideMapping))
       else {
         logger.error(
           "Proxy Server can not calculate cost for configuration \(configuration)"
