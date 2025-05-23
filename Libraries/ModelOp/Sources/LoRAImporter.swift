@@ -428,7 +428,13 @@ public enum LoRAImporter {
           }
         }
         return reversed.mapValues {
-          $0.sorted(by: { $0.0 < $1.0 }).map(\.1)
+          // If they have the same index, we need to override the map, to avoid accidentally create MoE.
+          func unique(_ values: [(Int, String)]) -> [(Int, String)] {
+            guard values.count > 1 else { return values }
+            var seen: Set<Int> = []
+            return values.filter { seen.insert($0.0).inserted }
+          }
+          return unique($0).sorted(by: { $0.0 < $1.0 }).map(\.1)
         }
       }
       let reverseUNetMapping: [String: [String]]
