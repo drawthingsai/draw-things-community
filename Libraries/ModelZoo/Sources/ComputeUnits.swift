@@ -79,7 +79,15 @@ public enum ComputeUnits {
       isConsistencyModel = specification.isConsistencyModel ?? false
     } else {
       modelVersion = ModelZoo.versionForModel(model)
-      samplerModifier = ModelZoo.modifierForModel(model)
+      var modifier = ModelZoo.modifierForModel(model)
+      for lora in configuration.loras {
+        guard let file = lora.file else { continue }
+        let loraModifier = LoRAZoo.modifierForModel(file)
+        if loraModifier != .none {
+          modifier = loraModifier
+        }
+      }
+      samplerModifier = modifier
       isGuidanceEmbedEnabled =
         ModelZoo.guidanceEmbedForModel(model) && configuration.speedUpWithGuidanceEmbed
       isConsistencyModel = ModelZoo.isConsistencyModelForModel(model)
@@ -100,13 +108,19 @@ public enum ComputeUnits {
       textGuidanceScale: configuration.guidanceScale,
       imageGuidanceScale: configuration.imageGuidanceScale, version: modelVersion,
       modifier: samplerModifier)
-    let modelCoefficient = modelCoefficient(modelVersion)
+    var modelCoefficient = modelCoefficient(modelVersion)
     var root = Double(Int(configuration.startWidth) * 64 * Int(configuration.startHeight) * 64)
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hiDreamI1:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
+    case .hiDreamI1:
+      batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
+      numFrames = 1
+      if samplerModifier == .editing {  // For HiDream E1, we extends the width, effectively double the resolution.
+        root = root * 2
+      }
     case .svdI2v:
       batchSize = cfgChannels
       numFrames = Int(configuration.numFrames)
@@ -126,7 +140,7 @@ public enum ComputeUnits {
         let upperRidge = upperRidgeLength * upperRidgeLength * 0.5
         let totalArea =
           lowerTriangle + upperRidge * Double(configuration.causalInference) / Double(numFrames)
-        root = root * (totalArea / (sequenceLength * sequenceLength))
+        modelCoefficient = modelCoefficient * (totalArea / (sequenceLength * sequenceLength))
       }
     }
     root = root * Double(numFrames)
