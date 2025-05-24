@@ -94,10 +94,13 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     for (t, lastT) in zip(t, lastT) {
       let tf32 = t.as(of: T.self)
       let lastTf32 = lastT.as(of: T.self)
-      let r1 = Functional.abs(tf32 - lastTf32).reduced(.mean, axis: [0, 1, 2]).rawValue.toCPU()
-      let r2 = Functional.abs(lastTf32).reduced(.mean, axis: [0, 1, 2]).rawValue.toCPU()
-      totalR1 += Float(r1[0, 0, 0])
-      totalR2 += Float(r2[0, 0, 0])
+      let shape = tf32.shape
+      let r1 = Functional.abs(tf32 - lastTf32).reduced(.mean, axis: Array(0..<shape.count)).rawValue
+        .toCPU()
+      let r2 = Functional.abs(lastTf32).reduced(.mean, axis: Array(0..<shape.count)).rawValue
+        .toCPU()
+      totalR1 += Float(r1.reshaped(.C(1))[0])
+      totalR2 += Float(r2.reshaped(.C(1))[0])
     }
     let r = totalR1 / totalR2
     let dist =
@@ -119,7 +122,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public func compile(model: ModelBuilderOrModel, inputs: [DynamicGraph.AnyTensor]) {
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .hiDreamI1:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large:
       fatalError()
     case .hunyuanVideo:
       if let inferModel = inferModel {
@@ -132,6 +135,10 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       if let inferModel = inferModel {
         inferModel.compile(inputs: [inputs[0]] + Array(inputs[(3 + 6)..<(5 + 6)]))
       }
+      reducedModel.compile(inputs: [
+        inputs[0], inputs[0], inputs[inputs.count - 2], inputs[inputs.count - 1],
+      ])
+    case .hiDreamI1:
       reducedModel.compile(inputs: [
         inputs[0], inputs[0], inputs[inputs.count - 2], inputs[inputs.count - 1],
       ])

@@ -198,7 +198,7 @@ extension DDIMSampler: Sampler {
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond, lora: lora,
-        tiledDiffusion: tiledDiffusion, injectedControls: injectedControls)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: injectedControls)
       conditions = vector + encodings
       injectedControlsC = injectedControls.map {
         $0.model.encode(
@@ -374,7 +374,7 @@ extension DDIMSampler: Sampler {
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
-                injectedControls: injectedControls
+                teaCache: teaCache, injectedControls: injectedControls
               ).0
             indexOffset = i
           }

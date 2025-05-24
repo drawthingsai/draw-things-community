@@ -677,6 +677,8 @@ public final class ModelImporter {
             tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
             tiledDiffusion: TiledConfiguration(
               isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
+            teaCache: TeaCacheConfiguration(
+              coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0),
             injectedControls: []
           ).0.map({ DynamicGraph.Tensor<FloatType>($0).toCPU() })
         if modelVersion == .svdI2v {
@@ -904,8 +906,9 @@ public final class ModelImporter {
       case .hiDreamI1:
         (unet, unetMapper) = HiDream(
           batchSize: 1, height: 64, width: 64, textLength: (128, 128), layers: (16, 32),
-          usesFlashAttention: true)
-        (unetFixed, unetFixedMapper) = HiDreamFixed(timesteps: 1, layers: (16, 32))
+          usesFlashAttention: true, outputResidual: false, inputResidual: false)
+        (unetFixed, unetFixedMapper) = HiDreamFixed(
+          timesteps: 1, layers: (16, 32), outputTimesteps: false)
       case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:

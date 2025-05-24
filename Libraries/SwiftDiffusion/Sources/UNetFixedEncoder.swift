@@ -191,6 +191,7 @@ extension UNetFixedEncoder {
     textEncoding: [DynamicGraph.Tensor<FloatType>],
     timesteps: [Float], batchSize: Int, startHeight: Int, startWidth: Int, tokenLengthUncond: Int,
     tokenLengthCond: Int, lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration,
+    teaCache teaCacheConfiguration: TeaCacheConfiguration,
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )]
@@ -1181,14 +1182,18 @@ extension UNetFixedEncoder {
       let shouldRunLoRASeparately =
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
+      let isTeaCacheEnabled = teaCacheConfiguration.threshold > 0
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         (unetFixed, _) = LoRAHiDreamFixed(
           timesteps: cBatchSize * timesteps.count, layers: (16, 32),
+          outputTimesteps: isTeaCacheEnabled,
           LoRAConfiguration: configuration)
       } else {
-        (unetFixed, _) = HiDreamFixed(timesteps: cBatchSize * timesteps.count, layers: (16, 32))
+        (unetFixed, _) = HiDreamFixed(
+          timesteps: cBatchSize * timesteps.count, layers: (16, 32),
+          outputTimesteps: isTeaCacheEnabled)
       }
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(cBatchSize * timesteps.count, 256), of: FloatType.self)
@@ -1252,7 +1257,7 @@ extension UNetFixedEncoder {
       }
       let conditions = unetFixed(
         inputs: timeEmbeds, [pooleds, t5] + llama3
-      ).map { $0.as(of: FloatType.self) }
+      )
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       return ([graph.variable(rot)] + conditions, nil)
     case .wurstchenStageB:

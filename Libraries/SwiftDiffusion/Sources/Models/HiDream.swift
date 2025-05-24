@@ -453,14 +453,13 @@ private func SingleTransformerBlock(
 
 public func HiDream(
   batchSize: Int, height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int),
-  usesFlashAttention: Bool
+  usesFlashAttention: Bool, outputResidual: Bool, inputResidual: Bool
 )
   -> (
     Model, ModelWeightMapper
   )
 {
   let x = Input()
-  let rot = Input()
   let h = height / 2
   let w = width / 2
   let imgIn = Dense(count: 2_560, name: "x_embedder")
@@ -468,26 +467,47 @@ public func HiDream(
     x.reshaped([batchSize, h, 2, w, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
       .reshaped([batchSize, h * w, 2 * 2 * 16])
   ).to(.Float32)
-  let encoderHiddenStates = (0..<(layers.0 + layers.1 + 1)).map { _ in Input() }
-  var context = encoderHiddenStates[encoderHiddenStates.count - 1].to(.Float32)
+  let imgInX = out
+  let residualIn: Input?
+  if inputResidual {
+    let residual = Input()
+    residualIn = residual
+    out = out + residual
+  } else {
+    residualIn = nil
+  }
+  let rot: [Input]
+  let encoderHiddenStates: [Input]
+  var context: Model.IO?
+  if layers.0 > 0 || layers.1 > 0 {
+    rot = [Input()]
+    encoderHiddenStates = (0..<(layers.0 + layers.1 + 1)).map { _ in Input() }
+    context = encoderHiddenStates[encoderHiddenStates.count - 1].to(.Float32)
+  } else {
+    rot = []
+    encoderHiddenStates = []
+    context = nil
+  }
   var mappers = [ModelWeightMapper]()
   var adaLNChunks = [Input]()
   for i in 0..<layers.0 {
     let contextChunks = (0..<6).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
     let contextIn = Functional.concat(
-      axis: 1, context, encoderHiddenStates[i].to(.Float32), flags: [.disableOpt])
+      axis: 1, context!, encoderHiddenStates[i].to(.Float32), flags: [.disableOpt])
     let (mapper, block) = JointTransformerBlock(
       prefix: "double_stream_blocks.\(i).block", k: 128, h: 20, b: batchSize,
       t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
       contextBlockPreOnly: false, upcast: i > 12, usesFlashAttention: usesFlashAttention)
-    let blockOut = block([out, contextIn, rot] + contextChunks + xChunks)
+    let blockOut = block([out, contextIn, rot[0]] + contextChunks + xChunks)
     out = blockOut[0]
     context = blockOut[1]
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
-  out = Functional.concat(axis: 1, out, context)
+  if let context = context {
+    out = Functional.concat(axis: 1, out, context)
+  }
   for i in 0..<layers.1 {
     let xChunks = (0..<6).map { _ in Input() }
     let xIn = Functional.concat(
@@ -496,9 +516,15 @@ public func HiDream(
       prefix: "single_stream_blocks.\(i).block", k: 128, h: 20, b: batchSize,
       t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
       contextBlockPreOnly: i == layers.1 - 1, upcast: false, usesFlashAttention: usesFlashAttention)
-    out = block([xIn, rot] + xChunks)
+    out = block([xIn, rot[0]] + xChunks)
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
+  }
+  let residualOut: Model.IO?
+  if outputResidual {
+    residualOut = out - imgInX
+  } else {
+    residualOut = nil
   }
   let shift = Input()
   let scale = Input()
@@ -522,8 +548,10 @@ public func HiDream(
     mapping["final_layer.linear.bias"] = [projOut.bias.name]
     return mapping
   }
+  var inputs: [Input] = [x] + (residualIn.map { [$0] } ?? []) + rot
+  inputs = inputs + encoderHiddenStates + adaLNChunks
   return (
-    Model([x, rot] + encoderHiddenStates + adaLNChunks, [out]), mapper
+    Model(inputs, [out] + (residualOut.map { [$0] } ?? [])), mapper
   )
 }
 
@@ -581,14 +609,15 @@ private func SingleTransformerBlockFixed(
   return (mapper, Model([c], xChunks))
 }
 
-public func HiDreamFixed(timesteps: Int, layers: (Int, Int)) -> (
+public func HiDreamFixed(timesteps: Int, layers: (Int, Int), outputTimesteps: Bool) -> (
   Model, ModelWeightMapper
 ) {
   let t = Input()
   let vector = Input()
   let (tMlp0, tMlp2, timeEmbedder) = MLPEmbedder(channels: 2_560, name: "t")
   let (pMlp0, pMlp2, pooledEmbedder) = MLPEmbedder(channels: 2_560, name: "p")
-  var vec = timeEmbedder(t) + pooledEmbedder(vector)
+  let tEmb = timeEmbedder(t)
+  var vec = tEmb + pooledEmbedder(vector)
   let t5EncoderHiddenStates = Input()
   let llamaEncoderHiddenStates = (0..<32).map { _ in Input() }
   let captionProjections = (0..<(layers.0 + layers.1 + 1)).map { _ in
@@ -646,7 +675,8 @@ public func HiDreamFixed(timesteps: Int, layers: (Int, Int)) -> (
   }
   return (
     Model(
-      [t, vector, t5EncoderHiddenStates] + llamaEncoderHiddenStates, encoderHiddenStates + outs),
+      [t, vector, t5EncoderHiddenStates] + llamaEncoderHiddenStates,
+      encoderHiddenStates + (outputTimesteps ? [tEmb.to(.Float32)] : []) + outs),
     mapper
   )
 }
@@ -1110,14 +1140,14 @@ private func LoRASingleTransformerBlock(
 
 public func LoRAHiDream(
   batchSize: Int, height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int),
-  usesFlashAttention: Bool, LoRAConfiguration: LoRANetworkConfiguration
+  usesFlashAttention: Bool, outputResidual: Bool, inputResidual: Bool,
+  LoRAConfiguration: LoRANetworkConfiguration
 )
   -> (
     Model, ModelWeightMapper
   )
 {
   let x = Input()
-  let rot = Input()
   let h = height / 2
   let w = width / 2
   let imgIn = LoRADense(count: 2_560, configuration: LoRAConfiguration, name: "x_embedder")
@@ -1125,27 +1155,48 @@ public func LoRAHiDream(
     x.reshaped([batchSize, h, 2, w, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
       .reshaped([batchSize, h * w, 2 * 2 * 16])
   ).to(.Float32)
-  let encoderHiddenStates = (0..<(layers.0 + layers.1 + 1)).map { _ in Input() }
-  var context = encoderHiddenStates[encoderHiddenStates.count - 1].to(.Float32)
+  let imgInX = out
+  let residualIn: Input?
+  if inputResidual {
+    let residual = Input()
+    residualIn = residual
+    out = out + residual
+  } else {
+    residualIn = nil
+  }
+  let rot: [Input]
+  let encoderHiddenStates: [Input]
+  var context: Model.IO?
+  if layers.0 > 0 || layers.1 > 0 {
+    rot = [Input()]
+    encoderHiddenStates = (0..<(layers.0 + layers.1 + 1)).map { _ in Input() }
+    context = encoderHiddenStates[encoderHiddenStates.count - 1].to(.Float32)
+  } else {
+    rot = []
+    encoderHiddenStates = []
+    context = nil
+  }
   var mappers = [ModelWeightMapper]()
   var adaLNChunks = [Input]()
   for i in 0..<layers.0 {
     let contextChunks = (0..<6).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
     let contextIn = Functional.concat(
-      axis: 1, context, encoderHiddenStates[i].to(.Float32), flags: [.disableOpt])
+      axis: 1, context!, encoderHiddenStates[i].to(.Float32), flags: [.disableOpt])
     let (mapper, block) = LoRAJointTransformerBlock(
       prefix: "double_stream_blocks.\(i).block", k: 128, h: 20, b: batchSize,
       t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
       contextBlockPreOnly: false, upcast: i > 12, usesFlashAttention: usesFlashAttention,
       layerIndex: i, configuration: LoRAConfiguration)
-    let blockOut = block([out, contextIn, rot] + contextChunks + xChunks)
+    let blockOut = block([out, contextIn, rot[0]] + contextChunks + xChunks)
     out = blockOut[0]
     context = blockOut[1]
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     mappers.append(mapper)
   }
-  out = Functional.concat(axis: 1, out, context)
+  if let context = context {
+    out = Functional.concat(axis: 1, out, context)
+  }
   for i in 0..<layers.1 {
     let xChunks = (0..<6).map { _ in Input() }
     let xIn = Functional.concat(
@@ -1155,9 +1206,15 @@ public func LoRAHiDream(
       t: (textLength.0 + textLength.1, textLength.0 + textLength.1 * 2), hw: h * w,
       contextBlockPreOnly: i == layers.1 - 1, upcast: false, usesFlashAttention: usesFlashAttention,
       layerIndex: i + layers.0, configuration: LoRAConfiguration)
-    out = block([xIn, rot] + xChunks)
+    out = block([xIn, rot[0]] + xChunks)
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)
+  }
+  let residualOut: Model.IO?
+  if outputResidual {
+    residualOut = out - imgInX
+  } else {
+    residualOut = nil
   }
   let shift = Input()
   let scale = Input()
@@ -1182,8 +1239,10 @@ public func LoRAHiDream(
     mapping["final_layer.linear.bias"] = [projOut.bias.name]
     return mapping
   }
+  var inputs: [Input] = [x] + (residualIn.map { [$0] } ?? []) + rot
+  inputs = inputs + encoderHiddenStates + adaLNChunks
   return (
-    Model([x, rot] + encoderHiddenStates + adaLNChunks, [out]), mapper
+    Model(inputs, [out] + (residualOut.map { [$0] } ?? [])), mapper
   )
 }
 
@@ -1248,7 +1307,8 @@ private func SingleTransformerBlockFixed(
 }
 
 public func LoRAHiDreamFixed(
-  timesteps: Int, layers: (Int, Int), LoRAConfiguration: LoRANetworkConfiguration
+  timesteps: Int, layers: (Int, Int), outputTimesteps: Bool,
+  LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   Model, ModelWeightMapper
 ) {
@@ -1258,7 +1318,8 @@ public func LoRAHiDreamFixed(
     channels: 2_560, configuration: LoRAConfiguration, name: "t")
   let (pMlp0, pMlp2, pooledEmbedder) = LoRAMLPEmbedder(
     channels: 2_560, configuration: LoRAConfiguration, name: "p")
-  var vec = timeEmbedder(t) + pooledEmbedder(vector)
+  let tEmb = timeEmbedder(t)
+  var vec = tEmb + pooledEmbedder(vector)
   let t5EncoderHiddenStates = Input()
   let llamaEncoderHiddenStates = (0..<32).map { _ in Input() }
   let captionProjections = (0..<(layers.0 + layers.1 + 1)).map {
@@ -1320,7 +1381,8 @@ public func LoRAHiDreamFixed(
   }
   return (
     Model(
-      [t, vector, t5EncoderHiddenStates] + llamaEncoderHiddenStates, encoderHiddenStates + outs),
+      [t, vector, t5EncoderHiddenStates] + llamaEncoderHiddenStates,
+      encoderHiddenStates + (outputTimesteps ? [tEmb.to(.Float32)] : []) + outs),
     mapper
   )
 }

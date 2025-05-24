@@ -549,6 +549,8 @@ extension ModelPreloader {
               maxPeriod: 10_000)
           ).toGPU(0)
         )
+        let teaCache = TeaCacheConfiguration(
+          coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
         var cArr = [c]
         var conditions: [DynamicGraph.AnyTensor] = cArr
         if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
@@ -579,7 +581,7 @@ extension ModelPreloader {
               isGuidanceEmbedEnabled: false, distilledGuidanceLayers: 0,
               textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
-              tiledDiffusion: tiledDiffusion, injectedControls: []
+              tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: []
             ).0  // No need to pass lora, one off use.
         }
         let _ = unet.compileModel(
@@ -598,9 +600,7 @@ extension ModelPreloader {
           injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>(
             injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
             injectedAttentionKVs: []), tiledDiffusion: tiledDiffusion,
-          teaCache: TeaCacheConfiguration(
-            coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0),
-          causalInference: 0, weightsCache: weightsCache
+          teaCache: teaCache, causalInference: 0, weightsCache: weightsCache
         )
         unetFilePath = modelPath
         unetExternalOnDemand = externalOnDemand

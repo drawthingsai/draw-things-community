@@ -158,10 +158,15 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
     return conditions[0..<50]
       + conditions[50..<conditions.count].map {
         let shape = $0.shape
-        return DynamicGraph.Tensor<FloatType>($0)[
-          (index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]
-        ]
-        .copied()
+        if shape.count == 2 {
+          return DynamicGraph.Tensor<Float>($0)[
+            (index * batchSize)..<((index + 1) * batchSize), 0..<shape[1]
+          ].copied()
+        } else {
+          return DynamicGraph.Tensor<FloatType>($0)[
+            (index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]
+          ].copied()
+        }
       }
   case .hunyuanVideo:
     return conditions[0..<2]
@@ -1050,16 +1055,43 @@ extension UNetFromNNC {
             batchSize: 1, height: tiledHeight,
             width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
             textLength: (t5Length, llama3Length), layers: (16, 32),
-            usesFlashAttention: usesFlashAttention, LoRAConfiguration: configuration
+            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
+            inputResidual: false, LoRAConfiguration: configuration
           ).0)
+        if isTeaCacheEnabled {
+          teaCache = TeaCache(
+            modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
+            threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
+            reducedModel: LoRAHiDream(
+              batchSize: 1, height: tiledHeight,
+              width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
+              textLength: (t5Length, llama3Length), layers: (0, 0),
+              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true,
+              LoRAConfiguration: configuration
+            ).0)
+        }
       } else {
         unet = ModelBuilderOrModel.model(
           HiDream(
             batchSize: 1, height: tiledHeight,
             width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
             textLength: (t5Length, llama3Length), layers: (16, 32),
-            usesFlashAttention: usesFlashAttention
+            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
+            inputResidual: false
           ).0)
+        if isTeaCacheEnabled {
+          teaCache = TeaCache(
+            modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
+            threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+            maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
+            reducedModel: HiDream(
+              batchSize: 1, height: tiledHeight,
+              width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
+              textLength: (t5Length, llama3Length), layers: (0, 0),
+              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true
+            ).0)
+        }
       }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
@@ -1660,7 +1692,12 @@ extension UNetFromNNC {
         ).transposed(2, 3).reshaped(.NHWC(shape[0], shape[1], 2 * shape[2], shape[3] / 2))
           .contiguous()
       }
-      unet.compile(inputs: inputs)
+      if let teaCache = teaCache {
+        unet.compile(inputs: Array(inputs[0..<51] + inputs[52...]))
+        teaCache.compile(model: unet, inputs: inputs)
+      } else {
+        unet.compile(inputs: inputs)
+      }
       return
     }
     unet.compile(inputs: inputs)
@@ -2018,39 +2055,110 @@ extension UNetFromNNC {
           .contiguous()
         shape = firstInput.shape
       }
-      let batchSize = shape[0]
-      guard batchSize > 1 else {
-        let et = unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+      if let teaCache = teaCache {
+        let shouldUseCache =
+          teaCache.shouldUseCacheForTimeEmbedding(
+            Array(restInputs[50..<51]), model: unet!, step: step, marker: index, of: Float.self)
+        let batchSize = shape[0]
+        guard batchSize > 1 else {
+          let et: DynamicGraph.Tensor<FloatType>
+          if shouldUseCache,
+            let result = teaCache(model: unet!, inputs: firstInput, restInputs, marker: index)
+          {
+            et = result
+          } else {
+            let result = unet!(
+              inputs: firstInput, Array(restInputs[0..<50]) + Array(restInputs[51...]))
+            et = result[0].as(of: FloatType.self)
+            teaCache.cache(outputs: result, marker: index)
+          }
+          if modifier == .editing {
+            // remove the conditioning.
+            return et[0..<shape[0], 0..<shape[1], 0..<(shape[2] / 2), 0..<shape[3]].copied()
+          } else {
+            return et
+          }
+        }
+        let graph = firstInput.graph
+        var et = graph.variable(like: firstInput)
+        for i in 0..<batchSize {
+          let x0 = firstInput[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+          let others = restInputs.map {
+            var shape = $0.shape
+            guard shape[0] > 1 else { return $0 }
+            shape[0] = 1
+            return DynamicGraph.Tensor<FloatType>($0).reshaped(
+              format: $0.format, shape: shape, offset: [i]
+            ).copied()
+          }
+          let et0: DynamicGraph.Tensor<FloatType>
+          if shouldUseCache,
+            let result = teaCache(
+              model: unet!, inputs: firstInput, restInputs, marker: index * batchSize + i)
+          {
+            et0 = result
+          } else {
+            let result = unet!(inputs: x0, Array(others[0..<50]) + Array(others[51...]))
+            et0 = result[0].as(of: FloatType.self)
+            teaCache.cache(outputs: result, marker: index * batchSize + i)
+          }
+          et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = et0
+          guard !isCancelled.load(ordering: .acquiring) else {
+            if modifier == .editing {
+              // remove the conditioning.
+              return et[0..<shape[0], 0..<shape[1], 0..<(shape[2] / 2), 0..<shape[3]].copied()
+            } else {
+              return et
+            }
+          }
+        }
         if modifier == .editing {
           // remove the conditioning.
           return et[0..<shape[0], 0..<shape[1], 0..<(shape[2] / 2), 0..<shape[3]].copied()
         } else {
           return et
         }
-      }
-      let graph = firstInput.graph
-      var et = graph.variable(like: firstInput)
-      for i in 0..<batchSize {
-        let x0 = firstInput[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
-        let others = restInputs.map {
-          var shape = $0.shape
-          guard shape[0] > 1 else { return $0 }
-          shape[0] = 1
-          return DynamicGraph.Tensor<FloatType>($0).reshaped(
-            format: $0.format, shape: shape, offset: [i]
-          ).copied()
+      } else {
+        let batchSize = shape[0]
+        guard batchSize > 1 else {
+          let et = unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+          if modifier == .editing {
+            // remove the conditioning.
+            return et[0..<shape[0], 0..<shape[1], 0..<(shape[2] / 2), 0..<shape[3]].copied()
+          } else {
+            return et
+          }
         }
-        et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = unet!(inputs: x0, others)[0].as(
-          of: FloatType.self)
-        guard !isCancelled.load(ordering: .acquiring) else {
+        let graph = firstInput.graph
+        var et = graph.variable(like: firstInput)
+        for i in 0..<batchSize {
+          let x0 = firstInput[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+          let others = restInputs.map {
+            var shape = $0.shape
+            guard shape[0] > 1 else { return $0 }
+            shape[0] = 1
+            return DynamicGraph.Tensor<FloatType>($0).reshaped(
+              format: $0.format, shape: shape, offset: [i]
+            ).copied()
+          }
+          et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = unet!(inputs: x0, others)[0]
+            .as(
+              of: FloatType.self)
+          guard !isCancelled.load(ordering: .acquiring) else {
+            if modifier == .editing {
+              // remove the conditioning.
+              return et[0..<shape[0], 0..<shape[1], 0..<(shape[2] / 2), 0..<shape[3]].copied()
+            } else {
+              return et
+            }
+          }
+        }
+        if modifier == .editing {
+          // remove the conditioning.
+          return et[0..<shape[0], 0..<shape[1], 0..<(shape[2] / 2), 0..<shape[3]].copied()
+        } else {
           return et
         }
-      }
-      if modifier == .editing {
-        // remove the conditioning.
-        return et[0..<shape[0], 0..<shape[1], 0..<(shape[2] / 2), 0..<shape[3]].copied()
-      } else {
-        return et
       }
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
