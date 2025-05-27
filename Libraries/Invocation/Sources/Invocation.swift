@@ -26,8 +26,8 @@ public struct Invocation {
       }
     }
   }
+  public var configuration: GenerationConfiguration
   public let image: PrefersDefaultOptional<Tensor<FloatType>>
-  public let configuration: GenerationConfiguration
   public let prompt: String?
   public let negativePrompt: String?
   public let mask: PrefersDefaultOptional<Tensor<UInt8>>
