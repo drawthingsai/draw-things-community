@@ -14,15 +14,6 @@ public final class LocalLoRAManager {
     case contentHashMismatch
   }
 
-  final class ObjCResponder: NSObject {
-    var index: Int = 0
-    var lastUpdated = Date()
-    let progress: (Int64, Int64, Int) -> Void
-    init(progress: @escaping (Int64, Int64, Int) -> Void) {
-      self.progress = progress
-    }
-  }
-
   private let logger = Logger(label: "com.draw-things.local-lora-manager")
   private let r2Client: R2Client
   private let localDirectory: String
@@ -37,7 +28,7 @@ public final class LocalLoRAManager {
   /// - Returns: A tuple with success status and the downloaded file size
   private func downloadRemoteLoRA(
     _ modelNames: [String], index: Int, results: [String: Bool], session: URLSession,
-    objCResponder: ObjCResponder,
+    objCResponder: R2Client.ObjCResponder,
     cancellation: @escaping (@escaping () -> Void) -> Void,
     completion: @escaping ([String: Bool]) -> Void
   ) {
@@ -51,7 +42,9 @@ public final class LocalLoRAManager {
     let logger = logger
     logger.info("Downloading LoRA \(modelName)")
     objCResponder.index = index
-    let task = r2Client.downloadObject(key: modelName, session: session) { result in
+    let task = r2Client.downloadObject(
+      key: modelName, session: session, objCResponder: objCResponder
+    ) { result in
       switch result {
       case .success(let tempUrl):
         logger.info("Downloaded LoRA \(modelName) at \(tempUrl)")
@@ -115,31 +108,12 @@ public final class LocalLoRAManager {
     completion: @escaping ([String: Bool]) -> Void
   ) {
     let total = modelNames.count
-    let objCResponder = ObjCResponder { bytesReceived, bytesExpected, index in
+    let objCResponder = R2Client.ObjCResponder { bytesReceived, bytesExpected, index in
       progress(bytesReceived, bytesExpected, index, total)
     }
     downloadRemoteLoRA(
       modelNames, index: 0, results: [:],
       session: URLSession(configuration: .default, delegate: objCResponder, delegateQueue: nil),
       objCResponder: objCResponder, cancellation: cancellation, completion: completion)
-  }
-}
-
-extension LocalLoRAManager.ObjCResponder: URLSessionDownloadDelegate {
-  func urlSession(
-    _ session: URLSession, downloadTask: URLSessionDownloadTask,
-    didFinishDownloadingTo location: URL
-  ) {
-    // Do nothing.
-  }
-  func urlSession(
-    _ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
-    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
-  ) {
-    let date = Date()
-    let timeElapsed = date.timeIntervalSince(lastUpdated)
-    guard timeElapsed >= 1 else { return }
-    progress(totalBytesWritten, totalBytesExpectedToWrite, index)
-    lastUpdated = date
   }
 }

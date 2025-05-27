@@ -13,6 +13,16 @@ public struct R2Client {
     case httpError(_: Int)
   }
 
+  public final class ObjCResponder: NSObject {
+    var index: Int = 0
+    var lastUpdated = Date()
+    var completion: (@Sendable (URL?, URLResponse?, (any Swift.Error)?) -> Void)? = nil
+    let progress: (Int64, Int64, Int) -> Void
+    init(progress: @escaping (Int64, Int64, Int) -> Void) {
+      self.progress = progress
+    }
+  }
+
   private let accessKey: String
   private let secret: String
   private let endpoint: String
@@ -31,7 +41,7 @@ public struct R2Client {
 
   // Update your R2Client.downloadObject method with better error handling
   public func downloadObject(
-    key: String, session: URLSession,
+    key: String, session: URLSession, objCResponder: ObjCResponder,
     completion: @escaping (Result<URL, Swift.Error>) -> Void
   )
     -> URLSessionDownloadTask?
@@ -60,8 +70,7 @@ public struct R2Client {
       print("Request headers: \(request.allHTTPHeaderFields ?? [:])")
     }
 
-    // Execute the download task
-    let task = session.downloadTask(with: request) { tempUrl, response, error in
+    objCResponder.completion = { tempUrl, response, error in
       if let error = error {
         completion(.failure(error))
         return
@@ -106,7 +115,7 @@ public struct R2Client {
       // Return the temporary URL for the downloaded file
       completion(.success(tempUrl))
     }
-
+    let task = session.downloadTask(with: request)
     task.resume()
 
     return task
@@ -203,5 +212,32 @@ public struct R2Client {
     if self.debug {
       print("Final Authorization header: \(authorization)")
     }
+  }
+}
+
+extension R2Client.ObjCResponder: URLSessionDownloadDelegate {
+  public func urlSession(
+    _ session: URLSession, downloadTask: URLSessionDownloadTask,
+    didFinishDownloadingTo location: URL
+  ) {
+    completion?(location, downloadTask.response, nil)
+    completion = nil
+  }
+  public func urlSession(
+    _ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?
+  ) {
+    guard let error = error else { return }
+    completion?(nil, task.response, error)
+    completion = nil
+  }
+  public func urlSession(
+    _ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
+    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
+  ) {
+    let date = Date()
+    let timeElapsed = date.timeIntervalSince(lastUpdated)
+    guard timeElapsed >= 0.25 || bytesWritten == totalBytesWritten else { return }
+    progress(totalBytesWritten, totalBytesExpectedToWrite, index)
+    lastUpdated = date
   }
 }
