@@ -159,6 +159,16 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         cancel()
       }
       serverConfigurationRewriter.newConfiguration(configuration: configuration) {
+        bytesReceived, bytesExpected, index, total in
+        let response = ImageGenerationResponse.with {
+          $0.remoteDownload = RemoteDownloadResponse.with {
+            $0.bytesExpected = bytesExpected
+            $0.bytesReceived = bytesReceived
+            $0.item = Int32(index)
+            $0.itemsExpected = Int32(total)
+          }
+        }
+      } cancellation: {
         cancellationBlock in
         cancellation.modify {
           $0 = cancellationBlock

@@ -113,6 +113,14 @@ enum ChunkState {
   MORE_CHUNKS = 1;
 }
 
+message RemoteDownloadResponse {
+  int64 bytesReceived = 1;
+  int64 bytesExpected = 2;
+  int32 item = 3;
+  int32 itemsExpected = 4;
+  string tag = 5;
+}
+
 message ImageGenerationResponse {
   repeated bytes generatedImages = 1;      // Generated image data as bytes.
   optional ImageGenerationSignpostProto currentSignpost = 2; // Single current signpost.
@@ -122,6 +130,7 @@ message ImageGenerationResponse {
   repeated string tags = 6; // Tags to track which server responded to the generation request.
   optional int64 downloadSize = 7; // The size of final image will be sent in the next payload.
   ChunkState chunkState = 8; // What's this chunk is, it helps to compose the chunks together.
+  optional RemoteDownloadResponse remoteDownload = 9; // If the remote needs to download something, which are they.
 }
 
 message FileChunk {

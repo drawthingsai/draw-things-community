@@ -543,6 +543,26 @@ public struct ImageGenerationSignpostProto: Sendable {
   public init() {}
 }
 
+public struct RemoteDownloadResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var bytesReceived: Int64 = 0
+
+  public var bytesExpected: Int64 = 0
+
+  public var item: Int32 = 0
+
+  public var itemsExpected: Int32 = 0
+
+  public var tag: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public struct ImageGenerationResponse: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -600,6 +620,16 @@ public struct ImageGenerationResponse: @unchecked Sendable {
   /// What's this chunk is, it helps to compose the chunks together.
   public var chunkState: ChunkState = .lastChunk
 
+  /// If the remote needs to download something, which are they.
+  public var remoteDownload: RemoteDownloadResponse {
+    get {return _remoteDownload ?? RemoteDownloadResponse()}
+    set {_remoteDownload = newValue}
+  }
+  /// Returns true if `remoteDownload` has been explicitly set.
+  public var hasRemoteDownload: Bool {return self._remoteDownload != nil}
+  /// Clears the value of `remoteDownload`. Subsequent reads from it will return its default value.
+  public mutating func clearRemoteDownload() {self._remoteDownload = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -608,6 +638,7 @@ public struct ImageGenerationResponse: @unchecked Sendable {
   fileprivate var _previewImage: Data? = nil
   fileprivate var _scaleFactor: Int32? = nil
   fileprivate var _downloadSize: Int64? = nil
+  fileprivate var _remoteDownload: RemoteDownloadResponse? = nil
 }
 
 public struct FileChunk: @unchecked Sendable {
@@ -1624,6 +1655,62 @@ extension ImageGenerationSignpostProto.ImageUpscaled: SwiftProtobuf.Message, Swi
   }
 }
 
+extension RemoteDownloadResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = "RemoteDownloadResponse"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "bytesReceived"),
+    2: .same(proto: "bytesExpected"),
+    3: .same(proto: "item"),
+    4: .same(proto: "itemsExpected"),
+    5: .same(proto: "tag"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt64Field(value: &self.bytesReceived) }()
+      case 2: try { try decoder.decodeSingularInt64Field(value: &self.bytesExpected) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.item) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.itemsExpected) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.tag) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.bytesReceived != 0 {
+      try visitor.visitSingularInt64Field(value: self.bytesReceived, fieldNumber: 1)
+    }
+    if self.bytesExpected != 0 {
+      try visitor.visitSingularInt64Field(value: self.bytesExpected, fieldNumber: 2)
+    }
+    if self.item != 0 {
+      try visitor.visitSingularInt32Field(value: self.item, fieldNumber: 3)
+    }
+    if self.itemsExpected != 0 {
+      try visitor.visitSingularInt32Field(value: self.itemsExpected, fieldNumber: 4)
+    }
+    if !self.tag.isEmpty {
+      try visitor.visitSingularStringField(value: self.tag, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: RemoteDownloadResponse, rhs: RemoteDownloadResponse) -> Bool {
+    if lhs.bytesReceived != rhs.bytesReceived {return false}
+    if lhs.bytesExpected != rhs.bytesExpected {return false}
+    if lhs.item != rhs.item {return false}
+    if lhs.itemsExpected != rhs.itemsExpected {return false}
+    if lhs.tag != rhs.tag {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = "ImageGenerationResponse"
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
@@ -1635,6 +1722,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     6: .same(proto: "tags"),
     7: .same(proto: "downloadSize"),
     8: .same(proto: "chunkState"),
+    9: .same(proto: "remoteDownload"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -1651,6 +1739,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
       case 6: try { try decoder.decodeRepeatedStringField(value: &self.tags) }()
       case 7: try { try decoder.decodeSingularInt64Field(value: &self._downloadSize) }()
       case 8: try { try decoder.decodeSingularEnumField(value: &self.chunkState) }()
+      case 9: try { try decoder.decodeSingularMessageField(value: &self._remoteDownload) }()
       default: break
       }
     }
@@ -1685,6 +1774,9 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     if self.chunkState != .lastChunk {
       try visitor.visitSingularEnumField(value: self.chunkState, fieldNumber: 8)
     }
+    try { if let v = self._remoteDownload {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1697,6 +1789,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     if lhs.tags != rhs.tags {return false}
     if lhs._downloadSize != rhs._downloadSize {return false}
     if lhs.chunkState != rhs.chunkState {return false}
+    if lhs._remoteDownload != rhs._remoteDownload {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

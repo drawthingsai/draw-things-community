@@ -15,6 +15,8 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
 
   public func newConfiguration(
     configuration: GenerationConfiguration,
+    progress: @escaping (_ bytesReceived: Int64, _ bytesExpected: Int64, _ index: Int, _ total: Int)
+      -> Void,
     cancellation: @escaping (@escaping () -> Void) -> Void,
     completion: @escaping (Result<GenerationConfiguration, Error>) -> Void
   ) {
@@ -49,7 +51,9 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
     }
 
     self.logger.info("LoRAs need to load: \(loRAsNeedToLoad)")
-    localLoRAManager.downloadRemoteLoRAs(loRAsNeedToLoad, cancellation: cancellation) { results in
+    localLoRAManager.downloadRemoteLoRAs(
+      loRAsNeedToLoad, progress: progress, cancellation: cancellation
+    ) { results in
       // Check if any model failed to download
       if let failedModel = results.first(where: { !$0.value })?.key {
         self.logger.info("Fail to download LoRA: \(failedModel)")

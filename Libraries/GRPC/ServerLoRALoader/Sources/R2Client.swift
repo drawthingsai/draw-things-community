@@ -13,11 +13,17 @@ public struct R2Client {
     case httpError(_: Int)
   }
 
+  final class ObjCResponder: NSObject {
+    let progress: (Int64, Int64) -> Void
+    init(progress: @escaping (Int64, Int64) -> Void) {
+      self.progress = progress
+    }
+  }
+
   private let accessKey: String
   private let secret: String
   private let endpoint: String
   private let bucket: String
-  private let session: URLSession
   private let debug: Bool
 
   public init(
@@ -28,11 +34,13 @@ public struct R2Client {
     self.endpoint = endpoint
     self.bucket = bucket
     self.debug = debug
-    self.session = URLSession.shared
   }
 
   // Update your R2Client.downloadObject method with better error handling
-  public func downloadObject(key: String, completion: @escaping (Result<URL, Swift.Error>) -> Void)
+  public func downloadObject(
+    key: String, session: URLSession, progress: @escaping (Int64, Int64) -> Void,
+    completion: @escaping (Result<URL, Swift.Error>) -> Void
+  )
     -> URLSessionDownloadTask?
   {
     // Create the request URL
@@ -59,8 +67,10 @@ public struct R2Client {
       print("Request headers: \(request.allHTTPHeaderFields ?? [:])")
     }
 
+    let objCResponder = ObjCResponder(progress: progress)
     // Execute the download task
     let task = session.downloadTask(with: request) { tempUrl, response, error in
+      withExtendedLifetime(objCResponder) {}  // We hold it until the request is done.
       if let error = error {
         completion(.failure(error))
         return
@@ -105,6 +115,7 @@ public struct R2Client {
       // Return the temporary URL for the downloaded file
       completion(.success(tempUrl))
     }
+    task.delegate = objCResponder
 
     task.resume()
 
@@ -202,5 +213,20 @@ public struct R2Client {
     if self.debug {
       print("Final Authorization header: \(authorization)")
     }
+  }
+}
+
+extension R2Client.ObjCResponder: URLSessionDownloadDelegate {
+  func urlSession(
+    _ session: URLSession, downloadTask: URLSessionDownloadTask,
+    didFinishDownloadingTo location: URL
+  ) {
+    // Do nothing.
+  }
+  func urlSession(
+    _ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
+    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
+  ) {
+    progress(totalBytesWritten, totalBytesExpectedToWrite)
   }
 }

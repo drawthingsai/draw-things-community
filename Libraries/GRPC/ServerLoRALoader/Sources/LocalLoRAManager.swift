@@ -27,7 +27,9 @@ public final class LocalLoRAManager {
   ///   - modelName: Name of the model to download
   /// - Returns: A tuple with success status and the downloaded file size
   private func downloadRemoteLoRA(
-    _ modelNames: [String], index: Int, results: [String: Bool],
+    _ modelNames: [String], index: Int, results: [String: Bool], session: URLSession,
+    progress: @escaping (_ bytesReceived: Int64, _ bytesExpected: Int64, _ index: Int, _ total: Int)
+      -> Void,
     cancellation: @escaping (@escaping () -> Void) -> Void,
     completion: @escaping ([String: Bool]) -> Void
   ) {
@@ -40,7 +42,11 @@ public final class LocalLoRAManager {
     let dirURL = URL(fileURLWithPath: localDirectory)
     let logger = logger
     logger.info("Downloading LoRA \(modelName)")
-    let task = r2Client.downloadObject(key: modelName) { result in
+    let total = modelNames.count
+    let task = r2Client.downloadObject(key: modelName, session: session) {
+      bytesReceived, bytesExpected in
+      progress(bytesReceived, bytesExpected, index, total)
+    } completion: { result in
       switch result {
       case .success(let tempUrl):
         logger.info("Downloaded LoRA \(modelName) at \(tempUrl)")
@@ -79,7 +85,8 @@ public final class LocalLoRAManager {
           results[modelName] = false
         }
         self.downloadRemoteLoRA(
-          modelNames, index: index + 1, results: results, cancellation: cancellation,
+          modelNames, index: index + 1, results: results, session: session, progress: progress,
+          cancellation: cancellation,
           completion: completion)
       case .failure(let error):
         logger.info("Error downloading model \(modelName): \(error.localizedDescription)")
@@ -98,10 +105,13 @@ public final class LocalLoRAManager {
   ///   - modelNames: Array of model names to download
   /// - Returns: Dictionary mapping model names to download success status
   public func downloadRemoteLoRAs(
-    _ modelNames: [String], cancellation: @escaping (@escaping () -> Void) -> Void,
+    _ modelNames: [String],
+    progress: @escaping (_ bytesReceived: Int64, _ bytesExpected: Int64, _ index: Int, _ total: Int)
+      -> Void, cancellation: @escaping (@escaping () -> Void) -> Void,
     completion: @escaping ([String: Bool]) -> Void
   ) {
     downloadRemoteLoRA(
-      modelNames, index: 0, results: [:], cancellation: cancellation, completion: completion)
+      modelNames, index: 0, results: [:], session: URLSession(configuration: .default),
+      progress: progress, cancellation: cancellation, completion: completion)
   }
 }
