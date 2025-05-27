@@ -48,7 +48,7 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
   Model, Model, Model
 ) {
   let x = Input()
-  let linear1 = Dense(count: intermediateSize, name: "\(name)_linear1")
+  let linear1 = Dense(count: intermediateSize, flags: [.Float16], name: "\(name)_linear1")
   var out = linear1(x).GELU(approximate: .tanh)
   // The scale down is integrated into out proj bias.
   if upcast {
@@ -77,9 +77,9 @@ private func WanAttentionBlock(
   let chunks = zip(c, modulations).map { $0 + $1 }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = ((1 + chunks[1]) .* xNorm1(x) + chunks[0]).to(.Float16)
-  let xToKeys = Dense(count: k * h, name: "x_k")
+  let xToKeys = Dense(count: k * h, flags: [.Float16], name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
-  let xToValues = Dense(count: k * h, name: "x_v")
+  let xToValues = Dense(count: k * h, flags: [.Float16], name: "x_v")
   var xK = xToKeys(xOut)
   let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_norm_k")
   xK = normK(xK).reshaped([b, hw, h, k])
@@ -614,7 +614,8 @@ private func LoRAFeedForward(
 ) {
   let x = Input()
   let linear1 = LoRADense(
-    count: intermediateSize, configuration: configuration, index: index, name: "\(name)_linear1")
+    count: intermediateSize, configuration: configuration, flags: [.Float16], index: index,
+    name: "\(name)_linear1")
   var out = linear1(x).GELU(approximate: .tanh)
   // The scale down is integrated into out proj bias.
   if upcast {
@@ -646,11 +647,11 @@ private func LoRAWanAttentionBlock(
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = ((1 + chunks[1]) .* xNorm1(x) + chunks[0]).to(.Float16)
   let xToKeys = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "x_k")
+    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_k")
   let xToQueries = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_q")
   let xToValues = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
+    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_v")
   var xK = xToKeys(xOut)
   let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_norm_k")
   xK = normK(xK).reshaped([b, hw, h, k])
