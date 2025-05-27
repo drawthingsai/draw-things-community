@@ -429,10 +429,10 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         }
         context.sendResponse(finalResponse, promise: nil)
       } else {
-        let chunked = chunked && totalBytes <= 4 * 1024 * 1024  // If total bytes is less than 4MiB, send them in one batch. Otherwise, chunk them up.
+        let chunked = chunked && totalBytes > 4 * 1024 * 1024  // If total bytes is less than 4MiB, send them in one batch. Otherwise, chunk them up.
         logger.info("Image processed successfully, should send in chunks? \(chunked)")
         if chunked {
-          for (i, imageData) in imageDatas.enumerated() {
+          for imageData in imageDatas {
             let dataSize = imageData.count
             if dataSize <= 4 * 1024 * 1024 {
               let finalResponse = ImageGenerationResponse.with {
@@ -442,8 +442,8 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
               }
               context.sendResponse(finalResponse, promise: nil)
             } else {
-              for j in stride(from: 0, to: dataSize, by: 10 * 1024 * 1024) {
-                let chunkSize = min(10 * 1024 * 1024, dataSize - j)
+              for j in stride(from: 0, to: dataSize, by: 4 * 1024 * 1024) {
+                let chunkSize = min(4 * 1024 * 1024, dataSize - j)
                 let subdata = imageData[j..<(j + chunkSize)]
                 let finalResponse = ImageGenerationResponse.with {
                   $0.generatedImages = [subdata]
