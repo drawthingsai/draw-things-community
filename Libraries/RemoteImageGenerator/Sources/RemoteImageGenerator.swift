@@ -54,9 +54,14 @@ public struct RemoteImageGenerator: ImageGenerator {
   public struct TransferDataCallback {
     public var beginUpload: (Int) -> Void
     public var beginDownload: (Int) -> Void
-    public init(beginUpload: @escaping (Int) -> Void, beginDownload: @escaping (Int) -> Void) {
+    public var remoteDownloads: (Int64, Int64, Int, Int) -> Void
+    public init(
+      beginUpload: @escaping (Int) -> Void, beginDownload: @escaping (Int) -> Void,
+      remoteDownloads: @escaping (Int64, Int64, Int, Int) -> Void
+    ) {
       self.beginUpload = beginUpload
       self.beginDownload = beginDownload
+      self.remoteDownloads = remoteDownloads
     }
   }
 
@@ -201,6 +206,11 @@ public struct RemoteImageGenerator: ImageGenerator {
     let callOptions = CallOptions(customMetadata: metadata)
 
     let callInstance = client.generateImage(request, callOptions: callOptions) { response in
+      if response.hasRemoteDownload {
+        transferDataCallback?.remoteDownloads(
+          response.remoteDownload.bytesReceived, response.remoteDownload.bytesExpected,
+          Int(response.remoteDownload.item), Int(response.remoteDownload.itemsExpected))
+      }
       if !response.generatedImages.isEmpty {
         let imageTensors: [Tensor<FloatType>]
         switch response.chunkState {
