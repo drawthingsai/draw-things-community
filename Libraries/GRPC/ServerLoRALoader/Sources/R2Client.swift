@@ -15,7 +15,8 @@ public struct R2Client {
 
   public final class ObjCResponder: NSObject {
     var index: Int = 0
-    var lastUpdated = Date()
+    var totalBytesExpectedToWrite: Int64 = 0
+    var lastUpdated: Date? = nil
     var completion: (@Sendable (URL?, URLResponse?, (any Swift.Error)?) -> Void)? = nil
     let progress: (Int64, Int64, Int) -> Void
     init(progress: @escaping (Int64, Int64, Int) -> Void) {
@@ -220,6 +221,8 @@ extension R2Client.ObjCResponder: URLSessionDownloadDelegate {
     _ session: URLSession, downloadTask: URLSessionDownloadTask,
     didFinishDownloadingTo location: URL
   ) {
+    progress(totalBytesExpectedToWrite, totalBytesExpectedToWrite, index)
+    lastUpdated = nil
     completion?(location, downloadTask.response, nil)
     completion = nil
   }
@@ -227,6 +230,7 @@ extension R2Client.ObjCResponder: URLSessionDownloadDelegate {
     _ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?
   ) {
     guard let error = error else { return }
+    lastUpdated = nil
     completion?(nil, task.response, error)
     completion = nil
   }
@@ -235,8 +239,9 @@ extension R2Client.ObjCResponder: URLSessionDownloadDelegate {
     totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
   ) {
     let date = Date()
-    let timeElapsed = date.timeIntervalSince(lastUpdated)
-    guard timeElapsed >= 0.25 || bytesWritten == totalBytesWritten else { return }
+    let timeElapsed = lastUpdated.map { date.timeIntervalSince($0) } ?? 1
+    guard timeElapsed >= 0.25 else { return }
+    self.totalBytesExpectedToWrite = totalBytesExpectedToWrite
     progress(totalBytesWritten, totalBytesExpectedToWrite, index)
     lastUpdated = date
   }
