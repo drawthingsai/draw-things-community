@@ -14,6 +14,15 @@ public final class LocalLoRAManager {
     case contentHashMismatch
   }
 
+  final class ObjCResponder: NSObject {
+    var index: Int = 0
+    var lastUpdated = Date()
+    let progress: (Int64, Int64, Int) -> Void
+    init(progress: @escaping (Int64, Int64, Int) -> Void) {
+      self.progress = progress
+    }
+  }
+
   private let logger = Logger(label: "com.draw-things.local-lora-manager")
   private let r2Client: R2Client
   private let localDirectory: String
@@ -28,8 +37,7 @@ public final class LocalLoRAManager {
   /// - Returns: A tuple with success status and the downloaded file size
   private func downloadRemoteLoRA(
     _ modelNames: [String], index: Int, results: [String: Bool], session: URLSession,
-    progress: @escaping (_ bytesReceived: Int64, _ bytesExpected: Int64, _ index: Int, _ total: Int)
-      -> Void,
+    objCResponder: ObjCResponder,
     cancellation: @escaping (@escaping () -> Void) -> Void,
     completion: @escaping ([String: Bool]) -> Void
   ) {
@@ -42,11 +50,8 @@ public final class LocalLoRAManager {
     let dirURL = URL(fileURLWithPath: localDirectory)
     let logger = logger
     logger.info("Downloading LoRA \(modelName)")
-    let total = modelNames.count
-    let task = r2Client.downloadObject(key: modelName, session: session) {
-      bytesReceived, bytesExpected in
-      progress(bytesReceived, bytesExpected, index, total)
-    } completion: { result in
+    objCResponder.index = index
+    let task = r2Client.downloadObject(key: modelName, session: session) { result in
       switch result {
       case .success(let tempUrl):
         logger.info("Downloaded LoRA \(modelName) at \(tempUrl)")
@@ -85,9 +90,8 @@ public final class LocalLoRAManager {
           results[modelName] = false
         }
         self.downloadRemoteLoRA(
-          modelNames, index: index + 1, results: results, session: session, progress: progress,
-          cancellation: cancellation,
-          completion: completion)
+          modelNames, index: index + 1, results: results, session: session,
+          objCResponder: objCResponder, cancellation: cancellation, completion: completion)
       case .failure(let error):
         logger.info("Error downloading model \(modelName): \(error.localizedDescription)")
         results[modelName] = false
@@ -110,8 +114,32 @@ public final class LocalLoRAManager {
       -> Void, cancellation: @escaping (@escaping () -> Void) -> Void,
     completion: @escaping ([String: Bool]) -> Void
   ) {
+    let total = modelNames.count
+    let objCResponder = ObjCResponder { bytesReceived, bytesExpected, index in
+      progress(bytesReceived, bytesExpected, index, total)
+    }
     downloadRemoteLoRA(
-      modelNames, index: 0, results: [:], session: URLSession(configuration: .default),
-      progress: progress, cancellation: cancellation, completion: completion)
+      modelNames, index: 0, results: [:],
+      session: URLSession(configuration: .default, delegate: objCResponder, delegateQueue: nil),
+      objCResponder: objCResponder, cancellation: cancellation, completion: completion)
+  }
+}
+
+extension LocalLoRAManager.ObjCResponder: URLSessionDownloadDelegate {
+  func urlSession(
+    _ session: URLSession, downloadTask: URLSessionDownloadTask,
+    didFinishDownloadingTo location: URL
+  ) {
+    // Do nothing.
+  }
+  func urlSession(
+    _ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
+    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
+  ) {
+    let date = Date()
+    let timeElapsed = date.timeIntervalSince(lastUpdated)
+    guard timeElapsed >= 1 else { return }
+    progress(totalBytesWritten, totalBytesExpectedToWrite, index)
+    lastUpdated = date
   }
 }

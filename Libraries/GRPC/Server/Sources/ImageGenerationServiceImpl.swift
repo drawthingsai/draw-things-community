@@ -168,6 +168,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             $0.itemsExpected = Int32(total)
           }
         }
+        context.sendResponse(response, promise: nil)
       } cancellation: {
         cancellationBlock in
         cancellation.modify {
