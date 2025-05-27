@@ -60,6 +60,7 @@ message ImageGenerationRequest {
   DeviceType device = 11; // The type of the device uses.
   repeated bytes contents = 12; // The image data as array of bytes. It is addressed by its sha256 content. This is modeled as content-addressable storage.
   optional string sharedSecret = 13; // The secret use to authenticate if needed.
+  bool chunked = 14; // Whether we can accept chunked response.
 }
 
 message HintProto {
@@ -107,6 +108,11 @@ message ImageGenerationSignpostProto {
   }
 }
 
+enum ChunkState {
+  LAST_CHUNK = 0;
+  MORE_CHUNKS = 1;
+}
+
 message ImageGenerationResponse {
   repeated bytes generatedImages = 1;      // Generated image data as bytes.
   optional ImageGenerationSignpostProto currentSignpost = 2; // Single current signpost.
@@ -115,6 +121,7 @@ message ImageGenerationResponse {
   optional int32 scaleFactor = 5; // The scale factor of the image.
   repeated string tags = 6; // Tags to track which server responded to the generation request.
   optional int64 downloadSize = 7; // The size of final image will be sent in the next payload.
+  ChunkState chunkState = 8; // What's this chunk is, it helps to compose the chunks together.
 }
 
 message FileChunk {

@@ -282,6 +282,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       TextualInversionZoo.overrideMapping = [:]
       UpscalerZoo.overrideMapping = [:]
     }
+    let chunked = request.chunked
 
     let progressUpdateHandler:
       (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) -> Bool = {
@@ -406,12 +407,8 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         }
         context.sendResponse(projectionResponse, promise: nil)
       }
-
-      let finalResponse = ImageGenerationResponse.with {
-        if !imageDatas.isEmpty {
-          logger.info("Image processed successfully")
-          $0.generatedImages.append(contentsOf: imageDatas)
-        } else {
+      if imageDatas.isEmpty {
+        let finalResponse = ImageGenerationResponse.with {
           if isCancelled() {
             logger.info("Image processed cancelled, generated images return nil")
           } else {
@@ -427,10 +424,49 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             logger.error(
               "Image processed failed, failed configuration:\(configurationDictionary)")
           }
+          $0.scaleFactor = Int32(scaleFactor)
+          $0.chunkState = .lastChunk
         }
-        $0.scaleFactor = Int32(scaleFactor)
+        context.sendResponse(finalResponse, promise: nil)
+      } else {
+        let chunked = chunked && totalBytes <= 10 * 1024 * 1024  // If total bytes is less than 10MiB, send them in one batch. Otherwise, chunk them up.
+        logger.info("Image processed successfully, should send in chunks? \(chunked)")
+        if chunked {
+          for (i, imageData) in imageDatas.enumerated() {
+            let dataSize = imageData.count
+            if dataSize <= 10 * 1024 * 1024 {
+              let finalResponse = ImageGenerationResponse.with {
+                $0.generatedImages = [imageData]
+                $0.scaleFactor = Int32(scaleFactor)
+                $0.chunkState = .lastChunk
+              }
+              context.sendResponse(finalResponse, promise: nil)
+            } else {
+              for j in stride(from: 0, to: dataSize, by: 10 * 1024 * 1024) {
+                let chunkSize = min(10 * 1024 * 1024, dataSize - j)
+                let subdata = imageData[j..<(j + chunkSize)]
+                let finalResponse = ImageGenerationResponse.with {
+                  $0.generatedImages = [subdata]
+                  $0.scaleFactor = Int32(scaleFactor)
+                  if j + chunkSize == dataSize {
+                    $0.chunkState = .lastChunk
+                  } else {
+                    $0.chunkState = .moreChunks
+                  }
+                }
+                context.sendResponse(finalResponse, promise: nil)
+              }
+            }
+          }
+        } else {
+          let finalResponse = ImageGenerationResponse.with {
+            $0.generatedImages.append(contentsOf: imageDatas)
+            $0.scaleFactor = Int32(scaleFactor)
+            $0.chunkState = .lastChunk
+          }
+          context.sendResponse(finalResponse, promise: nil)
+        }
       }
-      context.sendResponse(finalResponse, promise: nil)
       promise.succeed(.ok)
       context.statusPromise.succeed(.ok)
       let success = imageDatas.isEmpty ? false : true

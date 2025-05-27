@@ -59,6 +59,40 @@ public enum DeviceType: SwiftProtobuf.Enum, Swift.CaseIterable {
 
 }
 
+public enum ChunkState: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case lastChunk // = 0
+  case moreChunks // = 1
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .lastChunk
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .lastChunk
+    case 1: self = .moreChunks
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .lastChunk: return 0
+    case .moreChunks: return 1
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [ChunkState] = [
+    .lastChunk,
+    .moreChunks,
+  ]
+
+}
+
 public struct EchoRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -271,6 +305,12 @@ public struct ImageGenerationRequest: @unchecked Sendable {
   public var hasSharedSecret: Bool {return _storage._sharedSecret != nil}
   /// Clears the value of `sharedSecret`. Subsequent reads from it will return its default value.
   public mutating func clearSharedSecret() {_uniqueStorage()._sharedSecret = nil}
+
+  /// Whether we can accept chunked response.
+  public var chunked: Bool {
+    get {return _storage._chunked}
+    set {_uniqueStorage()._chunked = newValue}
+  }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -557,6 +597,9 @@ public struct ImageGenerationResponse: @unchecked Sendable {
   /// Clears the value of `downloadSize`. Subsequent reads from it will return its default value.
   public mutating func clearDownloadSize() {self._downloadSize = nil}
 
+  /// What's this chunk is, it helps to compose the chunks together.
+  public var chunkState: ChunkState = .lastChunk
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -678,6 +721,13 @@ extension DeviceType: SwiftProtobuf._ProtoNameProviding {
     0: .same(proto: "PHONE"),
     1: .same(proto: "TABLET"),
     2: .same(proto: "LAPTOP"),
+  ]
+}
+
+extension ChunkState: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    0: .same(proto: "LAST_CHUNK"),
+    1: .same(proto: "MORE_CHUNKS"),
   ]
 }
 
@@ -941,6 +991,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     11: .same(proto: "device"),
     12: .same(proto: "contents"),
     13: .same(proto: "sharedSecret"),
+    14: .same(proto: "chunked"),
   ]
 
   fileprivate class _StorageClass {
@@ -957,6 +1008,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
     var _device: DeviceType = .phone
     var _contents: [Data] = []
     var _sharedSecret: String? = nil
+    var _chunked: Bool = false
 
     #if swift(>=5.10)
       // This property is used as the initial default value for new instances of the type.
@@ -984,6 +1036,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
       _device = source._device
       _contents = source._contents
       _sharedSecret = source._sharedSecret
+      _chunked = source._chunked
     }
   }
 
@@ -1015,6 +1068,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
         case 11: try { try decoder.decodeSingularEnumField(value: &_storage._device) }()
         case 12: try { try decoder.decodeRepeatedBytesField(value: &_storage._contents) }()
         case 13: try { try decoder.decodeSingularStringField(value: &_storage._sharedSecret) }()
+        case 14: try { try decoder.decodeSingularBoolField(value: &_storage._chunked) }()
         default: break
         }
       }
@@ -1066,6 +1120,9 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
       try { if let v = _storage._sharedSecret {
         try visitor.visitSingularStringField(value: v, fieldNumber: 13)
       } }()
+      if _storage._chunked != false {
+        try visitor.visitSingularBoolField(value: _storage._chunked, fieldNumber: 14)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1088,6 +1145,7 @@ extension ImageGenerationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageI
         if _storage._device != rhs_storage._device {return false}
         if _storage._contents != rhs_storage._contents {return false}
         if _storage._sharedSecret != rhs_storage._sharedSecret {return false}
+        if _storage._chunked != rhs_storage._chunked {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -1576,6 +1634,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     5: .same(proto: "scaleFactor"),
     6: .same(proto: "tags"),
     7: .same(proto: "downloadSize"),
+    8: .same(proto: "chunkState"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -1591,6 +1650,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
       case 5: try { try decoder.decodeSingularInt32Field(value: &self._scaleFactor) }()
       case 6: try { try decoder.decodeRepeatedStringField(value: &self.tags) }()
       case 7: try { try decoder.decodeSingularInt64Field(value: &self._downloadSize) }()
+      case 8: try { try decoder.decodeSingularEnumField(value: &self.chunkState) }()
       default: break
       }
     }
@@ -1622,6 +1682,9 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     try { if let v = self._downloadSize {
       try visitor.visitSingularInt64Field(value: v, fieldNumber: 7)
     } }()
+    if self.chunkState != .lastChunk {
+      try visitor.visitSingularEnumField(value: self.chunkState, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1633,6 +1696,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     if lhs._scaleFactor != rhs._scaleFactor {return false}
     if lhs.tags != rhs.tags {return false}
     if lhs._downloadSize != rhs._downloadSize {return false}
+    if lhs.chunkState != rhs.chunkState {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

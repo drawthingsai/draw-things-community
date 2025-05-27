@@ -115,6 +115,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     request.keywords = keywords
     request.user = name
     request.device = DeviceType(from: deviceType)
+    request.chunked = true
     if let sharedSecret = sharedSecret {
       request.sharedSecret = sharedSecret
     }
@@ -188,6 +189,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     // Send the request
     // handler is running on event group thread
     let logger = logger
+    var lastChunk = Data()
     var tensors = [Tensor<FloatType>]()
     var scaleFactor: Int = 1
     var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
@@ -200,12 +202,31 @@ public struct RemoteImageGenerator: ImageGenerator {
 
     let callInstance = client.generateImage(request, callOptions: callOptions) { response in
       if !response.generatedImages.isEmpty {
-        let imageTensors = response.generatedImages.compactMap { generatedImageData in
-          if let image = Tensor<FloatType>(data: generatedImageData, using: [.zip, .fpzip]) {
-            return Tensor<FloatType>(from: image)
-          } else {
-            return nil
+        let imageTensors: [Tensor<FloatType>]
+        switch response.chunkState {
+        case .lastChunk:
+          imageTensors = response.generatedImages.enumerated().compactMap { i, generatedImageData in
+            let imageData: Data
+            if i == 0, !lastChunk.isEmpty {
+              imageData = lastChunk + generatedImageData
+            } else {
+              imageData = generatedImageData
+            }
+            if let image = Tensor<FloatType>(data: imageData, using: [.zip, .fpzip]) {
+              return Tensor<FloatType>(from: image)
+            } else {
+              return nil
+            }
           }
+          lastChunk = Data()
+        case .moreChunks:
+          // There are more chunks to decode, in this case, we just simply append the chunk.
+          if let first = response.generatedImages.first {
+            lastChunk += first
+          }
+          imageTensors = []
+        case .UNRECOGNIZED(_):
+          imageTensors = []
         }
         logger.info("Received generated image data")
         tensors.append(contentsOf: imageTensors)
