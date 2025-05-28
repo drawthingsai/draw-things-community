@@ -20,7 +20,7 @@ private func VectorEmbedder(channels: Int) -> (Model, Model, Model) {
 
 private func MLP(hiddenSize: Int, intermediateSize: Int, name: String) -> (Model, Model, Model) {
   let x = Input()
-  let fc1 = Dense(count: intermediateSize, name: "\(name)_fc1")
+  let fc1 = Dense(count: intermediateSize, flags: [.Float16], name: "\(name)_fc1")
   var out = GELU(approximate: .tanh)(fc1(x))
   let fc2 = Dense(count: hiddenSize, flags: [.Float32], name: "\(name)_fc2")
   out = fc2(out)
@@ -40,9 +40,9 @@ private func JointTransformerBlock(
   var contextOut =
     contextChunks[1] .* (upcast ? contextNorm1(context).to(.Float16) : contextNorm1(context))
     + contextChunks[0]
-  let contextToKeys = Dense(count: k * h, name: "c_k")
+  let contextToKeys = Dense(count: k * h, flags: [.Float16], name: "c_k")
   let contextToQueries = Dense(count: k * h, name: "c_q")
-  let contextToValues = Dense(count: k * h, name: "c_v")
+  let contextToValues = Dense(count: k * h, flags: [.Float16], name: "c_v")
   var contextK = contextToKeys(contextOut)
   var contextQ = contextToQueries(contextOut)
   let contextV = contextToValues(contextOut)
@@ -63,9 +63,9 @@ private func JointTransformerBlock(
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   let xNorm1X = (upcast ? xNorm1(x).to(.Float16) : xNorm1(x))
   var xOut = xChunks[1] .* xNorm1X + xChunks[0]
-  let xToKeys = Dense(count: k * h, name: "x_k")
+  let xToKeys = Dense(count: k * h, flags: [.Float16], name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
-  let xToValues = Dense(count: k * h, name: "x_v")
+  let xToValues = Dense(count: k * h, flags: [.Float16], name: "x_v")
   var xK = xToKeys(xOut)
   var xQ = xToQueries(xOut)
   let xV = xToValues(xOut)
@@ -76,9 +76,9 @@ private func JointTransformerBlock(
   var xQ2: Model.IO?
   var xV2: Model.IO?
   if useDualAttention {
-    xToKeys2 = Dense(count: k * h, name: "x_k_2")
+    xToKeys2 = Dense(count: k * h, flags: [.Float16], name: "x_k_2")
     xToQueries2 = Dense(count: k * h, name: "x_q_2")
-    xToValues2 = Dense(count: k * h, name: "x_v_2")
+    xToValues2 = Dense(count: k * h, flags: [.Float16], name: "x_v_2")
     let out = xChunks[7] .* xNorm1X + xChunks[6]
     xK2 = xToKeys2?(out)
     xQ2 = xToQueries2?(out)
@@ -498,7 +498,8 @@ private func LoRAMLP(
 ) -> (Model, Model, Model) {
   let x = Input()
   let fc1 = LoRADense(
-    count: intermediateSize, configuration: configuration, index: index, name: "\(name)_fc1")
+    count: intermediateSize, configuration: configuration, flags: [.Float16], index: index,
+    name: "\(name)_fc1")
   var out = GELU(approximate: .tanh)(fc1(x))
   let fc2 = LoRADense(
     count: hiddenSize, configuration: configuration, flags: [.Float32], index: index,
@@ -523,11 +524,11 @@ private func LoRAJointTransformerBlock(
     contextChunks[1] .* (upcast ? contextNorm1(context).to(.Float16) : contextNorm1(context))
     + contextChunks[0]
   let contextToKeys = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "c_k")
+    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "c_k")
   let contextToQueries = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "c_q")
   let contextToValues = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "c_v")
+    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "c_v")
   var contextK = contextToKeys(contextOut)
   var contextQ = contextToQueries(contextOut)
   let contextV = contextToValues(contextOut)
@@ -549,11 +550,11 @@ private func LoRAJointTransformerBlock(
   let xNorm1X = (upcast ? xNorm1(x).to(.Float16) : xNorm1(x))
   var xOut = xChunks[1] .* xNorm1X + xChunks[0]
   let xToKeys = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "x_k")
+    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_k")
   let xToQueries = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_q")
   let xToValues = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
+    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_v")
   var xK = xToKeys(xOut)
   var xQ = xToQueries(xOut)
   let xV = xToValues(xOut)
@@ -564,9 +565,14 @@ private func LoRAJointTransformerBlock(
   var xQ2: Model.IO?
   var xV2: Model.IO?
   if useDualAttention {
-    xToKeys2 = Dense(count: k * h, name: "x_k_2")
-    xToQueries2 = Dense(count: k * h, name: "x_q_2")
-    xToValues2 = Dense(count: k * h, name: "x_v_2")
+    xToKeys2 = LoRADense(
+      count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex,
+      name: "x_k_2")
+    xToQueries2 = LoRADense(
+      count: k * h, configuration: configuration, index: layerIndex, name: "x_q_2")
+    xToValues2 = LoRADense(
+      count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex,
+      name: "x_v_2")
     let out = xChunks[7] .* xNorm1X + xChunks[6]
     xK2 = xToKeys2?(out)
     xQ2 = xToQueries2?(out)
@@ -732,7 +738,8 @@ private func LoRAJointTransformerBlock(
   }
   let xUnifyheads2: Model?
   if let out = out2 {
-    xUnifyheads2 = Dense(count: k * h, name: "x_o_2")
+    xUnifyheads2 = LoRADense(
+      count: k * h, configuration: configuration, index: layerIndex, name: "x_o_2")
     out2 = xUnifyheads2?(out)
   } else {
     xUnifyheads2 = nil
