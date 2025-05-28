@@ -1521,3 +1521,300 @@ extension ModelImporter {
     }
   }
 }
+
+extension ModelImporter {
+
+  public static func createModelSpecification(
+    modelName: String,
+    fileName: String,
+    fileNames: [String],
+    modelVersion: ModelVersion,
+    modifier: SamplerModifier,
+    inspectionResult: ModelImporter.InspectionResult,
+    prefix: String,
+    objective: Denoiser.Objective?,
+    conditioning: Denoiser.Conditioning?,
+    noiseDiscretization: ModelZoo.NoiseDiscretization?,
+    upcastAttention: Bool,
+    finetuneScale: UInt16
+  ) -> (
+    specification: ModelZoo.Specification,
+    additionalModels: [(name: String, subtitle: String, file: String)],
+    wurstchenStageCEffNetAndPreviewer: String?
+  ) {
+
+    // Extract text encoders based on model version
+    var clipEncoder: String? = nil
+    var additionalClipEncoders: [String]? = nil
+    var t5Encoder: String? = nil
+    let textEncoder: String?
+
+    switch modelVersion {
+    case .v1:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_clip_vit_l14_f16.ckpt")
+      }
+    case .v2, .svdI2v:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_open_clip_vit_h14_f16.ckpt")
+      }
+    case .sdxlBase, .ssd1b:
+      clipEncoder = fileNames.first {
+        $0.hasSuffix("_clip_vit_l14_f16.ckpt")
+      }
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_open_clip_vit_bigg14_f16.ckpt")
+      }
+    case .sd3:
+      clipEncoder = fileNames.first {
+        $0.hasSuffix("_clip_vit_l14_f16.ckpt")
+      }
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_open_clip_vit_bigg14_f16.ckpt")
+      }
+    case .sd3Large:
+      clipEncoder = fileNames.first {
+        $0.hasSuffix("_clip_vit_l14_f16.ckpt")
+      }
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_open_clip_vit_bigg14_f16.ckpt")
+      }
+    case .pixart:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_t5_xxl_encoder_f16.ckpt")
+      }
+    case .auraflow:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_pile_t5_xl_encoder_f16.ckpt")
+      }
+    case .sdxlRefiner:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_open_clip_vit_bigg14_f16.ckpt")
+      }
+    case .flux1:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_t5_xxl_encoder_f16.ckpt")
+      }
+      clipEncoder = fileNames.first {
+        $0.hasSuffix("_clip_vit_l14_f16.ckpt")
+      }
+    case .hunyuanVideo:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_llava_llama_3_8b_v1.1_q8p.ckpt")
+      }
+      clipEncoder = fileNames.first {
+        $0.hasSuffix("_clip_vit_l14_f16.ckpt")
+      }
+    case .wan21_1_3b, .wan21_14b:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_umt5_xxl_encoder_q8p.ckpt")
+      }
+      clipEncoder = fileNames.first {
+        $0.hasSuffix("_open_clip_xlm_roberta_large_vit_h14_f16.ckpt")
+      }
+    case .hiDreamI1:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_llama_3.1_8b_instruct_f16.ckpt")
+      }
+      clipEncoder = fileNames.first {
+        $0.hasSuffix("_long_clip_vit_l14_f16.ckpt")
+      }
+      additionalClipEncoders =
+        (fileNames.first {
+          $0.hasSuffix("_long_open_clip_vit_bigg14_f16.ckpt")
+        }).map { [$0] }
+      t5Encoder = fileNames.first {
+        $0.hasSuffix("_t5_xxl_encoder_f16.ckpt")
+      }
+    case .wurstchenStageC:
+      textEncoder = nil
+    case .kandinsky21, .wurstchenStageB:
+      fatalError()
+    }
+
+    let autoencoder = fileNames.first { $0.hasSuffix("_vae_f16.ckpt") }
+
+    // Create base specification
+    var specification = ModelZoo.Specification(
+      name: modelName, file: "\(fileName)_f16.ckpt", prefix: prefix, version: modelVersion,
+      upcastAttention: upcastAttention, defaultScale: finetuneScale,
+      textEncoder: textEncoder, autoencoder: autoencoder, modifier: modifier,
+      clipEncoder: clipEncoder, additionalClipEncoders: additionalClipEncoders,
+      t5Encoder: t5Encoder, conditioning: conditioning, objective: objective,
+      noiseDiscretization: noiseDiscretization
+    )
+
+    // Apply version-specific configurations
+    var wurstchenStageCEffNetAndPreviewer: String? = nil
+    var additionalModels = [(name: String, subtitle: String, file: String)]()
+
+    switch modelVersion {
+    case .v1:
+      break
+    case .v2:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "open_clip_vit_h14_f16.ckpt"
+      }
+    case .sdxlBase, .sdxlRefiner, .ssd1b:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "open_clip_vit_bigg14_f16.ckpt"
+      }
+      if specification.clipEncoder == nil {
+        specification.clipEncoder = "clip_vit_l14_f16.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "sdxl_vae_v1.0_f16.ckpt"
+      }
+    case .svdI2v:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "open_clip_vit_h14_vision_model_f16.ckpt"
+      }
+      if specification.clipEncoder == nil {
+        specification.clipEncoder = "open_clip_vit_h14_visual_proj_f16.ckpt"
+      }
+      specification.conditioning = .noise
+      specification.objective = .v
+      specification.noiseDiscretization = .edm(.init(sigmaMax: 700.0))
+    case .wurstchenStageC:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "open_clip_vit_bigg14_f16.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "wurstchen_3.0_stage_a_hq_f16.ckpt"
+      }
+      specification.stageModels = ["wurstchen_3.0_stage_b_q6p_q8p.ckpt"]
+      if ModelZoo.isModelDownloaded("wurstchen_3.0_stage_c_f32_f16.ckpt") {
+        wurstchenStageCEffNetAndPreviewer = "wurstchen_3.0_stage_c_f32_f16.ckpt"
+      } else if ModelZoo.isModelDownloaded("wurstchen_3.0_stage_c_f32_q6p_q8p.ckpt") {
+        wurstchenStageCEffNetAndPreviewer = "wurstchen_3.0_stage_c_f32_q6p_q8p.ckpt"
+      } else {
+        wurstchenStageCEffNetAndPreviewer = "wurstchen_3.0_stage_c_effnet_previewer_f32_f16.ckpt"
+        additionalModels.append(
+          (
+            name: "Stable Cascade (Würstchen v3.0) EfficientNet and Previewer",
+            subtitle: ModelZoo.humanReadableNameForVersion(.wurstchenStageC),
+            file: "wurstchen_3.0_stage_c_effnet_previewer_f32_f16.ckpt"
+          ))
+      }
+    case .pixart:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "t5_xxl_encoder_q6p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "sdxl_vae_v1.0_f16.ckpt"
+      }
+      specification.noiseDiscretization = .ddpm(
+        .init(linearStart: 0.0001, linearEnd: 0.02, timesteps: 1_000, linspace: .linearWrtBeta))
+    case .auraflow:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "pile_t5_xl_encoder_q8p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "sdxl_vae_v1.0_f16.ckpt"
+      }
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+    case .flux1:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "t5_xxl_encoder_q6p.ckpt"
+      }
+      if specification.clipEncoder == nil {
+        specification.clipEncoder = "clip_vit_l14_f16.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "flux_1_vae_f16.ckpt"
+      }
+      specification.highPrecisionAutoencoder = true
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      if inspectionResult.hasGuidanceEmbed {
+        specification.guidanceEmbed = true
+      }
+      // For FLUX.1, the hires fix trigger scale is 1.5 of the finetune scale.
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
+      if inspectionResult.distilledGuidanceLayers > 0 {
+        specification.mmdit = ModelZoo.Specification.MMDiT(
+          qkNorm: true, dualAttentionLayers: [],
+          distilledGuidanceLayers: inspectionResult.distilledGuidanceLayers)
+      }
+    case .hunyuanVideo:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "llava_llama_3_8b_v1.1_q8p.ckpt"
+      }
+      if specification.clipEncoder == nil {
+        specification.clipEncoder = "clip_vit_l14_f16.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "hunyuan_video_vae_f16.ckpt"
+      }
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      specification.guidanceEmbed = true
+      // For Hunyuan, the hires fix trigger scale is 1.5 of the finetune scale.
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
+    case .wan21_1_3b, .wan21_14b:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "umt5_xxl_encoder_q8p.ckpt"
+      }
+      if modifier == .inpainting && specification.clipEncoder == nil {
+        specification.clipEncoder = "open_clip_xlm_roberta_large_vit_h14_f16.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "wan_v2.1_video_vae_f16.ckpt"
+      }
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      // For Wan, the hires fix trigger scale is 1.5 of the finetune scale.
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
+    case .hiDreamI1:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "llama_3.1_8b_instruct_q8p.ckpt"
+      }
+      if specification.clipEncoder == nil {
+        specification.clipEncoder = "long_clip_vit_l14_f16.ckpt"
+      }
+      if specification.additionalClipEncoders == nil {
+        specification.additionalClipEncoders = ["long_open_clip_vit_bigg14_f16.ckpt"]
+      }
+      if specification.t5Encoder == nil {
+        specification.t5Encoder = "t5_xxl_encoder_q6p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "flux_1_vae_f16.ckpt"
+      }
+      specification.highPrecisionAutoencoder = true
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      // For HiDream, the hires fix trigger scale is 1.5 of the finetune scale.
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
+    case .sd3, .sd3Large:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "open_clip_vit_bigg14_f16.ckpt"
+      }
+      if specification.clipEncoder == nil {
+        specification.clipEncoder = "clip_vit_l14_f16.ckpt"
+      }
+      if specification.t5Encoder == nil {
+        specification.t5Encoder = "t5_xxl_encoder_q6p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "sd3_vae_f16.ckpt"
+      }
+      specification.mmdit = ModelZoo.Specification.MMDiT(
+        qkNorm: inspectionResult.qkNorm, dualAttentionLayers: inspectionResult.dualAttentionLayers
+      )
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+    case .kandinsky21, .wurstchenStageB:
+      fatalError()
+    }
+
+    return (specification, additionalModels, wurstchenStageCEffNetAndPreviewer)
+  }
+}
