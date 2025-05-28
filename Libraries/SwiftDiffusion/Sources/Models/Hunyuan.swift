@@ -237,7 +237,7 @@ private func JointTransformerBlock(
   var contextOut = contextChunks[1] .* contextNorm1(context).to(.Float16) + contextChunks[0]
   let contextToKeys = Dense(count: k * h, flags: [.Float16], name: "c_k")
   let contextToQueries = Dense(count: k * h, name: "c_q")
-  let contextToValues = Dense(count: k * h, flags: [.Float16], name: "c_v")
+  let contextToValues = Dense(count: k * h, name: "c_v")
   var contextK = contextToKeys(contextOut).reshaped([b, t, h, k])
   let normAddedK = RMSNorm(epsilon: 1e-6, axis: [3], name: "c_norm_k")
   contextK = normAddedK(contextK)
@@ -249,7 +249,7 @@ private func JointTransformerBlock(
   var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
   let xToKeys = Dense(count: k * h, flags: [.Float16], name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
-  let xToValues = Dense(count: k * h, flags: [.Float16], name: "x_v")
+  let xToValues = Dense(count: k * h, name: "x_v")
   var xK = xToKeys(xOut).reshaped([b, hw, h, k])
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
   xK = normK(xK)
@@ -424,7 +424,7 @@ private func SingleTransformerBlock(
   var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
   let xToKeys = Dense(count: k * h, flags: [.Float16], name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
-  let xToValues = Dense(count: k * h, flags: [.Float16], name: "x_v")
+  let xToValues = Dense(count: k * h, name: "x_v")
   var xK = xToKeys(xOut).reshaped([b, t + hw, h, k])
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
   xK = normK(xK)
@@ -1018,7 +1018,7 @@ private func LoRAJointTransformerBlock(
   let contextToQueries = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "c_q")
   let contextToValues = LoRADense(
-    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "c_v")
+    count: k * h, configuration: configuration, index: layerIndex, name: "c_v")
   var contextK = contextToKeys(contextOut).reshaped([b, t, h, k])
   let normAddedK = RMSNorm(epsilon: 1e-6, axis: [3], name: "c_norm_k")
   contextK = normAddedK(contextK)
@@ -1033,7 +1033,7 @@ private func LoRAJointTransformerBlock(
   let xToQueries = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_q")
   let xToValues = LoRADense(
-    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_v")
+    count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
   var xK = xToKeys(xOut).reshaped([b, hw, h, k])
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
   xK = normK(xK)
@@ -1215,7 +1215,7 @@ private func LoRASingleTransformerBlock(
   let xToQueries = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_q")
   let xToValues = LoRADense(
-    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_v")
+    count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
   var xK = xToKeys(xOut).reshaped([b, t + hw, h, k])
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
   xK = normK(xK)

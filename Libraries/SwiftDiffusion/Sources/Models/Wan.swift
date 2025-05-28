@@ -79,7 +79,7 @@ private func WanAttentionBlock(
   var xOut = ((1 + chunks[1]) .* xNorm1(x) + chunks[0]).to(.Float16)
   let xToKeys = Dense(count: k * h, flags: [.Float16], name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
-  let xToValues = Dense(count: k * h, flags: [.Float16], name: "x_v")
+  let xToValues = Dense(count: k * h, name: "x_v")
   var xK = xToKeys(xOut)
   let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_norm_k")
   xK = normK(xK).reshaped([b, hw, h, k])
@@ -651,7 +651,7 @@ private func LoRAWanAttentionBlock(
   let xToQueries = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_q")
   let xToValues = LoRADense(
-    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_v")
+    count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
   var xK = xToKeys(xOut)
   let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_norm_k")
   xK = normK(xK).reshaped([b, hw, h, k])
