@@ -156,8 +156,8 @@ private func JointTransformerBlock(
   let xChunks = (0..<6).map { _ in Input() }
   let contextNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var contextOut = contextChunks[1] .* contextNorm1(context).to(.Float16) + contextChunks[0]
-  let contextToKeys = Dense(count: k * h, flags: [.Float16], name: "c_k")
-  let contextToQueries = Dense(count: k * h, name: "c_q")
+  let contextToKeys = Dense(count: k * h, name: "c_k")
+  let contextToQueries = Dense(count: k * h, flags: [.Float16], name: "c_q")
   let contextToValues = Dense(count: k * h, name: "c_v")
   var contextK = contextToKeys(contextOut)
   let normAddedK = RMSNorm(epsilon: 1e-5, axis: [2], name: "c_norm_k")
@@ -168,8 +168,8 @@ private func JointTransformerBlock(
   let contextV = contextToValues(contextOut).reshaped([b, t.1, h, k])
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
-  let xToKeys = Dense(count: k * h, flags: [.Float16], name: "x_k")
-  let xToQueries = Dense(count: k * h, name: "x_q")
+  let xToKeys = Dense(count: k * h, name: "x_k")
+  let xToQueries = Dense(count: k * h, flags: [.Float16], name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
   var xK = xToKeys(xOut)
   let normK = RMSNorm(epsilon: 1e-5, axis: [2], name: "x_norm_k")
@@ -344,8 +344,8 @@ private func SingleTransformerBlock(
   let xChunks = (0..<6).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
-  let xToKeys = Dense(count: k * h, flags: [.Float16], name: "x_k")
-  let xToQueries = Dense(count: k * h, name: "x_q")
+  let xToKeys = Dense(count: k * h, name: "x_k")
+  let xToQueries = Dense(count: k * h, flags: [.Float16], name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
   var xK = xToKeys(xOut)
   let normK = RMSNorm(epsilon: 1e-5, axis: [2], name: "x_norm_k")
@@ -834,9 +834,9 @@ private func LoRAJointTransformerBlock(
   let contextNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var contextOut = contextChunks[1] .* contextNorm1(context).to(.Float16) + contextChunks[0]
   let contextToKeys = LoRADense(
-    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "c_k")
+    count: k * h, configuration: configuration, index: layerIndex, name: "c_k")
   let contextToQueries = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "c_q")
+    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "c_q")
   let contextToValues = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "c_v")
   var contextK = contextToKeys(contextOut)
@@ -849,9 +849,9 @@ private func LoRAJointTransformerBlock(
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
   let xToKeys = LoRADense(
-    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_k")
+    count: k * h, configuration: configuration, index: layerIndex, name: "x_k")
   let xToQueries = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "x_q")
+    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_q")
   let xToValues = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
   var xK = xToKeys(xOut)
@@ -1032,9 +1032,9 @@ private func LoRASingleTransformerBlock(
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
   let xToKeys = LoRADense(
-    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_k")
+    count: k * h, configuration: configuration, index: layerIndex, name: "x_k")
   let xToQueries = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "x_q")
+    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_q")
   let xToValues = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
   var xK = xToKeys(xOut)
