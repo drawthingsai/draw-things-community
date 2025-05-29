@@ -1526,7 +1526,7 @@ extension ModelImporter {
 
 extension ModelImporter {
 
-  public static func createModelSpecification(
+  public static func inferModelSpecification(
     modelName: String,
     fileName: String,
     fileNames: [String],
