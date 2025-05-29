@@ -470,12 +470,14 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             }
           }
         } else {
-          let finalResponse = ImageGenerationResponse.with {
-            $0.generatedImages.append(contentsOf: imageDatas)
-            $0.scaleFactor = Int32(scaleFactor)
-            $0.chunkState = .lastChunk
+          for imageData in imageDatas {
+            let finalResponse = ImageGenerationResponse.with {
+              $0.generatedImages = [imageData]
+              $0.scaleFactor = Int32(scaleFactor)
+              $0.chunkState = .lastChunk
+            }
+            context.sendResponse(finalResponse, promise: nil)
           }
-          context.sendResponse(finalResponse, promise: nil)
         }
       }
       promise.succeed(.ok)
