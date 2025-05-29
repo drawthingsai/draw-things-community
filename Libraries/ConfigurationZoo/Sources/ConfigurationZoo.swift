@@ -1,5 +1,6 @@
 import DataModels
 import Dflat
+import Diffusion
 import Foundation
 import ModelZoo
 import ScriptDataModels
@@ -7,12 +8,14 @@ import ScriptDataModels
 public struct ConfigurationZoo {
   public struct Specification {
     public var name: String
+    public var version: ModelVersion?
     public var negative: String?
     public var configuration: [String: Any]
     public init(
-      name: String, negative: String?, configuration: [String: Any]
+      name: String, version: ModelVersion?, negative: String?, configuration: [String: Any]
     ) {
       self.name = name
+      self.version = version
       self.negative = negative
       self.configuration = configuration
     }
@@ -36,7 +39,9 @@ public struct ConfigurationZoo {
       else { continue }
       availableSpecifications.append(
         Specification(
-          name: name, negative: specification["negative"] as? String, configuration: configuration))
+          name: name,
+          version: (specification["version"] as? String).flatMap { ModelVersion(rawValue: $0) },
+          negative: specification["negative"] as? String, configuration: configuration))
     }
     return availableSpecifications
   }()
@@ -67,7 +72,8 @@ public struct ConfigurationZoo {
       else { continue }
       configurationDictionary["id"] = nil
       specifications.append(
-        Specification(name: name, negative: nil, configuration: configurationDictionary))
+        Specification(
+          name: name, version: nil, negative: nil, configuration: configurationDictionary))
     }
     var availableSpecifications = availableSpecifications
     for specification in specifications {
@@ -134,7 +140,12 @@ public struct ConfigurationZoo {
     }) {
       var dictionary = customSpecifications[firstIndex]
       dictionary["configuration"] = specification.configuration
-      dictionary["negative"] = specification.negative
+      if let negative = specification.negative {
+        dictionary["negative"] = negative
+      }
+      if let version = specification.version {
+        dictionary["version"] = version.rawValue
+      }
       customSpecifications[firstIndex] = dictionary
     } else {
       customSpecifications = customSpecifications.filter {
@@ -145,6 +156,7 @@ public struct ConfigurationZoo {
         "name": specification.name, "configuration": specification.configuration,
       ]
       dictionary["negative"] = specification.negative
+      dictionary["version"] = specification.version?.rawValue
       customSpecifications.append(dictionary)
     }
     guard
