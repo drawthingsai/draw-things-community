@@ -49,7 +49,8 @@ public protocol UNetProtocol {
   var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { get }
   var didRunLoRASeparately: Bool { get }
   mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, memoryCapacity: MemoryCapacity, version: ModelVersion,
+    filePath: String, externalOnDemand: Bool, deviceProperties: DeviceProperties,
+    version: ModelVersion,
     modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
@@ -370,7 +371,8 @@ extension UNetFromNNC {
   }
 
   public mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, memoryCapacity: MemoryCapacity, version: ModelVersion,
+    filePath: String, externalOnDemand: Bool, deviceProperties: DeviceProperties,
+    version: ModelVersion,
     modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
@@ -414,7 +416,8 @@ extension UNetFromNNC {
     let isLoHa = lora.contains { $0.isLoHa }
     var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
     let externalOnDemandPartially = externalOnDemandPartially(
-      version: version, memoryCapacity: memoryCapacity, externalOnDemand: externalOnDemand)
+      version: version, memoryCapacity: deviceProperties.memoryCapacity,
+      externalOnDemand: externalOnDemand)
     let runLoRASeparatelyIsPreferred =
       isQuantizedModel || externalOnDemand || externalOnDemandPartially
     let isTeaCacheEnabled = teaCacheConfiguration.threshold > 0

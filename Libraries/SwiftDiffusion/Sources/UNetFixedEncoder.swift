@@ -13,11 +13,13 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let isQuantizedModel: Bool
   public let canRunLoRASeparately: Bool
   public let externalOnDemand: Bool
+  public let deviceProperties: DeviceProperties
   private let weightsCache: WeightsCache
   public init(
     filePath: String, version: ModelVersion, modifier: SamplerModifier, dualAttentionLayers: [Int],
     usesFlashAttention: Bool, zeroNegativePrompt: Bool, isQuantizedModel: Bool,
-    canRunLoRASeparately: Bool, externalOnDemand: Bool, weightsCache: WeightsCache
+    canRunLoRASeparately: Bool, externalOnDemand: Bool, deviceProperties: DeviceProperties,
+    weightsCache: WeightsCache
   ) {
     self.filePath = filePath
     self.version = version
@@ -28,6 +30,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.isQuantizedModel = isQuantizedModel
     self.canRunLoRASeparately = canRunLoRASeparately
     self.externalOnDemand = externalOnDemand
+    self.deviceProperties = deviceProperties
     self.weightsCache = weightsCache
   }
 }

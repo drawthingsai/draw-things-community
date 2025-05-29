@@ -64,6 +64,15 @@ public struct LoRAConfiguration: Equatable {
   }
 }
 
+public struct DeviceProperties {
+  public var isUMA: Bool
+  public var memoryCapacity: MemoryCapacity
+  public init(isUMA: Bool, memoryCapacity: MemoryCapacity) {
+    self.isUMA = isUMA
+    self.memoryCapacity = memoryCapacity
+  }
+}
+
 public struct SamplerOutput<FloatType: TensorNumeric & BinaryFloatingPoint, UNet: UNetProtocol> {
   public var x: DynamicGraph.Tensor<FloatType>
   public var unets: [UNet?]

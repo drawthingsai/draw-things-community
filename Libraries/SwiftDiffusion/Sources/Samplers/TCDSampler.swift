@@ -25,7 +25,7 @@ where UNet.FloatType == FloatType {
   public let isGuidanceEmbedEnabled: Bool
   public let isQuantizedModel: Bool
   public let canRunLoRASeparately: Bool
-  public let memoryCapacity: MemoryCapacity
+  public let deviceProperties: DeviceProperties
   public let stochasticSamplingGamma: Float
   public let conditioning: Denoiser.Conditioning
   public let tiledDiffusion: TiledConfiguration
@@ -40,7 +40,7 @@ where UNet.FloatType == FloatType {
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
     isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
-    memoryCapacity: MemoryCapacity,
+    deviceProperties: DeviceProperties,
     stochasticSamplingGamma: Float, conditioning: Denoiser.Conditioning,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration, causalInference: Int,
     discretization: Discretization, weightsCache: WeightsCache
@@ -63,7 +63,7 @@ where UNet.FloatType == FloatType {
     self.isGuidanceEmbedEnabled = isGuidanceEmbedEnabled
     self.isQuantizedModel = isQuantizedModel
     self.canRunLoRASeparately = canRunLoRASeparately
-    self.memoryCapacity = memoryCapacity
+    self.deviceProperties = deviceProperties
     self.stochasticSamplingGamma = stochasticSamplingGamma
     self.conditioning = conditioning
     self.tiledDiffusion = tiledDiffusion
@@ -181,7 +181,7 @@ extension TCDSampler: Sampler {
       usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
       canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand,
-      weightsCache: weightsCache)
+      deviceProperties: deviceProperties, weightsCache: weightsCache)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
     let alphasCumprod = discretization.alphasCumprod(
       steps: sampling.steps + 1, shift: sampling.shift)
@@ -273,7 +273,7 @@ extension TCDSampler: Sampler {
         newC = conditions
       }
       let _ = unet.compileModel(
-        filePath: filePath, externalOnDemand: externalOnDemand, memoryCapacity: memoryCapacity,
+        filePath: filePath, externalOnDemand: externalOnDemand, deviceProperties: deviceProperties,
         version: version,
         modifier: modifier, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers,
@@ -366,7 +366,8 @@ extension TCDSampler: Sampler {
             modifier: modifier, dualAttentionLayers: dualAttentionLayers,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
             isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
-            externalOnDemand: externalOnDemand, weightsCache: weightsCache)
+            externalOnDemand: externalOnDemand, deviceProperties: deviceProperties,
+            weightsCache: weightsCache)
           if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
             let vector = fixedEncoder.vector(
               textEmbedding: oldC[oldC.count - 1], originalSize: originalSize,
@@ -412,7 +413,7 @@ extension TCDSampler: Sampler {
           }
           let _ = unet.compileModel(
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
-            memoryCapacity: memoryCapacity,
+            deviceProperties: deviceProperties,
             version: refiner.version, modifier: modifier, qkNorm: qkNorm,
             dualAttentionLayers: dualAttentionLayers,
             upcastAttention: upcastAttention,

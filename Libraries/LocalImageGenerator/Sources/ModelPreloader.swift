@@ -558,7 +558,10 @@ extension ModelPreloader {
             filePath: modelPath, version: modelVersion, modifier: .none, dualAttentionLayers: [],
             usesFlashAttention: useMFA,
             zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
-            externalOnDemand: false, weightsCache: weightsCache)
+            externalOnDemand: false,
+            deviceProperties: DeviceProperties(
+              isUMA: DeviceCapability.isUMA, memoryCapacity: DeviceCapability.memoryCapacity),
+            weightsCache: weightsCache)
           cArr.insert(
             graph.variable(.GPU(0), .HWC(cfgChannels * batchSize, 77, 768), of: FloatType.self),
             at: 0)
@@ -586,7 +589,8 @@ extension ModelPreloader {
         }
         let _ = unet.compileModel(
           filePath: modelPath, externalOnDemand: externalOnDemand,
-          memoryCapacity: DeviceCapability.memoryCapacity,
+          deviceProperties: DeviceProperties(
+            isUMA: DeviceCapability.isUMA, memoryCapacity: DeviceCapability.memoryCapacity),
           version: modelVersion, modifier: .none, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           upcastAttention: upcastAttention, usesFlashAttention: useMFA,

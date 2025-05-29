@@ -2785,6 +2785,7 @@ public struct LoRATrainer {
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
+                deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(
@@ -2828,6 +2829,7 @@ public struct LoRATrainer {
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
+                deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(
@@ -2863,6 +2865,7 @@ public struct LoRATrainer {
                   usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
+                  deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
                   weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
                 c =
                   unetFixEncoder.vector(
@@ -2885,6 +2888,7 @@ public struct LoRATrainer {
                   usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
+                  deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
                   weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
                 c =
                   unetFixEncoder.vector(
@@ -2911,6 +2915,7 @@ public struct LoRATrainer {
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
+                deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(

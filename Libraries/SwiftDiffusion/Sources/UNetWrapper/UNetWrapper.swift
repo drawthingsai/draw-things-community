@@ -62,7 +62,8 @@ extension UNetWrapper {
     return unetFromNNC.modelAndWeightMapper
   }
   public mutating func compileModel(
-    filePath: String, externalOnDemand: Bool, memoryCapacity: MemoryCapacity, version: ModelVersion,
+    filePath: String, externalOnDemand: Bool, deviceProperties: DeviceProperties,
+    version: ModelVersion,
     modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
@@ -77,7 +78,7 @@ extension UNetWrapper {
     #if !os(Linux)
 
       if unetFromCoreML.compileModel(
-        filePath: filePath, externalOnDemand: externalOnDemand, memoryCapacity: memoryCapacity,
+        filePath: filePath, externalOnDemand: externalOnDemand, deviceProperties: deviceProperties,
         version: version,
         modifier: modifier,
         qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
@@ -96,7 +97,7 @@ extension UNetWrapper {
       }
     #endif
     let _ = unetFromNNC.compileModel(
-      filePath: filePath, externalOnDemand: externalOnDemand, memoryCapacity: memoryCapacity,
+      filePath: filePath, externalOnDemand: externalOnDemand, deviceProperties: deviceProperties,
       version: version, modifier: modifier,
       qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
       upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,

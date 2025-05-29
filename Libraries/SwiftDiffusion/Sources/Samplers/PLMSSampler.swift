@@ -36,7 +36,7 @@ where UNet.FloatType == FloatType {
   public let isGuidanceEmbedEnabled: Bool
   public let isQuantizedModel: Bool
   public let canRunLoRASeparately: Bool
-  public let memoryCapacity: MemoryCapacity
+  public let deviceProperties: DeviceProperties
   public let conditioning: Denoiser.Conditioning
   public let tiledDiffusion: TiledConfiguration
   public let teaCache: TeaCacheConfiguration
@@ -50,7 +50,7 @@ where UNet.FloatType == FloatType {
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
     classifierFreeGuidance: Bool, isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool,
-    canRunLoRASeparately: Bool, memoryCapacity: MemoryCapacity,
+    canRunLoRASeparately: Bool, deviceProperties: DeviceProperties,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
     teaCache: TeaCacheConfiguration, causalInference: Int, discretization: Discretization,
     weightsCache: WeightsCache
@@ -74,7 +74,7 @@ where UNet.FloatType == FloatType {
     self.isGuidanceEmbedEnabled = isGuidanceEmbedEnabled
     self.isQuantizedModel = isQuantizedModel
     self.canRunLoRASeparately = canRunLoRASeparately
-    self.memoryCapacity = memoryCapacity
+    self.deviceProperties = deviceProperties
     self.conditioning = conditioning
     self.tiledDiffusion = tiledDiffusion
     self.teaCache = teaCache
@@ -172,7 +172,7 @@ extension PLMSSampler: Sampler {
       usesFlashAttention: usesFlashAttention,
       zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
       canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand,
-      weightsCache: weightsCache)
+      deviceProperties: deviceProperties, weightsCache: weightsCache)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
     let timesteps = (startStep..<endStep).map {
@@ -251,7 +251,7 @@ extension PLMSSampler: Sampler {
         newC = conditions
       }
       let _ = unet.compileModel(
-        filePath: filePath, externalOnDemand: externalOnDemand, memoryCapacity: memoryCapacity,
+        filePath: filePath, externalOnDemand: externalOnDemand, deviceProperties: deviceProperties,
         version: version,
         modifier: modifier, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers,
@@ -342,7 +342,8 @@ extension PLMSSampler: Sampler {
             modifier: modifier, dualAttentionLayers: dualAttentionLayers,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
             isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
-            externalOnDemand: externalOnDemand, weightsCache: weightsCache)
+            externalOnDemand: externalOnDemand, deviceProperties: deviceProperties,
+            weightsCache: weightsCache)
           if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
             let vector = fixedEncoder.vector(
               textEmbedding: oldC[oldC.count - 1], originalSize: originalSize,
@@ -388,7 +389,7 @@ extension PLMSSampler: Sampler {
           }
           let _ = unet.compileModel(
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
-            memoryCapacity: memoryCapacity,
+            deviceProperties: deviceProperties,
             version: refiner.version, modifier: modifier, qkNorm: qkNorm,
             dualAttentionLayers: dualAttentionLayers,
             upcastAttention: upcastAttention,

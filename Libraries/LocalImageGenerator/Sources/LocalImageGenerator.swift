@@ -131,6 +131,8 @@ extension LocalImageGenerator {
       samplingTimesteps = []
       samplingSigmas = []
     }
+    let deviceProperties = DeviceProperties(
+      isUMA: DeviceCapability.isUMA, memoryCapacity: DeviceCapability.memoryCapacity)
     guard version != .wurstchenStageC && version != .wurstchenStageB else {
       switch type {
       case .dPMPP2MKarras, .DPMPP2MAYS, .dPMPP2MTrailing:
@@ -146,7 +148,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
@@ -163,7 +165,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
@@ -180,7 +182,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
@@ -197,7 +199,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
@@ -214,7 +216,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
@@ -231,7 +233,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
@@ -247,7 +249,7 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity,
+          deviceProperties: deviceProperties,
           conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           causalInference: causalInference,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
@@ -264,7 +266,7 @@ extension LocalImageGenerator {
           injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
           isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity,
+          deviceProperties: deviceProperties,
           stochasticSamplingGamma: stochasticSamplingGamma,
           conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
           causalInference: causalInference,
@@ -284,7 +286,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective),
@@ -305,7 +307,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing),
@@ -325,7 +327,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas),
@@ -345,7 +347,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
@@ -362,7 +364,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
@@ -379,7 +381,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
@@ -395,7 +397,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
@@ -417,7 +419,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing),
@@ -437,7 +439,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas),
@@ -457,7 +459,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
@@ -474,7 +476,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
@@ -491,7 +493,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
@@ -508,7 +510,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
@@ -525,7 +527,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective),
@@ -541,7 +543,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(
@@ -563,7 +565,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing),
@@ -583,7 +585,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas),
@@ -603,7 +605,7 @@ extension LocalImageGenerator {
           classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           isQuantizedModel: isQuantizedModel,
           canRunLoRASeparately: canRunLoRASeparately,
-          memoryCapacity: DeviceCapability.memoryCapacity, conditioning: conditioning,
+          deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
@@ -620,7 +622,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
@@ -635,7 +637,7 @@ extension LocalImageGenerator {
         injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         causalInference: causalInference,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
@@ -650,7 +652,7 @@ extension LocalImageGenerator {
         injectAttentionKV: injectAttentionKV,
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         stochasticSamplingGamma: stochasticSamplingGamma,
         conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         causalInference: causalInference,
@@ -667,7 +669,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: false, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearManualDiscretization(
@@ -686,7 +688,7 @@ extension LocalImageGenerator {
         injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
         classifierFreeGuidance: false, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
         isQuantizedModel: isQuantizedModel,
-        canRunLoRASeparately: canRunLoRASeparately, memoryCapacity: DeviceCapability.memoryCapacity,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         discretization: Denoiser.LinearManualDiscretization(
