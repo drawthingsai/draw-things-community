@@ -20,8 +20,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let latentsScaling:
     (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?)
   private let highPrecisionFallback: Bool
-  private let memoryCapacity: MemoryCapacity  // If this device has more than 24GiB RAM, 8GiB - 24GiB, less than 8GiB
-  private let isNHWCPreferred: Bool
+  private let deviceProperties: DeviceProperties  // If this device has more than 24GiB RAM, 8GiB - 24GiB, less than 8GiB
   private let isCancelled = ManagedAtomic<Bool>(false)
   public init(
     filePath: String, version: ModelVersion,
@@ -30,7 +29,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     tiledDecoding: TiledConfiguration,
     tiledDiffusion: TiledConfiguration, externalOnDemand: Bool, alternativeUsesFlashAttention: Bool,
     alternativeFilePath: String?, alternativeDecoderVersion: AlternativeDecoderVersion?,
-    memoryCapacity: MemoryCapacity, isNHWCPreferred: Bool
+    deviceProperties: DeviceProperties
   ) {
     self.filePath = filePath
     self.version = version
@@ -43,8 +42,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.alternativeUsesFlashAttention = alternativeUsesFlashAttention
     self.alternativeFilePath = alternativeFilePath
     self.alternativeDecoderVersion = alternativeDecoderVersion
-    self.memoryCapacity = memoryCapacity
-    self.isNHWCPreferred = isNHWCPreferred
+    self.deviceProperties = deviceProperties
   }
 }
 
@@ -127,7 +125,7 @@ extension FirstStage {
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
           startHeight: startHeight, inputChannels: 4,
           highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: false,
-          paddingFinalConvLayer: true, format: isNHWCPreferred ? .NHWC : .NCHW
+          paddingFinalConvLayer: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).0
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -182,7 +180,8 @@ extension FirstStage {
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
           startHeight: startHeight, inputChannels: 16,
           highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: false,
-          paddingFinalConvLayer: true, format: isNHWCPreferred ? .NHWC : .NCHW, quantLayer: false
+          paddingFinalConvLayer: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW,
+          quantLayer: false
         ).0
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -232,7 +231,7 @@ extension FirstStage {
       var startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
-      let sizeLimit = memoryCapacity == .high ? 32 : 20
+      let sizeLimit = deviceProperties.memoryCapacity == .high ? 32 : 20
       if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > 15 {
         // We turn on tiled decoding forcefully.
         if !tiledDecoding {
@@ -251,7 +250,7 @@ extension FirstStage {
         ?? DecoderCausal3D(
           channels: [128, 256, 512, 512], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true,
-          format: isNHWCPreferred ? .NHWC : .NCHW
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       var mask = Tensor<Float>(
         Array(repeating: 0, count: startDepth * startDepth), .CPU,
@@ -287,7 +286,7 @@ extension FirstStage {
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       let sizeLimit: Int
-      switch memoryCapacity {
+      switch deviceProperties.memoryCapacity {
       case .high:
         sizeLimit = 1024  // Practically unlimited.
       case .medium:
@@ -312,7 +311,7 @@ extension FirstStage {
         ?? WanDecoderCausal3D(
           channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true,
-          format: isNHWCPreferred ? .NHWC : .NCHW
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -673,7 +672,7 @@ extension FirstStage {
         ?? Encoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
           startHeight: startHeight, usesFlashAttention: false,
-          format: isNHWCPreferred ? .NHWC : .NCHW
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).0
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)
@@ -701,7 +700,7 @@ extension FirstStage {
         ?? Encoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
           startHeight: startHeight, usesFlashAttention: false,
-          format: isNHWCPreferred ? .NHWC : .NCHW, quantLayer: false,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW, quantLayer: false,
           outputChannels: 16
         ).0
       // Don't use FP32 for SD3 / FLUX.1 encoding pass.
@@ -727,7 +726,7 @@ extension FirstStage {
       var startDepth = (shape[0] - 1) / 4 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
-      let sizeLimit = memoryCapacity == .high ? 32 : 20
+      let sizeLimit = deviceProperties.memoryCapacity == .high ? 32 : 20
       if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > 15 {
         // We turn on tiled decoding forcefully.
         if !tiledEncoding {
@@ -745,7 +744,8 @@ extension FirstStage {
         existingEncoder
         ?? EncoderCausal3D(
           channels: [128, 256, 512, 512], numRepeat: 2, startWidth: startWidth,
-          startHeight: startHeight, startDepth: startDepth, format: isNHWCPreferred ? .NHWC : .NCHW
+          startHeight: startHeight, startDepth: startDepth,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       var mask = Tensor<Float>(
         Array(repeating: 0, count: startDepth * startDepth), .CPU,
@@ -782,7 +782,7 @@ extension FirstStage {
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
       let sizeLimit: Int
-      switch memoryCapacity {
+      switch deviceProperties.memoryCapacity {
       case .high:
         sizeLimit = 1024  // Practically unlimited.
       case .medium:
@@ -806,7 +806,8 @@ extension FirstStage {
         existingEncoder
         ?? WanEncoderCausal3D(
           channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
-          startHeight: startHeight, startDepth: startDepth, format: isNHWCPreferred ? .NHWC : .NCHW
+          startHeight: startHeight, startDepth: startDepth,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)

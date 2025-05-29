@@ -206,8 +206,7 @@ public struct LoRATrainer {
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
-      alternativeDecoderVersion: nil, memoryCapacity: DeviceCapability.memoryCapacity,
-      isNHWCPreferred: DeviceCapability.isNHWCPreferred)
+      alternativeDecoderVersion: nil, deviceProperties: DeviceCapability.deviceProperties)
     let graph = DynamicGraph()
     var processedInputs = [ProcessedInput]()
     let (_, zeroCLIPTokens, _, _, _) = tokenizers[0].tokenize(
@@ -759,8 +758,7 @@ public struct LoRATrainer {
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
-      alternativeDecoderVersion: nil, memoryCapacity: DeviceCapability.memoryCapacity,
-      isNHWCPreferred: DeviceCapability.isNHWCPreferred)
+      alternativeDecoderVersion: nil, deviceProperties: DeviceCapability.deviceProperties)
     let graph = DynamicGraph()
     let imageWidth = Int(scale.widthScale) * 64
     let imageHeight = Int(scale.heightScale) * 64
@@ -1603,8 +1601,7 @@ public struct LoRATrainer {
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
       externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
-      alternativeDecoderVersion: nil, memoryCapacity: DeviceCapability.memoryCapacity,
-      isNHWCPreferred: DeviceCapability.isNHWCPreferred)
+      alternativeDecoderVersion: nil, deviceProperties: DeviceCapability.deviceProperties)
     graph.maxConcurrency = .limit(1)
     var dataFrame = dataFrame
     let cotrainUNet = unetLearningRate.upperBound > 0
@@ -2785,7 +2782,8 @@ public struct LoRATrainer {
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
-                deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
+                deviceProperties: DeviceProperties(
+                  isUMA: true, memoryCapacity: .high, isNHWCPreferred: true),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(
@@ -2829,7 +2827,8 @@ public struct LoRATrainer {
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
-                deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
+                deviceProperties: DeviceProperties(
+                  isUMA: true, memoryCapacity: .high, isNHWCPreferred: true),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(
@@ -2865,7 +2864,8 @@ public struct LoRATrainer {
                   usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
-                  deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
+                  deviceProperties: DeviceProperties(
+                    isUMA: true, memoryCapacity: .high, isNHWCPreferred: true),
                   weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
                 c =
                   unetFixEncoder.vector(
@@ -2888,7 +2888,8 @@ public struct LoRATrainer {
                   usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
-                  deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
+                  deviceProperties: DeviceProperties(
+                    isUMA: true, memoryCapacity: .high, isNHWCPreferred: true),
                   weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
                 c =
                   unetFixEncoder.vector(
@@ -2915,7 +2916,8 @@ public struct LoRATrainer {
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
-                deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
+                deviceProperties: DeviceProperties(
+                  isUMA: true, memoryCapacity: .high, isNHWCPreferred: true),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(

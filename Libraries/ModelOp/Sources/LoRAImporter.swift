@@ -314,7 +314,8 @@ public enum LoRAImporter {
         filePath: "", version: version, modifier: .none, dualAttentionLayers: dualAttentionLayers,
         usesFlashAttention: false, zeroNegativePrompt: false, isQuantizedModel: false,
         canRunLoRASeparately: false, externalOnDemand: false,
-        deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
+        deviceProperties: DeviceProperties(
+          isUMA: true, memoryCapacity: .high, isNHWCPreferred: true),
         weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
       for c in cArr {
         c.full(0)

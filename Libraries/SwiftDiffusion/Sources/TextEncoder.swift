@@ -13,12 +13,12 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let clipSkip: Int
   public let lora: [LoRAConfiguration]
   public let externalOnDemand: Bool
-  public let memoryCapacity: MemoryCapacity
+  public let deviceProperties: DeviceProperties
   private let weightsCache: WeightsCache
   public init(
     filePaths: [String], version: ModelVersion, textEncoderVersion: TextEncoderVersion?,
     isCfgEnabled: Bool, usesFlashAttention: Bool, injectEmbeddings: Bool, externalOnDemand: Bool,
-    memoryCapacity: MemoryCapacity, weightsCache: WeightsCache, maxLength: Int = 77,
+    deviceProperties: DeviceProperties, weightsCache: WeightsCache, maxLength: Int = 77,
     clipSkip: Int = 1, lora: [LoRAConfiguration] = []
   ) {
     self.filePaths = filePaths
@@ -28,7 +28,7 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.usesFlashAttention = usesFlashAttention
     self.injectEmbeddings = injectEmbeddings
     self.externalOnDemand = externalOnDemand
-    self.memoryCapacity = memoryCapacity
+    self.deviceProperties = deviceProperties
     self.weightsCache = weightsCache
     self.maxLength = maxLength
     self.clipSkip = clipSkip
@@ -935,7 +935,8 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[2], to: t5.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
+        externalOnDemand || deviceProperties.memoryCapacity != .high
+        ? .externalOnDemand : .externalData
       // Move T5 to on-demand.
       TensorData.makeExternalData(for: filePaths[2], graph: graph)
       graph.openStore(
@@ -991,7 +992,8 @@ extension TextEncoder {
     textModel.compile(inputs: tokensTensorGPU, relativePositionBucketsGPU)
     // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
+      externalOnDemand || deviceProperties.memoryCapacity != .high
+      ? .externalOnDemand : .externalData
     // Move T5 to on-demand.
     TensorData.makeExternalData(for: filePaths[0], graph: graph)
     graph.openStore(
@@ -1052,7 +1054,8 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
+        externalOnDemand || deviceProperties.memoryCapacity != .high
+        ? .externalOnDemand : .externalData
       // Move Pile T5 XL to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1158,7 +1161,8 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
+        externalOnDemand || deviceProperties.memoryCapacity != .high
+        ? .externalOnDemand : .externalData
       // Move ChatGLM3 to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1377,7 +1381,8 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: t5.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
+        externalOnDemand || deviceProperties.memoryCapacity != .high
+        ? .externalOnDemand : .externalData
       // Move T5 to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1623,7 +1628,8 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: llama3.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
+        externalOnDemand || deviceProperties.memoryCapacity != .high
+        ? .externalOnDemand : .externalData
       // Move Llama3 8B to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1672,7 +1678,8 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
+        externalOnDemand || deviceProperties.memoryCapacity != .high
+        ? .externalOnDemand : .externalData
       // Move UMT5 XXL to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -2023,7 +2030,8 @@ extension TextEncoder {
       if !weightsCache.detach(filePaths[3], to: t5.parameters) {
         // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
         let externalData: DynamicGraph.Store.Codec =
-          externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
+          externalOnDemand || deviceProperties.memoryCapacity != .high
+          ? .externalOnDemand : .externalData
         // Move T5 to on-demand.
         TensorData.makeExternalData(for: filePaths[3], graph: graph)
         graph.openStore(
@@ -2094,7 +2102,8 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: llama3.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || memoryCapacity != .high ? .externalOnDemand : .externalData
+        externalOnDemand || deviceProperties.memoryCapacity != .high
+        ? .externalOnDemand : .externalData
       // Move Llama3 8B to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(

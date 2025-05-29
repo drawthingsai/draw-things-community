@@ -210,6 +210,9 @@ public struct DeviceCapability {
     }
     return .low
   }()
+  public static var deviceProperties: DeviceProperties {
+    DeviceProperties(isUMA: isUMA, memoryCapacity: memoryCapacity, isNHWCPreferred: isNHWCPreferred)
+  }
   public static var maxTotalWeightsCacheSize: UInt64 = {
     #if !canImport(Metal)
       return 0

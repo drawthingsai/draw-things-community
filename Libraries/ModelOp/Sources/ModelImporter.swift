@@ -643,7 +643,8 @@ public final class ModelImporter {
           dualAttentionLayers: dualAttentionLayers,
           usesFlashAttention: false, zeroNegativePrompt: false,
           isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false,
-          deviceProperties: DeviceProperties(isUMA: true, memoryCapacity: .high),
+          deviceProperties: DeviceProperties(
+            isUMA: true, memoryCapacity: .high, isNHWCPreferred: true),
           weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
         cArr.insert(
           graph.variable(.CPU, .HWC(batchSize, 77, 768), of: FloatType.self),

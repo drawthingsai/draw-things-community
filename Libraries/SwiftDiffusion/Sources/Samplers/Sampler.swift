@@ -67,9 +67,11 @@ public struct LoRAConfiguration: Equatable {
 public struct DeviceProperties {
   public var isUMA: Bool
   public var memoryCapacity: MemoryCapacity
-  public init(isUMA: Bool, memoryCapacity: MemoryCapacity) {
+  public var isNHWCPreferred: Bool
+  public init(isUMA: Bool, memoryCapacity: MemoryCapacity, isNHWCPreferred: Bool) {
     self.isUMA = isUMA
     self.memoryCapacity = memoryCapacity
+    self.isNHWCPreferred = isNHWCPreferred
   }
 }
 
