@@ -1191,7 +1191,7 @@ extension UNetFromNNC {
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     let loadedFromWeightsCache = weightsCache.detach(filePath, to: unet.unwrapped.parameters)
 
     func shouldOffload(name: String) -> Bool {
@@ -1288,7 +1288,11 @@ extension UNetFromNNC {
                 // Patch for bias weights which missing a 1/8 scale. Note that this is not needed if we merge this into the model import step like we do for Hunyuan.
                 if version == .flux1
                   && (name.hasSuffix("_out_proj-17-1]") || name.hasSuffix("_out_proj-18-1]")),
-                  let tensor = store.read(name, codec: [.ezm7, .externalData, .q6p, .q8p])
+                  let tensor = store.read(
+                    name,
+                    codec: [
+                      .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap), .q6p, .q8p,
+                    ])
                 {
                   guard !loadedFromWeightsCache else {
                     return .fail
@@ -1348,7 +1352,11 @@ extension UNetFromNNC {
                 // Patch for bias weights which missing a 1/8 scale. Note that this is not needed if we merge this into the model import step like we do for Hunyuan.
                 if version == .flux1
                   && (name.hasSuffix("_out_proj-17-1]") || name.hasSuffix("_out_proj-18-1]")),
-                  let tensor = store.read(name, codec: [.ezm7, .externalData, .q6p, .q8p])
+                  let tensor = store.read(
+                    name,
+                    codec: [
+                      .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap), .q6p, .q8p,
+                    ])
                 {
                   guard !loadedFromWeightsCache else {
                     return .fail
@@ -1409,7 +1417,9 @@ extension UNetFromNNC {
             // Patch for bias weights which missing a 1/8 scale. Note that this is not needed if we merge this into the model import step like we do for Hunyuan.
             if version == .flux1
               && (name.hasSuffix("_out_proj-17-1]") || name.hasSuffix("_out_proj-18-1]")),
-              let tensor = store.read(name, codec: [.ezm7, .externalData, .q6p, .q8p])
+              let tensor = store.read(
+                name,
+                codec: [.ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap), .q6p, .q8p])
             {
               return .final(
                 graph.withNoGrad {
@@ -1427,12 +1437,16 @@ extension UNetFromNNC {
         }
       }
       if let timeEmbed = timeEmbed {
-        store.read("time_embed", model: timeEmbed, codec: [.q6p, .q8p, .ezm7, .externalData])
+        store.read(
+          "time_embed", model: timeEmbed,
+          codec: [.q6p, .q8p, .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap)])
       }
       if let previewer = previewer {
         previewer.maxConcurrency = .limit(4)
         previewer.compile(inputs: xT)
-        store.read("previewer", model: previewer, codec: [.q6p, .q8p, .ezm7, .externalData])
+        store.read(
+          "previewer", model: previewer,
+          codec: [.q6p, .q8p, .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap)])
       }
     }
     self.unet = unet

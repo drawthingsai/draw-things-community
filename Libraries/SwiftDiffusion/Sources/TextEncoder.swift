@@ -78,7 +78,7 @@ extension TextEncoder {
     var fullEmb: DynamicGraph.Tensor<FloatType>? = nil
     var poolEmb: DynamicGraph.Tensor<FloatType>? = nil
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     graph.openStore(
       filePaths[0], flags: .readOnly,
       externalStore: TensorData.externalStore(filePath: filePaths[0])
@@ -261,7 +261,7 @@ extension TextEncoder {
     let maskGPU = mask.map { $0.toGPU(0) }
     let injectedEmbeddingsGPU = injectedEmbeddings.map { $0.toGPU(0) }
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     var textModel: Model
     textModel =
       CLIPTextModel(
@@ -394,7 +394,8 @@ extension TextEncoder {
         store.read("text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
       }
       store.read(
-        "text_projection", variable: textProjection, codec: [.q6p, .q8p, .ezm7, .externalData])
+        "text_projection", variable: textProjection,
+        codec: [.q6p, .q8p, .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap)])
     }
     let c1Out: [DynamicGraph.Tensor<FloatType>]
     if let maskGPU = maskGPU.last, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.last {
@@ -469,7 +470,7 @@ extension TextEncoder {
       input = (input - mean) .* invStd
     }
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     if existingTextModels.count >= 1, let existingTextModel = existingTextModels[0] {
       vit = existingTextModel
     } else {
@@ -494,7 +495,9 @@ extension TextEncoder {
         filePaths[1], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[1])
       ) {
-        $0.read("visual_proj", model: visualProj, codec: [.jit, .q6p, .q8p, .ezm7, .externalData])
+        $0.read(
+          "visual_proj", model: visualProj,
+          codec: [.jit, .q6p, .q8p, .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap)])
       }
     }
     let imageProj = visualProj(inputs: imageEmbeds)[0].as(of: FloatType.self)
@@ -589,7 +592,7 @@ extension TextEncoder {
     let injectedEmbeddingsGPU = injectedEmbeddings.map { $0.toGPU(0) }
     let textModel: Model
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     if let existingTextModel = existingTextModels[0] {
       textModel = existingTextModel
     } else {
@@ -648,7 +651,8 @@ extension TextEncoder {
         store.read("text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
       }
       store.read(
-        "text_projection", variable: textProjection, codec: [.q6p, .q8p, .ezm7, .externalData])
+        "text_projection", variable: textProjection,
+        codec: [.q6p, .q8p, .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap)])
     }
     let cOut: [DynamicGraph.Tensor<FloatType>]
     if let maskGPU = maskGPU.last, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.last {
@@ -725,7 +729,7 @@ extension TextEncoder {
     let maskGPU = mask.map { $0.toGPU(0) }
     let injectedEmbeddingsGPU = injectedEmbeddings.map { $0.toGPU(0) }
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     var textModel: Model
     textModel =
       CLIPTextModel(
@@ -874,7 +878,8 @@ extension TextEncoder {
         store.read("text_model", model: textModel, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
       }
       store.read(
-        "text_projection", variable: textProjection, codec: [.q6p, .q8p, .ezm7, .externalData])
+        "text_projection", variable: textProjection,
+        codec: [.q6p, .q8p, .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap)])
     }
     let c1Out: [DynamicGraph.Tensor<FloatType>]
     if let maskGPU = maskGPU.last, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.last {
@@ -936,7 +941,7 @@ extension TextEncoder {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
         externalOnDemand || deviceProperties.memoryCapacity != .high
-        ? .externalOnDemand : .externalData
+        ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
       // Move T5 to on-demand.
       TensorData.makeExternalData(for: filePaths[2], graph: graph)
       graph.openStore(
@@ -993,7 +998,7 @@ extension TextEncoder {
     // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
     let externalData: DynamicGraph.Store.Codec =
       externalOnDemand || deviceProperties.memoryCapacity != .high
-      ? .externalOnDemand : .externalData
+      ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     // Move T5 to on-demand.
     TensorData.makeExternalData(for: filePaths[0], graph: graph)
     graph.openStore(
@@ -1055,7 +1060,7 @@ extension TextEncoder {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
         externalOnDemand || deviceProperties.memoryCapacity != .high
-        ? .externalOnDemand : .externalData
+        ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
       // Move Pile T5 XL to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1162,7 +1167,7 @@ extension TextEncoder {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
         externalOnDemand || deviceProperties.memoryCapacity != .high
-        ? .externalOnDemand : .externalData
+        ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
       // Move ChatGLM3 to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1241,7 +1246,7 @@ extension TextEncoder {
     let maskGPU = mask.map { $0.toGPU(0) }
     let injectedEmbeddingsGPU = injectedEmbeddings.map { $0.toGPU(0) }
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     var textModel: Model
     textModel =
       CLIPTextModel(
@@ -1382,7 +1387,7 @@ extension TextEncoder {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
         externalOnDemand || deviceProperties.memoryCapacity != .high
-        ? .externalOnDemand : .externalData
+        ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
       // Move T5 to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1457,7 +1462,7 @@ extension TextEncoder {
     let maskGPU = mask.map { $0.toGPU(0) }
     let injectedEmbeddingsGPU = injectedEmbeddings.map { $0.toGPU(0) }
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     var textModel: Model
     textModel =
       CLIPTextModel(
@@ -1629,7 +1634,7 @@ extension TextEncoder {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
         externalOnDemand || deviceProperties.memoryCapacity != .high
-        ? .externalOnDemand : .externalData
+        ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
       // Move Llama3 8B to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1679,7 +1684,7 @@ extension TextEncoder {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
         externalOnDemand || deviceProperties.memoryCapacity != .high
-        ? .externalOnDemand : .externalData
+        ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
       // Move UMT5 XXL to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -1729,7 +1734,7 @@ extension TextEncoder {
       input = (input - mean) .* invStd
     }
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     if existingTextModels.count >= 1, let existingTextModel = existingTextModels[0] {
       vit = existingTextModel
     } else {
@@ -1778,7 +1783,7 @@ extension TextEncoder {
     let position0TensorGPU = positions[0].toGPU(0)
     let causalAttentionMask0GPU = graph.variable(causalAttentionMask0.toGPU())
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     let textModel0 =
       CLIPTextModel(
         FloatType.self, injectEmbeddings: false,
@@ -1834,7 +1839,8 @@ extension TextEncoder {
           }
         }
         store.read(
-          "text_projection", variable: textProjection0, codec: [.q6p, .q8p, .ezm7, .externalData])
+          "text_projection", variable: textProjection0,
+          codec: [.q6p, .q8p, .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap)])
       }
       c0Out = textModel0(
         inputs: tokens0TensorGPU, position0TensorGPU, causalAttentionMask0GPU
@@ -1936,7 +1942,8 @@ extension TextEncoder {
             "text_model", model: textModel1, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
         store.read(
-          "text_projection", variable: textProjection1, codec: [.q6p, .q8p, .ezm7, .externalData])
+          "text_projection", variable: textProjection1,
+          codec: [.q6p, .q8p, .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap)])
       }
       c1Out = textModel1(
         inputs: tokens1TensorGPU, position1TensorGPU, causalAttentionMask1GPU
@@ -2031,7 +2038,7 @@ extension TextEncoder {
         // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
         let externalData: DynamicGraph.Store.Codec =
           externalOnDemand || deviceProperties.memoryCapacity != .high
-          ? .externalOnDemand : .externalData
+          ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
         // Move T5 to on-demand.
         TensorData.makeExternalData(for: filePaths[3], graph: graph)
         graph.openStore(
@@ -2103,7 +2110,7 @@ extension TextEncoder {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
         externalOnDemand || deviceProperties.memoryCapacity != .high
-        ? .externalOnDemand : .externalData
+        ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
       // Move Llama3 8B to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -2251,7 +2258,7 @@ extension TextEncoder {
     let injectedEmbeddingsGPU = injectedEmbeddings.map { $0.toGPU(0) }
     let textModel: Model
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData
+      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
     if let existingTextModel = existingTextModels[0] {
       textModel = existingTextModel
     } else {
