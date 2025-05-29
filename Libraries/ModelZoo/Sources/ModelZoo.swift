@@ -858,35 +858,35 @@ public struct ModelZoo: DownloadZoo {
       textEncoder: "open_clip_vit_bigg14_f16.ckpt", autoencoder: "sdxl_vae_v1.0_f16.ckpt",
       modifier: .inpainting, clipEncoder: "clip_vit_l14_f16.ckpt"),
     Specification(
-      name: "Generic (Stable Diffusion v1.4)", file: "sd_v1.4_f16.ckpt", prefix: "", version: .v1,
+      name: "Stable Diffusion v1.4", file: "sd_v1.4_f16.ckpt", prefix: "", version: .v1,
       deprecated: true),
     Specification(
-      name: "Generic (Stable Diffusion v1.5)", file: "sd_v1.5_f16.ckpt", prefix: "", version: .v1),
+      name: "Stable Diffusion v1.5", file: "sd_v1.5_f16.ckpt", prefix: "", version: .v1),
     Specification(
-      name: "Inpainting (Stable Diffusion v1.5 Inpainting)", file: "sd_v1.5_inpainting_f16.ckpt",
+      name: "Stable Diffusion v1.5 Inpainting", file: "sd_v1.5_inpainting_f16.ckpt",
       prefix: "", version: .v1, modifier: .inpainting),
     Specification(
-      name: "Generic (Stable Diffusion v2.0)", file: "sd_v2.0_f16.ckpt", prefix: "", version: .v2,
+      name: "Stable Diffusion v2.0", file: "sd_v2.0_f16.ckpt", prefix: "", version: .v2,
       textEncoder: "open_clip_vit_h14_f16.ckpt", deprecated: true),
     Specification(
-      name: "Generic HD (Stable Diffusion v2.0 768-v)", file: "sd_v2.0_768_v_f16.ckpt", prefix: "",
+      name: "Stable Diffusion v2.0 768-v", file: "sd_v2.0_768_v_f16.ckpt", prefix: "",
       version: .v2, defaultScale: 12, textEncoder: "open_clip_vit_h14_f16.ckpt", deprecated: true,
       objective: .v),
     Specification(
-      name: "Inpainting (Stable Diffusion v2.0 Inpainting)", file: "sd_v2.0_inpainting_f16.ckpt",
+      name: "Stable Diffusion v2.0 Inpainting", file: "sd_v2.0_inpainting_f16.ckpt",
       prefix: "", version: .v2, textEncoder: "open_clip_vit_h14_f16.ckpt", modifier: .inpainting),
     Specification(
-      name: "Depth (Stable Diffusion v2.0 Depth)", file: "sd_v2.0_depth_f16.ckpt",
+      name: "Stable Diffusion v2.0 Depth", file: "sd_v2.0_depth_f16.ckpt",
       prefix: "", version: .v2, textEncoder: "open_clip_vit_h14_f16.ckpt", modifier: .depth),
     Specification(
-      name: "Generic (Stable Diffusion v2.1)", file: "sd_v2.1_f16.ckpt", prefix: "", version: .v2,
+      name: "Stable Diffusion v2.1", file: "sd_v2.1_f16.ckpt", prefix: "", version: .v2,
       textEncoder: "open_clip_vit_h14_f16.ckpt"),
     Specification(
-      name: "Generic HD (Stable Diffusion v2.1 768-v)", file: "sd_v2.1_768_v_f16.ckpt", prefix: "",
+      name: "Stable Diffusion v2.1 768-v", file: "sd_v2.1_768_v_f16.ckpt", prefix: "",
       version: .v2, upcastAttention: true, defaultScale: 12,
       textEncoder: "open_clip_vit_h14_f16.ckpt", objective: .v),
     Specification(
-      name: "Multi-Language HD (Kandinsky v2.1)", file: "kandinsky_f16.ckpt", prefix: "",
+      name: "Kandinsky v2.1", file: "kandinsky_f16.ckpt", prefix: "",
       version: .kandinsky21, upcastAttention: false, defaultScale: 12,
       textEncoder: "xlm_roberta_f16.ckpt", autoencoder: "kandinsky_movq_f16.ckpt",
       deprecated: true, imageEncoder: "image_vit_l14_f16.ckpt",
@@ -906,10 +906,10 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "svd_i2v_xt_1.0_q6p_q8p.ckpt", conditioning: .noise, objective: .v,
       noiseDiscretization: .edm(.init(sigmaMax: 700.0))),
     Specification(
-      name: "Generic SD (MiniSD v1.4)", file: "minisd_v1.4_f16.ckpt", prefix: "", version: .v1,
+      name: "MiniSD v1.4", file: "minisd_v1.4_f16.ckpt", prefix: "", version: .v1,
       defaultScale: 4, deprecated: true),
     Specification(
-      name: "Editing (Instruct Pix2Pix)", file: "instruct_pix2pix_22000_f16.ckpt", prefix: "",
+      name: "Instruct Pix2Pix", file: "instruct_pix2pix_22000_f16.ckpt", prefix: "",
       version: .v1, defaultScale: 8, modifier: .editing, deprecated: true),
   ]
 
