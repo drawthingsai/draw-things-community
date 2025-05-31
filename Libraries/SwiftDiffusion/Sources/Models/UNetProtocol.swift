@@ -1191,7 +1191,8 @@ extension UNetFromNNC {
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
+      externalOnDemand
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let loadedFromWeightsCache = weightsCache.detach(filePath, to: unet.unwrapped.parameters)
 
     func shouldOffload(name: String) -> Bool {
@@ -1291,7 +1292,8 @@ extension UNetFromNNC {
                   let tensor = store.read(
                     name,
                     codec: [
-                      .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap), .q6p, .q8p,
+                      .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap),
+                      .q6p, .q8p,
                     ])
                 {
                   guard !loadedFromWeightsCache else {
@@ -1355,7 +1357,8 @@ extension UNetFromNNC {
                   let tensor = store.read(
                     name,
                     codec: [
-                      .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap), .q6p, .q8p,
+                      .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap),
+                      .q6p, .q8p,
                     ])
                 {
                   guard !loadedFromWeightsCache else {
@@ -1419,7 +1422,10 @@ extension UNetFromNNC {
               && (name.hasSuffix("_out_proj-17-1]") || name.hasSuffix("_out_proj-18-1]")),
               let tensor = store.read(
                 name,
-                codec: [.ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap), .q6p, .q8p])
+                codec: [
+                  .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap), .q6p,
+                  .q8p,
+                ])
             {
               return .final(
                 graph.withNoGrad {
@@ -1439,14 +1445,18 @@ extension UNetFromNNC {
       if let timeEmbed = timeEmbed {
         store.read(
           "time_embed", model: timeEmbed,
-          codec: [.q6p, .q8p, .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap)])
+          codec: [
+            .q6p, .q8p, .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap),
+          ])
       }
       if let previewer = previewer {
         previewer.maxConcurrency = .limit(4)
         previewer.compile(inputs: xT)
         store.read(
           "previewer", model: previewer,
-          codec: [.q6p, .q8p, .ezm7, .externalData(deviceProperties.isUMA ? .fread : .mmap)])
+          codec: [
+            .q6p, .q8p, .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap),
+          ])
       }
     }
     self.unet = unet

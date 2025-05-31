@@ -202,7 +202,8 @@ extension UNetFixedEncoder {
     let graph = textEncoding[0].graph
     let lora = lora.filter { $0.version == version }
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand ? .externalOnDemand : .externalData(deviceProperties.isUMA ? .fread : .mmap)
+      externalOnDemand
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     switch version {
     case .sdxlBase, .ssd1b:
       let batchSize = textEncoding[0].shape[0]
