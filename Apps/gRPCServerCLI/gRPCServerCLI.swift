@@ -111,6 +111,10 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
 
   private func supervise(childWork: () -> Void) {
     var restartCount = 0
+    var crashTimes: [Date] = []
+    let maxCrashesPerMinute = 10
+    let timeWindow: TimeInterval = 60.0  // 1 minute in seconds
+
     while true {
       let pid = fork()
       guard pid != 0 else {
@@ -124,6 +128,8 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
       // Parent process
       var status: Int32 = 0
       waitpid(pid, &status, 0)
+      let crashTime = Date()
+      var shouldRestart = false
 
       if checkWIFEXITED(status) {
         let exitStatus = getWEXITSTATUS(status)
@@ -132,11 +138,35 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
           return
         }
         print("Child process exited with status: \(exitStatus)")
+        shouldRestart = true
       } else if checkWIFSIGNALED(status) {
         print("Child process terminated by signal: \(getWTERMSIG(status))")
+        shouldRestart = true
       }
-      restartCount += 1
-      print("Restarting...  (Attempt \(restartCount) restarting")
+
+      if shouldRestart {
+        // Add current crash time to the list
+        crashTimes.append(crashTime)
+
+        // Remove crash times older than 1 minute
+        crashTimes = crashTimes.filter { crashTime.timeIntervalSince($0) <= timeWindow }
+
+        // Check if we've exceeded the crash limit
+        if crashTimes.count >= maxCrashesPerMinute, let time = crashTimes.last {
+          print(
+            "ERROR: Too many crashes (\(crashTimes.count)) within 1 minute. Stopping auto-restart to prevent infinite crash loop."
+          )
+          print("Last \(crashTimes.count) crashes occurred at:")
+          let formatter = DateFormatter()
+          formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+          print("\(formatter.string(from: time))")
+          print("ERROR: Too many crashes. Exiting with error code 2 for external supervisor.")
+          exit(2)
+        }
+
+        restartCount += 1
+        print("Restarting... (Attempt \(restartCount), \(crashTimes.count) crashes in last minute)")
+      }
     }
   }
 #endif
