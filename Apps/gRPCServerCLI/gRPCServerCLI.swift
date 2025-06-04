@@ -323,7 +323,9 @@ struct gRPCServerCLI: ParsableCommand {
     #if os(Linux)
       if supervised {
         // Run in supervised mode
-        supervise {
+        supervise(
+          maxCrashesWithinTimeWindow: maxCrashesWithinTimeWindow, timeWindow: crashTimeWindow
+        ) {
           try? startGRPCServer()
         }
       } else {
