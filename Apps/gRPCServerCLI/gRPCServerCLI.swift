@@ -308,7 +308,7 @@ struct gRPCServerCLI: ParsableCommand {
     var maxCrashesWithinTimeWindow: Int?
 
     @Option(name: .long, help: "The time window for us to record number of crashes in seconds.")
-    let crashTimeWindow: TimeInterval = 60.0
+    var crashTimeWindow: TimeInterval = 60.0
 
   #endif
 
