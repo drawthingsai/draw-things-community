@@ -109,11 +109,11 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
     return status & 0x7f
   }
 
-  private func supervise(childWork: () -> Void) {
+  private func supervise(
+    maxCrashesWithinTimeWindow: Int?, timeWindow: TimeInterval, childWork: () -> Void
+  ) {
     var restartCount = 0
     var crashTimes: [Date] = []
-    let maxCrashesPerMinute = 10
-    let timeWindow: TimeInterval = 60.0  // 1 minute in seconds
 
     while true {
       let pid = fork()
@@ -145,23 +145,25 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
       }
 
       if shouldRestart {
-        // Add current crash time to the list
-        crashTimes.append(crashTime)
+        if let maxCrashesWithinTimeWindow = maxCrashesWithinTimeWindow {
+          // Add current crash time to the list
+          crashTimes.append(crashTime)
 
-        // Remove crash times older than 1 minute
-        crashTimes = crashTimes.filter { crashTime.timeIntervalSince($0) <= timeWindow }
+          // Remove crash times older than 1 minute
+          crashTimes = crashTimes.filter { crashTime.timeIntervalSince($0) <= timeWindow }
 
-        // Check if we've exceeded the crash limit
-        if crashTimes.count >= maxCrashesPerMinute, let time = crashTimes.last {
-          print(
-            "ERROR: Too many crashes (\(crashTimes.count)) within 1 minute. Stopping auto-restart to prevent infinite crash loop."
-          )
-          print("Last \(crashTimes.count) crashes occurred at:")
-          let formatter = DateFormatter()
-          formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-          print("\(formatter.string(from: time))")
-          print("ERROR: Too many crashes. Exiting with error code 2 for external supervisor.")
-          exit(2)
+          // Check if we've exceeded the crash limit
+          if crashTimes.count >= maxCrashesWithinTimeWindow, let time = crashTimes.last {
+            print(
+              "ERROR: Too many crashes (\(crashTimes.count)) within \(timeWindow) seconds. Stopping auto-restart to prevent infinite crash loop."
+            )
+            print("Last \(crashTimes.count) crashes occurred at:")
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            print("\(formatter.string(from: time))")
+            print("ERROR: Too many crashes. Exiting with error code 2 for external supervisor.")
+            exit(2)
+          }
         }
 
         restartCount += 1
@@ -299,6 +301,14 @@ struct gRPCServerCLI: ParsableCommand {
   #if os(Linux)
     @Flag(help: "Supervise the server so it restarts upon a internal crash.")
     var supervised = false
+
+    @Option(
+      name: .long,
+      help: "The maximum number of crashes within a given time window before we give up rebooting.")
+    var maxCrashesWithinTimeWindow: Int?
+
+    @Option(name: .long, help: "The time window for us to record number of crashes in seconds.")
+    let crashTimeWindow: TimeInterval = 60.0
 
   #endif
 
