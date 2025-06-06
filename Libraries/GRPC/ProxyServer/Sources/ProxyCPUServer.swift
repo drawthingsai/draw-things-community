@@ -576,7 +576,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         return (false, "Proxy Server can not calculate cost for model \(modelName)")
       }
 
-      let costThreshold = ComputeUnits.threadhold(for: payload.priority)
+      let costThreshold = ComputeUnits.threshold(for: payload.priority)
       guard cost < costThreshold else {
         logger.error(
           "Proxy Server enqueue image generating request failed, cost exceed threshold \(costThreshold)"

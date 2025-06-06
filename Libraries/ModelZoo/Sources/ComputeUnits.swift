@@ -151,7 +151,7 @@ public enum ComputeUnits {
         * Double(max(configuration.strength, 0.05)) * Double(batchSize)).rounded(.up))
   }
 
-  public static func threadhold(for priority: String) -> Int {
+  public static func threshold(for priority: String) -> Int {
     switch priority {
     case "community":
       return 15000  // around 120s
