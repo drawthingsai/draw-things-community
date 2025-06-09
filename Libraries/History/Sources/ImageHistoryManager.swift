@@ -1201,8 +1201,10 @@ public final class ImageHistoryManager {
   // Return whether we are on the sacred lineage, which is the lineage can be represented by the slider.
   public func seek(to logicalTime: Int64, lineage: Int64?) -> Bool {
     dispatchPrecondition(condition: .onQueue(.main))
+    var logicalTime = logicalTime
     if lineage == nil {
-      precondition(logicalTime >= 0 && logicalTime <= maxLogicalTime)
+      assert(logicalTime >= 0 && logicalTime <= maxLogicalTime)
+      logicalTime = min(max(0, logicalTime), maxLogicalTime)
     }
     if let imageHistory =
       nodeCache[logicalTime]?.0
