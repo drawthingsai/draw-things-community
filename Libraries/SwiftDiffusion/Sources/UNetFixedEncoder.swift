@@ -775,7 +775,7 @@ extension UNetFixedEncoder {
                   store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
                 )
                 switch result {
-                case .continue(let updatedName, _):
+                case .continue(let updatedName, _, _):
                   guard updatedName == name else { return result }
                   if !loadedFromWeightsCache {
                     return result
@@ -940,7 +940,7 @@ extension UNetFixedEncoder {
                   store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
                 )
                 switch result {
-                case .continue(let updatedName, _):
+                case .continue(let updatedName, _, _):
                   guard updatedName == name else { return result }
                   if !loadedFromWeightsCache {
                     return result
@@ -1088,7 +1088,7 @@ extension UNetFixedEncoder {
                     of: FloatType.self)
                 }
                 switch result {
-                case .continue(let updatedName, _):
+                case .continue(let updatedName, _, _):
                   guard updatedName == name else { return result }
                   if !loadedFromWeightsCache {
                     return result
@@ -1233,7 +1233,7 @@ extension UNetFixedEncoder {
                   store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
                 )
                 switch result {
-                case .continue(let updatedName, _):
+                case .continue(let updatedName, _, _):
                   guard updatedName == name else { return result }
                   if !loadedFromWeightsCache {
                     return result

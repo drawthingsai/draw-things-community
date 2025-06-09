@@ -182,7 +182,7 @@ extension UNetFromCoreML {
                   graph, name: key, store: store, dataType: Float16.dataType,
                   shape: tensorShape.shape, of: Float16.self)
                 {
-                case .continue(let name, _):
+                case .continue(let name, _, _):
                   tensor = store.read(name, codec: [.q6p, .q8p, .ezm7, .externalData])
                 case .final(let x):
                   tensor = x

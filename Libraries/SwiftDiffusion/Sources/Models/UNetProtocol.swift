@@ -1321,7 +1321,7 @@ extension UNetFromNNC {
                     of: FloatType.self)
                 }
                 switch result {
-                case .continue(let updatedName, _):
+                case .continue(let updatedName, _, _):
                   guard updatedName == name else {
                     return result
                   }
@@ -1384,7 +1384,7 @@ extension UNetFromNNC {
                     of: FloatType.self)
                 }
                 switch result {
-                case .continue(let updatedName, _):
+                case .continue(let updatedName, _, _):
                   guard updatedName == name else {
                     return result
                   }
