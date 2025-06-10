@@ -319,6 +319,19 @@ struct gRPCServerCLI: ParsableCommand {
   )
   var join: String?
 
+  @Flag(help: "Enable cancellation monitoring for stuck generations.")
+  var enableCancellationMonitoring = false
+
+  @Option(
+    name: .long,
+    help: "Warning timeout in seconds for cancelled operations (default: 60).")
+  var cancellationWarningTimeout: TimeInterval = 60.0
+
+  @Option(
+    name: .long,
+    help: "Exit timeout in seconds after warning for cancelled operations (default: 60).")
+  var cancellationExitTimeout: TimeInterval = 60.0
+
   mutating func run() throws {
     #if os(Linux)
       if supervised {
@@ -442,7 +455,10 @@ struct gRPCServerCLI: ParsableCommand {
     let localImageGenerator = createLocalImageGenerator(queue: queue)
     let imageGenerationServiceImpl = ImageGenerationServiceImpl(
       imageGenerator: localImageGenerator, queue: queue, backupQueue: queue,
-      serverConfigurationRewriter: serverLoRALoader)
+      serverConfigurationRewriter: serverLoRALoader,
+      enableCancellationMonitoring: enableCancellationMonitoring,
+      cancellationWarningTimeoutSeconds: cancellationWarningTimeout,
+      cancellationExitTimeoutSeconds: cancellationExitTimeout)
     if noResponseCompression {
       imageGenerationServiceImpl.responseCompression.store(false, ordering: .releasing)
     } else {
