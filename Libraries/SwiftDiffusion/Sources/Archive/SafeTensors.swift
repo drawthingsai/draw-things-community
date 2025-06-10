@@ -30,6 +30,37 @@ public let F8_E4M3: [Float] = [
   .nan,
 ]
 
+public let F8_E5M2: [Float] = [
+  0.0, 1.52587890625e-05, 3.0517578125e-05, 4.57763671875e-05, 6.103515625e-05, 7.62939453125e-05,
+  9.1552734375e-05, 0.0001068115234375, 0.0001220703125, 0.000152587890625, 0.00018310546875,
+  0.000213623046875, 0.000244140625, 0.00030517578125, 0.0003662109375, 0.00042724609375,
+  0.00048828125, 0.0006103515625, 0.000732421875, 0.0008544921875, 0.0009765625, 0.001220703125,
+  0.00146484375, 0.001708984375, 0.001953125, 0.00244140625, 0.0029296875, 0.00341796875,
+  0.00390625, 0.0048828125, 0.005859375, 0.0068359375, 0.0078125, 0.009765625, 0.01171875,
+  0.013671875, 0.015625, 0.01953125, 0.0234375, 0.02734375, 0.03125, 0.0390625, 0.046875, 0.0546875,
+  0.0625, 0.078125, 0.09375, 0.109375, 0.125, 0.15625, 0.1875, 0.21875, 0.25, 0.3125, 0.375, 0.4375,
+  0.5, 0.625, 0.75, 0.875, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0,
+  12.0, 14.0, 16.0, 20.0, 24.0, 28.0, 32.0, 40.0, 48.0, 56.0, 64.0, 80.0, 96.0, 112.0, 128.0, 160.0,
+  192.0, 224.0, 256.0, 320.0, 384.0, 448.0, 512.0, 640.0, 768.0, 896.0, 1024.0, 1280.0, 1536.0,
+  1792.0, 2048.0, 2560.0, 3072.0, 3584.0, 4096.0, 5120.0, 6144.0, 7168.0, 8192.0, 10240.0, 12288.0,
+  14336.0, 16384.0, 20480.0, 24576.0, 28672.0, 32768.0, 40960.0, 49152.0, 57344.0, .infinity, .nan,
+  .nan, .nan, -0.0, -1.52587890625e-05, -3.0517578125e-05, -4.57763671875e-05, -6.103515625e-05,
+  -7.62939453125e-05, -9.1552734375e-05, -0.0001068115234375, -0.0001220703125, -0.000152587890625,
+  -0.00018310546875, -0.000213623046875, -0.000244140625, -0.00030517578125, -0.0003662109375,
+  -0.00042724609375, -0.00048828125, -0.0006103515625, -0.000732421875, -0.0008544921875,
+  -0.0009765625, -0.001220703125, -0.00146484375, -0.001708984375, -0.001953125, -0.00244140625,
+  -0.0029296875, -0.00341796875, -0.00390625, -0.0048828125, -0.005859375, -0.0068359375,
+  -0.0078125, -0.009765625, -0.01171875, -0.013671875, -0.015625, -0.01953125, -0.0234375,
+  -0.02734375, -0.03125, -0.0390625, -0.046875, -0.0546875, -0.0625, -0.078125, -0.09375, -0.109375,
+  -0.125, -0.15625, -0.1875, -0.21875, -0.25, -0.3125, -0.375, -0.4375, -0.5, -0.625, -0.75, -0.875,
+  -1.0, -1.25, -1.5, -1.75, -2.0, -2.5, -3.0, -3.5, -4.0, -5.0, -6.0, -7.0, -8.0, -10.0, -12.0,
+  -14.0, -16.0, -20.0, -24.0, -28.0, -32.0, -40.0, -48.0, -56.0, -64.0, -80.0, -96.0, -112.0,
+  -128.0, -160.0, -192.0, -224.0, -256.0, -320.0, -384.0, -448.0, -512.0, -640.0, -768.0, -896.0,
+  -1024.0, -1280.0, -1536.0, -1792.0, -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0,
+  -7168.0, -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0, -32768.0,
+  -40960.0, -49152.0, -57344.0, -.infinity, .nan, .nan, .nan,
+]
+
 public final class SafeTensors {
   public var data: Data
   public let bufferStart: Int
@@ -67,17 +98,19 @@ public final class SafeTensors {
         dtype == "f32" || dtype == "f16" || dtype == "float16" || dtype == "float32"
           || dtype == "float" || dtype == "half" || dtype == "float64" || dtype == "f64"
           || dtype == "double" || dtype == "bf16" || dtype == "bfloat16" || dtype == "f8_e4m3"
+          || dtype == "f8_e5m2"
       else {
         continue
       }
       let BF16 = (dtype == "bf16" || dtype == "bfloat16")
-      let FP8 = (dtype == "f8_e4m3")
+      let FP8_E4M3 = (dtype == "f8_e4m3")
+      let FP8_E5M2 = (dtype == "f8_e5m2")
       let dataType: DataType
       if dtype == "f32" || dtype == "float32" || dtype == "float" {
         dataType = .Float32
       } else if dtype == "f64" || dtype == "float64" || dtype == "double" {
         dataType = .Float64
-      } else if dtype == "f8_e4m3" {
+      } else if dtype == "f8_e4m3" || dtype == "f8_e5m2" {
         dataType = .UInt8
       } else {
         dataType = .Float16
@@ -91,7 +124,8 @@ public final class SafeTensors {
       strides.reverse()
       let tensorDescriptor = TensorDescriptor(
         storage: Storage(
-          name: key, size: offsetEnd - offsetStart, dataType: dataType, BF16: BF16, FP8: FP8),
+          name: key, size: offsetEnd - offsetStart, dataType: dataType, BF16: BF16,
+          FP8_E4M3: FP8_E4M3, FP8_E5M2: FP8_E5M2),
         storageOffset: offsetStart, shape: shape, strides: strides)
       states[key] = tensorDescriptor
     }
@@ -166,8 +200,14 @@ extension TensorDataArchive {
           )
           f32.withUnsafeMutableBytes {
             guard let f32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
-            for i in 0..<count {
-              f32[i] = F8_E4M3[Int(fp8[i])]
+            if tensorDescriptor.storage.FP8_E4M3 {
+              for i in 0..<count {
+                f32[i] = F8_E4M3[Int(fp8[i])]
+              }
+            } else if tensorDescriptor.storage.FP8_E5M2 {
+              for i in 0..<count {
+                f32[i] = F8_E5M2[Int(fp8[i])]
+              }
             }
           }
           tensor = f32
@@ -220,8 +260,14 @@ extension TensorDataArchive {
           )
           f32.withUnsafeMutableBytes {
             guard let f32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
-            for i in 0..<count {
-              f32[i] = F8_E4M3[Int(fp8[i])]
+            if tensorDescriptor.storage.FP8_E4M3 {
+              for i in 0..<count {
+                f32[i] = F8_E4M3[Int(fp8[i])]
+              }
+            } else if tensorDescriptor.storage.FP8_E5M2 {
+              for i in 0..<count {
+                f32[i] = F8_E5M2[Int(fp8[i])]
+              }
             }
           }
           tensor = f32

@@ -14,7 +14,8 @@ public struct Storage {
   var size: Int
   var dataType: DataType
   var BF16: Bool
-  var FP8: Bool
+  var FP8_E4M3: Bool
+  var FP8_E5M2: Bool
 }
 
 public struct TensorDescriptor {

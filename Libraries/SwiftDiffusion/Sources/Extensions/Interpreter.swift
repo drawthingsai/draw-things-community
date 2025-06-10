@@ -86,13 +86,17 @@ extension Interpreter {
       }
       let storage: Storage
       if global.function == "HalfStorage" {
-        storage = Storage(name: name, size: size, dataType: .Float16, BF16: false, FP8: false)
+        storage = Storage(
+          name: name, size: size, dataType: .Float16, BF16: false, FP8_E4M3: false, FP8_E5M2: false)
       } else if global.function == "BFloat16Storage" {
-        storage = Storage(name: name, size: size, dataType: .Float16, BF16: true, FP8: false)
+        storage = Storage(
+          name: name, size: size, dataType: .Float16, BF16: true, FP8_E4M3: false, FP8_E5M2: false)
       } else if global.function == "DoubleStorage" {
-        storage = Storage(name: name, size: size, dataType: .Float64, BF16: false, FP8: false)
+        storage = Storage(
+          name: name, size: size, dataType: .Float64, BF16: false, FP8_E4M3: false, FP8_E5M2: false)
       } else {
-        storage = Storage(name: name, size: size, dataType: .Float32, BF16: false, FP8: false)
+        storage = Storage(
+          name: name, size: size, dataType: .Float32, BF16: false, FP8_E4M3: false, FP8_E5M2: false)
       }
       return [storage]
     }
@@ -166,7 +170,7 @@ extension Interpreter {
         ? (data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: Int64.self) }) : 0
       descriptor.storageOffset = offset + MemoryLayout<Int64>.size
       let elementSize = {
-        if descriptor.storage.FP8 {
+        if descriptor.storage.FP8_E4M3 || descriptor.storage.FP8_E5M2 {
           return 1
         }
         switch descriptor.storage.dataType {
