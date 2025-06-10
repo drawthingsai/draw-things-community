@@ -319,18 +319,19 @@ struct gRPCServerCLI: ParsableCommand {
   )
   var join: String?
 
-  @Flag(help: "Enable cancellation monitoring for stuck generations.")
-  var enableCancellationMonitoring = false
+  @Option(
+    name: .long,
+    help:
+      "When a request is done, generation should be returned timely. This warns us if it is not returned after specified seconds."
+  )
+  var cancellationWarningTimeout: TimeInterval? = nil
 
   @Option(
     name: .long,
-    help: "Warning timeout in seconds for cancelled operations (default: 60).")
-  var cancellationWarningTimeout: TimeInterval = 60.0
-
-  @Option(
-    name: .long,
-    help: "Exit timeout in seconds after warning for cancelled operations (default: 60).")
-  var cancellationExitTimeout: TimeInterval = 60.0
+    help:
+      "When a request is done, generation should be returned timely. This crashes the process if it is not returned after specified seconds after the warning."
+  )
+  var cancellationCrashTimeout: TimeInterval? = nil
 
   mutating func run() throws {
     #if os(Linux)
@@ -453,12 +454,19 @@ struct gRPCServerCLI: ParsableCommand {
     }
     let queue = DispatchQueue(label: "com.draw-things.edit", qos: .userInteractive)
     let localImageGenerator = createLocalImageGenerator(queue: queue)
+    let cancellationMonitor: ImageGenerationServiceImpl.CancellationMonitor?
+    if let cancellationWarningTimeout = cancellationWarningTimeout,
+      let cancellationCrashTimeout = cancellationCrashTimeout
+    {
+      cancellationMonitor = ImageGenerationServiceImpl.CancellationMonitor(
+        warningTimeout: cancellationWarningTimeout, crashTimeout: cancellationCrashTimeout)
+    } else {
+      cancellationMonitor = nil
+    }
     let imageGenerationServiceImpl = ImageGenerationServiceImpl(
       imageGenerator: localImageGenerator, queue: queue, backupQueue: queue,
       serverConfigurationRewriter: serverLoRALoader,
-      enableCancellationMonitoring: enableCancellationMonitoring,
-      cancellationWarningTimeoutSeconds: cancellationWarningTimeout,
-      cancellationExitTimeoutSeconds: cancellationExitTimeout)
+      cancellationMonitor: cancellationMonitor)
     if noResponseCompression {
       imageGenerationServiceImpl.responseCompression.store(false, ordering: .releasing)
     } else {

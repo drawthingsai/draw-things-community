@@ -117,52 +117,48 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   public var sharedSecret: String? = nil
 
   // Configurable monitoring properties
-  public var enableCancellationMonitoring: Bool
-  public var cancellationWarningTimeoutSeconds: TimeInterval
-  public var cancellationExitTimeoutSeconds: TimeInterval
+  public struct CancellationMonitor {
+    public var warningTimeout: TimeInterval
+    public var crashTimeout: TimeInterval
+    public init(warningTimeout: TimeInterval, crashTimeout: TimeInterval) {
+      self.warningTimeout = warningTimeout
+      self.crashTimeout = crashTimeout
+    }
+  }
+  public let cancellationMonitor: CancellationMonitor?
 
   public init(
     imageGenerator: ImageGenerator, queue: DispatchQueue, backupQueue: DispatchQueue,
     serverConfigurationRewriter: ServerConfigurationRewriter? = nil,
-    enableCancellationMonitoring: Bool = false,
-    cancellationWarningTimeoutSeconds: TimeInterval = 60.0,
-    cancellationExitTimeoutSeconds: TimeInterval = 60.0
+    cancellationMonitor: CancellationMonitor? = nil
   ) {
     self.imageGenerator = imageGenerator
     self.queue = queue
     self.backupQueue = backupQueue
     self.serverConfigurationRewriter = serverConfigurationRewriter
-    self.enableCancellationMonitoring = enableCancellationMonitoring
-    self.cancellationWarningTimeoutSeconds = cancellationWarningTimeoutSeconds
-    self.cancellationExitTimeoutSeconds = cancellationExitTimeoutSeconds
+    self.cancellationMonitor = cancellationMonitor
     self.logger.info("ImageGenerationServiceImpl init")
   }
 
-  static private func cancellationMonitoring(successFlag: ManagedAtomic<Bool>) {
-    guard enableCancellationMonitoring else { return }
-
-    let monitoringQueue = DispatchQueue.global(qos: .userInitiated)
+  static private func cancellationMonitoring(
+    successFlag: ManagedAtomic<Bool>, logger: Logger, cancellationMonitor: CancellationMonitor
+  ) {
+    let queue = DispatchQueue.global(qos: .userInitiated)
 
     // Schedule error log after configurable warning timeout
-    monitoringQueue.asyncAfter(deadline: .now() + cancellationWarningTimeoutSeconds) {
-      [weak self] in
-      guard let self = self else { return }
-      if !successFlag.load(ordering: .acquiring) {
-        self.logger.error(
-          "Image generation has been cancelled/disconnected for \(Int(self.cancellationWarningTimeoutSeconds)) seconds and still not completed successfully"
-        )
+    queue.asyncAfter(deadline: .now() + cancellationMonitor.warningTimeout) {
+      guard !successFlag.load(ordering: .acquiring) else { return }
+      logger.error(
+        "Image generation has been cancelled/disconnected for \(cancellationMonitor.warningTimeout) seconds and still not completed successfully"
+      )
 
-        // Schedule app exit after configurable exit timeout (total = warning + exit timeout)
-        monitoringQueue.asyncAfter(deadline: .now() + self.cancellationExitTimeoutSeconds) {
-          [weak self] in
-          guard let self = self else { return }
-          if !successFlag.load(ordering: .acquiring) {
-            self.logger.error(
-              "Image generation has been cancelled/disconnected for \(Int(self.cancellationWarningTimeoutSeconds + self.cancellationExitTimeoutSeconds)) seconds and still not completed successfully. Exiting application for restart."
-            )
-            exit(-1)
-          }
-        }
+      // Schedule app exit after configurable exit timeout (total = warning + exit timeout)
+      queue.asyncAfter(deadline: .now() + cancellationMonitor.crashTimeout) {
+        guard !successFlag.load(ordering: .acquiring) else { return }
+        logger.error(
+          "Image generation has been cancelled/disconnected for \(cancellationMonitor.crashTimeout) seconds and still not completed successfully. Exiting application for restart."
+        )
+        exit(-1)
       }
     }
   }
@@ -189,13 +185,18 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       let cancelFlag = ManagedAtomic<Bool>(false)
       let successFlag = ManagedAtomic<Bool>(false)
       var cancellation: ProtectedValue<(() -> Void)?> = ProtectedValue(nil)
+      let logger = logger
+      let cancellationMonitor = cancellationMonitor
       func cancel() {
         cancelFlag.store(true, ordering: .releasing)
         cancellation.modify {
           $0?()
           $0 = nil
         }
-        self.cancellationMonitoring(successFlag: successFlag)
+        if let cancellationMonitor = cancellationMonitor {
+          Self.cancellationMonitoring(
+            successFlag: successFlag, logger: logger, cancellationMonitor: cancellationMonitor)
+        }
       }
       context.closeFuture.whenComplete { _ in
         cancel()
@@ -266,6 +267,8 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     let cancelFlag = ManagedAtomic<Bool>(false)
     let successFlag = ManagedAtomic<Bool>(false)
     var cancellation: ProtectedValue<(() -> Void)?> = ProtectedValue(nil)
+    let logger = logger
+    let cancellationMonitor = cancellationMonitor
     func cancel() {
       cancelFlag.store(true, ordering: .releasing)
       cancellation.modify {
@@ -273,7 +276,10 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         $0 = nil
       }
       // Start monitoring after cancellation
-      self.cancellationMonitoring(successFlag: successFlag)
+      if let cancellationMonitor = cancellationMonitor {
+        Self.cancellationMonitoring(
+          successFlag: successFlag, logger: logger, cancellationMonitor: cancellationMonitor)
+      }
     }
     context.closeFuture.whenComplete { _ in
       cancel()
