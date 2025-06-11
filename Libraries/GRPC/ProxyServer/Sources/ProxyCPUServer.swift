@@ -48,7 +48,7 @@ public struct Worker {
 }
 
 extension Worker {
-  func executeTask(_ task: WorkTask) async {
+  func executeTask(_ task: WorkTask) async -> Result<Void, Error> {
     logger.info(
       "Worker \(id) primaryPriority:\(primaryPriority) starting task  (Priority: \(task.priority))"
     )
@@ -60,7 +60,11 @@ extension Worker {
     do {
       var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
       guard let client = client.client else {
-        throw WorkerError.invalidNioClient
+        logger.error("Worker \(id) task failed: invalid NIO client")
+        let error = WorkerError.invalidNioClient
+        task.promise.fail(error)
+        task.context.statusPromise.fail(error)
+        return .failure(error)
       }
       let logger = logger
       let callInstance = client.generateImage(task.request) { response in
@@ -91,11 +95,14 @@ extension Worker {
       task.promise.succeed(status)
       task.context.statusPromise.succeed(status)
 
-    } catch {
-      logger.error("forward response error \(error)")
+      logger.info("Worker \(id) completed task successfully (Priority: \(task.priority))")
+      return .success(())
 
+    } catch {
+      logger.error("Worker \(id) task failed with error: \(error) (Priority: \(task.priority))")
       task.promise.fail(error)
       task.context.statusPromise.fail(error)
+      return .failure(error)
     }
   }
 }
@@ -640,9 +647,16 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       if let worker = await taskQueue.nextWorker() {
         // Note that the extracted task may not be the ones we just enqueued.
         if let nextTaskForWorker = await taskQueue.nextTaskForWorker(worker) {
-          await worker.executeTask(nextTaskForWorker)
-          await taskQueue.returnWorker(worker)
+          let result = await worker.executeTask(nextTaskForWorker)
+          switch result {
+          case .success:
+            logger.info("Task execution completed successfully for worker \(worker.id)")
+          case .failure(let error):
+            logger.error("Task execution failed for worker \(worker.id): \(error)")
+          }
         }
+        // Always return worker to pool regardless of task outcome
+        await taskQueue.returnWorker(worker)
       } else {
         logger.error("worker stream finished, can not get available worker")
         heartbeat.cancel()
