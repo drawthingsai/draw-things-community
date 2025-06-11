@@ -332,6 +332,11 @@ struct gRPCServerCLI: ParsableCommand {
       "When a request is done, generation should be returned timely. This crashes the process if it is not returned after specified seconds after the warning."
   )
   var cancellationCrashTimeout: TimeInterval? = nil
+  @Flag(
+    help:
+      "Echo response will be done on the media generation queue. This helps to use echo call as a health check mechanism."
+  )
+  var echoOnQueue: Bool = false
 
   mutating func run() throws {
     #if os(Linux)
@@ -466,7 +471,7 @@ struct gRPCServerCLI: ParsableCommand {
     let imageGenerationServiceImpl = ImageGenerationServiceImpl(
       imageGenerator: localImageGenerator, queue: queue, backupQueue: queue,
       serverConfigurationRewriter: serverLoRALoader,
-      cancellationMonitor: cancellationMonitor)
+      cancellationMonitor: cancellationMonitor, echoOnQueue: echoOnQueue)
     if noResponseCompression {
       imageGenerationServiceImpl.responseCompression.store(false, ordering: .releasing)
     } else {

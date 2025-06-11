@@ -126,17 +126,19 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     }
   }
   public let cancellationMonitor: CancellationMonitor?
+  private let echoOnQueue: Bool
 
   public init(
     imageGenerator: ImageGenerator, queue: DispatchQueue, backupQueue: DispatchQueue,
     serverConfigurationRewriter: ServerConfigurationRewriter? = nil,
-    cancellationMonitor: CancellationMonitor? = nil
+    cancellationMonitor: CancellationMonitor? = nil, echoOnQueue: Bool = false
   ) {
     self.imageGenerator = imageGenerator
     self.queue = queue
     self.backupQueue = backupQueue
     self.serverConfigurationRewriter = serverConfigurationRewriter
     self.cancellationMonitor = cancellationMonitor
+    self.echoOnQueue = echoOnQueue
     self.logger.info("ImageGenerationServiceImpl init")
   }
 
@@ -664,7 +666,15 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         }
       }
     }
-    return context.eventLoop.makeSucceededFuture(response)
+    if echoOnQueue {
+      let promise = context.eventLoop.makePromise(of: EchoReply.self)
+      queue.async {
+        promise.succeed(response)
+      }
+      return promise.futureResult
+    } else {
+      return context.eventLoop.makeSucceededFuture(response)
+    }
   }
 
   public func uploadFile(context: StreamingResponseCallContext<UploadResponse>) -> EventLoopFuture<
