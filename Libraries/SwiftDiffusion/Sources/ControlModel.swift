@@ -479,11 +479,28 @@ extension ControlModel {
       let startHeight = shape[1]
       let startWidth = shape[2]
       if let firstStage = firstStage {  // For FLUX.1, we use the VAE as encoder.
-        var encoder: Model? = nil
-        return inputs.map {
-          let result = firstStage.sample($0.hint, encoder: encoder, cancellation: { _ in })
-          encoder = result.2
-          return [result.0]
+        switch version {
+        case .flux1:
+          var encoder: Model? = nil
+          return inputs.map {
+            let result = firstStage.sample($0.hint, encoder: encoder, cancellation: { _ in })
+            encoder = result.2
+            return [result.0]
+          }
+        case .wan21_14b, .wan21_1_3b:
+          var encoder: Model? = nil
+          return inputs.map {
+            // Use mean rather than sampled from distribution.
+            let result = firstStage.encode($0.hint, encoder: encoder, cancellation: { _ in })
+            let shape = result.0.shape
+            encoder = result.1
+            return [
+              firstStage.scale(result.0[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<16].copied())
+            ]
+          }
+        case .auraflow, .hiDreamI1, .hunyuanVideo, .kandinsky21, .pixart, .sd3, .sd3Large,
+          .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+          break
         }
       }
       let tiledHeight =

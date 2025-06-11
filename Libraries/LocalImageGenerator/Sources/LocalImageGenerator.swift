@@ -1925,7 +1925,7 @@ extension LocalImageGenerator {
         filePaths.append(ControlNetZoo.filePathForModelDownloaded(preprocessor))
       }
       // We don't adjust RGB range if it is a ControlNet not trained for SDXL.
-      let adjustRGB = (version != .flux1)
+      let adjustRGB = (version != .flux1 && version != .wan21_14b && version != .wan21_1_3b)
       let controlModel = ControlModel<FloatType>(
         filePaths: filePaths, type: type, modifier: modifier,
         externalOnDemand: externalOnDemand, version: version,
@@ -1933,7 +1933,7 @@ extension LocalImageGenerator {
         startStep: startStep, endStep: endStep, controlMode: controlMode,
         globalAveragePooling: globalAveragePooling, transformerBlocks: transformerBlocks,
         targetBlocks: control.targetBlocks, imageEncoderVersion: imageEncoderVersion,
-        ipAdapterConfig: ipAdapterConfig, firstStage: version == .flux1 ? firstStage : nil)  // TODO: temporary holder, we need a new setting to know whether to reuse the image encoder from first stage or something else.
+        ipAdapterConfig: ipAdapterConfig, firstStage: firstStage)
       func customRGB(_ convert: Bool) -> DynamicGraph.Tensor<FloatType>? {
         custom.map({
           let input = graph.variable(Tensor<FloatType>($0).toGPU(0))

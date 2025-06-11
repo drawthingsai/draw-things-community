@@ -116,9 +116,15 @@ public struct ControlNetZoo: DownloadZoo {
       "732fc3543b725d93854ef6950291123edfb6056dc372cdcf7adad4df0055dbe8",
     "controlnet_depth_sdxl_v1.0_mid_f16.ckpt":
       "6629c9ccdc2a7741c1100089c28588df7f3d3dd26260c17e9204765d62167215",
+    "wan_v2.1_1.3b_vace_480p_f16.ckpt":
+      "203b1372d505d8bf7dcd72ce29458d03bb9e41f3f0d296ea4349cd78335de6eb",
   ]
 
   public static let builtinSpecifications: [Specification] = [
+    Specification(
+      name: "VACE (Wan 2.1, 1.3B)",
+      file: "wan_v2.1_1.3b_vace_480p_f16.ckpt",
+      modifier: nil, version: .wan21_1_3b, type: .controlnet),
     Specification(
       name: "Canny Edge Map (SD v1.x, ControlNet 1.0)", file: "controlnet_canny_1.x_f16.ckpt",
       modifier: .canny, version: .v1, type: .controlnet, deprecated: true),
