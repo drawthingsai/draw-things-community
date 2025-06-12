@@ -468,7 +468,10 @@ extension ControlModel {
       fatalError()
     }
   }
-  public func hint(inputs: [(hint: DynamicGraph.Tensor<FloatType>, weight: Float)])
+  public func hint(
+    batchSize: Int, startHeight: Int, startWidth: Int,
+    inputs: [(hint: DynamicGraph.Tensor<FloatType>, weight: Float)]
+  )
     -> [[DynamicGraph.Tensor<FloatType>]]
   {
     guard inputs.count > 0 else {
@@ -491,15 +494,37 @@ extension ControlModel {
           }
         case .wan21_14b, .wan21_1_3b:
           var encoder: Model? = nil
-          return inputs.map {
+          let refs = inputs.map {
             // Use mean rather than sampled from distribution.
             let result = firstStage.encode($0.hint, encoder: encoder, cancellation: { _ in })
             let shape = result.0.shape
             encoder = result.1
-            return [
-              firstStage.scale(result.0[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<16].copied())
-            ]
+            return firstStage.scale(
+              result.0[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<16].copied())
           }
+          // Encode empty video, as well as mask.
+          let frames = graph.variable(
+            .GPU(0), .NHWC(((batchSize - refs.count) - 1) * 4 + 1, startHeight, startWidth, 3),
+            of: FloatType.self)
+          frames.full(0)
+          var latents = firstStage.encode(frames, encoder: nil, cancellation: { _ in }).0
+          latents = firstStage.scale(
+            latents[
+              0..<(batchSize - refs.count), 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16
+            ].copied())
+          var vaceLatents = graph.variable(
+            .GPU(0), .NHWC(batchSize, startHeight / 8, startWidth / 8, 96), of: FloatType.self)
+          vaceLatents.full(1)
+          for (i, ref) in refs.enumerated() {
+            let shape = ref.shape
+            vaceLatents[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<16] = ref
+            vaceLatents[i..<(i + 1), 0..<shape[1], 0..<shape[2], 16..<32].full(0)
+          }
+          vaceLatents[refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16] =
+            latents
+          vaceLatents[
+            refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 16..<32] = latents
+          return [[vaceLatents]]
         case .auraflow, .hiDreamI1, .hunyuanVideo, .kandinsky21, .pixart, .sd3, .sd3Large,
           .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
           break

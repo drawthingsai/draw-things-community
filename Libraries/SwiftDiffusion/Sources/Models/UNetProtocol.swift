@@ -918,6 +918,8 @@ extension UNetFromNNC {
         }
       }
     case .wan21_1_3b:
+      let vaceLayers: [Int] =
+        injectedControlsAndAdapters.injectedControls.isEmpty ? [] : (0..<15).map { $0 * 2 }
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
       tiledHeight =
@@ -934,7 +936,7 @@ extension UNetFromNNC {
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
           LoRAWan(
-            channels: 1_536, layers: 30, vaceLayers: [], intermediateSize: 8_960,
+            channels: 1_536, layers: 30, vaceLayers: vaceLayers, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
@@ -957,7 +959,7 @@ extension UNetFromNNC {
       } else {
         unet = ModelBuilderOrModel.model(
           Wan(
-            channels: 1_536, layers: 30, vaceLayers: [], intermediateSize: 8_960,
+            channels: 1_536, layers: 30, vaceLayers: vaceLayers, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
@@ -978,6 +980,8 @@ extension UNetFromNNC {
         }
       }
     case .wan21_14b:
+      let vaceLayers: [Int] =
+        injectedControlsAndAdapters.injectedControls.isEmpty ? [] : (0..<8).map { $0 * 5 }
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
       tiledHeight =
@@ -994,7 +998,7 @@ extension UNetFromNNC {
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
           LoRAWan(
-            channels: 5_120, layers: 40, vaceLayers: [], intermediateSize: 13_824,
+            channels: 5_120, layers: 40, vaceLayers: vaceLayers, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
@@ -1017,7 +1021,7 @@ extension UNetFromNNC {
       } else {
         unet = ModelBuilderOrModel.model(
           Wan(
-            channels: 5_120, layers: 40, vaceLayers: [], intermediateSize: 13_824,
+            channels: 5_120, layers: 40, vaceLayers: vaceLayers, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
