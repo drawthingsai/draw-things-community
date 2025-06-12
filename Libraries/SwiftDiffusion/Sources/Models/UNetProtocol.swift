@@ -372,8 +372,7 @@ extension UNetFromNNC {
 
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, deviceProperties: DeviceProperties,
-    version: ModelVersion,
-    modifier: SamplerModifier,
+    version: ModelVersion, modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
@@ -935,7 +934,7 @@ extension UNetFromNNC {
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
           LoRAWan(
-            channels: 1_536, layers: 30, intermediateSize: 8_960,
+            channels: 1_536, layers: 30, vaceLayers: [], intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
@@ -947,7 +946,7 @@ extension UNetFromNNC {
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: LoRAWan(
-              channels: 1_536, layers: 0, intermediateSize: 8_960,
+              channels: 1_536, layers: 0, vaceLayers: [], intermediateSize: 8_960,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
               injectImage: injectImage,
@@ -958,7 +957,7 @@ extension UNetFromNNC {
       } else {
         unet = ModelBuilderOrModel.model(
           Wan(
-            channels: 1_536, layers: 30, intermediateSize: 8_960,
+            channels: 1_536, layers: 30, vaceLayers: [], intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
@@ -970,7 +969,7 @@ extension UNetFromNNC {
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: Wan(
-              channels: 1_536, layers: 0, intermediateSize: 8_960,
+              channels: 1_536, layers: 0, vaceLayers: [], intermediateSize: 8_960,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
               injectImage: injectImage,
@@ -995,7 +994,7 @@ extension UNetFromNNC {
         configuration.keys = keys
         unet = ModelBuilderOrModel.model(
           LoRAWan(
-            channels: 5_120, layers: 40, intermediateSize: 13_824,
+            channels: 5_120, layers: 40, vaceLayers: [], intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
@@ -1007,7 +1006,7 @@ extension UNetFromNNC {
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: LoRAWan(
-              channels: 5_120, layers: 0, intermediateSize: 13_824,
+              channels: 5_120, layers: 0, vaceLayers: [], intermediateSize: 13_824,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
               injectImage: injectImage,
@@ -1018,7 +1017,7 @@ extension UNetFromNNC {
       } else {
         unet = ModelBuilderOrModel.model(
           Wan(
-            channels: 5_120, layers: 40, intermediateSize: 13_824,
+            channels: 5_120, layers: 40, vaceLayers: [], intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
@@ -1030,7 +1029,7 @@ extension UNetFromNNC {
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: Wan(
-              channels: 5_120, layers: 0, intermediateSize: 13_824,
+              channels: 5_120, layers: 0, vaceLayers: [], intermediateSize: 13_824,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
               injectImage: injectImage,

@@ -1630,8 +1630,10 @@ extension ControlModel {
       let emptyControl = graph.variable(
         .GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 3072), of: FloatType.self)
       emptyControls = Array(repeating: emptyControl, count: 19 + 38)
+    case .wan21_1_3b, .wan21_14b:
+      emptyControls = []
     case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .sdxlRefiner, .ssd1b,
-      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+      .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .hiDreamI1:
       fatalError()
     }
     for emptyControl in emptyControls {

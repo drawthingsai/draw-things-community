@@ -124,7 +124,7 @@ public struct ControlNetZoo: DownloadZoo {
     Specification(
       name: "VACE (Wan 2.1, 1.3B)",
       file: "wan_v2.1_1.3b_vace_480p_f16.ckpt",
-      modifier: nil, version: .wan21_1_3b, type: .controlnet),
+      modifier: .shuffle, version: .wan21_1_3b, type: .controlnet),
     Specification(
       name: "Canny Edge Map (SD v1.x, ControlNet 1.0)", file: "controlnet_canny_1.x_f16.ckpt",
       modifier: .canny, version: .v1, type: .controlnet, deprecated: true),

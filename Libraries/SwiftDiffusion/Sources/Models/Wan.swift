@@ -65,26 +65,27 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
 }
 
 private func WanAttentionBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int, causalInference: Int,
+  prefix: String, weightsPrefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int,
+  causalInference: Int,
   intermediateSize: Int, injectImage: Bool, usesFlashAttention: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
   let c = (0..<6).map { _ in Input() }
   let modulations = (0..<6).map {
-    Parameter<Float>(.GPU(0), .HWC(1, 1, k * h), name: "attn_ada_ln_\($0)")
+    Parameter<Float>(.GPU(0), .HWC(1, 1, k * h), name: "\(weightsPrefix)attn_ada_ln_\($0)")
   }
   let chunks = zip(c, modulations).map { $0 + $1 }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = ((1 + chunks[1]) .* xNorm1(x) + chunks[0]).to(.Float16)
-  let xToKeys = Dense(count: k * h, name: "x_k")
-  let xToQueries = Dense(count: k * h, flags: [.Float16], name: "x_q")
-  let xToValues = Dense(count: k * h, name: "x_v")
+  let xToKeys = Dense(count: k * h, name: "\(weightsPrefix)x_k")
+  let xToQueries = Dense(count: k * h, flags: [.Float16], name: "\(weightsPrefix)x_q")
+  let xToValues = Dense(count: k * h, name: "\(weightsPrefix)x_v")
   var xK = xToKeys(xOut)
-  let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_norm_k")
+  let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_norm_k")
   xK = normK(xK).reshaped([b, hw, h, k])
   var xQ = xToQueries(xOut)
-  let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_norm_q")
+  let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_norm_q")
   xQ = normQ(xQ).reshaped([b, hw, h, k])
   let xV = xToValues(xOut).reshaped([b, hw, h, k])
   var queries = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xQ, right: rot)
@@ -144,15 +145,15 @@ private func WanAttentionBlock(
       b, hw, h * k,
     ])
   }
-  let xUnifyheads = Dense(count: k * h, name: "x_o")
+  let xUnifyheads = Dense(count: k * h, name: "\(weightsPrefix)x_o")
   out = xUnifyheads(out)
   out = x + chunks[2] .* out.to(of: x)
-  let xNorm3 = LayerNorm(epsilon: 1e-6, axis: [2], name: "x_norm_3")
+  let xNorm3 = LayerNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_norm_3")
   xOut = xNorm3(out).to(.Float16)
-  let xToContextQueries = Dense(count: k * h, name: "x_c_q")
+  let xToContextQueries = Dense(count: k * h, name: "\(weightsPrefix)x_c_q")
   let cK = Input()
   var cQ = xToContextQueries(xOut)
-  let contextNormQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_c_norm_q")
+  let contextNormQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_c_norm_q")
   cQ = contextNormQ(cQ).reshaped([b, hw, h, k])
   let cV = Input()
   var crossOut: Model.IO
@@ -199,11 +200,11 @@ private func WanAttentionBlock(
   } else {
     injectedImageKVs = []
   }
-  let contextUnifyheads = Dense(count: k * h, name: "c_o")
+  let contextUnifyheads = Dense(count: k * h, name: "\(weightsPrefix)c_o")
   out = out + contextUnifyheads(crossOut).to(of: out)
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   let (xLinear1, xOutProjection, xFF) = FeedForward(
-    hiddenSize: k * h, intermediateSize: intermediateSize, upcast: false, name: "x")
+    hiddenSize: k * h, intermediateSize: intermediateSize, upcast: false, name: "\(weightsPrefix)x")
   out =
     out + xFF(((1 + chunks[4]) .* xNorm2(out) + chunks[3]).to(.Float16)).to(of: out) .* chunks[5]
   let mapper: ModelWeightMapper = { format in
@@ -295,8 +296,8 @@ private func MLPProj(inChannels: Int, outChannels: Int, name: String) -> (
 }
 
 public func Wan(
-  channels: Int, layers: Int, intermediateSize: Int, time: Int, height: Int, width: Int,
-  textLength: Int, causalInference: Int, injectImage: Bool, usesFlashAttention: Bool,
+  channels: Int, layers: Int, vaceLayers: [Int], intermediateSize: Int, time: Int, height: Int,
+  width: Int, textLength: Int, causalInference: Int, injectImage: Bool, usesFlashAttention: Bool,
   outputResidual: Bool, inputResidual: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -325,7 +326,8 @@ public func Wan(
   var contextIn = [Input]()
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlock(
-      prefix: "blocks.\(i)", k: 128, h: channels / 128, b: 1, t: (textLength, 257),
+      prefix: "blocks.\(i)", weightsPrefix: "", k: 128, h: channels / 128, b: 1,
+      t: (textLength, 257),
       hw: time * h * w, time: time, causalInference: causalInference,
       intermediateSize: intermediateSize, injectImage: injectImage,
       usesFlashAttention: usesFlashAttention)
@@ -388,14 +390,15 @@ public func Wan(
 }
 
 private func WanAttentionBlockFixed(
-  prefix: String, k: Int, h: Int, b: (Int, Int), t: (Int, Int), injectImage: Bool
+  prefix: String, weightsPrefix: String, k: Int, h: Int, b: (Int, Int), t: (Int, Int),
+  injectImage: Bool
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   // Now run attention.
-  let contextToKeys = Dense(count: k * h, name: "c_k")
-  let contextToValues = Dense(count: k * h, name: "c_v")
+  let contextToKeys = Dense(count: k * h, name: "\(weightsPrefix)c_k")
+  let contextToValues = Dense(count: k * h, name: "\(weightsPrefix)c_v")
   var cK = contextToKeys(context)
-  let contextNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "c_norm_k")
+  let contextNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)c_norm_k")
   cK = contextNormK(cK).reshaped([b.0, t.0, h, k])
   let cV = contextToValues(context).reshaped([b.0, t.0, h, k])
   var ins = [context]
@@ -405,10 +408,10 @@ private func WanAttentionBlockFixed(
   let cImgNormK: Model?
   if injectImage {
     let contextImg = Input()
-    let contextImgToKeys = Dense(count: k * h, name: "c_img_k")
-    let contextImgToValues = Dense(count: k * h, name: "c_img_v")
+    let contextImgToKeys = Dense(count: k * h, name: "\(weightsPrefix)c_img_k")
+    let contextImgToValues = Dense(count: k * h, name: "\(weightsPrefix)c_img_v")
     var cImgK = contextImgToKeys(contextImg)
-    let contextImgNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "c_img_norm_k")
+    let contextImgNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)c_img_norm_k")
     cImgK = contextImgNormK(cImgK).reshaped([b.1, t.1, h, k])
     let cImgV = contextImgToValues(contextImg).reshaped([b.1, t.1, h, k])
     ins.append(contextImg)
@@ -494,7 +497,8 @@ public func WanFixed(
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlockFixed(
-      prefix: "blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: (textLength, 257),
+      prefix: "blocks.\(i)", weightsPrefix: "", k: 128, h: channels / 128, b: batchSize,
+      t: (textLength, 257),
       injectImage: injectImage)
     if let contextImg = contextImg {
       outs.append(block(context, contextImg))
@@ -633,7 +637,8 @@ private func LoRAFeedForward(
 }
 
 private func LoRAWanAttentionBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int, causalInference: Int,
+  prefix: String, weightsPrefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int,
+  causalInference: Int,
   intermediateSize: Int, injectImage: Bool, usesFlashAttention: Bool, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
@@ -641,22 +646,23 @@ private func LoRAWanAttentionBlock(
   let rot = Input()
   let c = (0..<6).map { _ in Input() }
   let modulations = (0..<6).map {
-    Parameter<Float>(.GPU(0), .HWC(1, 1, k * h), name: "attn_ada_ln_\($0)")
+    Parameter<Float>(.GPU(0), .HWC(1, 1, k * h), name: "\(weightsPrefix)attn_ada_ln_\($0)")
   }
   let chunks = zip(c, modulations).map { $0 + $1 }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = ((1 + chunks[1]) .* xNorm1(x) + chunks[0]).to(.Float16)
   let xToKeys = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "x_k")
+    count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)x_k")
   let xToQueries = LoRADense(
-    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_q")
+    count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex,
+    name: "\(weightsPrefix)x_q")
   let xToValues = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
+    count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)x_v")
   var xK = xToKeys(xOut)
-  let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_norm_k")
+  let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_norm_k")
   xK = normK(xK).reshaped([b, hw, h, k])
   var xQ = xToQueries(xOut)
-  let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_norm_q")
+  let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_norm_q")
   xQ = normQ(xQ).reshaped([b, hw, h, k])
   let xV = xToValues(xOut).reshaped([b, hw, h, k])
   var queries = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xQ, right: rot)
@@ -717,16 +723,16 @@ private func LoRAWanAttentionBlock(
     ])
   }
   let xUnifyheads = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "x_o")
+    count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)x_o")
   out = xUnifyheads(out)
   out = x + chunks[2] .* out.to(of: x)
-  let xNorm3 = LayerNorm(epsilon: 1e-6, axis: [2], name: "x_norm_3")
+  let xNorm3 = LayerNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_norm_3")
   xOut = xNorm3(out).to(.Float16)
   let xToContextQueries = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "x_c_q")
+    count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)x_c_q")
   let cK = Input()
   var cQ = xToContextQueries(xOut)
-  let contextNormQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "x_c_norm_q")
+  let contextNormQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_c_norm_q")
   cQ = contextNormQ(cQ).reshaped([b, hw, h, k])
   let cV = Input()
   var crossOut: Model.IO
@@ -774,12 +780,12 @@ private func LoRAWanAttentionBlock(
     injectedImageKVs = []
   }
   let contextUnifyheads = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "c_o")
+    count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)c_o")
   out = out + contextUnifyheads(crossOut).to(of: out)
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   let (xLinear1, xOutProjection, xFF) = LoRAFeedForward(
     hiddenSize: k * h, intermediateSize: intermediateSize, upcast: false,
-    configuration: configuration, index: layerIndex, name: "x")
+    configuration: configuration, index: layerIndex, name: "\(weightsPrefix)x")
   out =
     out + xFF(((1 + chunks[4]) .* xNorm2(out) + chunks[3]).to(.Float16)).to(of: out) .* chunks[5]
   let mapper: ModelWeightMapper = { format in
@@ -875,8 +881,8 @@ private func LoRAMLPProj(
 }
 
 func LoRAWan(
-  channels: Int, layers: Int, intermediateSize: Int, time: Int, height: Int, width: Int,
-  textLength: Int, causalInference: Int, injectImage: Bool, usesFlashAttention: Bool,
+  channels: Int, layers: Int, vaceLayers: [Int], intermediateSize: Int, time: Int, height: Int,
+  width: Int, textLength: Int, causalInference: Int, injectImage: Bool, usesFlashAttention: Bool,
   outputResidual: Bool, inputResidual: Bool, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -905,7 +911,8 @@ func LoRAWan(
   var contextIn = [Input]()
   for i in 0..<layers {
     let (mapper, block) = LoRAWanAttentionBlock(
-      prefix: "blocks.\(i)", k: 128, h: channels / 128, b: 1, t: (textLength, 257),
+      prefix: "blocks.\(i)", weightsPrefix: "", k: 128, h: channels / 128, b: 1,
+      t: (textLength, 257),
       hw: time * h * w, time: time, causalInference: causalInference,
       intermediateSize: intermediateSize, injectImage: injectImage,
       usesFlashAttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration)
@@ -969,17 +976,18 @@ func LoRAWan(
 }
 
 private func LoRAWanAttentionBlockFixed(
-  prefix: String, k: Int, h: Int, b: (Int, Int), t: (Int, Int), injectImage: Bool, layerIndex: Int,
+  prefix: String, weightsPrefix: String, k: Int, h: Int, b: (Int, Int), t: (Int, Int),
+  injectImage: Bool, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   // Now run attention.
   let contextToKeys = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "c_k")
+    count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)c_k")
   let contextToValues = LoRADense(
-    count: k * h, configuration: configuration, index: layerIndex, name: "c_v")
+    count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)c_v")
   var cK = contextToKeys(context)
-  let contextNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "c_norm_k")
+  let contextNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)c_norm_k")
   cK = contextNormK(cK).reshaped([b.0, t.0, h, k])
   let cV = contextToValues(context).reshaped([b.0, t.0, h, k])
   var ins = [context]
@@ -990,11 +998,13 @@ private func LoRAWanAttentionBlockFixed(
   if injectImage {
     let contextImg = Input()
     let contextImgToKeys = LoRADense(
-      count: k * h, configuration: configuration, index: layerIndex, name: "c_img_k")
+      count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)c_img_k"
+    )
     let contextImgToValues = LoRADense(
-      count: k * h, configuration: configuration, index: layerIndex, name: "c_img_v")
+      count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)c_img_v"
+    )
     var cImgK = contextImgToKeys(contextImg)
-    let contextImgNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "c_img_norm_k")
+    let contextImgNormK = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)c_img_norm_k")
     cImgK = contextImgNormK(cImgK).reshaped([b.1, t.1, h, k])
     let cImgV = contextImgToValues(contextImg).reshaped([b.1, t.1, h, k])
     ins.append(contextImg)
@@ -1084,7 +1094,8 @@ func LoRAWanFixed(
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers {
     let (mapper, block) = LoRAWanAttentionBlockFixed(
-      prefix: "blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: (textLength, 257),
+      prefix: "blocks.\(i)", weightsPrefix: "", k: 128, h: channels / 128, b: batchSize,
+      t: (textLength, 257),
       injectImage: injectImage, layerIndex: i, configuration: LoRAConfiguration)
     if let contextImg = contextImg {
       outs.append(block(context, contextImg))
