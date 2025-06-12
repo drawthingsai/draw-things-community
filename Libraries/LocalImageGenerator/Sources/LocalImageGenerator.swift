@@ -1847,7 +1847,7 @@ extension LocalImageGenerator {
         startStep: 0, endStep: 0, controlMode: .prompt,
         globalAveragePooling: false, transformerBlocks: [],
         targetBlocks: [], imageEncoderVersion: imageEncoderVersion,
-        ipAdapterConfig: nil, firstStage: nil)
+        deviceProperties: DeviceCapability.deviceProperties, ipAdapterConfig: nil, firstStage: nil)
       switch type {
       case .controlnet, .controlnetunion, .controlnetlora, .injectKV, .ipadapterplus,
         .ipadapterfull, .redux, .ipadapterfaceidplus, .pulid, .t2iadapter:
@@ -1933,7 +1933,8 @@ extension LocalImageGenerator {
         startStep: startStep, endStep: endStep, controlMode: controlMode,
         globalAveragePooling: globalAveragePooling, transformerBlocks: transformerBlocks,
         targetBlocks: control.targetBlocks, imageEncoderVersion: imageEncoderVersion,
-        ipAdapterConfig: ipAdapterConfig, firstStage: firstStage)
+        deviceProperties: DeviceCapability.deviceProperties, ipAdapterConfig: ipAdapterConfig,
+        firstStage: firstStage)
       func customRGB(_ convert: Bool) -> DynamicGraph.Tensor<FloatType>? {
         custom.map({
           let input = graph.variable(Tensor<FloatType>($0).toGPU(0))
