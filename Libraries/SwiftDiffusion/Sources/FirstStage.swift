@@ -509,6 +509,48 @@ extension FirstStage {
     return (result, decoder)
   }
 
+  public func decode(
+    _ x: DynamicGraph.Tensor<FloatType>, batchSize: (Int, Int), decoder existingDecoder: Model?,
+    cancellation: (@escaping () -> Void) -> Void
+  )
+    -> (DynamicGraph.Tensor<FloatType>, Model)
+  {
+    let shape = x.shape
+    if batchSize.1 == 0 {
+      if batchSize.0 >= shape[0] {
+        return decode(x, decoder: existingDecoder, cancellation: cancellation)
+      }
+      return decode(
+        x[(shape[0] - batchSize.0)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]],
+        decoder: existingDecoder, cancellation: cancellation)
+    }
+    // Decode first n frames as if they are images.
+    var results = [DynamicGraph.Tensor<FloatType>]()
+    var decoder: Model? = nil
+    for i in 0..<batchSize.1 {
+      let result = decode(
+        x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]], decoder: decoder,
+        cancellation: cancellation)
+      results.append(result.0)
+      decoder = result.1
+    }
+    let graph = x.graph
+    let result = decode(
+      x[(shape[0] - batchSize.0)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]],
+      decoder: existingDecoder, cancellation: cancellation)
+    var resultShape = result.0.shape
+    resultShape[0] += batchSize.1
+    var fullResult = graph.variable(.GPU(0), format: .NHWC, shape: resultShape, of: FloatType.self)
+    for i in 0..<batchSize.1 {
+      fullResult[i..<(i + 1), 0..<resultShape[1], 0..<resultShape[2], 0..<resultShape[3]] =
+        results[i]
+    }
+    fullResult[
+      batchSize.1..<resultShape[0], 0..<resultShape[1], 0..<resultShape[2], 0..<resultShape[3]] =
+      result.0
+    return (fullResult, result.1)
+  }
+
   public func sampleFromDistribution(
     _ parameters: DynamicGraph.Tensor<FloatType>, noise: DynamicGraph.Tensor<FloatType>? = nil
   ) -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>) {
