@@ -3542,8 +3542,8 @@ extension LocalImageGenerator {
         }
         // encode image again.
         (sample, _, _) = firstStage.sample(
-          DynamicGraph.Tensor<FloatType>(from: firstStageImage), encoder: nil,
-          cancellation: cancellation)
+          DynamicGraph.Tensor<FloatType>(from: firstStageImage), individualFrames: batchSize.1,
+          encoder: nil, cancellation: cancellation)
       }
       if modifier == .inpainting || modifier == .editing || modifier == .double {
         // TODO: Support this properly for Wurstchen models.

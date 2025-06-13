@@ -521,7 +521,7 @@ extension FirstStage {
         return decode(x, decoder: existingDecoder, cancellation: cancellation)
       }
       return decode(
-        x[(shape[0] - batchSize.0)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]],
+        x[(shape[0] - batchSize.0)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
         decoder: existingDecoder, cancellation: cancellation)
     }
     // Decode first n frames as if they are images.
@@ -529,14 +529,15 @@ extension FirstStage {
     var decoder: Model? = nil
     for i in 0..<batchSize.1 {
       let result = decode(
-        x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]], decoder: decoder,
+        x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(), decoder: decoder,
         cancellation: cancellation)
       results.append(result.0)
       decoder = result.1
     }
+    decoder = nil
     let graph = x.graph
     let result = decode(
-      x[(shape[0] - batchSize.0)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]],
+      x[batchSize.1..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
       decoder: existingDecoder, cancellation: cancellation)
     var resultShape = result.0.shape
     resultShape[0] += batchSize.1
@@ -594,6 +595,49 @@ extension FirstStage {
     }
     let (sample, mean) = sampleFromDistribution(parameters)
     return (sample, mean, encoder)
+  }
+
+  public func sample(
+    _ x: DynamicGraph.Tensor<FloatType>, individualFrames: Int, encoder existingEncoder: Model?,
+    cancellation: (@escaping () -> Void) -> Void
+  ) -> (
+    DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>, Model
+  ) {
+    if individualFrames == 0 {
+      return sample(x, encoder: existingEncoder, cancellation: cancellation)
+    }
+    let shape = x.shape
+    precondition(individualFrames < shape[0])
+    var results = [(DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>)]()
+    var encoder: Model? = nil
+    for i in 0..<individualFrames {
+      let result = sample(
+        x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(), encoder: encoder,
+        cancellation: cancellation)
+      results.append((result.0, result.1))
+      encoder = result.2
+    }
+    encoder = nil
+    let graph = x.graph
+    let result = sample(
+      x[individualFrames..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+      encoder: existingEncoder, cancellation: cancellation)
+    var sampleShape = result.0.shape
+    sampleShape[0] += individualFrames
+    var meanShape = result.1.shape
+    meanShape[0] += individualFrames
+    var sample = graph.variable(.GPU(0), format: .NHWC, shape: sampleShape, of: FloatType.self)
+    var mean = graph.variable(.GPU(0), format: .NHWC, shape: meanShape, of: FloatType.self)
+    for i in 0..<individualFrames {
+      sample[i..<(i + 1), 0..<sampleShape[1], 0..<sampleShape[2], 0..<sampleShape[3]] = results[i].0
+      mean[i..<(i + 1), 0..<meanShape[1], 0..<meanShape[2], 0..<meanShape[3]] = results[i].1
+    }
+    sample[
+      individualFrames..<sampleShape[0], 0..<sampleShape[1], 0..<sampleShape[2], 0..<sampleShape[3]] =
+      result.0
+    mean[individualFrames..<meanShape[0], 0..<meanShape[1], 0..<meanShape[2], 0..<meanShape[3]] =
+      result.1
+    return (sample, mean, result.2)
   }
 
   public func scale(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType> {
