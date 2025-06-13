@@ -1288,7 +1288,12 @@ extension UNetFromNNC {
               ) {
                 name, dataType, format, shape in
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
-                  return result
+                  if case let .continue(name, _, store) = result, shouldOffload(name: name) {
+                    return .continue(
+                      name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit], store: store)
+                  } else {
+                    return result
+                  }
                 }
                 // Patch for bias weights which missing a 1/8 scale. Note that this is not needed if we merge this into the model import step like we do for Hunyuan.
                 if version == .flux1
@@ -1353,7 +1358,12 @@ extension UNetFromNNC {
               ) {
                 name, dataType, _, shape in
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
-                  return result
+                  if case let .continue(name, _, store) = result, shouldOffload(name: name) {
+                    return .continue(
+                      name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit], store: store)
+                  } else {
+                    return result
+                  }
                 }
                 // Patch for bias weights which missing a 1/8 scale. Note that this is not needed if we merge this into the model import step like we do for Hunyuan.
                 if version == .flux1
@@ -1416,7 +1426,12 @@ extension UNetFromNNC {
           ) {
             name, _, _, _ in
             if let result = controlModelLoader.loadMergedWeight(name: name) {
-              return result
+              if case let .continue(name, _, store) = result, shouldOffload(name: name) {
+                return .continue(
+                  name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit], store: store)
+              } else {
+                return result
+              }
             }
             guard !loadedFromWeightsCache else {
               return .fail
