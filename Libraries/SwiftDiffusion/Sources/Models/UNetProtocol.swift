@@ -928,7 +928,7 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
       let injectImage =
-        c.count > 9 + (isCfgEnabled ? 4 : 2) * 30 + vaceLayers.count * 4
+        c.count > 9 + (isCfgEnabled ? 4 : 2) * 30 + vaceLayers.count * (isCfgEnabled ? 4 : 2)
         + (vaceLayers.isEmpty ? 0 : 2)
       let textLength = vaceContextExists ? c[9].shape[1] : c[7].shape[1]
       didRunLoRASeparately =
@@ -992,7 +992,7 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
       let injectImage =
-        c.count > 9 + (isCfgEnabled ? 4 : 2) * 40 + vaceLayers.count * 4
+        c.count > 9 + (isCfgEnabled ? 4 : 2) * 40 + vaceLayers.count * (isCfgEnabled ? 4 : 2)
         + (vaceLayers.isEmpty ? 0 : 2)
       let textLength = vaceContextExists ? c[9].shape[1] : c[7].shape[1]
       didRunLoRASeparately =
@@ -1678,13 +1678,18 @@ extension UNetFromNNC {
         return
       }
       let vaceContextExists = (inputs[8].shape.count == 1 && inputs[8].shape[0] == 1)
+      let vaceLayers: Int
       let injectImage: Bool
       if version == .wan21_1_3b {
+        vaceLayers = vaceContextExists ? 15 : 0
         injectImage =
-          inputs.count > 10 + (isCfgEnabled ? 4 : 2) * 30 + (vaceContextExists ? 15 * 4 + 2 : 0)
+          inputs.count > 10 + (isCfgEnabled ? 4 : 2) * 30
+          + (vaceContextExists ? 15 * (isCfgEnabled ? 4 : 2) + 2 : 0)
       } else {
+        vaceLayers = vaceContextExists ? 8 : 0
         injectImage =
-          inputs.count > 10 + (isCfgEnabled ? 4 : 2) * 40 + (vaceContextExists ? 8 * 4 + 2 : 0)
+          inputs.count > 10 + (isCfgEnabled ? 4 : 2) * 40
+          + (vaceContextExists ? 8 * (isCfgEnabled ? 4 : 2) + 2 : 0)
       }
       let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
         let shape = $0.1.shape
@@ -1696,10 +1701,16 @@ extension UNetFromNNC {
           return $0.1
         default:
           if injectImage {
-            if ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 1
-              || ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 3
-            {
-              return nil  // Remove positive ones.
+            if vaceContextExists, $0.0 < 9 + vaceLayers * 4 {
+              if $0.0 % 2 == 0 {
+                return nil
+              }
+            } else {
+              if ($0.0 - (vaceContextExists ? 9 + vaceLayers * 4 : 7)) % 6 == 1
+                || ($0.0 - (vaceContextExists ? 9 + vaceLayers * 4 : 7)) % 6 == 3
+              {
+                return nil  // Remove positive ones.
+              }
             }
             return $0.1
           } else {
@@ -1968,13 +1979,18 @@ extension UNetFromNNC {
         return et
       }
       let vaceContextExists = (restInputs[7].shape.count == 1 && restInputs[7].shape[0] == 1)
+      let vaceLayers: Int
       let injectImage: Bool
       if version == .wan21_1_3b {
+        vaceLayers = vaceContextExists ? 15 : 0
         injectImage =
-          restInputs.count > 9 + (isCfgEnabled ? 4 : 2) * 30 + (vaceContextExists ? 15 * 4 + 2 : 0)
+          restInputs.count > 9 + (isCfgEnabled ? 4 : 2) * 30
+          + (vaceContextExists ? 15 * (isCfgEnabled ? 4 : 2) + 2 : 0)
       } else {
+        vaceLayers = vaceContextExists ? 8 : 0
         injectImage =
-          restInputs.count > 9 + (isCfgEnabled ? 4 : 2) * 40 + (vaceContextExists ? 8 * 4 + 2 : 0)
+          restInputs.count > 9 + (isCfgEnabled ? 4 : 2) * 40
+          + (vaceContextExists ? 8 * (isCfgEnabled ? 4 : 2) + 2 : 0)
       }
       let shape = firstInput.shape
       let etUncond: DynamicGraph.Tensor<FloatType>
@@ -1987,10 +2003,16 @@ extension UNetFromNNC {
           return $0.1
         default:
           if injectImage {
-            if ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 1
-              || ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 3
-            {
-              return nil  // Remove positive ones.
+            if vaceContextExists, $0.0 < 9 + vaceLayers * 4 {
+              if $0.0 % 2 == 0 {
+                return nil
+              }
+            } else {
+              if ($0.0 - (vaceContextExists ? 9 + vaceLayers * 4 : 7)) % 6 == 1
+                || ($0.0 - (vaceContextExists ? 9 + vaceLayers * 4 : 7)) % 6 == 3
+              {
+                return nil  // Remove positive ones.
+              }
             }
             return $0.1
           } else {
@@ -2024,10 +2046,16 @@ extension UNetFromNNC {
           return $0.1
         default:
           if injectImage {
-            if ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 0
-              || ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 2
-            {
-              return nil  // Remove negative ones.
+            if vaceContextExists, $0.0 < 9 + vaceLayers * 4 {
+              if $0.0 % 2 == 1 {
+                return nil
+              }
+            } else {
+              if ($0.0 - (vaceContextExists ? 9 + vaceLayers * 4 : 7)) % 6 == 0
+                || ($0.0 - (vaceContextExists ? 9 + vaceLayers * 4 : 7)) % 6 == 2
+              {
+                return nil  // Remove negative ones.
+              }
             }
             return $0.1
           } else {
