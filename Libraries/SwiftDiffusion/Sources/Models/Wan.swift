@@ -329,8 +329,9 @@ public func Wan(
   var hints = [Int: Model.IO]()
   var lastHint: Model.IO? = nil
   if !vaceLayers.isEmpty {
+    let scale = Input()
     let vIn = Input()
-    contextIn.append(vIn)
+    contextIn.append(contentsOf: [scale, vIn])
     out = (xIn16 + vIn.reshaped([1, time * h * w, channels])).to(.Float32)
     for (i, n) in vaceLayers.enumerated() {
       let (mapper, block) = WanAttentionBlock(
@@ -348,7 +349,7 @@ public func Wan(
       }
       mappers.append(mapper)
       let afterProj = Dense(count: channels, name: "vace_after_proj")
-      lastHint = afterProj(out)
+      lastHint = scale .* afterProj(out)
       hints[n] = lastHint
     }
   }
@@ -965,8 +966,9 @@ func LoRAWan(
   var hints = [Int: Model.IO]()
   var lastHint: Model.IO? = nil
   if !vaceLayers.isEmpty {
+    let scale = Input()
     let vIn = Input()
-    contextIn.append(vIn)
+    contextIn.append(contentsOf: [scale, vIn])
     out = (xIn16 + vIn.reshaped([1, time * h * w, channels])).to(.Float32)
     for (i, n) in vaceLayers.enumerated() {
       let (mapper, block) = WanAttentionBlock(
@@ -984,7 +986,7 @@ func LoRAWan(
       }
       mappers.append(mapper)
       let afterProj = Dense(count: channels, name: "vace_after_proj")
-      lastHint = afterProj(out)
+      lastHint = scale .* afterProj(out)
       hints[n] = lastHint
     }
   }

@@ -132,7 +132,7 @@ extension ControlModel {
           let newInjectedIPAdapters = injected.model(
             inputStartYPad: 0, inputEndYPad: 0, inputStartXPad: 0, inputEndXPad: 0,
             step: step, inputs: xT, hint, strength: strength, timestep, c[i],
-            tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+            inputs: [], tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, index: index,
             mainUNetAndWeightMapper: mainUNetAndWeightMapper,
             controlNet: &existingControlNets[i])
@@ -167,7 +167,8 @@ extension ControlModel {
     controlNets existingControlNets: inout [Model?]
   ) -> (
     (
-      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ xT: DynamicGraph.Tensor<FloatType>, _ restInputs: [DynamicGraph.AnyTensor],
+      _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
@@ -188,7 +189,7 @@ extension ControlModel {
         for (hint, strength) in injected.hints {
           let newHint = injected.model(
             inputStartYPad: 0, inputEndYPad: 0, inputStartXPad: 0, inputEndXPad: 0,
-            step: step, inputs: xT, hint, strength: strength, timestep, c[i],
+            step: step, inputs: xT, hint, strength: strength, timestep, c[i], inputs: [],
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, index: index,
             mainUNetAndWeightMapper: mainUNetAndWeightMapper,
@@ -203,7 +204,7 @@ extension ControlModel {
         for (hint, strength) in injected.hints {
           let newInjectedT2IAdapters = injected.model(
             inputStartYPad: 0, inputEndYPad: 0, inputStartXPad: 0, inputEndXPad: 0,
-            step: step, inputs: xT, hint, strength: strength, timestep, c[i],
+            step: step, inputs: xT, hint, strength: strength, timestep, c[i], inputs: [],
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, index: index,
             mainUNetAndWeightMapper: mainUNetAndWeightMapper,
@@ -216,7 +217,9 @@ extension ControlModel {
         }
       }
     }
-    return { xT, inputStartYPad, inputEndYPad, inputStartXPad, inputEndXPad, existingControlNets in
+    return {
+      xT, restInputs, inputStartYPad, inputEndYPad, inputStartXPad, inputEndXPad,
+      existingControlNets in
       var injectedControls = [DynamicGraph.Tensor<FloatType>]()
       var controlNetMap = [TypeAndFilePaths: Model]()
       for (i, injected) in injecteds.enumerated() {
@@ -235,7 +238,7 @@ extension ControlModel {
             let newInjectedControls = injected.model(
               inputStartYPad: inputStartYPad, inputEndYPad: inputEndYPad,
               inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
-              step: step, inputs: xT, hint, strength: strength, timestep, c[i],
+              step: step, inputs: xT, hint, strength: strength, timestep, c[i], inputs: restInputs,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
               isCfgEnabled: isCfgEnabled, index: index,
               mainUNetAndWeightMapper: mainUNetAndWeightMapper,
@@ -2230,7 +2233,8 @@ extension ControlModel {
     inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int,
     step: Int, inputs xT: DynamicGraph.Tensor<FloatType>, _ hint: [DynamicGraph.Tensor<FloatType>],
     strength: Float, _ timestep: DynamicGraph.Tensor<FloatType>?,
-    _ c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
+    _ c: [DynamicGraph.Tensor<FloatType>], inputs: [DynamicGraph.AnyTensor], tokenLengthUncond: Int,
+    tokenLengthCond: Int,
     isCfgEnabled: Bool, index: Int, mainUNetAndWeightMapper: (AnyModel, ModelWeightMapper)?,
     controlNet existingControlNet: inout Model?
   ) -> [DynamicGraph.Tensor<FloatType>] {
@@ -2246,6 +2250,9 @@ extension ControlModel {
       }
       switch type {
       case .controlnet, .controlnetlora, .controlnetunion:
+        if version == .wan21_1_3b || version == .wan21_14b {
+          DynamicGraph.Tensor<Float>(inputs[7]).full(0)  // Disable the influence.
+        }
         return Self.emptyControls(
           graph: graph, batchSize: batchSize, startWidth: startWidth, startHeight: startHeight,
           version: version)
@@ -2445,6 +2452,7 @@ extension ControlModel {
         xIn =
           channels == 16 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<16].copied()
       case .wan21_1_3b, .wan21_14b:
+        DynamicGraph.Tensor<Float>(inputs[7]).full(strength)
         return []
       case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v,
         .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .hiDreamI1:

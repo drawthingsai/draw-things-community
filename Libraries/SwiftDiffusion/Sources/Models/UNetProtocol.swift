@@ -68,7 +68,8 @@ public protocol UNetProtocol {
     inputs: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>?,
     _: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
-      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ xT: DynamicGraph.Tensor<FloatType>, _ restInputs: [DynamicGraph.AnyTensor],
+      _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
@@ -918,7 +919,7 @@ extension UNetFromNNC {
         }
       }
     case .wan21_1_3b:
-      let vaceContextExists = c.count == 9 + 4 * 30 + 15 * 4 + 1
+      let vaceContextExists = (c[7].shape.count == 1 && c[7].shape[0] == 1)
       let vaceLayers: [Int] = vaceContextExists ? (0..<15).map { $0 * 2 } : []
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -926,8 +927,8 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      let injectImage = c.count > 9 + 4 * 30 + vaceLayers.count * 4 + (vaceLayers.isEmpty ? 0 : 1)
-      let textLength = c[8].shape[1]
+      let injectImage = c.count > 9 + 4 * 30 + vaceLayers.count * 4 + (vaceLayers.isEmpty ? 0 : 2)
+      let textLength = c[9].shape[1]
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
@@ -980,7 +981,7 @@ extension UNetFromNNC {
         }
       }
     case .wan21_14b:
-      let vaceContextExists = c.count == 9 + 4 * 40 + 8 * 4 + 1
+      let vaceContextExists = (c[7].shape.count == 1 && c[7].shape[0] == 1)
       let vaceLayers: [Int] = vaceContextExists ? (0..<8).map { $0 * 5 } : []
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -988,8 +989,8 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      let injectImage = c.count > 9 + 4 * 40 + vaceLayers.count * 4 + (vaceLayers.isEmpty ? 0 : 1)
-      let textLength = c[8].shape[1]
+      let injectImage = c.count > 9 + 4 * 40 + vaceLayers.count * 4 + (vaceLayers.isEmpty ? 0 : 2)
+      let textLength = c[9].shape[1]
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
@@ -1657,14 +1658,12 @@ extension UNetFromNNC {
         teaCache?.compile(model: unet, inputs: inputs)
         return
       }
-      let vaceContextExists: Bool
+      let vaceContextExists = (inputs[8].shape.count == 1 && inputs[8].shape[0] == 1)
       let injectImage: Bool
       if version == .wan21_1_3b {
-        vaceContextExists = inputs.count == 10 + 4 * 30 + 15 * 4 + 1
-        injectImage = inputs.count > 10 + 4 * 30 + (vaceContextExists ? 15 * 4 + 1 : 0)
+        injectImage = inputs.count > 10 + 4 * 30 + (vaceContextExists ? 15 * 4 + 2 : 0)
       } else {
-        vaceContextExists = inputs.count == 10 + 4 * 40 + 8 * 4 + 1
-        injectImage = inputs.count > 10 + 4 * 40 + (vaceContextExists ? 8 * 4 + 1 : 0)
+        injectImage = inputs.count > 10 + 4 * 40 + (vaceContextExists ? 8 * 4 + 2 : 0)
       }
       let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
         let shape = $0.1.shape
@@ -1672,12 +1671,12 @@ extension UNetFromNNC {
         case 0:
           return DynamicGraph.Tensor<FloatType>($0.1)[
             0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-        case 1...(vaceContextExists ? 8 : 7), (inputs.count - 2)..<inputs.count:
+        case 1...(vaceContextExists ? 9 : 7), (inputs.count - 2)..<inputs.count:
           return $0.1
         default:
           if injectImage {
-            if ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 1
-              || ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 3
+            if ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 1
+              || ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 3
             {
               return nil  // Remove positive ones.
             }
@@ -1947,14 +1946,12 @@ extension UNetFromNNC {
         }
         return et
       }
-      let vaceContextExists: Bool
+      let vaceContextExists = (restInputs[7].shape.count == 1 && restInputs[7].shape[0] == 1)
       let injectImage: Bool
       if version == .wan21_1_3b {
-        vaceContextExists = restInputs.count == 9 + 4 * 30 + 15 * 4 + 1
-        injectImage = restInputs.count > 9 + 4 * 30 + (vaceContextExists ? 15 * 4 + 1 : 0)
+        injectImage = restInputs.count > 9 + 4 * 30 + (vaceContextExists ? 15 * 4 + 2 : 0)
       } else {
-        vaceContextExists = restInputs.count == 9 + 4 * 40 + 8 * 4 + 1
-        injectImage = restInputs.count > 9 + 4 * 40 + (vaceContextExists ? 8 * 4 + 1 : 0)
+        injectImage = restInputs.count > 9 + 4 * 40 + (vaceContextExists ? 8 * 4 + 2 : 0)
       }
       let shape = firstInput.shape
       let etUncond: DynamicGraph.Tensor<FloatType>
@@ -1963,18 +1960,18 @@ extension UNetFromNNC {
         .copied()
       let restInputsUncond: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
         switch $0.0 {
-        case 0..<(vaceContextExists ? 8 : 7), (restInputs.count - 2)..<restInputs.count:
+        case 0..<(vaceContextExists ? 9 : 7), (restInputs.count - 2)..<restInputs.count:
           return $0.1
         default:
           if injectImage {
-            if ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 1
-              || ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 3
+            if ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 1
+              || ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 3
             {
               return nil  // Remove positive ones.
             }
             return $0.1
           } else {
-            if ($0.0 - (vaceContextExists ? 1 : 0)) % 2 == 1 {
+            if ($0.0 - (vaceContextExists ? 2 : 0)) % 2 == 1 {
               return $0.1
             }
             return nil
@@ -2000,18 +1997,18 @@ extension UNetFromNNC {
         .copied()
       let restInputsCond: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
         switch $0.0 {
-        case 0..<(vaceContextExists ? 8 : 7), (restInputs.count - 2)..<restInputs.count:
+        case 0..<(vaceContextExists ? 9 : 7), (restInputs.count - 2)..<restInputs.count:
           return $0.1
         default:
           if injectImage {
-            if ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 0
-              || ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 2
+            if ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 0
+              || ($0.0 - (vaceContextExists ? 9 : 7)) % 6 == 2
             {
               return nil  // Remove negative ones.
             }
             return $0.1
           } else {
-            if ($0.0 - (vaceContextExists ? 1 : 0)) % 2 == 0 {
+            if ($0.0 - (vaceContextExists ? 2 : 0)) % 2 == 0 {
               return $0.1
             }
             return nil
@@ -2213,7 +2210,8 @@ extension UNetFromNNC {
     xyTiles: Int, index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int,
     inputEndXPad: Int, xT: DynamicGraph.Tensor<FloatType>, inputs: [DynamicGraph.AnyTensor],
     injectedControlsAndAdapters: (
-      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ xT: DynamicGraph.Tensor<FloatType>, _ restInputs: [DynamicGraph.AnyTensor],
+      _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
@@ -2229,7 +2227,7 @@ extension UNetFromNNC {
     // Need to rework the shape. For Wurstchen B, we need to slice them up.
     // For ControlNet, we already sliced them up into batch dimension, now need to extract them out.
     let (injectedControls, injectedT2IAdapters, injectedAttentionKVs) = injectedControlsAndAdapters(
-      xT, inputStartYPad, inputEndYPad, inputStartXPad, inputEndXPad, &controlNets)
+      xT, inputs, inputStartYPad, inputEndYPad, inputStartXPad, inputEndXPad, &controlNets)
     let inputs = sliceInputs(
       inputs + injectedControls + injectedT2IAdapters, originalShape: shape, xyTiles: xyTiles,
       index: index, inputStartYPad: inputStartYPad,
@@ -2245,7 +2243,8 @@ extension UNetFromNNC {
     tiledDiffusion: TiledConfiguration, xT: DynamicGraph.Tensor<FloatType>,
     inputs: [DynamicGraph.AnyTensor],
     injectedControlsAndAdapters: (
-      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ xT: DynamicGraph.Tensor<FloatType>, _ restInputs: [DynamicGraph.AnyTensor],
+      _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
@@ -2259,7 +2258,7 @@ extension UNetFromNNC {
     else {
       let (injectedControls, injectedT2IAdapters, injectedAttentionKVs) =
         injectedControlsAndAdapters(
-          xT, 0, 0, 0, 0, &controlNets)
+          xT, inputs, 0, 0, 0, 0, &controlNets)
       return self(
         step: step, index: 0,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
@@ -2360,7 +2359,8 @@ extension UNetFromNNC {
     inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
-      _ xT: DynamicGraph.Tensor<FloatType>, _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ xT: DynamicGraph.Tensor<FloatType>, _ restInputs: [DynamicGraph.AnyTensor],
+      _ inputStartYPad: Int, _ inputEndYPad: Int,
       _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
     ) -> (
       injectedControls: [DynamicGraph.Tensor<FloatType>],
@@ -2440,7 +2440,7 @@ extension UNetFromNNC {
     } else {
       let (injectedControls, injectedT2IAdapters, injectedAttentionKVs) =
         injectedControlsAndAdapters(
-          xT, 0, 0, 0, 0, &controlNets)
+          xT, (timestep.map { [$0] } ?? []) + c, 0, 0, 0, 0, &controlNets)
       return self(
         step: step, index: 0,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
