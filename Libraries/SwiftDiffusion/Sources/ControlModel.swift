@@ -2452,6 +2452,7 @@ extension ControlModel {
         xIn =
           channels == 16 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<16].copied()
       case .wan21_1_3b, .wan21_14b:
+        // Set the strength for the generation.
         DynamicGraph.Tensor<Float>(inputs[7]).full(strength)
         return []
       case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v,
