@@ -307,7 +307,9 @@ public func Wan(
   let h = height / 2
   let w = width / 2
   var mappers = [ModelWeightMapper]()
-  var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
+  let xIn16 = imgIn(x).reshaped([1, time * h * w, channels])
+  let xIn = xIn16.to(.Float32)
+  var out = xIn
   let imgInX = out
   let residualIn: Input?
   if inputResidual {
@@ -324,6 +326,36 @@ public func Wan(
     rotAndtOut = [rot] + tOut
   }
   var contextIn = [Input]()
+  var hints = [Int: Model.IO]()
+  var lastHint: Model.IO? = nil
+  if !vaceLayers.isEmpty {
+    let vIn = Input()
+    contextIn.append(vIn)
+    out = (xIn16 + vIn.reshaped([1, time * h * w, channels])).to(.Float32)
+    for (i, n) in vaceLayers.enumerated() {
+      let (mapper, block) = WanAttentionBlock(
+        prefix: "vace_blocks.\(i)", weightsPrefix: "vace_", k: 128, h: channels / 128, b: 1,
+        t: (textLength, 257),
+        hw: time * h * w, time: time, causalInference: causalInference,
+        intermediateSize: intermediateSize, injectImage: false,
+        usesFlashAttention: usesFlashAttention)
+      let contextK = Input()
+      let contextV = Input()
+      contextIn.append(contentsOf: [contextK, contextV])
+      out = block([out] + rotAndtOut + [contextK, contextV])
+      if let lastHint = lastHint {
+        out.add(dependencies: [lastHint])
+      }
+      mappers.append(mapper)
+      let afterProj = Dense(count: channels, name: "vace_after_proj")
+      lastHint = afterProj(out)
+      hints[n] = lastHint
+    }
+  }
+  out = xIn
+  if let lastHint = lastHint {
+    out.add(dependencies: [lastHint])
+  }
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlock(
       prefix: "blocks.\(i)", weightsPrefix: "", k: 128, h: channels / 128, b: 1,
@@ -343,6 +375,9 @@ public func Wan(
       out = block([out] + rotAndtOut + [contextK, contextV])
     }
     mappers.append(mapper)
+    if let hint = hints[i] {
+      out = out + hint
+    }
   }
   let residualOut: Model.IO?
   if outputResidual {
@@ -460,8 +495,8 @@ private func WanAttentionBlockFixed(
 }
 
 public func WanFixed(
-  timesteps: Int, batchSize: (Int, Int), channels: Int, layers: Int, textLength: Int,
-  injectImage: Bool
+  timesteps: Int, batchSize: (Int, Int), channels: Int, layers: Int, vaceLayers: [Int],
+  textLength: Int, injectImage: Bool
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -475,6 +510,17 @@ public func WanFixed(
   let timeProjections = (0..<6).map { Dense(count: channels, name: "ada_ln_\($0)") }
   var outs = timeProjections.map { $0(vectorIn).identity().identity().identity() }  // Have duplicate name ada_ln_0 / ada_ln_1, now have to push the order to make sure the proper weights are loaded :(.
   var ins = [txt, t]
+  if !vaceLayers.isEmpty {
+    let vaceContext = Input()
+    let vaceIn = Convolution(
+      groups: 1, filters: channels, filterSize: [2, 2],
+      hint: Hint(stride: [2, 2]), format: .OIHW, name: "vace_x_embedder")
+    let beforeProj = Convolution(
+      groups: 1, filters: channels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+      name: "vace_before_proj")
+    outs.append(beforeProj(vaceIn(vaceContext)))
+    ins.append(vaceContext)
+  }
   let contextImg: Model.IO?
   let clipLn1: Model?
   let clipLn2: Model?
@@ -495,11 +541,16 @@ public func WanFixed(
     contextImg = nil
   }
   var mappers = [ModelWeightMapper]()
+  for (i, n) in vaceLayers.enumerated() {
+    let (mapper, block) = WanAttentionBlockFixed(
+      prefix: "vace_blocks.\(i)", weightsPrefix: "vace_", k: 128, h: channels / 128, b: batchSize,
+      t: (textLength, 257), injectImage: false)
+    outs.append(block(context))
+  }
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlockFixed(
       prefix: "blocks.\(i)", weightsPrefix: "", k: 128, h: channels / 128, b: batchSize,
-      t: (textLength, 257),
-      injectImage: injectImage)
+      t: (textLength, 257), injectImage: injectImage)
     if let contextImg = contextImg {
       outs.append(block(context, contextImg))
     } else {
@@ -892,7 +943,9 @@ func LoRAWan(
   let h = height / 2
   let w = width / 2
   var mappers = [ModelWeightMapper]()
-  var out = imgIn(x).reshaped([1, time * h * w, channels]).to(.Float32)
+  let xIn16 = imgIn(x).reshaped([1, time * h * w, channels])
+  let xIn = xIn16.to(.Float32)
+  var out = xIn
   let imgInX = out
   let residualIn: Input?
   if inputResidual {
@@ -909,6 +962,36 @@ func LoRAWan(
     rotAndtOut = [rot] + tOut
   }
   var contextIn = [Input]()
+  var hints = [Int: Model.IO]()
+  var lastHint: Model.IO? = nil
+  if !vaceLayers.isEmpty {
+    let vIn = Input()
+    contextIn.append(vIn)
+    out = (xIn16 + vIn.reshaped([1, time * h * w, channels])).to(.Float32)
+    for (i, n) in vaceLayers.enumerated() {
+      let (mapper, block) = WanAttentionBlock(
+        prefix: "vace_blocks.\(i)", weightsPrefix: "vace_", k: 128, h: channels / 128, b: 1,
+        t: (textLength, 257),
+        hw: time * h * w, time: time, causalInference: causalInference,
+        intermediateSize: intermediateSize, injectImage: false,
+        usesFlashAttention: usesFlashAttention)
+      let contextK = Input()
+      let contextV = Input()
+      contextIn.append(contentsOf: [contextK, contextV])
+      out = block([out] + rotAndtOut + [contextK, contextV])
+      if let lastHint = lastHint {
+        out.add(dependencies: [lastHint])
+      }
+      mappers.append(mapper)
+      let afterProj = Dense(count: channels, name: "vace_after_proj")
+      lastHint = afterProj(out)
+      hints[n] = lastHint
+    }
+  }
+  out = xIn
+  if let lastHint = lastHint {
+    out.add(dependencies: [lastHint])
+  }
   for i in 0..<layers {
     let (mapper, block) = LoRAWanAttentionBlock(
       prefix: "blocks.\(i)", weightsPrefix: "", k: 128, h: channels / 128, b: 1,
@@ -928,6 +1011,9 @@ func LoRAWan(
       out = block([out] + rotAndtOut + [contextK, contextV])
     }
     mappers.append(mapper)
+    if let hint = hints[i] {
+      out = out + hint
+    }
   }
   let residualOut: Model.IO?
   if outputResidual {
@@ -1053,8 +1139,8 @@ private func LoRAWanAttentionBlockFixed(
 }
 
 func LoRAWanFixed(
-  timesteps: Int, batchSize: (Int, Int), channels: Int, layers: Int, textLength: Int,
-  injectImage: Bool, LoRAConfiguration: LoRANetworkConfiguration
+  timesteps: Int, batchSize: (Int, Int), channels: Int, layers: Int, vaceLayers: [Int],
+  textLength: Int, injectImage: Bool, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -1072,6 +1158,17 @@ func LoRAWanFixed(
   }
   var outs = timeProjections.map { $0(vectorIn).identity().identity().identity() }  // Have duplicate name ada_ln_0 / ada_ln_1, now have to push the order to make sure the proper weights are loaded :(.
   var ins = [txt, t]
+  if !vaceLayers.isEmpty {
+    let vaceContext = Input()
+    let vaceIn = Convolution(
+      groups: 1, filters: channels, filterSize: [2, 2],
+      hint: Hint(stride: [2, 2]), format: .OIHW, name: "vace_x_embedder")
+    let beforeProj = Convolution(
+      groups: 1, filters: channels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+      name: "vace_before_proj")
+    outs.append(beforeProj(vaceIn(vaceContext)))
+    ins.append(vaceContext)
+  }
   let contextImg: Model.IO?
   let clipLn1: Model?
   let clipLn2: Model?
@@ -1092,6 +1189,12 @@ func LoRAWanFixed(
     contextImg = nil
   }
   var mappers = [ModelWeightMapper]()
+  for (i, n) in vaceLayers.enumerated() {
+    let (mapper, block) = WanAttentionBlockFixed(
+      prefix: "vace_blocks.\(i)", weightsPrefix: "vace_", k: 128, h: channels / 128, b: batchSize,
+      t: (textLength, 257), injectImage: false)
+    outs.append(block(context))
+  }
   for i in 0..<layers {
     let (mapper, block) = LoRAWanAttentionBlockFixed(
       prefix: "blocks.\(i)", weightsPrefix: "", k: 128, h: channels / 128, b: batchSize,

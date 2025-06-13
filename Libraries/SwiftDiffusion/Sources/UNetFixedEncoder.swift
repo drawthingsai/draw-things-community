@@ -1025,6 +1025,16 @@ extension UNetFixedEncoder {
       let shouldRunLoRASeparately =
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
+      let vaceContext: DynamicGraph.Tensor<FloatType>? =
+        (injectedControls.first {
+          $0.model.type == .controlnet
+        })?.hints.first?.0.first
+      let vaceLayers: [Int]
+      if version == .wan21_1_3b {
+        vaceLayers = vaceContext == nil ? [] : (0..<15).map { $0 * 2 }
+      } else {
+        vaceLayers = vaceContext == nil ? [] : (0..<8).map { $0 * 5 }
+      }
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
@@ -1032,14 +1042,14 @@ extension UNetFixedEncoder {
           unetFixed =
             LoRAWanFixed(
               timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 1_536,
-              layers: 30, textLength: textLength, injectImage: injectImage,
+              layers: 30, vaceLayers: vaceLayers, textLength: textLength, injectImage: injectImage,
               LoRAConfiguration: configuration
             ).1
         } else {
           unetFixed =
             LoRAWanFixed(
               timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 5_120,
-              layers: 40, textLength: textLength, injectImage: injectImage,
+              layers: 40, vaceLayers: vaceLayers, textLength: textLength, injectImage: injectImage,
               LoRAConfiguration: configuration
             ).1
         }
@@ -1048,87 +1058,112 @@ extension UNetFixedEncoder {
           unetFixed =
             WanFixed(
               timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 1_536,
-              layers: 30, textLength: textLength, injectImage: injectImage
+              layers: 30, vaceLayers: vaceLayers, textLength: textLength, injectImage: injectImage
             ).1
         } else {
           unetFixed =
             WanFixed(
               timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 5_120,
-              layers: 40, textLength: textLength, injectImage: injectImage
+              layers: 40, vaceLayers: vaceLayers, textLength: textLength, injectImage: injectImage
             ).1
         }
       }
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: [c, timeEmbeds] + (c1.map { [$0] } ?? []))
+      unetFixed.compile(
+        inputs: [c, timeEmbeds] + (vaceContext.map { [$0] } ?? []) + (c1.map { [$0] } ?? []))
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
-        if !lora.isEmpty {
-          if shouldRunLoRASeparately {
-            let mapping: [Int: Int] = [Int: Int](
-              uniqueKeysWithValues: (0..<40).map {
-                return ($0, $0)
-              })
-            LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
-                name, dataType, format, shape in
-                let result: DynamicGraph.Store.ModelReaderResult
-                if dataType == .Float32 {
-                  // Keeping at higher precision for LoRA loading.
-                  result = loader.concatenateLoRA(
-                    graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                    store: store, dataType: dataType, format: format, shape: shape, of: Float32.self
-                  )
-                } else {
-                  result = loader.concatenateLoRA(
-                    graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                    store: store, dataType: dataType, format: format, shape: shape,
-                    of: FloatType.self)
-                }
-                switch result {
-                case .continue(let updatedName, _, _):
-                  guard updatedName == name else { return result }
-                  if !loadedFromWeightsCache {
+        ControlModelLoader<FloatType>.openStore(
+          graph, injectControlModels: injectedControls.map { $0.model },
+          version: version
+        ) { controlModelLoader in
+          if !lora.isEmpty {
+            if shouldRunLoRASeparately {
+              let mapping: [Int: Int] = [Int: Int](
+                uniqueKeysWithValues: (0..<40).map {
+                  return ($0, $0)
+                })
+              LoRALoader.openStore(graph, lora: lora) { loader in
+                store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+                {
+                  name, dataType, format, shape in
+                  if let result = controlModelLoader.loadMergedWeight(name: name) {
                     return result
-                  } else {
-                    return .fail  // Skip loading.
                   }
-                case .fail, .final(_):
-                  return result
+                  let result: DynamicGraph.Store.ModelReaderResult
+                  if dataType == .Float32 {
+                    // Keeping at higher precision for LoRA loading.
+                    result = loader.concatenateLoRA(
+                      graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                      store: store, dataType: dataType, format: format, shape: shape,
+                      of: Float32.self
+                    )
+                  } else {
+                    result = loader.concatenateLoRA(
+                      graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                      store: store, dataType: dataType, format: format, shape: shape,
+                      of: FloatType.self)
+                  }
+                  switch result {
+                  case .continue(let updatedName, _, _):
+                    guard updatedName == name else { return result }
+                    if !loadedFromWeightsCache {
+                      return result
+                    } else {
+                      return .fail  // Skip loading.
+                    }
+                  case .fail, .final(_):
+                    return result
+                  }
+                }
+              }
+            } else {
+              LoRALoader.openStore(graph, lora: lora) { loader in
+                store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+                {
+                  name, dataType, _, shape in
+                  if let result = controlModelLoader.loadMergedWeight(name: name) {
+                    return result
+                  }
+                  if dataType == .Float32 {
+                    // Keeping at higher precision for LoRA loading.
+                    return loader.mergeLoRA(
+                      graph, name: name, store: store, dataType: dataType, shape: shape,
+                      of: Float32.self)
+                  } else {
+                    return loader.mergeLoRA(
+                      graph, name: name, store: store, dataType: dataType, shape: shape,
+                      of: FloatType.self)
+                  }
                 }
               }
             }
           } else {
-            LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
-                name, dataType, _, shape in
-                if dataType == .Float32 {
-                  // Keeping at higher precision for LoRA loading.
-                  return loader.mergeLoRA(
-                    graph, name: name, store: store, dataType: dataType, shape: shape,
-                    of: Float32.self)
-                } else {
-                  return loader.mergeLoRA(
-                    graph, name: name, store: store, dataType: dataType, shape: shape,
-                    of: FloatType.self)
-                }
+            store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              name, _, _, _ in
+              if let result = controlModelLoader.loadMergedWeight(name: name) {
+                return result
+              }
+              if !loadedFromWeightsCache {
+                return .continue(name)
+              } else {
+                return .fail  // Skip.
               }
             }
           }
-        } else if !loadedFromWeightsCache {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
       var conditions: [DynamicGraph.AnyTensor] = unetFixed(
-        inputs: c, [timeEmbeds] + (c1.map { [$0] } ?? []))
+        inputs: c, [timeEmbeds] + (vaceContext.map { [$0] } ?? []) + (c1.map { [$0] } ?? []))
       if lora.isEmpty || shouldRunLoRASeparately {
         weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       }
       conditions = conditions.enumerated().flatMap {
         switch $0.offset {
-        case 0..<6, (conditions.count - 2)..<conditions.count:
+        case 0..<(vaceContext == nil ? 6 : 7), (conditions.count - 2)..<conditions.count:
           return [$0.element]
         default:  // Need to separate them into two elements.
           let shape = $0.element.shape

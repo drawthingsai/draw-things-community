@@ -2444,8 +2444,10 @@ extension ControlModel {
         controlNetWeightMapper = nil
         xIn =
           channels == 16 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<16].copied()
+      case .wan21_1_3b, .wan21_14b:
+        return []
       case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v,
-        .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+        .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .hiDreamI1:
         fatalError()
       }
     }

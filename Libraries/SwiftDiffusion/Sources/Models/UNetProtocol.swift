@@ -918,16 +918,16 @@ extension UNetFromNNC {
         }
       }
     case .wan21_1_3b:
-      let vaceLayers: [Int] =
-        injectedControlsAndAdapters.injectedControls.isEmpty ? [] : (0..<15).map { $0 * 2 }
+      let vaceContextExists = c.count == 9 + 4 * 30 + 15 * 4 + 1
+      let vaceLayers: [Int] = vaceContextExists ? (0..<15).map { $0 * 2 } : []
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      let injectImage = c.count > 9 + 4 * 30
-      let textLength = c[7].shape[1]
+      let injectImage = c.count > 9 + 4 * 30 + vaceLayers.count * 4 + (vaceLayers.isEmpty ? 0 : 1)
+      let textLength = c[8].shape[1]
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
@@ -980,16 +980,16 @@ extension UNetFromNNC {
         }
       }
     case .wan21_14b:
-      let vaceLayers: [Int] =
-        injectedControlsAndAdapters.injectedControls.isEmpty ? [] : (0..<8).map { $0 * 5 }
+      let vaceContextExists = c.count == 9 + 4 * 40 + 8 * 4 + 1
+      let vaceLayers: [Int] = vaceContextExists ? (0..<8).map { $0 * 5 } : []
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      let injectImage = c.count > 9 + 4 * 40
-      let textLength = c[7].shape[1]
+      let injectImage = c.count > 9 + 4 * 40 + vaceLayers.count * 4 + (vaceLayers.isEmpty ? 0 : 1)
+      let textLength = c[8].shape[1]
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
@@ -1657,11 +1657,14 @@ extension UNetFromNNC {
         teaCache?.compile(model: unet, inputs: inputs)
         return
       }
+      let vaceContextExists: Bool
       let injectImage: Bool
       if version == .wan21_1_3b {
-        injectImage = inputs.count > 10 + 4 * 30
+        vaceContextExists = inputs.count == 10 + 4 * 30 + 15 * 4 + 1
+        injectImage = inputs.count > 10 + 4 * 30 + (vaceContextExists ? 15 * 4 + 1 : 0)
       } else {
-        injectImage = inputs.count > 10 + 4 * 40
+        vaceContextExists = inputs.count == 10 + 4 * 40 + 8 * 4 + 1
+        injectImage = inputs.count > 10 + 4 * 40 + (vaceContextExists ? 8 * 4 + 1 : 0)
       }
       let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
         let shape = $0.1.shape
@@ -1669,11 +1672,13 @@ extension UNetFromNNC {
         case 0:
           return DynamicGraph.Tensor<FloatType>($0.1)[
             0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-        case 1...7, (inputs.count - 2)..<inputs.count:
+        case 1...(vaceContextExists ? 8 : 7), (inputs.count - 2)..<inputs.count:
           return $0.1
         default:
           if injectImage {
-            if ($0.0 - 8) % 6 == 1 || ($0.0 - 8) % 6 == 3 {
+            if ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 1
+              || ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 3
+            {
               return nil  // Remove positive ones.
             }
             return $0.1
@@ -1942,11 +1947,14 @@ extension UNetFromNNC {
         }
         return et
       }
+      let vaceContextExists: Bool
       let injectImage: Bool
       if version == .wan21_1_3b {
-        injectImage = restInputs.count > 9 + 4 * 30
+        vaceContextExists = restInputs.count == 9 + 4 * 30 + 15 * 4 + 1
+        injectImage = restInputs.count > 9 + 4 * 30 + (vaceContextExists ? 15 * 4 + 1 : 0)
       } else {
-        injectImage = restInputs.count > 9 + 4 * 40
+        vaceContextExists = restInputs.count == 9 + 4 * 40 + 8 * 4 + 1
+        injectImage = restInputs.count > 9 + 4 * 40 + (vaceContextExists ? 8 * 4 + 1 : 0)
       }
       let shape = firstInput.shape
       let etUncond: DynamicGraph.Tensor<FloatType>
@@ -1955,16 +1963,18 @@ extension UNetFromNNC {
         .copied()
       let restInputsUncond: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
         switch $0.0 {
-        case 0..<7, (restInputs.count - 2)..<restInputs.count:
+        case 0..<(vaceContextExists ? 8 : 7), (restInputs.count - 2)..<restInputs.count:
           return $0.1
         default:
           if injectImage {
-            if ($0.0 - 7) % 6 == 1 || ($0.0 - 7) % 6 == 3 {
+            if ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 1
+              || ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 3
+            {
               return nil  // Remove positive ones.
             }
             return $0.1
           } else {
-            if $0.0 % 2 == 1 {
+            if ($0.0 - (vaceContextExists ? 1 : 0)) % 2 == 1 {
               return $0.1
             }
             return nil
@@ -1990,16 +2000,18 @@ extension UNetFromNNC {
         .copied()
       let restInputsCond: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
         switch $0.0 {
-        case 0..<7, (restInputs.count - 2)..<restInputs.count:
+        case 0..<(vaceContextExists ? 8 : 7), (restInputs.count - 2)..<restInputs.count:
           return $0.1
         default:
           if injectImage {
-            if ($0.0 - 7) % 6 == 0 || ($0.0 - 7) % 6 == 2 {
+            if ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 0
+              || ($0.0 - (vaceContextExists ? 8 : 7)) % 6 == 2
+            {
               return nil  // Remove negative ones.
             }
             return $0.1
           } else {
-            if $0.0 % 2 == 0 {
+            if ($0.0 - (vaceContextExists ? 1 : 0)) % 2 == 0 {
               return $0.1
             }
             return nil
