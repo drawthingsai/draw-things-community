@@ -352,8 +352,8 @@ public func Wan(
       lastHint = scale .* afterProj(out)
       hints[n] = lastHint
     }
+    out = xIn
   }
-  out = xIn
   if let lastHint = lastHint {
     out.add(dependencies: [lastHint])
   }
@@ -542,7 +542,7 @@ public func WanFixed(
     contextImg = nil
   }
   var mappers = [ModelWeightMapper]()
-  for (i, n) in vaceLayers.enumerated() {
+  for (i, _) in vaceLayers.enumerated() {
     let (mapper, block) = WanAttentionBlockFixed(
       prefix: "vace_blocks.\(i)", weightsPrefix: "vace_", k: 128, h: channels / 128, b: batchSize,
       t: (textLength, 257), injectImage: false)
@@ -989,8 +989,8 @@ func LoRAWan(
       lastHint = scale .* afterProj(out)
       hints[n] = lastHint
     }
+    out = xIn
   }
-  out = xIn
   if let lastHint = lastHint {
     out.add(dependencies: [lastHint])
   }
@@ -1191,7 +1191,7 @@ func LoRAWanFixed(
     contextImg = nil
   }
   var mappers = [ModelWeightMapper]()
-  for (i, n) in vaceLayers.enumerated() {
+  for (i, _) in vaceLayers.enumerated() {
     let (mapper, block) = WanAttentionBlockFixed(
       prefix: "vace_blocks.\(i)", weightsPrefix: "vace_", k: 128, h: channels / 128, b: batchSize,
       t: (textLength, 257), injectImage: false)
