@@ -1877,7 +1877,7 @@ extension LocalImageGenerator {
           shuffles: shuffles, imageEncoderVersion: imageEncoderVersion, graph: graph)
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-          inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }
+          image: nil, inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
       }
@@ -2003,6 +2003,7 @@ extension LocalImageGenerator {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+              image: image,
               inputs: [
                 (hint: rgb, weight: 1)
               ]
@@ -2013,6 +2014,7 @@ extension LocalImageGenerator {
             ControlModel<FloatType>.canny(image.rawValue.toCPU(), adjustRGB: adjustRGB).toGPU(0))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: canny, weight: 1)
             ]
@@ -2026,6 +2028,7 @@ extension LocalImageGenerator {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+              image: image,
               inputs: [
                 (hint: rgb, weight: 1)
               ]
@@ -2053,6 +2056,7 @@ extension LocalImageGenerator {
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: softedge, weight: 1)
             ]
@@ -2063,6 +2067,7 @@ extension LocalImageGenerator {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+              image: image,
               inputs: [
                 (hint: rgb, weight: 1)
               ]
@@ -2077,6 +2082,7 @@ extension LocalImageGenerator {
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: mlsdTensor.toGPU(0), weight: 1)
             ]
@@ -2108,6 +2114,7 @@ extension LocalImageGenerator {
           depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = depth
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: depthRGB, weight: 1)
             ]
@@ -2161,6 +2168,7 @@ extension LocalImageGenerator {
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: scribble, weight: 1)
             ]
@@ -2171,6 +2179,7 @@ extension LocalImageGenerator {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+              image: image,
               inputs: [
                 (hint: rgb, weight: 1)
               ]
@@ -2180,6 +2189,7 @@ extension LocalImageGenerator {
 
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: graph.variable(pose.toGPU(0)), weight: 1)
             ]
@@ -2191,6 +2201,7 @@ extension LocalImageGenerator {
           rgb = 0.5 * (1 - rgb)
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: rgb, weight: 1)
             ]
@@ -2200,6 +2211,7 @@ extension LocalImageGenerator {
           guard let rgb = customRGB(true) else { return nil }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: rgb, weight: 1)
             ]
@@ -2210,6 +2222,7 @@ extension LocalImageGenerator {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+              image: image,
               inputs: [
                 (hint: rgb, weight: 1)
               ]
@@ -2223,7 +2236,7 @@ extension LocalImageGenerator {
             rgbs,
             controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              inputs: rgbs.map { (hint: $0.0, weight: 1) })
+              image: image, inputs: rgbs.map { (hint: $0.0, weight: 1) })
           ).map { ($0.1, $0.0.1 * control.weight) }
           return (model: controlModel, hints: hints)
         case .inpaint:
@@ -2264,6 +2277,7 @@ extension LocalImageGenerator {
           }
           var hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: input, weight: 1)
             ]
@@ -2303,6 +2317,7 @@ extension LocalImageGenerator {
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: input, weight: 1)
             ]
@@ -2313,7 +2328,7 @@ extension LocalImageGenerator {
           if let rgb = customRGB(true) {
             let hint = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              inputs: [(hint: rgb, weight: 1)])[0]
+              image: image, inputs: [(hint: rgb, weight: 1)])[0]
             return (model: controlModel, hints: [(hint, control.weight)])
           }
           guard var input = image else { return nil }
@@ -2354,6 +2369,7 @@ extension LocalImageGenerator {
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: input, weight: 1)
             ]
@@ -2366,6 +2382,7 @@ extension LocalImageGenerator {
         guard !shuffles.isEmpty else { return nil }
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+          image: image,
           inputs: shuffles.map {
             (hint: graph.variable($0.0).toGPU(0), weight: $0.1 * control.weight)
           }
@@ -2383,7 +2400,7 @@ extension LocalImageGenerator {
           shuffles: shuffles, imageEncoderVersion: imageEncoderVersion, graph: graph)
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-          inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }
+          image: image, inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
       case .ipadapterfaceidplus, .pulid:
@@ -2395,7 +2412,7 @@ extension LocalImageGenerator {
         let rgbs = shuffles.map { (graph.variable($0.0), $0.1) }
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-          inputs: (rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) })
+          image: image, inputs: (rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) })
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
       case .t2iadapter:
@@ -2410,7 +2427,7 @@ extension LocalImageGenerator {
               .NHWC(shape[0], startHeight, startWidth, 64))
             let hint = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              inputs: [(hint: input, weight: control.weight)])[0]
+              image: image, inputs: [(hint: input, weight: control.weight)])[0]
             return (model: controlModel, hints: [(hint, 1)])
           }
           let canny = graph.variable(
@@ -2422,6 +2439,7 @@ extension LocalImageGenerator {
             .NHWC(shape[0], startHeight, startWidth, 64))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: input, weight: control.weight)
             ]
@@ -2446,6 +2464,7 @@ extension LocalImageGenerator {
             .NHWC(shape[0], startHeight, startWidth, 64 * 3))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: input, weight: control.weight)
             ]
@@ -2472,6 +2491,7 @@ extension LocalImageGenerator {
             .NHWC(shape[0], startHeight, startWidth, 64))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: input, weight: control.weight)
             ]
@@ -2487,6 +2507,7 @@ extension LocalImageGenerator {
               .NHWC(shape[0], startHeight, startWidth, 64 * 3))
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+              image: image,
               inputs: [
                 (hint: input, weight: control.weight)
               ]
@@ -2500,6 +2521,7 @@ extension LocalImageGenerator {
             .NHWC(shape[0], startHeight, startWidth, 64 * 3))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: input, weight: control.weight)
             ]
@@ -2541,6 +2563,7 @@ extension LocalImageGenerator {
             .NHWC(shape[0], startHeight, startWidth, 64 * 3))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+            image: image,
             inputs: [
               (hint: input, weight: control.weight)
             ]
@@ -2756,7 +2779,7 @@ extension LocalImageGenerator {
   }
 
   private func expandImageForEncoding(
-    batchSize: Int, version: ModelVersion, modifier: SamplerModifier,
+    batchSize: (Int, Int), version: ModelVersion, modifier: SamplerModifier,
     image: DynamicGraph.Tensor<FloatType>
   ) -> (Int, DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>?) {
     switch version {
@@ -2765,17 +2788,17 @@ extension LocalImageGenerator {
       return (1, image, nil)
     case .wan21_14b, .wan21_1_3b:
       let shape = image.shape
-      guard shape[0] < (batchSize - 1) * 4 + 1 else {
-        let copied = image[0..<(batchSize - 1) * 4 + 1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+      guard shape[0] < (batchSize.0 - 1) * 4 + 1 else {
+        let copied = image[0..<(batchSize.0 - 1) * 4 + 1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
         if modifier == .inpainting {
-          return (batchSize, copied, copied)
+          return (batchSize.0, copied, copied)
         } else {
-          return (batchSize, copied, nil)
+          return (batchSize.0, copied, nil)
         }
       }
       let graph = image.graph
-      let decodedSize = (batchSize - 1) * 4 + 1
+      let decodedSize = (batchSize.0 - 1) * 4 + 1
       var repeatedImage = graph.variable(
         .GPU(0), .NHWC(decodedSize, shape[1], shape[2], shape[3]), of: FloatType.self)
       // Replicate images throughout.
@@ -2786,13 +2809,13 @@ extension LocalImageGenerator {
           ].copied()
       }
       guard modifier == .inpainting else {
-        return (batchSize, repeatedImage, nil)
+        return (batchSize.0, repeatedImage, nil)
       }
       var expandedImage = graph.variable(
         .GPU(0), .NHWC(decodedSize, shape[1], shape[2], shape[3]), of: FloatType.self)
       expandedImage.full(0)
       expandedImage[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] = image
-      return (batchSize, expandedImage, repeatedImage)
+      return (batchSize.0, expandedImage, repeatedImage)
     }
   }
 
@@ -3357,7 +3380,7 @@ extension LocalImageGenerator {
           }()
         let imageSize: Int
         (imageSize, firstPassImage, _) = expandImageForEncoding(
-          batchSize: batchSize.0, version: modelVersion, modifier: modifier, image: firstPassImage)
+          batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
         let encodedImage = modelPreloader.consumeFirstStageEncode(
           firstStage.encode(
             firstPassImage,
@@ -3599,7 +3622,7 @@ extension LocalImageGenerator {
           }()
         let imageSize: Int
         (imageSize, image, _) = expandImageForEncoding(
-          batchSize: batchSize.0, version: modelVersion, modifier: modifier, image: image)
+          batchSize: batchSize, version: modelVersion, modifier: modifier, image: image)
         let encodedImage = modelPreloader.consumeFirstStageEncode(
           firstStage.encode(
             image,
@@ -4331,7 +4354,7 @@ extension LocalImageGenerator {
       let imageSize: Int
       let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
       (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
-        batchSize: batchSize.0, version: modelVersion, modifier: modifier, image: firstPassImage)
+        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
       var sample: DynamicGraph.Tensor<FloatType>
       let encodedImage: DynamicGraph.Tensor<FloatType>
       (sample, encodedImage) = modelPreloader.consumeFirstStageSample(
@@ -5589,7 +5612,7 @@ extension LocalImageGenerator {
       let imageSize: Int
       let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
       (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
-        batchSize: batchSize.0, version: modelVersion, modifier: modifier, image: firstPassImage)
+        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
       let (sample, _) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
           firstPassImageForSample ?? firstPassImage,
@@ -6344,7 +6367,7 @@ extension LocalImageGenerator {
       let imageSize: Int
       let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
       (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
-        batchSize: batchSize.0, version: modelVersion, modifier: modifier, image: firstPassImage)
+        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
       let (sample, _) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
           firstPassImageForSample ?? firstPassImage,

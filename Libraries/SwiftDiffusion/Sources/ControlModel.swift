@@ -472,7 +472,7 @@ extension ControlModel {
     }
   }
   public func hint(
-    batchSize: Int, startHeight: Int, startWidth: Int,
+    batchSize: Int, startHeight: Int, startWidth: Int, image: DynamicGraph.Tensor<FloatType>?,
     inputs: [(hint: DynamicGraph.Tensor<FloatType>, weight: Float)]
   )
     -> [[DynamicGraph.Tensor<FloatType>]]
@@ -505,16 +505,37 @@ extension ControlModel {
             return firstStage.scale(
               result.0[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<16].copied())
           }
+          encoder = nil
           // Encode empty video, as well as mask.
-          let frames = graph.variable(
+          var frames = graph.variable(
             .GPU(0), .NHWC(((batchSize - refs.count) - 1) * 4 + 1, startHeight, startWidth, 3),
             of: FloatType.self)
           frames.full(0)
-          var latents = firstStage.encode(frames, encoder: nil, cancellation: { _ in }).0
-          latents = firstStage.scale(
-            latents[
+          let firstFrames = image?.shape[0] ?? 0
+          if var image = image {
+            if image.shape[1] != startHeight || image.shape[2] != startWidth {
+              image = Upsample(
+                .bilinear, widthScale: Float(startWidth) / Float(image.shape[2]),
+                heightScale: Float(startHeight) / Float(image.shape[1]))(image)
+            }
+            frames[0..<firstFrames, 0..<startHeight, 0..<startWidth, 0..<3] = image
+          }
+          var inactive: DynamicGraph.Tensor<FloatType>
+          (inactive, encoder) = firstStage.encode(frames, encoder: encoder, cancellation: { _ in })
+          inactive = firstStage.scale(
+            inactive[
               0..<(batchSize - refs.count), 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16
             ].copied())
+          var reactive = inactive
+          if image != nil {
+            frames.full(0)
+            (reactive, _) = firstStage.encode(frames, encoder: encoder, cancellation: { _ in })
+            reactive = firstStage.scale(
+              reactive[
+                0..<(batchSize - refs.count), 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16
+              ].copied())
+          }
+          encoder = nil
           var vaceLatents = graph.variable(
             .GPU(0), .NHWC(batchSize, startHeight / 8, startWidth / 8, 96), of: FloatType.self)
           vaceLatents.full(1)
@@ -524,9 +545,16 @@ extension ControlModel {
             vaceLatents[i..<(i + 1), 0..<shape[1], 0..<shape[2], 16..<32].full(0)
           }
           vaceLatents[refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16] =
-            latents
+            inactive
           vaceLatents[
-            refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 16..<32] = latents
+            refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 16..<32] = reactive
+          if firstFrames > 0 {
+            // Inactive area set mask to 0.
+            vaceLatents[
+              refs.count..<(refs.count + (firstFrames - 1) / 4 + 1), 0..<(startHeight / 8),
+              0..<(startWidth / 8), 32..<96
+            ].full(0)
+          }
           return [[vaceLatents]]
         case .auraflow, .hiDreamI1, .hunyuanVideo, .kandinsky21, .pixart, .sd3, .sd3Large,
           .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
