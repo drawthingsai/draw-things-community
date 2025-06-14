@@ -540,23 +540,21 @@ extension ControlModel {
           encoder = nil
           var vaceLatents = graph.variable(
             .GPU(0), .NHWC(batchSize, startHeight / 8, startWidth / 8, 96), of: FloatType.self)
-          vaceLatents.full(1)
+          vaceLatents.full(0)
           for (i, ref) in refs.enumerated() {
             let shape = ref.shape
             vaceLatents[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<16] = ref
-            vaceLatents[i..<(i + 1), 0..<shape[1], 0..<shape[2], 16..<96].full(0)  // Both mask and reactive are 0s.
+            // Both mask and reactive are 0s.
           }
           vaceLatents[refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16] =
             inactive
           vaceLatents[
             refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 16..<32] = reactive
-          if firstFrames > 0 {
-            // Inactive area set mask to 0.
-            vaceLatents[
-              refs.count..<(refs.count + (firstFrames - 1) / 4 + 1), 0..<(startHeight / 8),
-              0..<(startWidth / 8), 32..<96
-            ].full(0)
-          }
+          // Inactive area set mask to 0. The rest are 1s.
+          vaceLatents[
+            (refs.count + (firstFrames > 0 ? (firstFrames - 1) / 4 + 1 : 0))..<batchSize,
+            0..<(startHeight / 8), 0..<(startWidth / 8), 32..<96
+          ].full(1)
           return [[vaceLatents]]
         case .auraflow, .hiDreamI1, .hunyuanVideo, .kandinsky21, .pixart, .sd3, .sd3Large,
           .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
