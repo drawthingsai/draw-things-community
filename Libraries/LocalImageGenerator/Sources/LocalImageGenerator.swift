@@ -1832,7 +1832,8 @@ extension LocalImageGenerator {
     graph: DynamicGraph, hints: [ControlHintType: AnyTensor],
     custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], pose: Tensor<FloatType>?,
     controls: [Control], version: ModelVersion, tiledDiffusion: TiledConfiguration,
-    usesFlashAttention: Bool, externalOnDemand: Bool
+    usesFlashAttention: Bool, externalOnDemand: Bool,
+    cancellation: (@escaping () -> Void) -> Void
   ) -> [(model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)])] {
     return controls.enumerated().compactMap {
       index, control -> (
@@ -1877,7 +1878,8 @@ extension LocalImageGenerator {
           shuffles: shuffles, imageEncoderVersion: imageEncoderVersion, graph: graph)
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-          image: nil, inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }
+          image: nil, inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) },
+          cancellation: cancellation
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
       }
@@ -1891,7 +1893,8 @@ extension LocalImageGenerator {
     custom: Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)], pose: Tensor<FloatType>?,
     mask: Tensor<FloatType>?,
     controls: [Control], version: ModelVersion, tiledDiffusion: TiledConfiguration,
-    usesFlashAttention: Bool, externalOnDemand: Bool, steps: Int, firstStage: FirstStage<FloatType>
+    usesFlashAttention: Bool, externalOnDemand: Bool, steps: Int, firstStage: FirstStage<FloatType>,
+    cancellation: (@escaping () -> Void) -> Void
   ) -> [(model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)])] {
     return controls.enumerated().compactMap {
       index, control -> (
@@ -2006,7 +2009,7 @@ extension LocalImageGenerator {
               image: image,
               inputs: [
                 (hint: rgb, weight: 1)
-              ]
+              ], cancellation: cancellation
             ).map { ($0, control.weight) }
             return (model: controlModel, hints: hints)
           }
@@ -2017,7 +2020,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: canny, weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .softedge:
@@ -2031,7 +2034,7 @@ extension LocalImageGenerator {
               image: image,
               inputs: [
                 (hint: rgb, weight: 1)
-              ]
+              ], cancellation: cancellation
             ).map { ($0, control.weight) }
             return (model: controlModel, hints: hints)
           }
@@ -2059,7 +2062,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: softedge, weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .mlsd:
@@ -2070,7 +2073,7 @@ extension LocalImageGenerator {
               image: image,
               inputs: [
                 (hint: rgb, weight: 1)
-              ]
+              ], cancellation: cancellation
             ).map { ($0, control.weight) }
             return (model: controlModel, hints: hints)
           }
@@ -2085,7 +2088,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: mlsdTensor.toGPU(0), weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .depth:
@@ -2117,7 +2120,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: depthRGB, weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .scribble:
@@ -2171,7 +2174,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: scribble, weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .pose:
@@ -2182,7 +2185,7 @@ extension LocalImageGenerator {
               image: image,
               inputs: [
                 (hint: rgb, weight: 1)
-              ]
+              ], cancellation: cancellation
             ).map { ($0, control.weight) }
             return (model: controlModel, hints: hints)
           }
@@ -2192,9 +2195,8 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: graph.variable(pose.toGPU(0)), weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
-          //          DynamicGraph.logLevel = .verbose
           return (model: controlModel, hints: hints)
         case .lineart:
           guard var rgb = customRGB(false) else { return nil }
@@ -2204,7 +2206,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: rgb, weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .normalbae, .seg, .custom:
@@ -2214,7 +2216,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: rgb, weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .shuffle:
@@ -2225,7 +2227,7 @@ extension LocalImageGenerator {
               image: image,
               inputs: [
                 (hint: rgb, weight: 1)
-              ]
+              ], cancellation: cancellation
             ).map { ($0, control.weight) }
             return (model: controlModel, hints: hints)
           }
@@ -2236,7 +2238,8 @@ extension LocalImageGenerator {
             rgbs,
             controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image, inputs: rgbs.map { (hint: $0.0, weight: 1) })
+              image: image, inputs: rgbs.map { (hint: $0.0, weight: 1) }, cancellation: cancellation
+            )
           ).map { ($0.1, $0.0.1 * control.weight) }
           return (model: controlModel, hints: hints)
         case .inpaint:
@@ -2280,7 +2283,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: input, weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
           if version == .flux1 {
             hints = hints.map {
@@ -2320,7 +2323,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: input, weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .tile, .blur, .gray, .lowquality:
@@ -2328,7 +2331,7 @@ extension LocalImageGenerator {
           if let rgb = customRGB(true) {
             let hint = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image, inputs: [(hint: rgb, weight: 1)])[0]
+              image: image, inputs: [(hint: rgb, weight: 1)], cancellation: cancellation)[0]
             return (model: controlModel, hints: [(hint, control.weight)])
           }
           guard var input = image else { return nil }
@@ -2372,7 +2375,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: input, weight: 1)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .color:
@@ -2385,7 +2388,7 @@ extension LocalImageGenerator {
           image: image,
           inputs: shuffles.map {
             (hint: graph.variable($0.0).toGPU(0), weight: $0.1 * control.weight)
-          }
+          }, cancellation: cancellation
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
       case .llava:
@@ -2400,7 +2403,8 @@ extension LocalImageGenerator {
           shuffles: shuffles, imageEncoderVersion: imageEncoderVersion, graph: graph)
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-          image: image, inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }
+          image: image, inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) },
+          cancellation: cancellation
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
       case .ipadapterfaceidplus, .pulid:
@@ -2412,7 +2416,8 @@ extension LocalImageGenerator {
         let rgbs = shuffles.map { (graph.variable($0.0), $0.1) }
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-          image: image, inputs: (rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) })
+          image: image, inputs: (rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }),
+          cancellation: cancellation
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
       case .t2iadapter:
@@ -2427,7 +2432,8 @@ extension LocalImageGenerator {
               .NHWC(shape[0], startHeight, startWidth, 64))
             let hint = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image, inputs: [(hint: input, weight: control.weight)])[0]
+              image: image, inputs: [(hint: input, weight: control.weight)],
+              cancellation: cancellation)[0]
             return (model: controlModel, hints: [(hint, 1)])
           }
           let canny = graph.variable(
@@ -2442,7 +2448,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: input, weight: control.weight)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, 1) }
           return (model: controlModel, hints: hints)
         case .depth:
@@ -2467,7 +2473,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: input, weight: control.weight)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, 1) }
           return (model: controlModel, hints: hints)
         case .scribble:
@@ -2494,7 +2500,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: input, weight: control.weight)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, 1) }
           return (model: controlModel, hints: hints)
         case .pose:
@@ -2510,7 +2516,7 @@ extension LocalImageGenerator {
               image: image,
               inputs: [
                 (hint: input, weight: control.weight)
-              ]
+              ], cancellation: cancellation
             ).map { ($0, 1) }
             return (model: controlModel, hints: hints)
           }
@@ -2524,7 +2530,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: input, weight: control.weight)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, 1) }
           return (model: controlModel, hints: hints)
         case .color:
@@ -2566,7 +2572,7 @@ extension LocalImageGenerator {
             image: image,
             inputs: [
               (hint: input, weight: control.weight)
-            ]
+            ], cancellation: cancellation
           ).map { ($0, 1) }
           return (model: controlModel, hints: hints)
         case .normalbae, .lineart, .softedge, .seg, .inpaint, .ip2p, .shuffle, .mlsd, .tile,
@@ -3272,7 +3278,7 @@ extension LocalImageGenerator {
         graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand)
+        externalOnDemand: controlExternalOnDemand, cancellation: cancellation)
       let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         injecteds: injectedTextEmbeddings)
@@ -3463,7 +3469,8 @@ extension LocalImageGenerator {
         image: firstPassImage, depth: firstPassDepthImage, hints: hints, custom: custom,
         shuffles: shuffles, pose: poses.first?.0, mask: nil, controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage)
+        externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage,
+        cancellation: cancellation)
 
       guard
         let x =
@@ -3715,7 +3722,7 @@ extension LocalImageGenerator {
         version: modelVersion,
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: secondPassControlExternalOnDemand, steps: sampling.steps,
-        firstStage: firstStage)
+        firstStage: firstStage, cancellation: cancellation)
       let secondPassModelVersion: ModelVersion
       let secondPassModelFilePath: String
       if modelVersion == .wurstchenStageC {
@@ -4257,7 +4264,7 @@ extension LocalImageGenerator {
         graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand)
+        externalOnDemand: controlExternalOnDemand, cancellation: cancellation)
       let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         injecteds: injectedTextEmbeddings)
@@ -4440,7 +4447,8 @@ extension LocalImageGenerator {
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
         mask: nil, controls: configuration.controls, version: modelVersion,
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage)
+        externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage,
+        cancellation: cancellation)
       guard
         var x =
           try? modelPreloader.consumeUNet(
@@ -5523,7 +5531,7 @@ extension LocalImageGenerator {
         graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand)
+        externalOnDemand: controlExternalOnDemand, cancellation: cancellation)
       let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         injecteds: injectedTextEmbeddings)
@@ -5636,7 +5644,8 @@ extension LocalImageGenerator {
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
         mask: imageNegMask2, controls: configuration.controls, version: modelVersion,
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage)
+        externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage,
+        cancellation: cancellation)
       var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modifier == .double
         || modelVersion == .svdI2v
@@ -6278,7 +6287,7 @@ extension LocalImageGenerator {
         graph: graph, hints: hints, custom: custom, shuffles: shuffles, pose: poses.first?.0,
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
-        externalOnDemand: controlExternalOnDemand)
+        externalOnDemand: controlExternalOnDemand, cancellation: cancellation)
       let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         injecteds: injectedTextEmbeddings)
@@ -6457,7 +6466,7 @@ extension LocalImageGenerator {
         mask: imageNegMask1, controls: configuration.controls, version: modelVersion,
         tiledDiffusion: tiledDiffusion,
         usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
-        steps: sampling.steps, firstStage: firstStage)
+        steps: sampling.steps, firstStage: firstStage, cancellation: cancellation)
       let redoInjectedControls = configuration.controls.contains { control in
         control.file.map {
           (ControlNetZoo.modifierForModel($0) ?? ControlHintType(from: control.inputOverride))
@@ -6584,7 +6593,7 @@ extension LocalImageGenerator {
           mask: imageNegMask2, controls: configuration.controls, version: modelVersion,
           tiledDiffusion: tiledDiffusion,
           usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
-          steps: sampling.steps, firstStage: firstStage
+          steps: sampling.steps, firstStage: firstStage, cancellation: cancellation
         )
       }
       var initMask2Maybe: DynamicGraph.Tensor<FloatType>? = initMask2

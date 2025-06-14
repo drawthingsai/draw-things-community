@@ -473,7 +473,8 @@ extension ControlModel {
   }
   public func hint(
     batchSize: Int, startHeight: Int, startWidth: Int, image: DynamicGraph.Tensor<FloatType>?,
-    inputs: [(hint: DynamicGraph.Tensor<FloatType>, weight: Float)]
+    inputs: [(hint: DynamicGraph.Tensor<FloatType>, weight: Float)],
+    cancellation: (@escaping () -> Void) -> Void
   )
     -> [[DynamicGraph.Tensor<FloatType>]]
   {
@@ -491,7 +492,7 @@ extension ControlModel {
         case .flux1:
           var encoder: Model? = nil
           return inputs.map {
-            let result = firstStage.sample($0.hint, encoder: encoder, cancellation: { _ in })
+            let result = firstStage.sample($0.hint, encoder: encoder, cancellation: cancellation)
             encoder = result.2
             return [result.0]
           }
@@ -499,7 +500,7 @@ extension ControlModel {
           var encoder: Model? = nil
           let refs = inputs.map {
             // Use mean rather than sampled from distribution.
-            let result = firstStage.encode($0.hint, encoder: encoder, cancellation: { _ in })
+            let result = firstStage.encode($0.hint, encoder: encoder, cancellation: cancellation)
             let shape = result.0.shape
             encoder = result.1
             return firstStage.scale(
@@ -521,7 +522,8 @@ extension ControlModel {
             frames[0..<firstFrames, 0..<startHeight, 0..<startWidth, 0..<3] = image
           }
           var inactive: DynamicGraph.Tensor<FloatType>
-          (inactive, encoder) = firstStage.encode(frames, encoder: encoder, cancellation: { _ in })
+          (inactive, encoder) = firstStage.encode(
+            frames, encoder: encoder, cancellation: cancellation)
           inactive = firstStage.scale(
             inactive[
               0..<(batchSize - refs.count), 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16
@@ -529,7 +531,7 @@ extension ControlModel {
           var reactive = inactive
           if image != nil {
             frames.full(0)
-            (reactive, _) = firstStage.encode(frames, encoder: encoder, cancellation: { _ in })
+            (reactive, _) = firstStage.encode(frames, encoder: encoder, cancellation: cancellation)
             reactive = firstStage.scale(
               reactive[
                 0..<(batchSize - refs.count), 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16
@@ -542,7 +544,7 @@ extension ControlModel {
           for (i, ref) in refs.enumerated() {
             let shape = ref.shape
             vaceLatents[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<16] = ref
-            vaceLatents[i..<(i + 1), 0..<shape[1], 0..<shape[2], 16..<32].full(0)
+            vaceLatents[i..<(i + 1), 0..<shape[1], 0..<shape[2], 16..<96].full(0)  // Both mask and reactive are 0s.
           }
           vaceLatents[refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16] =
             inactive
