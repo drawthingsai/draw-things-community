@@ -547,6 +547,7 @@ public func WanFixed(
       prefix: "vace_blocks.\(i)", weightsPrefix: "vace_", k: 128, h: channels / 128, b: batchSize,
       t: (textLength, 257), injectImage: false)
     outs.append(block(context))
+    mappers.append(mapper)
   }
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlockFixed(
@@ -1196,6 +1197,7 @@ func LoRAWanFixed(
       prefix: "vace_blocks.\(i)", weightsPrefix: "vace_", k: 128, h: channels / 128, b: batchSize,
       t: (textLength, 257), injectImage: false)
     outs.append(block(context))
+    mappers.append(mapper)
   }
   for i in 0..<layers {
     let (mapper, block) = LoRAWanAttentionBlockFixed(
