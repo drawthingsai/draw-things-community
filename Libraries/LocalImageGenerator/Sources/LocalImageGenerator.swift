@@ -1788,7 +1788,8 @@ extension LocalImageGenerator {
   }
 
   private func shuffleRGB(
-    shuffles: [(Tensor<FloatType>, Float)], graph: DynamicGraph, startHeight: Int, startWidth: Int
+    shuffles: [(Tensor<FloatType>, Float)], graph: DynamicGraph, startHeight: Int, startWidth: Int,
+    adjustRGB: Bool, aspectFit: Bool
   ) -> [(DynamicGraph.Tensor<FloatType>, Float)] {
     var rgbResults = [(DynamicGraph.Tensor<FloatType>, Float)]()
     for (shuffle, strength) in shuffles {
@@ -1797,16 +1798,30 @@ extension LocalImageGenerator {
       let inputWidth = input.shape[2]
       precondition(input.shape[3] == 3)
       if inputHeight != startHeight * 8 || inputWidth != startWidth * 8 {
-        rgbResults.append(
-          (
-            0.5
-              * (Upsample(
-                .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
-                heightScale: Float(startHeight * 8) / Float(inputHeight))(input) + 1),
-            strength
-          ))
+        if aspectFit {
+          let scale = min(
+            Float(startWidth * 8) / Float(inputWidth), Float(startHeight * 8) / Float(inputHeight))
+          let graph = input.graph
+          let shape = input.shape
+          var resampled = Upsample(.bilinear, widthScale: scale, heightScale: scale)(input)
+          resampled = adjustRGB ? 0.5 * (resampled + 1) : resampled
+          var adjusted = graph.variable(
+            .GPU(0), .NHWC(shape[0], startHeight * 8, startWidth * 8, 3), of: FloatType.self)
+          adjusted.full(1)
+          let yOffset = (startHeight * 8 - resampled.shape[1]) / 2
+          let xOffset = (startWidth * 8 - resampled.shape[2]) / 2
+          adjusted[
+            0..<shape[0], yOffset..<(yOffset + resampled.shape[1]),
+            xOffset..<(xOffset + resampled.shape[2]), 0..<3] = resampled
+          rgbResults.append((adjusted, strength))
+        } else {
+          let resampled = Upsample(
+            .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
+            heightScale: Float(startHeight * 8) / Float(inputHeight))(input)
+          rgbResults.append((adjustRGB ? 0.5 * (resampled + 1) : resampled, strength))
+        }
       } else {
-        rgbResults.append((0.5 * (input + 1), strength))
+        rgbResults.append((adjustRGB ? 0.5 * (input + 1) : input, strength))
       }
     }
     return rgbResults
@@ -1928,6 +1943,7 @@ extension LocalImageGenerator {
       }
       // We don't adjust RGB range if it is a ControlNet not trained for SDXL.
       let adjustRGB = (version != .flux1 && version != .wan21_14b && version != .wan21_1_3b)
+      let aspectFit = (version == .wan21_14b || version == .wan21_1_3b)
       let controlModel = ControlModel<FloatType>(
         filePaths: filePaths, type: type, modifier: modifier,
         externalOnDemand: externalOnDemand, version: version,
@@ -1954,10 +1970,29 @@ extension LocalImageGenerator {
           guard inputHeight != startHeight * 8 || inputWidth != startWidth * 8 else {
             return adjustRGB ? 0.5 * (input + 1) : input
           }
-          let resampled = Upsample(
-            .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
-            heightScale: Float(startHeight * 8) / Float(inputHeight))(input)
-          return adjustRGB ? 0.5 * (resampled + 1) : resampled
+          if aspectFit {
+            let scale = min(
+              Float(startWidth * 8) / Float(inputWidth), Float(startHeight * 8) / Float(inputHeight)
+            )
+            let graph = input.graph
+            let shape = input.shape
+            var resampled = Upsample(.bilinear, widthScale: scale, heightScale: scale)(input)
+            resampled = adjustRGB ? 0.5 * (resampled + 1) : resampled
+            var adjusted = graph.variable(
+              .GPU(0), .NHWC(shape[0], startHeight * 8, startWidth * 8, 3), of: FloatType.self)
+            adjusted.full(1)
+            let yOffset = (startHeight * 8 - resampled.shape[1]) / 2
+            let xOffset = (startWidth * 8 - resampled.shape[2]) / 2
+            adjusted[
+              0..<shape[0], yOffset..<(yOffset + resampled.shape[1]),
+              xOffset..<(xOffset + resampled.shape[2]), 0..<3] = resampled
+            return adjusted
+          } else {
+            let resampled = Upsample(
+              .bilinear, widthScale: Float(startWidth * 8) / Float(inputWidth),
+              heightScale: Float(startHeight * 8) / Float(inputHeight))(input)
+            return adjustRGB ? 0.5 * (resampled + 1) : resampled
+          }
         })
       }
       switch type {
@@ -2182,7 +2217,8 @@ extension LocalImageGenerator {
             return (model: controlModel, hints: hints)
           }
           let rgbs = shuffleRGB(
-            shuffles: shuffles, graph: graph, startHeight: startHeight, startWidth: startWidth)
+            shuffles: shuffles, graph: graph, startHeight: startHeight, startWidth: startWidth,
+            adjustRGB: adjustRGB, aspectFit: aspectFit)
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = zip(
             rgbs,
             controlModel.hint(
