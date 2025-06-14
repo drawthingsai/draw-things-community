@@ -327,6 +327,7 @@ public func Wan(
   }
   var contextIn = [Input]()
   var hints = [Int: Model.IO]()
+  var hintAttentions = [Int: Model.IO]()
   var lastHint: Model.IO? = nil
   if !vaceLayers.isEmpty {
     let scale = Input()
@@ -347,15 +348,13 @@ public func Wan(
       if let lastHint = lastHint {
         out.add(dependencies: [lastHint])
       }
+      hintAttentions[n] = out
       mappers.append(mapper)
       let afterProj = Dense(count: channels, name: "vace_after_proj")
       lastHint = scale .* afterProj(out)
       hints[n] = lastHint
     }
     out = xIn
-  }
-  if let lastHint = lastHint {
-    out.add(dependencies: [lastHint])
   }
   for i in 0..<layers {
     let (mapper, block) = WanAttentionBlock(
@@ -377,6 +376,10 @@ public func Wan(
     }
     mappers.append(mapper)
     if let hint = hints[i] {
+      if let hintAttention = hintAttentions[i] {
+        hintAttention.add(dependencies: [out])
+        hintAttentions[i] = nil
+      }
       out = out + hint
     }
   }
@@ -965,6 +968,7 @@ func LoRAWan(
   }
   var contextIn = [Input]()
   var hints = [Int: Model.IO]()
+  var hintAttentions = [Int: Model.IO]()
   var lastHint: Model.IO? = nil
   if !vaceLayers.isEmpty {
     let scale = Input()
@@ -985,15 +989,13 @@ func LoRAWan(
       if let lastHint = lastHint {
         out.add(dependencies: [lastHint])
       }
+      hintAttentions[n] = out
       mappers.append(mapper)
       let afterProj = Dense(count: channels, name: "vace_after_proj")
       lastHint = scale .* afterProj(out)
       hints[n] = lastHint
     }
     out = xIn
-  }
-  if let lastHint = lastHint {
-    out.add(dependencies: [lastHint])
   }
   for i in 0..<layers {
     let (mapper, block) = LoRAWanAttentionBlock(
@@ -1015,6 +1017,10 @@ func LoRAWan(
     }
     mappers.append(mapper)
     if let hint = hints[i] {
+      if let hintAttention = hintAttentions[i] {
+        hintAttention.add(dependencies: [out])
+        hintAttentions[i] = nil
+      }
       out = out + hint
     }
   }
