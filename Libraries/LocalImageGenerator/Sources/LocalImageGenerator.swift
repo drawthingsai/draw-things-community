@@ -2810,17 +2810,18 @@ extension LocalImageGenerator {
       return (1, image, nil)
     case .wan21_14b, .wan21_1_3b:
       let shape = image.shape
-      guard shape[0] < (batchSize.0 - 1) * 4 + 1 else {
-        let copied = image[0..<(batchSize.0 - 1) * 4 + 1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+      let batchSize = batchSize.0 - batchSize.1
+      guard shape[0] < (batchSize - 1) * 4 + 1 else {
+        let copied = image[0..<(batchSize - 1) * 4 + 1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
         if modifier == .inpainting {
-          return (batchSize.0, copied, copied)
+          return (batchSize, copied, copied)
         } else {
-          return (batchSize.0, copied, nil)
+          return (batchSize, copied, nil)
         }
       }
       let graph = image.graph
-      let decodedSize = (batchSize.0 - 1) * 4 + 1
+      let decodedSize = (batchSize - 1) * 4 + 1
       var repeatedImage = graph.variable(
         .GPU(0), .NHWC(decodedSize, shape[1], shape[2], shape[3]), of: FloatType.self)
       // Replicate images throughout.
@@ -2831,14 +2832,41 @@ extension LocalImageGenerator {
           ].copied()
       }
       guard modifier == .inpainting else {
-        return (batchSize.0, repeatedImage, nil)
+        return (batchSize, repeatedImage, nil)
       }
       var expandedImage = graph.variable(
         .GPU(0), .NHWC(decodedSize, shape[1], shape[2], shape[3]), of: FloatType.self)
       expandedImage.full(0)
       expandedImage[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] = image
-      return (batchSize.0, expandedImage, repeatedImage)
+      return (batchSize, expandedImage, repeatedImage)
     }
+  }
+
+  private func injectVACEFrames(
+    batchSize: (Int, Int), version: ModelVersion, image: DynamicGraph.Tensor<FloatType>,
+    injectedControls: [(
+      model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
+    )]
+  ) -> DynamicGraph.Tensor<FloatType> {
+    guard version == .wan21_14b || version == .wan21_1_3b else { return image }
+    let shape = image.shape
+    guard shape[0] < batchSize.0 else { return image }
+    guard
+      let hint = injectedControls.first(where: {
+        $0.model.type == .controlnet && $0.model.version == version
+      })?.hints.first?.0.first
+    else { return image }
+    var newShape = shape
+    newShape[0] = batchSize.0
+    var injectedImage = image.graph.variable(
+      .GPU(0), format: .NHWC, shape: newShape, of: FloatType.self)
+    injectedImage[
+      (batchSize.0 - shape[0])..<batchSize.0, 0..<shape[1], 0..<shape[2], 0..<shape[3]] = image
+    injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<4].full(1)
+    injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 4..<20] = hint[
+      0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<16
+    ].copied()
+    return injectedImage
   }
 
   private func injectReferenceFrames(
@@ -3491,6 +3519,11 @@ extension LocalImageGenerator {
         externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage,
         cancellation: cancellation)
 
+      if let image = maskedImage {
+        maskedImage = injectVACEFrames(
+          batchSize: batchSize, version: modelVersion, image: image,
+          injectedControls: injectedControls)
+      }
       guard
         let x =
           try? modelPreloader.consumeUNet(
@@ -3648,7 +3681,7 @@ extension LocalImageGenerator {
           }()
         let imageSize: Int
         (imageSize, image, _) = expandImageForEncoding(
-          batchSize: batchSize, version: modelVersion, modifier: modifier, image: image)
+          batchSize: (batchSize.0, 0), version: modelVersion, modifier: modifier, image: image)
         let encodedImage = modelPreloader.consumeFirstStageEncode(
           firstStage.encode(
             image,
@@ -3741,6 +3774,7 @@ extension LocalImageGenerator {
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: secondPassControlExternalOnDemand, steps: sampling.steps,
         firstStage: firstStage, cancellation: cancellation)
+
       let secondPassModelVersion: ModelVersion
       let secondPassModelFilePath: String
       if modelVersion == .wurstchenStageC {
@@ -4424,17 +4458,6 @@ extension LocalImageGenerator {
         graph: graph, batchSize: batchSize.0, startHeight: startHeight,
         startWidth: startWidth, channels: channels, seed: configuration.seed,
         seedMode: configuration.seedMode)
-      let x_T: DynamicGraph.Tensor<FloatType>
-      if initTimestep.startStep > 0 {
-        let sampleScaleFactor = sampler.sampleScaleFactor(
-          at: initTimestep.startStep, sampling: sampling)
-        let noiseScaleFactor = sampler.noiseScaleFactor(
-          at: initTimestep.startStep, sampling: sampling)
-        let zEnc = sampleScaleFactor * sample + noiseScaleFactor * noise
-        x_T = zEnc
-      } else {
-        x_T = noise
-      }
       let depthImage = depth.map {
         let depthImage = graph.variable($0.toGPU(0))
         let depthHeight = depthImage.shape[1]
@@ -4457,9 +4480,6 @@ extension LocalImageGenerator {
           .bilinear, widthScale: Float(startHeight * 8) / Float(customHeight),
           heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
       }
-      let imageCond = encodeImageCond(
-        image: firstPassImage, depth: depthImage, custom: customImage, modifier: modifier,
-        version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       let injectedControls = generateInjectedControls(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight, startWidth: startWidth,
         image: image,
@@ -4468,6 +4488,31 @@ extension LocalImageGenerator {
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage,
         cancellation: cancellation)
+      if let image = maskedImage {
+        maskedImage = injectVACEFrames(
+          batchSize: batchSize, version: modelVersion, image: image,
+          injectedControls: injectedControls)
+      }
+      firstPassImage = injectVACEFrames(
+        batchSize: batchSize, version: modelVersion, image: firstPassImage,
+        injectedControls: injectedControls)
+      sample = injectVACEFrames(
+        batchSize: batchSize, version: modelVersion, image: sample,
+        injectedControls: injectedControls)
+      let x_T: DynamicGraph.Tensor<FloatType>
+      if initTimestep.startStep > 0 {
+        let sampleScaleFactor = sampler.sampleScaleFactor(
+          at: initTimestep.startStep, sampling: sampling)
+        let noiseScaleFactor = sampler.noiseScaleFactor(
+          at: initTimestep.startStep, sampling: sampling)
+        let zEnc = sampleScaleFactor * sample + noiseScaleFactor * noise
+        x_T = zEnc
+      } else {
+        x_T = noise
+      }
+      let imageCond = encodeImageCond(
+        image: firstPassImage, depth: depthImage, custom: customImage, modifier: modifier,
+        version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       guard
         var x =
           try? modelPreloader.consumeUNet(
@@ -5641,7 +5686,7 @@ extension LocalImageGenerator {
       let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
       (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
         batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
-      let (sample, _) = modelPreloader.consumeFirstStageSample(
+      var (sample, _) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
           firstPassImageForSample ?? firstPassImage,
           encoder: modelPreloader.retrieveFirstStageEncoder(
@@ -5660,7 +5705,7 @@ extension LocalImageGenerator {
       }
       let injectedControls = generateInjectedControls(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight, startWidth: startWidth,
-        image: firstPassImage,
+        image: image,
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
         mask: imageNegMask2, controls: configuration.controls, version: modelVersion,
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
@@ -5696,6 +5741,17 @@ extension LocalImageGenerator {
             .copied()
         }
       }
+      if let image = maskedImage {
+        maskedImage = injectVACEFrames(
+          batchSize: batchSize, version: modelVersion, image: image,
+          injectedControls: injectedControls)
+      }
+      firstPassImage = injectVACEFrames(
+        batchSize: batchSize, version: modelVersion, image: firstPassImage,
+        injectedControls: injectedControls)
+      sample = injectVACEFrames(
+        batchSize: batchSize, version: modelVersion, image: sample,
+        injectedControls: injectedControls)
       guard feedback(.imageEncoded, signposts, nil) else { return nil }
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight,
@@ -6398,7 +6454,7 @@ extension LocalImageGenerator {
       let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
       (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
         batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
-      let (sample, _) = modelPreloader.consumeFirstStageSample(
+      var (sample, _) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
           firstPassImageForSample ?? firstPassImage,
           encoder: modelPreloader.retrieveFirstStageEncoder(
@@ -6482,7 +6538,7 @@ extension LocalImageGenerator {
       }
       var injectedControls = generateInjectedControls(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight, startWidth: startWidth,
-        image: firstPassImage,
+        image: image,
         depth: depthImage, hints: hints, custom: custom, shuffles: shuffles, pose: poses.last?.0,
         mask: imageNegMask1, controls: configuration.controls, version: modelVersion,
         tiledDiffusion: tiledDiffusion,
@@ -6494,6 +6550,22 @@ extension LocalImageGenerator {
             == .inpaint
         } ?? false
       }
+      if let image = maskedImage1 {
+        maskedImage1 = injectVACEFrames(
+          batchSize: batchSize, version: modelVersion, image: image,
+          injectedControls: injectedControls)
+      }
+      if let image = maskedImage2 {
+        maskedImage2 = injectVACEFrames(
+          batchSize: batchSize, version: modelVersion, image: image,
+          injectedControls: injectedControls)
+      }
+      firstPassImage = injectVACEFrames(
+        batchSize: batchSize, version: modelVersion, image: firstPassImage,
+        injectedControls: injectedControls)
+      sample = injectVACEFrames(
+        batchSize: batchSize, version: modelVersion, image: sample,
+        injectedControls: injectedControls)
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight,
         startWidth: startWidth, channels: channels, seed: configuration.seed,
