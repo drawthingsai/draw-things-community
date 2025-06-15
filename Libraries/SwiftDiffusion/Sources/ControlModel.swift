@@ -473,20 +473,17 @@ extension ControlModel {
   }
   public func hint(
     batchSize: Int, startHeight: Int, startWidth: Int, image: DynamicGraph.Tensor<FloatType>?,
-    inputs: [(hint: DynamicGraph.Tensor<FloatType>, weight: Float)],
+    graph: DynamicGraph, inputs: [(hint: DynamicGraph.Tensor<FloatType>, weight: Float)],
     cancellation: (@escaping () -> Void) -> Void
   )
     -> [[DynamicGraph.Tensor<FloatType>]]
   {
-    guard inputs.count > 0 else {
+    let isVACE = (type == .controlnet) && (version == .wan21_1_3b || version == .wan21_14b)
+    guard inputs.count > 0 || isVACE else {
       return []
     }
-    let graph = inputs[0].hint.graph
     switch type {
     case .controlnet, .controlnetlora, .controlnetunion:
-      let shape = inputs[0].hint.shape
-      let startHeight = shape[1]
-      let startWidth = shape[2]
       if let firstStage = firstStage {  // For FLUX.1, we use the VAE as encoder.
         switch version {
         case .flux1:
@@ -498,6 +495,8 @@ extension ControlModel {
           }
         case .wan21_14b, .wan21_1_3b:
           var encoder: Model? = nil
+          let startHeight = startHeight * 8
+          let startWidth = startWidth * 8
           let refs = inputs.map {
             // Use mean rather than sampled from distribution.
             let result = firstStage.encode($0.hint, encoder: encoder, cancellation: cancellation)
@@ -561,6 +560,9 @@ extension ControlModel {
           break
         }
       }
+      let shape = inputs[0].hint.shape
+      let startHeight = shape[1]
+      let startWidth = shape[2]
       let tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 64, startHeight) : startHeight

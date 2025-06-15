@@ -101,8 +101,9 @@ public struct ImageGeneratorUtils {
           injectControls = injectControls || hasCustom
           injectedControls += hasCustom ? 1 : 0
         case .shuffle:
-          injectControls = injectControls || shuffleCount > 0 || hasCustom
-          injectedControls += shuffleCount > 0 || hasCustom ? 1 : 0
+          let isVACE = (version == .wan21_1_3b || version == .wan21_14b)
+          injectControls = injectControls || shuffleCount > 0 || hasCustom || (isVACE && hasImage)
+          injectedControls += shuffleCount > 0 || hasCustom || (isVACE && hasImage) ? 1 : 0
         case .inpaint, .ip2p:
           injectControls = injectControls || hasImage
           injectedControls += hasImage ? 1 : 0

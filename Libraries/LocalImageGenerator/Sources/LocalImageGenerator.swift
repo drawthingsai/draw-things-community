@@ -1878,7 +1878,8 @@ extension LocalImageGenerator {
           shuffles: shuffles, imageEncoderVersion: imageEncoderVersion, graph: graph)
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-          image: nil, inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) },
+          image: nil, graph: graph,
+          inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) },
           cancellation: cancellation
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
@@ -2006,7 +2007,7 @@ extension LocalImageGenerator {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image,
+              image: image, graph: graph,
               inputs: [
                 (hint: rgb, weight: 1)
               ], cancellation: cancellation
@@ -2017,7 +2018,7 @@ extension LocalImageGenerator {
             ControlModel<FloatType>.canny(image.rawValue.toCPU(), adjustRGB: adjustRGB).toGPU(0))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: canny, weight: 1)
             ], cancellation: cancellation
@@ -2031,7 +2032,7 @@ extension LocalImageGenerator {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image,
+              image: image, graph: graph,
               inputs: [
                 (hint: rgb, weight: 1)
               ], cancellation: cancellation
@@ -2059,7 +2060,7 @@ extension LocalImageGenerator {
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: softedge, weight: 1)
             ], cancellation: cancellation
@@ -2070,7 +2071,7 @@ extension LocalImageGenerator {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image,
+              image: image, graph: graph,
               inputs: [
                 (hint: rgb, weight: 1)
               ], cancellation: cancellation
@@ -2085,7 +2086,7 @@ extension LocalImageGenerator {
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: mlsdTensor.toGPU(0), weight: 1)
             ], cancellation: cancellation
@@ -2117,7 +2118,7 @@ extension LocalImageGenerator {
           depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = depth
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: depthRGB, weight: 1)
             ], cancellation: cancellation
@@ -2171,7 +2172,7 @@ extension LocalImageGenerator {
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: scribble, weight: 1)
             ], cancellation: cancellation
@@ -2182,7 +2183,7 @@ extension LocalImageGenerator {
             guard let rgb = customRGB(true) else { return nil }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image,
+              image: image, graph: graph,
               inputs: [
                 (hint: rgb, weight: 1)
               ], cancellation: cancellation
@@ -2192,7 +2193,7 @@ extension LocalImageGenerator {
 
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: graph.variable(pose.toGPU(0)), weight: 1)
             ], cancellation: cancellation
@@ -2203,7 +2204,7 @@ extension LocalImageGenerator {
           rgb = 0.5 * (1 - rgb)
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: rgb, weight: 1)
             ], cancellation: cancellation
@@ -2213,18 +2214,29 @@ extension LocalImageGenerator {
           guard let rgb = customRGB(true) else { return nil }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: rgb, weight: 1)
             ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
         case .shuffle:
+          let isVACE = (version == .wan21_1_3b || version == .wan21_14b)
           guard !shuffles.isEmpty else {
-            guard let rgb = customRGB(true) else { return nil }
+            guard let rgb = customRGB(true) else {
+              if isVACE {
+                let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
+                  batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
+                  image: image, graph: graph,
+                  inputs: [], cancellation: cancellation
+                ).map { ($0, control.weight) }
+                return (model: controlModel, hints: hints)
+              }
+              return nil
+            }
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image,
+              image: image, graph: graph,
               inputs: [
                 (hint: rgb, weight: 1)
               ], cancellation: cancellation
@@ -2238,9 +2250,10 @@ extension LocalImageGenerator {
             rgbs,
             controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image, inputs: rgbs.map { (hint: $0.0, weight: 1) }, cancellation: cancellation
+              image: image, graph: graph, inputs: rgbs.map { (hint: $0.0, weight: 1) },
+              cancellation: cancellation
             )
-          ).map { ($0.1, $0.0.1 * control.weight) }
+          ).map { ($0.1, isVACE ? control.weight : $0.0.1 * control.weight) }
           return (model: controlModel, hints: hints)
         case .inpaint:
           guard var input = image else { return nil }
@@ -2280,7 +2293,7 @@ extension LocalImageGenerator {
           }
           var hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: input, weight: 1)
             ], cancellation: cancellation
@@ -2320,7 +2333,7 @@ extension LocalImageGenerator {
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: input, weight: 1)
             ], cancellation: cancellation
@@ -2331,7 +2344,8 @@ extension LocalImageGenerator {
           if let rgb = customRGB(true) {
             let hint = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image, inputs: [(hint: rgb, weight: 1)], cancellation: cancellation)[0]
+              image: image, graph: graph, inputs: [(hint: rgb, weight: 1)],
+              cancellation: cancellation)[0]
             return (model: controlModel, hints: [(hint, control.weight)])
           }
           guard var input = image else { return nil }
@@ -2372,7 +2386,7 @@ extension LocalImageGenerator {
           }
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: input, weight: 1)
             ], cancellation: cancellation
@@ -2385,7 +2399,7 @@ extension LocalImageGenerator {
         guard !shuffles.isEmpty else { return nil }
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-          image: image,
+          image: image, graph: graph,
           inputs: shuffles.map {
             (hint: graph.variable($0.0).toGPU(0), weight: $0.1 * control.weight)
           }, cancellation: cancellation
@@ -2403,7 +2417,8 @@ extension LocalImageGenerator {
           shuffles: shuffles, imageEncoderVersion: imageEncoderVersion, graph: graph)
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-          image: image, inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) },
+          image: image, graph: graph,
+          inputs: rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) },
           cancellation: cancellation
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
@@ -2416,7 +2431,8 @@ extension LocalImageGenerator {
         let rgbs = shuffles.map { (graph.variable($0.0), $0.1) }
         let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
           batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-          image: image, inputs: (rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }),
+          image: image, graph: graph,
+          inputs: (rgbs.map { (hint: $0.0, weight: $0.1 * control.weight) }),
           cancellation: cancellation
         ).map { ($0, 1) }
         return (model: controlModel, hints: hints)
@@ -2432,7 +2448,7 @@ extension LocalImageGenerator {
               .NHWC(shape[0], startHeight, startWidth, 64))
             let hint = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image, inputs: [(hint: input, weight: control.weight)],
+              image: image, graph: graph, inputs: [(hint: input, weight: control.weight)],
               cancellation: cancellation)[0]
             return (model: controlModel, hints: [(hint, 1)])
           }
@@ -2445,7 +2461,7 @@ extension LocalImageGenerator {
             .NHWC(shape[0], startHeight, startWidth, 64))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: input, weight: control.weight)
             ], cancellation: cancellation
@@ -2470,7 +2486,7 @@ extension LocalImageGenerator {
             .NHWC(shape[0], startHeight, startWidth, 64 * 3))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: input, weight: control.weight)
             ], cancellation: cancellation
@@ -2497,7 +2513,7 @@ extension LocalImageGenerator {
             .NHWC(shape[0], startHeight, startWidth, 64))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: input, weight: control.weight)
             ], cancellation: cancellation
@@ -2513,7 +2529,7 @@ extension LocalImageGenerator {
               .NHWC(shape[0], startHeight, startWidth, 64 * 3))
             let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
               batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-              image: image,
+              image: image, graph: graph,
               inputs: [
                 (hint: input, weight: control.weight)
               ], cancellation: cancellation
@@ -2527,7 +2543,7 @@ extension LocalImageGenerator {
             .NHWC(shape[0], startHeight, startWidth, 64 * 3))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: input, weight: control.weight)
             ], cancellation: cancellation
@@ -2569,7 +2585,7 @@ extension LocalImageGenerator {
             .NHWC(shape[0], startHeight, startWidth, 64 * 3))
           let hints: [([DynamicGraph.Tensor<FloatType>], Float)] = controlModel.hint(
             batchSize: batchSize, startHeight: startHeight, startWidth: startWidth,
-            image: image,
+            image: image, graph: graph,
             inputs: [
               (hint: input, weight: control.weight)
             ], cancellation: cancellation
@@ -2826,12 +2842,15 @@ extension LocalImageGenerator {
   }
 
   private func injectReferenceFrames(
-    batchSize: Int, version: ModelVersion, canInjectControls: Bool, shuffleCount: Int
+    batchSize: Int, version: ModelVersion, canInjectControls: Bool, shuffleCount: Int,
+    hasCustom: Bool
   ) -> (Int, Int) {
     switch version {
     case .wan21_14b, .wan21_1_3b:
+      let referenceFrames =
+        (canInjectControls ? (shuffleCount > 0 ? shuffleCount : (hasCustom ? 1 : 0)) : 0)
       return (
-        batchSize + (canInjectControls ? shuffleCount : 0), (canInjectControls ? shuffleCount : 0)
+        batchSize + referenceFrames, referenceFrames
       )
     case .hunyuanVideo, .auraflow, .flux1, .hiDreamI1, .kandinsky21, .pixart, .sd3, .sd3Large,
       .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
@@ -3368,7 +3387,8 @@ extension LocalImageGenerator {
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
-          canInjectControls: canInjectControls, shuffleCount: shuffles.count)
+          canInjectControls: canInjectControls, shuffleCount: shuffles.count,
+          hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1:
         break
@@ -4353,7 +4373,8 @@ extension LocalImageGenerator {
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
-          canInjectControls: canInjectControls, shuffleCount: shuffles.count)
+          canInjectControls: canInjectControls, shuffleCount: shuffles.count,
+          hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1:
         break
@@ -5612,7 +5633,8 @@ extension LocalImageGenerator {
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
-          canInjectControls: canInjectControls, shuffleCount: shuffles.count)
+          canInjectControls: canInjectControls, shuffleCount: shuffles.count,
+          hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1:
         break
@@ -6368,7 +6390,8 @@ extension LocalImageGenerator {
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
-          canInjectControls: canInjectControls, shuffleCount: shuffles.count)
+          canInjectControls: canInjectControls, shuffleCount: shuffles.count,
+          hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1:
         break
