@@ -1179,7 +1179,7 @@ extension UNetFixedEncoder {
       }
       if vaceContext != nil {
         // Insert empty weight into the conditions.
-        let contextScale = graph.variable(.GPU(0), .C(1), of: Float.self)
+        let contextScale = graph.variable(.GPU(0), .C(1), of: FloatType.self)
         contextScale.full(1)
         conditions.insert(contextScale, at: 6)
       }

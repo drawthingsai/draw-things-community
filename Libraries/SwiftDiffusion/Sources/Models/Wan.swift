@@ -64,16 +64,16 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
   return (linear1, outProjection, Model([x], [out]))
 }
 
-private func WanAttentionBlock(
+private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   prefix: String, weightsPrefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int,
-  causalInference: Int,
-  intermediateSize: Int, injectImage: Bool, usesFlashAttention: Bool
+  causalInference: Int, intermediateSize: Int, injectImage: Bool, usesFlashAttention: Bool,
+  of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
   let c = (0..<6).map { _ in Input() }
   let modulations = (0..<6).map {
-    Parameter<Float>(.GPU(0), .HWC(1, 1, k * h), name: "\(weightsPrefix)attn_ada_ln_\($0)")
+    Parameter<FloatType>(.GPU(0), .HWC(1, 1, k * h), name: "\(weightsPrefix)attn_ada_ln_\($0)")
   }
   let chunks = zip(c, modulations).map { $0 + $1 }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
@@ -333,14 +333,15 @@ public func Wan(
     let scale = Input()
     let vIn = Input()
     contextIn.append(contentsOf: [scale, vIn])
-    out = (xIn16 + vIn.reshaped([1, time * h * w, channels])).to(.Float32)
+    out = xIn16 + vIn.reshaped([1, time * h * w, channels])
+    let rotAndtOut: [Model.IO] = [rotAndtOut[0]] + rotAndtOut[1..<7].map { $0.to(of: out) }
     for (i, n) in vaceLayers.enumerated() {
       let (mapper, block) = WanAttentionBlock(
         prefix: "vace_blocks.\(i)", weightsPrefix: "vace_", k: 128, h: channels / 128, b: 1,
         t: (textLength, 257),
         hw: time * h * w, time: time, causalInference: causalInference,
         intermediateSize: intermediateSize, injectImage: false,
-        usesFlashAttention: usesFlashAttention)
+        usesFlashAttention: usesFlashAttention, of: FloatType.self)
       let contextK = Input()
       let contextV = Input()
       contextIn.append(contentsOf: [contextK, contextV])
@@ -362,7 +363,7 @@ public func Wan(
       t: (textLength, 257),
       hw: time * h * w, time: time, causalInference: causalInference,
       intermediateSize: intermediateSize, injectImage: injectImage,
-      usesFlashAttention: usesFlashAttention)
+      usesFlashAttention: usesFlashAttention, of: Float.self)
     let contextK = Input()
     let contextV = Input()
     contextIn.append(contentsOf: [contextK, contextV])
@@ -380,7 +381,9 @@ public func Wan(
         hintAttention.add(dependencies: [out])
         hintAttentions[i] = nil
       }
-      out = out + hint
+      let hintAsOut = hint.to(of: out)
+      hintAsOut.add(dependencies: [out])
+      out = out + hintAsOut
     }
   }
   let residualOut: Model.IO?
@@ -974,14 +977,15 @@ func LoRAWan(
     let scale = Input()
     let vIn = Input()
     contextIn.append(contentsOf: [scale, vIn])
-    out = (xIn16 + vIn.reshaped([1, time * h * w, channels])).to(.Float32)
+    out = xIn16 + vIn.reshaped([1, time * h * w, channels])
+    let rotAndtOut: [Model.IO] = [rotAndtOut[0]] + rotAndtOut[1..<7].map { $0.to(of: out) }
     for (i, n) in vaceLayers.enumerated() {
       let (mapper, block) = WanAttentionBlock(
         prefix: "vace_blocks.\(i)", weightsPrefix: "vace_", k: 128, h: channels / 128, b: 1,
         t: (textLength, 257),
         hw: time * h * w, time: time, causalInference: causalInference,
         intermediateSize: intermediateSize, injectImage: false,
-        usesFlashAttention: usesFlashAttention)
+        usesFlashAttention: usesFlashAttention, of: FloatType.self)
       let contextK = Input()
       let contextV = Input()
       contextIn.append(contentsOf: [contextK, contextV])
@@ -1021,7 +1025,9 @@ func LoRAWan(
         hintAttention.add(dependencies: [out])
         hintAttentions[i] = nil
       }
-      out = out + hint
+      let hintAsOut = hint.to(of: out)
+      hintAsOut.add(dependencies: [out])
+      out = out + hintAsOut
     }
   }
   let residualOut: Model.IO?
