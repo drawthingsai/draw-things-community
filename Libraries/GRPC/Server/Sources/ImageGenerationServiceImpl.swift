@@ -46,10 +46,8 @@ extension ImageGenerationSignpostProto {
       switch signpost {
       case .textEncoded:
         $0.signpost = .textEncoded(.init())
-      case .imageEncoded:
+      case .imageEncoded, .controlsGenerated:
         $0.signpost = .imageEncoded(.init())
-      case .controlsGenerated:
-        break
       case .sampling(let step):
         $0.signpost = .sampling(
           .with {
