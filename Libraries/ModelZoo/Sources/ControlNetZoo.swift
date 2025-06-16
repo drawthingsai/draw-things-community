@@ -117,13 +117,13 @@ public struct ControlNetZoo: DownloadZoo {
     "controlnet_depth_sdxl_v1.0_mid_f16.ckpt":
       "6629c9ccdc2a7741c1100089c28588df7f3d3dd26260c17e9204765d62167215",
     "wan_v2.1_1.3b_vace_480p_f16.ckpt":
-      "203b1372d505d8bf7dcd72ce29458d03bb9e41f3f0d296ea4349cd78335de6eb",
+      "974eb1bd38ba2dcbf228e821102234634fd57a88d359af3695c4772c179a0e85",
     "wan_v2.1_14b_vace_720p_f16.ckpt":
-      "6dd93495d4ccf4ce7e73abcc9bf32b80ca81079371eac92137c7ea1a838b00a3",
+      "5337d4bfd84a9d446486c8a2fe3e9a81e372952e053e3044b4f377dbe01cc256",
     "wan_v2.1_1.3b_vace_480p_q8p.ckpt":
-      "ffa3314caeeb9d52b85c48ea0f314dd639c7324bf3718280df0ed98e8d0a0239",
+      "62de000252a97b4c79aefb76caa9a468e6faf59bf2786c2301b8f11be0baf5e8",
     "wan_v2.1_14b_vace_720p_q8p.ckpt":
-      "e37a23caf9588cb9cfd7e2bedc76ad73c57ccabc5818370a6c1912f4a503c1be",
+      "2930e1c3e7c25ae0ec128d5e9889bb07ae2ea23ea7e7900771a4b55befcd7dbd",
   ]
 
   public static let builtinSpecifications: [Specification] = [
