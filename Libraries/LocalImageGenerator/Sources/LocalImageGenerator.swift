@@ -2844,6 +2844,7 @@ extension LocalImageGenerator {
 
   private func injectVACEFrames(
     batchSize: (Int, Int), version: ModelVersion, image: DynamicGraph.Tensor<FloatType>,
+    modifier: SamplerModifier,
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )]
@@ -2862,10 +2863,16 @@ extension LocalImageGenerator {
       .GPU(0), format: .NHWC, shape: newShape, of: FloatType.self)
     injectedImage[
       (batchSize.0 - shape[0])..<batchSize.0, 0..<shape[1], 0..<shape[2], 0..<shape[3]] = image
-    injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<4].full(1)
-    injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 4..<20] = hint[
-      0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<16
-    ].copied()
+    if modifier == .inpainting {
+      injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<4].full(1)
+      injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 4..<20] = hint[
+        0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<16
+      ].copied()
+    } else {
+      injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<16] = hint[
+        0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<16
+      ].copied()
+    }
     return injectedImage
   }
 
@@ -3522,7 +3529,7 @@ extension LocalImageGenerator {
 
       if let image = maskedImage {
         maskedImage = injectVACEFrames(
-          batchSize: batchSize, version: modelVersion, image: image,
+          batchSize: batchSize, version: modelVersion, image: image, modifier: modifier,
           injectedControls: injectedControls)
       }
       guard
@@ -4493,14 +4500,14 @@ extension LocalImageGenerator {
       guard feedback(.controlsGenerated, signposts, nil) else { return (nil, 1) }
       if let image = maskedImage {
         maskedImage = injectVACEFrames(
-          batchSize: batchSize, version: modelVersion, image: image,
+          batchSize: batchSize, version: modelVersion, image: image, modifier: modifier,
           injectedControls: injectedControls)
       }
       firstPassImage = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: firstPassImage,
+        batchSize: batchSize, version: modelVersion, image: firstPassImage, modifier: modifier,
         injectedControls: injectedControls)
       sample = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: sample,
+        batchSize: batchSize, version: modelVersion, image: sample, modifier: modifier,
         injectedControls: injectedControls)
       let x_T: DynamicGraph.Tensor<FloatType>
       if initTimestep.startStep > 0 {
@@ -5747,14 +5754,14 @@ extension LocalImageGenerator {
       }
       if let image = maskedImage {
         maskedImage = injectVACEFrames(
-          batchSize: batchSize, version: modelVersion, image: image,
+          batchSize: batchSize, version: modelVersion, image: image, modifier: modifier,
           injectedControls: injectedControls)
       }
       firstPassImage = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: firstPassImage,
+        batchSize: batchSize, version: modelVersion, image: firstPassImage, modifier: modifier,
         injectedControls: injectedControls)
       sample = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: sample,
+        batchSize: batchSize, version: modelVersion, image: sample, modifier: modifier,
         injectedControls: injectedControls)
       guard feedback(.imageEncoded, signposts, nil) else { return nil }
       let noise = randomLatentNoise(
@@ -6557,19 +6564,19 @@ extension LocalImageGenerator {
       }
       if let image = maskedImage1 {
         maskedImage1 = injectVACEFrames(
-          batchSize: batchSize, version: modelVersion, image: image,
+          batchSize: batchSize, version: modelVersion, image: image, modifier: modifier,
           injectedControls: injectedControls)
       }
       if let image = maskedImage2 {
         maskedImage2 = injectVACEFrames(
-          batchSize: batchSize, version: modelVersion, image: image,
+          batchSize: batchSize, version: modelVersion, image: image, modifier: modifier,
           injectedControls: injectedControls)
       }
       firstPassImage = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: firstPassImage,
+        batchSize: batchSize, version: modelVersion, image: firstPassImage, modifier: modifier,
         injectedControls: injectedControls)
       sample = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: sample,
+        batchSize: batchSize, version: modelVersion, image: sample, modifier: modifier,
         injectedControls: injectedControls)
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight,
