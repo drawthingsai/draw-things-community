@@ -160,3 +160,12 @@ message FileUploadRequest {
   }
   optional string sharedSecret = 3; // The secret use to authenticate if needed.
 }
+
+message PubkeyRequest {
+  string name = 1;
+}
+
+message EchoReply {
+  string message = 1;
+  string pubkey = 2;
+}

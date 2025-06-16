@@ -314,6 +314,7 @@ final class ControlPanelService: ControlPanelServiceProvider {
     (any GRPCControlPanelModels.ControlPanelServiceServerInterceptorFactoryProtocol)?
   private let taskQueue: TaskQueue
   private var controlConfigs: ControlConfigs
+  private var proxyMessageSigner: ProxyMessageSigner
   private let logger: Logger
   enum ControlPanelError: Error {
     case gpuConnectFailed(message: String)
@@ -321,10 +322,14 @@ final class ControlPanelService: ControlPanelServiceProvider {
     case removeGPUFailed(message: String)
   }
 
-  init(taskQueue: TaskQueue, controlConfigs: ControlConfigs, logger: Logger) {
+  init(
+    taskQueue: TaskQueue, controlConfigs: ControlConfigs, logger: Logger,
+    proxyMessageSigner: ProxyMessageSigner
+  ) {
     self.taskQueue = taskQueue
     self.controlConfigs = controlConfigs
     self.logger = logger
+    self.proxyMessageSigner = proxyMessageSigner
   }
 
   func manageGPUServer(
@@ -460,6 +465,27 @@ final class ControlPanelService: ControlPanelServiceProvider {
 
     return promise.futureResult
   }
+
+  func updatePrivateKey(request: UpdatePrivateKeyRequest, context: StatusOnlyCallContext)
+    -> EventLoopFuture<UpdatePrivateKeyResponse>
+  {
+    let promise = context.eventLoop.makePromise(
+      of: GRPCControlPanelModels.UpdatePrivateKeyResponse.self)
+    Task {
+      try await proxyMessageSigner.reloadKeys()
+      self.logger.info(
+        "reload proxy private key pairs"
+      )
+
+      let publicKeyPEM = try await proxyMessageSigner.getPublicKey()
+      let response = UpdatePrivateKeyResponse.with {
+        $0.message = "Update proxy private keys, current public key is: \(publicKeyPEM)"
+      }
+      promise.succeed(response)
+    }
+
+    return promise.futureResult
+  }
 }
 
 final class ImageGenerationProxyService: ImageGenerationServiceProvider {
@@ -470,11 +496,15 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   private let logger: Logger
   private var controlConfigs: ControlConfigs
   private var healthCheckTask: Task<Void, Never>?
-
-  init(taskQueue: TaskQueue, controlConfigs: ControlConfigs, logger: Logger, healthCheck: Bool) {
+  private var proxyMessageSigner: ProxyMessageSigner
+  init(
+    taskQueue: TaskQueue, controlConfigs: ControlConfigs, logger: Logger, healthCheck: Bool,
+    proxyMessageSigner: ProxyMessageSigner
+  ) {
     self.taskQueue = taskQueue
     self.logger = logger
     self.controlConfigs = controlConfigs
+    self.proxyMessageSigner = proxyMessageSigner
     if healthCheck {
       self.startHealthCheck()
     }
@@ -699,6 +729,25 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     return promise.futureResult
   }
 
+  public func pubkey(request: PubkeyRequest, context: StatusOnlyCallContext)
+    -> EventLoopFuture<PubkeyResponse>
+  {
+    let promise = context.eventLoop.makePromise(of: PubkeyResponse.self)
+    Task {
+      let pubkey = await self.proxyMessageSigner.getPublicKey()
+      let response = PubkeyResponse.with {
+        if let pubkey = pubkey {
+          $0.pubkey = pubkey
+          $0.message = "get pubkey successfully"
+        } else {
+          $0.message = "failed to get pubkey"
+        }
+      }
+      promise.succeed(response)
+    }
+    return promise.futureResult
+  }
+
   func echo(request: EchoRequest, context: StatusOnlyCallContext) -> EventLoopFuture<EchoReply> {
     let promise = context.eventLoop.makePromise(of: EchoReply.self)
     Task {
@@ -736,8 +785,11 @@ public class ProxyCPUServer {
   private let logger = Logger(label: "com.draw-things.image-generation-proxy-service")
   private var controlConfigs: ControlConfigs
   private var taskQueue: TaskQueue
-
-  public init(workers: [Worker], publicKeyPEM: String, modelListPath: String, nonceSizeLimit: Int) {
+  private var proxyMessageSigner: ProxyMessageSigner
+  public init(
+    workers: [Worker], publicKeyPEM: String, modelListPath: String, nonceSizeLimit: Int,
+    proxyPrivateKeyPath: String, proxyPublicKeyPath: String
+  ) {
     self.workers = workers
     self.controlConfigs = ControlConfigs(
       throttlePolicy: [
@@ -745,7 +797,8 @@ public class ProxyCPUServer {
         "24_hour": 10000,
       ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath,
       nonceSizeLimit: nonceSizeLimit)
-
+    self.proxyMessageSigner = ProxyMessageSigner(
+      privateKeyPath: proxyPrivateKeyPath, publicKeyPath: proxyPublicKeyPath)
     self.taskQueue = TaskQueue(workers: workers, logger: logger)
   }
 
@@ -757,7 +810,8 @@ public class ProxyCPUServer {
         try! group.syncShutdownGracefully()
       }
       let controlPanelService = ControlPanelService(
-        taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger)
+        taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger,
+        proxyMessageSigner: proxyMessageSigner)
 
       var serverBindings: [EventLoopFuture<Server>] = []
 
@@ -820,7 +874,8 @@ public class ProxyCPUServer {
     logger.info("ImageGenerationProxyService starting on \(host):\(port)")
     let group = MultiThreadedEventLoopGroup(numberOfThreads: numberOfThreads)
     let proxyService = ImageGenerationProxyService(
-      taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger, healthCheck: healthCheck
+      taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger,
+      healthCheck: healthCheck, proxyMessageSigner: proxyMessageSigner
     )
     let imageServer: Server
     if TLS {

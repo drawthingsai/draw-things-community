@@ -598,6 +598,15 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     return context.eventLoop.makeSucceededFuture(response)
   }
 
+  public func pubkey(request: PubkeyRequest, context: StatusOnlyCallContext)
+    -> EventLoopFuture<PubkeyResponse>
+  {
+    let response = PubkeyResponse.with {
+      $0.pubkey = "none"
+    }
+    return context.eventLoop.makeSucceededFuture(response)
+  }
+
   public func echo(
     request: GRPCImageServiceModels.EchoRequest, context: any GRPC.StatusOnlyCallContext
   )

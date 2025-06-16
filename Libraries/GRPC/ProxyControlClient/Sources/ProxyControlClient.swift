@@ -168,6 +168,28 @@ public final class ProxyControlClient {
     }
   }
 
+  public func updatePrivateKey(completion: @escaping (Bool) -> Void) {
+    guard let client = client else {
+      print("can not connect to proxy server")
+      completion(false)
+      return
+    }
+
+    let request = UpdatePrivateKeyRequest()
+
+    let _ = client.updatePrivateKey(request).response.always {
+      switch $0 {
+      case .success(let response):
+        print("\(response.message)")
+        completion(true)
+
+      case .failure(_):
+        print("can not update Private Key succees on Server")
+        completion(false)
+      }
+    }
+  }
+
   public func updateModelList(files: [String], completion: @escaping (Bool) -> Void) {
     guard let client = client else {
       print("can not connect to proxy server")

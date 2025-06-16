@@ -6,6 +6,7 @@ service ControlPanelService {
   rpc UpdatePem(UpdatePemRequest) returns (UpdatePemResponse);
   rpc UpdateModelList(UpdateModelListRequest) returns (UpdateModelListResponse);
   rpc UpdateSharedSecret(UpdateSharedSecretRequest) returns (UpdateSharedSecretResponse);
+  rpc UpdatePrivateKey(UpdatePrivateKeyRequest) returns (UpdatePrivateKeyResponse);
 
 }
 
@@ -63,5 +64,13 @@ message UpdateSharedSecretRequest {
 }
 
 message UpdateSharedSecretResponse {
+  string message = 1;
+}
+
+message UpdatePrivateKeyRequest {
+    string message = 1;
+}
+
+message UpdatePrivateKeyResponse {
   string message = 1;
 }

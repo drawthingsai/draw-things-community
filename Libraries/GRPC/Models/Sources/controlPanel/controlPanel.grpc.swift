@@ -40,6 +40,11 @@ public protocol ControlPanelServiceClientProtocol: GRPCClient {
     _ request: UpdateSharedSecretRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<UpdateSharedSecretRequest, UpdateSharedSecretResponse>
+
+  func updatePrivateKey(
+    _ request: UpdatePrivateKeyRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<UpdatePrivateKeyRequest, UpdatePrivateKeyResponse>
 }
 
 extension ControlPanelServiceClientProtocol {
@@ -136,6 +141,24 @@ extension ControlPanelServiceClientProtocol {
       interceptors: self.interceptors?.makeUpdateSharedSecretInterceptors() ?? []
     )
   }
+
+  /// Unary call to UpdatePrivateKey
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to UpdatePrivateKey.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  public func updatePrivateKey(
+    _ request: UpdatePrivateKeyRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<UpdatePrivateKeyRequest, UpdatePrivateKeyResponse> {
+    return self.makeUnaryCall(
+      path: ControlPanelServiceClientMetadata.Methods.updatePrivateKey.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdatePrivateKeyInterceptors() ?? []
+    )
+  }
 }
 
 @available(*, deprecated)
@@ -224,6 +247,11 @@ public protocol ControlPanelServiceAsyncClientProtocol: GRPCClient {
     _ request: UpdateSharedSecretRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<UpdateSharedSecretRequest, UpdateSharedSecretResponse>
+
+  func makeUpdatePrivateKeyCall(
+    _ request: UpdatePrivateKeyRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<UpdatePrivateKeyRequest, UpdatePrivateKeyResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -295,6 +323,18 @@ extension ControlPanelServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeUpdateSharedSecretInterceptors() ?? []
     )
   }
+
+  public func makeUpdatePrivateKeyCall(
+    _ request: UpdatePrivateKeyRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<UpdatePrivateKeyRequest, UpdatePrivateKeyResponse> {
+    return self.makeAsyncUnaryCall(
+      path: ControlPanelServiceClientMetadata.Methods.updatePrivateKey.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdatePrivateKeyInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -358,6 +398,18 @@ extension ControlPanelServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeUpdateSharedSecretInterceptors() ?? []
     )
   }
+
+  public func updatePrivateKey(
+    _ request: UpdatePrivateKeyRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> UpdatePrivateKeyResponse {
+    return try await self.performAsyncUnaryCall(
+      path: ControlPanelServiceClientMetadata.Methods.updatePrivateKey.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdatePrivateKeyInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -393,6 +445,9 @@ public protocol ControlPanelServiceClientInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when invoking 'updateSharedSecret'.
   func makeUpdateSharedSecretInterceptors() -> [ClientInterceptor<UpdateSharedSecretRequest, UpdateSharedSecretResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'updatePrivateKey'.
+  func makeUpdatePrivateKeyInterceptors() -> [ClientInterceptor<UpdatePrivateKeyRequest, UpdatePrivateKeyResponse>]
 }
 
 public enum ControlPanelServiceClientMetadata {
@@ -405,6 +460,7 @@ public enum ControlPanelServiceClientMetadata {
       ControlPanelServiceClientMetadata.Methods.updatePem,
       ControlPanelServiceClientMetadata.Methods.updateModelList,
       ControlPanelServiceClientMetadata.Methods.updateSharedSecret,
+      ControlPanelServiceClientMetadata.Methods.updatePrivateKey,
     ]
   )
 
@@ -438,6 +494,12 @@ public enum ControlPanelServiceClientMetadata {
       path: "/ControlPanelService/UpdateSharedSecret",
       type: GRPCCallType.unary
     )
+
+    public static let updatePrivateKey = GRPCMethodDescriptor(
+      name: "UpdatePrivateKey",
+      path: "/ControlPanelService/UpdatePrivateKey",
+      type: GRPCCallType.unary
+    )
   }
 }
 
@@ -454,6 +516,8 @@ public protocol ControlPanelServiceProvider: CallHandlerProvider {
   func updateModelList(request: UpdateModelListRequest, context: StatusOnlyCallContext) -> EventLoopFuture<UpdateModelListResponse>
 
   func updateSharedSecret(request: UpdateSharedSecretRequest, context: StatusOnlyCallContext) -> EventLoopFuture<UpdateSharedSecretResponse>
+
+  func updatePrivateKey(request: UpdatePrivateKeyRequest, context: StatusOnlyCallContext) -> EventLoopFuture<UpdatePrivateKeyResponse>
 }
 
 extension ControlPanelServiceProvider {
@@ -513,6 +577,15 @@ extension ControlPanelServiceProvider {
         userFunction: self.updateSharedSecret(request:context:)
       )
 
+    case "UpdatePrivateKey":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<UpdatePrivateKeyRequest>(),
+        responseSerializer: ProtobufSerializer<UpdatePrivateKeyResponse>(),
+        interceptors: self.interceptors?.makeUpdatePrivateKeyInterceptors() ?? [],
+        userFunction: self.updatePrivateKey(request:context:)
+      )
+
     default:
       return nil
     }
@@ -549,6 +622,11 @@ public protocol ControlPanelServiceAsyncProvider: CallHandlerProvider, Sendable 
     request: UpdateSharedSecretRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> UpdateSharedSecretResponse
+
+  func updatePrivateKey(
+    request: UpdatePrivateKeyRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> UpdatePrivateKeyResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -615,6 +693,15 @@ extension ControlPanelServiceAsyncProvider {
         wrapping: { try await self.updateSharedSecret(request: $0, context: $1) }
       )
 
+    case "UpdatePrivateKey":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<UpdatePrivateKeyRequest>(),
+        responseSerializer: ProtobufSerializer<UpdatePrivateKeyResponse>(),
+        interceptors: self.interceptors?.makeUpdatePrivateKeyInterceptors() ?? [],
+        wrapping: { try await self.updatePrivateKey(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -642,6 +729,10 @@ public protocol ControlPanelServiceServerInterceptorFactoryProtocol: Sendable {
   /// - Returns: Interceptors to use when handling 'updateSharedSecret'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeUpdateSharedSecretInterceptors() -> [ServerInterceptor<UpdateSharedSecretRequest, UpdateSharedSecretResponse>]
+
+  /// - Returns: Interceptors to use when handling 'updatePrivateKey'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeUpdatePrivateKeyInterceptors() -> [ServerInterceptor<UpdatePrivateKeyRequest, UpdatePrivateKeyResponse>]
 }
 
 public enum ControlPanelServiceServerMetadata {
@@ -654,6 +745,7 @@ public enum ControlPanelServiceServerMetadata {
       ControlPanelServiceServerMetadata.Methods.updatePem,
       ControlPanelServiceServerMetadata.Methods.updateModelList,
       ControlPanelServiceServerMetadata.Methods.updateSharedSecret,
+      ControlPanelServiceServerMetadata.Methods.updatePrivateKey,
     ]
   )
 
@@ -685,6 +777,12 @@ public enum ControlPanelServiceServerMetadata {
     public static let updateSharedSecret = GRPCMethodDescriptor(
       name: "UpdateSharedSecret",
       path: "/ControlPanelService/UpdateSharedSecret",
+      type: GRPCCallType.unary
+    )
+
+    public static let updatePrivateKey = GRPCMethodDescriptor(
+      name: "UpdatePrivateKey",
+      path: "/ControlPanelService/UpdatePrivateKey",
       type: GRPCCallType.unary
     )
   }
