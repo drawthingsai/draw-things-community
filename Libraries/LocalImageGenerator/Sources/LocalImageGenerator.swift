@@ -2844,7 +2844,6 @@ extension LocalImageGenerator {
 
   private func injectVACEFrames(
     batchSize: (Int, Int), version: ModelVersion, image: DynamicGraph.Tensor<FloatType>,
-    modifier: SamplerModifier,
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )]
@@ -2863,16 +2862,16 @@ extension LocalImageGenerator {
       .GPU(0), format: .NHWC, shape: newShape, of: FloatType.self)
     injectedImage[
       (batchSize.0 - shape[0])..<batchSize.0, 0..<shape[1], 0..<shape[2], 0..<shape[3]] = image
-    if modifier == .inpainting {
-      injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<4].full(1)
-      injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 4..<20] = hint[
-        0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<16
-      ].copied()
-    } else {
-      injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<16] = hint[
-        0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<16
-      ].copied()
+    let maskChannels = shape[3] - 16
+    if maskChannels > 0 {
+      injectedImage[0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<maskChannels]
+        .full(1)
     }
+    injectedImage[
+      0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], maskChannels..<(maskChannels + 16)] =
+      hint[
+        0..<(batchSize.0 - shape[0]), 0..<shape[1], 0..<shape[2], 0..<16
+      ].copied()
     return injectedImage
   }
 
@@ -2930,7 +2929,8 @@ extension LocalImageGenerator {
       result.full(0)
       result[0..<shape[0], 0..<shape[1], 0..<shape[2], 4..<(4 + shape[3])] = encodedImage
       if hasImage {
-        result[0..<1, 0..<shape[1], 0..<shape[2], 0..<4].full(1)
+        let firstFrames = min(max(1, shape[0] - (batchSize.0 - batchSize.1) + 1), shape[0])
+        result[0..<firstFrames, 0..<shape[1], 0..<shape[2], 0..<4].full(1)
       }
       return result
     case .hiDreamI1:
@@ -3529,7 +3529,7 @@ extension LocalImageGenerator {
 
       if let image = maskedImage {
         maskedImage = injectVACEFrames(
-          batchSize: batchSize, version: modelVersion, image: image, modifier: modifier,
+          batchSize: batchSize, version: modelVersion, image: image,
           injectedControls: injectedControls)
       }
       guard
@@ -4500,14 +4500,14 @@ extension LocalImageGenerator {
       guard feedback(.controlsGenerated, signposts, nil) else { return (nil, 1) }
       if let image = maskedImage {
         maskedImage = injectVACEFrames(
-          batchSize: batchSize, version: modelVersion, image: image, modifier: modifier,
+          batchSize: batchSize, version: modelVersion, image: image,
           injectedControls: injectedControls)
       }
       firstPassImage = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: firstPassImage, modifier: modifier,
+        batchSize: batchSize, version: modelVersion, image: firstPassImage,
         injectedControls: injectedControls)
       sample = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: sample, modifier: modifier,
+        batchSize: batchSize, version: modelVersion, image: sample,
         injectedControls: injectedControls)
       let x_T: DynamicGraph.Tensor<FloatType>
       if initTimestep.startStep > 0 {
@@ -5754,14 +5754,14 @@ extension LocalImageGenerator {
       }
       if let image = maskedImage {
         maskedImage = injectVACEFrames(
-          batchSize: batchSize, version: modelVersion, image: image, modifier: modifier,
+          batchSize: batchSize, version: modelVersion, image: image,
           injectedControls: injectedControls)
       }
       firstPassImage = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: firstPassImage, modifier: modifier,
+        batchSize: batchSize, version: modelVersion, image: firstPassImage,
         injectedControls: injectedControls)
       sample = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: sample, modifier: modifier,
+        batchSize: batchSize, version: modelVersion, image: sample,
         injectedControls: injectedControls)
       guard feedback(.imageEncoded, signposts, nil) else { return nil }
       let noise = randomLatentNoise(
@@ -6564,19 +6564,19 @@ extension LocalImageGenerator {
       }
       if let image = maskedImage1 {
         maskedImage1 = injectVACEFrames(
-          batchSize: batchSize, version: modelVersion, image: image, modifier: modifier,
+          batchSize: batchSize, version: modelVersion, image: image,
           injectedControls: injectedControls)
       }
       if let image = maskedImage2 {
         maskedImage2 = injectVACEFrames(
-          batchSize: batchSize, version: modelVersion, image: image, modifier: modifier,
+          batchSize: batchSize, version: modelVersion, image: image,
           injectedControls: injectedControls)
       }
       firstPassImage = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: firstPassImage, modifier: modifier,
+        batchSize: batchSize, version: modelVersion, image: firstPassImage,
         injectedControls: injectedControls)
       sample = injectVACEFrames(
-        batchSize: batchSize, version: modelVersion, image: sample, modifier: modifier,
+        batchSize: batchSize, version: modelVersion, image: sample,
         injectedControls: injectedControls)
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight,
