@@ -6,6 +6,7 @@ import NNC
 public enum ImageGeneratorSignpost: Equatable & Hashable {
   case textEncoded
   case imageEncoded
+  case controlsGenerated
   case sampling(Int)
   case imageDecoded
   case secondPassImageEncoded
@@ -39,6 +40,8 @@ extension ImageGeneratorSignpost {
       return "text_encoded"
     case .imageEncoded:
       return "image_encoded"
+    case .controlsGenerated:
+      return "controls_generated"
     case .sampling(_):
       return "sampling"
     case .imageDecoded:

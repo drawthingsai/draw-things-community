@@ -1,3 +1,4 @@
+import Atomics
 import C_ccv
 import NNC
 
@@ -494,67 +495,91 @@ extension ControlModel {
             return [result.0]
           }
         case .wan21_14b, .wan21_1_3b:
-          var encoder: Model? = nil
-          let startHeight = startHeight * 8
-          let startWidth = startWidth * 8
-          let refs = inputs.map {
-            // Use mean rather than sampled from distribution.
-            let result = firstStage.encode($0.hint, encoder: encoder, cancellation: cancellation)
-            let shape = result.0.shape
-            encoder = result.1
-            return firstStage.scale(
-              result.0[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<16].copied())
-          }
-          encoder = nil
-          // Encode empty video, as well as mask.
-          var frames = graph.variable(
-            .GPU(0), .NHWC(((batchSize - refs.count) - 1) * 4 + 1, startHeight, startWidth, 3),
-            of: FloatType.self)
-          frames.full(0)
-          let firstFrames = image?.shape[0] ?? 0
-          if var image = image {
-            if image.shape[1] != startHeight || image.shape[2] != startWidth {
-              image = Upsample(
-                .bilinear, widthScale: Float(startWidth) / Float(image.shape[2]),
-                heightScale: Float(startHeight) / Float(image.shape[1]))(image)
+          return withoutActuallyEscaping(cancellation) { parent in
+            let isCancelled = ManagedAtomic<Bool>(false)
+            var encoder: Model? = nil
+            let startHeight = startHeight * 8
+            let startWidth = startWidth * 8
+            let cancellation: (@escaping () -> Void) -> Void = { cancel in
+              parent {
+                isCancelled.store(true, ordering: .releasing)
+                cancel()
+              }
             }
-            frames[0..<firstFrames, 0..<startHeight, 0..<startWidth, 0..<3] = image
-          }
-          var inactive: DynamicGraph.Tensor<FloatType>
-          (inactive, encoder) = firstStage.encode(
-            frames, encoder: encoder, cancellation: cancellation)
-          inactive = firstStage.scale(
-            inactive[
-              0..<(batchSize - refs.count), 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16
-            ].copied())
-          var reactive = inactive
-          if image != nil {
+            let refs: [DynamicGraph.Tensor<FloatType>] = inputs.compactMap {
+              guard !isCancelled.load(ordering: .acquiring) else {
+                return nil
+              }
+              // Use mean rather than sampled from distribution.
+              let result = firstStage.encode($0.hint, encoder: encoder, cancellation: cancellation)
+              let shape = result.0.shape
+              encoder = result.1
+              return firstStage.scale(
+                result.0[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<16].copied())
+            }
+            guard !isCancelled.load(ordering: .acquiring) else {
+              return [[]]
+            }
+            encoder = nil
+            // Encode empty video, as well as mask.
+            var frames = graph.variable(
+              .GPU(0), .NHWC(((batchSize - refs.count) - 1) * 4 + 1, startHeight, startWidth, 3),
+              of: FloatType.self)
             frames.full(0)
-            (reactive, _) = firstStage.encode(frames, encoder: encoder, cancellation: cancellation)
-            reactive = firstStage.scale(
-              reactive[
+            let firstFrames = image?.shape[0] ?? 0
+            if var image = image {
+              if image.shape[1] != startHeight || image.shape[2] != startWidth {
+                image = Upsample(
+                  .bilinear, widthScale: Float(startWidth) / Float(image.shape[2]),
+                  heightScale: Float(startHeight) / Float(image.shape[1]))(image)
+              }
+              frames[0..<firstFrames, 0..<startHeight, 0..<startWidth, 0..<3] = image
+            }
+            var inactive: DynamicGraph.Tensor<FloatType>
+            (inactive, encoder) = firstStage.encode(
+              frames, encoder: encoder, cancellation: cancellation)
+            guard !isCancelled.load(ordering: .acquiring) else {
+              return [[]]
+            }
+            inactive = firstStage.scale(
+              inactive[
                 0..<(batchSize - refs.count), 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16
               ].copied())
+            var reactive = inactive
+            if image != nil {
+              frames.full(0)
+              (reactive, _) = firstStage.encode(
+                frames, encoder: encoder, cancellation: cancellation)
+              reactive = firstStage.scale(
+                reactive[
+                  0..<(batchSize - refs.count), 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16
+                ].copied())
+              guard !isCancelled.load(ordering: .acquiring) else {
+                return [[]]
+              }
+            }
+            encoder = nil
+            var vaceLatents = graph.variable(
+              .GPU(0), .NHWC(batchSize, startHeight / 8, startWidth / 8, 96), of: FloatType.self)
+            vaceLatents.full(0)
+            for (i, ref) in refs.enumerated() {
+              let shape = ref.shape
+              vaceLatents[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<16] = ref
+              // Both mask and reactive are 0s.
+            }
+            vaceLatents[
+              refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16] =
+              inactive
+            vaceLatents[
+              refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 16..<32] =
+              reactive
+            // Inactive area set mask to 0. The rest are 1s.
+            vaceLatents[
+              (refs.count + (firstFrames > 0 ? (firstFrames - 1) / 4 + 1 : 0))..<batchSize,
+              0..<(startHeight / 8), 0..<(startWidth / 8), 32..<96
+            ].full(1)
+            return [[vaceLatents]]
           }
-          encoder = nil
-          var vaceLatents = graph.variable(
-            .GPU(0), .NHWC(batchSize, startHeight / 8, startWidth / 8, 96), of: FloatType.self)
-          vaceLatents.full(0)
-          for (i, ref) in refs.enumerated() {
-            let shape = ref.shape
-            vaceLatents[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<16] = ref
-            // Both mask and reactive are 0s.
-          }
-          vaceLatents[refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 0..<16] =
-            inactive
-          vaceLatents[
-            refs.count..<batchSize, 0..<(startHeight / 8), 0..<(startWidth / 8), 16..<32] = reactive
-          // Inactive area set mask to 0. The rest are 1s.
-          vaceLatents[
-            (refs.count + (firstFrames > 0 ? (firstFrames - 1) / 4 + 1 : 0))..<batchSize,
-            0..<(startHeight / 8), 0..<(startWidth / 8), 32..<96
-          ].full(1)
-          return [[vaceLatents]]
         case .auraflow, .hiDreamI1, .hunyuanVideo, .kandinsky21, .pixart, .sd3, .sd3Large,
           .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
           break

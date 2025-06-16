@@ -3518,6 +3518,7 @@ extension LocalImageGenerator {
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage,
         cancellation: cancellation)
+      guard feedback(.controlsGenerated, signposts, nil) else { return (nil, 1) }
 
       if let image = maskedImage {
         maskedImage = injectVACEFrames(
@@ -3774,6 +3775,7 @@ extension LocalImageGenerator {
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: secondPassControlExternalOnDemand, steps: sampling.steps,
         firstStage: firstStage, cancellation: cancellation)
+      guard feedback(.controlsGenerated, signposts, nil) else { return (nil, 1) }
 
       let secondPassModelVersion: ModelVersion
       let secondPassModelFilePath: String
@@ -4488,6 +4490,7 @@ extension LocalImageGenerator {
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage,
         cancellation: cancellation)
+      guard feedback(.controlsGenerated, signposts, nil) else { return (nil, 1) }
       if let image = maskedImage {
         maskedImage = injectVACEFrames(
           batchSize: batchSize, version: modelVersion, image: image,
@@ -5711,6 +5714,7 @@ extension LocalImageGenerator {
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage,
         cancellation: cancellation)
+      guard feedback(.controlsGenerated, signposts, nil) else { return nil }
       var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modifier == .double
         || modelVersion == .svdI2v
@@ -6544,6 +6548,7 @@ extension LocalImageGenerator {
         tiledDiffusion: tiledDiffusion,
         usesFlashAttention: isMFAEnabled, externalOnDemand: controlExternalOnDemand,
         steps: sampling.steps, firstStage: firstStage, cancellation: cancellation)
+      guard feedback(.controlsGenerated, signposts, nil) else { return nil }
       let redoInjectedControls = configuration.controls.contains { control in
         control.file.map {
           (ControlNetZoo.modifierForModel($0) ?? ControlHintType(from: control.inputOverride))

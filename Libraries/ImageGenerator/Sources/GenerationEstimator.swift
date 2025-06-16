@@ -13,6 +13,8 @@ public enum GenerationEstimator {
         estimatedTotalDuration += TimeInterval(estimation.textEncoded)
       case .imageEncoded:
         estimatedTotalDuration += TimeInterval(estimation.imageEncoded)
+      case .controlsGenerated:
+        continue
       case .sampling(let steps):
         estimatedTotalDuration += TimeInterval(estimation.samplingStep) * TimeInterval(steps)
       case .imageDecoded:
@@ -43,6 +45,8 @@ public enum GenerationEstimator {
       estimation.textEncoded = Float(duration)
     case .imageEncoded:
       estimation.imageEncoded = Float(duration) - estimation.textEncoded
+    case .controlsGenerated:
+      break
     case .sampling(let step):
       if step > 0 {
         estimation.samplingStep =
@@ -188,6 +192,8 @@ public enum GenerationEstimator {
         updatedEstimatedTotalDuration += TimeInterval(estimation.textEncoded)
       case .imageEncoded:
         updatedEstimatedTotalDuration += TimeInterval(estimation.imageEncoded)
+      case .controlsGenerated:
+        continue
       case .sampling(let steps):
         updatedEstimatedTotalDuration += TimeInterval(estimation.samplingStep) * TimeInterval(steps)
       case .imageDecoded:
@@ -210,6 +216,8 @@ public enum GenerationEstimator {
     case .textEncoded:
       updatedDurationThisFar = TimeInterval(estimation.textEncoded)
     case .imageEncoded:
+      updatedDurationThisFar = TimeInterval(estimation.textEncoded + estimation.imageEncoded)
+    case .controlsGenerated:
       updatedDurationThisFar = TimeInterval(estimation.textEncoded + estimation.imageEncoded)
     case .sampling(let step):
       updatedDurationThisFar = TimeInterval(
