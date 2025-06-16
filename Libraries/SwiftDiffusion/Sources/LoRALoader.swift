@@ -50,7 +50,7 @@ public struct LoRALoader {
             guard isLoRADownNetworkKey || (key.hasSuffix("__") && key.hasPrefix("__")) else {
               if inspectFilesRequireMerge && modelFile != file && key.hasPrefix("__") {
                 filesRequireMerge[file, default: Set<String>()].insert(key)
-                break
+                continue
               }
               continue
             }
