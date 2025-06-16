@@ -5,6 +5,8 @@ service ImageGenerationService {
   rpc FilesExist(FileListRequest) returns (FileExistenceResponse);
   rpc UploadFile(stream FileUploadRequest) returns (stream UploadResponse);
   rpc Echo(EchoRequest) returns (EchoReply);
+  rpc Pubkey(PubkeyRequest) returns (PubkeyResponse);
+
 }
 
 message EchoRequest {
@@ -165,7 +167,7 @@ message PubkeyRequest {
   string name = 1;
 }
 
-message EchoReply {
+message PubkeyResponse {
   string message = 1;
   string pubkey = 2;
 }
