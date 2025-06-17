@@ -77,6 +77,17 @@ public final class ImageGenerationClientWrapper {
     }
   }
 
+  public struct LabHours {
+    public var community: Int
+    public var plus: Int
+    public var expireAt: Date
+    public init(community: Int, plus: Int, expireAt: Date) {
+      self.community = community
+      self.plus = plus
+      self.expireAt = expireAt
+    }
+  }
+
   public func echo(
     callback: @escaping (
       Bool, Bool,
@@ -84,12 +95,14 @@ public final class ImageGenerationClientWrapper {
         files: [String], models: [ModelZoo.Specification], LoRAs: [LoRAZoo.Specification],
         controlNets: [ControlNetZoo.Specification],
         textualInversions: [TextualInversionZoo.Specification]
-      )
+      ),
+      LabHours?
     ) -> Void
   ) {
     guard let client = client else {
       callback(
-        false, false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []))
+        false, false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []),
+        nil)
       return
     }
 
@@ -125,15 +138,22 @@ public final class ImageGenerationClientWrapper {
             [FailableDecodable<TextualInversionZoo.Specification>].self,
             from: result.override.textualInversions
           ).compactMap({ $0.value })) ?? []
+        let labHours: LabHours? = {
+          guard result.hasThresholds else { return nil }
+          return LabHours(
+            community: Int(result.thresholds.community), plus: Int(result.thresholds.plus),
+            expireAt: Date(timeIntervalSince1970: TimeInterval(result.thresholds.expireAt)))
+        }()
         callback(
           true, !result.sharedSecretMissing,
           (
             files: result.files, models: models, LoRAs: loras, controlNets: controlNets,
             textualInversions: textualInversions
-          ))
+          ), labHours)
       case .failure(_):
         callback(
-          false, false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []))
+          false, false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []),
+          nil)
       }
     }
   }
