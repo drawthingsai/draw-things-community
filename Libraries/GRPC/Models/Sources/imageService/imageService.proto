@@ -17,6 +17,7 @@ message EchoRequest {
 message ComputeUnitThreshold {
   double community = 1;
   double plus = 2;
+  int64 expireAt = 3;
 }
 
 message EchoReply {
@@ -24,7 +25,7 @@ message EchoReply {
   repeated string files = 2;
   optional MetadataOverride override = 3;
   bool sharedSecretMissing = 4; // If this is true, sharedSecret is required.
-  ComputeUnitThreshold thresholds = 5; // The thresholds currently imposed by the server.
+  optional ComputeUnitThreshold thresholds = 5; // The thresholds currently imposed by the server.
 }
 
 message FileListRequest {

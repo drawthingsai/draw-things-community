@@ -126,6 +126,8 @@ public struct ComputeUnitThreshold: Sendable {
 
   public var plus: Double = 0
 
+  public var expireAt: Int64 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -860,6 +862,7 @@ extension ComputeUnitThreshold: SwiftProtobuf.Message, SwiftProtobuf._MessageImp
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
     1: .same(proto: "community"),
     2: .same(proto: "plus"),
+    3: .same(proto: "expireAt"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -870,6 +873,7 @@ extension ComputeUnitThreshold: SwiftProtobuf.Message, SwiftProtobuf._MessageImp
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularDoubleField(value: &self.community) }()
       case 2: try { try decoder.decodeSingularDoubleField(value: &self.plus) }()
+      case 3: try { try decoder.decodeSingularInt64Field(value: &self.expireAt) }()
       default: break
       }
     }
@@ -882,12 +886,16 @@ extension ComputeUnitThreshold: SwiftProtobuf.Message, SwiftProtobuf._MessageImp
     if self.plus.bitPattern != 0 {
       try visitor.visitSingularDoubleField(value: self.plus, fieldNumber: 2)
     }
+    if self.expireAt != 0 {
+      try visitor.visitSingularInt64Field(value: self.expireAt, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ComputeUnitThreshold, rhs: ComputeUnitThreshold) -> Bool {
     if lhs.community != rhs.community {return false}
     if lhs.plus != rhs.plus {return false}
+    if lhs.expireAt != rhs.expireAt {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
