@@ -88,6 +88,34 @@ public final class ImageGenerationClientWrapper {
     }
   }
 
+  public func hours(callback: @escaping (LabHours?) -> Void) {
+    guard let client = client else {
+      callback(nil)
+      return
+    }
+    let request = HoursRequest.with { _ in }
+
+    let callOptions = CallOptions(
+      messageEncoding: .enabled(.responsesOnly(decompressionLimit: .ratio(100))))
+
+    let _ = client.hours(request, callOptions: callOptions).response.always {
+      switch $0 {
+      case .success(let result):
+        if result.hasThresholds {
+          let thresholds = result.thresholds
+          callback(
+            LabHours(
+              community: Int(thresholds.community), plus: Int(thresholds.plus),
+              expireAt: Date(timeIntervalSince1970: TimeInterval(thresholds.expireAt))))
+        } else {
+          callback(nil)
+        }
+      case .failure(_):
+        callback(nil)
+      }
+    }
+  }
+
   public func echo(
     callback: @escaping (
       Bool, Bool,
