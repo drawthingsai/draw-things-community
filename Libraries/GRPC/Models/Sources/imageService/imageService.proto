@@ -14,11 +14,17 @@ message EchoRequest {
   optional string sharedSecret = 2; // The secret use to authenticate if needed.
 }
 
+message ComputeUnitThreshold {
+  double community = 1;
+  double plus = 2;
+}
+
 message EchoReply {
   string message = 1;
   repeated string files = 2;
   optional MetadataOverride override = 3;
   bool sharedSecretMissing = 4; // If this is true, sharedSecret is required.
+  ComputeUnitThreshold thresholds = 5; // The thresholds currently imposed by the server.
 }
 
 message FileListRequest {

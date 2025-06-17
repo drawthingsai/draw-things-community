@@ -117,6 +117,20 @@ public struct EchoRequest: Sendable {
   fileprivate var _sharedSecret: String? = nil
 }
 
+public struct ComputeUnitThreshold: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var community: Double = 0
+
+  public var plus: Double = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public struct EchoReply: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -138,11 +152,22 @@ public struct EchoReply: Sendable {
   /// If this is true, sharedSecret is required.
   public var sharedSecretMissing: Bool = false
 
+  /// The thresholds currently imposed by the server.
+  public var thresholds: ComputeUnitThreshold {
+    get {return _thresholds ?? ComputeUnitThreshold()}
+    set {_thresholds = newValue}
+  }
+  /// Returns true if `thresholds` has been explicitly set.
+  public var hasThresholds: Bool {return self._thresholds != nil}
+  /// Clears the value of `thresholds`. Subsequent reads from it will return its default value.
+  public mutating func clearThresholds() {self._thresholds = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _override: MetadataOverride? = nil
+  fileprivate var _thresholds: ComputeUnitThreshold? = nil
 }
 
 public struct FileListRequest: Sendable {
@@ -830,6 +855,44 @@ extension EchoRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementati
   }
 }
 
+extension ComputeUnitThreshold: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = "ComputeUnitThreshold"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "community"),
+    2: .same(proto: "plus"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularDoubleField(value: &self.community) }()
+      case 2: try { try decoder.decodeSingularDoubleField(value: &self.plus) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.community.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.community, fieldNumber: 1)
+    }
+    if self.plus.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.plus, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ComputeUnitThreshold, rhs: ComputeUnitThreshold) -> Bool {
+    if lhs.community != rhs.community {return false}
+    if lhs.plus != rhs.plus {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = "EchoReply"
   public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
@@ -837,6 +900,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     2: .same(proto: "files"),
     3: .same(proto: "override"),
     4: .same(proto: "sharedSecretMissing"),
+    5: .same(proto: "thresholds"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -849,6 +913,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
       case 2: try { try decoder.decodeRepeatedStringField(value: &self.files) }()
       case 3: try { try decoder.decodeSingularMessageField(value: &self._override) }()
       case 4: try { try decoder.decodeSingularBoolField(value: &self.sharedSecretMissing) }()
+      case 5: try { try decoder.decodeSingularMessageField(value: &self._thresholds) }()
       default: break
       }
     }
@@ -871,6 +936,9 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     if self.sharedSecretMissing != false {
       try visitor.visitSingularBoolField(value: self.sharedSecretMissing, fieldNumber: 4)
     }
+    try { if let v = self._thresholds {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -879,6 +947,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     if lhs.files != rhs.files {return false}
     if lhs._override != rhs._override {return false}
     if lhs.sharedSecretMissing != rhs.sharedSecretMissing {return false}
+    if lhs._thresholds != rhs._thresholds {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
