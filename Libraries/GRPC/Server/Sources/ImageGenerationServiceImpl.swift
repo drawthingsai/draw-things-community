@@ -599,9 +599,14 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   public func pubkey(request: PubkeyRequest, context: StatusOnlyCallContext)
     -> EventLoopFuture<PubkeyResponse>
   {
-    let response = PubkeyResponse.with {
-      $0.pubkey = "none"
-    }
+    let response = PubkeyResponse.with { _ in }
+    return context.eventLoop.makeSucceededFuture(response)
+  }
+
+  public func hours(request: HoursRequest, context: any StatusOnlyCallContext) -> EventLoopFuture<
+    HoursResponse
+  > {
+    let response = HoursResponse.with { _ in }
     return context.eventLoop.makeSucceededFuture(response)
   }
 

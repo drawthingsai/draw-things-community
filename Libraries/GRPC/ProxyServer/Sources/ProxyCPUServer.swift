@@ -748,6 +748,13 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     return promise.futureResult
   }
 
+  public func hours(request: HoursRequest, context: any StatusOnlyCallContext) -> EventLoopFuture<
+    HoursResponse
+  > {
+    let response = HoursResponse.with { _ in }
+    return context.eventLoop.makeSucceededFuture(response)
+  }
+
   func echo(request: EchoRequest, context: StatusOnlyCallContext) -> EventLoopFuture<EchoReply> {
     let promise = context.eventLoop.makePromise(of: EchoReply.self)
     Task {

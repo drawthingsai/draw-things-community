@@ -798,6 +798,38 @@ public struct PubkeyResponse: Sendable {
   public init() {}
 }
 
+public struct HoursRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public struct HoursResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// The thresholds currently imposed by the server.
+  public var thresholds: ComputeUnitThreshold {
+    get {return _thresholds ?? ComputeUnitThreshold()}
+    set {_thresholds = newValue}
+  }
+  /// Returns true if `thresholds` has been explicitly set.
+  public var hasThresholds: Bool {return self._thresholds != nil}
+  /// Clears the value of `thresholds`. Subsequent reads from it will return its default value.
+  public mutating func clearThresholds() {self._thresholds = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _thresholds: ComputeUnitThreshold? = nil
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 extension DeviceType: SwiftProtobuf._ProtoNameProviding {
@@ -2177,6 +2209,61 @@ extension PubkeyResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplement
   public static func ==(lhs: PubkeyResponse, rhs: PubkeyResponse) -> Bool {
     if lhs.message != rhs.message {return false}
     if lhs.pubkey != rhs.pubkey {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension HoursRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = "HoursRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: HoursRequest, rhs: HoursRequest) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension HoursResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = "HoursResponse"
+  public static let _protobuf_nameMap: SwiftProtobuf._NameMap = [
+    1: .same(proto: "thresholds"),
+  ]
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._thresholds) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._thresholds {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: HoursResponse, rhs: HoursResponse) -> Bool {
+    if lhs._thresholds != rhs._thresholds {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

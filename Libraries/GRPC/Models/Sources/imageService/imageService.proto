@@ -6,6 +6,7 @@ service ImageGenerationService {
   rpc UploadFile(stream FileUploadRequest) returns (stream UploadResponse);
   rpc Echo(EchoRequest) returns (EchoReply);
   rpc Pubkey(PubkeyRequest) returns (PubkeyResponse);
+  rpc Hours(HoursRequest) returns (HoursResponse);
 
 }
 
@@ -177,4 +178,11 @@ message PubkeyRequest {
 message PubkeyResponse {
   string message = 1;
   string pubkey = 2;
+}
+
+message HoursRequest {
+}
+
+message HoursResponse {
+  ComputeUnitThreshold thresholds = 1; // The thresholds currently imposed by the server.
 }
