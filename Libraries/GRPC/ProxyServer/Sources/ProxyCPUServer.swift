@@ -56,6 +56,7 @@ extension Worker {
     logger.info(
       "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority))"
     )
+    let taskExecuteStartTimestamp = Date()
     defer { task.heartbeat.cancel() }
     do {
       var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
@@ -67,8 +68,10 @@ extension Worker {
       let callInstance = client.generateImage(task.request) { response in
         if !response.generatedImages.isEmpty {
           let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
+          let totalExecutionTimeMs = Date().timeIntervalSince(taskExecuteStartTimestamp) * 1000
+
           logger.info(
-            "Task total time: \(totalTimeMs)ms, (Priority: \(task.priority))"
+            "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority))"
           )
         }
         task.context.sendResponse(response).whenComplete { result in
