@@ -7,6 +7,7 @@ service ControlPanelService {
   rpc UpdateModelList(UpdateModelListRequest) returns (UpdateModelListResponse);
   rpc UpdateSharedSecret(UpdateSharedSecretRequest) returns (UpdateSharedSecretResponse);
   rpc UpdatePrivateKey(UpdatePrivateKeyRequest) returns (UpdatePrivateKeyResponse);
+  rpc UpdateComputeUnit(UpdateComputeUnitRequest) returns (UpdateComputeUnitResponse);
 
 }
 
@@ -58,7 +59,6 @@ message UpdateModelListResponse {
   string message = 1;
 }
 
-
 message UpdateSharedSecretRequest {
     string message = 1;
 }
@@ -72,5 +72,14 @@ message UpdatePrivateKeyRequest {
 }
 
 message UpdatePrivateKeyResponse {
+  string message = 1;
+}
+
+message UpdateComputeUnitRequest {
+    map<string, int32> cu_config = 1;  // e.g. {"community": 15000, "plus": 40000}
+    int64 expiration_timestamp = 2;  // Unix timestamp in seconds
+}
+
+message UpdateComputeUnitResponse {
   string message = 1;
 }

@@ -45,6 +45,11 @@ public protocol ControlPanelServiceClientProtocol: GRPCClient {
     _ request: UpdatePrivateKeyRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<UpdatePrivateKeyRequest, UpdatePrivateKeyResponse>
+
+  func updateComputeUnit(
+    _ request: UpdateComputeUnitRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<UpdateComputeUnitRequest, UpdateComputeUnitResponse>
 }
 
 extension ControlPanelServiceClientProtocol {
@@ -159,6 +164,24 @@ extension ControlPanelServiceClientProtocol {
       interceptors: self.interceptors?.makeUpdatePrivateKeyInterceptors() ?? []
     )
   }
+
+  /// Unary call to UpdateComputeUnit
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to UpdateComputeUnit.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  public func updateComputeUnit(
+    _ request: UpdateComputeUnitRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<UpdateComputeUnitRequest, UpdateComputeUnitResponse> {
+    return self.makeUnaryCall(
+      path: ControlPanelServiceClientMetadata.Methods.updateComputeUnit.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdateComputeUnitInterceptors() ?? []
+    )
+  }
 }
 
 @available(*, deprecated)
@@ -252,6 +275,11 @@ public protocol ControlPanelServiceAsyncClientProtocol: GRPCClient {
     _ request: UpdatePrivateKeyRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<UpdatePrivateKeyRequest, UpdatePrivateKeyResponse>
+
+  func makeUpdateComputeUnitCall(
+    _ request: UpdateComputeUnitRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<UpdateComputeUnitRequest, UpdateComputeUnitResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -335,6 +363,18 @@ extension ControlPanelServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeUpdatePrivateKeyInterceptors() ?? []
     )
   }
+
+  public func makeUpdateComputeUnitCall(
+    _ request: UpdateComputeUnitRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<UpdateComputeUnitRequest, UpdateComputeUnitResponse> {
+    return self.makeAsyncUnaryCall(
+      path: ControlPanelServiceClientMetadata.Methods.updateComputeUnit.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdateComputeUnitInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -410,6 +450,18 @@ extension ControlPanelServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeUpdatePrivateKeyInterceptors() ?? []
     )
   }
+
+  public func updateComputeUnit(
+    _ request: UpdateComputeUnitRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> UpdateComputeUnitResponse {
+    return try await self.performAsyncUnaryCall(
+      path: ControlPanelServiceClientMetadata.Methods.updateComputeUnit.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdateComputeUnitInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -448,6 +500,9 @@ public protocol ControlPanelServiceClientInterceptorFactoryProtocol: Sendable {
 
   /// - Returns: Interceptors to use when invoking 'updatePrivateKey'.
   func makeUpdatePrivateKeyInterceptors() -> [ClientInterceptor<UpdatePrivateKeyRequest, UpdatePrivateKeyResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'updateComputeUnit'.
+  func makeUpdateComputeUnitInterceptors() -> [ClientInterceptor<UpdateComputeUnitRequest, UpdateComputeUnitResponse>]
 }
 
 public enum ControlPanelServiceClientMetadata {
@@ -461,6 +516,7 @@ public enum ControlPanelServiceClientMetadata {
       ControlPanelServiceClientMetadata.Methods.updateModelList,
       ControlPanelServiceClientMetadata.Methods.updateSharedSecret,
       ControlPanelServiceClientMetadata.Methods.updatePrivateKey,
+      ControlPanelServiceClientMetadata.Methods.updateComputeUnit,
     ]
   )
 
@@ -500,6 +556,12 @@ public enum ControlPanelServiceClientMetadata {
       path: "/ControlPanelService/UpdatePrivateKey",
       type: GRPCCallType.unary
     )
+
+    public static let updateComputeUnit = GRPCMethodDescriptor(
+      name: "UpdateComputeUnit",
+      path: "/ControlPanelService/UpdateComputeUnit",
+      type: GRPCCallType.unary
+    )
   }
 }
 
@@ -518,6 +580,8 @@ public protocol ControlPanelServiceProvider: CallHandlerProvider {
   func updateSharedSecret(request: UpdateSharedSecretRequest, context: StatusOnlyCallContext) -> EventLoopFuture<UpdateSharedSecretResponse>
 
   func updatePrivateKey(request: UpdatePrivateKeyRequest, context: StatusOnlyCallContext) -> EventLoopFuture<UpdatePrivateKeyResponse>
+
+  func updateComputeUnit(request: UpdateComputeUnitRequest, context: StatusOnlyCallContext) -> EventLoopFuture<UpdateComputeUnitResponse>
 }
 
 extension ControlPanelServiceProvider {
@@ -586,6 +650,15 @@ extension ControlPanelServiceProvider {
         userFunction: self.updatePrivateKey(request:context:)
       )
 
+    case "UpdateComputeUnit":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<UpdateComputeUnitRequest>(),
+        responseSerializer: ProtobufSerializer<UpdateComputeUnitResponse>(),
+        interceptors: self.interceptors?.makeUpdateComputeUnitInterceptors() ?? [],
+        userFunction: self.updateComputeUnit(request:context:)
+      )
+
     default:
       return nil
     }
@@ -627,6 +700,11 @@ public protocol ControlPanelServiceAsyncProvider: CallHandlerProvider, Sendable 
     request: UpdatePrivateKeyRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> UpdatePrivateKeyResponse
+
+  func updateComputeUnit(
+    request: UpdateComputeUnitRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> UpdateComputeUnitResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -702,6 +780,15 @@ extension ControlPanelServiceAsyncProvider {
         wrapping: { try await self.updatePrivateKey(request: $0, context: $1) }
       )
 
+    case "UpdateComputeUnit":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<UpdateComputeUnitRequest>(),
+        responseSerializer: ProtobufSerializer<UpdateComputeUnitResponse>(),
+        interceptors: self.interceptors?.makeUpdateComputeUnitInterceptors() ?? [],
+        wrapping: { try await self.updateComputeUnit(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -733,6 +820,10 @@ public protocol ControlPanelServiceServerInterceptorFactoryProtocol: Sendable {
   /// - Returns: Interceptors to use when handling 'updatePrivateKey'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeUpdatePrivateKeyInterceptors() -> [ServerInterceptor<UpdatePrivateKeyRequest, UpdatePrivateKeyResponse>]
+
+  /// - Returns: Interceptors to use when handling 'updateComputeUnit'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeUpdateComputeUnitInterceptors() -> [ServerInterceptor<UpdateComputeUnitRequest, UpdateComputeUnitResponse>]
 }
 
 public enum ControlPanelServiceServerMetadata {
@@ -746,6 +837,7 @@ public enum ControlPanelServiceServerMetadata {
       ControlPanelServiceServerMetadata.Methods.updateModelList,
       ControlPanelServiceServerMetadata.Methods.updateSharedSecret,
       ControlPanelServiceServerMetadata.Methods.updatePrivateKey,
+      ControlPanelServiceServerMetadata.Methods.updateComputeUnit,
     ]
   )
 
@@ -783,6 +875,12 @@ public enum ControlPanelServiceServerMetadata {
     public static let updatePrivateKey = GRPCMethodDescriptor(
       name: "UpdatePrivateKey",
       path: "/ControlPanelService/UpdatePrivateKey",
+      type: GRPCCallType.unary
+    )
+
+    public static let updateComputeUnit = GRPCMethodDescriptor(
+      name: "UpdateComputeUnit",
+      path: "/ControlPanelService/UpdateComputeUnit",
       type: GRPCCallType.unary
     )
   }

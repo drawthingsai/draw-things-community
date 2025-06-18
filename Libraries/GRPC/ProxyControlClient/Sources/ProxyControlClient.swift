@@ -211,4 +211,30 @@ public final class ProxyControlClient {
       }
     }
   }
+
+  public func updateComputeUnit(
+    policies: [String: Int], expirationTimestamp: Int64 = 0, completion: @escaping (Bool) -> Void
+  ) {
+    guard let client = client else {
+      print("updateComputeUnit can not connect to proxy server")
+      completion(false)
+      return
+    }
+
+    var request = UpdateComputeUnitRequest()
+    request.cuConfig = policies.mapValues { Int32($0) }
+    request.expirationTimestamp = expirationTimestamp
+
+    let _ = client.updateComputeUnit(request).response.always {
+      switch $0 {
+      case .success(let result):
+        print("\(result.message)")
+        completion(true)
+
+      case .failure(_):
+        print("can not update ComputeUnit policy")
+        completion(false)
+      }
+    }
+  }
 }

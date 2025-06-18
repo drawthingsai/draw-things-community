@@ -18,6 +18,8 @@ import NIOSSL
 
 public actor ControlConfigs {
   public private(set) var throttlePolicy = [String: Int]()
+  public private(set) var computeUnitPolicy = [String: Int]()
+  public private(set) var expirationTimestamp: Int64?
   public private(set) var publicKeyPEM: String
   public private(set) var modelListPath: String
   private var nonces = Set<String>()
@@ -67,6 +69,17 @@ public actor ControlConfigs {
       throttlePolicy[key] = value
     }
   }
+
+  func updateComputeUnitPolicy(newPolicies: [String: Int]) async {
+    for (key, value) in newPolicies {
+      computeUnitPolicy[key] = value
+    }
+  }
+
+  func updateExpirationTimestamp(_ timestamp: Int64?) async {
+    expirationTimestamp = timestamp
+  }
+
   func updatePublicKeyPEM() async throws {
     guard let url = URL(string: "https://api.drawthings.ai/key") else {
       logger.error("ControlConfigs failed to update Pem, invalid url")
@@ -284,6 +297,60 @@ final class ControlPanelService: ControlPanelServiceProvider {
 
     return promise.futureResult
   }
+
+  func updateComputeUnit(
+    request: GRPCControlPanelModels.UpdateComputeUnitRequest,
+    context: any GRPC.StatusOnlyCallContext
+  ) -> NIOCore.EventLoopFuture<GRPCControlPanelModels.UpdateComputeUnitResponse> {
+    let promise = context.eventLoop.makePromise(
+      of: GRPCControlPanelModels.UpdateComputeUnitResponse.self)
+    Task {
+      // Get current state
+      let currentComputeUnitPolicies = await controlConfigs.computeUnitPolicy
+      let currentExpirationTimestamp = await controlConfigs.expirationTimestamp
+      let currentExpirationStr =
+        currentExpirationTimestamp.map { "expiration: \($0)" } ?? "no expiration"
+
+      // Validate expiration timestamp first
+      let currentTime = Int64(Date().timeIntervalSince1970)
+
+      let logMessage: String
+      let response: UpdateComputeUnitResponse
+
+      if request.expirationTimestamp > currentTime {
+        self.logger.info(
+          "Current compute unit policies: \(currentComputeUnitPolicies), \(currentExpirationStr)")
+
+        // Update with new policies and timestamp
+        await controlConfigs.updateComputeUnitPolicy(
+          newPolicies: request.cuConfig.mapValues { Int($0) })
+        await controlConfigs.updateExpirationTimestamp(request.expirationTimestamp)
+
+        let updatedComputeUnitPolicies = await controlConfigs.computeUnitPolicy
+        let hoursUntilExpiration = Double(request.expirationTimestamp - currentTime) / 3600.0
+
+        logMessage =
+          "Updated compute unit policies to \(updatedComputeUnitPolicies), expires in \(String(format: "%.1f", hoursUntilExpiration)) hours (timestamp: \(request.expirationTimestamp))"
+
+        response = UpdateComputeUnitResponse.with {
+          $0.message = logMessage
+        }
+      } else {
+        // Invalid timestamp - skip update and report current state
+        logMessage =
+          "Invalid expiration timestamp \(request.expirationTimestamp) (must be in the future). Current compute unit policies: \(currentComputeUnitPolicies), \(currentExpirationStr)"
+
+        response = UpdateComputeUnitResponse.with {
+          $0.message = logMessage
+        }
+      }
+
+      self.logger.info("\(logMessage)")
+      promise.succeed(response)
+    }
+
+    return promise.futureResult
+  }
 }
 
 final class ImageGenerationProxyService: ImageGenerationServiceProvider {
@@ -407,7 +474,13 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         return (false, "Proxy Server can not calculate cost for model \(modelName)")
       }
 
-      let costThreshold = ComputeUnits.threshold(for: payload.priority)
+      let computeUnitPolicy = await controlConfigs.computeUnitPolicy
+      let expirationTimestamp = await controlConfigs.expirationTimestamp
+      let costThreshold = ComputeUnits.threshold(
+        for: payload.priority,
+        computeUnitPolicy: computeUnitPolicy,
+        expirationTimestamp: expirationTimestamp
+      )
       guard cost < costThreshold else {
         logger.error(
           "Proxy Server enqueue image generating request failed, cost exceed threshold \(costThreshold)"
