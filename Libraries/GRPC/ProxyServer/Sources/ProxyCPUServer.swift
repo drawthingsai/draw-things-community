@@ -56,7 +56,6 @@ extension Worker {
     logger.info(
       "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority))"
     )
-    let taskExecuteStartTimestamp = Date()
     defer { task.heartbeat.cancel() }
     do {
       var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
@@ -65,14 +64,11 @@ extension Worker {
         throw WorkerError.invalidNioClient
       }
       let logger = logger
+      var imageGenerated = false
+      let taskExecuteStartTimestamp = Date()
       let callInstance = client.generateImage(task.request) { response in
         if !response.generatedImages.isEmpty {
-          let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
-          let totalExecutionTimeMs = Date().timeIntervalSince(taskExecuteStartTimestamp) * 1000
-
-          logger.info(
-            "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority))"
-          )
+          imageGenerated = true
         }
         task.context.sendResponse(response).whenComplete { result in
           switch result {
@@ -92,6 +88,13 @@ extension Worker {
       }
 
       let status = try await callInstance.status.get()
+      if imageGenerated {
+        let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
+        let totalExecutionTimeMs = Date().timeIntervalSince(taskExecuteStartTimestamp) * 1000
+        logger.info(
+          "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority))"
+        )
+      }
       task.promise.succeed(status)
       task.context.statusPromise.succeed(status)
 
@@ -488,14 +491,14 @@ final class ControlPanelService: ControlPanelServiceProvider {
     let promise = context.eventLoop.makePromise(
       of: GRPCControlPanelModels.UpdatePrivateKeyResponse.self)
     Task {
-      try await proxyMessageSigner.reloadKeys()
+      await proxyMessageSigner.reloadKeys()
       self.logger.info(
         "reload proxy private key pairs"
       )
 
-      let publicKeyPEM = try await proxyMessageSigner.getPublicKey()
+      let publicKeyPEM = await proxyMessageSigner.getPublicKey()
       let response = UpdatePrivateKeyResponse.with {
-        $0.message = "Update proxy private keys, current public key is: \(publicKeyPEM)"
+        $0.message = "Update proxy private keys, current public key is: \(publicKeyPEM as Any)"
       }
       promise.succeed(response)
     }
@@ -900,7 +903,7 @@ public class ProxyCPUServer {
 
       // Start all servers
       for host in hosts {
-        let binding = try Server.insecure(group: group)
+        let binding = Server.insecure(group: group)
           .withServiceProviders([controlPanelService])
           .bind(host: host, port: port)
         serverBindings.append(binding)
@@ -912,7 +915,7 @@ public class ProxyCPUServer {
 
       // Wait for any server to close (first one that closes)
       let onCloseFutures = servers.map { $0.onClose }
-      try EventLoopFuture.whenAllComplete(onCloseFutures, on: group.next()).wait()
+      let _ = try EventLoopFuture.whenAllComplete(onCloseFutures, on: group.next()).wait()
 
       logger.info("Leave Control Panel Service, something may be wrong")
     }
