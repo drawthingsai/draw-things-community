@@ -16,6 +16,208 @@ import NIOSSL
   import FoundationNetworking
 #endif
 
+public enum ProxyTaskPriority: Sendable {
+  case high
+  case low
+}
+
+struct WorkTask {
+  var priority: TaskPriority
+  var request: ImageGenerationRequest
+  var context: StreamingResponseCallContext<ImageGenerationResponse>
+  var promise: EventLoopPromise<GRPCStatus>
+  var heartbeat: Task<Void, Error>
+  var creationTimestamp: Date
+}
+
+public struct Worker {
+  var id: String
+  var primaryPriority: ProxyTaskPriority
+  public let client: ProxyGPUClientWrapper
+  private let logger = Logger(label: "com.draw-things.image-generation-proxy-service")
+  enum WorkerError: Error {
+    case invalidNioClient
+  }
+  public init(
+    id: String, client: ProxyGPUClientWrapper, primaryPriority: ProxyTaskPriority
+  ) {
+    self.id = id
+    self.client = client
+    self.primaryPriority = primaryPriority
+  }
+}
+
+extension Worker {
+  func executeTask(_ task: WorkTask) async throws {
+    logger.info(
+      "Worker \(id) primaryPriority:\(primaryPriority) starting task  (Priority: \(task.priority))"
+    )
+    let taskQueueingTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
+    logger.info(
+      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority))"
+    )
+    defer { task.heartbeat.cancel() }
+    do {
+      var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
+      guard let client = client.client else {
+        logger.error("Worker \(id) task failed: invalid NIO client")
+        throw WorkerError.invalidNioClient
+      }
+      let logger = logger
+      let callInstance = client.generateImage(task.request) { response in
+        if !response.generatedImages.isEmpty {
+          let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
+          logger.info(
+            "Task total time: \(totalTimeMs)ms, (Priority: \(task.priority))"
+          )
+        }
+        task.context.sendResponse(response).whenComplete { result in
+          switch result {
+          case .success:
+            logger.debug("forward response: \(response)")
+          case .failure(let error):
+            logger.error("Worker:\(self), forward response error \(error)")
+            call?.cancel(promise: nil)
+            task.promise.fail(error)
+          }
+        }
+      }
+
+      call = callInstance
+      task.context.closeFuture.whenComplete { _ in
+        callInstance.cancel(promise: nil)
+      }
+
+      let status = try await callInstance.status.get()
+      task.promise.succeed(status)
+      task.context.statusPromise.succeed(status)
+
+      logger.info("Worker \(id) completed task successfully (Priority: \(task.priority))")
+
+    } catch {
+      logger.error("Worker \(id) task failed with error: \(error) (Priority: \(task.priority))")
+      task.promise.fail(error)
+      task.context.statusPromise.fail(error)
+      throw error
+    }
+  }
+}
+
+actor TaskQueue {
+  private var highPriorityTasks: [WorkTask] = []
+  private var lowPriorityTasks: [WorkTask] = []
+  private var pendingRemoveWorkerId = Set<String>()
+  private var workers: [String: Worker]
+  private let logger: Logger
+  var workerIds: [String] {
+    return Array(workers.keys)
+  }
+
+  // Shared availability stream
+  private let workerAvailabilityStream: AsyncStream<Worker>
+  private let availabilityContinuation: AsyncStream<Worker>.Continuation
+
+  init(workers: [Worker], logger: Logger) {
+    self.logger = logger
+    self.workers = Dictionary(uniqueKeysWithValues: workers.map { ($0.id, $0) })
+
+    (workerAvailabilityStream, availabilityContinuation) = AsyncStream.makeStream(of: Worker.self)
+    for worker in workers {
+      availabilityContinuation.yield(worker)
+    }
+  }
+
+  func nextWorker() async -> Worker? {
+    for await worker in workerAvailabilityStream {
+      if workers[worker.id] != nil {
+        return worker
+      } else {
+        logger.info("skip removed worker:\(worker) from workerAvailabilityStream")
+      }
+    }
+    return nil
+  }
+
+  func nextTaskForWorker(_ worker: Worker) async -> WorkTask? {
+    let isPrimaryHigh = worker.primaryPriority == .high
+
+    // Try primary queue first
+    if isPrimaryHigh {
+      if let task = highPriorityTasks.first {
+        highPriorityTasks.removeFirst()
+        return task
+      }
+      if let task = lowPriorityTasks.first {
+        lowPriorityTasks.removeFirst()
+        return task
+      }
+    } else {
+      if let task = lowPriorityTasks.first {
+        lowPriorityTasks.removeFirst()
+        return task
+      }
+      if let task = highPriorityTasks.first {
+        highPriorityTasks.removeFirst()
+        return task
+      }
+    }
+
+    return nil
+  }
+
+  func addTask(_ task: WorkTask) {
+    if task.priority == .high {
+      logger.info("highPriorityTasks append task \(task.priority)")
+      highPriorityTasks.append(task)
+    } else {
+      logger.info("lowPriorityTasks append task \(task.priority)")
+      lowPriorityTasks.append(task)
+    }
+  }
+
+  func returnWorker(_ worker: Worker) async {
+    guard workers[worker.id] != nil else {
+      logger.error("worker:\(worker) is removed, can not be added to worker stream")
+      return
+    }
+    logger.info("add worker:\(worker) back to worker stream")
+    availabilityContinuation.yield(worker)
+  }
+
+  func addWorker(_ worker: Worker) async {
+    guard worker.client.client != nil else {
+      logger.error(
+        "can add worker:\(worker) to worker TaskQueue with invalid nioclient connection")
+      return
+    }
+    let alreadyExists = workers[worker.id] != nil
+    workers[worker.id] = worker
+    guard !alreadyExists else {
+      logger.info("worker:\(worker) already exists in workers, skip adding")
+      return
+    }
+    availabilityContinuation.yield(worker)
+    logger.info("add worker:\(worker) to worker TaskQueue and stream")
+  }
+
+  func removeWorkerById(_ name: String) async {
+    guard let worker = workers[name] else {
+      logger.error("failed to find worker based on name \(name)")
+      return
+    }
+    try? worker.client.disconnect()
+    workers[worker.id] = nil
+    logger.info("remove worker:\(worker) from worker TaskQueue")
+  }
+
+  deinit {
+    for worker in workers.values {
+      try? worker.client.disconnect()
+    }
+    availabilityContinuation.finish()
+  }
+}
+
 public actor ControlConfigs {
   public private(set) var throttlePolicy = [String: Int]()
   public private(set) var computeUnitPolicy = [String: Int]()
@@ -123,7 +325,7 @@ public actor ControlConfigs {
 final class ControlPanelService: ControlPanelServiceProvider {
   var interceptors:
     (any GRPCControlPanelModels.ControlPanelServiceServerInterceptorFactoryProtocol)?
-  private let taskQueue: TaskQueueable
+  private let taskQueue: TaskQueue
   private var controlConfigs: ControlConfigs
   private var proxyMessageSigner: ProxyMessageSigner
   private let logger: Logger
@@ -134,7 +336,7 @@ final class ControlPanelService: ControlPanelServiceProvider {
   }
 
   init(
-    taskQueue: TaskQueueable, controlConfigs: ControlConfigs, logger: Logger,
+    taskQueue: TaskQueue, controlConfigs: ControlConfigs, logger: Logger,
     proxyMessageSigner: ProxyMessageSigner
   ) {
     self.taskQueue = taskQueue
@@ -161,7 +363,7 @@ final class ControlPanelService: ControlPanelServiceProvider {
           let result = await client.echo()
           self.logger.info("server: \(gpuServerName). echo \(result)")
           if let _ = client.client, result.0 {
-            let worker = ProxyWorker(
+            let worker = Worker(
               id: gpuServerName, client: client,
               primaryPriority: request.serverConfig.isHighPriority ? .high : .low)
             await taskQueue.addWorker(worker)
@@ -357,13 +559,13 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   var interceptors:
     (any GRPCImageServiceModels.ImageGenerationServiceServerInterceptorFactoryProtocol)?
 
-  private let taskQueue: TaskQueueable
+  private let taskQueue: TaskQueue
   private let logger: Logger
   private var controlConfigs: ControlConfigs
   private var healthCheckTask: Task<Void, Never>?
   private var proxyMessageSigner: ProxyMessageSigner
   init(
-    taskQueue: TaskQueueable, controlConfigs: ControlConfigs, logger: Logger, healthCheck: Bool,
+    taskQueue: TaskQueue, controlConfigs: ControlConfigs, logger: Logger, healthCheck: Bool,
     proxyMessageSigner: ProxyMessageSigner
   ) {
     self.taskQueue = taskQueue
@@ -537,7 +739,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
           try? await Task.sleep(for: .seconds(20))  // Every 20 seconds send a heartbeat.
         }
       }
-      let task = ProxyWorkTask(
+      let task = WorkTask(
         priority: priority, request: request, context: context, promise: promise,
         heartbeat: heartbeat, creationTimestamp: Date())
       await taskQueue.addTask(task)
@@ -659,14 +861,13 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
 }
 
 public class ProxyCPUServer {
-  private let workers: [ProxyWorker]
+  private let workers: [Worker]
   private let logger = Logger(label: "com.draw-things.image-generation-proxy-service")
   private var controlConfigs: ControlConfigs
-  private var taskQueue: TaskQueueable
+  private var taskQueue: TaskQueue
   private var proxyMessageSigner: ProxyMessageSigner
-
   public init(
-    workers: [ProxyWorker], publicKeyPEM: String, modelListPath: String, nonceSizeLimit: Int,
+    workers: [Worker], publicKeyPEM: String, modelListPath: String, nonceSizeLimit: Int,
     proxyPrivateKeyPath: String, proxyPublicKeyPath: String
   ) {
     self.workers = workers
