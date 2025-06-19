@@ -801,7 +801,7 @@ public struct ModelZoo: DownloadZoo {
       highPrecisionAutoencoder: true, isConsistencyModel: true, objective: .u(conditionScale: 1000),
       paddedTextEncodingLength: 256, hiresFixScale: 24),
     Specification(
-      name: "FLUX.1 [schnell] (8-bit)", file: "flux_1_schnell_q5p.ckpt", prefix: "",
+      name: "FLUX.1 [schnell] (5-bit)", file: "flux_1_schnell_q5p.ckpt", prefix: "",
       version: .flux1, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
       highPrecisionAutoencoder: true, isConsistencyModel: true, objective: .u(conditionScale: 1000),
