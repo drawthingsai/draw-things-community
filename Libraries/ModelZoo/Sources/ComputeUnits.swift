@@ -163,9 +163,7 @@ public enum ComputeUnits {
   }
 
   public static func threshold(
-    for priority: String,
-    computeUnitPolicy: [String: Int]? = nil,
-    expirationTimestamp: Date? = nil
+    for priority: String, computeUnitPolicy: [String: Int]?, expirationTimestamp: Date?
   ) -> Int {
     // Check if we have a valid policy and it's not expired
     let currentTimestamp = Date()
