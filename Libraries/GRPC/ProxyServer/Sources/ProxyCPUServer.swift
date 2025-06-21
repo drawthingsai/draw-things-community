@@ -226,14 +226,14 @@ actor TaskQueue {
 
 public actor ControlConfigs {
   public private(set) var throttlePolicy = [String: Int]()
-  public private(set) var computeUnitPolicy = [String: Int]()
-  public private(set) var expirationTimestamp: Int64?
   public private(set) var publicKeyPEM: String
   public private(set) var modelListPath: String
   private var nonces = Set<String>()
   private let logger: Logger
   private var nonceSizeLimit: Int
   private var sharedSecret: String?
+  private var computeUnitPolicy = [String: Int]()
+  private var expirationTimestamp: Date?
   enum ControlConfigsError: Error {
     case updatePublicKeyFailed(message: String)
   }
@@ -261,6 +261,10 @@ public actor ControlConfigs {
     logger.info("ControlConfigs add processed nonce:\(nonce)")
   }
 
+  func getComputeUnitPolicyAndExpirationTimestamp() async -> ([String: Int], Date?) {
+    return (computeUnitPolicy, expirationTimestamp)
+  }
+
   func isUsedNonce(_ nonce: String) async -> Bool {
     nonces.contains(nonce)
   }
@@ -278,13 +282,12 @@ public actor ControlConfigs {
     }
   }
 
-  func updateComputeUnitPolicy(newPolicies: [String: Int]) async {
+  func updateComputeUnitPolicyAndExpirationTimestamp(newPolicies: [String: Int], _ timestamp: Date)
+    async
+  {
     for (key, value) in newPolicies {
       computeUnitPolicy[key] = value
     }
-  }
-
-  func updateExpirationTimestamp(_ timestamp: Int64?) async {
     expirationTimestamp = timestamp
   }
 
@@ -514,8 +517,8 @@ final class ControlPanelService: ControlPanelServiceProvider {
       of: GRPCControlPanelModels.UpdateComputeUnitResponse.self)
     Task {
       // Get current state
-      let currentComputeUnitPolicies = await controlConfigs.computeUnitPolicy
-      let currentExpirationTimestamp = await controlConfigs.expirationTimestamp
+      let (currentComputeUnitPolicies, currentExpirationTimestamp) =
+        await controlConfigs.getComputeUnitPolicyAndExpirationTimestamp()
       let currentExpirationStr =
         currentExpirationTimestamp.map { "expiration: \($0)" } ?? "no expiration"
 
@@ -524,21 +527,21 @@ final class ControlPanelService: ControlPanelServiceProvider {
 
       let logMessage: String
       let response: UpdateComputeUnitResponse
-
-      if request.expirationTimestamp > currentTime {
+      let newExpirationTimestamp = request.expirationTimestamp
+      if newExpirationTimestamp > currentTime {
         self.logger.info(
           "Current compute unit policies: \(currentComputeUnitPolicies), \(currentExpirationStr)")
 
         // Update with new policies and timestamp
-        await controlConfigs.updateComputeUnitPolicy(
-          newPolicies: request.cuConfig.mapValues { Int($0) })
-        await controlConfigs.updateExpirationTimestamp(request.expirationTimestamp)
+        await controlConfigs.updateComputeUnitPolicyAndExpirationTimestamp(
+          newPolicies: request.cuConfig.mapValues { Int($0) },
+          Date(timeIntervalSince1970: TimeInterval(newExpirationTimestamp)))
 
-        let updatedComputeUnitPolicies = await controlConfigs.computeUnitPolicy
-        let hoursUntilExpiration = Double(request.expirationTimestamp - currentTime) / 3600.0
+        let (updatedComputeUnitPolicies, updatedExpirationTimestamp) =
+          await controlConfigs.getComputeUnitPolicyAndExpirationTimestamp()
 
         logMessage =
-          "Updated compute unit policies to \(updatedComputeUnitPolicies), expires in \(String(format: "%.1f", hoursUntilExpiration)) hours (timestamp: \(request.expirationTimestamp))"
+          "Updated compute unit policies to \(updatedComputeUnitPolicies),  timestamp: \(updatedExpirationTimestamp)"
 
         response = UpdateComputeUnitResponse.with {
           $0.message = logMessage
@@ -682,8 +685,8 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         return (false, "Proxy Server can not calculate cost for model \(modelName)")
       }
 
-      let computeUnitPolicy = await controlConfigs.computeUnitPolicy
-      let expirationTimestamp = await controlConfigs.expirationTimestamp
+      let (computeUnitPolicy, expirationTimestamp) =
+        await controlConfigs.getComputeUnitPolicyAndExpirationTimestamp()
       let costThreshold = ComputeUnits.threshold(
         for: payload.priority,
         computeUnitPolicy: computeUnitPolicy,
@@ -830,14 +833,34 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   public func hours(request: HoursRequest, context: any StatusOnlyCallContext) -> EventLoopFuture<
     HoursResponse
   > {
-    let response = HoursResponse.with { _ in }
-    return context.eventLoop.makeSucceededFuture(response)
+    let promise = context.eventLoop.makePromise(of: HoursResponse.self)
+    Task {
+      let (computeUnitPolicies, expirationTimestamp) =
+        await controlConfigs.getComputeUnitPolicyAndExpirationTimestamp()
+
+      let response = HoursResponse.with {
+
+        if let expiration = expirationTimestamp, Date() < expiration {
+          $0.thresholds = ComputeUnitThreshold.with {
+            $0.community = Double(
+              computeUnitPolicies["community"] ?? ComputeUnits.threshold(for: "community"))
+            $0.plus = Double(computeUnitPolicies["plus"] ?? ComputeUnits.threshold(for: "plus"))
+            $0.expireAt = Int64(expiration.timeIntervalSince1970)
+          }
+        }
+      }
+      promise.succeed(response)
+    }
+    return promise.futureResult
   }
 
   func echo(request: EchoRequest, context: StatusOnlyCallContext) -> EventLoopFuture<EchoReply> {
     let promise = context.eventLoop.makePromise(of: EchoReply.self)
     Task {
       let internalFilePath = await controlConfigs.modelListPath
+      let (computeUnitPolicies, expirationTimestamp) =
+        await controlConfigs.getComputeUnitPolicyAndExpirationTimestamp()
+
       let response = EchoReply.with {
         logger.info("Proxy Server Received echo from: \(request.name)")
         $0.message = "Hello, \(request.name)!"
@@ -850,6 +873,15 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
           logger.error("Proxy Server file list is nil")
         }
         $0.files = fileList
+
+        if let expiration = expirationTimestamp, Date() < expiration {
+          $0.thresholds = ComputeUnitThreshold.with {
+            $0.community = Double(
+              computeUnitPolicies["community"] ?? ComputeUnits.threshold(for: "community"))
+            $0.plus = Double(computeUnitPolicies["plus"] ?? ComputeUnits.threshold(for: "plus"))
+            $0.expireAt = Int64(expiration.timeIntervalSince1970)
+          }
+        }
       }
       promise.succeed(response)
     }

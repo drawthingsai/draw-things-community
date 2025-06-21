@@ -165,10 +165,10 @@ public enum ComputeUnits {
   public static func threshold(
     for priority: String,
     computeUnitPolicy: [String: Int]? = nil,
-    expirationTimestamp: Int64? = nil
+    expirationTimestamp: Date? = nil
   ) -> Int {
     // Check if we have a valid policy and it's not expired
-    let currentTimestamp = Int64(Date().timeIntervalSince1970)
+    let currentTimestamp = Date()
     if let policy = computeUnitPolicy,
       let expiration = expirationTimestamp,
       currentTimestamp < expiration,
