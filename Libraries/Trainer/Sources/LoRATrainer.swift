@@ -1342,6 +1342,18 @@ public struct LoRATrainer {
                 * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
             })
         }
+        if name.hasSuffix("x_embedder-0-0]"), let tensor = store.read(like: name) {
+          // Special processing the x_embedder to handle cases with FLUX.1 Fill as base.
+          let count = shape.reduce(1, *)
+          guard count < tensor.shape.reduce(1, *),
+            let tensor = store.read(name, kind: .CPU, codec: [.ezm7, .externalData, .q6p, .q8p])
+          else {
+            return .continue(name)
+          }
+          let reshaped = Tensor<FloatType>(from: tensor).reshaped(
+            format: .NCHW, shape: [shape[0], -1, 2, 2])
+          return .final(reshaped[0..<shape[0], 0..<(count / (shape[0] * 4)), 0..<2, 0..<2].copied())
+        }
         return .continue(name)
       }
     }
