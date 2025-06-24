@@ -258,8 +258,10 @@ public struct LoRATrainer {
             let zeros = graph.variable(
               .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
             zeros.full(0)
-            let latentZeros = firstStage.sample(zeros, encoder: encoder, cancellation: { _ in }).1
-              .copied().rawValue.toCPU()
+            let latentZeros = firstStage.scale(
+              firstStage.sample(zeros, encoder: encoder, cancellation: { _ in }).1
+            )
+            .copied().rawValue.toCPU()
             store.write("\(imagePath)~latent_zeros", tensor: latentZeros)
           }
           let (_, CLIPTokens, _, _, _) = tokenizers[0].tokenize(
@@ -311,9 +313,10 @@ public struct LoRATrainer {
                 let zeros = graph.variable(
                   .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
                 zeros.full(0)
-                let latentZeros = firstStage.sample(zeros, encoder: encoder, cancellation: { _ in })
-                  .1
-                  .copied().rawValue.toCPU()
+                let latentZeros = firstStage.scale(
+                  firstStage.sample(zeros, encoder: encoder, cancellation: { _ in })
+                    .1
+                ).copied().rawValue.toCPU()
                 store.write("\(imagePath):\(i)~latent_zeros", tensor: latentZeros)
               }
               if var processedInput = inputMap[imagePath] {
@@ -849,8 +852,9 @@ public struct LoRATrainer {
         let zeros = graph.variable(
           .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
         zeros.full(0)
-        let latentZeros = firstStage.sample(zeros, encoder: encoder, cancellation: { _ in }).1
-          .copied().rawValue.toCPU()
+        let latentZeros = firstStage.scale(
+          firstStage.sample(zeros, encoder: encoder, cancellation: { _ in }).1
+        ).copied().rawValue.toCPU()
         store.write("latent_zeros", tensor: latentZeros)
         if useImageAspectRatio && !additionalScales.isEmpty {
           var inputMap = [String: ProcessedInput]()
