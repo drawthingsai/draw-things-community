@@ -217,6 +217,7 @@ public struct LoRATrainer {
       imagePath: "", tokens: zeroTokens, CLIPTokens: zeroCLIPTokens, originalSize: (0, 0),
       cropTopLeft: (0, 0), targetSize: (0, 0), loadedImagePath: "")
     var stopped = false
+    let isFill = ModelZoo.modifierForModel(model) == .inpainting
     graph.openStore(session) { store in
       // First, center crop and encode the image.
       graph.withNoGrad {
@@ -253,6 +254,14 @@ public struct LoRATrainer {
           encoder = tuple.1
           let imagePath = input.imageUrl.path
           store.write(imagePath, tensor: sample)
+          if isFill {
+            let zeros = graph.variable(
+              .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
+            zeros.full(0)
+            let latentZeros = firstStage.sample(zeros, encoder: encoder, cancellation: { _ in }).1
+              .copied().rawValue.toCPU()
+            store.write("\(imagePath)~latent_zeros", tensor: latentZeros)
+          }
           let (_, CLIPTokens, _, _, _) = tokenizers[0].tokenize(
             text: input.caption, truncation: true, maxLength: 77)
           let (_, tokens, _, _, _) = tokenizers[1].tokenize(
@@ -269,17 +278,6 @@ public struct LoRATrainer {
           }
         }
         guard !stopped else { return }
-        let imageWidth = Int(scale.widthScale) * 64
-        let imageHeight = Int(scale.heightScale) * 64
-        let zeros = graph.variable(
-          .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
-        zeros.full(0)
-        if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
-          encoder = nil  // Reload encoder.
-        }
-        let latentZeros = firstStage.sample(zeros, encoder: encoder, cancellation: { _ in }).1
-          .copied().rawValue.toCPU()
-        store.write("latent_zeros", tensor: latentZeros)
         if useImageAspectRatio && !additionalScales.isEmpty {
           var inputMap = [String: ProcessedInput]()
           for input in processedInputs {
@@ -309,6 +307,15 @@ public struct LoRATrainer {
               encoder = tuple.1
               let imagePath = input.imageUrl.path
               store.write(imagePath + ":\(i)", tensor: sample)
+              if isFill {
+                let zeros = graph.variable(
+                  .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
+                zeros.full(0)
+                let latentZeros = firstStage.sample(zeros, encoder: encoder, cancellation: { _ in })
+                  .1
+                  .copied().rawValue.toCPU()
+                store.write("\(imagePath):\(i)~latent_zeros", tensor: latentZeros)
+              }
               if var processedInput = inputMap[imagePath] {
                 processedInput.loadedImagePath = imagePath + ":\(i)"
                 processedInputs.append(processedInput)
@@ -1243,8 +1250,10 @@ public struct LoRATrainer {
     }
     dit.maxConcurrency = .limit(1)
     dit.memoryReduction = (memorySaver != .turbo)
+    let isFill = ModelZoo.modifierForModel(model) == .inpainting
     let latents = graph.variable(
-      .GPU(0), .HWC(1, (latentsHeight / 2) * (latentsWidth / 2), 16 * 2 * 2), of: FloatType.self)
+      .GPU(0), .HWC(1, (latentsHeight / 2) * (latentsWidth / 2), isFill ? 96 * 2 * 2 : 16 * 2 * 2),
+      of: FloatType.self)
     var cachedRotaryPositionEmbedder = CachedRotaryPositionEmbedder()
     let rotaryConstant = cachedRotaryPositionEmbedder.Flux1RotaryPositionEmbedding(
       graph: graph, height: latentsHeight / 2, width: latentsWidth / 2,
@@ -1429,6 +1438,15 @@ public struct LoRATrainer {
                 Tensor<FloatType>(from: $0)
               })
             else { continue }
+            let latentZeros: Tensor<FloatType>?
+            if isFill {
+              guard let zeros = sessionStore.read(item.loadedImagePath + "~latent_zeros") else {
+                continue
+              }
+              latentZeros = Tensor<FloatType>(from: zeros)
+            } else {
+              latentZeros = nil
+            }
             let latentsHeight = tensor.shape[1]
             let latentsWidth = tensor.shape[2]
             let (zt, target) = graph.withNoGrad {
@@ -1438,6 +1456,17 @@ public struct LoRATrainer {
               noise.randn(std: 1, mean: 0)
               let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
               var latents = firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0
+              if isFill {
+                let oldLatents = latents
+                latents = graph.variable(
+                  .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 96), of: FloatType.self)
+                latents.full(1)
+                latents[0..<1, 0..<latentsHeight, 0..<latentsWidth, 0..<16] = oldLatents
+                if let latentZeros = (latentZeros.map { graph.variable($0) }) {
+                  latents[0..<1, 0..<latentsHeight, 0..<latentsWidth, 16..<32] = latentZeros.toGPU(
+                    0)
+                }
+              }
               latents = latents.reshaped(
                 format: .NHWC, shape: [1, latentsHeight / 2, 2, latentsWidth / 2, 2, 16]
               ).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
