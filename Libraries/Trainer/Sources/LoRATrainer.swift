@@ -1460,33 +1460,40 @@ public struct LoRATrainer {
               noise.randn(std: 1, mean: 0)
               let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
               var latents = firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0
-              let latentsChannels: Int
-              if isFill {
-                let oldLatents = latents
-                latents = graph.variable(
-                  .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 96), of: FloatType.self)
-                latents.full(1)
-                latents[0..<1, 0..<latentsHeight, 0..<latentsWidth, 0..<16] = oldLatents
-                if let latentZeros = (latentZeros.map { graph.variable($0) }) {
-                  latents[0..<1, 0..<latentsHeight, 0..<latentsWidth, 16..<32] = latentZeros.toGPU(
-                    0)
-                }
-                latentsChannels = 96
-              } else {
-                latentsChannels = 16
-              }
               latents = latents.reshaped(
                 format: .NHWC,
-                shape: [1, latentsHeight / 2, 2, latentsWidth / 2, 2, latentsChannels]
+                shape: [1, latentsHeight / 2, 2, latentsWidth / 2, 2, 16]
               ).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
                 format: .NHWC,
                 shape: [
-                  1, (latentsHeight / 2) * (latentsWidth / 2), latentsChannels * 2 * 2,
+                  1, (latentsHeight / 2) * (latentsWidth / 2), 16 * 2 * 2,
                 ])
               let z1 = graph.variable(like: latents)
               z1.randn()
-              let zt = Functional.add(
+              var zt = Functional.add(
                 left: latents, right: z1, leftScalar: 1 - item.timestep, rightScalar: item.timestep)
+              if isFill {
+                let oldZt = zt
+                zt = graph.variable(
+                  .GPU(0), .HWC(1, (latentsHeight / 2) * (latentsWidth / 2), 96 * 2 * 2),
+                  of: FloatType.self)
+                zt.full(1)
+                zt[0..<1, 0..<((latentsHeight / 2) * (latentsWidth / 2)), 0..<(16 * 2 * 2)] = oldZt
+                if let latentZeros = (latentZeros.map { graph.variable($0) }) {
+                  zt[
+                    0..<1, 0..<((latentsHeight / 2) * (latentsWidth / 2)),
+                    (16 * 2 * 2)..<(32 * 2 * 2)] = latentZeros.toGPU(
+                      0
+                    ).reshaped(
+                      format: .NHWC,
+                      shape: [1, latentsHeight / 2, 2, latentsWidth / 2, 2, 16]
+                    ).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
+                      format: .NHWC,
+                      shape: [
+                        1, (latentsHeight / 2) * (latentsWidth / 2), 16 * 2 * 2,
+                      ])
+                }
+              }
               return (zt, z1 - latents)
             }
             let rotaryConstant = cachedRotaryPositionEmbedder.Flux1RotaryPositionEmbedding(
