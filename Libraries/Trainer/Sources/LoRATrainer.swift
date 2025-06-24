@@ -1460,6 +1460,7 @@ public struct LoRATrainer {
               noise.randn(std: 1, mean: 0)
               let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
               var latents = firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0
+              let latentsChannels: Int
               if isFill {
                 let oldLatents = latents
                 latents = graph.variable(
@@ -1470,13 +1471,17 @@ public struct LoRATrainer {
                   latents[0..<1, 0..<latentsHeight, 0..<latentsWidth, 16..<32] = latentZeros.toGPU(
                     0)
                 }
+                latentsChannels = 96
+              } else {
+                latentsChannels = 16
               }
               latents = latents.reshaped(
-                format: .NHWC, shape: [1, latentsHeight / 2, 2, latentsWidth / 2, 2, 16]
+                format: .NHWC,
+                shape: [1, latentsHeight / 2, 2, latentsWidth / 2, 2, latentsChannels]
               ).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
                 format: .NHWC,
                 shape: [
-                  1, (latentsHeight / 2) * (latentsWidth / 2), 16 * 2 * 2,
+                  1, (latentsHeight / 2) * (latentsWidth / 2), latentsChannels * 2 * 2,
                 ])
               let z1 = graph.variable(like: latents)
               z1.randn()
