@@ -526,7 +526,7 @@ extension ModelPreloader {
     case .double:
       cfgChannels = 2
       numberOfChannels = 8
-    case .none:
+    case .none, .kontext:
       cfgChannels = 2
       numberOfChannels = 4
     }

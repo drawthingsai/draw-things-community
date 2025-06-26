@@ -45,6 +45,7 @@ public enum SamplerModifier: String, Codable {
   case editing = "editing"
   case double = "double"
   case canny = "canny"
+  case kontext = "kontext"
 }
 
 public struct LoRAConfiguration: Equatable {
@@ -198,6 +199,7 @@ public protocol Sampler<FloatType, UNet> {
   func sample(
     _ x_T: DynamicGraph.Tensor<FloatType>, unets: [UNet?], sample: DynamicGraph.Tensor<FloatType>?,
     conditionImage: DynamicGraph.Tensor<FloatType>?,
+    referenceImages: [DynamicGraph.Tensor<FloatType>],
     mask: DynamicGraph.Tensor<FloatType>?, negMask: DynamicGraph.Tensor<FloatType>?,
     conditioning c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
@@ -281,7 +283,7 @@ public func cfgChannelsAndInputChannels(
     case .double:
       cfgChannels = isCfgEnabled ? 2 : 1
       inChannels = channels * 2
-    case .none:
+    case .none, .kontext:
       cfgChannels = isCfgEnabled ? 2 : 1
       inChannels = channels
     }
@@ -401,7 +403,7 @@ func updateCfgInputAndConditions<FloatType: TensorNumeric & BinaryFloatingPoint>
           maskedImage
       }
     }
-  case .none:
+  case .none, .kontext:
     break
   }
 }

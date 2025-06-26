@@ -79,6 +79,7 @@ extension DDIMSampler: Sampler {
   public func sample(
     _ x_T: DynamicGraph.Tensor<FloatType>, unets existingUNets: [UNet?],
     sample: DynamicGraph.Tensor<FloatType>?, conditionImage: DynamicGraph.Tensor<FloatType>?,
+    referenceImages: [DynamicGraph.Tensor<FloatType>],
     mask: DynamicGraph.Tensor<FloatType>?, negMask: DynamicGraph.Tensor<FloatType>?,
     conditioning c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,

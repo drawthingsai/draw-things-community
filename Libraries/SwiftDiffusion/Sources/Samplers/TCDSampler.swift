@@ -79,6 +79,7 @@ extension TCDSampler: Sampler {
   public func sample(
     _ x_T: DynamicGraph.Tensor<FloatType>, unets existingUNets: [UNet?],
     sample: DynamicGraph.Tensor<FloatType>?, conditionImage: DynamicGraph.Tensor<FloatType>?,
+    referenceImages: [DynamicGraph.Tensor<FloatType>],
     mask: DynamicGraph.Tensor<FloatType>?, negMask: DynamicGraph.Tensor<FloatType>?,
     conditioning c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
@@ -114,7 +115,7 @@ extension TCDSampler: Sampler {
         inChannels = channels * 2
       case .double:
         inChannels = channels * 2
-      case .none:
+      case .none, .kontext:
         inChannels = channels
       }
     }
@@ -144,7 +145,7 @@ extension TCDSampler: Sampler {
           i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + maskedImageChannels)] =
           maskedImage
       }
-    case .none:
+    case .none, .kontext:
       break
     }
     var c = c

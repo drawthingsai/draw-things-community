@@ -2721,7 +2721,7 @@ extension LocalImageGenerator {
     image: DynamicGraph.Tensor<FloatType>?, depth: DynamicGraph.Tensor<FloatType>?,
     custom: DynamicGraph.Tensor<FloatType>?, modifier: SamplerModifier, version: ModelVersion,
     firstStage: FirstStage<FloatType>, usesFlashAttention: Bool
-  ) -> DynamicGraph.Tensor<FloatType>? {
+  ) -> (DynamicGraph.Tensor<FloatType>?, [DynamicGraph.Tensor<FloatType>]) {
     switch modifier {
     case .depth:
       guard
@@ -2737,11 +2737,11 @@ extension LocalImageGenerator {
               )
               .toGPU(0))
           })
-      else { return nil }
+      else { return (nil, []) }
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
-        return Functional.averagePool(depth, filterSize: [8, 8], hint: Hint(stride: [8, 8]))
+        return (Functional.averagePool(depth, filterSize: [8, 8], hint: Hint(stride: [8, 8])), [])
       case .flux1:
         let graph = depth.graph
         let shape = depth.shape
@@ -2752,8 +2752,10 @@ extension LocalImageGenerator {
         depthRGB[0..<shape[0], 0..<shape[1], 0..<shape[2], 2..<3] = depth
         let encodedDepth = firstStage.encode(depthRGB, encoder: nil, cancellation: { _ in }).0
         let encodedShape = encodedDepth.shape
-        return firstStage.scale(
-          encodedDepth[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied())
+        return (
+          firstStage.scale(
+            encodedDepth[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied()), []
+        )
       case .hiDreamI1:
         fatalError()
       case .wan21_1_3b, .wan21_14b:
@@ -2766,7 +2768,7 @@ extension LocalImageGenerator {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1:
-        return nil
+        return (nil, [])
       case .flux1:
         guard
           let cannyRGB = {
@@ -2777,14 +2779,16 @@ extension LocalImageGenerator {
             return graph.variable(
               ControlModel<FloatType>.canny(image.rawValue.toCPU(), adjustRGB: false).toGPU(0))
           }()
-        else { return nil }
+        else { return (nil, []) }
         let encodedCanny = firstStage.encode(cannyRGB, encoder: nil, cancellation: { _ in }).0
         let encodedShape = encodedCanny.shape
-        return firstStage.scale(
-          encodedCanny[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied())
+        return (
+          firstStage.scale(
+            encodedCanny[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied()), []
+        )
       }
-    case .double, .editing, .inpainting, .none:
-      return nil
+    case .double, .editing, .inpainting, .none, .kontext:
+      return (nil, [])
     }
   }
 
@@ -3540,7 +3544,8 @@ extension LocalImageGenerator {
               unets: modelPreloader.retrieveUNet(
                 sampler: sampler, scale: firstPassScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond), sample: nil,
-              conditionImage: maskedImage ?? firstPassImageCond,
+              conditionImage: maskedImage ?? firstPassImageCond.0,
+              referenceImages: firstPassImageCond.1,
               mask: mask, negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
@@ -3875,7 +3880,8 @@ extension LocalImageGenerator {
               unets: modelPreloader.retrieveUNet(
                 sampler: secondPassSampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond),
-              sample: nil, conditionImage: maskedImage ?? secondPassImageCond, mask: mask,
+              sample: nil, conditionImage: maskedImage ?? secondPassImageCond.0,
+              referenceImages: secondPassImageCond.1, mask: mask,
               negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: secondPassInjectedControls,
@@ -4531,7 +4537,7 @@ extension LocalImageGenerator {
               unets: modelPreloader.retrieveUNet(
                 sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond), sample: nil,
-              conditionImage: maskedImage ?? imageCond,
+              conditionImage: maskedImage ?? imageCond.0, referenceImages: imageCond.1,
               mask: mask, negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
@@ -4658,7 +4664,7 @@ extension LocalImageGenerator {
                   sampler: secondPassSampler, scale: imageScale,
                   tokenLengthUncond: tokenLengthUncond,
                   tokenLengthCond: tokenLengthCond),
-                sample: nil, conditionImage: maskedImage, mask: mask,
+                sample: nil, conditionImage: maskedImage, referenceImages: [], mask: mask,
                 negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
                 injectedControls: [],  // TODO: Support injectedControls for this.
@@ -5823,7 +5829,8 @@ extension LocalImageGenerator {
               unets: modelPreloader.retrieveUNet(
                 sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond), sample: sample,
-              conditionImage: maskedImage ?? imageCond, mask: initMaskMaybe,
+              conditionImage: maskedImage ?? imageCond.0, referenceImages: imageCond.1,
+              mask: initMaskMaybe,
               negMask: initNegMaskMaybe,
               conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
@@ -5939,7 +5946,7 @@ extension LocalImageGenerator {
                   sampler: secondPassSampler, scale: imageScale,
                   tokenLengthUncond: tokenLengthUncond,
                   tokenLengthCond: tokenLengthCond),
-                sample: sample, conditionImage: nil, mask: initMask,
+                sample: sample, conditionImage: nil, referenceImages: [], mask: initMask,
                 negMask: initNegMask, conditioning: c, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
                 injectedControls: [],  // TODO: Support injectedControls for this.
@@ -6613,7 +6620,8 @@ extension LocalImageGenerator {
         unets: modelPreloader.retrieveUNet(
           sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond), sample: sample,
-        conditionImage: maskedImage1 ?? imageCond, mask: initMask1Maybe,
+        conditionImage: maskedImage1 ?? imageCond.0, referenceImages: imageCond.1,
+        mask: initMask1Maybe,
         negMask: initNegMaskMaybe,
         conditioning: c, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         extraProjection: extraProjection, injectedControls: injectedControls,
@@ -6718,7 +6726,8 @@ extension LocalImageGenerator {
           try? modelPreloader.consumeUNet(
             sampler.sample(
               x_T, unets: intermediateResult?.unets ?? [nil], sample: sample,
-              conditionImage: maskedImage2 ?? imageCond, mask: initMask2Maybe,
+              conditionImage: maskedImage2 ?? imageCond.0, referenceImages: imageCond.1,
+              mask: initMask2Maybe,
               negMask: initNegMask2Maybe,
               conditioning: c,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
@@ -6821,7 +6830,7 @@ extension LocalImageGenerator {
             unets: modelPreloader.retrieveUNet(
               sampler: secondPassSampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond),
-            sample: sample, conditionImage: nil, mask: initMask1,
+            sample: sample, conditionImage: nil, referenceImages: [], mask: initMask1,
             negMask: initNegMask, conditioning: c, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
             injectedControls: [],  // TODO: Support injectedControls for this.
@@ -6890,8 +6899,8 @@ extension LocalImageGenerator {
             try? modelPreloader.consumeUNet(
               secondPassSampler.sample(
                 x_T, unets: intermediateResult?.unets ?? [nil], sample: sample,
-                conditionImage: maskedImage2 ?? imageCond, mask: initMask2, negMask: initNegMask2,
-                conditioning: c,
+                conditionImage: maskedImage2 ?? imageCond.0, referenceImages: imageCond.1,
+                mask: initMask2, negMask: initNegMask2, conditioning: c,
                 tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
                 extraProjection: extraProjection, injectedControls: injectedControls,
                 textGuidanceScale: secondPassTextGuidance, imageGuidanceScale: imageGuidanceScale,
