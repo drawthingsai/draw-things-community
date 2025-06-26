@@ -2,11 +2,16 @@ import Foundation
 import NNC
 
 public func Flux1RotaryPositionEmbedding(
-  height: Int, width: Int, tokenLength: Int, channels: Int, heads: Int = 1
+  height: Int, width: Int, tokenLength: Int, referenceSizes: [(height: Int, width: Int)],
+  channels: Int, heads: Int = 1
 )
   -> Tensor<Float>
 {
-  var rotTensor = Tensor<Float>(.CPU, .NHWC(1, height * width + tokenLength, heads, channels))
+  var rotTensor = Tensor<Float>(
+    .CPU,
+    .NHWC(
+      1, height * width + tokenLength + referenceSizes.reduce(0) { $0 + $1.height * $1.width },
+      heads, channels))
   let dim0 = channels / 8
   let dim1 = channels * 7 / 16
   let dim2 = dim1
@@ -63,6 +68,51 @@ public func Flux1RotaryPositionEmbedding(
         }
       }
     }
+  }
+  var index = width * height + tokenLength
+  var h = 0
+  var w = 0
+  for referenceSize in referenceSizes {
+    let height = referenceSize.height
+    let width = referenceSize.width
+    var hOffset = 0
+    var wOffset = 0
+    if height + h > width + w {
+      wOffset = w
+    } else {
+      hOffset = h
+    }
+    for y in 0..<height {
+      for x in 0..<width {
+        let i = y * width + x + index
+        for j in 0..<heads {
+          for k in 0..<(dim0 / 2) {
+            let theta = 1 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))  // Use time index at 1.
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, k * 2] = Float(costheta)
+            rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim1 / 2) {
+            let theta = Double(y + hOffset) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+            rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim2 / 2) {
+            let theta = Double(x + wOffset) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+            rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+          }
+        }
+      }
+    }
+    index += height * width
+    h = max(h, height + hOffset)
+    w = max(w, width + wOffset)
   }
   return rotTensor
 }
@@ -311,7 +361,8 @@ private func JointTransformerBlock(
 }
 
 private func SingleTransformerBlock(
-  prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
+  prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, referenceSequenceLength: Int,
+  contextBlockPreOnly: Bool,
   usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -380,11 +431,17 @@ private func SingleTransformerBlock(
   }
   var xIn: Model.IO = x
   if contextBlockPreOnly {
-    out = out.reshaped([b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1])
-    xIn = x.reshaped([b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1])
-      .contiguous()
+    out = out.reshaped(
+      [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
+      strides: [(t + hw) * h * k, h * k, 1])
+    xIn = x.reshaped(
+      [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
+      strides: [(t + hw) * h * k, h * k, 1]
+    )
+    .contiguous()
     xOut = xOut.reshaped(
-      [b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1]
+      [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
+      strides: [(t + hw) * h * k, h * k, 1]
     )
   }
   let xUnifyheads = Dense(count: k * h, noBias: true, name: "x_o")
@@ -429,22 +486,35 @@ private func SingleTransformerBlock(
   return (mapper, Model([x, rot] + xChunks, [out]))
 }
 
-public func Flux1Norm1(batchSize: Int, height: Int, width: Int, channels: Int) -> Model {
+public func Flux1Norm1(
+  batchSize: Int, referenceSequenceLength: Int, height: Int, width: Int, channels: Int
+) -> Model {
   let x = Input()
   let h = height / 2
   let w = width / 2
   let xEmbedder = Convolution(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+  var out: Model.IO
+  let referenceLatents: Input?
+  if referenceSequenceLength > 0 {
+    let latents = Input()
+    out = Functional.concat(axis: 1, xEmbedder(x).reshaped([batchSize, h * w, channels]), latents)
+      .to(.Float32)
+    referenceLatents = latents
+  } else {
+    out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+    referenceLatents = nil
+  }
   let xChunks = (0..<2).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = xChunks[1] .* xNorm1(out).to(.Float16) + xChunks[0]
-  return Model([x] + xChunks, [out])
+  return Model([x] + (referenceLatents.map { [$0] } ?? []) + xChunks, [out])
 }
 
 public func Flux1(
-  batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
+  batchSize: Int, tokenLength: Int, referenceSequenceLength: Int, height: Int, width: Int,
+  channels: Int, layers: (Int, Int),
   usesFlashAttention: FlashAttentionLevel, contextPreloaded: Bool, injectControls: Bool,
   injectIPAdapterLengths: [Int: [Int]], outputResidual: Bool, inputResidual: Bool
 ) -> (ModelWeightMapper, Model) {
@@ -454,8 +524,24 @@ public func Flux1(
   let xEmbedder = Convolution(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
-  let imgInX = out
+  var out: Model.IO
+  let referenceLatents: Input?
+  let imgInX: Model.IO?
+  if referenceSequenceLength > 0 && (layers.0 > 0 || layers.1 > 0) {
+    let latents = Input()
+    let imgIn = xEmbedder(x).reshaped([batchSize, h * w, channels])
+    out = Functional.concat(axis: 1, imgIn, latents).to(.Float32)
+    referenceLatents = latents
+    if outputResidual {
+      imgInX = imgIn.to(.Float32)
+    } else {
+      imgInX = nil
+    }
+  } else {
+    out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+    referenceLatents = nil
+    imgInX = out
+  }
   var adaLNChunks = [Input]()
   var injectedControls = [Input]()
   var injectedIPAdapters = [Input]()
@@ -482,7 +568,7 @@ public func Flux1(
       context = contextIn.to(.Float32)
       contextEmbedder = nil
     }
-    rotAndContextIn = [rot, contextIn]
+    rotAndContextIn = [rot] + (referenceLatents.map { [$0] } ?? []) + [contextIn]
   } else {
     context = nil
     contextEmbedder = nil
@@ -494,7 +580,7 @@ public func Flux1(
     let (mapper, block) = JointTransformerBlock(
       prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize, t: tokenLength,
-      hw: h * w, contextBlockPreOnly: false, upcast: i > (layers.0 - 3),
+      hw: h * w + referenceSequenceLength, contextBlockPreOnly: false, upcast: i > (layers.0 - 3),
       usesFlashAttention: usesFlashAttention
     )
     let blockOut = block([context!, out, rotAndContextIn[0]] + contextChunks + xChunks)
@@ -515,7 +601,7 @@ public func Flux1(
         let ipValues = Input()
         let block = PuLIDCrossAttentionKeysAndValues(
           prefix: "", name: "\(j).double_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
-          b: batchSize, t: (injectIPAdapterLength, h * w),
+          b: batchSize, t: (injectIPAdapterLength, h * w + referenceSequenceLength),
           usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
         out = out + block(image, ipKeys, ipValues).to(of: out)
         injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
@@ -532,7 +618,8 @@ public func Flux1(
     let (mapper, block) = SingleTransformerBlock(
       prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize, t: tokenLength,
-      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
+      hw: h * w + referenceSequenceLength, referenceSequenceLength: referenceSequenceLength,
+      contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
     out = block([out, rotAndContextIn[0]] + xChunks)
     if injectControls {
       let injectedControl = Input()
@@ -544,10 +631,10 @@ public func Flux1(
       } else {
         let encoderHiddenStates = out.reshaped(
           [batchSize, tokenLength, channels], offset: [0, 0, 0],
-          strides: [(tokenLength + h * w) * channels, channels, 1])
+          strides: [(tokenLength + h * w + referenceSequenceLength) * channels, channels, 1])
         var hiddenStates = out.reshaped(
-          [batchSize, h * w, channels], offset: [0, tokenLength, 0],
-          strides: [(tokenLength + h * w) * channels, channels, 1])
+          [batchSize, h * w + referenceSequenceLength, channels], offset: [0, tokenLength, 0],
+          strides: [(tokenLength + h * w + referenceSequenceLength) * channels, channels, 1])
         hiddenStates = hiddenStates + (injectedControlFP32 * scaleFactor)
         out = Functional.concat(axis: 1, encoderHiddenStates, hiddenStates)
       }
@@ -569,17 +656,17 @@ public func Flux1(
       } else {
         let encoderHiddenStates = out.reshaped(
           [batchSize, tokenLength, channels], offset: [0, 0, 0],
-          strides: [(tokenLength + h * w) * channels, channels, 1])
+          strides: [(tokenLength + h * w + referenceSequenceLength) * channels, channels, 1])
         var hiddenStates = out.reshaped(
-          [batchSize, h * w, channels], offset: [0, tokenLength, 0],
-          strides: [(tokenLength + h * w) * channels, channels, 1])
+          [batchSize, h * w + referenceSequenceLength, channels], offset: [0, tokenLength, 0],
+          strides: [(tokenLength + h * w + referenceSequenceLength) * channels, channels, 1])
         let image = hiddenStates
         for (j, injectIPAdapterLength) in injectIPAdapterLengths.enumerated() {
           let ipKeys = Input()
           let ipValues = Input()
           let block = PuLIDCrossAttentionKeysAndValues(
             prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
-            b: batchSize, t: (injectIPAdapterLength, h * w),
+            b: batchSize, t: (injectIPAdapterLength, h * w + referenceSequenceLength),
             usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
           hiddenStates = hiddenStates + block(image, ipKeys, ipValues).to(of: hiddenStates)
           injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
@@ -591,7 +678,7 @@ public func Flux1(
     mappers.append(mapper)
   }
   let residualOut: Model.IO?
-  if outputResidual {
+  if outputResidual, let imgInX = imgInX {
     residualOut = out - imgInX
   } else {
     residualOut = nil
@@ -875,7 +962,8 @@ private func LoRAJointTransformerBlock(
 }
 
 private func LoRASingleTransformerBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
+  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, referenceSequenceLength: Int,
+  contextBlockPreOnly: Bool,
   usesFlashAttention: FlashAttentionLevel, layerIndex: Int, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -949,11 +1037,17 @@ private func LoRASingleTransformerBlock(
   }
   var xIn: Model.IO = x
   if contextBlockPreOnly {
-    out = out.reshaped([b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1])
-    xIn = x.reshaped([b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1])
-      .contiguous()
+    out = out.reshaped(
+      [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
+      strides: [(t + hw) * h * k, h * k, 1])
+    xIn = x.reshaped(
+      [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
+      strides: [(t + hw) * h * k, h * k, 1]
+    )
+    .contiguous()
     xOut = xOut.reshaped(
-      [b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1]
+      [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
+      strides: [(t + hw) * h * k, h * k, 1]
     )
   }
   let xUnifyheads = LoRADense(
@@ -985,7 +1079,7 @@ private func LoRASingleTransformerBlock(
 }
 
 public func LoRAFlux1Norm1(
-  batchSize: Int, height: Int, width: Int, channels: Int,
+  batchSize: Int, referenceSequenceLength: Int, height: Int, width: Int, channels: Int,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> Model {
   let x = Input()
@@ -994,15 +1088,26 @@ public func LoRAFlux1Norm1(
   let xEmbedder = LoRAConvolution(
     groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+  var out: Model.IO
+  let referenceLatents: Input?
+  if referenceSequenceLength > 0 {
+    let latents = Input()
+    out = Functional.concat(axis: 1, xEmbedder(x).reshaped([batchSize, h * w, channels]), latents)
+      .to(.Float32)
+    referenceLatents = latents
+  } else {
+    out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+    referenceLatents = nil
+  }
   let xChunks = (0..<2).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = xChunks[1] .* xNorm1(out).to(.Float16) + xChunks[0]
-  return Model([x] + xChunks, [out])
+  return Model([x] + (referenceLatents.map { [$0] } ?? []) + xChunks, [out])
 }
 
 public func LoRAFlux1(
-  batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
+  batchSize: Int, tokenLength: Int, referenceSequenceLength: Int, height: Int, width: Int,
+  channels: Int, layers: (Int, Int),
   usesFlashAttention: FlashAttentionLevel, contextPreloaded: Bool, injectControls: Bool,
   injectIPAdapterLengths: [Int: [Int]], outputResidual: Bool, inputResidual: Bool,
   LoRAConfiguration: LoRANetworkConfiguration,
@@ -1013,16 +1118,45 @@ public func LoRAFlux1(
   let w = width / 2
   let xEmbedder: Model
   var out: Model.IO
-  if useConvolutionForPatchify {
-    xEmbedder = LoRAConvolution(
-      groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
-      hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-    out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+  let imgInX: Model.IO?
+  let referenceLatents: Input?
+  if referenceSequenceLength > 0 && (layers.0 > 0 || layers.1 > 0) {
+    let latents = Input()
+    if useConvolutionForPatchify {
+      xEmbedder = LoRAConvolution(
+        groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
+        hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+      let imgIn = xEmbedder(x).reshaped([batchSize, h * w, channels])
+      out = Functional.concat(axis: 1, imgIn, latents).to(.Float32)
+      if outputResidual {
+        imgInX = imgIn.to(.Float32)
+      } else {
+        imgInX = nil
+      }
+    } else {
+      xEmbedder = LoRADense(count: channels, configuration: LoRAConfiguration, name: "x_embedder")
+      let imgIn = xEmbedder(x)
+      out = Functional.concat(axis: 1, imgIn, latents).to(.Float32)
+      if outputResidual {
+        imgInX = imgIn.to(.Float32)
+      } else {
+        imgInX = nil
+      }
+    }
+    referenceLatents = latents
   } else {
-    xEmbedder = LoRADense(count: channels, configuration: LoRAConfiguration, name: "x_embedder")
-    out = xEmbedder(x).to(.Float32)
+    if useConvolutionForPatchify {
+      xEmbedder = LoRAConvolution(
+        groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
+        hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+      out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+    } else {
+      xEmbedder = LoRADense(count: channels, configuration: LoRAConfiguration, name: "x_embedder")
+      out = xEmbedder(x).to(.Float32)
+    }
+    referenceLatents = nil
+    imgInX = out
   }
-  let imgInX = out
   var adaLNChunks = [Input]()
   var injectedControls = [Input]()
   var injectedIPAdapters = [Input]()
@@ -1050,7 +1184,7 @@ public func LoRAFlux1(
       context = contextIn.to(.Float32)
       contextEmbedder = nil
     }
-    rotAndContextIn = [rot, contextIn]
+    rotAndContextIn = [rot] + (referenceLatents.map { [$0] } ?? []) + [contextIn]
   } else {
     context = nil
     contextEmbedder = nil
@@ -1061,7 +1195,7 @@ public func LoRAFlux1(
     let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = LoRAJointTransformerBlock(
       prefix: "double_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: tokenLength,
-      hw: h * w, contextBlockPreOnly: false, upcast: i > 16,
+      hw: h * w + referenceSequenceLength, contextBlockPreOnly: false, upcast: i > 16,
       usesFlashAttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration
     )
     let blockOut = block([context!, out, rotAndContextIn[0]] + contextChunks + xChunks)
@@ -1085,7 +1219,7 @@ public func LoRAFlux1(
         let ipValues = Input()
         let block = PuLIDCrossAttentionKeysAndValues(
           prefix: "", name: "\(j).double_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
-          b: batchSize, t: (injectIPAdapterLength, h * w),
+          b: batchSize, t: (injectIPAdapterLength, h * w + referenceSequenceLength),
           usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
         out = out + block(image, ipKeys, ipValues).to(of: out)
         injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
@@ -1101,7 +1235,8 @@ public func LoRAFlux1(
     let xChunks = (0..<3).map { _ in Input() }
     let (mapper, block) = LoRASingleTransformerBlock(
       prefix: "single_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: tokenLength,
-      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention,
+      hw: h * w + referenceSequenceLength, referenceSequenceLength: referenceSequenceLength,
+      contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention,
       layerIndex: i + layers.0, configuration: LoRAConfiguration)
     out = block([out, rotAndContextIn[0]] + xChunks)
     if LoRAConfiguration.gradientCheckpointingTransformerLayer {
@@ -1117,10 +1252,10 @@ public func LoRAFlux1(
       } else {
         let encoderHiddenStates = out.reshaped(
           [batchSize, tokenLength, channels], offset: [0, 0, 0],
-          strides: [(tokenLength + h * w) * channels, channels, 1])
+          strides: [(tokenLength + h * w + referenceSequenceLength) * channels, channels, 1])
         var hiddenStates = out.reshaped(
-          [batchSize, h * w, channels], offset: [0, tokenLength, 0],
-          strides: [(tokenLength + h * w) * channels, channels, 1])
+          [batchSize, h * w + referenceSequenceLength, channels], offset: [0, tokenLength, 0],
+          strides: [(tokenLength + h * w + referenceSequenceLength) * channels, channels, 1])
         hiddenStates = hiddenStates + (injectedControlFP32 * scaleFactor)
         out = Functional.concat(axis: 1, encoderHiddenStates, hiddenStates)
       }
@@ -1142,17 +1277,17 @@ public func LoRAFlux1(
       } else {
         let encoderHiddenStates = out.reshaped(
           [batchSize, tokenLength, channels], offset: [0, 0, 0],
-          strides: [(tokenLength + h * w) * channels, channels, 1])
+          strides: [(tokenLength + h * w + referenceSequenceLength) * channels, channels, 1])
         var hiddenStates = out.reshaped(
-          [batchSize, h * w, channels], offset: [0, tokenLength, 0],
-          strides: [(tokenLength + h * w) * channels, channels, 1])
+          [batchSize, h * w + referenceSequenceLength, channels], offset: [0, tokenLength, 0],
+          strides: [(tokenLength + h * w + referenceSequenceLength) * channels, channels, 1])
         let image = hiddenStates
         for (j, injectIPAdapterLength) in injectIPAdapterLengths.enumerated() {
           let ipKeys = Input()
           let ipValues = Input()
           let block = PuLIDCrossAttentionKeysAndValues(
             prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
-            b: batchSize, t: (injectIPAdapterLength, h * w),
+            b: batchSize, t: (injectIPAdapterLength, h * w + referenceSequenceLength),
             usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
           hiddenStates = hiddenStates + block(image, ipKeys, ipValues).to(of: hiddenStates)
           injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
@@ -1164,7 +1299,7 @@ public func LoRAFlux1(
     mappers.append(mapper)
   }
   let residualOut: Model.IO?
-  if outputResidual {
+  if outputResidual, let imgInX = imgInX {
     residualOut = out - imgInX
   } else {
     residualOut = nil
@@ -1286,10 +1421,23 @@ private func SingleTransformerBlockFixed(
 
 public func Flux1Fixed(
   batchSize: (Int, Int), channels: Int, layers: (Int, Int),
-  contextPreloaded: Bool, guidanceEmbed: Bool = false
+  contextPreloaded: Bool, numberOfReferenceImages: Int, guidanceEmbed: Bool = false
 ) -> (ModelWeightMapper, Model) {
   let timestep = Input()
   let y = Input()
+  var outs = [Model.IO]()
+  var referenceImages = [Input]()
+  if numberOfReferenceImages > 0 {
+    let xEmbedder = Convolution(
+      groups: 1, filters: channels, filterSize: [2, 2],
+      hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+    for _ in 0..<numberOfReferenceImages {
+      let x = Input()
+      let out = xEmbedder(x)
+      referenceImages.append(x)
+      outs.append(out)
+    }
+  }
   let contextIn: Input?
   let guidance: Input?
   let (tMlp0, tMlp2, tEmbedder) = MLPEmbedder(channels: channels, name: "t")
@@ -1310,7 +1458,6 @@ public func Flux1Fixed(
   }
   let (yMlp0, yMlp2, yEmbedder) = MLPEmbedder(channels: channels, name: "vector")
   vec = vec + yEmbedder(y)
-  var outs = [Model.IO]()
   let contextEmbedder: Model?
   if contextPreloaded {
     let cIn = Input()
@@ -1396,7 +1543,9 @@ public func Flux1Fixed(
   }
   return (
     mapper,
-    Model((contextIn.map { [$0] } ?? []) + [timestep, y] + (guidance.map { [$0] } ?? []), outs)
+    Model(
+      (contextIn.map { [$0] } ?? []) + referenceImages + [timestep, y]
+        + (guidance.map { [$0] } ?? []), outs)
   )
 }
 
@@ -1595,10 +1744,23 @@ private func LoRASingleTransformerBlockFixed(
 public func LoRAFlux1Fixed(
   batchSize: (Int, Int), channels: Int, layers: (Int, Int),
   LoRAConfiguration: LoRANetworkConfiguration,
-  contextPreloaded: Bool, guidanceEmbed: Bool = false
+  contextPreloaded: Bool, numberOfReferenceImages: Int, guidanceEmbed: Bool = false
 ) -> (ModelWeightMapper, Model) {
   let timestep = Input()
   let y = Input()
+  var outs = [Model.IO]()
+  var referenceImages = [Input]()
+  if numberOfReferenceImages > 0 {
+    let xEmbedder = Convolution(
+      groups: 1, filters: channels, filterSize: [2, 2],
+      hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+    for _ in 0..<numberOfReferenceImages {
+      let x = Input()
+      let out = xEmbedder(x)
+      referenceImages.append(x)
+      outs.append(out)
+    }
+  }
   let contextIn: Input?
   let guidance: Input?
   let (tMlp0, tMlp2, tEmbedder) = LoRAMLPEmbedder(
@@ -1622,7 +1784,6 @@ public func LoRAFlux1Fixed(
   let (yMlp0, yMlp2, yEmbedder) = LoRAMLPEmbedder(
     channels: channels, configuration: LoRAConfiguration, name: "vector")
   vec = vec + yEmbedder(y)
-  var outs = [Model.IO]()
   let contextEmbedder: Model?
   if contextPreloaded {
     let cIn = Input()
@@ -1686,7 +1847,9 @@ public func LoRAFlux1Fixed(
   }
   return (
     mapper,
-    Model((contextIn.map { [$0] } ?? []) + [timestep, y] + (guidance.map { [$0] } ?? []), outs)
+    Model(
+      (contextIn.map { [$0] } ?? []) + referenceImages + [timestep, y]
+        + (guidance.map { [$0] } ?? []), outs)
   )
 }
 
@@ -1849,8 +2012,8 @@ public func ControlNetFlux1(
     let xChunks = (0..<3).map { _ in Input() }
     let (mapper, block) = SingleTransformerBlock(
       prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128, h: channels / 128,
-      b: batchSize, t: tokenLength,
-      hw: h * w, contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
+      b: batchSize, t: tokenLength, hw: h * w, referenceSequenceLength: 0,
+      contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
     out = block([out, rot] + xChunks)
     adaLNChunks.append(contentsOf: xChunks)
     mappers.append(mapper)

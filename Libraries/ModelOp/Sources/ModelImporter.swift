@@ -681,7 +681,7 @@ public final class ModelImporter {
               isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
             teaCache: TeaCacheConfiguration(
               coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0),
-            injectedControls: []
+            injectedControls: [], referenceImages: []
           ).0.map({ DynamicGraph.Tensor<FloatType>($0).toCPU() })
         if modelVersion == .svdI2v {
           // Only take the first half (positive part).
@@ -693,7 +693,7 @@ public final class ModelImporter {
             graph.variable(
               Tensor<FloatType>(
                 from: Flux1RotaryPositionEmbedding(
-                  height: 32, width: 32, tokenLength: 256, channels: 128)))
+                  height: 32, width: 32, tokenLength: 256, referenceSizes: [], channels: 128)))
           ]
           + Flux1FixedOutputShapes(
             batchSize: (1, 1), tokenLength: 256, channels: 3072, layers: (19, 38),
@@ -870,7 +870,8 @@ public final class ModelImporter {
           batchSize: batchSize, channels: 2432, layers: 38, dualAttentionLayers: [])
       case .flux1:
         (unetMapper, unet) = Flux1(
-          batchSize: batchSize, tokenLength: 256, height: 64, width: 64, channels: 3072,
+          batchSize: batchSize, tokenLength: 256, referenceSequenceLength: 0, height: 64, width: 64,
+          channels: 3072,
           layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: true,
           injectControls: false, injectIPAdapterLengths: [:], outputResidual: false,
           inputResidual: false)
@@ -881,7 +882,7 @@ public final class ModelImporter {
         } else {
           (unetFixedMapper, unetFixed) = Flux1Fixed(
             batchSize: (batchSize, batchSize), channels: 3072, layers: (19, 38),
-            contextPreloaded: true, guidanceEmbed: true)
+            contextPreloaded: true, numberOfReferenceImages: 0, guidanceEmbed: true)
         }
       case .hunyuanVideo:
         (unetMapper, unet) = Hunyuan(

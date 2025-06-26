@@ -2241,7 +2241,8 @@ extension ControlModel {
       let w = startWidth / 2
       let rot = Tensor<FloatType>(
         from: Flux1RotaryPositionEmbedding(
-          height: h, width: w, tokenLength: t5Length + (union ? 1 : 0), channels: 128)
+          height: h, width: w, tokenLength: t5Length + (union ? 1 : 0), referenceSizes: [],
+          channels: 128)
       ).toGPU(0)
       return [graph.variable(rot)] + conditions
     case .controlnetlora, .ipadapterfull, .ipadapterplus, .t2iadapter, .injectKV,
@@ -2519,7 +2520,8 @@ extension ControlModel {
     var c = UNetExtractConditions(
       of: FloatType.self,
       graph: graph, index: index, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
-      tokenLengthCond: tokenLengthCond, conditions: c, version: version, isCfgEnabled: isCfgEnabled)
+      tokenLengthCond: tokenLengthCond, conditions: c, referenceImageCount: 0, version: version,
+      isCfgEnabled: isCfgEnabled)
     if tiledDiffusionIsEnabled {
       let shape = hint[0].shape
       c = sliceInputs(

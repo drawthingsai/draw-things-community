@@ -105,12 +105,13 @@ public enum LoRAImporter {
         usesFlashAttention: false, of: FloatType.self)
     case .flux1:
       (unetMapper, unet) = Flux1(
-        batchSize: 1, tokenLength: 256, height: 64, width: 64, channels: 3072, layers: (19, 38),
+        batchSize: 1, tokenLength: 256, referenceSequenceLength: 0, height: 64, width: 64,
+        channels: 3072, layers: (19, 38),
         usesFlashAttention: .scaleMerged, contextPreloaded: true, injectControls: false,
         injectIPAdapterLengths: [:], outputResidual: false, inputResidual: false)
       (unetFixedMapper, unetFixed) = Flux1Fixed(
         batchSize: (1, 1), channels: 3072, layers: (19, 38), contextPreloaded: true,
-        guidanceEmbed: true)
+        numberOfReferenceImages: 0, guidanceEmbed: true)
     case .hunyuanVideo:
       (unetMapper, unet) = Hunyuan(
         time: 1, height: 64, width: 64, textLength: 20, channels: 3072, layers: (20, 40),
@@ -354,7 +355,7 @@ public enum LoRAImporter {
               isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
             teaCache: TeaCacheConfiguration(
               coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0),
-            injectedControls: []
+            injectedControls: [], referenceImages: []
           ).0.map({ DynamicGraph.Tensor<FloatType>($0).toCPU() })
       case .flux1:
         cArr =
@@ -362,7 +363,7 @@ public enum LoRAImporter {
             graph.variable(
               Tensor<FloatType>(
                 from: Flux1RotaryPositionEmbedding(
-                  height: 32, width: 32, tokenLength: 256, channels: 128)))
+                  height: 32, width: 32, tokenLength: 256, referenceSizes: [], channels: 128)))
           ]
           + Flux1FixedOutputShapes(
             batchSize: (1, 1), tokenLength: 256, channels: 3072, layers: (19, 38),

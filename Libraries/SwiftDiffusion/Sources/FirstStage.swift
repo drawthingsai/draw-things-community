@@ -702,8 +702,8 @@ extension FirstStage {
   {
     let shape = x.shape
     let batchSize = shape[0]
-    precondition(shape[1] % 32 == 0)
-    precondition(shape[2] % 32 == 0)
+    precondition(shape[1] % 16 == 0)
+    precondition(shape[2] % 16 == 0)
     let graph = x.graph
     let encoder: Model
     let queueWatermark = DynamicGraph.queueWatermark

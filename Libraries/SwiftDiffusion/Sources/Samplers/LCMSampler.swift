@@ -229,7 +229,8 @@ extension LCMSampler: Sampler {
         batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: injectedControls)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: injectedControls,
+        referenceImages: referenceImages)
       conditions = vector + encodings
       injectedControlsC = injectedControls.map {
         $0.model.encode(
@@ -260,6 +261,7 @@ extension LCMSampler: Sampler {
     cancellation {
       unet.cancel()
     }
+    let referenceImageCount = referenceImages.count
     var controlNets = [Model?](repeating: nil, count: injectedControls.count)
     var timeEmbeddingSize = version == .kandinsky21 || version == .sdxlRefiner ? 384 : 320
     let injectControlsAndAdapters = InjectControlsAndAdapters(
@@ -294,10 +296,12 @@ extension LCMSampler: Sampler {
         UNetExtractConditions(
           of: FloatType.self,
           graph: graph, index: 0, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
-          tokenLengthCond: tokenLengthCond, conditions: newC, version: version, isCfgEnabled: false),
+          tokenLengthCond: tokenLengthCond, conditions: newC,
+          referenceImageCount: referenceImageCount, version: version, isCfgEnabled: false),
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: false, extraProjection: extraProjection,
         injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
+        referenceImageCount: referenceImageCount,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         weightsCache: weightsCache)
     }
@@ -419,7 +423,8 @@ extension LCMSampler: Sampler {
                 batchSize: batchSize, startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
-                teaCache: teaCache, injectedControls: injectedControls
+                teaCache: teaCache, injectedControls: injectedControls,
+                referenceImages: referenceImages
               ).0
             indexOffset = i
           }
@@ -464,10 +469,12 @@ extension LCMSampler: Sampler {
               of: FloatType.self,
               graph: graph, index: 0, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, conditions: newC,
+              referenceImageCount: referenceImageCount,
               version: currentModelVersion, isCfgEnabled: false),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: false, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
+            referenceImageCount: referenceImageCount,
             tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
             weightsCache: weightsCache)
           refinerKickIn = -1
@@ -487,7 +494,7 @@ extension LCMSampler: Sampler {
           of: FloatType.self,
           graph: graph, index: i - indexOffset, batchSize: batchSize,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-          conditions: conditions,
+          conditions: conditions, referenceImageCount: referenceImageCount,
           version: currentModelVersion, isCfgEnabled: false)
         xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
         let injectedIPAdapters = ControlModel<FloatType>

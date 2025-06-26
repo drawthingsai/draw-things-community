@@ -197,7 +197,7 @@ extension UNetFixedEncoder {
     teaCache teaCacheConfiguration: TeaCacheConfiguration,
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
-    )]
+    )], referenceImages: [DynamicGraph.Tensor<FloatType>]
   ) -> ([DynamicGraph.AnyTensor], ModelWeightMapper?) {
     let graph = textEncoding[0].graph
     let lora = lora.filter { $0.version == version }
@@ -671,6 +671,7 @@ extension UNetFixedEncoder {
           (_, unetFixed) = LoRAFlux1Fixed(
             batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
             LoRAConfiguration: configuration, contextPreloaded: true,
+            numberOfReferenceImages: referenceImages.count,
             guidanceEmbed: isGuidanceEmbedSupported)
         }
       } else {
@@ -681,7 +682,8 @@ extension UNetFixedEncoder {
         } else {
           (_, unetFixed) = Flux1Fixed(
             batchSize: (cBatchSize, cBatchSize * timesteps.count), channels: 3072, layers: (19, 38),
-            contextPreloaded: true, guidanceEmbed: isGuidanceEmbedSupported)
+            contextPreloaded: true, numberOfReferenceImages: referenceImages.count,
+            guidanceEmbed: isGuidanceEmbedSupported)
         }
       }
       let restInputs: [DynamicGraph.Tensor<FloatType>]
@@ -755,7 +757,7 @@ extension UNetFixedEncoder {
         restInputs = [timeEmbeds, pooleds] + (guidanceEmbeds.map { [$0] } ?? [])
       }
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: [c] + restInputs)
+      unetFixed.compile(inputs: [c] + referenceImages + restInputs)
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
@@ -801,15 +803,41 @@ extension UNetFixedEncoder {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
-      let conditions = unetFixed(inputs: c, restInputs).map { $0.as(of: FloatType.self) }
+      var conditions = unetFixed(inputs: c, referenceImages + restInputs).map {
+        $0.as(of: FloatType.self)
+      }
       if lora.isEmpty || shouldRunLoRASeparately {
         weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
+      var referenceSizes: [(height: Int, width: Int)]
+      if referenceImages.count > 0 {
+        referenceSizes = conditions[0..<referenceImages.count].map {
+          let shape = $0.shape
+          return (height: shape[1], width: shape[2])
+        }
+        let refLatents = conditions[0..<referenceImages.count].map {
+          let shape = $0.shape
+          return $0.reshaped(.HWC(shape[0], shape[1] * shape[2], shape[3]))
+        }
+        let sequenceLength = refLatents.reduce(0) { $0 + $1.shape[1] }
+        let shape = refLatents[0].shape
+        var reference = graph.variable(
+          .GPU(0), .HWC(shape[0], sequenceLength, shape[2]), of: FloatType.self)
+        var index = 0
+        for refLatent in refLatents {
+          let shape = refLatent.shape
+          reference[0..<shape[0], index..<(index + shape[1]), 0..<shape[2]] = refLatent
+          index += shape[1]
+        }
+        conditions = [reference] + conditions[referenceImages.count...]
+      } else {
+        referenceSizes = []
       }
       let h = startHeight / 2
       let w = startWidth / 2
       let rot = Tensor<FloatType>(
         from: Flux1RotaryPositionEmbedding(
-          height: h, width: w, tokenLength: t5Length, channels: 128)
+          height: h, width: w, tokenLength: t5Length, referenceSizes: referenceSizes, channels: 128)
       ).toGPU(0)
       return ([graph.variable(rot)] + conditions, nil)
     case .hunyuanVideo:

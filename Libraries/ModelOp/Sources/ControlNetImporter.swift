@@ -89,7 +89,7 @@ public final class ControlNetImporter {
         graph.variable(
           Tensor<FloatType>(
             from: Flux1RotaryPositionEmbedding(
-              height: 32, width: 32, tokenLength: 256, channels: 128)))
+              height: 32, width: 32, tokenLength: 256, referenceSizes: [], channels: 128)))
       ]
       + flux1FixedOutputShapes.map {
         graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)

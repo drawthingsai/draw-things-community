@@ -199,7 +199,8 @@ extension PLMSSampler: Sampler {
         textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
         startWidth: startWidth,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: injectedControls)
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: injectedControls,
+        referenceImages: referenceImages)
       conditions = vector + encodings
       injectedControlsC = injectedControls.map {
         $0.model.encode(
@@ -230,6 +231,7 @@ extension PLMSSampler: Sampler {
     cancellation {
       unet.cancel()
     }
+    let referenceImageCount = referenceImages.count
     var controlNets = [Model?](repeating: nil, count: injectedControls.count)
     let injectControlsAndAdapters = InjectControlsAndAdapters(
       injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -264,10 +266,12 @@ extension PLMSSampler: Sampler {
           of: FloatType.self,
           graph: graph, index: 0, batchSize: cfgChannels * batchSize,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, conditions: newC,
+          referenceImageCount: referenceImageCount,
           version: version, isCfgEnabled: isCfgEnabled),
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
         injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
+        referenceImageCount: referenceImageCount,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         weightsCache: weightsCache)
     }
@@ -363,7 +367,8 @@ extension PLMSSampler: Sampler {
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
-                teaCache: teaCache, injectedControls: injectedControls
+                teaCache: teaCache, injectedControls: injectedControls,
+                referenceImages: referenceImages
               ).0
             indexOffset = i
           }
@@ -403,10 +408,12 @@ extension PLMSSampler: Sampler {
               of: FloatType.self,
               graph: graph, index: 0, batchSize: cfgChannels * batchSize,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              conditions: newC, version: currentModelVersion, isCfgEnabled: isCfgEnabled),
+              conditions: newC, referenceImageCount: referenceImageCount,
+              version: currentModelVersion, isCfgEnabled: isCfgEnabled),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
+            referenceImageCount: referenceImageCount,
             tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
             weightsCache: weightsCache)
           refinerKickIn = -1
@@ -426,7 +433,7 @@ extension PLMSSampler: Sampler {
           of: FloatType.self,
           graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-          conditions: conditions,
+          conditions: conditions, referenceImageCount: referenceImageCount,
           version: currentModelVersion, isCfgEnabled: isCfgEnabled)
         var et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,

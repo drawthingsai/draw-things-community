@@ -1030,7 +1030,7 @@ public struct LoRATrainer {
           }).get()) ?? false
       let unetFixed = Flux1Fixed(
         batchSize: (batch.count, batch.count), channels: 3072, layers: (19, 38),
-        contextPreloaded: false, guidanceEmbed: isGuidanceEmbedSupported
+        contextPreloaded: false, numberOfReferenceImages: 0, guidanceEmbed: isGuidanceEmbedSupported
       ).1
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(batch.count, 256), of: FloatType.self)
@@ -1178,7 +1178,8 @@ public struct LoRATrainer {
       }
       let rotary = Tensor<FloatType>(
         from: Diffusion.Flux1RotaryPositionEmbedding(
-          height: height, width: width, tokenLength: tokenLength, channels: 128, heads: 1)
+          height: height, width: width, tokenLength: tokenLength, referenceSizes: [], channels: 128,
+          heads: 1)
       ).toGPU(0)
       rotaryEmbeddings[size] = rotary
       var fullRotary = Tensor<FloatType>(.GPU(0), .NHWC(1, height * width + tokenLength, 24, 128))
@@ -1244,7 +1245,8 @@ public struct LoRATrainer {
     let latentsHeight = Int(scale.heightScale) * 8
     let dit: ModelBuilder<(width: Int, height: Int)> = ModelBuilder { size, _ in
       return LoRAFlux1(
-        batchSize: 1, tokenLength: paddedTextEncodingLength, height: size.height,
+        batchSize: 1, tokenLength: paddedTextEncodingLength, referenceSequenceLength: 0,
+        height: size.height,
         width: size.width, channels: 3072,
         layers: (19, 38), usesFlashAttention: .scaleMerged, contextPreloaded: false,
         injectControls: false, injectIPAdapterLengths: [:], outputResidual: false,

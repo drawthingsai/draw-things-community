@@ -58,7 +58,7 @@ public protocol UNetProtocol {
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
+    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration, causalInference: Int,
     weightsCache: WeightsCache
   ) -> Bool
@@ -130,6 +130,7 @@ extension UNetProtocol {
 public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint>(
   of: FloatType.Type = FloatType.self, graph: DynamicGraph, index: Int, batchSize: Int,
   tokenLengthUncond: Int, tokenLengthCond: Int, conditions: [DynamicGraph.AnyTensor],
+  referenceImageCount: Int,
   version: ModelVersion, isCfgEnabled: Bool
 )
   -> [DynamicGraph.AnyTensor]
@@ -148,8 +149,9 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         .copied()
       }
   case .flux1:
-    return conditions[0..<2]
-      + conditions[2..<conditions.count].map {
+    let endIndex = referenceImageCount > 0 ? 3 : 2
+    return conditions[0..<endIndex]
+      + conditions[endIndex..<conditions.count].map {
         let shape = $0.shape
         return DynamicGraph.Tensor<FloatType>($0)[
           (index * batchSize)..<((index + 1) * batchSize), 0..<shape[1], 0..<shape[2]
@@ -380,7 +382,7 @@ extension UNetFromNNC {
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
+    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache teaCacheConfiguration: TeaCacheConfiguration,
     causalInference: Int, weightsCache: WeightsCache
   ) -> Bool {
@@ -784,7 +786,15 @@ extension UNetFromNNC {
       for i in [0, 4, 8, 12, 16, 20, 24, 28, 32, 36] {
         injectIPAdapterLengths[19 + i] = injectControlsAndAdapters.injectIPAdapterLengths
       }
-      let tokenLength = c[1].shape[1]
+      let referenceSequenceLength: Int
+      let tokenLength: Int
+      if referenceImageCount > 0 {
+        referenceSequenceLength = c[1].shape[1]
+        tokenLength = c[2].shape[1]
+      } else {
+        referenceSequenceLength = 0
+        tokenLength = c[1].shape[1]
+      }
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
@@ -794,6 +804,7 @@ extension UNetFromNNC {
         unet = ModelBuilderOrModel.model(
           LoRAFlux1(
             batchSize: isTeaCacheEnabled ? 1 : batchSize, tokenLength: tokenLength,
+            referenceSequenceLength: referenceSequenceLength,
             height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             contextPreloaded: true,
@@ -808,6 +819,7 @@ extension UNetFromNNC {
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: LoRAFlux1(
               batchSize: 1, tokenLength: tokenLength,
+              referenceSequenceLength: referenceSequenceLength,
               height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
               usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
               contextPreloaded: true,
@@ -816,13 +828,15 @@ extension UNetFromNNC {
               inputResidual: true, LoRAConfiguration: configuration
             ).1,
             inferModel: LoRAFlux1Norm1(
-              batchSize: 1, height: tiledHeight, width: tiledWidth, channels: 3072,
+              batchSize: 1, referenceSequenceLength: referenceSequenceLength, height: tiledHeight,
+              width: tiledWidth, channels: 3072,
               LoRAConfiguration: configuration))
         }
       } else {
         unet = ModelBuilderOrModel.model(
           Flux1(
             batchSize: isTeaCacheEnabled ? 1 : batchSize, tokenLength: tokenLength,
+            referenceSequenceLength: referenceSequenceLength,
             height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
             usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
             contextPreloaded: true,
@@ -837,6 +851,7 @@ extension UNetFromNNC {
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
             reducedModel: Flux1(
               batchSize: 1, tokenLength: tokenLength,
+              referenceSequenceLength: referenceSequenceLength,
               height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
               usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
               contextPreloaded: true,
@@ -845,7 +860,8 @@ extension UNetFromNNC {
               inputResidual: true
             ).1,
             inferModel: Flux1Norm1(
-              batchSize: 1, height: tiledHeight, width: tiledWidth, channels: 3072))
+              batchSize: 1, referenceSequenceLength: referenceSequenceLength, height: tiledHeight,
+              width: tiledWidth, channels: 3072))
         }
       }
     case .hunyuanVideo:

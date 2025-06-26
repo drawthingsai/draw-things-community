@@ -41,7 +41,7 @@ extension UNetFromCoreML {
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
+    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
     causalInference: Int, weightsCache: WeightsCache
   ) -> Bool {

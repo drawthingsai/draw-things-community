@@ -583,7 +583,8 @@ extension ModelPreloader {
               isGuidanceEmbedEnabled: false, distilledGuidanceLayers: 0,
               textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
-              tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: []
+              tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: [],
+              referenceImages: []
             ).0  // No need to pass lora, one off use.
         }
         let _ = unet.compileModel(
@@ -601,7 +602,7 @@ extension ModelPreloader {
           extraProjection: nil,
           injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>(
             injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
-            injectedAttentionKVs: []), tiledDiffusion: tiledDiffusion,
+            injectedAttentionKVs: []), referenceImageCount: 0, tiledDiffusion: tiledDiffusion,
           teaCache: teaCache, causalInference: 0, weightsCache: weightsCache
         )
         unetFilePath = modelPath

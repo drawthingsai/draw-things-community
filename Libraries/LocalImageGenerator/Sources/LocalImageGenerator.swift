@@ -2718,9 +2718,11 @@ extension LocalImageGenerator {
   }
 
   private func encodeImageCond(
+    startHeight: Int, startWidth: Int, graph: DynamicGraph,
     image: DynamicGraph.Tensor<FloatType>?, depth: DynamicGraph.Tensor<FloatType>?,
-    custom: DynamicGraph.Tensor<FloatType>?, modifier: SamplerModifier, version: ModelVersion,
-    firstStage: FirstStage<FloatType>, usesFlashAttention: Bool
+    custom: DynamicGraph.Tensor<FloatType>?, shuffles: [(Tensor<FloatType>, Float)],
+    modifier: SamplerModifier, version: ModelVersion, firstStage: FirstStage<FloatType>,
+    usesFlashAttention: Bool
   ) -> (DynamicGraph.Tensor<FloatType>?, [DynamicGraph.Tensor<FloatType>]) {
     switch modifier {
     case .depth:
@@ -2787,7 +2789,46 @@ extension LocalImageGenerator {
             encodedCanny[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied()), []
         )
       }
-    case .double, .editing, .inpainting, .none, .kontext:
+    case .kontext:
+      switch version {
+      case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
+        .hiDreamI1:
+        return (nil, [])
+      case .flux1:
+        var referenceEncoded = [DynamicGraph.Tensor<FloatType>]()
+        if let image = image {
+          let encoded = firstStage.encode(image, encoder: nil, cancellation: { _ in }).0
+          let shape = encoded.shape
+          referenceEncoded.append(
+            firstStage.scale(
+              encoded[0..<1, 0..<shape[1], 0..<shape[2], 0..<16].copied()))
+        }
+        for shuffle in shuffles {
+          var image = graph.variable(shuffle.0.toGPU(0))
+          let shape = image.shape
+          let height = shape[1]
+          let width = shape[2]
+          // Normalize the height / width to same pixel count of the startWidth / startHeight. Note that Kontext was trained on 1M pixel images only.
+          if height != startHeight * 8 || width != startWidth * 8 {
+            let scaleFactor =
+              Double(startHeight * 8 * startWidth * 8).squareRoot()
+              / Double(height * width).squareRoot()
+            let newHeight = Int(((Double(height) * scaleFactor) / 16).rounded()) * 16
+            let newWidth = Int(((Double(width) * scaleFactor) / 16).rounded()) * 16
+            image = Upsample(
+              .bilinear, widthScale: Float(newWidth) / Float(width),
+              heightScale: Float(newHeight) / Float(height))(image)
+          }
+          let encoded = firstStage.encode(image, encoder: nil, cancellation: { _ in }).0
+          let encodedShape = encoded.shape
+          referenceEncoded.append(
+            firstStage.scale(
+              encoded[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied()))
+        }
+        return (nil, referenceEncoded)
+      }
+    case .double, .editing, .inpainting, .none:
       return (nil, [])
     }
   }
@@ -3394,7 +3435,7 @@ extension LocalImageGenerator {
       var mask: DynamicGraph.Tensor<FloatType>? = nil
       var firstPassImage: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modifier == .double
-        || modifier == .depth || modifier == .canny || canInjectControls
+        || modifier == .depth || modifier == .canny || modifier == .kontext || canInjectControls
         || canInjectT2IAdapters || !injectIPAdapterLengths.isEmpty
       {
         // TODO: This needs to be properly handled for Wurstchen (i.e. using EfficientNet to encode image).
@@ -3517,8 +3558,9 @@ extension LocalImageGenerator {
           heightScale: Float(firstPassStartWidth * 8) / Float(customWidth))($0)
       }
       let firstPassImageCond = encodeImageCond(
+        startHeight: firstPassStartHeight, startWidth: firstPassStartWidth, graph: graph,
         image: firstPassImage, depth: firstPassDepthImage, custom: firstPassCustomImage,
-        modifier: modifier, version: modelVersion, firstStage: firstStage,
+        shuffles: shuffles, modifier: modifier, version: modelVersion, firstStage: firstStage,
         usesFlashAttention: isMFAEnabled)
 
       let injectedControls = generateInjectedControls(
@@ -3756,7 +3798,9 @@ extension LocalImageGenerator {
           heightScale: Float(startWidth * 8) / Float(customWidth))($0)
       }
       let secondPassImageCond = encodeImageCond(
+        startHeight: startHeight, startWidth: startWidth, graph: graph,
         image: image, depth: secondPassDepthImage, custom: secondPassCustomImage,
+        shuffles: shuffles,
         modifier: modifier, version: modelVersion, firstStage: firstStage,
         usesFlashAttention: isMFAEnabled)
       let (
@@ -4527,7 +4571,9 @@ extension LocalImageGenerator {
         x_T = noise
       }
       let imageCond = encodeImageCond(
-        image: firstPassImage, depth: depthImage, custom: customImage, modifier: modifier,
+        startHeight: startHeight, startWidth: startWidth, graph: graph,
+        image: firstPassImage, depth: depthImage, custom: customImage, shuffles: shuffles,
+        modifier: modifier,
         version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       guard
         var x =
@@ -5807,7 +5853,9 @@ extension LocalImageGenerator {
           heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
       }
       let imageCond = encodeImageCond(
-        image: firstPassImage, depth: depthImage, custom: customImage, modifier: modifier,
+        startHeight: startHeight, startWidth: startWidth, graph: graph,
+        image: firstPassImage, depth: depthImage, custom: customImage, shuffles: shuffles,
+        modifier: modifier,
         version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       var initMaskMaybe: DynamicGraph.Tensor<FloatType>? = initMask
       var initNegMaskMaybe: DynamicGraph.Tensor<FloatType>? = initNegMask
@@ -6601,7 +6649,9 @@ extension LocalImageGenerator {
           heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
       }
       let imageCond = encodeImageCond(
-        image: firstPassImage, depth: depthImage, custom: customImage, modifier: modifier,
+        startHeight: startHeight, startWidth: startWidth, graph: graph,
+        image: firstPassImage, depth: depthImage, custom: customImage, shuffles: shuffles,
+        modifier: modifier,
         version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       var initMask1Maybe: DynamicGraph.Tensor<FloatType>? = initMask1
       var initNegMaskMaybe: DynamicGraph.Tensor<FloatType>? = initNegMask

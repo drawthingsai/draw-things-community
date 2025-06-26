@@ -71,7 +71,7 @@ extension UNetWrapper {
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
-    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>,
+    injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
     causalInference: Int, weightsCache: WeightsCache
   ) -> Bool {
@@ -89,6 +89,7 @@ extension UNetWrapper {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
         extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
+        referenceImageCount: referenceImageCount,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         weightsCache: weightsCache)
       {
@@ -107,6 +108,7 @@ extension UNetWrapper {
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       isCfgEnabled: isCfgEnabled,
       extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
+      referenceImageCount: referenceImageCount,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
       weightsCache: weightsCache)
     return true
