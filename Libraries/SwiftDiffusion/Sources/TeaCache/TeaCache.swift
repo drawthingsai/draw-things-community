@@ -114,7 +114,6 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       coefficients.0 * r * r * r * r + coefficients.1 * r * r * r + coefficients.2 * r * r
       + coefficients.3 * r + coefficients.4
     var accumulatedRelL1Distance = accumulatedRelL1Distances[marker] ?? 0
-    print(dist)
     accumulatedRelL1Distance += dist
     var shouldUseCache = true
     if accumulatedRelL1Distance >= threshold {
