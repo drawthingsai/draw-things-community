@@ -28,6 +28,7 @@ struct WorkTask {
   var promise: EventLoopPromise<GRPCStatus>
   var heartbeat: Task<Void, Error>
   var creationTimestamp: Date
+  var model: String
 }
 
 public struct Worker {
@@ -64,11 +65,11 @@ extension Worker {
         throw WorkerError.invalidNioClient
       }
       let logger = logger
-      var imageGenerated = false
+      var numberOfImages = 0
       let taskExecuteStartTimestamp = Date()
       let callInstance = client.generateImage(task.request) { response in
         if !response.generatedImages.isEmpty {
-          imageGenerated = true
+          numberOfImages = response.generatedImages.count
         }
         task.context.sendResponse(response).whenComplete { result in
           switch result {
@@ -88,11 +89,11 @@ extension Worker {
       }
 
       let status = try await callInstance.status.get()
-      if imageGenerated {
+      if numberOfImages > 0 {
         let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
         let totalExecutionTimeMs = Date().timeIntervalSince(taskExecuteStartTimestamp) * 1000
         logger.info(
-          "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority))"
+          "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, Model:\(task.model), NumberOfImages:\(numberOfImages), (Priority: \(task.priority))"
         )
       }
       task.promise.succeed(status)
@@ -617,13 +618,13 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
 
   private func isValidRequest(
     payload: JWTPayload?, encodedBlob: Data, request: ImageGenerationRequest
-  ) async -> (Bool, String) {
+  ) async -> (Bool, String, String) {
 
     let isSharedSecretValid = await controlConfigs.isSharedSecretValid(request.sharedSecret)
     logger.info(
       "Proxy Server enqueue image generating payload:\(payload as Any)"
     )
-
+    var modelName = ""
     if isSharedSecretValid {
       logger.info("Proxy Server SharedSecret is valid, skip requests validation")
     } else {
@@ -636,7 +637,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         logger.info(
           "Proxy Server enqueue image generating request failed, payload:\(payload as Any)"
         )
-        return (false, "Service bear-token signature is failed")
+        return (false, "Service bear-token signature is failed", modelName)
       }
       logger.info("Proxy Server verified request checksum:\(checksum) success")
 
@@ -644,7 +645,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         logger.error(
           "Proxy Server image generating request failed, \(payload.nonce) is a used nonce"
         )
-        return (false, "used nonce")
+        return (false, "used nonce", modelName)
       }
       await self.controlConfigs.addProcessedNonce(payload.nonce)
       let throttlePolicies = await controlConfigs.throttlePolicy
@@ -653,14 +654,16 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
           logger.error(
             "user made \(stat) requests, while policy only allow \(throttlePolicy) for \(key)"
           )
-          return (false, "user failed to pass throttlePolicy, \(key) in \(throttlePolicy)")
+          return (
+            false, "user failed to pass throttlePolicy, \(key) in \(throttlePolicy)", modelName
+          )
         }
       }
       let configuration = GenerationConfiguration.from(data: request.configuration)
-      guard let modelName = configuration.model else {
-        return (false, "no valid model name ")
+      guard let model = configuration.model else {
+        return (false, "no valid model name ", modelName)
       }
-
+      modelName = model
       // decode override models mapping
       let override = request.override
       let jsonDecoder = JSONDecoder()
@@ -682,7 +685,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         logger.error(
           "Proxy Server can not calculate cost for configuration \(configuration)"
         )
-        return (false, "Proxy Server can not calculate cost for model \(modelName)")
+        return (false, "Proxy Server can not calculate cost for model \(modelName)", modelName)
       }
 
       let (computeUnitPolicy, expirationTimestamp) =
@@ -696,10 +699,10 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         logger.error(
           "Proxy Server enqueue image generating request failed, cost exceed threshold \(costThreshold)"
         )
-        return (false, "cost \(cost) exceed threshold \(costThreshold)")
+        return (false, "cost \(cost) exceed threshold \(costThreshold)", modelName)
       }
     }
-    return (true, "")
+    return (true, "", modelName)
   }
 
   func generateImage(
@@ -731,7 +734,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       let pem: String = await controlConfigs.publicKeyPEM
       let decoder = try? JWTDecoder(publicKeyPEM: pem)
       let payload = try? decoder?.decode(bearToken)
-      let (isValidRequest, message) = await isValidRequest(
+      let (isValidRequest, message, modelName) = await isValidRequest(
         payload: payload, encodedBlob: encodedBlob, request: request)
       guard isValidRequest else {
         promise.fail(
@@ -750,7 +753,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       }
       let task = WorkTask(
         priority: priority, request: request, context: context, promise: promise,
-        heartbeat: heartbeat, creationTimestamp: Date())
+        heartbeat: heartbeat, creationTimestamp: Date(), model: modelName)
       await taskQueue.addTask(task)
       if let worker = await taskQueue.nextWorker() {
         // Note that the extracted task may not be the ones we just enqueued.
