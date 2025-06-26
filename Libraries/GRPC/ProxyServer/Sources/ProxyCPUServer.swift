@@ -28,7 +28,7 @@ struct WorkTask {
   var promise: EventLoopPromise<GRPCStatus>
   var heartbeat: Task<Void, Error>
   var creationTimestamp: Date
-  var model: String
+  var model: String?
 }
 
 public struct Worker {
@@ -69,7 +69,7 @@ extension Worker {
       let taskExecuteStartTimestamp = Date()
       let callInstance = client.generateImage(task.request) { response in
         if !response.generatedImages.isEmpty {
-          numberOfImages = response.generatedImages.count
+          numberOfImages += response.generatedImages.count
         }
         task.context.sendResponse(response).whenComplete { result in
           switch result {
@@ -618,13 +618,17 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
 
   private func isValidRequest(
     payload: JWTPayload?, encodedBlob: Data, request: ImageGenerationRequest
-  ) async -> (Bool, String, String) {
+  ) async -> (Bool, String, String?) {
 
     let isSharedSecretValid = await controlConfigs.isSharedSecretValid(request.sharedSecret)
     logger.info(
       "Proxy Server enqueue image generating payload:\(payload as Any)"
     )
-    var modelName = ""
+    let configuration = GenerationConfiguration.from(data: request.configuration)
+    guard let modelName = configuration.model else {
+      return (false, "no valid model name ", nil)
+    }
+
     if isSharedSecretValid {
       logger.info("Proxy Server SharedSecret is valid, skip requests validation")
     } else {
@@ -659,11 +663,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
           )
         }
       }
-      let configuration = GenerationConfiguration.from(data: request.configuration)
-      guard let model = configuration.model else {
-        return (false, "no valid model name ", modelName)
-      }
-      modelName = model
+
       // decode override models mapping
       let override = request.override
       let jsonDecoder = JSONDecoder()
