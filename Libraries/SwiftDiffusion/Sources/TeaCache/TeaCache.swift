@@ -24,6 +24,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let maxSkipSteps: Int
   private let reducedModel: Model
   private let inferModel: Model?
+  private let referenceImageCount: Int
   private var lastTs: [Int: [DynamicGraph.AnyTensor]]
   private var accumulatedRelL1Distances: [Int: Float]
   private var lastResiduals: [Int: DynamicGraph.AnyTensor]
@@ -33,7 +34,8 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
 
   public init(
     modelVersion: ModelVersion, coefficients: (Float, Float, Float, Float, Float), threshold: Float,
-    steps: ClosedRange<Int>, maxSkipSteps: Int, reducedModel: Model, inferModel: Model? = nil
+    steps: ClosedRange<Int>, maxSkipSteps: Int, reducedModel: Model, inferModel: Model? = nil,
+    referenceImageCount: Int = 0
   ) {
     self.modelVersion = modelVersion
     self.coefficients = coefficients
@@ -42,6 +44,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.maxSkipSteps = max(1, maxSkipSteps)
     self.reducedModel = reducedModel
     self.inferModel = inferModel
+    self.referenceImageCount = referenceImageCount
     lastTs = [Int: [DynamicGraph.AnyTensor]]()
     accumulatedRelL1Distances = [Int: Float]()
     lastResiduals = [Int: DynamicGraph.Tensor<FloatType>]()
@@ -78,7 +81,11 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       case .hunyuanVideo:
         t = [inferModel(inputs: t[0], Array(t[(4 + 6)..<(6 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
       case .flux1:
-        t = [inferModel(inputs: t[0], Array(t[(3 + 6)..<(5 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
+        if referenceImageCount > 0 {
+          t = [inferModel(inputs: t[0], [t[2]] + Array(t[(4 + 6)..<(6 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
+        } else {
+          t = [inferModel(inputs: t[0], Array(t[(3 + 6)..<(5 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
+        }
       }
     }
     guard let lastT = lastTs[marker], steps.contains(step),
@@ -107,6 +114,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       coefficients.0 * r * r * r * r + coefficients.1 * r * r * r + coefficients.2 * r * r
       + coefficients.3 * r + coefficients.4
     var accumulatedRelL1Distance = accumulatedRelL1Distances[marker] ?? 0
+    print(dist)
     accumulatedRelL1Distance += dist
     var shouldUseCache = true
     if accumulatedRelL1Distance >= threshold {
@@ -133,10 +141,18 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       ])
     case .flux1:
       if let inferModel = inferModel {
-        inferModel.compile(inputs: [inputs[0]] + Array(inputs[(3 + 6)..<(5 + 6)]))
+        if referenceImageCount > 0 {
+          inferModel.compile(inputs: [inputs[0], inputs[2]] + Array(inputs[(4 + 6)..<(6 + 6)]))
+        } else {
+          inferModel.compile(inputs: [inputs[0]] + Array(inputs[(3 + 6)..<(5 + 6)]))
+        }
       }
+      let shift: DynamicGraph.AnyTensor = inputs[
+        (referenceImageCount > 0 ? 4 : 3) + 19 * 12 + 38 * 3]
+      let scale: DynamicGraph.AnyTensor = inputs[
+        (referenceImageCount > 0 ? 4 : 3) + 19 * 12 + 38 * 3 + 1]
       reducedModel.compile(inputs: [
-        inputs[0], inputs[0], inputs[inputs.count - 2], inputs[inputs.count - 1],
+        inputs[0], inputs[0], shift, scale,
       ])
     case .hiDreamI1:
       reducedModel.compile(inputs: [
@@ -182,8 +198,8 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       shift = restInputs[restInputs.count - 2]
       scale = restInputs[restInputs.count - 1]
     case .flux1:
-      shift = restInputs[2 + 19 * 12 + 38 * 3]
-      scale = restInputs[2 + 19 * 12 + 38 * 3 + 1]
+      shift = restInputs[(referenceImageCount > 0 ? 3 : 2) + 19 * 12 + 38 * 3]
+      scale = restInputs[(referenceImageCount > 0 ? 3 : 2) + 19 * 12 + 38 * 3 + 1]
     }
     // Running the reduced model, this is skipped.
     skipSteps[marker, default: 0] += 1

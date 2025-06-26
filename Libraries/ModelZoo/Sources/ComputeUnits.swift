@@ -112,9 +112,15 @@ public enum ComputeUnits {
     var root = Double(Int(configuration.startWidth) * 64 * Int(configuration.startHeight) * 64)
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
+    case .flux1:
+      batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
+      numFrames = 1
+      if samplerModifier == .kontext {  // For Kontext, if the reference image is provided, we effectively double the cost at least.
+        root = root * 2
+      }
     case .hiDreamI1:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1

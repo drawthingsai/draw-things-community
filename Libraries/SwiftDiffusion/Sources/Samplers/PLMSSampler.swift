@@ -462,7 +462,8 @@ extension PLMSSampler: Sampler {
           var etCond = unet(
             timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
-            injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
+            injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+            step: i, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
             tiledDiffusion: tiledDiffusion,
             controlNets: &controlNets)
@@ -475,7 +476,8 @@ extension PLMSSampler: Sampler {
             let etUncond = unet(
               timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
-              injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
+              injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+              step: i, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
               tiledDiffusion: tiledDiffusion,
               controlNets: &controlNets)
@@ -522,7 +524,8 @@ extension PLMSSampler: Sampler {
           let etOut = unet(
             timestep: cNoise, inputs: xIn, t, conditions, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
-            injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
+            injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+            step: i, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
             tiledDiffusion: tiledDiffusion,
             controlNets: &controlNets)
@@ -587,7 +590,8 @@ extension PLMSSampler: Sampler {
             var etNextCond = unet(
               timestep: cNoiseNext, inputs: xIn, tNext, cCond, extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
-              injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
+              injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+              step: i, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
               tiledDiffusion: tiledDiffusion,
               controlNets: &controlNets)
@@ -600,7 +604,8 @@ extension PLMSSampler: Sampler {
               let etNextUncond = unet(
                 timestep: cNoiseNext, inputs: xIn, tNext, cUncond, extraProjection: extraProjection,
                 injectedControlsAndAdapters: injectedControlsAndAdapters,
-                injectedIPAdapters: injectedIPAdapters, step: i,
+                injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+                step: i,
                 tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
                 tiledDiffusion: tiledDiffusion,
@@ -646,7 +651,8 @@ extension PLMSSampler: Sampler {
               timestep: cNoiseNext, inputs: xIn, tNext, conditions,
               extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
-              injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
+              injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+              step: i, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
               tiledDiffusion: tiledDiffusion,
               controlNets: &controlNets)

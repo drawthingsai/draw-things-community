@@ -328,7 +328,7 @@ extension UNetFromCoreML {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], step: Int,
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int, step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int,
     isCfgEnabled: Bool, tiledDiffusion: TiledConfiguration,
     controlNets: inout [Model?]

@@ -829,6 +829,15 @@ extension UNetFixedEncoder {
           reference[0..<shape[0], index..<(index + shape[1]), 0..<shape[2]] = refLatent
           index += shape[1]
         }
+        if shape[0] < cBatchSize {
+          let oldReference = reference
+          reference = graph.variable(
+            .GPU(0), .HWC(cBatchSize, sequenceLength, shape[2]), of: FloatType.self)
+          for i in 0..<cBatchSize {
+            reference[i..<(i + 1), 0..<sequenceLength, 0..<shape[2]] =
+              oldReference[0..<1, 0..<sequenceLength, 0..<shape[2]]
+          }
+        }
         conditions = [reference] + conditions[referenceImages.count...]
       } else {
         referenceSizes = []

@@ -76,7 +76,7 @@ public protocol UNetProtocol {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], step: Int,
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int, step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType>
@@ -830,7 +830,7 @@ extension UNetFromNNC {
             inferModel: LoRAFlux1Norm1(
               batchSize: 1, referenceSequenceLength: referenceSequenceLength, height: tiledHeight,
               width: tiledWidth, channels: 3072,
-              LoRAConfiguration: configuration))
+              LoRAConfiguration: configuration), referenceImageCount: referenceImageCount)
         }
       } else {
         unet = ModelBuilderOrModel.model(
@@ -861,7 +861,7 @@ extension UNetFromNNC {
             ).1,
             inferModel: Flux1Norm1(
               batchSize: 1, referenceSequenceLength: referenceSequenceLength, height: tiledHeight,
-              width: tiledWidth, channels: 3072))
+              width: tiledWidth, channels: 3072), referenceImageCount: referenceImageCount)
         }
       }
     case .hunyuanVideo:
@@ -1786,7 +1786,7 @@ extension UNetFromNNC {
   }
 
   private func callAsFunction(
-    step: Int, index: Int,
+    referenceImageCount: Int, step: Int, index: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     inputs firstInput: DynamicGraph.Tensor<FloatType>,
     _ restInputs: [DynamicGraph.AnyTensor]
@@ -2284,7 +2284,8 @@ extension UNetFromNNC {
       injectedControls: [DynamicGraph.Tensor<FloatType>],
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
-    ), step: Int, tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    ), referenceImageCount: Int, step: Int, tokenLengthUncond: Int, tokenLengthCond: Int,
+    isCfgEnabled: Bool,
     controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     let shape = xT.shape
@@ -2301,6 +2302,7 @@ extension UNetFromNNC {
       inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
       modifier: modifier)
     return self(
+      referenceImageCount: referenceImageCount,
       step: step, index: index,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       isCfgEnabled: isCfgEnabled, inputs: xT, inputs + injectedAttentionKVs)
@@ -2317,7 +2319,8 @@ extension UNetFromNNC {
       injectedControls: [DynamicGraph.Tensor<FloatType>],
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
-    ), step: Int, tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    ), referenceImageCount: Int, step: Int, tokenLengthUncond: Int, tokenLengthCond: Int,
+    isCfgEnabled: Bool,
     controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     guard let xTileWeightsAndIndexes = xTileWeightsAndIndexes,
@@ -2327,6 +2330,7 @@ extension UNetFromNNC {
         injectedControlsAndAdapters(
           xT, inputs, 0, 0, 0, 0, &controlNets)
       return self(
+        referenceImageCount: referenceImageCount,
         step: step, index: 0,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
@@ -2372,6 +2376,7 @@ extension UNetFromNNC {
             xyTiles: xTiles * yTiles, index: y * xTiles + x, inputStartYPad: inputStartYPad,
             inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
             xT: xT, inputs: inputs, injectedControlsAndAdapters: injectedControlsAndAdapters,
+            referenceImageCount: referenceImageCount,
             step: step, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, controlNets: &controlNets))
         guard !isCancelled.load(ordering: .acquiring) else {
@@ -2434,7 +2439,7 @@ extension UNetFromNNC {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], step: Int,
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int, step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
@@ -2445,12 +2450,13 @@ extension UNetFromNNC {
       if tiledDiffusion.isEnabled {
         return tiledDiffuse(
           tiledDiffusion: tiledDiffusion, xT: xT, inputs: [embGPU, c[0]],
-          injectedControlsAndAdapters: injectedControlsAndAdapters, step: step,
+          injectedControlsAndAdapters: injectedControlsAndAdapters,
+          referenceImageCount: referenceImageCount, step: step,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
       } else {
         return self(
-          step: step, index: 0,
+          referenceImageCount: referenceImageCount, step: step, index: 0,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: isCfgEnabled, inputs: xT, [embGPU, c[0]])
       }
@@ -2501,7 +2507,8 @@ extension UNetFromNNC {
     if tiledDiffusion.isEnabled {
       return tiledDiffuse(
         tiledDiffusion: tiledDiffusion, xT: xT, inputs: (timestep.map { [$0] } ?? []) + c,
-        injectedControlsAndAdapters: injectedControlsAndAdapters, step: step,
+        injectedControlsAndAdapters: injectedControlsAndAdapters,
+        referenceImageCount: referenceImageCount, step: step,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
     } else {
@@ -2509,7 +2516,7 @@ extension UNetFromNNC {
         injectedControlsAndAdapters(
           xT, (timestep.map { [$0] } ?? []) + c, 0, 0, 0, 0, &controlNets)
       return self(
-        step: step, index: 0,
+        referenceImageCount: referenceImageCount, step: step, index: 0,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, inputs: xT,
         (timestep.map { [$0] } ?? []) + c + injectedControls + injectedT2IAdapters

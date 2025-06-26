@@ -484,7 +484,8 @@ extension TCDSampler: Sampler {
         var etOut = unet(
           timestep: cNoise, inputs: xIn, t, newC, extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
+          injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount, step: i,
+          tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, isCfgEnabled: false, tiledDiffusion: tiledDiffusion,
           controlNets: &controlNets)
         if channels < etOut.shape[3] {

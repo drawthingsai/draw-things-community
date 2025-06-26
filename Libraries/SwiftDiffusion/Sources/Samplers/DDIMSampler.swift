@@ -475,7 +475,8 @@ extension DDIMSampler: Sampler {
           var etCond = unet(
             timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
-            injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
+            injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+            step: i, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
             tiledDiffusion: tiledDiffusion, controlNets: &controlNets)
           let alpha =
@@ -487,7 +488,8 @@ extension DDIMSampler: Sampler {
             let etUncond = unet(
               timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
-              injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
+              injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+              step: i, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
               tiledDiffusion: tiledDiffusion,
               controlNets: &controlNets)
@@ -534,7 +536,8 @@ extension DDIMSampler: Sampler {
           let etOut = unet(
             timestep: cNoise, inputs: xIn, t, conditions, extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
-            injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
+            injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+            step: i, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
             tiledDiffusion: tiledDiffusion,
             controlNets: &controlNets)

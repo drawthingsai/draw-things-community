@@ -523,7 +523,8 @@ extension LCMSampler: Sampler {
           timestep: cNoise, inputs: xIn, t.map { $0 + cfgCond }, newC,
           extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, step: i, tokenLengthUncond: tokenLengthUncond,
+          injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount, step: i,
+          tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, isCfgEnabled: false, tiledDiffusion: tiledDiffusion,
           controlNets: &controlNets)
 

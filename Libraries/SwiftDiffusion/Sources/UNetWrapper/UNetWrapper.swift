@@ -127,7 +127,7 @@ extension UNetWrapper {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], step: Int,
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int, step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
@@ -137,7 +137,8 @@ extension UNetWrapper {
         return unetFromCoreML(
           timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, step: step, tokenLengthUncond: tokenLengthUncond,
+          injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+          step: step, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
           tiledDiffusion: tiledDiffusion, controlNets: &controlNets)
       }
@@ -146,7 +147,8 @@ extension UNetWrapper {
     return unetFromNNC(
       timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
       injectedControlsAndAdapters: injectedControlsAndAdapters,
-      injectedIPAdapters: injectedIPAdapters, step: step, tokenLengthUncond: tokenLengthUncond,
+      injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount, step: step,
+      tokenLengthUncond: tokenLengthUncond,
       tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled, tiledDiffusion: tiledDiffusion,
       controlNets: &controlNets)
   }
