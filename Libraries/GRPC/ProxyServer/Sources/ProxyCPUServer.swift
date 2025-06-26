@@ -28,7 +28,7 @@ struct WorkTask {
   var promise: EventLoopPromise<GRPCStatus>
   var heartbeat: Task<Void, Error>
   var creationTimestamp: Date
-  var model: String?
+  var model: String
 }
 
 public struct Worker {
@@ -624,85 +624,83 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     logger.info(
       "Proxy Server enqueue image generating payload:\(payload as Any)"
     )
-    let configuration = GenerationConfiguration.from(data: request.configuration)
-    guard let modelName = configuration.model else {
-      return (false, "no valid model name ", nil)
-    }
-
     if isSharedSecretValid {
       logger.info("Proxy Server SharedSecret is valid, skip requests validation")
-    } else {
-      let requestHash = Data(SHA256.hash(data: encodedBlob))
-      let checksum = requestHash.map({ String(format: "%02x", $0) }).joined()
-      guard let payload = payload, payload.checksum == checksum else {
-        logger.info(
-          "Proxy Server enqueue image generating request failed, payload.blobSHA:\(payload?.checksum ?? "empty"), request blob:\(checksum) "
-        )
-        logger.info(
-          "Proxy Server enqueue image generating request failed, payload:\(payload as Any)"
-        )
-        return (false, "Service bear-token signature is failed", modelName)
-      }
-      logger.info("Proxy Server verified request checksum:\(checksum) success")
-
-      guard await !controlConfigs.isUsedNonce(payload.nonce) || isSharedSecretValid else {
-        logger.error(
-          "Proxy Server image generating request failed, \(payload.nonce) is a used nonce"
-        )
-        return (false, "used nonce", modelName)
-      }
-      await self.controlConfigs.addProcessedNonce(payload.nonce)
-      let throttlePolicies = await controlConfigs.throttlePolicy
-      for (key, stat) in payload.stats {
-        if let throttlePolicy = throttlePolicies[key], throttlePolicy < stat {
-          logger.error(
-            "user made \(stat) requests, while policy only allow \(throttlePolicy) for \(key)"
-          )
-          return (
-            false, "user failed to pass throttlePolicy, \(key) in \(throttlePolicy)", modelName
-          )
-        }
-      }
-
-      // decode override models mapping
-      let override = request.override
-      let jsonDecoder = JSONDecoder()
-      jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-      let overrideModels =
-        (try? jsonDecoder.decode(
-          [FailableDecodable<ModelZoo.Specification>].self, from: override.models
-        ).compactMap({ $0.value })) ?? []
-      let modelOverrideMapping = Dictionary(overrideModels.map { ($0.file, $0) }) { v, _ in v }
-      let overrideLoras =
-        (try? jsonDecoder.decode(
-          [FailableDecodable<LoRAZoo.Specification>].self, from: override.loras
-        ).compactMap({ $0.value })) ?? []
-      let loraOverrideMapping = Dictionary(overrideLoras.map { ($0.file, $0) }) { v, _ in v }
-      guard
-        let cost = ComputeUnits.from(
-          configuration, overrideMapping: (model: modelOverrideMapping, lora: loraOverrideMapping))
-      else {
-        logger.error(
-          "Proxy Server can not calculate cost for configuration \(configuration)"
-        )
-        return (false, "Proxy Server can not calculate cost for model \(modelName)", modelName)
-      }
-
-      let (computeUnitPolicy, expirationTimestamp) =
-        await controlConfigs.getComputeUnitPolicyAndExpirationTimestamp()
-      let costThreshold = ComputeUnits.threshold(
-        for: payload.priority,
-        computeUnitPolicy: computeUnitPolicy,
-        expirationTimestamp: expirationTimestamp
+      return (true, "", GenerationConfiguration.from(data: request.configuration).model)
+    }
+    let requestHash = Data(SHA256.hash(data: encodedBlob))
+    let checksum = requestHash.map({ String(format: "%02x", $0) }).joined()
+    guard let payload = payload, payload.checksum == checksum else {
+      logger.info(
+        "Proxy Server enqueue image generating request failed, payload.blobSHA:\(payload?.checksum ?? "empty"), request blob:\(checksum) "
       )
-      guard cost < costThreshold else {
+      logger.info(
+        "Proxy Server enqueue image generating request failed, payload:\(payload as Any)"
+      )
+      return (false, "Service bear-token signature is failed", nil)
+    }
+    logger.info("Proxy Server verified request checksum:\(checksum) success")
+
+    guard await !controlConfigs.isUsedNonce(payload.nonce) || isSharedSecretValid else {
+      logger.error(
+        "Proxy Server image generating request failed, \(payload.nonce) is a used nonce"
+      )
+      return (false, "used nonce", nil)
+    }
+    await self.controlConfigs.addProcessedNonce(payload.nonce)
+    let throttlePolicies = await controlConfigs.throttlePolicy
+    for (key, stat) in payload.stats {
+      if let throttlePolicy = throttlePolicies[key], throttlePolicy < stat {
         logger.error(
-          "Proxy Server enqueue image generating request failed, cost exceed threshold \(costThreshold)"
+          "user made \(stat) requests, while policy only allow \(throttlePolicy) for \(key)"
         )
-        return (false, "cost \(cost) exceed threshold \(costThreshold)", modelName)
+        return (
+          false, "user failed to pass throttlePolicy, \(key) in \(throttlePolicy)", nil
+        )
       }
     }
-    return (true, "", modelName)
+    let configuration = GenerationConfiguration.from(data: request.configuration)
+    guard let model = configuration.model else {
+      return (false, "no valid model name ", nil)
+    }
+    // decode override models mapping
+    let override = request.override
+    let jsonDecoder = JSONDecoder()
+    jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    let overrideModels =
+      (try? jsonDecoder.decode(
+        [FailableDecodable<ModelZoo.Specification>].self, from: override.models
+      ).compactMap({ $0.value })) ?? []
+    let modelOverrideMapping = Dictionary(overrideModels.map { ($0.file, $0) }) { v, _ in v }
+    let overrideLoras =
+      (try? jsonDecoder.decode(
+        [FailableDecodable<LoRAZoo.Specification>].self, from: override.loras
+      ).compactMap({ $0.value })) ?? []
+    let loraOverrideMapping = Dictionary(overrideLoras.map { ($0.file, $0) }) { v, _ in v }
+    guard
+      let cost = ComputeUnits.from(
+        configuration, overrideMapping: (model: modelOverrideMapping, lora: loraOverrideMapping))
+    else {
+      logger.error(
+        "Proxy Server can not calculate cost for configuration \(configuration)"
+      )
+      return (false, "Proxy Server can not calculate cost for model \(model)", model)
+    }
+
+    let (computeUnitPolicy, expirationTimestamp) =
+      await controlConfigs.getComputeUnitPolicyAndExpirationTimestamp()
+    let costThreshold = ComputeUnits.threshold(
+      for: payload.priority,
+      computeUnitPolicy: computeUnitPolicy,
+      expirationTimestamp: expirationTimestamp
+    )
+    guard cost < costThreshold else {
+      logger.error(
+        "Proxy Server enqueue image generating request failed, cost exceed threshold \(costThreshold)"
+      )
+      return (false, "cost \(cost) exceed threshold \(costThreshold)", model)
+    }
+    return (true, "", model)
   }
 
   func generateImage(
@@ -734,9 +732,9 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       let pem: String = await controlConfigs.publicKeyPEM
       let decoder = try? JWTDecoder(publicKeyPEM: pem)
       let payload = try? decoder?.decode(bearToken)
-      let (isValidRequest, message, modelName) = await isValidRequest(
+      let (isValidRequest, message, model) = await isValidRequest(
         payload: payload, encodedBlob: encodedBlob, request: request)
-      guard isValidRequest else {
+      guard isValidRequest, let model = model else {
         promise.fail(
           GRPCStatus(
             code: .permissionDenied, message: message))
@@ -753,7 +751,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       }
       let task = WorkTask(
         priority: priority, request: request, context: context, promise: promise,
-        heartbeat: heartbeat, creationTimestamp: Date(), model: modelName)
+        heartbeat: heartbeat, creationTimestamp: Date(), model: model)
       await taskQueue.addTask(task)
       if let worker = await taskQueue.nextWorker() {
         // Note that the extracted task may not be the ones we just enqueued.
