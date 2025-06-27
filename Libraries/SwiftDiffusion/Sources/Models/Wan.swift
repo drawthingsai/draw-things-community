@@ -99,16 +99,17 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
       var outs = [Model.IO]()
       precondition(b == 1)
       let frames = hw / time * causalInference.0
+      let padFrames = hw / time * causalInference.pad
       for i in 0..<((time + causalInference.0 - 1) / causalInference.0) {
         let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
         let query = queries.reshaped(
           [b, min(hw - i * frames, frames), h, k], offset: [0, i * frames, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let key = keys.reshaped(
-          [b, min(hw, (i + 1 + causalInference.pad) * frames), h, k], offset: [0, 0, 0, 0],
+          [b, min(hw, (i + 1) * frames + padFrames), h, k], offset: [0, 0, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let value = values.reshaped(
-          [b, min(hw, (i + 1 + causalInference.pad) * frames), h, k], offset: [0, 0, 0, 0],
+          [b, min(hw, (i + 1) * frames + padFrames), h, k], offset: [0, 0, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let out = scaledDotProductAttention(query, key, value)
         if let last = outs.last {
@@ -736,16 +737,17 @@ private func LoRAWanAttentionBlock(
       var outs = [Model.IO]()
       precondition(b == 1)
       let frames = hw / time * causalInference.0
+      let padFrames = hw / time * causalInference.pad
       for i in 0..<((time + causalInference.0 - 1) / causalInference.0) {
         let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
         let query = queries.reshaped(
           [b, min(hw - i * frames, frames), h, k], offset: [0, i * frames, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let key = keys.reshaped(
-          [b, min(hw, (i + 1 + causalInference.pad) * frames), h, k], offset: [0, 0, 0, 0],
+          [b, min(hw, (i + 1) * frames + padFrames), h, k], offset: [0, 0, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let value = values.reshaped(
-          [b, min(hw, (i + 1 + causalInference.pad) * frames), h, k], offset: [0, 0, 0, 0],
+          [b, min(hw, (i + 1) * frames + padFrames), h, k], offset: [0, 0, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let out = scaledDotProductAttention(query, key, value)
         if let last = outs.last {
