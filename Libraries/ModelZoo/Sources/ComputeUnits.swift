@@ -137,13 +137,15 @@ public enum ComputeUnits {
       batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
       if configuration.causalInferenceEnabled && configuration.causalInference > 0
-        && configuration.causalInference < numFrames
+        && configuration.causalInference + max(0, configuration.causalInferencePad) < numFrames
       {
         // A perfect causal inference would be 1/2 cheaper than non-causal variant. But given causal inference for these models are based on full frames, it is not 1/2, it needs to add batch these extra edges.
         let sequenceLength = root * Double(numFrames)
         let lowerTriangle = sequenceLength * sequenceLength * 0.5
         let upperRidgeLength = root * Double(configuration.causalInference)
-        let upperRidge = upperRidgeLength * upperRidgeLength * 0.5
+        // upperRidgePad is an rectangle.
+        let upperRidgePad = upperRidgeLength * root * Double(configuration.causalInferencePad)
+        let upperRidge = upperRidgeLength * upperRidgeLength * 0.5 + upperRidgePad
         let totalArea =
           lowerTriangle + upperRidge * Double(configuration.causalInference) / Double(numFrames)
         modelCoefficient = modelCoefficient * (totalArea / (sequenceLength * sequenceLength))
