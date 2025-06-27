@@ -1188,7 +1188,8 @@ extension UNetFromNNC {
     if startWidth > tiledWidth || startHeight > tiledHeight {
       let inputs = sliceInputs(
         inputs, originalShape: shape, xyTiles: xTiles * yTiles, index: 0, inputStartYPad: 0,
-        inputEndYPad: tiledHeight, inputStartXPad: 0, inputEndXPad: tiledWidth, modifier: modifier)
+        inputEndYPad: tiledHeight, inputStartXPad: 0, inputEndXPad: tiledWidth, modifier: modifier,
+        referenceImageCount: referenceImageCount)
       compile(
         unet, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
@@ -1509,7 +1510,7 @@ extension UNetFromNNC {
   private func sliceInputs(
     _ inputs: [DynamicGraph.AnyTensor], originalShape: TensorShape, xyTiles: Int,
     index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int,
-    modifier: SamplerModifier
+    modifier: SamplerModifier, referenceImageCount: Int
   ) -> [DynamicGraph.AnyTensor] {
     return inputs.enumerated().map {
       // For FLUX.1, if it is the first one, we need to handle its slicing (rotary encoding).
@@ -1517,17 +1518,34 @@ extension UNetFromNNC {
       case .flux1:
         if $0.0 == 0 {
           let shape = $0.1.shape
-          let tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
+          let referenceSequenceLength: Int
+          let tokenLength: Int
+          if referenceImageCount > 0 {
+            tokenLength = inputs[2].shape[1]
+            referenceSequenceLength = inputs[1].shape[1]
+          } else {
+            tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
+            referenceSequenceLength = 0
+          }
           let graph = $0.1.graph
           let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
             0..<shape[0], 0..<tokenLength, 0..<shape[2], 0..<shape[3]
-          ]
-          .copied()
+          ].copied()
           let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
-            0..<shape[0], tokenLength..<shape[1], 0..<shape[2], 0..<shape[3]
+            0..<shape[0], tokenLength..<(shape[1] - referenceSequenceLength), 0..<shape[2],
+            0..<shape[3]
           ]
           .copied().reshaped(
             .NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+          let referenceEncoding: DynamicGraph.Tensor<FloatType>?
+          if referenceSequenceLength > 0 {
+            referenceEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], (shape[1] - referenceSequenceLength)..<shape[1], 0..<shape[2],
+              0..<shape[3]
+            ].copied()
+          } else {
+            referenceEncoding = nil
+          }
           let h = inputEndYPad / 2 - inputStartYPad / 2
           let w = inputEndXPad / 2 - inputStartXPad / 2
           let sliceEncoding = imageEncoding[
@@ -1535,10 +1553,16 @@ extension UNetFromNNC {
             (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[3]
           ].copied().reshaped(.NHWC(shape[0], h * w, 1, shape[3]))
           var finalEncoding = graph.variable(
-            $0.1.kind, .NHWC(shape[0], h * w + tokenLength, 1, shape[3]), of: FloatType.self)
+            $0.1.kind, .NHWC(shape[0], h * w + tokenLength + referenceSequenceLength, 1, shape[3]),
+            of: FloatType.self)
           finalEncoding[0..<shape[0], 0..<tokenLength, 0..<1, 0..<shape[3]] = tokenEncoding
           finalEncoding[0..<shape[0], tokenLength..<(tokenLength + h * w), 0..<1, 0..<shape[3]] =
             sliceEncoding
+          if let referenceEncoding = referenceEncoding {
+            finalEncoding[
+              0..<shape[0], (tokenLength + h * w)..<(tokenLength + h * w + referenceSequenceLength),
+              0..<1, 0..<shape[3]] = referenceEncoding
+          }
           return finalEncoding
         }
       case .hiDreamI1:
@@ -2299,7 +2323,7 @@ extension UNetFromNNC {
       inputs + injectedControls + injectedT2IAdapters, originalShape: shape, xyTiles: xyTiles,
       index: index, inputStartYPad: inputStartYPad,
       inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
-      modifier: modifier)
+      modifier: modifier, referenceImageCount: referenceImageCount)
     return self(
       referenceImageCount: referenceImageCount,
       step: step, index: index,
