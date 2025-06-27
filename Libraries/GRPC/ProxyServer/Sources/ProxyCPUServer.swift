@@ -678,9 +678,17 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         [FailableDecodable<LoRAZoo.Specification>].self, from: override.loras
       ).compactMap({ $0.value })) ?? []
     let loraOverrideMapping = Dictionary(overrideLoras.map { ($0.file, $0) }) { v, _ in v }
+    let hasImage = request.hasImage
+    let shuffleCount = request.hints.reduce(0) {
+      guard $1.hintType == "shuffle" else { return $0 }
+      return $1.tensors.reduce(0) {
+        $0 + ($1.weight > 0 ? 1 : 0)
+      }
+    }
     guard
       let cost = ComputeUnits.from(
-        configuration, overrideMapping: (model: modelOverrideMapping, lora: loraOverrideMapping))
+        configuration, hasImage: hasImage, shuffleCount: shuffleCount,
+        overrideMapping: (model: modelOverrideMapping, lora: loraOverrideMapping))
     else {
       logger.error(
         "Proxy Server can not calculate cost for configuration \(configuration)"

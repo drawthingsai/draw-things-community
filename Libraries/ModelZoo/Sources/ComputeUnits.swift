@@ -46,6 +46,7 @@ public enum ComputeUnits {
 
   public static func from(
     _ configuration: GenerationConfiguration,
+    hasImage: Bool, shuffleCount: Int,
     overrideMapping: (
       model: [String: ModelZoo.Specification], lora: [String: LoRAZoo.Specification]
     )? = nil
@@ -119,7 +120,7 @@ public enum ComputeUnits {
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
       if samplerModifier == .kontext {  // For Kontext, if the reference image is provided, we effectively double the cost at least.
-        root = root * 2
+        root = root * Double(1 + (hasImage ? 1 : 0) + shuffleCount)
       }
     case .hiDreamI1:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
