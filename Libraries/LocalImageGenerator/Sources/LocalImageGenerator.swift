@@ -2805,6 +2805,7 @@ extension LocalImageGenerator {
               encoded[0..<1, 0..<shape[1], 0..<shape[2], 0..<16].copied()))
         }
         for shuffle in shuffles {
+          guard shuffle.1 > 0 else { continue }
           var image = graph.variable(shuffle.0.toGPU(0))
           let shape = image.shape
           let height = shape[1]
