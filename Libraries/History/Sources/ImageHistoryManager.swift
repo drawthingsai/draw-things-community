@@ -519,12 +519,12 @@ public final class ImageHistoryManager {
     customId = imageHistory.customId == 0 ? nil : imageHistory.customId
     if imageHistory.previewId == 0 {
       var previewId: Int64 = 0
-      previewId +=
-        Int64(imageHistory.tensorId) + Int64(imageHistory.maskId) + Int64(imageHistory.depthMapId)
-      previewId +=
-        Int64(imageHistory.scribbleId) + Int64(imageHistory.poseId)
-        + Int64(imageHistory.colorPaletteId)
-      previewId += Int64(imageHistory.customId)
+      previewId &+=
+        Int64(imageHistory.tensorId) &+ Int64(imageHistory.maskId) &+ Int64(imageHistory.depthMapId)
+      previewId &+=
+        Int64(imageHistory.scribbleId) &+ Int64(imageHistory.poseId)
+        &+ Int64(imageHistory.colorPaletteId)
+      previewId &+= Int64(imageHistory.customId)
       self.previewId = previewId
     } else {
       previewId = imageHistory.previewId
@@ -832,13 +832,14 @@ public final class ImageHistoryManager {
       if let preview = history.preview {
         var id: Int64 = 0
         for item in imageData {
-          id += Int64(item.tensorId ?? 0) + Int64(item.maskId ?? 0) + Int64(item.depthMapId ?? 0)
-          id +=
-            Int64(item.scribbleId ?? 0) + Int64(item.poseId ?? 0) + Int64(item.colorPaletteId ?? 0)
-          id += Int64(item.customId ?? 0)
+          id &+= Int64(item.tensorId ?? 0) &+ Int64(item.maskId ?? 0) &+ Int64(item.depthMapId ?? 0)
+          id &+=
+            Int64(item.scribbleId ?? 0) &+ Int64(item.poseId ?? 0)
+            &+ Int64(item.colorPaletteId ?? 0)
+          id &+= Int64(item.customId ?? 0)
         }
         for shuffleData in shuffleData {
-          id += Int64(shuffleData.shuffleId) * Int64((shuffleData.weight * 1000).rounded())
+          id &+= Int64(shuffleData.shuffleId) * Int64((shuffleData.weight * 1000).rounded())
         }
         previewCache[id] = preview
         previewId = id
@@ -1507,9 +1508,9 @@ public final class ImageHistoryManager {
       }
       var previewId: Int64
       if imageHistory.previewId == 0 {
-        previewId = imageHistory.tensorId + imageHistory.maskId + imageHistory.depthMapId
-        previewId += imageHistory.scribbleId + imageHistory.poseId + imageHistory.colorPaletteId
-        previewId += imageHistory.customId
+        previewId = imageHistory.tensorId &+ imageHistory.maskId &+ imageHistory.depthMapId
+        previewId &+= imageHistory.scribbleId &+ imageHistory.poseId &+ imageHistory.colorPaletteId
+        previewId &+= imageHistory.customId
       } else {
         previewId = imageHistory.previewId
       }
@@ -1811,9 +1812,9 @@ public final class ImageHistoryManager {
       }
       var previewId: Int64
       if imageHistory.previewId == 0 {
-        previewId = imageHistory.tensorId + imageHistory.maskId + imageHistory.depthMapId
-        previewId += imageHistory.scribbleId + imageHistory.poseId + imageHistory.colorPaletteId
-        previewId += imageHistory.customId
+        previewId = imageHistory.tensorId &+ imageHistory.maskId &+ imageHistory.depthMapId
+        previewId &+= imageHistory.scribbleId &+ imageHistory.poseId &+ imageHistory.colorPaletteId
+        previewId &+= imageHistory.customId
       } else {
         previewId = imageHistory.previewId
       }
