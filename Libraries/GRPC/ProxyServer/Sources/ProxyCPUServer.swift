@@ -9,7 +9,6 @@ import Logging
 import ModelZoo
 import NIO
 import NIOHPACK
-import NIOHTTP1
 import NIOHTTP2
 import NIOSSL
 
@@ -905,130 +904,6 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     return context.eventLoop.makeFailedFuture(
       GRPCStatus(code: .unimplemented, message: "Service not supported")
     )
-  }
-}
-
-final class HTTPPubkeyHandler: ChannelInboundHandler {
-  typealias InboundIn = HTTPServerRequestPart
-  typealias OutboundOut = HTTPServerResponsePart
-
-  private let proxyMessageSigner: ProxyMessageSigner
-  private let logger: Logger
-
-  init(proxyMessageSigner: ProxyMessageSigner, logger: Logger) {
-    self.proxyMessageSigner = proxyMessageSigner
-    self.logger = logger
-  }
-
-  func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-    let part = self.unwrapInboundIn(data)
-
-    switch part {
-    case .head(let head):
-      logger.debug("HTTP request received: \(head.method) \(head.uri)")
-      // Only handle GET /pubkey requests
-      if head.method == .GET && head.uri == "/pubkey" {
-        self.handlePubkeyRequest(context: context)
-      } else {
-        self.sendNotFound(context: context)
-      }
-    case .body(let body):
-      // Ignore body for GET requests
-      logger.debug("HTTP request body received: \(body.readableBytes) bytes")
-      break
-    case .end:
-      // Request complete
-      logger.debug("HTTP request end received")
-      break
-    }
-  }
-
-  private func handlePubkeyRequest(context: ChannelHandlerContext) {
-    // Use NIO's EventLoop future approach instead of Swift concurrency
-    let promise = context.eventLoop.makePromise(of: String?.self)
-    print("handlePubkeyRequest pubkey: )")
-
-    Task {
-      let pubkey = await self.proxyMessageSigner.getPublicKey()
-      promise.succeed(pubkey)
-    }
-
-    promise.futureResult.whenComplete { result in
-      let responseData: Data
-      let contentType: String
-      let status: HTTPResponseStatus
-
-      switch result {
-      case .success(let pubkey):
-        print("pubkey: \(pubkey)")
-        if let pubkey = pubkey {
-          let jsonResponse = [
-            "pubkey": pubkey,
-            "message": "get pubkey successfully",
-          ]
-          responseData = try! JSONSerialization.data(withJSONObject: jsonResponse)
-          contentType = "application/json"
-          status = .ok
-          self.logger.info("HTTP pubkey request served successfully")
-        } else {
-          let jsonResponse = [
-            "message": "failed to get pubkey"
-          ]
-          responseData = try! JSONSerialization.data(withJSONObject: jsonResponse)
-          contentType = "application/json"
-          status = .ok
-          self.logger.error("HTTP pubkey request failed - no pubkey available")
-        }
-
-      case .failure:
-        responseData = "Internal Server Error".data(using: .utf8)!
-        contentType = "text/plain"
-        status = .internalServerError
-        self.logger.error("HTTP pubkey request failed with error")
-      }
-
-      let responseHeaders = HTTPHeaders([
-        ("content-type", contentType),
-        ("content-length", String(responseData.count)),
-        ("access-control-allow-origin", "*"),
-        ("access-control-allow-methods", "GET"),
-        ("access-control-allow-headers", "Content-Type"),
-      ])
-
-      let responseHead = HTTPResponseHead(
-        version: .http1_1,
-        status: status,
-        headers: responseHeaders
-      )
-
-      context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
-
-      var buffer = context.channel.allocator.buffer(capacity: responseData.count)
-      buffer.writeBytes(responseData)
-      context.write(self.wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
-      context.writeAndFlush(self.wrapOutboundOut(.end(nil)), promise: nil)
-    }
-  }
-
-  private func sendNotFound(context: ChannelHandlerContext) {
-    let responseData = "Not Found".data(using: .utf8)!
-    let responseHeaders = HTTPHeaders([
-      ("content-type", "text/plain"),
-      ("content-length", String(responseData.count)),
-    ])
-
-    let responseHead = HTTPResponseHead(
-      version: .http1_1,
-      status: .notFound,
-      headers: responseHeaders
-    )
-
-    context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
-
-    var buffer = context.channel.allocator.buffer(capacity: responseData.count)
-    buffer.writeBytes(responseData)
-    context.write(self.wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
-    context.writeAndFlush(self.wrapOutboundOut(.end(nil)), promise: nil)
   }
 }
 
