@@ -1154,42 +1154,4 @@ public class ProxyCPUServer {
     try imageServer.onClose.wait()
   }
 
-  public func startPubkeyAndWait(
-    host: String, port: Int, TLS: Bool, certPath: String, keyPath: String, numberOfThreads: Int,
-    healthCheck: Bool
-  )
-    throws
-  {
-    logger.info("HTTP Pubkey Service starting on \(host):\(port)")
-    let group = MultiThreadedEventLoopGroup(numberOfThreads: numberOfThreads)
-    defer {
-      try! group.syncShutdownGracefully()
-    }
-
-    // Start only the HTTP server for pubkey endpoint
-    let httpServer = try self.startHTTPPubkeyServer(host: host, port: port, group: group)
-    logger.info("HTTP Pubkey Service started on \(host):\(port)")
-
-    // Wait for the HTTP server to close
-    try httpServer.closeFuture.wait()
-  }
-
-  private func startHTTPPubkeyServer(host: String, port: Int, group: EventLoopGroup) throws
-    -> Channel
-  {
-    print("startHTTPPubkeyServer host: \(host), port: \(port)")
-    let bootstrap = ServerBootstrap(group: group)
-      .serverChannelOption(ChannelOptions.backlog, value: 256)
-      .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-      .childChannelInitializer { channel in
-        return channel.pipeline.configureHTTPServerPipeline(withErrorHandling: true).flatMap {
-          channel.pipeline.addHandler(
-            HTTPPubkeyHandler(proxyMessageSigner: self.proxyMessageSigner, logger: self.logger))
-        }
-      }
-      .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-      .childChannelOption(ChannelOptions.maxMessagesPerRead, value: 1)
-
-    return try bootstrap.bind(host: host, port: port).wait()
-  }
 }
