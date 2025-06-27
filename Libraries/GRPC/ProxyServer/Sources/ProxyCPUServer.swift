@@ -93,8 +93,9 @@ extension Worker {
         let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
         let totalExecutionTimeMs = Date().timeIntervalSince(taskExecuteStartTimestamp) * 1000
         logger.info(
-          "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, Model:\(task.model), NumberOfImages:\(numberOfImages), (Priority: \(task.priority))"
+          "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority))"
         )
+        logger.info("Succeed: {\"model\": \"\(task.model)\",\"images\":\(numberOfImages)}")
       }
       task.promise.succeed(status)
       task.context.statusPromise.succeed(status)
