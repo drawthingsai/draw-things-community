@@ -97,7 +97,8 @@ public final class Parameters {
     decodingTileHeightParameter, decodingTileOverlapParameter, diffusionTileWidthParameter,
     diffusionTileHeightParameter, diffusionTileOverlapParameter,
     upscalerScaleFactorParameter, teaCacheStartParameter, teaCacheEndParameter,
-    teaCacheMaxSkipStepsParameter, causalInferenceParameter: IntParameter
+    teaCacheMaxSkipStepsParameter, causalInferenceParameter,
+    causalInferencePadParameter: IntParameter
   public let guidanceScaleParameter, strengthParameter, imageGuidanceScaleParameter,
     maskBlurParameter,
     clipWeightParameter, hiresFixStrengthParameter, refinerStartParameter, aestheticScoreParameter,
@@ -429,6 +430,11 @@ public final class Parameters {
       defaultValue: Int(
         defaultConfiguration.causalInferenceEnabled ? defaultConfiguration.causalInference : 0),
       range: 0...1000, commandLineFlag: "causal-inference")
+    causalInferencePadParameter = IntParameter(
+      titleKey: "causal_inference_pad", explanationKey: nil,
+      defaultValue: Int(
+        defaultConfiguration.causalInferenceEnabled ? defaultConfiguration.causalInferencePad : 0),
+      range: 0...1000, commandLineFlag: "causal-inference-pad")
   }
 
   public func allParameters() -> [Parameter] {
@@ -509,6 +515,7 @@ public final class Parameters {
       separateT5Parameter,
       t5TextParameter,
       causalInferenceParameter,
+      causalInferencePadParameter,
     ]
   }
 }

@@ -66,7 +66,8 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
 
 private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   prefix: String, weightsPrefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int,
-  causalInference: Int, intermediateSize: Int, injectImage: Bool, usesFlashAttention: Bool,
+  causalInference: (Int, pad: Int), intermediateSize: Int, injectImage: Bool,
+  usesFlashAttention: Bool,
   of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -94,20 +95,20 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   // Now run attention.
   var out: Model.IO
   if usesFlashAttention {
-    if causalInference > 0 && causalInference < time {
+    if causalInference.0 > 0 && causalInference.0 + causalInference.pad < time {
       var outs = [Model.IO]()
       precondition(b == 1)
-      let frames = hw / time * causalInference
-      for i in 0..<((time + causalInference - 1) / causalInference) {
+      let frames = hw / time * causalInference.0
+      for i in 0..<((time + causalInference.0 - 1) / causalInference.0) {
         let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
         let query = queries.reshaped(
           [b, min(hw - i * frames, frames), h, k], offset: [0, i * frames, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let key = keys.reshaped(
-          [b, min(hw, (i + 1) * frames), h, k], offset: [0, 0, 0, 0],
+          [b, min(hw, (i + 1 + causalInference.pad) * frames), h, k], offset: [0, 0, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let value = values.reshaped(
-          [b, min(hw, (i + 1) * frames), h, k], offset: [0, 0, 0, 0],
+          [b, min(hw, (i + 1 + causalInference.pad) * frames), h, k], offset: [0, 0, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let out = scaledDotProductAttention(query, key, value)
         if let last = outs.last {
@@ -297,7 +298,8 @@ private func MLPProj(inChannels: Int, outChannels: Int, name: String) -> (
 
 public func Wan(
   channels: Int, layers: Int, vaceLayers: [Int], intermediateSize: Int, time: Int, height: Int,
-  width: Int, textLength: Int, causalInference: Int, injectImage: Bool, usesFlashAttention: Bool,
+  width: Int, textLength: Int, causalInference: (Int, pad: Int), injectImage: Bool,
+  usesFlashAttention: Bool,
   outputResidual: Bool, inputResidual: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -697,7 +699,7 @@ private func LoRAFeedForward(
 
 private func LoRAWanAttentionBlock(
   prefix: String, weightsPrefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int,
-  causalInference: Int,
+  causalInference: (Int, pad: Int),
   intermediateSize: Int, injectImage: Bool, usesFlashAttention: Bool, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
@@ -730,20 +732,20 @@ private func LoRAWanAttentionBlock(
   // Now run attention.
   var out: Model.IO
   if usesFlashAttention {
-    if causalInference > 0 && causalInference < time {
+    if causalInference.0 > 0 && causalInference.0 + causalInference.pad < time {
       var outs = [Model.IO]()
       precondition(b == 1)
-      let frames = hw / time * causalInference
-      for i in 0..<((time + causalInference - 1) / causalInference) {
+      let frames = hw / time * causalInference.0
+      for i in 0..<((time + causalInference.0 - 1) / causalInference.0) {
         let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
         let query = queries.reshaped(
           [b, min(hw - i * frames, frames), h, k], offset: [0, i * frames, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let key = keys.reshaped(
-          [b, min(hw, (i + 1) * frames), h, k], offset: [0, 0, 0, 0],
+          [b, min(hw, (i + 1 + causalInference.pad) * frames), h, k], offset: [0, 0, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let value = values.reshaped(
-          [b, min(hw, (i + 1) * frames), h, k], offset: [0, 0, 0, 0],
+          [b, min(hw, (i + 1 + causalInference.pad) * frames), h, k], offset: [0, 0, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
         let out = scaledDotProductAttention(query, key, value)
         if let last = outs.last {
@@ -941,7 +943,8 @@ private func LoRAMLPProj(
 
 func LoRAWan(
   channels: Int, layers: Int, vaceLayers: [Int], intermediateSize: Int, time: Int, height: Int,
-  width: Int, textLength: Int, causalInference: Int, injectImage: Bool, usesFlashAttention: Bool,
+  width: Int, textLength: Int, causalInference: (Int, pad: Int), injectImage: Bool,
+  usesFlashAttention: Bool,
   outputResidual: Bool, inputResidual: Bool, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()

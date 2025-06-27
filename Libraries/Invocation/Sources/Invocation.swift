@@ -182,7 +182,8 @@ public struct Invocation {
       t5Text: parameters.t5TextParameter.value,
       teaCacheMaxSkipSteps: parameters.teaCacheMaxSkipStepsParameter.int32Value(),
       causalInferenceEnabled: parameters.causalInferenceParameter.int32Value() > 0,
-      causalInference: parameters.causalInferenceParameter.int32Value()
+      causalInference: parameters.causalInferenceParameter.int32Value(),
+      causalInferencePad: max(parameters.causalInferencePadParameter.int32Value(), 0)
     )
     self.prompt = try unwrapOrThrow(
       parameters.promptParameter.value, errorMessage: "Missing prompt")

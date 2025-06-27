@@ -122,7 +122,7 @@ public enum LoRAImporter {
       (unetMapper, unet) = Wan(
         channels: 1_536, layers: 30, vaceLayers: [], intermediateSize: 8_960, time: 1, height: 64,
         width: 64,
-        textLength: 512, causalInference: 0, injectImage: true, usesFlashAttention: true,
+        textLength: 512, causalInference: (0, 0), injectImage: true, usesFlashAttention: true,
         outputResidual: false, inputResidual: false)
       (unetFixedMapper, unetFixed) = WanFixed(
         timesteps: 1, batchSize: (1, 1), channels: 1_536, layers: 30, vaceLayers: [],
@@ -131,7 +131,7 @@ public enum LoRAImporter {
       (unetMapper, unet) = Wan(
         channels: 5_120, layers: 40, vaceLayers: [], intermediateSize: 13_824, time: 1, height: 64,
         width: 64,
-        textLength: 512, causalInference: 0, injectImage: true, usesFlashAttention: true,
+        textLength: 512, causalInference: (0, 0), injectImage: true, usesFlashAttention: true,
         outputResidual: false, inputResidual: false)
       (unetFixedMapper, unetFixed) = WanFixed(
         timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, vaceLayers: [],

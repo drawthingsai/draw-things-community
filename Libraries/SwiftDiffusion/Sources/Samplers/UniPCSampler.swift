@@ -30,7 +30,7 @@ where UNet.FloatType == FloatType {
   public let conditioning: Denoiser.Conditioning
   public let tiledDiffusion: TiledConfiguration
   public let teaCache: TeaCacheConfiguration
-  public let causalInference: Int
+  public let causalInference: (Int, pad: Int)
   private let discretization: Discretization
   private let weightsCache: WeightsCache
   public init(
@@ -42,7 +42,8 @@ where UNet.FloatType == FloatType {
     classifierFreeGuidance: Bool, isGuidanceEmbedEnabled: Bool, isQuantizedModel: Bool,
     canRunLoRASeparately: Bool, deviceProperties: DeviceProperties,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
-    teaCache: TeaCacheConfiguration, causalInference: Int, discretization: Discretization,
+    teaCache: TeaCacheConfiguration, causalInference: (Int, pad: Int),
+    discretization: Discretization,
     weightsCache: WeightsCache
   ) {
     self.filePath = filePath

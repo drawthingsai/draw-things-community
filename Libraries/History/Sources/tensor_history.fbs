@@ -176,6 +176,7 @@ table TensorHistoryNode {
   index_in_a_clip: int = 0;
   causal_inference_enabled: bool = false;
   causal_inference: int = 3;
+  causal_inference_pad: int = 0;
 }
 
 root_type TensorHistoryNode;

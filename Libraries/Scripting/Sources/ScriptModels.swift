@@ -154,6 +154,7 @@ public final class JSGenerationConfiguration: Codable {
   public let separateT5: Bool
   public let t5Text: String?
   public let causalInference: Int32
+  public let causalInferencePad: Int32
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -233,6 +234,7 @@ public final class JSGenerationConfiguration: Codable {
     separateT5 = configuration.separateT5
     t5Text = configuration.t5Text
     causalInference = configuration.causalInferenceEnabled ? configuration.causalInference : 0
+    causalInferencePad = configuration.causalInferenceEnabled ? configuration.causalInferencePad : 0
   }
 
   public func createGenerationConfiguration() -> GenerationConfiguration {
@@ -287,7 +289,8 @@ public final class JSGenerationConfiguration: Codable {
       t5Text: t5Text,
       teaCacheMaxSkipSteps: teaCacheMaxSkipSteps,
       causalInferenceEnabled: causalInference > 0,
-      causalInference: causalInference
+      causalInference: causalInference,
+      causalInferencePad: causalInferencePad
     )
   }
 }

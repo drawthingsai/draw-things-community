@@ -80,7 +80,8 @@ extension LocalImageGenerator {
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration], isGuidanceEmbedEnabled: Bool,
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, stochasticSamplingGamma: Float,
     conditioning: Denoiser.Conditioning, parameterization: Denoiser.Parameterization,
-    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration, causalInference: Int,
+    tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
+    causalInference: (Int, pad: Int),
     weightsCache: WeightsCache, of: FloatType.Type
   ) -> any Sampler<FloatType, UNetWrapper<FloatType>> {
     let manualSubsteps: (Int) -> [Int] = {
@@ -3259,8 +3260,9 @@ extension LocalImageGenerator {
       }
       ?? TeaCacheConfiguration(
         coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
-    let causalInference =
-      configuration.causalInferenceEnabled ? Int(configuration.causalInference) : 0
+    let causalInference: (Int, pad: Int) =
+      configuration.causalInferenceEnabled
+      ? (Int(configuration.causalInference), max(0, Int(configuration.causalInferencePad))) : (0, 0)
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
@@ -4244,8 +4246,9 @@ extension LocalImageGenerator {
       }
       ?? TeaCacheConfiguration(
         coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
-    let causalInference =
-      configuration.causalInferenceEnabled ? Int(configuration.causalInference) : 0
+    let causalInference: (Int, pad: Int) =
+      configuration.causalInferenceEnabled
+      ? (Int(configuration.causalInference), max(0, Int(configuration.causalInferencePad))) : (0, 0)
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
@@ -5575,8 +5578,9 @@ extension LocalImageGenerator {
       }
       ?? TeaCacheConfiguration(
         coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
-    let causalInference =
-      configuration.causalInferenceEnabled ? Int(configuration.causalInference) : 0
+    let causalInference: (Int, pad: Int) =
+      configuration.causalInferenceEnabled
+      ? (Int(configuration.causalInference), max(0, Int(configuration.causalInferencePad))) : (0, 0)
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
@@ -6348,8 +6352,9 @@ extension LocalImageGenerator {
       }
       ?? TeaCacheConfiguration(
         coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0)
-    let causalInference =
-      configuration.causalInferenceEnabled ? Int(configuration.causalInference) : 0
+    let causalInference: (Int, pad: Int) =
+      configuration.causalInferenceEnabled
+      ? (Int(configuration.causalInference), max(0, Int(configuration.causalInferencePad))) : (0, 0)
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,

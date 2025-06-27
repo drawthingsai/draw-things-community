@@ -73,7 +73,7 @@ extension UNetWrapper {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
-    causalInference: Int, weightsCache: WeightsCache
+    causalInference: (Int, pad: Int), weightsCache: WeightsCache
   ) -> Bool {
     #if !os(Linux)
 
