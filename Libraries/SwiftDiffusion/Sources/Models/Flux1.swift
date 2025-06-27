@@ -487,7 +487,7 @@ private func SingleTransformerBlock(
 }
 
 public func Flux1Norm1(
-  batchSize: Int, referenceSequenceLength: Int, height: Int, width: Int, channels: Int
+  batchSize: Int, height: Int, width: Int, channels: Int
 ) -> Model {
   let x = Input()
   let h = height / 2
@@ -495,21 +495,11 @@ public func Flux1Norm1(
   let xEmbedder = Convolution(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var out: Model.IO
-  let referenceLatents: Input?
-  if referenceSequenceLength > 0 {
-    let latents = Input()
-    out = Functional.concat(axis: 1, xEmbedder(x).reshaped([batchSize, h * w, channels]), latents)
-      .to(.Float32)
-    referenceLatents = latents
-  } else {
-    out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
-    referenceLatents = nil
-  }
+  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
   let xChunks = (0..<2).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = xChunks[1] .* xNorm1(out).to(.Float16) + xChunks[0]
-  return Model([x] + (referenceLatents.map { [$0] } ?? []) + xChunks, [out])
+  return Model([x] + xChunks, [out])
 }
 
 public func Flux1(
@@ -1079,7 +1069,7 @@ private func LoRASingleTransformerBlock(
 }
 
 public func LoRAFlux1Norm1(
-  batchSize: Int, referenceSequenceLength: Int, height: Int, width: Int, channels: Int,
+  batchSize: Int, height: Int, width: Int, channels: Int,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> Model {
   let x = Input()
@@ -1088,21 +1078,11 @@ public func LoRAFlux1Norm1(
   let xEmbedder = LoRAConvolution(
     groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var out: Model.IO
-  let referenceLatents: Input?
-  if referenceSequenceLength > 0 {
-    let latents = Input()
-    out = Functional.concat(axis: 1, xEmbedder(x).reshaped([batchSize, h * w, channels]), latents)
-      .to(.Float32)
-    referenceLatents = latents
-  } else {
-    out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
-    referenceLatents = nil
-  }
+  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
   let xChunks = (0..<2).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = xChunks[1] .* xNorm1(out).to(.Float16) + xChunks[0]
-  return Model([x] + (referenceLatents.map { [$0] } ?? []) + xChunks, [out])
+  return Model([x] + xChunks, [out])
 }
 
 public func LoRAFlux1(

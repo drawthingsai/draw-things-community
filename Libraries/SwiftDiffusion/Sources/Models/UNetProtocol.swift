@@ -828,8 +828,7 @@ extension UNetFromNNC {
               inputResidual: true, LoRAConfiguration: configuration
             ).1,
             inferModel: LoRAFlux1Norm1(
-              batchSize: 1, referenceSequenceLength: referenceSequenceLength, height: tiledHeight,
-              width: tiledWidth, channels: 3072,
+              batchSize: 1, height: tiledHeight, width: tiledWidth, channels: 3072,
               LoRAConfiguration: configuration), referenceImageCount: referenceImageCount)
         }
       } else {
@@ -860,7 +859,7 @@ extension UNetFromNNC {
               inputResidual: true
             ).1,
             inferModel: Flux1Norm1(
-              batchSize: 1, referenceSequenceLength: referenceSequenceLength, height: tiledHeight,
+              batchSize: 1, height: tiledHeight,
               width: tiledWidth, channels: 3072), referenceImageCount: referenceImageCount)
         }
       }

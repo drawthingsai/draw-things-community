@@ -82,7 +82,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
         t = [inferModel(inputs: t[0], Array(t[(4 + 6)..<(6 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
       case .flux1:
         if referenceImageCount > 0 {
-          t = [inferModel(inputs: t[0], [t[2]] + Array(t[(4 + 6)..<(6 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
+          t = [inferModel(inputs: t[0], Array(t[(4 + 6)..<(6 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
         } else {
           t = [inferModel(inputs: t[0], Array(t[(3 + 6)..<(5 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
         }
@@ -141,7 +141,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     case .flux1:
       if let inferModel = inferModel {
         if referenceImageCount > 0 {
-          inferModel.compile(inputs: [inputs[0], inputs[2]] + Array(inputs[(4 + 6)..<(6 + 6)]))
+          inferModel.compile(inputs: [inputs[0]] + Array(inputs[(4 + 6)..<(6 + 6)]))
         } else {
           inferModel.compile(inputs: [inputs[0]] + Array(inputs[(3 + 6)..<(5 + 6)]))
         }
