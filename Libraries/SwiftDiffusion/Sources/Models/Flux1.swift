@@ -433,16 +433,16 @@ private func SingleTransformerBlock(
   if contextBlockPreOnly {
     out = out.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
-      strides: [(t + hw) * h * k, h * k, 1])
+      strides: [(t + hw) * h * k, h * k, 1]
+    ).contiguous()
     xIn = x.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
       strides: [(t + hw) * h * k, h * k, 1]
-    )
-    .contiguous()
+    ).contiguous()
     xOut = xOut.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
       strides: [(t + hw) * h * k, h * k, 1]
-    )
+    ).contiguous()
   }
   let xUnifyheads = Dense(count: k * h, noBias: true, name: "x_o")
   let (xLinear1, xOutProjection, xFF) = FeedForward(
@@ -520,7 +520,7 @@ public func Flux1(
   if referenceSequenceLength > 0 && (layers.0 > 0 || layers.1 > 0) {
     let latents = Input()
     let imgIn = xEmbedder(x).reshaped([batchSize, h * w, channels])
-    out = Functional.concat(axis: 1, imgIn, latents).to(.Float32)
+    out = Functional.concat(axis: 1, imgIn, latents, flags: [.disableOpt]).to(.Float32)
     referenceLatents = latents
     if outputResidual {
       imgInX = imgIn.to(.Float32)
@@ -1029,16 +1029,16 @@ private func LoRASingleTransformerBlock(
   if contextBlockPreOnly {
     out = out.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
-      strides: [(t + hw) * h * k, h * k, 1])
+      strides: [(t + hw) * h * k, h * k, 1]
+    ).contiguous()
     xIn = x.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
       strides: [(t + hw) * h * k, h * k, 1]
-    )
-    .contiguous()
+    ).contiguous()
     xOut = xOut.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
       strides: [(t + hw) * h * k, h * k, 1]
-    )
+    ).contiguous()
   }
   let xUnifyheads = LoRADense(
     count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_o")
@@ -1107,7 +1107,7 @@ public func LoRAFlux1(
         groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
         hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
       let imgIn = xEmbedder(x).reshaped([batchSize, h * w, channels])
-      out = Functional.concat(axis: 1, imgIn, latents).to(.Float32)
+      out = Functional.concat(axis: 1, imgIn, latents, flags: [.disableOpt]).to(.Float32)
       if outputResidual {
         imgInX = imgIn.to(.Float32)
       } else {
@@ -1116,7 +1116,7 @@ public func LoRAFlux1(
     } else {
       xEmbedder = LoRADense(count: channels, configuration: LoRAConfiguration, name: "x_embedder")
       let imgIn = xEmbedder(x)
-      out = Functional.concat(axis: 1, imgIn, latents).to(.Float32)
+      out = Functional.concat(axis: 1, imgIn, latents, flags: [.disableOpt]).to(.Float32)
       if outputResidual {
         imgInX = imgIn.to(.Float32)
       } else {
