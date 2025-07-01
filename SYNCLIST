@@ -12,6 +12,7 @@ Libraries/ConfigurationZoo
 Libraries/DataModels
 Libraries/Exporter
 Libraries/FaceRestorer
+Libraries/FeaturesMatrix
 Libraries/History
 Libraries/ImageGenerator
 Libraries/ImageSegmentation
