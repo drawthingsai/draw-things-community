@@ -434,7 +434,7 @@ private func SingleTransformerBlock(
     out = out.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
       strides: [(t + hw) * h * k, h * k, 1]
-    ).contiguous()
+    )
     xIn = x.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
       strides: [(t + hw) * h * k, h * k, 1]
@@ -442,7 +442,7 @@ private func SingleTransformerBlock(
     xOut = xOut.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
       strides: [(t + hw) * h * k, h * k, 1]
-    ).contiguous()
+    )
   }
   let xUnifyheads = Dense(count: k * h, noBias: true, name: "x_o")
   let (xLinear1, xOutProjection, xFF) = FeedForward(
@@ -1030,7 +1030,7 @@ private func LoRASingleTransformerBlock(
     out = out.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
       strides: [(t + hw) * h * k, h * k, 1]
-    ).contiguous()
+    )
     xIn = x.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
       strides: [(t + hw) * h * k, h * k, 1]
@@ -1038,7 +1038,7 @@ private func LoRASingleTransformerBlock(
     xOut = xOut.reshaped(
       [b, hw - referenceSequenceLength, h * k], offset: [0, t, 0],
       strides: [(t + hw) * h * k, h * k, 1]
-    ).contiguous()
+    )
   }
   let xUnifyheads = LoRADense(
     count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_o")
