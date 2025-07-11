@@ -55,7 +55,7 @@ struct Quantizer: ParsableCommand {
               continue
             }
             if shape.count == 2 && squeezedDims > 1 {
-              $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+              $0.write(key, tensor: fp16, codec: [.q6p, .ezm7])
             } else if shape.count == 4 && squeezedDims > 1 {
               $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
             } else {
@@ -66,7 +66,7 @@ struct Quantizer: ParsableCommand {
               $0.write(key, tensor: fp16)
             } else {
               if shape.count == 2 && squeezedDims > 1 {
-                $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                $0.write(key, tensor: fp16, codec: [.q6p, .ezm7])
               } else if shape.count == 4 && squeezedDims > 1 {
                 $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
               } else {
@@ -107,7 +107,7 @@ struct Quantizer: ParsableCommand {
                 if key.contains("ada_ln") || key.contains("-linear-") {
                   $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
                 } else {
-                  $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  $0.write(key, tensor: fp16, codec: [.q5p, .ezm7])
                 }
               } else {
                 $0.write(key, tensor: fp16, codec: .ezm7)
@@ -144,7 +144,7 @@ struct Quantizer: ParsableCommand {
                   if shape.count == 4 {  // Convolution.
                     $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
                   } else {
-                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                    $0.write(key, tensor: fp16, codec: [.q5p, .ezm7])
                   }
                 }
               } else {
@@ -180,7 +180,7 @@ struct Quantizer: ParsableCommand {
                   if shape.count == 4 {  // Convolution.
                     $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
                   } else {
-                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                    $0.write(key, tensor: fp16, codec: [.q5p, .ezm7])
                   }
                 }
               } else {
@@ -198,9 +198,9 @@ struct Quantizer: ParsableCommand {
                   if shape.count == 4 {  // Convolution.
                     $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
                   } else if shape.count == 3 {  // MoE.
-                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                    $0.write(key, tensor: fp16, codec: [.q5p, .ezm7])
                   } else {
-                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                    $0.write(key, tensor: fp16, codec: [.q6p, .ezm7])
                   }
                 }
               } else {
