@@ -1,5 +1,6 @@
 import ArgumentParser
 import Diffusion
+import Glibc  // Add this line
 import NNC
 
 @main
@@ -8,31 +9,216 @@ struct Quantizer: ParsableCommand {
     name: .shortAndLong,
     help: "The input file to be converted.")
   var inputFile: String
-  @Option(name: .shortAndLong, help: "The directory to write the output files to.")
+
+  @Option(
+    name: .shortAndLong,
+    help: """
+      The model version of the input file. Available versions:
+      v1, v2, kandinsky2.1, sdxl_base_v0.9, sdxl_refiner_v0.9, ssd_1b, svd_i2v,
+      wurstchen_v3.0_stage_c, wurstchen_v3.0_stage_b, sd3, pixart, auraflow,
+      flux1, sd3_large, hunyuan_video, wan_v2.1_1.3b, wan_v2.1_14b, hidream_i1
+      """)
+  var modelVersion: String
+
+  @Option(name: .shortAndLong, help: "The output file after conversion")
   var outputFile: String
 
   mutating func run() throws {
+    // Convert string to ModelVersion enum
+    guard let version = ModelVersion(rawValue: modelVersion) else {
+      throw ValidationError("Invalid model version: \(modelVersion)")
+    }
+    // Now you can use 'version' as your ModelVersion enum
+    print("Converting \(inputFile), model version: \(version)")
+
     let graph = DynamicGraph()
     graph.openStore(
       inputFile, flags: .readOnly, externalStore: TensorData.externalStore(filePath: inputFile)
     ) { store in
       let keys = store.keys
+
       graph.openStore(outputFile) {
-        for key in keys {
-          guard let tensor = store.read(key, codec: [.q6p, .q8p, .ezm7, .externalData]) else {
+        let total = keys.count
+        for (i, key) in keys.enumerated() {
+          guard let tensor = store.read(key, codec: [.q8p, .q8p, .ezm7, .externalData]) else {
             continue
           }
+
           // First convert the tensor to FP16, and then to q8p.
-          let fp16 = Tensor<Float16>(from: tensor)
+          let fp16 = Tensor<FloatType>(from: tensor)
           let shape = fp16.shape
           let squeezedDims = shape.reduce(0) { $1 > 1 ? 1 + $0 : $0 }
-          if shape.count == 2 && squeezedDims > 1 {
-            $0.write(key, tensor: fp16, codec: [.q6p, .ezm7])
-          } else if shape.count == 4 && squeezedDims > 1 {
-            $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
-          } else {
-            $0.write(key, tensor: fp16, codec: .ezm7)
+          switch version {
+          case .v1, .v2, .ssd1b, .svdI2v, .sdxlBase, .sdxlRefiner, .wurstchenStageB, .kandinsky21:
+            if key.contains("visual_proj") || key.contains("encoder_hid_proj") {
+              $0.write(key, tensor: tensor)
+              continue
+            }
+            if shape.count == 2 && squeezedDims > 1 {
+              $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+            } else if shape.count == 4 && squeezedDims > 1 {
+              $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+            } else {
+              $0.write(key, tensor: fp16, codec: .ezm7)
+            }
+          case .wurstchenStageC:
+            if key.contains("text_emb") || key.contains("effnet") || key.contains("previewer") {
+              $0.write(key, tensor: fp16)
+            } else {
+              if shape.count == 2 && squeezedDims > 1 {
+                $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+              } else if shape.count == 4 && squeezedDims > 1 {
+                $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
+          case .pixart:
+            if key.contains("embedder") || key.contains("shift_table") || key.contains("t_block") {
+              $0.write(key, tensor: fp16)
+            } else {
+              if squeezedDims > 1 {
+                $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
+          case .sd3, .sd3Large:
+            if key.contains("embedder") || key.contains("pos_embed") || key.contains("ada_ln") {
+              $0.write(key, tensor: fp16)
+            } else if key.contains("norm") {
+              $0.write(key, tensor: fp16, codec: [.ezm7])
+            } else {
+              if squeezedDims > 1 {
+                $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
+          case .auraflow:
+            if key.contains("embedder") || key.contains("pos_embed")
+              || key.contains("register_tokens")
+            {
+              $0.write(key, tensor: fp16)
+            } else if key.contains("norm") {
+              $0.write(key, tensor: fp16, codec: [.ezm7])
+            } else {
+              if squeezedDims > 1 {
+                if key.contains("ada_ln") || key.contains("-linear-") {
+                  $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                } else {
+                  $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                }
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
+          case .flux1:
+            if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {
+              $0.write(key, tensor: fp16)
+            } else {
+              if squeezedDims > 1 {
+                if key.contains("ada_ln") {
+                  $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                } else {
+                  if shape.count == 4 {  // Convolution.
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  } else {
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  }
+                }
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
+          case .hunyuanVideo:
+            if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-")
+              || key.contains("refiner_")
+            {
+              $0.write(key, tensor: fp16)
+            } else {
+              if squeezedDims > 1 {
+                if key.contains("ada_ln") {
+                  $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                } else {
+                  if shape.count == 4 {  // Convolution.
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  } else {
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  }
+                }
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
+          case .wan21_1_3b:
+            if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {
+              $0.write(key, tensor: fp16)
+            } else {
+              if squeezedDims > 1 {
+                if key.contains("ada_ln") {
+                  $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                } else {
+                  if shape.count == 4 {  // Convolution.
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  } else {
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  }
+                }
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
+          case .wan21_14b:
+            if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {
+              $0.write(key, tensor: fp16)
+            } else {
+              if squeezedDims > 1 {
+                if key.contains("ada_ln") {
+                  $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                } else {
+                  if shape.count == 4 {  // Convolution.
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  } else {
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  }
+                }
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
+          case .hiDreamI1:
+            if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {
+              $0.write(key, tensor: fp16)
+            } else {
+              if squeezedDims > 1 {
+                if key.contains("ada_ln") {
+                  $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                } else {
+                  if shape.count == 4 {  // Convolution.
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  } else if shape.count == 3 {  // MoE.
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  } else {
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  }
+                }
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
           }
+
+          let progress = Double(i + 1) / Double(total)
+          let percentage = Int(progress * 100)
+          let barWidth = 50
+          let filledWidth = Int(progress * Double(barWidth))
+          let bar =
+            String(repeating: "█", count: filledWidth)
+            + String(repeating: "░", count: barWidth - filledWidth)
+          print("\r[\(bar)] \(percentage)% (\(i + 1)/\(total)) - \(key)", terminator: "")
+          fflush(stdout)
+
         }
       }
     }
