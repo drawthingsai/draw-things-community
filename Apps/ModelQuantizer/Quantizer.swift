@@ -1,6 +1,5 @@
 import ArgumentParser
 import Diffusion
-import Glibc  // Add this line
 import NNC
 
 @main
@@ -208,17 +207,6 @@ struct Quantizer: ParsableCommand {
               }
             }
           }
-
-          let progress = Double(i + 1) / Double(total)
-          let percentage = Int(progress * 100)
-          let barWidth = 50
-          let filledWidth = Int(progress * Double(barWidth))
-          let bar =
-            String(repeating: "█", count: filledWidth)
-            + String(repeating: "░", count: barWidth - filledWidth)
-          print("\r[\(bar)] \(percentage)% (\(i + 1)/\(total)) - \(key)", terminator: "")
-          fflush(stdout)
-
         }
       }
     }
