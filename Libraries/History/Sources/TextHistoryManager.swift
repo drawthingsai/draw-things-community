@@ -250,7 +250,7 @@ public final class TextHistoryManager {
       self.currentNegativeText = newText
     }
     let textVersion = uniqueVersion()
-    project.dictionary["text_seek_tob", Int.self] = nil
+    project.dictionary["text_seek_to", Int.self] = nil
     guard modifications.count > Self.segmentationSize - 1 else {
       let node = (
         TextHistoryNode(
