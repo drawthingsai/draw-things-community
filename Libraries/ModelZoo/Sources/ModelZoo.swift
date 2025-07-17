@@ -680,22 +680,6 @@ public struct ModelZoo: DownloadZoo {
         "[HiDream-E1 [full]](https://huggingface.co/HiDream-ai/HiDream-E1-Full) is an image editing model built on HiDream-I1. It is MIT-licensed and commercially friendly. Trained at 768×768 resolution using a Flow Matching objective, the model performs best with trailing samplers and 30–50 sampling steps. For optimal results, ensure the width is set to 768 and use the following prompt format: Editing Instruction: {}. Target Image Description: {}."
     ),
     Specification(
-      name: "SDXL Base (v0.9)", file: "sd_xl_base_0.9_f16.ckpt", prefix: "", version: .sdxlBase,
-      defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt"),
-    Specification(
-      name: "SDXL Refiner (v0.9)", file: "sd_xl_refiner_0.9_f16.ckpt", prefix: "",
-      version: .sdxlRefiner, defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
-      autoencoder: "sdxl_vae_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt"),
-    Specification(
-      name: "PixArt Sigma XL 1K", file: "pixart_sigma_xl_2_1024_ms_f16.ckpt", prefix: "",
-      version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
-    Specification(
-      name: "PixArt Sigma XL 1K (8-bit)", file: "pixart_sigma_xl_2_1024_ms_q8p.ckpt", prefix: "",
-      version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
-      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
-    Specification(
       name: "Wan 2.1 T2V 1.3B", file: "wan_v2.1_1.3b_480p_f16.ckpt", prefix: "",
       version: .wan21_1_3b, defaultScale: 8, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
       autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 12,
@@ -807,6 +791,14 @@ public struct ModelZoo: DownloadZoo {
       highPrecisionAutoencoder: true, isConsistencyModel: true, objective: .u(conditionScale: 1000),
       paddedTextEncodingLength: 256, hiresFixScale: 24),
     Specification(
+      name: "PixArt Sigma XL 1K", file: "pixart_sigma_xl_2_1024_ms_f16.ckpt", prefix: "",
+      version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
+    Specification(
+      name: "PixArt Sigma XL 1K (8-bit)", file: "pixart_sigma_xl_2_1024_ms_q8p.ckpt", prefix: "",
+      version: .pixart, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
+      autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
+    Specification(
       name: "PixArt Sigma XL 512", file: "pixart_sigma_xl_2_512_ms_f16.ckpt", prefix: "",
       version: .pixart, defaultScale: 8, textEncoder: "t5_xxl_encoder_q6p.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt"),
@@ -847,6 +839,14 @@ public struct ModelZoo: DownloadZoo {
       name: "SDXL Refiner v1.0 (8-bit)", file: "sd_xl_refiner_1.0_q6p_q8p.ckpt", prefix: "",
       version: .sdxlRefiner, defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
       autoencoder: "sdxl_vae_v1.0_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt"),
+    Specification(
+      name: "SDXL Base (v0.9)", file: "sd_xl_base_0.9_f16.ckpt", prefix: "", version: .sdxlBase,
+      defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
+      autoencoder: "sdxl_vae_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt"),
+    Specification(
+      name: "SDXL Refiner (v0.9)", file: "sd_xl_refiner_0.9_f16.ckpt", prefix: "",
+      version: .sdxlRefiner, defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
+      autoencoder: "sdxl_vae_f16.ckpt", deprecated: true, clipEncoder: "clip_vit_l14_f16.ckpt"),
     Specification(
       name: "Fooocus Inpaint SDXL v2.6", file: "fooocus_inpaint_sd_xl_v2.6_f16.ckpt", prefix: "",
       version: .sdxlBase, defaultScale: 16, textEncoder: "open_clip_vit_bigg14_f16.ckpt",
