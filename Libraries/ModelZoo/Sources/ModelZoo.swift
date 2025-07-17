@@ -658,8 +658,30 @@ public struct ModelZoo: DownloadZoo {
         "[HiDream-I1 [full]](https://huggingface.co/HiDream-ai/HiDream-I1-Full) is a state-of-the-art open-source image generation model known for its exceptional prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
     ),
     Specification(
-      name: "HiDream E1 [full]", file: "hidream_e1_full_q8p.ckpt", prefix: "",
+      name: "HiDream E1-1", file: "hidream_e1_1_q8p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", modifier: .editing,
+      clipEncoder: "long_clip_vit_l14_f16.ckpt",
+      additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
+      t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
+      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24,
+      note:
+        "[HiDream-E1-1](https://huggingface.co/HiDream-ai/HiDream-E1-1) is an image editing model built on HiDream-I1. It is MIT-licensed and commercially friendly. Trained with dynamic resolutions (around 1MP) using a Flow Matching objective, the model performs best with trailing samplers and 30–50 sampling steps."
+    ),
+    Specification(
+      name: "HiDream E1-1 (5-bit)", file: "hidream_e1_1_q5p.ckpt", prefix: "",
+      version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", modifier: .editing,
+      clipEncoder: "long_clip_vit_l14_f16.ckpt",
+      additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
+      t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
+      objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24,
+      note:
+        "[HiDream-E1-1](https://huggingface.co/HiDream-ai/HiDream-E1-1) is an image editing model built on HiDream-I1. It is MIT-licensed and commercially friendly. Trained with dynamic resolutions (around 1MP) using a Flow Matching objective, the model performs best with trailing samplers and 30–50 sampling steps."
+    ),
+    Specification(
+      name: "HiDream E1 [full]", file: "hidream_e1_full_q8p.ckpt", prefix: "",
+      version: .hiDreamI1, defaultScale: 12, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", modifier: .editing,
       clipEncoder: "long_clip_vit_l14_f16.ckpt",
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
@@ -670,7 +692,7 @@ public struct ModelZoo: DownloadZoo {
     ),
     Specification(
       name: "HiDream E1 [full] (5-bit)", file: "hidream_e1_full_q5p.ckpt", prefix: "",
-      version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
+      version: .hiDreamI1, defaultScale: 12, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", modifier: .editing,
       clipEncoder: "long_clip_vit_l14_f16.ckpt",
       additionalClipEncoders: ["long_open_clip_vit_bigg14_f16.ckpt"],
