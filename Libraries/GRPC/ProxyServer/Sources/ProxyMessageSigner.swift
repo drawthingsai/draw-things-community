@@ -168,7 +168,7 @@ public actor ProxyMessageSigner {
       let (_, response) = try await URLSession.shared.data(for: request)
 
       guard let httpResponse = response as? HTTPURLResponse else {
-        logger.info("Invalid response: \(response.className)")
+        logger.info("Invalid response: \(String(describing: type(of: response)))")
         return
       }
       logger.info("Response status code: \(httpResponse.statusCode)")

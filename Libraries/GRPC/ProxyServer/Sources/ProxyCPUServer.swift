@@ -740,7 +740,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       computeUnitPolicy: computeUnitPolicy,
       expirationTimestamp: expirationTimestamp
     )
-    let costThresholdFromBoost = payload.amount * computeUnitPerBoost
+    let costThresholdFromBoost = (payload.amount ?? 0) * computeUnitPerBoost
     if costThresholdFromBoost > costThresholdFromPolicy {
       logger.info(
         "Proxy Server applying consumable threshold \(costThresholdFromBoost) for generation id: \(payload.generationId)"
