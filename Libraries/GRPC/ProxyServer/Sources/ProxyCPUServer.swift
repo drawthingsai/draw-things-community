@@ -98,9 +98,11 @@ extension Worker {
         )
         logger.info("Succeed: {\"model\": \"\(task.model)\",\"images\":\(numberOfImages)}")
       }
-      if task.payload.consumableType == "boost" {
-        await proxyMessageSigner.processBoostCompletion(
-          action: "complete", generationId: task.payload.generationId, amount: task.payload.amount,
+      if task.payload.consumableType == "boost", let amount = task.payload.amount,
+        let generationId = task.payload.generationId
+      {
+        await proxyMessageSigner.completeBoost(
+          action: .complete, generationId: generationId, amount: amount,
           logger: logger)
       }
       task.promise.succeed(status)
@@ -109,9 +111,11 @@ extension Worker {
       logger.info("Worker \(id) completed task successfully (Priority: \(task.priority))")
 
     } catch {
-      if task.payload.consumableType == "boost" {
-        await proxyMessageSigner.processBoostCompletion(
-          action: "cancel", generationId: task.payload.generationId, amount: task.payload.amount,
+      if task.payload.consumableType == "boost", let amount = task.payload.amount,
+        let generationId = task.payload.generationId
+      {
+        await proxyMessageSigner.completeBoost(
+          action: .cancel, generationId: generationId, amount: amount,
           logger: logger)
       }
       logger.error("Worker \(id) task failed with error: \(error) (Priority: \(task.priority))")
@@ -783,12 +787,14 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       let (isValidRequest, message, model) = await isValidRequest(
         payload: payload, encodedBlob: encodedBlob, request: request)
       guard isValidRequest, let model = model else {
-        if payload.consumableType == "boost" {
+        if payload.consumableType == "boost", let amount = payload.amount,
+          let generationId = payload.generationId
+        {
           logger.info(
-            "isValidRequest cancel consumableType generationId:\( payload.generationId), message:\(message)"
+            "isValidRequest cancel consumableType generationId:\( generationId), message:\(message)"
           )
-          await proxyMessageSigner.processBoostCompletion(
-            action: "cancel", generationId: payload.generationId, amount: payload.amount,
+          await proxyMessageSigner.completeBoost(
+            action: .cancel, generationId: generationId, amount: amount,
             logger: logger)
         }
         promise.fail(

@@ -37,28 +37,17 @@ public actor ProxyMessageSigner {
     return keyPair.public.isValidSignature(signature, for: messageData)
   }
 
-  public func createDirectJWT(_ payload: [String: Any]) -> String? {
+  private func createDirectJWT(_ payload: Data) throws -> String {
     // Create header
     let header = ["alg": "ES256", "typ": "JWT"]
-    guard let headerData = try? JSONSerialization.data(withJSONObject: header),
-      let headerBase64 = base64URLEncode(headerData)
-    else {
-      return nil
-    }
-
-    guard let payloadData = try? JSONSerialization.data(withJSONObject: payload),
-      let payloadBase64 = base64URLEncode(payloadData)
-    else {
-      return nil
-    }
+    let headerData = try JSONSerialization.data(withJSONObject: header)
+    let headerBase64 = base64URLEncode(headerData)
+    let payloadBase64 = base64URLEncode(payload)
 
     let headerAndPayload = "\(headerBase64).\(payloadBase64)"
     let messageData = Data(headerAndPayload.utf8)
-    guard let signature = try? keyPair.private.signature(for: SHA256.hash(data: messageData)),
-      let signatureBase64 = base64URLEncode(signature.rawRepresentation)
-    else {
-      return nil
-    }
+    let signature = try keyPair.private.signature(for: SHA256.hash(data: messageData))
+    let signatureBase64 = base64URLEncode(signature.rawRepresentation)
 
     return "\(headerAndPayload).\(signatureBase64)"
   }
@@ -107,7 +96,7 @@ public actor ProxyMessageSigner {
 
   // MARK: - Helper Methods
 
-  private func base64URLEncode(_ data: Data) -> String? {
+  private func base64URLEncode(_ data: Data) -> String {
     let base64 = data.base64EncodedString()
     return
       base64
@@ -130,38 +119,39 @@ public actor ProxyMessageSigner {
     return Data(base64Encoded: base64)
   }
 
-  public func processBoostCompletion(
-    action: String, generationId: String, amount: Int, logger: Logger
+  public enum CompletionCode: String, Codable {
+    case cancel
+    case complete
+  }
+
+  public func completeBoost(
+    action: CompletionCode, generationId: String, amount: Int, logger: Logger
   ) async {
     do {
-      let completionData: [String: Any] = [
-        "action": action,
-        "generationId": generationId,
-        "amount": amount,
-      ]
-
-      let jsonData = try JSONSerialization.data(
-        withJSONObject: completionData, options: [.sortedKeys])
-      let jsonString = String(data: jsonData, encoding: .utf8)!
-      let jwtToken = createDirectJWT(completionData)
-
-      guard let jwtToken = jwtToken else {
-        logger.error("Failed to create JWT token for generationId: \(generationId)")
-        return
+      struct Request: Codable {
+        var action: CompletionCode
+        var generationId: String
+        var amount: Int
       }
+      let request = Request(action: action, generationId: generationId, amount: amount)
+      let jsonEncoder = JSONEncoder()
+      jsonEncoder.outputFormatting = [.sortedKeys]
+      let payload = try jsonEncoder.encode(request)
+      let jwtToken = try createDirectJWT(payload)
+
       await completeConsumableGeneration(
-        token: jwtToken, generationId: generationId, amount: amount, logger: logger)
+        token: jwtToken, generationId: generationId, logger: logger)
     } catch {
       logger.error("Failed to process completion: \(error)")
     }
   }
 
   private func completeConsumableGeneration(
-    token: String, generationId: String, amount: Int, logger: Logger
+    token: String, generationId: String, logger: Logger
   ) async {
     do {
       // Create the URL
-      guard let url = URL(string: "http://api.drawthings.ai/complete_consumable_generation") else {
+      guard let url = URL(string: "https://api.drawthings.ai/complete_consumable_generation") else {
         logger.error("Invalid URL for complete_consumable_generation")
         return
       }
@@ -177,20 +167,21 @@ public actor ProxyMessageSigner {
 
       let (_, response) = try await URLSession.shared.data(for: request)
 
-      if let httpResponse = response as? HTTPURLResponse {
-        logger.info("Response status code: \(httpResponse.statusCode)")
-        logger.info("Response status: \(httpResponse)")
-
-        if httpResponse.statusCode == 200 {
-          logger.info(
-            "Complete consumable generation request succeeded, generationId: \(generationId)")
-        } else {
-          logger.error(
-            "Complete consumable generation request failed with status code: \(httpResponse.statusCode), generationId: \(generationId)"
-          )
-        }
+      guard let httpResponse = response as? HTTPURLResponse else {
+        logger.info("Invalid response: \(response.className)")
+        return
       }
+      logger.info("Response status code: \(httpResponse.statusCode)")
+      logger.info("Response status: \(httpResponse)")
 
+      if httpResponse.statusCode == 200 {
+        logger.info(
+          "Complete consumable generation request succeeded, generationId: \(generationId)")
+      } else {
+        logger.error(
+          "Complete consumable generation request failed with status code: \(httpResponse.statusCode), generationId: \(generationId)"
+        )
+      }
     } catch {
       logger.error("Failed to send request to complete_consumable_generation: \(error)")
     }

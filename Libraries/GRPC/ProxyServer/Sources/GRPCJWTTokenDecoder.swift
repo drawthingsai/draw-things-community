@@ -87,13 +87,14 @@ public class JWTDecoder {
 public struct JWTPayload: Codable {
   public let checksum: String
   public let stats: [String: Int]
-  public let generationId: String
-  public let amount: Int
-  public let consumableType: String
   public let nonce: String
   public let priority: String
   public let iss: String
   public let exp: Int
+  // These are for the consumable.
+  public let generationId: String?
+  public let amount: Int?
+  public let consumableType: String?
 }
 
 enum JWTError: Error {
