@@ -29,6 +29,7 @@ struct WorkTask {
   var heartbeat: Task<Void, Error>
   var creationTimestamp: Date
   var model: String
+  var payload: JWTPayload
 }
 
 public struct Worker {
@@ -49,7 +50,7 @@ public struct Worker {
 }
 
 extension Worker {
-  func executeTask(_ task: WorkTask) async throws {
+  func executeTask(_ task: WorkTask, proxyMessageSigner: ProxyMessageSigner) async throws {
     logger.info(
       "Worker \(id) primaryPriority:\(primaryPriority) starting task  (Priority: \(task.priority))"
     )
@@ -97,18 +98,29 @@ extension Worker {
         )
         logger.info("Succeed: {\"model\": \"\(task.model)\",\"images\":\(numberOfImages)}")
       }
+      if task.payload.consumableType == "boost" {
+        await proxyMessageSigner.processBoostCompletion(
+          action: "complete", generationId: task.payload.generationId, amount: task.payload.amount,
+          logger: logger)
+      }
       task.promise.succeed(status)
       task.context.statusPromise.succeed(status)
 
       logger.info("Worker \(id) completed task successfully (Priority: \(task.priority))")
 
     } catch {
+      if task.payload.consumableType == "boost" {
+        await proxyMessageSigner.processBoostCompletion(
+          action: "cancel", generationId: task.payload.generationId, amount: task.payload.amount,
+          logger: logger)
+      }
       logger.error("Worker \(id) task failed with error: \(error) (Priority: \(task.priority))")
       task.promise.fail(error)
       task.context.statusPromise.fail(error)
       throw error
     }
   }
+
 }
 
 actor TaskQueue {
@@ -230,6 +242,7 @@ public actor ControlConfigs {
   public private(set) var throttlePolicy = [String: Int]()
   public private(set) var publicKeyPEM: String
   public private(set) var modelListPath: String
+  public private(set) var computeUnitPerBoost: Int = 60000
   private var nonces = Set<String>()
   private let logger: Logger
   private var nonceSizeLimit: Int
@@ -698,18 +711,38 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
 
     let (computeUnitPolicy, expirationTimestamp) =
       await controlConfigs.getComputeUnitPolicyAndExpirationTimestamp()
-    let costThreshold = ComputeUnits.threshold(
-      for: payload.priority,
+    let computeUnitPerBoost = await controlConfigs.computeUnitPerBoost
+    let costThreshold = costThreshold(
+      payload: payload,
       computeUnitPolicy: computeUnitPolicy,
-      expirationTimestamp: expirationTimestamp
+      expirationTimestamp: expirationTimestamp,
+      computeUnitPerBoost: computeUnitPerBoost
     )
     guard cost < costThreshold else {
       logger.error(
-        "Proxy Server enqueue image generating request failed, cost exceed threshold \(costThreshold)"
+        "Proxy Server enqueue image generating request failed, cost \(cost) exceed threshold \(costThreshold)"
       )
       return (false, "cost \(cost) exceed threshold \(costThreshold)", model)
     }
     return (true, "", model)
+  }
+
+  func costThreshold(
+    payload: JWTPayload, computeUnitPolicy: [String: Int]?, expirationTimestamp: Date?,
+    computeUnitPerBoost: Int
+  ) -> Int {
+    let costThresholdFromPolicy = ComputeUnits.threshold(
+      for: payload.priority,
+      computeUnitPolicy: computeUnitPolicy,
+      expirationTimestamp: expirationTimestamp
+    )
+    let costThresholdFromBoost = payload.amount * computeUnitPerBoost
+    if costThresholdFromBoost > costThresholdFromPolicy {
+      logger.info(
+        "Proxy Server applying consumable threshold \(costThresholdFromBoost) for generation id: \(payload.generationId)"
+      )
+    }
+    return max(costThresholdFromPolicy, costThresholdFromBoost)
   }
 
   func generateImage(
@@ -741,15 +774,29 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       let pem: String = await controlConfigs.publicKeyPEM
       let decoder = try? JWTDecoder(publicKeyPEM: pem)
       let payload = try? decoder?.decode(bearToken)
+      guard let payload = payload else {
+        promise.fail(
+          GRPCStatus(
+            code: .permissionDenied, message: "Invalid payload"))
+        return
+      }
       let (isValidRequest, message, model) = await isValidRequest(
         payload: payload, encodedBlob: encodedBlob, request: request)
       guard isValidRequest, let model = model else {
+        if payload.consumableType == "boost" {
+          logger.info(
+            "isValidRequest cancel consumableType generationId:\( payload.generationId), message:\(message)"
+          )
+          await proxyMessageSigner.processBoostCompletion(
+            action: "cancel", generationId: payload.generationId, amount: payload.amount,
+            logger: logger)
+        }
         promise.fail(
           GRPCStatus(
             code: .permissionDenied, message: message))
         return
       }
-      let priority = taskPriority(from: payload?.priority ?? "")
+      let priority = taskPriority(from: payload.priority)
       // Enqueue task.
       let heartbeat = Task {
         while !Task.isCancelled {
@@ -760,13 +807,13 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       }
       let task = WorkTask(
         priority: priority, request: request, context: context, promise: promise,
-        heartbeat: heartbeat, creationTimestamp: Date(), model: model)
+        heartbeat: heartbeat, creationTimestamp: Date(), model: model, payload: payload)
       await taskQueue.addTask(task)
       if let worker = await taskQueue.nextWorker() {
         // Note that the extracted task may not be the ones we just enqueued.
         if let nextTaskForWorker = await taskQueue.nextTaskForWorker(worker) {
           do {
-            try await worker.executeTask(nextTaskForWorker)
+            try await worker.executeTask(nextTaskForWorker, proxyMessageSigner: proxyMessageSigner)
             logger.info("Task execution completed successfully for worker \(worker.id)")
           } catch {
             logger.error("Task execution failed for worker \(worker.id): \(error)")
@@ -926,69 +973,6 @@ public class ProxyCPUServer {
       nonceSizeLimit: nonceSizeLimit)
     self.proxyMessageSigner = ProxyMessageSigner()
     self.taskQueue = TaskQueue(workers: workers, logger: logger)
-  }
-
-  public func processCompletion(action: String, generationId: String, amount: Int) async {
-    do {
-      let completionData: [String: Any] = [
-        "action": action,
-        "generationId": generationId,
-        "amount": amount,
-      ]
-
-      let jsonData = try JSONSerialization.data(
-        withJSONObject: completionData, options: [.sortedKeys])
-      let jsonString = String(data: jsonData, encoding: .utf8)!
-      let jwtToken = await self.proxyMessageSigner.createDirectJWT(completionData)
-
-      guard let jwtToken = jwtToken else {
-        logger.error("Failed to create JWT token for generationId: \(generationId)")
-        return
-      }
-
-      await self.completeConsumableGeneration(
-        token: jwtToken, generationId: generationId, amount: amount)
-    } catch {
-      logger.error("Failed to process completion: \(error)")
-    }
-  }
-
-  private func completeConsumableGeneration(token: String, generationId: String, amount: Int) async
-  {
-    do {
-      // Create the URL
-      guard let url = URL(string: "http://api.drawthings.ai/complete_consumable_generation") else {
-        logger.error("Invalid URL for complete_consumable_generation")
-        return
-      }
-
-      // Create the request
-      var request = URLRequest(url: url)
-      request.httpMethod = "POST"
-      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-      logger.info("Sending request to \(url.absoluteString)")
-      logger.info("Authorization header: Bearer \(token)")
-
-      let (data, response) = try await URLSession.shared.data(for: request)
-
-      if let httpResponse = response as? HTTPURLResponse {
-        logger.info("Response status code: \(httpResponse.statusCode)")
-
-        if httpResponse.statusCode == 200 {
-          logger.info(
-            "Complete consumable generation request succeeded, generationId: \(generationId)")
-        } else {
-          logger.error(
-            "Complete consumable generation request failed with status code: \(httpResponse.statusCode), generationId: \(generationId)"
-          )
-        }
-      }
-
-    } catch {
-      logger.error("Failed to send request to complete_consumable_generation: \(error)")
-    }
   }
 
   public func startControlPanel(hosts: [String], port: Int) throws {

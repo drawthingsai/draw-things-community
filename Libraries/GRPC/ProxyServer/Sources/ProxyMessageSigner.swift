@@ -1,5 +1,10 @@
 import Crypto
 import Foundation
+import Logging
+
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
 
 public actor ProxyMessageSigner {
   // In-memory key pair
@@ -123,5 +128,71 @@ public actor ProxyMessageSigner {
     }
 
     return Data(base64Encoded: base64)
+  }
+
+  public func processBoostCompletion(
+    action: String, generationId: String, amount: Int, logger: Logger
+  ) async {
+    do {
+      let completionData: [String: Any] = [
+        "action": action,
+        "generationId": generationId,
+        "amount": amount,
+      ]
+
+      let jsonData = try JSONSerialization.data(
+        withJSONObject: completionData, options: [.sortedKeys])
+      let jsonString = String(data: jsonData, encoding: .utf8)!
+      let jwtToken = createDirectJWT(completionData)
+
+      guard let jwtToken = jwtToken else {
+        logger.error("Failed to create JWT token for generationId: \(generationId)")
+        return
+      }
+      await completeConsumableGeneration(
+        token: jwtToken, generationId: generationId, amount: amount, logger: logger)
+    } catch {
+      logger.error("Failed to process completion: \(error)")
+    }
+  }
+
+  private func completeConsumableGeneration(
+    token: String, generationId: String, amount: Int, logger: Logger
+  ) async {
+    do {
+      // Create the URL
+      guard let url = URL(string: "http://api.drawthings.ai/complete_consumable_generation") else {
+        logger.error("Invalid URL for complete_consumable_generation")
+        return
+      }
+
+      // Create the request
+      var request = URLRequest(url: url)
+      request.httpMethod = "POST"
+      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+      logger.info("Sending request to \(url.absoluteString)")
+      logger.info("Authorization header: Bearer \(token)")
+
+      let (_, response) = try await URLSession.shared.data(for: request)
+
+      if let httpResponse = response as? HTTPURLResponse {
+        logger.info("Response status code: \(httpResponse.statusCode)")
+        logger.info("Response status: \(httpResponse)")
+
+        if httpResponse.statusCode == 200 {
+          logger.info(
+            "Complete consumable generation request succeeded, generationId: \(generationId)")
+        } else {
+          logger.error(
+            "Complete consumable generation request failed with status code: \(httpResponse.statusCode), generationId: \(generationId)"
+          )
+        }
+      }
+
+    } catch {
+      logger.error("Failed to send request to complete_consumable_generation: \(error)")
+    }
   }
 }
