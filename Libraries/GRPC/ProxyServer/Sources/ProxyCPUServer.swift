@@ -779,6 +779,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       let decoder = try? JWTDecoder(publicKeyPEM: pem)
       let payload = try? decoder?.decode(bearToken)
       guard let payload = payload else {
+        logger.info("decode payload failed, bearToken:\(bearToken)")
         promise.fail(
           GRPCStatus(
             code: .permissionDenied, message: "Invalid payload"))
