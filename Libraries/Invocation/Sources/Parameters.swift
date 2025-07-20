@@ -98,7 +98,7 @@ public final class Parameters {
     diffusionTileHeightParameter, diffusionTileOverlapParameter,
     upscalerScaleFactorParameter, teaCacheStartParameter, teaCacheEndParameter,
     teaCacheMaxSkipStepsParameter, causalInferenceParameter,
-    causalInferencePadParameter: IntParameter
+    causalInferencePadParameter, cfgZeroInitStepsParameter: IntParameter
   public let guidanceScaleParameter, strengthParameter, imageGuidanceScaleParameter,
     maskBlurParameter,
     clipWeightParameter, hiresFixStrengthParameter, refinerStartParameter, aestheticScoreParameter,
@@ -113,7 +113,7 @@ public final class Parameters {
     preserveOriginalAfterInpaintParameter, tiledDiffusionParameter,
     t5TextEncoderParameter, separateClipLParameter, separateOpenClipGParameter,
     speedUpWithGuidanceEmbedParameter, resolutionDependentShiftParameter,
-    teaCacheParameter, separateT5Parameter: BoolParameter
+    teaCacheParameter, separateT5Parameter, cfgZeroStarParameter: BoolParameter
   let lorasParameter: JSONParameter<[JSLoRA]>
   let controlsParameter: JSONParameter<[JSControl]>
 
@@ -435,6 +435,13 @@ public final class Parameters {
       defaultValue: Int(
         defaultConfiguration.causalInferenceEnabled ? defaultConfiguration.causalInferencePad : 0),
       range: 0...1000, commandLineFlag: "causal-inference-pad")
+    cfgZeroStarParameter = BoolParameter(
+      titleKey: "cfg_zero_star", explanationKey: nil, commandLineFlag: "cfg-zero-star",
+      defaultValue: defaultConfiguration.cfgZeroStar)
+    cfgZeroInitStepsParameter = IntParameter(
+      titleKey: "cfg_zero_init_steps", explanationKey: nil,
+      defaultValue: Int(defaultConfiguration.cfgZeroInitSteps),
+      range: 0...1000, commandLineFlag: "cfg-zero-init-steps")
   }
 
   public func allParameters() -> [Parameter] {
@@ -516,6 +523,8 @@ public final class Parameters {
       t5TextParameter,
       causalInferenceParameter,
       causalInferencePadParameter,
+      cfgZeroStarParameter,
+      cfgZeroInitStepsParameter,
     ]
   }
 }

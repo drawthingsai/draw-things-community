@@ -183,7 +183,9 @@ public struct Invocation {
       teaCacheMaxSkipSteps: parameters.teaCacheMaxSkipStepsParameter.int32Value(),
       causalInferenceEnabled: parameters.causalInferenceParameter.int32Value() > 0,
       causalInference: parameters.causalInferenceParameter.int32Value(),
-      causalInferencePad: max(parameters.causalInferencePadParameter.int32Value(), 0)
+      causalInferencePad: max(parameters.causalInferencePadParameter.int32Value(), 0),
+      cfgZeroStar: parameters.cfgZeroStarParameter.value,
+      cfgZeroInitSteps: parameters.cfgZeroInitStepsParameter.int32Value()
     )
     self.prompt = try unwrapOrThrow(
       parameters.promptParameter.value, errorMessage: "Missing prompt")

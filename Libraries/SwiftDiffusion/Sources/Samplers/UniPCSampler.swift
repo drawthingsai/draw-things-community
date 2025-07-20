@@ -31,6 +31,7 @@ where UNet.FloatType == FloatType {
   public let tiledDiffusion: TiledConfiguration
   public let teaCache: TeaCacheConfiguration
   public let causalInference: (Int, pad: Int)
+  public let cfgZeroStar: CfgZeroStarConfiguration
   private let discretization: Discretization
   private let weightsCache: WeightsCache
   public init(
@@ -43,7 +44,7 @@ where UNet.FloatType == FloatType {
     canRunLoRASeparately: Bool, deviceProperties: DeviceProperties,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
     teaCache: TeaCacheConfiguration, causalInference: (Int, pad: Int),
-    discretization: Discretization,
+    cfgZeroStar: CfgZeroStarConfiguration, discretization: Discretization,
     weightsCache: WeightsCache
   ) {
     self.filePath = filePath
@@ -70,6 +71,7 @@ where UNet.FloatType == FloatType {
     self.tiledDiffusion = tiledDiffusion
     self.teaCache = teaCache
     self.causalInference = causalInference
+    self.cfgZeroStar = cfgZeroStar
     self.discretization = discretization
 
     self.weightsCache = weightsCache
@@ -203,6 +205,7 @@ extension UniPCSampler: Sampler {
       channels: channels, conditionShape: conditionImage?.shape, isCfgEnabled: isCfgEnabled,
       textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
       version: version, modifier: modifier)
+    let isBatchEnabled = isBatchEnabled(version)
     let zeroNegativePrompt = isCfgEnabled && zeroNegativePrompt
     var xIn = graph.variable(
       .GPU(0), .NHWC(cfgChannels * batchSize, startHeight, startWidth, inChannels),
@@ -619,7 +622,8 @@ extension UniPCSampler: Sampler {
             etOut: etOut, blur: blur, batchSize: batchSize, startHeight: startHeight,
             startWidth: startWidth, channels: channels, isCfgEnabled: isCfgEnabled,
             textGuidanceScale: textGuidanceScale, imageGuidanceScale: imageGuidanceScale,
-            alpha: alpha, modifier: modifier)
+            alpha: alpha, modifier: modifier, step: i, isBatchEnabled: isBatchEnabled,
+            cfgZeroStar: cfgZeroStar)
         }
         var predX0: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {

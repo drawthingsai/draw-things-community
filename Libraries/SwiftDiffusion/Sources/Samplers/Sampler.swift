@@ -408,14 +408,34 @@ func updateCfgInputAndConditions<FloatType: TensorNumeric & BinaryFloatingPoint>
   }
 }
 
+public struct CfgZeroStarConfiguration {
+  public var isEnabled: Bool
+  public var zeroInitSteps: Int
+  public init(isEnabled: Bool, zeroInitSteps: Int) {
+    self.isEnabled = isEnabled
+    self.zeroInitSteps = zeroInitSteps
+  }
+}
+
+func isBatchEnabled(_ version: ModelVersion) -> Bool {
+  switch version {
+  case .auraflow, .flux1, .hiDreamI1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
+    .sdxlRefiner, .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+    return true
+  case .hunyuanVideo, .svdI2v, .wan21_14b, .wan21_1_3b:
+    return false
+  }
+}
+
 func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
   etOut: DynamicGraph.Tensor<FloatType>, blur: Model?, batchSize: Int, startHeight: Int,
   startWidth: Int, channels: Int, isCfgEnabled: Bool, textGuidanceScale: Float,
-  imageGuidanceScale: Float, alpha: Float, modifier: SamplerModifier
+  imageGuidanceScale: Float, alpha: Float, modifier: SamplerModifier, step: Int,
+  isBatchEnabled: Bool, cfgZeroStar: CfgZeroStarConfiguration
 ) -> DynamicGraph.Tensor<FloatType> {
   let et: DynamicGraph.Tensor<FloatType>
   if isCfgEnabled {
-    let etUncond = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
+    var etUncond = etOut[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
     var etCond = etOut[batchSize..<(batchSize * 2), 0..<startHeight, 0..<startWidth, 0..<channels]
       .copied()
     if let blur = blur {
@@ -426,6 +446,25 @@ func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
     if modifier == .editing {
       let cfgChannels = etOut.shape[0] / batchSize
       if cfgChannels == 2 {
+        if cfgZeroStar.isEnabled {
+          let dotProduct: DynamicGraph.Tensor<Float>
+          let squaredSum: DynamicGraph.Tensor<Float>
+          if isBatchEnabled {
+            dotProduct = DynamicGraph.Tensor<Float>(from: etUncond .* etCond).reduced(
+              .sum, axis: [0, 1, 2, 3])
+            squaredSum =
+              DynamicGraph.Tensor<Float>(from: etUncond .* etUncond).reduced(
+                .sum, axis: [0, 1, 2, 3]) + 1e-8
+          } else {
+            dotProduct = DynamicGraph.Tensor<Float>(from: etUncond .* etCond).reduced(
+              .sum, axis: [1, 2, 3])
+            squaredSum =
+              DynamicGraph.Tensor<Float>(from: etUncond .* etUncond).reduced(.sum, axis: [1, 2, 3])
+              + 1e-8
+          }
+          let stStar = DynamicGraph.Tensor<FloatType>(from: dotProduct ./ squaredSum)
+          etUncond = etUncond .* stStar
+        }
         // This handles the case text guidance scale == 0 and text guidance == image guidance.
         et = etUncond + imageGuidanceScale * (etCond - etUncond)
       } else {
@@ -438,6 +477,25 @@ func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
           * (etUncond - etAllUncond)
       }
     } else {
+      if cfgZeroStar.isEnabled {
+        let dotProduct: DynamicGraph.Tensor<Float>
+        let squaredSum: DynamicGraph.Tensor<Float>
+        if isBatchEnabled {
+          dotProduct = DynamicGraph.Tensor<Float>(from: etUncond .* etCond).reduced(
+            .sum, axis: [0, 1, 2, 3])
+          squaredSum =
+            DynamicGraph.Tensor<Float>(from: etUncond .* etUncond).reduced(
+              .sum, axis: [0, 1, 2, 3]) + 1e-8
+        } else {
+          dotProduct = DynamicGraph.Tensor<Float>(from: etUncond .* etCond).reduced(
+            .sum, axis: [1, 2, 3])
+          squaredSum =
+            DynamicGraph.Tensor<Float>(from: etUncond .* etUncond).reduced(.sum, axis: [1, 2, 3])
+            + 1e-8
+        }
+        let stStar = DynamicGraph.Tensor<FloatType>(from: dotProduct ./ squaredSum)
+        etUncond = etUncond .* stStar
+      }
       et = etUncond + textGuidanceScale * (etCond - etUncond)
     }
   } else {
@@ -451,6 +509,10 @@ func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
         left: etOutDegraded, right: etOut, leftScalar: alpha, rightScalar: 1 - alpha)
     }
     et = etOut
+  }
+  if cfgZeroStar.isEnabled, step < cfgZeroStar.zeroInitSteps {
+    // Predicting zero.
+    et.full(0)
   }
   return et
 }
