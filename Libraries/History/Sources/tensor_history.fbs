@@ -178,7 +178,7 @@ table TensorHistoryNode {
   causal_inference: int = 3;
   causal_inference_pad: int = 0;
   cfg_zero_star: bool = false;
-  cfg_zero_init_steps: int = 1;
+  cfg_zero_init_steps: int = 0;
 }
 
 root_type TensorHistoryNode;

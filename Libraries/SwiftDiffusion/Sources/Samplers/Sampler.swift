@@ -449,21 +449,23 @@ func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
         if cfgZeroStar.isEnabled {
           let dotProduct: DynamicGraph.Tensor<Float>
           let squaredSum: DynamicGraph.Tensor<Float>
+          let etUncondF32 = DynamicGraph.Tensor<Float>(from: etUncond)
+          let etCondF32 = DynamicGraph.Tensor<Float>(from: etCond)
           if isBatchEnabled {
-            dotProduct = DynamicGraph.Tensor<Float>(from: etUncond .* etCond).reduced(
+            dotProduct = (etUncondF32 .* etCondF32).reduced(
               .sum, axis: [0, 1, 2, 3])
             squaredSum =
-              DynamicGraph.Tensor<Float>(from: etUncond .* etUncond).reduced(
+              (etUncondF32 .* etUncondF32).reduced(
                 .sum, axis: [0, 1, 2, 3]) + 1e-8
           } else {
-            dotProduct = DynamicGraph.Tensor<Float>(from: etUncond .* etCond).reduced(
+            dotProduct = (etUncondF32 .* etCondF32).reduced(
               .sum, axis: [1, 2, 3])
             squaredSum =
-              DynamicGraph.Tensor<Float>(from: etUncond .* etUncond).reduced(.sum, axis: [1, 2, 3])
+              (etUncondF32 .* etUncondF32).reduced(.sum, axis: [1, 2, 3])
               + 1e-8
           }
-          let stStar = DynamicGraph.Tensor<FloatType>(from: dotProduct ./ squaredSum)
-          etUncond = etUncond .* stStar
+          let stStar = dotProduct ./ squaredSum
+          etUncond = DynamicGraph.Tensor<FloatType>(from: etUncondF32 .* stStar)
         }
         // This handles the case text guidance scale == 0 and text guidance == image guidance.
         et = etUncond + imageGuidanceScale * (etCond - etUncond)
@@ -480,21 +482,23 @@ func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
       if cfgZeroStar.isEnabled {
         let dotProduct: DynamicGraph.Tensor<Float>
         let squaredSum: DynamicGraph.Tensor<Float>
+        let etUncondF32 = DynamicGraph.Tensor<Float>(from: etUncond)
+        let etCondF32 = DynamicGraph.Tensor<Float>(from: etCond)
         if isBatchEnabled {
-          dotProduct = DynamicGraph.Tensor<Float>(from: etUncond .* etCond).reduced(
+          dotProduct = (etUncondF32 .* etCondF32).reduced(
             .sum, axis: [0, 1, 2, 3])
           squaredSum =
-            DynamicGraph.Tensor<Float>(from: etUncond .* etUncond).reduced(
+            (etUncondF32 .* etUncondF32).reduced(
               .sum, axis: [0, 1, 2, 3]) + 1e-8
         } else {
-          dotProduct = DynamicGraph.Tensor<Float>(from: etUncond .* etCond).reduced(
+          dotProduct = (etUncondF32 .* etCondF32).reduced(
             .sum, axis: [1, 2, 3])
           squaredSum =
-            DynamicGraph.Tensor<Float>(from: etUncond .* etUncond).reduced(.sum, axis: [1, 2, 3])
+            (etUncondF32 .* etUncondF32).reduced(.sum, axis: [1, 2, 3])
             + 1e-8
         }
-        let stStar = DynamicGraph.Tensor<FloatType>(from: dotProduct ./ squaredSum)
-        etUncond = etUncond .* stStar
+        let stStar = dotProduct ./ squaredSum
+        etUncond = DynamicGraph.Tensor<FloatType>(from: etUncondF32 .* stStar)
       }
       et = etUncond + textGuidanceScale * (etCond - etUncond)
     }
