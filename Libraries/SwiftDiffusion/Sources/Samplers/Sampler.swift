@@ -270,9 +270,6 @@ public func cfgChannelsAndInputChannels(
         // If they are the same, it degrades to guidance * (etCond - etAllUncond) + etAllUncond
         if (textGuidanceScale - imageGuidanceScale).magnitude <= 1e-3 {
           cfgChannels = 2
-          // If text guidance is 0, it degrades to image guidance * (etUncond - etAllUncond) + etAllUncond
-        } else if textGuidanceScale.magnitude <= 1e-3 {
-          cfgChannels = 2
         } else {
           cfgChannels = 3
         }
@@ -337,34 +334,7 @@ func updateCfgInputAndConditions<FloatType: TensorNumeric & BinaryFloatingPoint>
     }
     if isCfgEnabled {
       if cfgChannels == 2 {
-        if textGuidanceScale.magnitude <= 1e-3 {
-          // Make sure the usual etCond path took uncondition tokens.
-          c = c.map {
-            let oldC = $0
-            let shape = oldC.shape
-            if shape.count == 2 {
-              var c = graph.variable(
-                .GPU(0), .WC(2 * batchSize, oldC.shape[1]), of: FloatType.self)
-              // Expanding c. Both now took uncondition tokens.
-              c[0..<batchSize, 0..<oldC.shape[1]] =
-                oldC[0..<batchSize, 0..<oldC.shape[1]]
-              c[batchSize..<(batchSize * 2), 0..<oldC.shape[1]] =
-                oldC[0..<batchSize, 0..<oldC.shape[1]]
-              return c
-            } else {
-              var c = graph.variable(
-                .GPU(0), .HWC(2 * batchSize, oldC.shape[1], oldC.shape[2]), of: FloatType.self)
-              // Expanding c. Both now took uncondition tokens.
-              c[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]] =
-                oldC[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]]
-              c[batchSize..<(batchSize * 2), 0..<oldC.shape[1], 0..<oldC.shape[2]] =
-                oldC[0..<batchSize, 0..<oldC.shape[1], 0..<oldC.shape[2]]
-              return c
-            }
-          }
-        } else {
-          // Do nothing.
-        }
+        // Do nothing.
       } else {
         c = c.map {
           let oldC = $0
@@ -474,9 +444,41 @@ func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
           etOut[
             (batchSize * 2)..<(batchSize * 3), 0..<startHeight, 0..<startWidth, 0..<channels
           ].copied()
-        et =
-          etAllUncond + textGuidanceScale * (etCond - etUncond) + imageGuidanceScale
-          * (etUncond - etAllUncond)
+        if cfgZeroStar.isEnabled {
+          var etUncondF32 = DynamicGraph.Tensor<Float>(from: etUncond)
+          let etCondF32 = DynamicGraph.Tensor<Float>(from: etCond)
+          var etAllUncondF32 = DynamicGraph.Tensor<Float>(from: etAllUncond)
+          let dotProductUncond = (etUncondF32 .* etCondF32).reduced(.sum, axis: [1, 2, 3])
+          let squaredSumUncond = (etUncondF32 .* etUncondF32).reduced(.sum, axis: [1, 2, 3])
+          let stStarUncond = dotProductUncond ./ squaredSumUncond
+          etUncondF32 = etUncondF32 .* stStarUncond
+          let dotProductAllUncond = (etAllUncondF32 .* etCondF32).reduced(.sum, axis: [1, 2, 3])
+          let squaredSumAllUncond = (etAllUncondF32 .* etAllUncondF32).reduced(
+            .sum, axis: [1, 2, 3])
+          let stStarAllUncond = dotProductAllUncond ./ squaredSumAllUncond
+          etAllUncondF32 = etAllUncondF32 .* stStarAllUncond
+          et = DynamicGraph.Tensor<FloatType>(
+            from: etAllUncondF32 + textGuidanceScale * (etCondF32 - etUncondF32)
+              + imageGuidanceScale * (etUncondF32 - etAllUncondF32))
+        } else {
+          et =
+            etAllUncond + textGuidanceScale * (etCond - etUncond) + imageGuidanceScale
+            * (etUncond - etAllUncond)
+        }
+        /*
+        let etUncondF32 = DynamicGraph.Tensor<Float>(from: etUncond)
+        let etCondF32 = DynamicGraph.Tensor<Float>(from: etCond)
+        let etAllUncondF32 =
+        DynamicGraph.Tensor<Float>(from: etOut[
+            (batchSize * 2)..<(batchSize * 3), 0..<startHeight, 0..<startWidth, 0..<channels
+          ].copied())
+        let predText_ = etUncondF32 + textGuidanceScale * (etCondF32 - etUncondF32)
+        let normFullCondF32 = etCondF32.reduced(.norm2, axis: [1, 2, 3])
+        let normPredText = predText_.reduced(.norm2, axis: [1, 2, 3])
+        let scale = (normFullCondF32 ./ normPredText + 1e-8).clamped(0...1)
+        let predText = scale .* predText_
+        et = DynamicGraph.Tensor<FloatType>(from: etAllUncondF32 + imageGuidanceScale * (predText - etAllUncondF32))
+          */
       }
     } else {
       if cfgZeroStar.isEnabled {
