@@ -43,6 +43,8 @@ extension SamplerType {
       self = .dDIMTrailing
     case .uniPCTrailing:
       self = .uniPCTrailing
+    case .uniPCAYS:
+      self = .uniPCAYS
     }
   }
 }
@@ -86,6 +88,8 @@ extension DataModels.SamplerType {
       self = .dDIMTrailing
     case .uniPCTrailing:
       self = .uniPCTrailing
+    case .uniPCAYS:
+      self = .uniPCAYS
     }
   }
 }

@@ -232,7 +232,7 @@ extension LocalImageGenerator {
           cfgZeroStar: cfgZeroStar,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
-      case .uniPC, .uniPCTrailing:
+      case .uniPC, .uniPCAYS, .uniPCTrailing:
         return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
@@ -659,6 +659,69 @@ extension LocalImageGenerator {
         cfgZeroStar: cfgZeroStar,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
+    case .uniPCAYS:
+      if samplingTimesteps.isEmpty && samplingSigmas.isEmpty {
+        return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
+          distilledGuidanceLayers: distilledGuidanceLayers,
+          usesFlashAttention: usesFlashAttention,
+          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
+          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
+          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+          classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+          isQuantizedModel: isQuantizedModel,
+          canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
+          conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+          cfgZeroStar: cfgZeroStar,
+          discretization: Denoiser.LinearDiscretization(
+            parameterization, objective: objective, timestepSpacing: .trailing),
+          weightsCache: weightsCache)
+      } else if samplingTimesteps.isEmpty {
+        return UniPCSampler<
+          FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
+        >(
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
+          distilledGuidanceLayers: distilledGuidanceLayers,
+          usesFlashAttention: usesFlashAttention,
+          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
+          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
+          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+          classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+          isQuantizedModel: isQuantizedModel,
+          canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
+          conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+          cfgZeroStar: cfgZeroStar,
+          discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
+            parameterization, objective: objective, samplingSigmas: samplingSigmas),
+          weightsCache: weightsCache)
+      } else {
+        return UniPCSampler<
+          FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
+        >(
+          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
+          distilledGuidanceLayers: distilledGuidanceLayers,
+          usesFlashAttention: usesFlashAttention,
+          upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
+          injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+          injectAttentionKV: injectAttentionKV,
+          injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+          classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+          isQuantizedModel: isQuantizedModel,
+          canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
+          conditioning: conditioning,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+          cfgZeroStar: cfgZeroStar,
+          discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
+            parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
+          weightsCache: weightsCache)
+      }
     case .uniPCTrailing:
       return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,

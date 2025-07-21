@@ -17,6 +17,7 @@ enum SamplerType: byte {
   DPMPP2MTrailing,
   DDIMTrailing,
   UniPCTrailing,
+  UniPCAYS,
 }
 
 enum SeedMode: byte {

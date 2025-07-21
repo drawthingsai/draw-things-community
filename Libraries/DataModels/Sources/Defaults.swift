@@ -65,6 +65,8 @@ extension SamplerType: CustomStringConvertible {
       return "DDIM Trailing"
     case .uniPCTrailing:
       return "UniPC Trailing"
+    case .uniPCAYS:
+      return "UniPC AYS"
     }
   }
 
