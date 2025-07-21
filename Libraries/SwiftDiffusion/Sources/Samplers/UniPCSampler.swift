@@ -80,11 +80,11 @@ where UNet.FloatType == FloatType {
 
 extension UniPCSampler: Sampler {
   private func uniPBhUpdate(
-    predX0 mt: DynamicGraph.Tensor<FloatType>, prevTimestep t: Int,
-    sample x: DynamicGraph.Tensor<FloatType>, timestepList: [Int],
-    outputList: [DynamicGraph.Tensor<FloatType>], lambdas: [Double], alphas: [Double],
+    prevTimestep t: Int,
+    sample x: DynamicGraph.Tensor<Float>, timestepList: [Int],
+    outputList: [DynamicGraph.Tensor<Float>], lambdas: [Double], alphas: [Double],
     sigmas: [Double]
-  ) -> DynamicGraph.Tensor<FloatType> {
+  ) -> DynamicGraph.Tensor<Float> {
     let s0 = timestepList[timestepList.count - 1]
     let m0 = outputList[outputList.count - 1]
     let lambdat = lambdas[t]
@@ -93,7 +93,7 @@ extension UniPCSampler: Sampler {
     let sigmat = sigmas[t]
     let sigmas0 = sigmas[s0]
     let h = lambdat - lambdas0
-    let D1: DynamicGraph.Tensor<FloatType>?
+    let D1: DynamicGraph.Tensor<Float>?
     if timestepList.count >= 2 && outputList.count >= 2 {
       let si = timestepList[timestepList.count - 2]
       let mi = outputList[outputList.count - 2]
@@ -118,11 +118,11 @@ extension UniPCSampler: Sampler {
     }
   }
   private func uniCBhUpdate(
-    predX0 mt: DynamicGraph.Tensor<FloatType>, timestep t: Int,
-    lastSample x: DynamicGraph.Tensor<FloatType>, timestepList: [Int],
-    outputList: [DynamicGraph.Tensor<FloatType>], lambdas: [Double], alphas: [Double],
+    predX0 mt: DynamicGraph.Tensor<Float>, timestep t: Int,
+    lastSample x: DynamicGraph.Tensor<Float>, timestepList: [Int],
+    outputList: [DynamicGraph.Tensor<Float>], lambdas: [Double], alphas: [Double],
     sigmas: [Double]
-  ) -> DynamicGraph.Tensor<FloatType> {
+  ) -> DynamicGraph.Tensor<Float> {
     let s0 = timestepList[timestepList.count - 1]
     let m0 = outputList[outputList.count - 1]
     let lambdat = lambdas[t]
@@ -135,7 +135,7 @@ extension UniPCSampler: Sampler {
     let hPhi1 = exp(hh) - 1
     let hPhik = hPhi1 / hh - 1
     let Bh = hPhi1
-    let D1: DynamicGraph.Tensor<FloatType>?
+    let D1: DynamicGraph.Tensor<Float>?
     let rhosC0: Double
     let rhosC1: Double
     if timestepList.count >= 2 && outputList.count >= 2 {
@@ -156,7 +156,7 @@ extension UniPCSampler: Sampler {
     let xt_ = Functional.add(
       left: x, right: m0, leftScalar: Float(sigmat / sigmas0), rightScalar: Float(-alphat * hPhi1))
     let D1t = mt - m0
-    let D1s: DynamicGraph.Tensor<FloatType>
+    let D1s: DynamicGraph.Tensor<Float>
     if let D1 = D1 {
       D1s = Functional.add(
         left: D1, right: D1t, leftScalar: Float(rhosC0), rightScalar: Float(rhosC1))
@@ -188,8 +188,6 @@ extension UniPCSampler: Sampler {
     guard endStep.integral > startStep.integral else {
       return .success(SamplerOutput(x: x_T, unets: [nil]))
     }
-    let startStep = startStep.integral
-    let endStep = endStep.integral
     var x = x_T
     let batchSize = x.shape[0]
     let startHeight = x.shape[1]
@@ -257,8 +255,21 @@ extension UniPCSampler: Sampler {
       deviceProperties: deviceProperties, weightsCache: weightsCache)
     let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
-    let timesteps = (startStep..<endStep).map {
-      let alphaCumprod = alphasCumprod[$0]
+    let timesteps = (startStep.integral..<endStep.integral).map {
+      let alphaCumprod: Double
+      if $0 == startStep.integral && Float(startStep.integral) != startStep.fractional {
+        let lowTimestep = discretization.timestep(
+          for: alphasCumprod[max(0, min(Int(startStep.integral), alphasCumprod.count - 1))])
+        let highTimestep = discretization.timestep(
+          for: alphasCumprod[
+            max(0, min(Int(startStep.fractional.rounded(.up)), alphasCumprod.count - 1))])
+        let timestep =
+          lowTimestep
+          + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
+        alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
+      } else {
+        alphaCumprod = alphasCumprod[$0]
+      }
       switch conditioning {
       case .noise:
         return discretization.noise(for: alphaCumprod)
@@ -360,8 +371,16 @@ extension UniPCSampler: Sampler {
     if mask != nil {
       noise = graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
     }
-    let alphas = alphasCumprod.map { $0.squareRoot() }
-    let sigmas = alphasCumprod.map { (1 - $0).squareRoot() }
+    let alphas: [Double]
+    let sigmas: [Double]
+    switch discretization.objective {
+    case .u(_):
+      alphas = alphasCumprod.map { $0 }
+      sigmas = alphasCumprod.map { 1 - $0 }
+    case .edm(_), .v, .epsilon:
+      alphas = alphasCumprod.map { $0.squareRoot() }
+      sigmas = alphasCumprod.map { (1 - $0).squareRoot() }
+    }
     let lambdas = zip(alphas, sigmas).map { log($0) - log($1) }
     let condAugFrames: DynamicGraph.Tensor<FloatType>?
     let textGuidanceVector: DynamicGraph.Tensor<FloatType>?
@@ -398,26 +417,27 @@ extension UniPCSampler: Sampler {
     var refinerKickIn = refiner.map { (1 - $0.start) * discretization.timesteps } ?? -1
     var unets: [UNet?] = [unet]
     var currentModelVersion = version
-    var indexOffset = startStep
+    var indexOffset = startStep.integral
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       var timestepList = [Int]()
-      var outputList = [DynamicGraph.Tensor<FloatType>]()
-      var lastSample: DynamicGraph.Tensor<FloatType>? = nil
-      for i in startStep..<endStep {
+      var outputList = [DynamicGraph.Tensor<Float>]()
+      var lastSample: DynamicGraph.Tensor<Float>? = nil
+      for i in startStep.integral..<endStep.integral {
         let rawValue: Tensor<FloatType>? =
-          (i > max(startStep, sampling.steps / 2) || i % 2 == 1)
-          ? outputList.last?.rawValue.toCPU() : nil
+          (i > max(startStep.integral, sampling.steps / 2) || i % 2 == 1)
+          ? outputList.last.map({ DynamicGraph.Tensor<FloatType>(from: $0) })?.rawValue.toCPU()
+          : nil
         if i % 5 == 4, let rawValue = rawValue {
           if isNaN(rawValue) {
             return .failure(SamplerError.isNaN)
           }
         }
-        guard feedback(i - startStep, rawValue) else {
+        guard feedback(i - startStep.integral, rawValue) else {
           return .failure(SamplerError.cancelled(unets))
         }
         let timestep = discretization.timestep(for: alphasCumprod[i])
         if timestep < refinerKickIn, let refiner = refiner {
-          let timesteps = (i..<endStep).map {
+          let timesteps = (i..<endStep.integral).map {
             let alphaCumprod = alphasCumprod[$0]
             switch conditioning {
             case .noise:
@@ -532,7 +552,7 @@ extension UniPCSampler: Sampler {
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep,
+              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           let injectedControlsAndAdapters = ControlModel<FloatType>
@@ -540,7 +560,7 @@ extension UniPCSampler: Sampler {
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep,
+              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
 
@@ -596,7 +616,7 @@ extension UniPCSampler: Sampler {
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep,
+              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           let injectedControlsAndAdapters = ControlModel<FloatType>
@@ -604,7 +624,7 @@ extension UniPCSampler: Sampler {
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep,
+              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           let etOut = unet(
@@ -625,20 +645,21 @@ extension UniPCSampler: Sampler {
             alpha: alpha, modifier: modifier, step: i, isBatchEnabled: isBatchEnabled,
             cfgZeroStar: cfgZeroStar)
         }
-        var predX0: DynamicGraph.Tensor<FloatType>
+        var predX0: DynamicGraph.Tensor<Float>
+        var xF32 = DynamicGraph.Tensor<Float>(from: x)
         switch discretization.objective {
         case .u(_):
-          // TODO: This is wrong.
           predX0 = Functional.add(
-            left: x, right: et, leftScalar: Float(1.0 / alphas[i]),
-            rightScalar: Float(-sigmas[i] / alphas[i]))
+            left: xF32, right: DynamicGraph.Tensor<Float>(from: et), leftScalar: 1,
+            rightScalar: Float(-sigmas[i]))
         case .v:
           predX0 = Functional.add(
-            left: x, right: et, leftScalar: Float(alphas[i]),
+            left: xF32, right: DynamicGraph.Tensor<Float>(from: et), leftScalar: Float(alphas[i]),
             rightScalar: Float(-sigmas[i]))
         case .epsilon:
           predX0 = Functional.add(
-            left: x, right: et, leftScalar: Float(1.0 / alphas[i]),
+            left: xF32, right: DynamicGraph.Tensor<Float>(from: et),
+            leftScalar: Float(1.0 / alphas[i]),
             rightScalar: Float(-sigmas[i] / alphas[i]))
           if version == .kandinsky21 {
             predX0 = clipDenoised(predX0)
@@ -648,12 +669,12 @@ extension UniPCSampler: Sampler {
           let alphaCumprod = alphasCumprod[i]
           let sigma = ((1 - alphaCumprod) / alphaCumprod).squareRoot()
           predX0 = Functional.add(
-            left: x, right: et,
+            left: xF32, right: DynamicGraph.Tensor<Float>(from: et),
             leftScalar: Float(sigmaData2 / (sigma * sigma + sigmaData2).squareRoot()),
             rightScalar: Float(sigma * sigmaData / (sigma * sigma + sigmaData2).squareRoot()))
         }
         if let lastSample = lastSample {
-          x = uniCBhUpdate(
+          xF32 = uniCBhUpdate(
             predX0: predX0, timestep: i, lastSample: lastSample, timestepList: timestepList,
             outputList: outputList, lambdas: lambdas, alphas: alphas, sigmas: sigmas)
         }
@@ -672,22 +693,30 @@ extension UniPCSampler: Sampler {
         let alphaPrev = alphasCumprod[i + 1]
         if i < sampling.steps - 1 {
           let prevTimestep = i + 1
-          lastSample = x
-          x = uniPBhUpdate(
-            predX0: predX0, prevTimestep: prevTimestep, sample: x, timestepList: timestepList,
+          lastSample = xF32
+          xF32 = uniPBhUpdate(
+            prevTimestep: prevTimestep, sample: xF32, timestepList: timestepList,
             outputList: outputList, lambdas: lambdas, alphas: alphas, sigmas: sigmas)
         } else {
-          x = predX0
+          xF32 = predX0
         }
-        if i < endStep - 1, let noise = noise, let sample = sample, let mask = mask,
+        x = DynamicGraph.Tensor<FloatType>(from: xF32)
+        if i < endStep.integral - 1, let noise = noise, let sample = sample, let mask = mask,
           let negMask = negMask
         {
           noise.randn(std: 1, mean: 0)
-          let qSample =
-            Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
+          let qSample: DynamicGraph.Tensor<FloatType>
+          if case .u(_) = discretization.objective {
+            qSample = Functional.add(
+              left: sample, right: noise, leftScalar: Float(alphaPrev),
+              rightScalar: Float(1 - alphaPrev))
+          } else {
+            qSample =
+              Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
+          }
           x = qSample .* negMask + x .* mask
         }
-        if i == endStep - 1 {
+        if i == endStep.integral - 1 {
           if isNaN(x.rawValue.toCPU()) {
             return .failure(SamplerError.isNaN)
           }
@@ -703,28 +732,66 @@ extension UniPCSampler: Sampler {
   public func timestep(for strength: Float, sampling: Sampling) -> (
     timestep: Float, startStep: Float, roundedDownStartStep: Int, roundedUpStartStep: Int
   ) {
-    let tEnc = Int(strength * Float(sampling.steps))
-    let initTimestep =
-      discretization.timesteps - discretization.timesteps
-      / Float(sampling.steps * (sampling.steps - tEnc)) + 1
-    let startStep = sampling.steps - tEnc
+    let tEnc = strength * discretization.timesteps
+    let initTimestep = tEnc
+    let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
+    var previousTimestep = discretization.timesteps
+    for (i, alphaCumprod) in alphasCumprod.enumerated() {
+      let timestep = discretization.timestep(for: alphaCumprod)
+      if initTimestep >= timestep {
+        guard i > 0 else {
+          return (
+            timestep: timestep, startStep: 0, roundedDownStartStep: 0, roundedUpStartStep: 0
+          )
+        }
+        guard initTimestep > timestep + 1e-3 else {
+          return (
+            timestep: initTimestep, startStep: Float(i), roundedDownStartStep: i,
+            roundedUpStartStep: i
+          )
+        }
+        return (
+          timestep: Float(initTimestep),
+          startStep: Float(i - 1) + Float(initTimestep - previousTimestep)
+            / Float(timestep - previousTimestep), roundedDownStartStep: i - 1, roundedUpStartStep: i
+        )
+      }
+      previousTimestep = timestep
+    }
     return (
-      timestep: initTimestep, startStep: Float(startStep), roundedDownStartStep: startStep,
-      roundedUpStartStep: startStep
+      timestep: discretization.timestep(for: alphasCumprod[0]),
+      startStep: Float(alphasCumprod.count - 1),
+      roundedDownStartStep: alphasCumprod.count - 1, roundedUpStartStep: alphasCumprod.count - 1
     )
   }
 
   public func sampleScaleFactor(at step: Float, sampling: Sampling) -> Float {
-    let step = Int(step.rounded())
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
-    let alphaCumprod = alphasCumprod[max(0, min(alphasCumprod.count - 1, step))]
-    return Float(alphaCumprod.squareRoot())
+    let lowTimestep = discretization.timestep(
+      for: alphasCumprod[max(0, min(Int(step.rounded(.down)), alphasCumprod.count - 1))])
+    let highTimestep = discretization.timestep(
+      for: alphasCumprod[max(0, min(Int(step.rounded(.up)), alphasCumprod.count - 1))])
+    let timestep = lowTimestep + (highTimestep - lowTimestep) * (step - Float(step.rounded(.down)))
+    let alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
+    if case .u(_) = discretization.objective {
+      return Float(alphaCumprod)
+    } else {
+      return Float(alphaCumprod.squareRoot())
+    }
   }
 
   public func noiseScaleFactor(at step: Float, sampling: Sampling) -> Float {
-    let step = Int(step.rounded())
     let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
-    let alphaCumprod = alphasCumprod[max(0, min(alphasCumprod.count - 1, step))]
-    return Float((1 - alphaCumprod).squareRoot())
+    let lowTimestep = discretization.timestep(
+      for: alphasCumprod[max(0, min(Int(step.rounded(.down)), alphasCumprod.count - 1))])
+    let highTimestep = discretization.timestep(
+      for: alphasCumprod[max(0, min(Int(step.rounded(.up)), alphasCumprod.count - 1))])
+    let timestep = lowTimestep + (highTimestep - lowTimestep) * (step - Float(step.rounded(.down)))
+    let alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
+    if case .u(_) = discretization.objective {
+      return Float(1 - alphaCumprod)
+    } else {
+      return Float((1 - alphaCumprod).squareRoot())
+    }
   }
 }

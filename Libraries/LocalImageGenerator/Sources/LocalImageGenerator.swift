@@ -232,7 +232,7 @@ extension LocalImageGenerator {
           cfgZeroStar: cfgZeroStar,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
-      case .uniPC:
+      case .uniPC, .uniPCTrailing:
         return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
@@ -658,6 +658,24 @@ extension LocalImageGenerator {
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         cfgZeroStar: cfgZeroStar,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
+        weightsCache: weightsCache)
+    case .uniPCTrailing:
+      return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
+        injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
+        injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+        classifierFreeGuidance: isCfgEnabled, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+        isQuantizedModel: isQuantizedModel,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
+        conditioning: conditioning,
+        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+        cfgZeroStar: cfgZeroStar,
+        discretization: Denoiser.LinearDiscretization(
+          parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
     case .LCM:
       return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(

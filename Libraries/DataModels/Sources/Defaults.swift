@@ -63,6 +63,8 @@ extension SamplerType: CustomStringConvertible {
       return "DPM++ 2M Trailing"
     case .dDIMTrailing:
       return "DDIM Trailing"
+    case .uniPCTrailing:
+      return "UniPC Trailing"
     }
   }
 
