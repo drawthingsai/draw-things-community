@@ -445,18 +445,14 @@ func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
             (batchSize * 2)..<(batchSize * 3), 0..<startHeight, 0..<startWidth, 0..<channels
           ].copied()
         if cfgZeroStar.isEnabled {
-          var etUncondF32 = DynamicGraph.Tensor<Float>(from: etUncond)
+          let etUncondF32 = DynamicGraph.Tensor<Float>(from: etUncond)
           let etCondF32 = DynamicGraph.Tensor<Float>(from: etCond)
           var etAllUncondF32 = DynamicGraph.Tensor<Float>(from: etAllUncond)
-          let dotProductUncond = (etUncondF32 .* etCondF32).reduced(.sum, axis: [1, 2, 3])
-          let squaredSumUncond = (etUncondF32 .* etUncondF32).reduced(.sum, axis: [1, 2, 3])
-          let stStarUncond = dotProductUncond ./ squaredSumUncond
-          etUncondF32 = etUncondF32 .* stStarUncond
-          let dotProductAllUncond = (etAllUncondF32 .* etCondF32).reduced(.sum, axis: [1, 2, 3])
-          let squaredSumAllUncond = (etAllUncondF32 .* etAllUncondF32).reduced(
+          let dotProduct = (etAllUncondF32 .* etUncondF32).reduced(.sum, axis: [1, 2, 3])
+          let squaredSum = (etAllUncondF32 .* etAllUncondF32).reduced(
             .sum, axis: [1, 2, 3])
-          let stStarAllUncond = dotProductAllUncond ./ squaredSumAllUncond
-          etAllUncondF32 = etAllUncondF32 .* stStarAllUncond
+          let stStar = dotProduct ./ squaredSum
+          etAllUncondF32 = etAllUncondF32 .* stStar
           et = DynamicGraph.Tensor<FloatType>(
             from: etAllUncondF32 + textGuidanceScale * (etCondF32 - etUncondF32)
               + imageGuidanceScale * (etUncondF32 - etAllUncondF32))
