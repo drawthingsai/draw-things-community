@@ -98,11 +98,14 @@ extension Worker {
         )
         logger.info("Succeed: {\"model\": \"\(task.model)\",\"images\":\(numberOfImages)}")
       }
+      let isTaskSuccessful = status.code == .ok
+
       if task.payload.consumableType == "boost", let amount = task.payload.amount,
         let generationId = task.payload.generationId
       {
         await proxyMessageSigner.completeBoost(
-          action: .complete, generationId: generationId, amount: amount,
+          action: isTaskSuccessful ? .complete : .cancel, generationId: generationId,
+          amount: amount,
           logger: logger)
       }
       task.promise.succeed(status)
