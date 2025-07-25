@@ -1,5 +1,4 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_library")
-load("@build_bazel_rules_apple//apple:macos.bzl", "macos_command_line_application")
 
 swift_binary(
     name = "ModelConverter",
@@ -47,6 +46,7 @@ swift_binary(
 swift_library(
     name = "gRPCServerCLILib",
     srcs = glob(["gRPCServerCLI/gRPCServerCLI.swift"]),
+    visibility = ["//Apps:__subpackages__"],
     deps = [
         "//Libraries/BinaryResources",
         "//Libraries/DataModels",
@@ -68,26 +68,6 @@ swift_library(
 swift_binary(
     name = "gRPCServerCLI",
     srcs = [],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":gRPCServerCLILib",
-    ],
-)
-
-macos_command_line_application(
-    name = "gRPCServerCLI-macOS",
-    bundle_id = "com.liuliu.draw-things-grpc-server-cli",
-    linkopts = [
-        "-framework",
-        "Accelerate",
-        "-framework",
-        "Metal",
-        "-framework",
-        "MetalPerformanceShaders",
-        "-framework",
-        "MetalPerformanceShadersGraph",
-    ],
-    minimum_os_version = "13.0",
     visibility = ["//visibility:public"],
     deps = [
         ":gRPCServerCLILib",
