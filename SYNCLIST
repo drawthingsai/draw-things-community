@@ -4,6 +4,7 @@
 external/
 Apps/EmbeddingConverter
 Apps/Linux
+Apps/macOS
 Apps/LoRAConverter
 Apps/ModelConverter
 Apps/ModelQuantizer
