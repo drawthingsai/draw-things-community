@@ -1,5 +1,6 @@
 load(
     "@build_bazel_rules_swift//swift:swift.bzl",
+    "swift_interop_hint",
     "swift_library",
 )
 
@@ -28,6 +29,7 @@ cc_library(
     hdrs = glob([
         "Sources/CNIOBoringSSLShims/include/**/*.h",
     ]),
+    aspect_hints = [":CNIOBoringSSLShims_swift_interop"],
     copts = [],
     includes = ["Sources/CNIOBoringSSLShims/include"],
     local_defines = [
@@ -36,6 +38,11 @@ cc_library(
     tags = ["swift_module=CNIOBoringSSLShims"],
     visibility = ["//visibility:public"],
     deps = [":CNIOBoringSSL"],
+)
+
+swift_interop_hint(
+    name = "CNIOBoringSSLShims_swift_interop",
+    module_name = "CNIOBoringSSLShims",
 )
 
 cc_library(
@@ -50,6 +57,7 @@ cc_library(
         "Sources/CNIOBoringSSL/include/**/*.h",
         "Sources/CNIOBoringSSL/**/*.inc",
     ]),
+    aspect_hints = [":CNIOBoringSSL_swift_interop"],
     copts = [],
     includes = ["Sources/CNIOBoringSSL/include"],
     local_defines = [
@@ -60,4 +68,9 @@ cc_library(
     tags = ["swift_module=CNIOBoringSSL"],
     visibility = ["//visibility:public"],
     deps = [],
+)
+
+swift_interop_hint(
+    name = "CNIOBoringSSL_swift_interop",
+    module_name = "CNIOBoringSSL",
 )

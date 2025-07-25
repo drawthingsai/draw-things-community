@@ -1,4 +1,4 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_interop_hint", "swift_library")
 
 cc_library(
     name = "CYaml",
@@ -7,12 +7,18 @@ cc_library(
         "Sources/CYaml/src/*.h",
     ]),
     hdrs = ["Sources/CYaml/include/yaml.h"],
+    aspect_hints = [":CYaml_swift_interop"],
     # Requires because of https://github.com/bazelbuild/bazel/pull/10143 otherwise host transition builds fail
     copts = ["-fPIC"],
     includes = ["Sources/CYaml/include"],
     linkstatic = True,
-    tags = ["swift_module"],
+    tags = ["swift_module=CYaml"],
     visibility = ["//Tests:__subpackages__"],
+)
+
+swift_interop_hint(
+    name = "CYaml_swift_interop",
+    module_name = "CYaml",
 )
 
 swift_library(

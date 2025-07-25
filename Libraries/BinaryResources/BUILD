@@ -1,4 +1,4 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_interop_hint", "swift_library")
 load("//Tools:Packager/packager.bzl", "resource_library")
 
 resource_library(
@@ -25,8 +25,14 @@ resource_library(
 cc_library(
     name = "CResources",
     hdrs = ["Sources/Module.h"],
+    aspect_hints = [":C_Resources_swift_interop"],
     tags = ["swift_module=C_Resources"],
     deps = [":Resources"],
+)
+
+swift_interop_hint(
+    name = "C_Resources_swift_interop",
+    module_name = "C_Resources",
 )
 
 swift_library(

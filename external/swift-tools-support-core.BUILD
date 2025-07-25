@@ -1,4 +1,4 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_interop_hint", "swift_library")
 
 cc_library(
     name = "TSCclibc",
@@ -6,10 +6,16 @@ cc_library(
     hdrs = glob([
         "Sources/TSCclibc/include/*.h",
     ]),
+    aspect_hints = [":TSCclibc_swift_interop"],
     includes = [
         "Sources/TSCclibc/include/",
     ],
     tags = ["swift_module=TSCclibc"],
+)
+
+swift_interop_hint(
+    name = "TSCclibc_swift_interop",
+    module_name = "TSCclibc",
 )
 
 swift_library(

@@ -1,6 +1,7 @@
 load(
     "@build_bazel_rules_swift//swift:swift.bzl",
     "swift_binary",
+    "swift_interop_hint",
     "swift_library",
 )
 
@@ -12,9 +13,15 @@ cc_library(
     hdrs = glob([
         "Sources/CGRPCZlib/**/*.h",
     ]),
+    aspect_hints = [":CGRPCZlib_swift_interop"],
     includes = ["Sources/CGRPCZlib/include"],
     linkopts = ["-lz"],
     tags = ["swift_module=CGRPCZlib"],
+)
+
+swift_interop_hint(
+    name = "CGRPCZlib_swift_interop",
+    module_name = "CGRPCZlib",
 )
 
 swift_library(

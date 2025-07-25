@@ -1,5 +1,6 @@
 load(
     "@build_bazel_rules_swift//swift:swift.bzl",
+    "swift_interop_hint",
     "swift_library",
 )
 
@@ -15,11 +16,17 @@ cc_library(
     hdrs = glob([
         "Sources/CCryptoBoringSSL/include/**/*.h",
     ]),
+    aspect_hints = [":CCryptoBoringSSL_swift_interop"],
     copts = [],
     includes = ["Sources/CCryptoBoringSSL/include"],
     tags = ["swift_module=CCryptoBoringSSL"],
     visibility = ["//visibility:public"],
     deps = [],
+)
+
+swift_interop_hint(
+    name = "CCryptoBoringSSL_swift_interop",
+    module_name = "CCryptoBoringSSL",
 )
 
 cc_library(
@@ -30,11 +37,17 @@ cc_library(
     hdrs = glob([
         "Sources/CCryptoBoringSSLShims/include/**/*.h",
     ]),
+    aspect_hints = [":CCryptoBoringSSLShims_swift_interop"],
     copts = [],
     includes = ["Sources/CCryptoBoringSSLShims/include"],
     tags = ["swift_module=CCryptoBoringSSLShims"],
     visibility = ["//visibility:public"],
     deps = [":CCryptoBoringSSL"],
+)
+
+swift_interop_hint(
+    name = "CCryptoBoringSSLShims_swift_interop",
+    module_name = "CCryptoBoringSSLShims",
 )
 
 swift_library(

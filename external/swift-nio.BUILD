@@ -1,5 +1,6 @@
 load(
     "@build_bazel_rules_swift//swift:swift.bzl",
+    "swift_interop_hint",
     "swift_library",
 )
 
@@ -11,9 +12,15 @@ cc_library(
     hdrs = glob([
         "Sources/CNIOAtomics/**/*.h",
     ]),
+    aspect_hints = [":CNIOAtomics_swift_interop"],
     copts = [],
     includes = ["Sources/CNIOAtomics/include"],
     tags = ["swift_module=CNIOAtomics"],
+)
+
+swift_interop_hint(
+    name = "CNIOAtomics_swift_interop",
+    module_name = "CNIOAtomics",
 )
 
 cc_library(
@@ -24,11 +31,17 @@ cc_library(
     hdrs = glob([
         "Sources/CNIODarwin/**/*.h",
     ]),
+    aspect_hints = [":CNIODarwin_swift_interop"],
     defines = [
         "__APPLE_USE_RFC_3542",
     ],
     includes = ["Sources/CNIODarwin/include"],
     tags = ["swift_module=CNIODarwin"],
+)
+
+swift_interop_hint(
+    name = "CNIODarwin_swift_interop",
+    module_name = "CNIODarwin",
 )
 
 cc_library(
@@ -39,12 +52,18 @@ cc_library(
     hdrs = glob([
         "Sources/CNIOLLHTTP/**/*.h",
     ]),
+    aspect_hints = [":CNIOLLHTTP_swift_interop"],
     copts = [],
     defines = [
         "LLHTTP_STRICT_MODE",
     ],
     includes = ["Sources/CNIOLLHTTP/include"],
     tags = ["swift_module=CNIOLLHTTP"],
+)
+
+swift_interop_hint(
+    name = "CNIOLLHTTP_swift_interop",
+    module_name = "CNIOLLHTTP",
 )
 
 cc_library(
@@ -55,9 +74,15 @@ cc_library(
     hdrs = glob([
         "Sources/CNIOLinux/**/*.h",
     ]),
+    aspect_hints = [":CNIOLinux_swift_interop"],
     copts = [],
     includes = ["Sources/CNIOLinux/include"],
     tags = ["swift_module=CNIOLinux"],
+)
+
+swift_interop_hint(
+    name = "CNIOLinux_swift_interop",
+    module_name = "CNIOLinux",
 )
 
 cc_library(
@@ -68,9 +93,15 @@ cc_library(
     hdrs = [
         "Sources/CNIOSHA1/**/*.h",
     ],
+    aspect_hints = [":CNIOSHA1_swift_interop"],
     copts = [],
     includes = ["Sources/CNIOSHA1/include"],
     tags = ["swift_module=CNIOSHA1"],
+)
+
+swift_interop_hint(
+    name = "CNIOSHA1_swift_interop",
+    module_name = "CNIOSHA1",
 )
 
 cc_library(
@@ -81,9 +112,15 @@ cc_library(
     hdrs = glob([
         "Sources/CNIOWindows/**/*.h",
     ]),
+    aspect_hints = [":CNIOWindows_swift_interop"],
     copts = [],
     includes = ["Sources/CNIOWindows/include"],
     tags = ["swift_module=CNIOWindows"],
+)
+
+swift_interop_hint(
+    name = "CNIOWindows_swift_interop",
+    module_name = "CNIOWindows",
 )
 
 swift_library(

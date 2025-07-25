@@ -1,4 +1,4 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_interop_hint", "swift_library")
 load("@bazel_skylib//lib:selects.bzl", "selects")
 
 cc_library(
@@ -7,10 +7,16 @@ cc_library(
     hdrs = glob([
         "Sources/CSystem/include/*.h",
     ]),
+    aspect_hints = [":CSystem_swift_interop"],
     includes = [
         "Sources/CSystem/include/",
     ],
     tags = ["swift_module=CSystem"],
+)
+
+swift_interop_hint(
+    name = "CSystem_swift_interop",
+    module_name = "CSystem",
 )
 
 config_setting(

@@ -12,6 +12,8 @@ common --disk_cache=.cache
 
 build --cxxopt='-std=c++17'
 build --host_linkopt="-lm"
+build --host_cxxopt=-Wno-deprecated-declarations
+build --incompatible_enable_cc_toolchain_resolution=false
 
 common:release --compilation_mode=opt
 

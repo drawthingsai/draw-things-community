@@ -60,8 +60,8 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "build_bazel_rules_apple",
-    sha256 = "8ac4c7997d863f3c4347ba996e831b5ec8f7af885ee8d4fe36f1c3c8f0092b2c",
-    url = "https://github.com/bazelbuild/rules_apple/releases/download/2.5.0/rules_apple.2.5.0.tar.gz",
+    sha256 = "e21e13568f6cbd1167a3b4c29ee865440c11b680153a7b6014ee15e64cc57c2d",
+    url = "https://github.com/bazelbuild/rules_apple/releases/download/4.1.1/rules_apple.4.1.1.tar.gz",
 )
 
 load(
@@ -92,10 +92,11 @@ load(
 
 apple_support_dependencies()
 
-http_archive(
+git_repository(
     name = "rules_xcodeproj",
-    integrity = "sha256-b+AKGo9kJFkcN52bTraVuIu6hKlTEe/Y+LAHkhXs29o=",
-    url = "https://github.com/MobileNativeFoundation/rules_xcodeproj/releases/download/2.7.0/release.tar.gz",
+    commit = "637a94211aa7528ef92335b51825bf596b93bcf5",
+    remote = "https://github.com/MobileNativeFoundation/rules_xcodeproj.git",
+    shallow_since = "1747165514 -0500",
 )
 
 load(
@@ -111,9 +112,9 @@ bazel_features_deps()
 
 git_repository(
     name = "dflat",
-    commit = "ac2de5fd27842acb5d723e913a35e4ebb15812f9",
+    commit = "516595ddd9472bf8edf0b91c77ce752050d5dc1d",
     remote = "https://github.com/liuliu/dflat.git",
-    shallow_since = "1733814979 -0500",
+    shallow_since = "1753463895 -0400",
 )
 
 load("@dflat//:deps.bzl", "dflat_deps")
@@ -122,9 +123,9 @@ dflat_deps()
 
 git_repository(
     name = "s4nnc",
-    commit = "20dc8ed214e417f5bdaa47d54f1dc2d03cada306",
+    commit = "1ad7b5d44b23eb2f8e42c3bfbca4915ac6dbdb63",
     remote = "https://github.com/liuliu/s4nnc.git",
-    shallow_since = "1749617796 -0400",
+    shallow_since = "1753465579 -0400",
 )
 
 load("@s4nnc//:deps.bzl", "s4nnc_deps")
@@ -166,9 +167,9 @@ swift_fickling_deps()
 
 git_repository(
     name = "swift-sentencepiece",
-    commit = "8284609baa2ca57342e1eaf34613a9526c607095",
+    commit = "b0f9edd91fccbc4a1ba2323d82542beaec684fa5",
     remote = "https://github.com/liuliu/swift-sentencepiece.git",
-    shallow_since = "1731390681 -0500",
+    shallow_since = "1753399872 -0400",
 )
 
 load("@swift-sentencepiece//:deps.bzl", "swift_sentencepiece_deps")

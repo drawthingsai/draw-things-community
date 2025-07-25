@@ -1,4 +1,4 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_library", "swift_test")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_interop_hint", "swift_library", "swift_test")
 load("@bazel_skylib//lib:selects.bzl", "selects")
 
 config_setting(
@@ -27,7 +27,13 @@ cc_library(
     name = "C_DNSAdvertiser",
     srcs = ["Advertiser/Sources/dnssd_advertiser.c"],
     hdrs = ["Advertiser/Sources/dnssd_advertiser.h"],
+    aspect_hints = [":C_DNSAdvertiser_swift_interop"],
     tags = ["swift_module=C_DNSAdvertiser"],
+)
+
+swift_interop_hint(
+    name = "C_DNSAdvertiser_swift_interop",
+    module_name = "C_DNSAdvertiser",
 )
 
 swift_library(
