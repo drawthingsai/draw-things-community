@@ -590,6 +590,14 @@ public struct ModelZoo: DownloadZoo {
     "hidream_e1_full_q5p.ckpt": "63ff5d43c474937b3f83fe9220a2dbbea7d215fc0585db0fcf12e37ac87dc60c",
     "hidream_e1_1_q8p.ckpt": "b1fe02e5992e6696947f76d5afe0ea1aef7908f9947ae2d665b1d21661aeaf46",
     "hidream_e1_1_q5p.ckpt": "c50ddbdccc8e59ea03f1d382dbdb79c3ad9ad1ec8f543173241469324a4396dd",
+    "wan_v2.2_a14b_hne_t2v_q8p.ckpt":
+      "63b3dc2eaac38d1019017c4745ea763e9894b5aa55a97fb52dfe26985abc42e6",
+    "wan_v2.2_a14b_hne_t2v_q6p_svd.ckpt":
+      "f3d3adb772520896bc5d016d00f9159c8595fbdec2ecc33dff2572bffb39cadd",
+    "wan_v2.2_a14b_lne_t2v_q8p.ckpt":
+      "5fe77d9998141a667071353658d71acef656389210327391c832d39b4ee39671",
+    "wan_v2.2_a14b_lne_t2v_q6p_svd.ckpt":
+      "861aef3cb11c3dd44052e79a5cbd4740550dc05a7d119cf3069de152958c9e1e",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -702,6 +710,50 @@ public struct ModelZoo: DownloadZoo {
       objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24,
       note:
         "[HiDream-E1 [full]](https://huggingface.co/HiDream-ai/HiDream-E1-Full) is an image editing model built on HiDream-I1. It is MIT-licensed and commercially friendly. Trained at 768×768 resolution using a Flow Matching objective, the model performs best with trailing samplers and 30–50 sampling steps. For optimal results, ensure the width is set to 768 and use the following prompt format: Editing Instruction: {}. Target Image Description: {}."
+    ),
+    Specification(
+      name: "Wan 2.2 High Noise Expert T2V A14B", file: "wan_v2.2_a14b_hne_t2v_q8p.ckpt",
+      prefix: "",
+      version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 16,
+      note:
+        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      teaCacheCoefficients: [
+        -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
+      ], framesPerSecond: 16
+    ),
+    Specification(
+      name: "Wan 2.2 High Noise Expert T2V A14B (6-bit, SVDQuant)",
+      file: "wan_v2.2_a14b_hne_t2v_q6p_svd.ckpt",
+      prefix: "",
+      version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 16, builtinLora: true,
+      note:
+        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      teaCacheCoefficients: [
+        -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
+      ], framesPerSecond: 16
+    ),
+    Specification(
+      name: "Wan 2.2 Low Noise Expert T2V A14B", file: "wan_v2.2_a14b_lne_t2v_q8p.ckpt", prefix: "",
+      version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 16,
+      note:
+        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      teaCacheCoefficients: [
+        -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
+      ], framesPerSecond: 16
+    ),
+    Specification(
+      name: "Wan 2.2 Low Noise Expert T2V A14B (6-bit, SVDQuant)",
+      file: "wan_v2.2_a14b_lne_t2v_q6p_svd.ckpt", prefix: "",
+      version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 16, builtinLora: true,
+      note:
+        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      teaCacheCoefficients: [
+        -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
+      ], framesPerSecond: 16
     ),
     Specification(
       name: "Wan 2.1 T2V 1.3B", file: "wan_v2.1_1.3b_480p_f16.ckpt", prefix: "",
