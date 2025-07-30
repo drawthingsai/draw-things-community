@@ -1198,6 +1198,28 @@ extension UNetFixedEncoder {
       if lora.isEmpty || shouldRunLoRASeparately {
         weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       }
+      // Use this convoluted style (rather than conditions.enumerated().flatMap) to maximize memory reuse. Otherwise we are holding to old conditions so newer copied ones will not trigger a reuse.
+      var conditionOrNils: [DynamicGraph.AnyTensor?] = conditions
+      conditions = []
+      for offset in 0..<conditionOrNils.count {
+        guard let element = conditionOrNils[offset] else { continue }
+        switch offset {
+        case 0..<(vaceContext == nil ? 6 : 7), (conditionOrNils.count - 2)..<conditionOrNils.count:
+          conditions.append(element)
+        default:  // Need to separate them into two elements.
+          let shape = element.shape
+          guard shape[0] > 1 else {
+            conditions.append(element)
+            break
+          }
+          let value = DynamicGraph.Tensor<FloatType>(element)
+          conditions.append(contentsOf: [
+            value[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+            value[1..<2, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+          ])
+        }
+        conditionOrNils[offset] = nil
+      }
       conditions = conditions.enumerated().flatMap {
         switch $0.offset {
         case 0..<(vaceContext == nil ? 6 : 7), (conditions.count - 2)..<conditions.count:
