@@ -183,146 +183,148 @@ extension LCMSampler: Sampler {
         extraProjection = projection
       }
     }
-    let oldC = c
-    var conditions: [DynamicGraph.AnyTensor] = c
-    let fixedEncoder = UNetFixedEncoder<FloatType>(
-      filePath: filePath, version: version, modifier: modifier,
-      dualAttentionLayers: dualAttentionLayers,
-      usesFlashAttention: usesFlashAttention,
-      zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
-      canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand,
-      deviceProperties: deviceProperties, weightsCache: weightsCache)
-    let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
-    let alphasCumprod = Array(
-      discretization.alphasCumprod(steps: 1000, shift: sampling.shift).reversed())
-    let sigmas = alphasCumprod.map { discretization.sigma(from: $0) }
-    var timesteps = (0..<sampling.steps).map {
-      min(
-        Int(
-          (Double(1000 - 1 - 20) * Double(sampling.steps - $0)
-            / Double(sampling.steps)).rounded()) + 20, 1000 - 1)
-    }
-    if (Float(startStep.integral) - startStep.fractional).magnitude >= 1e-4 {
-      timesteps[startStep.integral] = min(
-        Int(
-          1000 - startStep.fractional * 1000 / Float(sampling.steps)), 1000 - 1)
-    }
-    if (Float(endStep.integral) - endStep.fractional).magnitude >= 1e-4
-      && endStep.integral < sampling.steps
-    {
-      timesteps[endStep.integral] = min(
-        Int(
-          1000 - endStep.fractional * 1000 / Float(sampling.steps)), 1000 - 1)
-    }
-    var lora = lora
-    if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: version) {
-      let vector = fixedEncoder.vector(
-        textEmbedding: c[c.count - 1], originalSize: originalSize,
-        cropTopLeft: cropTopLeft,
-        targetSize: targetSize, aestheticScore: aestheticScore,
-        negativeOriginalSize: negativeOriginalSize, negativeAestheticScore: negativeAestheticScore,
-        fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
-      let (encodings, weightMapper) = fixedEncoder.encode(
-        isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
-        isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
-        distilledGuidanceLayers: distilledGuidanceLayers,
-        textEncoding: c,
-        timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
-        batchSize: batchSize, startHeight: startHeight,
-        startWidth: startWidth,
-        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: injectedControls,
-        referenceImages: referenceImages)
-      conditions = vector + encodings
-      injectedControlsC = injectedControls.map {
-        $0.model.encode(
-          isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
-          isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, textEncoding: oldC,
-          timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
-          vector: vector.first, batchSize: batchSize, startHeight: startHeight,
-          startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
-          tokenLengthCond: tokenLengthCond, zeroNegativePrompt: zeroNegativePrompt,
-          mainUNetFixed: (fixedEncoder.filePath, weightMapper))
-      }
-    } else {
-      injectedControlsC = injectedControls.map {
-        $0.model.encode(
-          isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
-          isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, textEncoding: oldC,
-          timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
-          vector: nil, batchSize: batchSize, startHeight: startHeight,
-          startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
-          tokenLengthCond: tokenLengthCond, zeroNegativePrompt: zeroNegativePrompt,
-          mainUNetFixed: (fixedEncoder.filePath, nil))
-      }
-    }
-    var unet = existingUNets[0] ?? UNet()
-    defer {
-      cancellation {}  // In this way, we are not holding the graph any more.
-    }
-    cancellation {
-      unet.cancel()
-    }
-    let referenceImageCount = referenceImages.count
-    var controlNets = [Model?](repeating: nil, count: injectedControls.count)
-    var timeEmbeddingSize = version == .kandinsky21 || version == .sdxlRefiner ? 384 : 320
-    let injectControlsAndAdapters = InjectControlsAndAdapters(
-      injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
-      injectAttentionKV: injectAttentionKV, injectIPAdapterLengths: injectIPAdapterLengths,
-      injectControlModels: injectedControls.map { $0.model })
-    if existingUNets[0] == nil {
-      let firstTimestep =
-        discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1
-      let t = unet.timeEmbed(
-        graph: graph, batchSize: batchSize, timestep: firstTimestep, version: version)
-      let emptyInjectedControlsAndAdapters =
-        ControlModel<FloatType>
-        .emptyInjectedControlsAndAdapters(
-          injecteds: injectedControls, step: 0, version: version, inputs: xIn,
-          tiledDiffusion: tiledDiffusion)
-      let newC: [DynamicGraph.AnyTensor]
-      if version == .svdI2v {
-        newC = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
-      } else {
-        newC = conditions
-      }
-      let _ = unet.compileModel(
-        filePath: filePath, externalOnDemand: externalOnDemand, deviceProperties: deviceProperties,
-        version: version,
-        modifier: modifier, qkNorm: qkNorm,
-        dualAttentionLayers: dualAttentionLayers,
-        upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
-        injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,
-        isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
-        inputs: xIn, t,
-        UNetExtractConditions(
-          of: FloatType.self,
-          graph: graph, index: 0, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
-          tokenLengthCond: tokenLengthCond, conditions: newC,
-          referenceImageCount: referenceImageCount, version: version, isCfgEnabled: false),
-        tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-        isCfgEnabled: false, extraProjection: extraProjection,
-        injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-        referenceImageCount: referenceImageCount,
-        tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        weightsCache: weightsCache)
-    }
-    var noise: DynamicGraph.Tensor<FloatType>? = nil
-    if mask != nil || version == .kandinsky21 {
-      noise = graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
-    }
     let streamContext = StreamContext(.GPU(0))
-    var refinerKickIn = refiner.map { (1 - $0.start) * discretization.timesteps } ?? -1
-    var unets: [UNet?] = [unet]
-    let blur: Model?
-    if sharpness > 0 {
-      blur = Blur(filters: channels, sigma: 3.0, size: 13, input: x)
-    } else {
-      blur = nil
-    }
-    var currentModelVersion = version
-    var indexOffset = startStep.integral
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
+      let oldC = c
+      var conditions: [DynamicGraph.AnyTensor] = c
+      let fixedEncoder = UNetFixedEncoder<FloatType>(
+        filePath: filePath, version: version, modifier: modifier,
+        dualAttentionLayers: dualAttentionLayers,
+        usesFlashAttention: usesFlashAttention,
+        zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
+        canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand,
+        deviceProperties: deviceProperties, weightsCache: weightsCache)
+      let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
+      let alphasCumprod = Array(
+        discretization.alphasCumprod(steps: 1000, shift: sampling.shift).reversed())
+      let sigmas = alphasCumprod.map { discretization.sigma(from: $0) }
+      var timesteps = (0..<sampling.steps).map {
+        min(
+          Int(
+            (Double(1000 - 1 - 20) * Double(sampling.steps - $0)
+              / Double(sampling.steps)).rounded()) + 20, 1000 - 1)
+      }
+      if (Float(startStep.integral) - startStep.fractional).magnitude >= 1e-4 {
+        timesteps[startStep.integral] = min(
+          Int(
+            1000 - startStep.fractional * 1000 / Float(sampling.steps)), 1000 - 1)
+      }
+      if (Float(endStep.integral) - endStep.fractional).magnitude >= 1e-4
+        && endStep.integral < sampling.steps
+      {
+        timesteps[endStep.integral] = min(
+          Int(
+            1000 - endStep.fractional * 1000 / Float(sampling.steps)), 1000 - 1)
+      }
+      var lora = lora
+      if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: version) {
+        let vector = fixedEncoder.vector(
+          textEmbedding: c[c.count - 1], originalSize: originalSize,
+          cropTopLeft: cropTopLeft,
+          targetSize: targetSize, aestheticScore: aestheticScore,
+          negativeOriginalSize: negativeOriginalSize,
+          negativeAestheticScore: negativeAestheticScore,
+          fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug)
+        let (encodings, weightMapper) = fixedEncoder.encode(
+          isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
+          isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+          distilledGuidanceLayers: distilledGuidanceLayers,
+          textEncoding: c,
+          timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
+          batchSize: batchSize, startHeight: startHeight,
+          startWidth: startWidth,
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: injectedControls,
+          referenceImages: referenceImages)
+        conditions = vector + encodings
+        injectedControlsC = injectedControls.map {
+          $0.model.encode(
+            isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
+            isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, textEncoding: oldC,
+            timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
+            vector: vector.first, batchSize: batchSize, startHeight: startHeight,
+            startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
+            tokenLengthCond: tokenLengthCond, zeroNegativePrompt: zeroNegativePrompt,
+            mainUNetFixed: (fixedEncoder.filePath, weightMapper))
+        }
+      } else {
+        injectedControlsC = injectedControls.map {
+          $0.model.encode(
+            isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
+            isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, textEncoding: oldC,
+            timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
+            vector: nil, batchSize: batchSize, startHeight: startHeight,
+            startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
+            tokenLengthCond: tokenLengthCond, zeroNegativePrompt: zeroNegativePrompt,
+            mainUNetFixed: (fixedEncoder.filePath, nil))
+        }
+      }
+      var unet = existingUNets[0] ?? UNet()
+      defer {
+        cancellation {}  // In this way, we are not holding the graph any more.
+      }
+      cancellation {
+        unet.cancel()
+      }
+      let referenceImageCount = referenceImages.count
+      var controlNets = [Model?](repeating: nil, count: injectedControls.count)
+      var timeEmbeddingSize = version == .kandinsky21 || version == .sdxlRefiner ? 384 : 320
+      let injectControlsAndAdapters = InjectControlsAndAdapters(
+        injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV, injectIPAdapterLengths: injectIPAdapterLengths,
+        injectControlModels: injectedControls.map { $0.model })
+      if existingUNets[0] == nil {
+        let firstTimestep =
+          discretization.timesteps - discretization.timesteps / Float(sampling.steps) + 1
+        let t = unet.timeEmbed(
+          graph: graph, batchSize: batchSize, timestep: firstTimestep, version: version)
+        let emptyInjectedControlsAndAdapters =
+          ControlModel<FloatType>
+          .emptyInjectedControlsAndAdapters(
+            injecteds: injectedControls, step: 0, version: version, inputs: xIn,
+            tiledDiffusion: tiledDiffusion)
+        let newC: [DynamicGraph.AnyTensor]
+        if version == .svdI2v {
+          newC = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
+        } else {
+          newC = conditions
+        }
+        let _ = unet.compileModel(
+          filePath: filePath, externalOnDemand: externalOnDemand,
+          deviceProperties: deviceProperties,
+          version: version,
+          modifier: modifier, qkNorm: qkNorm,
+          dualAttentionLayers: dualAttentionLayers,
+          upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+          injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,
+          isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
+          inputs: xIn, t,
+          UNetExtractConditions(
+            of: FloatType.self,
+            graph: graph, index: 0, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
+            tokenLengthCond: tokenLengthCond, conditions: newC,
+            referenceImageCount: referenceImageCount, version: version, isCfgEnabled: false),
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+          isCfgEnabled: false, extraProjection: extraProjection,
+          injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
+          referenceImageCount: referenceImageCount,
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
+          weightsCache: weightsCache)
+      }
+      var noise: DynamicGraph.Tensor<FloatType>? = nil
+      if mask != nil || version == .kandinsky21 {
+        noise = graph.variable(.GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
+      }
+      var refinerKickIn = refiner.map { (1 - $0.start) * discretization.timesteps } ?? -1
+      var unets: [UNet?] = [unet]
+      let blur: Model?
+      if sharpness > 0 {
+        blur = Blur(filters: channels, sigma: 3.0, size: 13, input: x)
+      } else {
+        blur = nil
+      }
+      var currentModelVersion = version
+      var indexOffset = startStep.integral
       let condProj = Dense(count: 320, noBias: true)
       let cfg = graph.variable(
         Tensor<FloatType>(
@@ -400,17 +402,26 @@ extension LCMSampler: Sampler {
         let timestep = timesteps[i]
         if Float(timestep) < refinerKickIn, let refiner = refiner {
           unets = [nil]
-          lora = (refiner.builtinLora ? [LoRAConfiguration(file: refiner.filePath, weight: 1, version: refiner.version, isLoHa: false, modifier: .none)] : []) + lora.filter {
-            $0.file != filePath
-          }
+          unet.unloadModel()
+          lora =
+            (refiner.builtinLora
+              ? [
+                LoRAConfiguration(
+                  file: refiner.filePath, weight: 1, version: refiner.version, isLoHa: false,
+                  modifier: .none)
+              ] : [])
+            + lora.filter {
+              $0.file != filePath
+            }
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
             modifier: modifier, dualAttentionLayers: dualAttentionLayers,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
-            isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
-            externalOnDemand: externalOnDemand, deviceProperties: deviceProperties,
+            isQuantizedModel: refiner.isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
+            externalOnDemand: refiner.externalOnDemand, deviceProperties: deviceProperties,
             weightsCache: weightsCache)
           if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
+            conditions = []
             let vector = fixedEncoder.vector(
               textEmbedding: oldC[oldC.count - 1], originalSize: originalSize,
               cropTopLeft: cropTopLeft,

@@ -31,6 +31,7 @@ struct TensorNameAndBlobOffset {
 extension UNetFromCoreML {
   public var model: AnyModel? { nil }
   public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? { nil }
+  public mutating func unloadModel() {}
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, deviceProperties: DeviceProperties,
     version: ModelVersion,
@@ -482,7 +483,7 @@ extension UNetFromCoreML {
     return x
   }
 
-  public func cancel() {
+  public mutating func cancel() {
     // Do nothing.
   }
 }

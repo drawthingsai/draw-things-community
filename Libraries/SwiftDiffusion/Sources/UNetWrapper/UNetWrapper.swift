@@ -61,6 +61,9 @@ extension UNetWrapper {
     guard unetFromNNC.isLoaded else { return nil }
     return unetFromNNC.modelAndWeightMapper
   }
+  public mutating func unloadModel() {
+    unetFromNNC.unloadModel()
+  }
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, deviceProperties: DeviceProperties,
     version: ModelVersion,
@@ -164,7 +167,7 @@ extension UNetWrapper {
 
   }
 
-  public func cancel() {
+  public mutating func cancel() {
     unetFromNNC.cancel()
   }
 }

@@ -84,8 +84,9 @@ public protocol UNetProtocol {
 
   func decode(_ x: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType>
 
+  mutating func unloadModel()
   // This is for best-effort.
-  func cancel()
+  mutating func cancel()
 }
 
 extension UNetProtocol {
@@ -372,6 +373,10 @@ extension UNetFromNNC {
   public var modelAndWeightMapper: (AnyModel, ModelWeightMapper)? {
     guard let unet = unet, let unetWeightMapper = unetWeightMapper else { return nil }
     return (unet.unwrapped, unetWeightMapper)
+  }
+
+  public mutating func unloadModel() {
+    unet = nil
   }
 
   public mutating func compileModel(
@@ -2561,8 +2566,9 @@ extension UNetFromNNC {
     }
   }
 
-  public func cancel() {
+  public mutating func cancel() {
     isCancelled.store(true, ordering: .releasing)
     unet?.cancel()
+    unet = nil
   }
 }
