@@ -189,6 +189,7 @@ extension DDIMSampler: Sampler {
         return discretization.timestep(for: alphaCumprod)
       }
     }
+    var lora = lora
     if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: version) {
       let vector = fixedEncoder.vector(
         textEmbedding: c[c.count - 1], originalSize: originalSize,
@@ -359,6 +360,9 @@ extension DDIMSampler: Sampler {
             }
           }
           unets = [nil]
+          lora = (refiner.builtinLora ? [LoRAConfiguration(file: refiner.filePath, weight: 1, version: refiner.version, isLoHa: false, modifier: .none)] : []) + lora.filter {
+            $0.file != filePath
+          }
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version, modifier: modifier,
             dualAttentionLayers: dualAttentionLayers,

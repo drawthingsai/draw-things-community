@@ -3347,7 +3347,8 @@ extension LocalImageGenerator {
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
         externalOnDemand: externalOnDemand, version: ModelZoo.versionForModel($0),
         isQuantizedModel: ModelZoo.isQuantizedModel($0),
-        isConsistencyModel: ModelZoo.isConsistencyModelForModel($0))
+        isConsistencyModel: ModelZoo.isConsistencyModelForModel($0),
+        builtinLora: ModelZoo.builtinLoRAForModel($0))
     }
     let hiresFixStrength = configuration.hiresFixStrength
     let queueWatermark = DynamicGraph.queueWatermark
@@ -4323,7 +4324,8 @@ extension LocalImageGenerator {
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
         externalOnDemand: externalOnDemand, version: ModelZoo.versionForModel($0),
         isQuantizedModel: ModelZoo.isQuantizedModel($0),
-        isConsistencyModel: ModelZoo.isConsistencyModelForModel($0))
+        isConsistencyModel: ModelZoo.isConsistencyModelForModel($0),
+        builtinLora: ModelZoo.builtinLoRAForModel($0))
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
       version: modelVersion,
@@ -5655,7 +5657,8 @@ extension LocalImageGenerator {
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
         externalOnDemand: externalOnDemand, version: ModelZoo.versionForModel($0),
         isQuantizedModel: ModelZoo.isQuantizedModel($0),
-        isConsistencyModel: ModelZoo.isConsistencyModelForModel($0))
+        isConsistencyModel: ModelZoo.isConsistencyModelForModel($0),
+        builtinLora: ModelZoo.builtinLoRAForModel($0))
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
       version: modelVersion,
@@ -6429,7 +6432,8 @@ extension LocalImageGenerator {
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
         externalOnDemand: externalOnDemand, version: ModelZoo.versionForModel($0),
         isQuantizedModel: ModelZoo.isQuantizedModel($0),
-        isConsistencyModel: ModelZoo.isConsistencyModelForModel($0))
+        isConsistencyModel: ModelZoo.isConsistencyModelForModel($0),
+        builtinLora: ModelZoo.builtinLoRAForModel($0))
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
       version: modelVersion,

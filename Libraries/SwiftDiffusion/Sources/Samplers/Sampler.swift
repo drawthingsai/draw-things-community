@@ -155,10 +155,11 @@ public struct Refiner: Equatable {
   public var version: ModelVersion
   public var isQuantizedModel: Bool
   public var isConsistencyModel: Bool
+  public var builtinLora: Bool
   // We probably need to copy all the rest in sampler over, but for now, we will just ignore.
   public init(
     start: Float, filePath: String, externalOnDemand: Bool, version: ModelVersion,
-    isQuantizedModel: Bool, isConsistencyModel: Bool
+    isQuantizedModel: Bool, isConsistencyModel: Bool, builtinLora: Bool
   ) {
     self.start = start
     self.filePath = filePath
@@ -166,6 +167,7 @@ public struct Refiner: Equatable {
     self.version = version
     self.isQuantizedModel = isQuantizedModel
     self.isConsistencyModel = isConsistencyModel
+    self.builtinLora = builtinLora
   }
 }
 
