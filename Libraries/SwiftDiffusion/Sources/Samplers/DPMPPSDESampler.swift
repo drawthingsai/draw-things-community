@@ -95,7 +95,7 @@ extension DPMPPSDESampler: Sampler {
     targetSize: (width: Int, height: Int), aestheticScore: Float,
     negativeOriginalSize: (width: Int, height: Int), negativeAestheticScore: Float,
     zeroNegativePrompt: Bool, refiner: Refiner?, fpsId: Int, motionBucketId: Int, condAug: Float,
-    startFrameCfg: Float, sharpness: Float, sampling: Sampling, streamContext: StreamContext,
+    startFrameCfg: Float, sharpness: Float, sampling: Sampling,
     cancellation: (@escaping () -> Void) -> Void, feedback: (Int, Tensor<FloatType>?) -> Bool
   ) -> Result<SamplerOutput<FloatType, UNet>, Error> {
     guard endStep.integral > startStep.integral else {
@@ -157,6 +157,7 @@ extension DPMPPSDESampler: Sampler {
       // There is no tokenLengthUncond any more.
       tokenLengthUncond = tokenLengthCond
     }
+    let streamContext = StreamContext(.GPU(0))
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       let oldC = c
       var conditions: [DynamicGraph.AnyTensor] = c

@@ -3698,7 +3698,6 @@ extension LocalImageGenerator {
           batchSize: batchSize, version: modelVersion, image: image,
           injectedControls: injectedControls)
       }
-      let streamContext = StreamContext(.GPU(0))
       guard
         let x =
           try? modelPreloader.consumeUNet(
@@ -3723,8 +3722,7 @@ extension LocalImageGenerator {
               negativeAestheticScore: negativeAestheticScore,
               zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-              sharpness: sharpness, sampling: sampling, streamContext: streamContext,
-              cancellation: cancellation
+              sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(step), signposts, tensor)
             }, sampler: sampler, scale: firstPassScale, tokenLengthUncond: tokenLengthUncond,
@@ -4062,8 +4060,7 @@ extension LocalImageGenerator {
               negativeAestheticScore: negativeAestheticScore,
               zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-              sharpness: sharpness, sampling: secondPassSampling, streamContext: streamContext,
-              cancellation: cancellation
+              sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.secondPassSampling(step), signposts, tensor)
             }, sampler: secondPassSampler, scale: imageScale,
@@ -4700,7 +4697,6 @@ extension LocalImageGenerator {
         image: firstPassImage, depth: depthImage, custom: customImage, shuffles: shuffles,
         modifier: modifier,
         version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
-      let streamContext = StreamContext(.GPU(0))
       guard
         var x =
           try? modelPreloader.consumeUNet(
@@ -4724,8 +4720,7 @@ extension LocalImageGenerator {
               negativeAestheticScore: negativeAestheticScore,
               zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-              sharpness: sharpness, sampling: sampling, streamContext: streamContext,
-              cancellation: cancellation
+              sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(step), signposts, tensor)
             }, sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
@@ -4854,8 +4849,7 @@ extension LocalImageGenerator {
                 negativeAestheticScore: negativeAestheticScore,
                 zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
                 motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-                sharpness: sharpness, sampling: secondPassSampling, streamContext: streamContext,
-                cancellation: cancellation
+                sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
               ) { step, tensor in
                 feedback(.secondPassSampling(step), signposts, tensor)
               }, sampler: secondPassSampler, scale: imageScale,
@@ -5999,7 +5993,6 @@ extension LocalImageGenerator {
           initNegMaskMaybe = nil
         }
       }
-      let streamContext = StreamContext(.GPU(0))
       guard
         var x =
           try? modelPreloader.consumeUNet(
@@ -6025,8 +6018,7 @@ extension LocalImageGenerator {
               negativeAestheticScore: negativeAestheticScore,
               zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-              sharpness: sharpness, sampling: sampling, streamContext: streamContext,
-              cancellation: cancellation
+              sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(step), signposts, tensor)
             }, sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
@@ -6143,8 +6135,7 @@ extension LocalImageGenerator {
                 negativeAestheticScore: negativeAestheticScore,
                 zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
                 motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-                sharpness: sharpness, sampling: secondPassSampling, streamContext: streamContext,
-                cancellation: cancellation
+                sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
               ) { step, tensor in
                 feedback(.secondPassSampling(step), signposts, tensor)
               }, sampler: secondPassSampler, scale: imageScale,
@@ -6800,7 +6791,6 @@ extension LocalImageGenerator {
           initNegMaskMaybe = nil
         }
       }
-      let streamContext = StreamContext(.GPU(0))
       let intermediateResultWithError = sampler.sample(
         noise,
         unets: modelPreloader.retrieveUNet(
@@ -6821,7 +6811,7 @@ extension LocalImageGenerator {
         negativeAestheticScore: negativeAestheticScore, zeroNegativePrompt: zeroNegativePrompt,
         refiner: refiner, fpsId: fpsId, motionBucketId: motionBucketId, condAug: condAug,
         startFrameCfg: startFrameCfg, sharpness: sharpness, sampling: sampling,
-        streamContext: streamContext, cancellation: cancellation
+        cancellation: cancellation
       ) { step, tensor in
         feedback(.sampling(step), signposts, tensor)
       }
@@ -6932,8 +6922,7 @@ extension LocalImageGenerator {
               negativeAestheticScore: negativeAestheticScore,
               zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-              sharpness: sharpness, sampling: sampling, streamContext: streamContext,
-              cancellation: cancellation
+              sharpness: sharpness, sampling: sampling, cancellation: cancellation
             ) { step, tensor in
               feedback(.sampling(initTimestep.roundedDownStartStep + step), signposts, tensor)
             }, sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
@@ -7032,8 +7021,7 @@ extension LocalImageGenerator {
             negativeAestheticScore: negativeAestheticScore,
             zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
             motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-            sharpness: sharpness, sampling: secondPassSampling, streamContext: streamContext,
-            cancellation: cancellation
+            sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
           ) { step, tensor in
             feedback(.secondPassSampling(step), signposts, tensor)
           }).get()
@@ -7104,8 +7092,7 @@ extension LocalImageGenerator {
                 negativeAestheticScore: negativeAestheticScore,
                 zeroNegativePrompt: zeroNegativePrompt, refiner: refiner, fpsId: fpsId,
                 motionBucketId: motionBucketId, condAug: condAug, startFrameCfg: startFrameCfg,
-                sharpness: sharpness, sampling: secondPassSampling, streamContext: streamContext,
-                cancellation: cancellation
+                sharpness: sharpness, sampling: secondPassSampling, cancellation: cancellation
               ) { step, tensor in
                 feedback(.sampling(initTimestep.roundedDownStartStep + step), signposts, tensor)
               }, sampler: secondPassSampler, scale: imageScale,
