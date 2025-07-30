@@ -416,7 +416,7 @@ extension ImageGeneratorUtils {
       name: String, subtitle: String, file: String
     )]
   {
-
+    var existingFiles = Set<String>()
     var filesToDownload = [(name: String, subtitle: String, file: String)]()
 
     if let model = configuration.model,
@@ -426,6 +426,7 @@ extension ImageGeneratorUtils {
         (name, subtitle, file)
       }
       filesToDownload.append(contentsOf: files)
+      existingFiles.formUnion(files.map { $0.2 })
     }
 
     if let refinerModel = configuration.refinerModel,
@@ -434,7 +435,11 @@ extension ImageGeneratorUtils {
       let files = ModelZoo.filesToDownload(specification).map { (name, subtitle, file, _) in
         (name, subtitle, file)
       }
-      filesToDownload.append(contentsOf: files)
+      filesToDownload.append(
+        contentsOf: files.filter {
+          !existingFiles.contains($0.2)
+        })
+      existingFiles.formUnion(files.map { $0.2 })
     }
 
     for lora in configuration.loras {
@@ -445,7 +450,11 @@ extension ImageGeneratorUtils {
           (name, subtitle, file, _) in
           (name, subtitle, file)
         }
-        filesToDownload.append(contentsOf: files)
+        filesToDownload.append(
+          contentsOf: files.filter {
+            !existingFiles.contains($0.2)
+          })
+        existingFiles.formUnion(files.map { $0.2 })
       }
     }
 
@@ -457,7 +466,11 @@ extension ImageGeneratorUtils {
           (name, subtitle, file, _) in
           (name, subtitle, file)
         }
-        filesToDownload.append(contentsOf: files)
+        filesToDownload.append(
+          contentsOf: files.filter {
+            !existingFiles.contains($0.2)
+          })
+        existingFiles.formUnion(files.map { $0.2 })
       }
     }
 
