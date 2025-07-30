@@ -214,7 +214,7 @@ public protocol Sampler<FloatType, UNet> {
     targetSize: (width: Int, height: Int), aestheticScore: Float,
     negativeOriginalSize: (width: Int, height: Int), negativeAestheticScore: Float,
     zeroNegativePrompt: Bool, refiner: Refiner?, fpsId: Int, motionBucketId: Int, condAug: Float,
-    startFrameCfg: Float, sharpness: Float, sampling: Sampling,
+    startFrameCfg: Float, sharpness: Float, sampling: Sampling, streamContext: StreamContext,
     cancellation: (@escaping () -> Void) -> Void, feedback: (Int, Tensor<FloatType>?) -> Bool
   ) -> Result<SamplerOutput<FloatType, UNet>, Error>
 
