@@ -3343,11 +3343,16 @@ extension LocalImageGenerator {
           || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
             && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
       else { return nil }
+      let mmdit = ModelZoo.MMDiTForModel($0)
       return Refiner(
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
         externalOnDemand: externalOnDemand, version: ModelZoo.versionForModel($0),
         isQuantizedModel: ModelZoo.isQuantizedModel($0),
         isConsistencyModel: ModelZoo.isConsistencyModelForModel($0),
+        qkNorm: mmdit?.qkNorm ?? false,
+        dualAttentionLayers: mmdit?.dualAttentionLayers ?? [],
+        distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
+        upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
         builtinLora: ModelZoo.builtinLoRAForModel($0))
     }
     let hiresFixStrength = configuration.hiresFixStrength
@@ -4320,11 +4325,16 @@ extension LocalImageGenerator {
           || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
             && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
       else { return nil }
+      let mmdit = ModelZoo.MMDiTForModel($0)
       return Refiner(
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
         externalOnDemand: externalOnDemand, version: ModelZoo.versionForModel($0),
         isQuantizedModel: ModelZoo.isQuantizedModel($0),
         isConsistencyModel: ModelZoo.isConsistencyModelForModel($0),
+        qkNorm: mmdit?.qkNorm ?? false,
+        dualAttentionLayers: mmdit?.dualAttentionLayers ?? [],
+        distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
+        upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
         builtinLora: ModelZoo.builtinLoRAForModel($0))
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
@@ -5653,11 +5663,16 @@ extension LocalImageGenerator {
           || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
             && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
       else { return nil }
+      let mmdit = ModelZoo.MMDiTForModel($0)
       return Refiner(
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
         externalOnDemand: externalOnDemand, version: ModelZoo.versionForModel($0),
         isQuantizedModel: ModelZoo.isQuantizedModel($0),
         isConsistencyModel: ModelZoo.isConsistencyModelForModel($0),
+        qkNorm: mmdit?.qkNorm ?? false,
+        dualAttentionLayers: mmdit?.dualAttentionLayers ?? [],
+        distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
+        upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
         builtinLora: ModelZoo.builtinLoRAForModel($0))
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
@@ -6428,11 +6443,16 @@ extension LocalImageGenerator {
           || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
             && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
       else { return nil }
+      let mmdit = ModelZoo.MMDiTForModel($0)
       return Refiner(
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
         externalOnDemand: externalOnDemand, version: ModelZoo.versionForModel($0),
         isQuantizedModel: ModelZoo.isQuantizedModel($0),
         isConsistencyModel: ModelZoo.isConsistencyModelForModel($0),
+        qkNorm: mmdit?.qkNorm ?? false,
+        dualAttentionLayers: mmdit?.dualAttentionLayers ?? [],
+        distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
+        upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
         builtinLora: ModelZoo.builtinLoRAForModel($0))
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(

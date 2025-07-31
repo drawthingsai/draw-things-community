@@ -400,7 +400,7 @@ extension DPMPPSDESampler: Sampler {
             }
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
-            modifier: modifier, dualAttentionLayers: dualAttentionLayers,
+            modifier: modifier, dualAttentionLayers: refiner.dualAttentionLayers,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
             isQuantizedModel: refiner.isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
             externalOnDemand: refiner.externalOnDemand, deviceProperties: deviceProperties,
@@ -419,7 +419,7 @@ extension DPMPPSDESampler: Sampler {
               + fixedEncoder.encode(
                 isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
                 guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
-                distilledGuidanceLayers: distilledGuidanceLayers,
+                distilledGuidanceLayers: refiner.distilledGuidanceLayers,
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
@@ -453,9 +453,9 @@ extension DPMPPSDESampler: Sampler {
           let _ = unet.compileModel(
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
             deviceProperties: deviceProperties,
-            version: refiner.version, modifier: modifier, qkNorm: qkNorm,
-            dualAttentionLayers: dualAttentionLayers,
-            upcastAttention: upcastAttention,
+            version: refiner.version, modifier: modifier, qkNorm: refiner.qkNorm,
+            dualAttentionLayers: refiner.dualAttentionLayers,
+            upcastAttention: refiner.upcastAttention,
             usesFlashAttention: usesFlashAttention,
             injectControlsAndAdapters: injectControlsAndAdapters,
             lora: lora, isQuantizedModel: refiner.isQuantizedModel,
