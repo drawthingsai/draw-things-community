@@ -179,7 +179,7 @@ struct Quantizer: ParsableCommand {
                   if shape.count == 4 {  // Convolution.
                     $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
                   } else {
-                    $0.write(key, tensor: fp16, codec: [.q5p, .ezm7])
+                    $0.write(key, tensor: fp16, codec: [.q6p, .ezm7])
                   }
                 }
               } else {
