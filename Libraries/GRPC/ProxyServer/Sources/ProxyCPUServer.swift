@@ -595,14 +595,18 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   private var controlConfigs: ControlConfigs
   private var healthCheckTask: Task<Void, Never>?
   private var proxyMessageSigner: ProxyMessageSigner
+  private var workerFailureCounts: [String: Int] = [:]
+  private let maxFailureCount: Int
+
   init(
     taskQueue: TaskQueue, controlConfigs: ControlConfigs, logger: Logger, healthCheck: Bool,
-    proxyMessageSigner: ProxyMessageSigner
+    proxyMessageSigner: ProxyMessageSigner, maxFailureCount: Int = 3
   ) {
     self.taskQueue = taskQueue
     self.logger = logger
     self.controlConfigs = controlConfigs
     self.proxyMessageSigner = proxyMessageSigner
+    self.maxFailureCount = maxFailureCount
     if healthCheck {
       self.startHealthCheck()
     }
@@ -616,10 +620,22 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
           let (success, _) = await worker.client.echo()
           if success {
             logger.info("Health check passed for worker: \(worker.id)")
+            workerFailureCounts[worker.id] = 0
             await taskQueue.returnWorker(worker)
           } else {
-            logger.error("Health check failed for worker: \(worker.id)")
-            await taskQueue.removeWorkerById(worker.id)
+            let currentCount = workerFailureCounts[worker.id, default: 0] + 1
+            workerFailureCounts[worker.id] = currentCount
+            logger.error(
+              "Health check failed for worker: \(worker.id) (failure count: \(currentCount)/\(maxFailureCount))"
+            )
+
+            if currentCount >= maxFailureCount {
+              logger.error("Worker \(worker.id) exceeded max failure count, removing from queue")
+              workerFailureCounts.removeValue(forKey: worker.id)
+              await taskQueue.removeWorkerById(worker.id)
+            } else {
+              await taskQueue.returnWorker(worker)
+            }
           }
           try? await Task.sleep(for: .seconds(10))  // wait for 10s
         }
