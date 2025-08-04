@@ -2,6 +2,7 @@ import BinaryResources
 import Foundation
 import GRPC
 import GRPCImageServiceModels
+import Logging
 import NIO
 import NIOSSL
 
@@ -10,7 +11,7 @@ public final class ProxyGPUClientWrapper {
   private var eventLoopGroup: EventLoopGroup? = nil
   private var channel: GRPCChannel? = nil
   public private(set) var client: ImageGenerationServiceNIOClient? = nil
-
+  private let logger = Logger(label: "com.draw-things.image-generation-proxy-service")
   public init(deviceName: String? = nil) {
     self.deviceName = deviceName
   }
@@ -48,7 +49,7 @@ public final class ProxyGPUClientWrapper {
     }
   }
 
-  public func echo() async -> (Bool, [String]) {
+  public func echo(timeout: TimeInterval = 60.0, attempts: Int = 3) async -> (Bool, [String]) {
     guard let client = client else {
       return (false, [])
     }
@@ -56,12 +57,74 @@ public final class ProxyGPUClientWrapper {
     var request = EchoRequest()
     let name = deviceName ?? ""
     request.name = "Proxy Server connect \(name)"
-    do {
-      let result = try await client.echo(request).response.get()
-      return (true, result.files)
-    } catch {
-      return (false, [])
+
+    // Create call options with timeout
+    let callOptions = CallOptions(
+      timeLimit: .timeout(.seconds(Int64(timeout)))
+    )
+
+    // Retry logic
+    for attempt in 1...attempts {
+      do {
+        if attempt > 1 {
+          logger.info("Echo retry attempt \(attempt) for device: \(String(describing: deviceName))")
+        }
+
+        let result = try await client.echo(request, callOptions: callOptions).response.get()
+
+        if attempt > 1 {
+          logger.info(
+            "Echo succeeded on attempt \(attempt) for device: \(String(describing: deviceName))")
+        }
+
+        return (true, result.files)
+
+      } catch let error as GRPCStatus {
+        logger.error(
+          "DeviceName \(String(describing: deviceName)) Echo failed with gRPC status: \(error.code) - \(error.message ?? "")"
+        )
+
+        if attempt < attempts {
+          // Exponential backoff with jitter
+          let baseDelay = 2.0
+          let delay = baseDelay * pow(2.0, Double(attempt - 1))
+          let jitter = Double.random(in: 0...0.3) * delay
+          let totalDelay = min(delay + jitter, 10.0)  // Cap at 10 seconds
+
+          logger.warning(
+            "Echo failed on attempt \(attempt) for device: \(String(describing: deviceName)), retrying in \(totalDelay) seconds"
+          )
+
+          try? await Task.sleep(nanoseconds: UInt64(totalDelay * 1_000_000_000))
+        } else {
+          logger.error(
+            "Echo failed after \(attempts) attempts for device: \(String(describing: deviceName))")
+        }
+
+      } catch {
+        logger.error(
+          "DeviceName \(String(describing: deviceName)) Echo failed with error: \(error)")
+
+        if attempt < attempts {
+          // Same retry logic
+          let baseDelay = 2.0
+          let delay = baseDelay * pow(2.0, Double(attempt - 1))
+          let jitter = Double.random(in: 0...0.3) * delay
+          let totalDelay = min(delay + jitter, 10.0)  // Cap at 10 seconds
+
+          logger.warning(
+            "Echo failed on attempt \(attempt) for device: \(String(describing: deviceName)), retrying in \(totalDelay) seconds"
+          )
+
+          try? await Task.sleep(nanoseconds: UInt64(totalDelay * 1_000_000_000))
+        } else {
+          logger.error(
+            "Echo failed after \(attempts) attempts for device: \(String(describing: deviceName))")
+        }
+      }
     }
+
+    return (false, [])
   }
 
 }
