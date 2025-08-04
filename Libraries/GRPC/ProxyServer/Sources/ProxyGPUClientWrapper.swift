@@ -57,8 +57,11 @@ public final class ProxyGPUClientWrapper {
     var request = EchoRequest()
     let name = deviceName ?? ""
     request.name = "Proxy Server connect \(name)"
+    let callOptions = CallOptions(
+      timeLimit: .timeout(.seconds(Int64(300)))
+    )
     do {
-      let result = try await client.echo(request).response.get()
+      let result = try await client.echo(request, callOptions: callOptions).response.get()
       return (true, result.files)
     } catch {
       return (false, [])
