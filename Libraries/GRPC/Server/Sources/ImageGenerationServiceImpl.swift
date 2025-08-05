@@ -437,7 +437,8 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
 
     let signposts = ImageGeneratorUtils.expectedSignposts(
       image != nil, mask: mask != nil, text: request.prompt, negativeText: request.negativePrompt,
-      configuration: configuration, version: ModelZoo.versionForModel(configuration.model ?? ""))
+      configuration: configuration, version: ModelZoo.versionForModel(configuration.model ?? ""),
+      memorizedBy: [])
     if let delegate = self.delegate {
       let user = request.user
       let deviceType = ImageGeneratorDeviceType(from: request.device) ?? .laptop

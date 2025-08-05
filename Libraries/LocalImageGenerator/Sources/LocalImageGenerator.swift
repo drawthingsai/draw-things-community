@@ -3277,7 +3277,7 @@ extension LocalImageGenerator {
         hasImage: hasImage, hasDepth: depth != nil, hasHints: hasHints,
         hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls,
-        version: modelVersion)
+        version: modelVersion, memorizedBy: [])
     let isQuantizedModel = ModelZoo.isQuantizedModel(file)
     let (qkNorm, dualAttentionLayers, distilledGuidanceLayers) =
       ModelZoo.MMDiTForModel(file).map {
@@ -3936,7 +3936,7 @@ extension LocalImageGenerator {
           hasImage: true, hasDepth: secondPassDepthImage != nil, hasHints: hasHints,
           hasCustom: custom != nil, shuffleCount: shuffles.count,
           controls: configuration.controls,
-          version: modelVersion)
+          version: modelVersion, memorizedBy: [])
       let secondPassControlExternalOnDemand = modelPreloader.externalOnDemand(
         version: modelVersion,
         scale: DeviceCapability.Scale(
@@ -4271,7 +4271,7 @@ extension LocalImageGenerator {
       ImageGeneratorUtils.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: hasHints, hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls,
-        version: modelVersion)
+        version: modelVersion, memorizedBy: [])
     let queueWatermark = DynamicGraph.queueWatermark
     if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
       DynamicGraph.queueWatermark = 8
@@ -5578,7 +5578,7 @@ extension LocalImageGenerator {
       ImageGeneratorUtils.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: hasHints, hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls,
-        version: modelVersion)
+        version: modelVersion, memorizedBy: [])
     let queueWatermark = DynamicGraph.queueWatermark
     if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
       DynamicGraph.queueWatermark = 8
@@ -6358,7 +6358,7 @@ extension LocalImageGenerator {
       ImageGeneratorUtils.canInjectControls(
         hasImage: true, hasDepth: depth != nil, hasHints: hasHints, hasCustom: custom != nil,
         shuffleCount: shuffles.count, controls: configuration.controls,
-        version: modelVersion)
+        version: modelVersion, memorizedBy: [])
     let queueWatermark = DynamicGraph.queueWatermark
     if (canInjectControls && modelVersion == .v2) && !DeviceCapability.isMaxPerformance {
       DynamicGraph.queueWatermark = 8

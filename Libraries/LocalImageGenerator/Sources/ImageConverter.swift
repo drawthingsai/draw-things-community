@@ -896,7 +896,7 @@ public enum ImageConverter {
       from tensor: Tensor<FloatType>, binaryMask: Tensor<UInt8>?,
       configuration: GenerationConfiguration,
       savedPositivePrompt: String, savedNegativePrompt: String,
-      profile: GenerationProfile? = nil
+      memorizedBy: Set<String>, profile: GenerationProfile? = nil
     ) -> Data? {
       return autoreleasepool { () -> Data? in
         guard let cgImage = image(from: tensor, scaleFactor: 1, binaryMask: binaryMask).cgImage
@@ -947,7 +947,9 @@ public enum ImageConverter {
         json["model"] = model
         json["strength"] = configuration.strength
         json["seed_mode"] = seedMode
-        if let upscaler = configuration.upscaler, UpscalerZoo.isModelDownloaded(upscaler) {
+        if let upscaler = configuration.upscaler,
+          UpscalerZoo.isModelDownloaded(upscaler, memorizedBy: memorizedBy)
+        {
           json["upscaler"] = upscaler
           description += ", Upscaler: \(upscaler)"
         }
@@ -983,7 +985,8 @@ public enum ImageConverter {
           json["second_stage_strength"] = configuration.hiresFixStrength
         }
         let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
-          guard $0 != configuration.model, ModelZoo.isModelDownloaded($0) else { return nil }
+          guard $0 != configuration.model, ModelZoo.isModelDownloaded($0, memorizedBy: memorizedBy)
+          else { return nil }
           let version = ModelZoo.versionForModel($0)
           guard
             version == modelVersion
@@ -993,7 +996,9 @@ public enum ImageConverter {
           return ModelZoo.versionForModel($0)
         }
         let loras: [LoRAConfiguration] = configuration.loras.compactMap {
-          guard let file = $0.file, LoRAZoo.isModelDownloaded(file) else { return nil }
+          guard let file = $0.file, LoRAZoo.isModelDownloaded(file, memorizedBy: memorizedBy) else {
+            return nil
+          }
           let loraVersion = LoRAZoo.versionForModel(file)
           guard modelVersion == loraVersion || refinerVersion == loraVersion
           else { return nil }
@@ -1129,8 +1134,8 @@ public enum ImageConverter {
         ) =
           ImageGeneratorUtils.canInjectControls(
             hasImage: true, hasDepth: true, hasHints: Set([.scribble, .pose, .color]),
-            hasCustom: true, shuffleCount: 1,
-            controls: configuration.controls, version: modelVersion)
+            hasCustom: true, shuffleCount: 1, controls: configuration.controls,
+            version: modelVersion, memorizedBy: memorizedBy)
         if canInjectControls || canInjectT2IAdapters || canInjectAttentionKVs || canInjectPrompts
           || !injectIPAdapterLengths.isEmpty
         {
@@ -1142,7 +1147,7 @@ public enum ImageConverter {
               configuration.controls.compactMap {
                 guard let file = $0.file,
                   let specification = ControlNetZoo.specificationForModel(file),
-                  ControlNetZoo.isModelDownloaded(specification),
+                  ControlNetZoo.isModelDownloaded(specification, memorizedBy: memorizedBy),
                   let modifier = ControlNetZoo.modifierForModel(file)
                     ?? ControlHintType(from: $0.inputOverride)
                 else { return nil }
@@ -1278,7 +1283,8 @@ public enum ImageConverter {
   }
 
   public static func configuration(
-    from imageProperties: [String: Any]?, configuration: GenerationConfiguration
+    from imageProperties: [String: Any]?, configuration: GenerationConfiguration,
+    memorizedBy: Set<String>
   ) -> (
     String?, String?, GenerationConfiguration?
   ) {
@@ -1353,7 +1359,7 @@ public enum ImageConverter {
         }
 
         if let upscaler = commentsJsonDictionary["upscaler"] as? String,
-          UpscalerZoo.isModelDownloaded(upscaler)
+          UpscalerZoo.isModelDownloaded(upscaler, memorizedBy: memorizedBy)
         {
           configurationBuilder.upscaler = upscaler
         }
@@ -1452,7 +1458,8 @@ public enum ImageConverter {
 
         if let loraArray = commentsJsonDictionary["lora"] as? [[String: Any]] {
           let loras = loraArray.compactMap { (lora) -> DataModels.LoRA? in
-            if let file = lora["model"] as? String, LoRAZoo.isModelDownloaded(file),
+            if let file = lora["model"] as? String,
+              LoRAZoo.isModelDownloaded(file, memorizedBy: memorizedBy),
               let weight = lora["weight"] as? Float
             {
               return DataModels.LoRA(file: file, weight: weight)
@@ -1466,7 +1473,7 @@ public enum ImageConverter {
           let controls = controlsArray.compactMap { (control) -> DataModels.Control? in
             if let file = control["file"] as? String,
               let specification = ControlNetZoo.specificationForModel(file),
-              ControlNetZoo.isModelDownloaded(specification),
+              ControlNetZoo.isModelDownloaded(specification, memorizedBy: memorizedBy),
               let weight = control["weight"] as? Float32,
               let guidanceStart = control["guidance_start"] as? Float32,
               let guidanceEnd = control["guidance_end"] as? Float32,

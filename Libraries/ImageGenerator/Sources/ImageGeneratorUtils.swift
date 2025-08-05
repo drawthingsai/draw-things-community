@@ -43,7 +43,7 @@ public struct ImageGeneratorUtils {
 
   public static func canInjectControls(
     hasImage: Bool, hasDepth: Bool, hasHints: Set<ControlHintType>, hasCustom: Bool,
-    shuffleCount: Int, controls: [Control], version: ModelVersion
+    shuffleCount: Int, controls: [Control], version: ModelVersion, memorizedBy: Set<String>
   ) -> (
     injectControls: Bool, injectT2IAdapters: Bool, injectAttentionKVs: Bool,
     injectPrompts: Bool, injectIPAdapterLengths: [Int], injectedControls: Int
@@ -56,7 +56,7 @@ public struct ImageGeneratorUtils {
     var injectedControls = 0
     for control in controls {
       guard let file = control.file, let specification = ControlNetZoo.specificationForModel(file),
-        ControlNetZoo.isModelDownloaded(specification)
+        ControlNetZoo.isModelDownloaded(specification, memorizedBy: memorizedBy)
       else { continue }
       guard ControlNetZoo.versionForModel(file) == version else { continue }
       guard control.weight > 0 else { continue }
@@ -66,7 +66,7 @@ public struct ImageGeneratorUtils {
       else { continue }
       let type = ControlNetZoo.typeForModel(file)
       let isPreprocessorDownloaded = ControlNetZoo.preprocessorForModel(file).map {
-        ControlNetZoo.isModelDownloaded($0)
+        ControlNetZoo.isModelDownloaded($0, memorizedBy: memorizedBy)
       }
       switch type {
       case .controlnet, .controlnetunion, .controlnetlora:
@@ -84,7 +84,8 @@ public struct ImageGeneratorUtils {
         case .scribble:
           let isPreprocessorDownloaded =
             isPreprocessorDownloaded
-            ?? ControlNetZoo.isModelDownloaded(Self.defaultSoftEdgePreprocessor)
+            ?? ControlNetZoo.isModelDownloaded(
+              Self.defaultSoftEdgePreprocessor, memorizedBy: memorizedBy)
           injectControls =
             injectControls || hasHints.contains(modifier) || (isPreprocessorDownloaded && hasImage)
           injectedControls +=
@@ -94,7 +95,8 @@ public struct ImageGeneratorUtils {
         case .softedge:
           let isPreprocessorDownloaded =
             isPreprocessorDownloaded
-            ?? ControlNetZoo.isModelDownloaded(Self.defaultSoftEdgePreprocessor)
+            ?? ControlNetZoo.isModelDownloaded(
+              Self.defaultSoftEdgePreprocessor, memorizedBy: memorizedBy)
           injectControls = injectControls || (isPreprocessorDownloaded && hasImage) || hasCustom
           injectedControls += (isPreprocessorDownloaded && hasImage) || hasCustom ? 1 : 0
         case .normalbae, .lineart, .seg, .custom:
@@ -184,12 +186,13 @@ public struct ImageGeneratorUtils {
   }
 
   public static func isInpainting(
-    for binaryMask: Tensor<UInt8>?, configuration: GenerationConfiguration
+    for binaryMask: Tensor<UInt8>?, configuration: GenerationConfiguration, memorizedBy: Set<String>
   ) -> Bool {
     guard let binaryMask = binaryMask else { return false }
     let modelVersion = ModelZoo.versionForModel(configuration.model ?? "")
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
-      guard $0 != configuration.model, ModelZoo.isModelDownloaded($0) else { return nil }
+      guard $0 != configuration.model, ModelZoo.isModelDownloaded($0, memorizedBy: memorizedBy)
+      else { return nil }
       let version = ModelZoo.versionForModel($0)
       guard
         version == modelVersion
@@ -203,7 +206,7 @@ public struct ImageGeneratorUtils {
       guard let file = lora.file else { continue }
       let loraVersion = LoRAZoo.versionForModel(file)
 
-      guard LoRAZoo.isModelDownloaded(file),
+      guard LoRAZoo.isModelDownloaded(file, memorizedBy: memorizedBy),
         modelVersion == loraVersion || refinerVersion == loraVersion
           || (modelVersion == .kandinsky21 && loraVersion == .v1)
       else { continue }
@@ -255,16 +258,19 @@ public struct ImageGeneratorUtils {
 
   public static func expectedSignposts(
     _ image: Bool, mask: Bool, text: String, negativeText: String,
-    configuration: GenerationConfiguration, version: ModelVersion
+    configuration: GenerationConfiguration, version: ModelVersion, memorizedBy: Set<String>
   ) -> Set<ImageGeneratorSignpost> {
     var signposts = Set<ImageGeneratorSignpost>([.textEncoded, .imageDecoded])
     if let faceRestoration = configuration.faceRestoration,
-      EverythingZoo.isModelDownloaded(faceRestoration)
-        && EverythingZoo.isModelDownloaded(EverythingZoo.parsenetForModel(faceRestoration))
+      EverythingZoo.isModelDownloaded(faceRestoration, memorizedBy: memorizedBy)
+        && EverythingZoo.isModelDownloaded(
+          EverythingZoo.parsenetForModel(faceRestoration), memorizedBy: memorizedBy)
     {
       signposts.insert(.faceRestored)
     }
-    if let upscaler = configuration.upscaler, UpscalerZoo.isModelDownloaded(upscaler) {
+    if let upscaler = configuration.upscaler,
+      UpscalerZoo.isModelDownloaded(upscaler, memorizedBy: memorizedBy)
+    {
       signposts.insert(.imageUpscaled)
     }
     guard image else {

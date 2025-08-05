@@ -164,7 +164,8 @@ public struct RemoteImageGenerator: ImageGenerator {
       configuration.model.map {
         ImageGeneratorUtils.modifierForModel($0, LoRAs: configuration.loras.compactMap(\.file))
       } ?? .none
-    let isInpainting = ImageGeneratorUtils.isInpainting(for: mask, configuration: configuration)
+    let isInpainting = ImageGeneratorUtils.isInpainting(
+      for: mask, configuration: configuration, memorizedBy: [])
     let version = configuration.model.map { ModelZoo.versionForModel($0) } ?? .v1
     if configuration.strength == 1 && configuration.controls.isEmpty && modifier == .none
       && !isInpainting && version != .svdI2v
