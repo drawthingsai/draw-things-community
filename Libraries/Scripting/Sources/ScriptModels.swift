@@ -5,13 +5,34 @@ import NNC
 public final class JSLoRA: Codable {
   let file: String?
   let weight: Float32
+  let mode: String
   public init(lora: LoRA) {
     file = lora.file
     weight = lora.weight
+    switch lora.mode {
+    case .all:
+      mode = "all"
+    case .base:
+      mode = "base"
+    case .refiner:
+      mode = "refiner"
+    }
   }
 
   public func createLora() -> LoRA {
-    return DataModels.LoRA(file: file, weight: weight)
+    let mode: DataModels.LoRAMode = {
+      switch self.mode {
+      case "base":
+        return .base
+      case "refiner":
+        return .refiner
+      case "all":
+        return .all
+      default:
+        return .all
+      }
+    }()
+    return DataModels.LoRA(file: file, weight: weight, mode: mode)
   }
 }
 

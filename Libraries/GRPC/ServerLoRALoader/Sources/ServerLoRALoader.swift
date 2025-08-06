@@ -40,7 +40,7 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
         return nil
       }
       let sha256 = sha256HashName(loraName: file)
-      return DataModels.LoRA(file: sha256, weight: lora.weight)
+      return DataModels.LoRA(file: sha256, weight: lora.weight, mode: lora.mode)
     }
     let configuration = configurationBuilder.build()
 

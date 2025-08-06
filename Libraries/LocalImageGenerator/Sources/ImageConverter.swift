@@ -1462,7 +1462,19 @@ public enum ImageConverter {
               LoRAZoo.isModelDownloaded(file, memorizedBy: memorizedBy),
               let weight = lora["weight"] as? Float
             {
-              return DataModels.LoRA(file: file, weight: weight)
+              let mode: DataModels.LoRAMode = {
+                switch lora["mode"] as? String {
+                case "base":
+                  return .base
+                case "refiner":
+                  return .refiner
+                case "all":
+                  return .all
+                default:
+                  return .all
+                }
+              }()
+              return DataModels.LoRA(file: file, weight: weight, mode: mode)
             }
             return nil
           }
