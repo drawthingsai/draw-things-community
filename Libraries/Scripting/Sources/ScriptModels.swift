@@ -5,7 +5,7 @@ import NNC
 public final class JSLoRA: Codable {
   let file: String?
   let weight: Float32
-  let mode: String
+  let mode: String?
   public init(lora: LoRA) {
     file = lora.file
     weight = lora.weight
