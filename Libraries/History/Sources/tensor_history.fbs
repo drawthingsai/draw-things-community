@@ -68,9 +68,16 @@ table Control {
   input_override: ControlInputType = Unspecified;
 }
 
+enum LoRAMode: byte {
+  All,
+  Base,
+  Refiner,
+}
+
 table LoRA {
   file: string;
   weight: float = 0.6;
+  mode: LoRAMode = All;
 }
 
 table TensorHistoryNode {

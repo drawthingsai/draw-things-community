@@ -193,7 +193,10 @@ extension EulerASampler: Sampler {
           return discretization.timestep(for: alphaCumprod)
         }
       }
-      var lora = lora
+      let listOfLoras = lora
+      var lora = listOfLoras.filter {
+        $0.mode == .base || $0.mode == .all
+      }
       if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: version) {
         let vector = fixedEncoder.vector(
           textEmbedding: c[c.count - 1], originalSize: originalSize,
@@ -387,10 +390,10 @@ extension EulerASampler: Sampler {
               ? [
                 LoRAConfiguration(
                   file: refiner.filePath, weight: 1, version: refiner.version, isLoHa: false,
-                  modifier: .none)
+                  modifier: .none, mode: .refiner)
               ] : [])
-            + lora.filter {
-              $0.file != filePath
+            + listOfLoras.filter {
+              $0.mode == .all || $0.mode == .refiner
             }
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,

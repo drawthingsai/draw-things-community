@@ -1004,7 +1004,8 @@ public enum ImageConverter {
           else { return nil }
           return LoRAConfiguration(
             file: file, weight: $0.weight, version: modelVersion,
-            isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
+            isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file),
+            mode: .init(from: $0.mode))
         }
         if modelVersion == .kandinsky21 {
           json["clip_weight"] = configuration.clipWeight

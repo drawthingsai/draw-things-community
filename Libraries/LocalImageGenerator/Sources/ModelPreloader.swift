@@ -9,6 +9,19 @@ import ModelZoo
 import NNC
 import WeightsCache
 
+extension LoRAConfiguration.Mode {
+  public init(from mode: LoRAMode) {
+    switch mode {
+    case .all:
+      self = .all
+    case .base:
+      self = .base
+    case .refiner:
+      self = .refiner
+    }
+  }
+}
+
 public final class ModelPreloader {
   public enum PreloadState: Equatable {
     case countdown(Int)
@@ -135,13 +148,26 @@ public final class ModelPreloader {
       batchSize = Int(configuration.batchSize)
       clipSkip = Int(configuration.clipSkip)
       let modelVersion = ModelZoo.versionForModel(modelFile ?? "")
+      let isRefinerEnabled: Bool =
+        configuration.refinerModel.map {
+          guard $0 != configuration.model, ModelZoo.isModelDownloaded($0) else { return false }
+          let version = ModelZoo.versionForModel($0)
+          guard
+            version == modelVersion
+              || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
+                && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
+          else { return false }
+          return true
+        } ?? false
       lora = configuration.loras.compactMap {
         guard let file = $0.file, LoRAZoo.isModelDownloaded(file),
           LoRAZoo.versionForModel(file) == modelVersion
         else { return nil }
+        guard !isRefinerEnabled || $0.mode == .all || $0.mode == .base else { return nil }
         return LoRAConfiguration(
           file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: modelVersion,
-          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
+          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file),
+          mode: .init(from: $0.mode))
       }
       tiledDecoding = TiledConfiguration(
         isEnabled: configuration.tiledDecoding,
@@ -885,13 +911,26 @@ extension ModelPreloader {
     let newBatchSize = Int(newConfiguration.batchSize)
     let newClipSkip = Int(newConfiguration.clipSkip)
     let version = ModelZoo.versionForModel(newModelFile)
+    let isRefinerEnabled: Bool =
+      newConfiguration.refinerModel.map {
+        guard $0 != newModelFile, ModelZoo.isModelDownloaded($0) else { return false }
+        let refinerVersion = ModelZoo.versionForModel($0)
+        guard
+          refinerVersion == version
+            || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(refinerVersion)
+              && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(version))
+        else { return false }
+        return true
+      } ?? false
     let newLora: [LoRAConfiguration] = newConfiguration.loras.compactMap {
       guard let file = $0.file, LoRAZoo.isModelDownloaded(file),
         LoRAZoo.versionForModel(file) == version
       else { return nil }
+      guard !isRefinerEnabled || $0.mode == .all || $0.mode == .base else { return nil }
       return LoRAConfiguration(
         file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: version,
-        isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
+        isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file),
+        mode: .init(from: $0.mode))
     }
     let newTiledDecoding = TiledConfiguration(
       isEnabled: newConfiguration.tiledDecoding,

@@ -264,15 +264,41 @@ extension DataModels.Control {
   }
 }
 
+extension LoRAMode {
+  public init(from mode: DataModels.LoRAMode) {
+    switch mode {
+    case .all:
+      self = .all
+    case .base:
+      self = .base
+    case .refiner:
+      self = .refiner
+    }
+  }
+}
+
+extension DataModels.LoRAMode {
+  public init(from mode: LoRAMode) {
+    switch mode {
+    case .all:
+      self = .all
+    case .base:
+      self = .base
+    case .refiner:
+      self = .refiner
+    }
+  }
+}
+
 extension LoRA {
   public init(from lora: DataModels.LoRA) {
-    self.init(file: lora.file, weight: lora.weight)
+    self.init(file: lora.file, weight: lora.weight, mode: .init(from: lora.mode))
   }
 }
 
 extension DataModels.LoRA {
   public init(from lora: LoRA) {
-    self.init(file: lora.file, weight: lora.weight)
+    self.init(file: lora.file, weight: lora.weight, mode: .init(from: lora.mode))
   }
 }
 

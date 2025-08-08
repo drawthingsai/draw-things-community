@@ -415,7 +415,7 @@ extension UNetFromNNC {
       ) {
         LoRAConfiguration(
           file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
-          modifier: $0.modifier)
+          modifier: $0.modifier, mode: $0.mode)
       })
       .values
     ).filter { $0.weight != 0 }

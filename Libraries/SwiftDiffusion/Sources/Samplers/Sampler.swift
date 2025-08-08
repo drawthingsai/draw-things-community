@@ -49,19 +49,27 @@ public enum SamplerModifier: String, Codable {
 }
 
 public struct LoRAConfiguration: Equatable {
+  public enum Mode: String, Codable {
+    case all
+    case base
+    case refiner
+  }
   public var file: String
   public var weight: Float
   public var version: ModelVersion
   public var isLoHa: Bool
   public var modifier: SamplerModifier
+  public var mode: Mode
   public init(
-    file: String, weight: Float, version: ModelVersion, isLoHa: Bool, modifier: SamplerModifier
+    file: String, weight: Float, version: ModelVersion, isLoHa: Bool, modifier: SamplerModifier,
+    mode: Mode
   ) {
     self.file = file
     self.weight = weight
     self.version = version
     self.isLoHa = isLoHa
     self.modifier = modifier
+    self.mode = mode
   }
 }
 

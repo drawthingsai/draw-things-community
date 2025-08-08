@@ -3192,7 +3192,7 @@ extension LocalImageGenerator {
           || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
             && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
       else { return nil }
-      return ModelZoo.versionForModel($0)
+      return version
     }
     let tiledDecoding = TiledConfiguration(
       isEnabled: configuration.tiledDecoding,
@@ -3211,7 +3211,7 @@ extension LocalImageGenerator {
         ? [
           LoRAConfiguration(
             file: ModelZoo.filePathForModelDownloaded(file), weight: 1, version: modelVersion,
-            isLoHa: false, modifier: .none)
+            isLoHa: false, modifier: .none, mode: .base)
         ] : [])
       + configuration.loras.compactMap {
         guard let file = $0.file else { return nil }
@@ -3229,7 +3229,8 @@ extension LocalImageGenerator {
         }
         return LoRAConfiguration(
           file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
-          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
+          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file),
+          mode: refinerVersion == nil ? .all : .init(from: $0.mode))
       }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
@@ -4203,7 +4204,7 @@ extension LocalImageGenerator {
           || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
             && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
       else { return nil }
-      return ModelZoo.versionForModel($0)
+      return version
     }
     let tiledDecoding = TiledConfiguration(
       isEnabled: configuration.tiledDecoding,
@@ -4222,7 +4223,7 @@ extension LocalImageGenerator {
         ? [
           LoRAConfiguration(
             file: ModelZoo.filePathForModelDownloaded(file), weight: 1, version: modelVersion,
-            isLoHa: false, modifier: .none)
+            isLoHa: false, modifier: .none, mode: .base)
         ] : [])
       + configuration.loras.compactMap {
         guard let file = $0.file else { return nil }
@@ -4240,7 +4241,8 @@ extension LocalImageGenerator {
         }
         return LoRAConfiguration(
           file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
-          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
+          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file),
+          mode: refinerVersion == nil ? .all : .init(from: $0.mode))
       }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
@@ -5081,7 +5083,7 @@ extension LocalImageGenerator {
           || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
             && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
       else { return nil }
-      return ModelZoo.versionForModel($0)
+      return version
     }
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
     for lora in configuration.loras {
@@ -5148,7 +5150,7 @@ extension LocalImageGenerator {
           || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
             && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
       else { return nil }
-      return ModelZoo.versionForModel($0)
+      return version
     }
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
     for lora in configuration.loras {
@@ -5510,7 +5512,7 @@ extension LocalImageGenerator {
           || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
             && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
       else { return nil }
-      return ModelZoo.versionForModel($0)
+      return version
     }
     let tiledDecoding = TiledConfiguration(
       isEnabled: configuration.tiledDecoding,
@@ -5529,7 +5531,7 @@ extension LocalImageGenerator {
         ? [
           LoRAConfiguration(
             file: ModelZoo.filePathForModelDownloaded(file), weight: 1, version: modelVersion,
-            isLoHa: false, modifier: .none)
+            isLoHa: false, modifier: .none, mode: .base)
         ] : [])
       + configuration.loras.compactMap {
         guard let file = $0.file else { return nil }
@@ -5547,7 +5549,8 @@ extension LocalImageGenerator {
         }
         return LoRAConfiguration(
           file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
-          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
+          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file),
+          mode: refinerVersion == nil ? .all : .init(from: $0.mode))
       }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
@@ -6290,7 +6293,7 @@ extension LocalImageGenerator {
           || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
             && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
       else { return nil }
-      return ModelZoo.versionForModel($0)
+      return version
     }
     let tiledDecoding = TiledConfiguration(
       isEnabled: configuration.tiledDecoding,
@@ -6309,7 +6312,7 @@ extension LocalImageGenerator {
         ? [
           LoRAConfiguration(
             file: ModelZoo.filePathForModelDownloaded(file), weight: 1, version: modelVersion,
-            isLoHa: false, modifier: .none)
+            isLoHa: false, modifier: .none, mode: .base)
         ] : [])
       + configuration.loras.compactMap {
         guard let file = $0.file else { return nil }
@@ -6327,7 +6330,8 @@ extension LocalImageGenerator {
         }
         return LoRAConfiguration(
           file: LoRAZoo.filePathForModelDownloaded(file), weight: $0.weight, version: loraVersion,
-          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file))
+          isLoHa: LoRAZoo.isLoHaForModel(file), modifier: LoRAZoo.modifierForModel(file),
+          mode: refinerVersion == nil ? .all : .init(from: $0.mode))
       }
     if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
       || modelVersion == .ssd1b || modelVersion == .svdI2v || modelVersion == .wurstchenStageC
