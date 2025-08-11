@@ -13,3 +13,5 @@
 #include "Libraries/BinaryResources/vocab_llama3_generated.h"
 #include "Libraries/BinaryResources/merges_llama3_generated.h"
 #include "Libraries/BinaryResources/umt5.spiece_generated.h"
+#include "Libraries/BinaryResources/vocab_qwen2.5_generated.h"
+#include "Libraries/BinaryResources/merges_qwen2.5_generated.h"

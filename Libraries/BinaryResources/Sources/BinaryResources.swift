@@ -46,4 +46,10 @@ public enum BinaryResources {
   public static let umt5_spiece_model = Data(
     bytesNoCopy: C_Resources.umt5_spiece_model()!, count: C_Resources.umt5_spiece_model_size,
     deallocator: .none)
+  public static let merges_qwen2_5_txt = Data(
+    bytesNoCopy: C_Resources.merges_qwen2_5_txt()!, count: C_Resources.merges_qwen2_5_txt_size,
+    deallocator: .none)
+  public static let vocab_qwen2_5_json = Data(
+    bytesNoCopy: C_Resources.vocab_qwen2_5_json()!, count: C_Resources.vocab_qwen2_5_json_size,
+    deallocator: .none)
 }

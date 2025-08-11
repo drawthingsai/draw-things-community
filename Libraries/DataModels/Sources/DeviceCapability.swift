@@ -587,6 +587,12 @@ public struct DeviceCapability {
       else {
         return false
       }
+    case .qwenImage:
+      guard
+        (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force
+      else {
+        return false
+      }
     case .hiDreamI1:
       guard
         (!isUltraPerformance && !(isHighPerformance && is8BitModel)) || force

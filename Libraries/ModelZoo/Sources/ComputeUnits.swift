@@ -41,6 +41,8 @@ public enum ComputeUnits {
       return 2.823529412 * 0.8
     case .hiDreamI1:
       return 2.84465488969
+    case .qwenImage:
+      return 2.84465488969
     }
   }
 
@@ -113,7 +115,7 @@ public enum ComputeUnits {
     var root = Double(Int(configuration.startWidth) * 64 * Int(configuration.startHeight) * 64)
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .qwenImage:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
     case .flux1:

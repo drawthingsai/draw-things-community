@@ -368,6 +368,8 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .wan21_1_3b, .wan21_14b:
         throw Error.noTextEncoder
+      case .qwenImage:
+        throw Error.noTextEncoder
       case .hiDreamI1:
         throw Error.noTextEncoder
       case .kandinsky21:
@@ -440,7 +442,7 @@ public final class ModelImporter {
             filePath = ModelZoo.filePathForModelDownloaded(
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-            .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+            .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -480,7 +482,7 @@ public final class ModelImporter {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1:
+              .hiDreamI1, .qwenImage:
               fatalError()
             }
           }
@@ -617,6 +619,8 @@ public final class ModelImporter {
     case .hiDreamI1:
       conditionalLength = 4096
       batchSize = 1
+    case .qwenImage:
+      fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -663,7 +667,7 @@ public final class ModelImporter {
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-          .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+          .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -753,6 +757,8 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .qwenImage:
+        fatalError()
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -914,6 +920,8 @@ public final class ModelImporter {
           usesFlashAttention: true, outputResidual: false, inputResidual: false)
         (unetFixed, unetFixedMapper) = HiDreamFixed(
           timesteps: 1, layers: (16, 32), outputTimesteps: false)
+      case .qwenImage:
+        fatalError()
       case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
@@ -1006,6 +1014,8 @@ public final class ModelImporter {
             graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self)  // Llama encoder hidden states.
           }
         tEmb = nil
+      case .qwenImage:
+        fatalError()
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1178,6 +1188,8 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
+          case .qwenImage:
+            fatalError()
           case .auraflow:
             fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1408,6 +1420,8 @@ public final class ModelImporter {
           if $0.keys.count != 1857 {
             throw Error.tensorWritesFailed
           }
+        case .qwenImage:
+          fatalError()
         case .auraflow:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
@@ -1649,6 +1663,8 @@ extension ModelImporter {
       t5Encoder = fileNames.first {
         $0.hasSuffix("_t5_xxl_encoder_f16.ckpt")
       }
+    case .qwenImage:
+      fatalError()
     case .wurstchenStageC:
       textEncoder = nil
     case .kandinsky21, .wurstchenStageB:
@@ -1815,6 +1831,8 @@ extension ModelImporter {
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
       // For HiDream, the hires fix trigger scale is 1.5 of the finetune scale.
       specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
+    case .qwenImage:
+      fatalError()
     case .sd3, .sd3Large:
       if specification.textEncoder == nil {
         specification.textEncoder = "open_clip_vit_bigg14_f16.ckpt"

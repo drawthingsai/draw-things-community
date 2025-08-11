@@ -75,6 +75,8 @@ public enum LoRAExporter {
       metadata["ss_base_model_version"] = "wan_v2.1_1.3b"
       modelFixedPrefix = "dit"
       modelPrefix = "dit"
+    case .qwenImage:
+      fatalError()
     case .hiDreamI1:
       fatalError()
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -112,7 +114,7 @@ public enum LoRAExporter {
       textEncoderKeys2 = nil
       textEncoderKeysMapping2 = nil
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-      .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+      .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
       textEncoderKeys = []
       textEncoderKeysMapping = [:]
       textEncoderKeys2 = nil

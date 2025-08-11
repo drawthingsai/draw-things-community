@@ -72,13 +72,24 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
   let tokenizerUMT5 = SentencePieceTokenizer(
     data: BinaryResources.umt5_spiece_model, startToken: nil,
     endToken: 1, tokenShift: 0)
+  let tokenizerQwen25 = TiktokenTokenizer(
+    vocabulary: BinaryResources.vocab_qwen2_5_json, merges: BinaryResources.merges_qwen2_5_txt,
+    specialTokens: [
+      "</tool_call>": 151658, "<tool_call>": 151657, "<|box_end|>": 151649, "<|box_start|>": 151648,
+      "<|endoftext|>": 151643, "<|file_sep|>": 151664, "<|fim_middle|>": 151660,
+      "<|fim_pad|>": 151662, "<|fim_prefix|>": 151659, "<|fim_suffix|>": 151661,
+      "<|im_end|>": 151645, "<|im_start|>": 151644, "<|image_pad|>": 151655,
+      "<|object_ref_end|>": 151647, "<|object_ref_start|>": 151646, "<|quad_end|>": 151651,
+      "<|quad_start|>": 151650, "<|repo_name|>": 151663, "<|video_pad|>": 151656,
+      "<|vision_end|>": 151653, "<|vision_pad|>": 151654, "<|vision_start|>": 151652,
+    ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>")
 
   return LocalImageGenerator(
     queue: queue, configurations: configurations, workspace: workspace, tokenizerV1: tokenizerV1,
     tokenizerV2: tokenizerV2, tokenizerXL: tokenizerXL, tokenizerKandinsky: tokenizerKandinsky,
     tokenizerT5: tokenizerT5, tokenizerPileT5: tokenizerPileT5,
     tokenizerChatGLM3: tokenizerChatGLM3, tokenizerLlama3: tokenizerLlama3,
-    tokenizerUMT5: tokenizerUMT5)
+    tokenizerUMT5: tokenizerUMT5, tokenizerQwen25: tokenizerQwen25)
 }
 
 #if os(Linux)

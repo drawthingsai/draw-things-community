@@ -47,6 +47,8 @@ public struct ModelZoo: DownloadZoo {
       return "Wan v2.1 14B"
     case .hiDreamI1:
       return "HiDream I1"
+    case .qwenImage:
+      return "Qwen Image"
     }
   }
 
@@ -598,15 +600,39 @@ public struct ModelZoo: DownloadZoo {
       "5fe77d9998141a667071353658d71acef656389210327391c832d39b4ee39671",
     "wan_v2.2_a14b_lne_t2v_q6p_svd.ckpt":
       "861aef3cb11c3dd44052e79a5cbd4740550dc05a7d119cf3069de152958c9e1e",
-    "wan_v2.2_a14b_hne_i2v_q8p.ckpt": "bf44ed82e723cf3f2469c9a89fd5a98296c924d489b883e7dadef4c122ad295d",
-    "wan_v2.2_a14b_hne_i2v_q6p_svd.ckpt": "565f535dc5264a9264ec17e2e8396d9a23509be92d71a4930c40fafa16b29685",
-    "wan_v2.2_a14b_lne_i2v_q8p.ckpt": "51486a592ba0190c333ba4e071aa9ed2b502c8aa5b79cb5d38325e399ac6c129",
-    "wan_v2.2_a14b_lne_i2v_q6p_svd.ckpt": "ed0c61db1dccce4beaa2a805792de43c77c9b87d876e3633ef60e4cb716e153a",
+    "wan_v2.2_a14b_hne_i2v_q8p.ckpt":
+      "bf44ed82e723cf3f2469c9a89fd5a98296c924d489b883e7dadef4c122ad295d",
+    "wan_v2.2_a14b_hne_i2v_q6p_svd.ckpt":
+      "565f535dc5264a9264ec17e2e8396d9a23509be92d71a4930c40fafa16b29685",
+    "wan_v2.2_a14b_lne_i2v_q8p.ckpt":
+      "51486a592ba0190c333ba4e071aa9ed2b502c8aa5b79cb5d38325e399ac6c129",
+    "wan_v2.2_a14b_lne_i2v_q6p_svd.ckpt":
+      "ed0c61db1dccce4beaa2a805792de43c77c9b87d876e3633ef60e4cb716e153a",
+    "qwen_2.5_vl_7b_q8p.ckpt": "513b759b24619946d3ca13c0bf57464a32098593bbf8342001358fbfa51f78b1",
+    "qwen_image_vae_f16.ckpt": "701e7c46ed6c2fa8036543780317e06d264374f9b4dbfc22f27c0b3181bb988a",
+    "qwen_image_1.0_q8p.ckpt": "34e25c219945f5887bbab5ed0be39db78b8635f4986f6715b80eda2a3d581081",
+    "qwen_image_1.0_q6p.ckpt": "51bf057484c66cb7c4e6e3bab80b99e99aa20af043f42086ce5080dc01986b62",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
 
   public static let builtinSpecifications: [Specification] = [
+    Specification(
+      name: "Qwen Image 1.0", file: "qwen_image_1.0_q8p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+    ),
+    Specification(
+      name: "Qwen Image 1.0 (6-bit)", file: "qwen_image_1.0_q6p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+    ),
     Specification(
       name: "HiDream I1 [fast]", file: "hidream_i1_fast_q8p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
@@ -775,7 +801,8 @@ public struct ModelZoo: DownloadZoo {
       file: "wan_v2.2_a14b_hne_i2v_q6p_svd.ckpt",
       prefix: "",
       version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
-      autoencoder: "wan_v2.1_video_vae_f16.ckpt", modifier: .inpainting, hiresFixScale: 16, builtinLora: true,
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", modifier: .inpainting, hiresFixScale: 16,
+      builtinLora: true,
       note:
         "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
       teaCacheCoefficients: [
@@ -796,7 +823,8 @@ public struct ModelZoo: DownloadZoo {
       name: "Wan 2.2 Low Noise Expert I2V A14B (6-bit, SVDQuant)",
       file: "wan_v2.2_a14b_lne_i2v_q6p_svd.ckpt", prefix: "",
       version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
-      autoencoder: "wan_v2.1_video_vae_f16.ckpt", modifier: .inpainting, hiresFixScale: 16, builtinLora: true,
+      autoencoder: "wan_v2.1_video_vae_f16.ckpt", modifier: .inpainting, hiresFixScale: 16,
+      builtinLora: true,
       note:
         "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
       teaCacheCoefficients: [
@@ -1494,7 +1522,8 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .pixart:
       return .epsilon
-    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
+      .qwenImage:
       return .u(conditionScale: 1000)
     }
   }
@@ -1507,7 +1536,7 @@ public struct ModelZoo: DownloadZoo {
     switch specification.version {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b,
-      .wan21_14b, .hiDreamI1:
+      .wan21_14b, .hiDreamI1, .qwenImage:
       return .timestep
     case .svdI2v:
       return .noise
@@ -1536,7 +1565,8 @@ public struct ModelZoo: DownloadZoo {
       return .edm(.init(sigmaMax: 700.0))
     case .wurstchenStageC, .wurstchenStageB:
       return .edm(.init(sigmaMin: 0.01, sigmaMax: 99.995))
-    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+    case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
+      .qwenImage:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
@@ -1558,7 +1588,7 @@ public struct ModelZoo: DownloadZoo {
       return 512
     case .hiDreamI1:
       return 128
-    case .hunyuanVideo:
+    case .hunyuanVideo, .qwenImage:
       return 0
     case .wan21_1_3b, .wan21_14b:
       return 512
@@ -1592,7 +1622,7 @@ public struct ModelZoo: DownloadZoo {
       return (nil, nil, 0.3611, 0.11590)
     case .hunyuanVideo:
       return (nil, nil, 0.476986, nil)
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .qwenImage:
       return (
         [
           -0.7571, -0.7089, -0.9113, 0.1075, -0.1745, 0.9653, -0.1517, 1.5508,
@@ -1649,7 +1679,7 @@ public struct ModelZoo: DownloadZoo {
     switch specification.version {
     case .hunyuanVideo:
       return 30
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .qwenImage:
       return 16
     case .v1, .v2, .auraflow, .flux1, .hiDreamI1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
       .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
@@ -1674,7 +1704,7 @@ public struct ModelZoo: DownloadZoo {
     guard let coefficients = specification.teaCacheCoefficients else {
       switch specification.version {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b:
+        .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .qwenImage:
         return nil
       case .flux1:
         return (4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01)
@@ -1743,6 +1773,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 2 * 1_024 * 1_024 * 1_024
       case .wan21_14b:
         return fileSize < 13 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
+      case .qwenImage:
+        return fileSize < 17 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
       case .hiDreamI1:
         return fileSize < 13 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
       }
@@ -1789,6 +1821,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 2 * 1_024 * 1_024 * 1_024
       case .wan21_14b:
         return fileSize < 15 * 1_024 * 1_024 * 1_024
+      case .qwenImage:
+        return fileSize < 20 * 1_024 * 1_024 * 1_024
       case .hiDreamI1:
         return fileSize < 17 * 1_024 * 1_024 * 1_024
       }

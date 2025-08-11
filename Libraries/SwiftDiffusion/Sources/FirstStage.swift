@@ -94,7 +94,7 @@ extension FirstStage {
       .svdI2v, .kandinsky21, .hiDreamI1:
       scaleFactor = 8
       scaleFactorZ = 1
-    case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+    case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage:
       scaleFactor = 8
       scaleFactorZ = 4
     case .wurstchenStageB, .wurstchenStageC:
@@ -281,7 +281,7 @@ extension FirstStage {
         }
       }
       outputChannels = 3
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .qwenImage:
       let startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
@@ -726,7 +726,7 @@ extension FirstStage {
       .svdI2v, .kandinsky21, .hiDreamI1:
       scaleFactor = 8
       scaleFactorZ = 1
-    case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+    case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage:
       scaleFactor = 8
       scaleFactorZ = 4
     case .wurstchenStageC:
@@ -863,7 +863,7 @@ extension FirstStage {
         }
       }
       outputChannels = 32
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .qwenImage:
       let startDepth = (shape[0] - 1) / 4 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight

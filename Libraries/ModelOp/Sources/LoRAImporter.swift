@@ -142,6 +142,8 @@ public enum LoRAImporter {
         usesFlashAttention: true, outputResidual: false, inputResidual: false)
       (unetFixed, unetFixedMapper) = HiDreamFixed(
         timesteps: 1, layers: (16, 32), outputTimesteps: false)
+    case .qwenImage:
+      fatalError()
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -194,6 +196,8 @@ public enum LoRAImporter {
       case .hiDreamI1:
         inputDim = 16
         conditionalLength = 4096
+      case .qwenImage:
+        fatalError()
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
@@ -289,6 +293,8 @@ public enum LoRAImporter {
             graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self)  // Llama encoder hidden states.
           }
         tEmb = nil
+      case .qwenImage:
+        fatalError()
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -333,7 +339,7 @@ public enum LoRAImporter {
       case .svdI2v:
         vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
       case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-        .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+        .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
         vectors = []
       case .kandinsky21, .v1, .v2:
         fatalError()
@@ -423,6 +429,8 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .qwenImage:
+        fatalError()
       case .kandinsky21, .v1, .v2:
         fatalError()
       }
@@ -864,6 +872,9 @@ public enum LoRAImporter {
     case .hiDreamI1:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
+    case .qwenImage:
+      textModelMapping1 = [:]
+      textModelMapping2 = [:]
     case .auraflow:
       fatalError()
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -1165,6 +1176,8 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
+      case .qwenImage:
+        fatalError()
       case .auraflow:
         fatalError()
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
@@ -1200,7 +1213,7 @@ public enum LoRAImporter {
         modelPrefix = "stage_c"
         modelPrefixFixed = "stage_c_fixed"
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1:
+        .hiDreamI1, .qwenImage:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

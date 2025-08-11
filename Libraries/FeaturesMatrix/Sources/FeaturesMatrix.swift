@@ -6,7 +6,7 @@ public enum FeaturesMatrix {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .flux1:
       return true
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
-      .auraflow, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+      .auraflow, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
       return false
     }
   }
@@ -15,7 +15,7 @@ public enum FeaturesMatrix {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b:
       return true
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
-      .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+      .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
       return false
     }
   }
@@ -24,7 +24,7 @@ public enum FeaturesMatrix {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .flux1:
       return true
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
-      .auraflow, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1:
+      .auraflow, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
       return false
     }
   }
