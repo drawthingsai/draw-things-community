@@ -103,19 +103,17 @@ private func JointTransformerBlock(
   let x = Input()
   let c = Input()
   let rot = Input()
-  let contextAdaLNs = (0..<(contextBlockPreOnly ? 2 : 6)).map {
-    Dense(count: k * h, name: "context_ada_ln_\($0)")
+  let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in
+    Input()
   }
-  let contextChunks = contextAdaLNs.map { $0(c) }
+  let xChunks = (0..<6).map { _ in Input() }
   let contextNorm1 = LayerNorm(
     epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var contextOut =
-    ((1 + contextChunks[1].to(of: context)) .* contextNorm1(context)
-      + contextChunks[0].to(of: context))
+  var contextOut = contextChunks[1] .* contextNorm1(context) + contextChunks[0]
   let contextToKeys = Dense(count: k * h, name: "c_k")
   let contextToQueries = Dense(count: k * h, name: "c_q")
   let contextToValues = Dense(count: k * h, name: "c_v")
-  let downcastContextOut = ((1.0 / 8) * contextOut).to(.Float16)
+  let downcastContextOut = contextOut.to(.Float16)  // scale down factor merged into contextChunks.
   var contextK = contextToKeys(downcastContextOut).reshaped([b, t, h, k])
   let normAddedK = RMSNorm(
     epsilon: 1e-6 / (8.0 * 8.0 /* This is to remove the scale down factor */), axis: [3],
@@ -127,15 +125,13 @@ private func JointTransformerBlock(
     name: "c_norm_q")
   contextQ = normAddedQ(contextQ)
   let contextV = contextToValues(downcastContextOut).reshaped([b, t, h, k])
-  let xAdaLNs = (0..<6).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
-  let xChunks = xAdaLNs.map { $0(c) }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xNorm1(x)
-  xOut = ((1 + xChunks[1].to(of: x)) .* xOut + xChunks[0].to(of: x))
+  xOut = xChunks[1] .* xOut + xChunks[0]
   let xToKeys = Dense(count: k * h, name: "x_k")
   let xToQueries = Dense(count: k * h, name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
-  let downcastXOut = ((1.0 / 8) * xOut).to(.Float16)
+  let downcastXOut = xOut.to(.Float16)  // scale down factor merged into xChunks.
   var xK = xToKeys(downcastXOut).reshaped([b, hw, h, k])
   let normK = RMSNorm(
     epsilon: 1e-6 / (8.0 * 8.0 /* This is to remove the scale down factor */), axis: [3],
@@ -202,8 +198,7 @@ private func JointTransformerBlock(
       [b, t, h * k], offset: [0, hw, 0], strides: [(t + hw) * h * k, h * k, 1]
     ).contiguous()
     let unifyheads = Dense(count: k * h, name: "c_o")
-    contextOut =
-      (8 * scaleFactor.0) * unifyheads((1.0 / scaleFactor.0) * contextOut).to(of: context)
+    contextOut = unifyheads((1.0 / scaleFactor.0) * contextOut).to(of: context)  // scale up factor merged into contextChunks.
     contextUnifyheads = unifyheads
   } else {
     contextUnifyheads = nil
@@ -211,11 +206,11 @@ private func JointTransformerBlock(
   xOut = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
     .contiguous()
   let xUnifyheads = Dense(count: k * h, name: "x_o")
-  xOut = (8 * scaleFactor.0) * xUnifyheads((1.0 / scaleFactor.0) * xOut).to(of: x)
+  xOut = xUnifyheads((1.0 / scaleFactor.0) * xOut).to(of: x)  // scale up factor merged into xChunks.
   if !contextBlockPreOnly {
-    contextOut = context + (contextChunks[2]).to(of: context) .* contextOut
+    contextOut = context + contextChunks[2] .* contextOut
   }
-  xOut = x + (xChunks[2]).to(of: x) .* xOut
+  xOut = x + xChunks[2] .* xOut
   // Attentions are now. Now run MLP.
   let contextLinear1: Model?
   let contextOutProjection: Model?
@@ -227,10 +222,9 @@ private func JointTransformerBlock(
       epsilon: 1e-6, axis: [2], elementwiseAffine: false)
     contextOut =
       contextOut
-      + contextChunks[5].to(of: contextOut)
+      + contextChunks[5]
       .* contextFF(
-        (contextNorm2(contextOut) .* (1 + contextChunks[4].to(of: contextOut))
-          + contextChunks[3].to(of: contextOut)).to(.Float16)
+        (contextNorm2(contextOut) .* contextChunks[4] + contextChunks[3]).to(.Float16)
       ).to(
         of: contextOut)
   } else {
@@ -242,10 +236,10 @@ private func JointTransformerBlock(
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   xOut =
     xOut
-    + xChunks[5].to(of: xOut)
-    .* xFF((xNorm2(xOut) .* (1 + xChunks[4].to(of: xOut)) + xChunks[3].to(of: xOut)).to(.Float16))
+    + xChunks[5]
+    .* xFF((xNorm2(xOut) .* xChunks[4] + xChunks[3]).to(.Float16))
     .to(of: xOut)
-  let reader: ModelWeightMapper = { _ in
+  let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).attn.add_q_proj.weight"] = [contextToQueries.weight.name]
     mapping["\(prefix).attn.add_q_proj.bias"] = ModelWeightElement(
@@ -291,6 +285,102 @@ private func JointTransformerBlock(
     mapping["\(prefix).img_mlp.net.2.weight"] = [xOutProjection.weight.name]
     mapping["\(prefix).img_mlp.net.2.bias"] = ModelWeightElement(
       [xOutProjection.bias.name], scale: 1.0 / scaleFactor.1)
+    return mapping
+  }
+  if !contextBlockPreOnly {
+    return (mapper, Model([x, context, rot] + contextChunks + xChunks, [xOut, contextOut]))
+  } else {
+    return (mapper, Model([x, context, rot] + contextChunks + xChunks, [xOut]))
+  }
+}
+
+func QwenImage(
+  height: Int, width: Int, textLength: Int, channels: Int, layers: Int,
+  usesFlashAttention: FlashAttentionLevel
+) -> (
+  ModelWeightMapper, Model
+) {
+  let x = Input()
+  let rot = Input()
+  let contextIn = Input()
+  var adaLNChunks = [Input]()
+  let imgIn = Convolution(
+    groups: 1, filters: channels, filterSize: [2, 2],
+    hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+  var mappers = [ModelWeightMapper]()
+  var context = contextIn.to(.Float32)
+  var out = imgIn(x).to(.Float32)
+  let h = height / 2
+  let w = width / 2
+  for i in 0..<layers {
+    let contextBlockPreOnly = i == layers - 1
+    let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
+    let xChunks = (0..<6).map { _ in Input() }
+    let (mapper, block) = JointTransformerBlock(
+      prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength, hw: h * w,
+      contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
+      scaleFactor: (i >= layers - 16 ? 16 : 2, i >= layers - 1 ? 256 : 16))
+    let blockOut = block([out, context, rot] + contextChunks + xChunks)
+    if i == layers - 1 {
+      out = blockOut
+    } else {
+      out = blockOut[0]
+      context = blockOut[1]
+    }
+    adaLNChunks.append(contentsOf: contextChunks + xChunks)
+    mappers.append(mapper)
+  }
+  let shift = Input()
+  let scale = Input()
+  adaLNChunks.append(contentsOf: [shift, scale])
+  let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  out = scale .* normFinal(out).to(.Float16) + shift
+  let projOut = Dense(count: 2 * 2 * 16, name: "linear")
+  out = projOut(out).reshaped([1, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous()
+    .reshaped([
+      1, h * 2, w * 2, 16,
+    ])
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    mapping["img_in.weight"] = [imgIn.weight.name]
+    mapping["img_in.bias"] = [imgIn.bias.name]
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    mapping["proj_out.weight"] = [projOut.weight.name]
+    mapping["proj_out.bias"] = [projOut.bias.name]
+    return mapping
+  }
+  return (mapper, Model([x, rot, contextIn] + adaLNChunks, [out]))
+}
+
+private func JointTransformerBlockFixed(
+  prefix: String, k: Int, h: Int, contextBlockPreOnly: Bool, scaleFactor: (Float, Float)
+) -> (ModelWeightMapper, Model) {
+  let c = Input()
+  let contextAdaLNs = (0..<(contextBlockPreOnly ? 2 : 6)).map {
+    Dense(count: k * h, name: "context_ada_ln_\($0)")
+  }
+  var contextChunks = contextAdaLNs.map { $0(c) }
+  // Merge scale factor into the adaLN.
+  contextChunks[0] = (1.0 / 8) * contextChunks[0].to(.Float32)
+  contextChunks[1] = (1.0 / 8) * (1 + contextChunks[1].to(.Float32))
+  contextChunks[2] = (8 * scaleFactor.0) * contextChunks[2].to(.Float32)
+  let xAdaLNs = (0..<6).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
+  var xChunks = xAdaLNs.map { $0(c) }
+  xChunks[0] = (1.0 / 8) * xChunks[0].to(.Float32)
+  xChunks[1] = (1.0 / 8) * (1 + xChunks[1].to(.Float32))
+  xChunks[2] = (8 * scaleFactor.0) * xChunks[2].to(.Float32)
+  if !contextBlockPreOnly {
+    contextChunks[3] = contextChunks[3].to(.Float32)
+    contextChunks[4] = 1 + contextChunks[4].to(.Float32)
+    contextChunks[5] = contextChunks[5].to(.Float32)
+  }
+  xChunks[3] = xChunks[3].to(.Float32)
+  xChunks[4] = 1 + xChunks[4].to(.Float32)
+  xChunks[5] = xChunks[5].to(.Float32)
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = ModelWeightMapping()
     mapping[
       "\(prefix).txt_mod.1.weight"
     ] = ModelWeightElement(
@@ -303,58 +393,35 @@ private func JointTransformerBlock(
     mapping["\(prefix).img_mod.1.bias"] = ModelWeightElement((0..<6).map { xAdaLNs[$0].bias.name })
     return mapping
   }
-  if !contextBlockPreOnly {
-    return (reader, Model([x, context, c, rot], [xOut, contextOut]))
-  } else {
-    return (reader, Model([x, context, c, rot], [xOut]))
-  }
+  return (mapper, Model([c], contextChunks + xChunks))
 }
 
-func QwenImage(
-  height: Int, width: Int, textLength: Int, layers: Int, usesFlashAttention: FlashAttentionLevel
-) -> (
-  ModelWeightMapper, Model
-) {
-  let x = Input()
-  let rot = Input()
+func QwenImageFixed(channels: Int, layers: Int) -> (ModelWeightMapper, Model) {
   let txt = Input()
   let t = Input()
-  let imgIn = Dense(count: 3072, name: "x_embedder")
+  var outs = [Model.IO]()
   let txtNorm = RMSNorm(epsilon: 1e-6, axis: [2], name: "context_norm")
-  let txtIn = Dense(count: 3_072, name: "context_embedder")
-  let (timeInMlp0, timeInMlp2, timeIn) = MLPEmbedder(channels: 3_072, name: "t")
+  let txtIn = Dense(count: channels, name: "context_embedder")
+  let (timeInMlp0, timeInMlp2, timeIn) = MLPEmbedder(channels: channels, name: "t")
   var vec = timeIn(t)
-  vec = vec.reshaped([1, 1, 3072]).swish()
+  vec = vec.reshaped([1, 1, channels]).swish()
   var context = txtIn(txtNorm(txt))
   var mappers = [ModelWeightMapper]()
-  context = context.to(.Float32)
-  var out = imgIn(x).to(.Float32)
-  let h = height / 2
-  let w = width / 2
+  outs.append(context)
   for i in 0..<layers {
-    let (mapper, block) = JointTransformerBlock(
-      prefix: "transformer_blocks.\(i)", k: 128, h: 24, b: 1, t: textLength, hw: h * w,
-      contextBlockPreOnly: i == layers - 1, usesFlashAttention: usesFlashAttention,
+    let (mapper, block) = JointTransformerBlockFixed(
+      prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
+      contextBlockPreOnly: i == layers - 1,
       scaleFactor: (i >= layers - 16 ? 16 : 2, i >= layers - 1 ? 256 : 16))
-    let blockOut = block(out, context, vec, rot)
-    if i == layers - 1 {
-      out = blockOut
-    } else {
-      out = blockOut[0]
-      context = blockOut[1]
-    }
+    let blockOut = block(vec)
     mappers.append(mapper)
+    outs.append(blockOut)
   }
-  let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  let scale = Dense(count: 3072, name: "ada_ln_0")
-  let shift = Dense(count: 3072, name: "ada_ln_1")
-  out = (1 + scale(vec)) .* normFinal(out).to(.Float16) + shift(vec)
-  let projOut = Dense(count: 2 * 2 * 16, name: "linear")
-  out = projOut(out)
+  let scale = Dense(count: channels, name: "ada_ln_0")
+  let shift = Dense(count: channels, name: "ada_ln_1")
+  outs.append(contentsOf: [shift(vec), 1 + scale(vec)])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["img_in.weight"] = [imgIn.weight.name]
-    mapping["img_in.bias"] = [imgIn.bias.name]
     mapping["txt_norm.weight"] = [txtNorm.weight.name]
     mapping["txt_in.weight"] = [txtIn.weight.name]
     mapping["txt_in.bias"] = [txtIn.bias.name]
@@ -375,9 +442,7 @@ func QwenImage(
     }
     mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
     mapping["norm_out.linear.bias"] = [scale.bias.name, shift.bias.name]
-    mapping["proj_out.weight"] = [projOut.weight.name]
-    mapping["proj_out.bias"] = [projOut.bias.name]
     return mapping
   }
-  return (mapper, Model([x, rot, t, txt], [out]))
+  return (mapper, Model([txt, t], outs))
 }
