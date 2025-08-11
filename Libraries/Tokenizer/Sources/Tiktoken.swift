@@ -17,6 +17,7 @@ public struct TiktokenTokenizer {
   public let unknownToken: Int32
   public let startToken: Int32
   public let endToken: Int32
+  private let specialTokensRegex: Any?
 
   public init(
     vocabulary: Data, merges: Data, specialTokens: [String: Int32] = [:],
@@ -51,6 +52,17 @@ public struct TiktokenTokenizer {
           second: Self.unicodeToBytes(String(splits[1])))] = i
     }
     self.bpeRanks = bpeRanks
+    if specialTokens.isEmpty {
+      specialTokensRegex = nil
+    } else {
+      if #available(iOS 16.0, macOS 13.0, *) {
+        specialTokensRegex = try? Regex(
+          "(\(specialTokens.keys.map({ NSRegularExpression.escapedPattern(for: $0) }).joined(separator: "|")))"
+        )
+      } else {
+        specialTokensRegex = nil
+      }
+    }
     var specialTokenStrings = Set(specialTokens.keys)
     specialTokenStrings.insert(unknownToken)
     specialTokenStrings.insert(startToken)
@@ -255,6 +267,30 @@ public struct TiktokenTokenizer {
   private func pretokenize(_ text: String) -> [Substring] {
     if #available(iOS 16.0, macOS 13.0, *) {
       if let tokenRegex = Self.tokenRegex as? Regex<AnyRegexOutput> {
+        if let specialTokensRegex = specialTokensRegex as? Regex<AnyRegexOutput> {
+          var lastIndex = text.startIndex
+          var tokens: [Substring] = []
+          for match in text.matches(of: specialTokensRegex) {
+            let range = match.range
+            if lastIndex < range.lowerBound {
+              let unmatched = text[lastIndex..<range.lowerBound]
+              tokens.append(
+                contentsOf: unmatched.matches(of: tokenRegex).map {
+                  unmatched[$0.range]
+                })
+            }
+            tokens.append(text[range])  // match
+            lastIndex = range.upperBound
+          }
+          if lastIndex < text.endIndex {
+            let unmatched = text[lastIndex..<text.endIndex]
+            tokens.append(
+              contentsOf: unmatched.matches(of: tokenRegex).map {
+                unmatched[$0.range]
+              })
+          }
+          return tokens
+        }
         return text.matches(of: tokenRegex).map {
           text[$0.range]
         }
