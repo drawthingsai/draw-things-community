@@ -485,8 +485,6 @@ public struct ControlNetZoo: DownloadZoo {
     var builtinModels = Set(builtinSpecifications.map { $0.file })
     for specification in jsonSpecifications {
       if builtinModels.contains(specification.file) {
-        builtinModels.remove(specification.file)
-        // Remove this from previous list.
         availableSpecifications = availableSpecifications.filter { $0.file != specification.file }
       }
       availableSpecifications.append(specification)
