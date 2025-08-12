@@ -140,6 +140,8 @@ struct Converter: ParsableCommand {
       }
     case .hiDreamI1:
       fatalError()
+    case .qwenImage:
+      fatalError()
     case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow:
       fatalError()
     }

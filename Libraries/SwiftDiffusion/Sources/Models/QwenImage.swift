@@ -86,11 +86,11 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, scaleFactor: Fl
   )
 {
   let x = Input()
-  let linear1 = Dense(count: intermediateSize, name: "\(name)_linear1")
+  let linear1 = Dense(count: intermediateSize, flags: [.Float16], name: "\(name)_linear1")
   var out = linear1(x).GELU(approximate: .tanh)
   out = (1.0 / scaleFactor) * out
   // The scale down is integrated into out proj bias.
-  let outProjection = Dense(count: hiddenSize, name: "\(name)_out_proj")
+  let outProjection = Dense(count: hiddenSize, flags: [.Float32], name: "\(name)_out_proj")
   out = scaleFactor * outProjection(out).to(.Float32)
   return (linear1, outProjection, Model([x], [out]))
 }
@@ -110,7 +110,7 @@ private func JointTransformerBlock(
     epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var contextOut = contextChunks[1] .* contextNorm1(context) + contextChunks[0]
   let contextToKeys = Dense(count: k * h, name: "c_k")
-  let contextToQueries = Dense(count: k * h, name: "c_q")
+  let contextToQueries = Dense(count: k * h, flags: [.Float16], name: "c_q")
   let contextToValues = Dense(count: k * h, name: "c_v")
   let downcastContextOut = contextOut.to(.Float16)  // scale down factor merged into contextChunks.
   var contextK = contextToKeys(downcastContextOut).reshaped([b, t, h, k])
@@ -128,7 +128,7 @@ private func JointTransformerBlock(
   var xOut = xNorm1(x)
   xOut = xChunks[1] .* xOut + xChunks[0]
   let xToKeys = Dense(count: k * h, name: "x_k")
-  let xToQueries = Dense(count: k * h, name: "x_q")
+  let xToQueries = Dense(count: k * h, flags: [.Float16], name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
   let downcastXOut = xOut.to(.Float16)  // scale down factor merged into xChunks.
   var xK = xToKeys(downcastXOut).reshaped([b, hw, h, k])

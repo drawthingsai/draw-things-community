@@ -207,6 +207,24 @@ struct Quantizer: ParsableCommand {
               }
             }
           }
+          case .qwenImage:
+            if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {
+              $0.write(key, tensor: fp16)
+            } else {
+              if squeezedDims > 1 {
+                if key.contains("ada_ln") {
+                  $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                } else {
+                  if shape.count == 4 {  // Convolution.
+                    $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                  } else {
+                    $0.write(key, tensor: fp16, codec: [.q6p, .ezm7])
+                  }
+                }
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
         }
       }
     }
