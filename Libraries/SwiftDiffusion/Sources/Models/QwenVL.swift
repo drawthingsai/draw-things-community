@@ -92,7 +92,7 @@ private func TransformerBlock(
   let residual = out
   let norm2 = RMSNorm(epsilon: 1e-6, axis: [1], name: "post_attention_layernorm")
   out = norm2(out)
-  let (w1, w2, w3, ffn) = FeedForward(hiddenSize: h * k, intermediateSize: MLP, name: "mlp")
+  let (_, _, _, ffn) = FeedForward(hiddenSize: h * k, intermediateSize: MLP, name: "mlp")
   out = residual + ffn(out)
   return Model([x, rot, causalAttentionMask], [out])
 }
