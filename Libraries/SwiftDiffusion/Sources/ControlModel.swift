@@ -445,7 +445,7 @@ extension ControlModel {
   private func zeroTensor(dataType: DataType, format: TensorFormat, shape: TensorShape) -> AnyTensor
   {
     switch dataType {
-    case .Float16:
+    case .Float16, .BFloat16:
       #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
         var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
         tensor.withUnsafeMutableBytes {

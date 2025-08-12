@@ -112,7 +112,7 @@ extension Interpreter {
       else { return [nil] }
       let storeageOffsetInBytes: Int
       switch storage.dataType {
-      case .Float16:
+      case .Float16, .BFloat16:
         storeageOffsetInBytes = storageOffset * 2
       case .Float32:
         storeageOffsetInBytes = storageOffset * 4
@@ -174,7 +174,7 @@ extension Interpreter {
           return 1
         }
         switch descriptor.storage.dataType {
-        case .Float16:
+        case .Float16, .BFloat16:
           return 2
         case .Float32, .Int32:
           return 4

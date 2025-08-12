@@ -195,7 +195,7 @@ extension UNetFixedEncoder {
     textEncoding: [DynamicGraph.Tensor<FloatType>],
     timesteps: [Float], batchSize: Int, startHeight: Int, startWidth: Int, tokenLengthUncond: Int,
     tokenLengthCond: Int, lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration,
-    teaCache teaCacheConfiguration: TeaCacheConfiguration,
+    teaCache teaCacheConfiguration: TeaCacheConfiguration, isBF16: Bool,
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )], referenceImages: [DynamicGraph.Tensor<FloatType>]
@@ -1321,10 +1321,12 @@ extension UNetFixedEncoder {
         configuration.keys = keys
         unetFixed =
           LoRAQwenImageFixed(
-            timesteps: timesteps.count, channels: 3072, layers: 60, LoRAConfiguration: configuration
+            timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: false,
+            LoRAConfiguration: configuration
           ).1
       } else {
-        unetFixed = QwenImageFixed(timesteps: timesteps.count, channels: 3072, layers: 60).1
+        unetFixed =
+          QwenImageFixed(timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: false).1
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(

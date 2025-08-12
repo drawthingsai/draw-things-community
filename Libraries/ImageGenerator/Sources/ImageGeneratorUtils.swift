@@ -30,6 +30,8 @@ public struct ImageGeneratorUtils {
       return Tensor<Int64>(tensor).data(using: codec)
     case .Int32:
       return Tensor<Int32>(tensor).data(using: codec)
+    case .BFloat16:
+      return Tensor<BFloat16>(tensor).data(using: codec)
     case .Float16:
       #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
         return Tensor<Float16>(tensor).data(using: codec)

@@ -1307,7 +1307,7 @@ public struct LoRATrainer {
         }
         if name.contains("lora_up") {
           switch dataType {
-          case .Float16:
+          case .Float16, .BFloat16:
             #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
               var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
               tensor.withUnsafeMutableBytes {
@@ -1330,7 +1330,7 @@ public struct LoRATrainer {
           }
         } else if orthonormalLoRADown && name.contains("lora_down") {
           switch dataType {
-          case .Float16:
+          case .Float16, .BFloat16:
             #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
               let tensor = Self.randomOrthonormalMatrix(
                 graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *), of: Float16.self)
@@ -2093,7 +2093,7 @@ public struct LoRATrainer {
             }
             if name.contains("lora_up") {
               switch dataType {
-              case .Float16:
+              case .Float16, .BFloat16:
                 #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
                   var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
                   tensor.withUnsafeMutableBytes {
@@ -2116,7 +2116,7 @@ public struct LoRATrainer {
               }
             } else if orthonormalLoRADown && name.contains("lora_down") {
               switch dataType {
-              case .Float16:
+              case .Float16, .BFloat16:
                 #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
                   let tensor = Self.randomOrthonormalMatrix(
                     graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),
@@ -2186,7 +2186,7 @@ public struct LoRATrainer {
               }
               if name.contains("lora_up") {
                 switch dataType {
-                case .Float16:
+                case .Float16, .BFloat16:
                   #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
                     var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
                     tensor.withUnsafeMutableBytes {
@@ -2209,7 +2209,7 @@ public struct LoRATrainer {
                 }
               } else if orthonormalLoRADown && name.contains("lora_down") {
                 switch dataType {
-                case .Float16:
+                case .Float16, .BFloat16:
                   #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
                     let tensor = Self.randomOrthonormalMatrix(
                       graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),
@@ -2335,7 +2335,7 @@ public struct LoRATrainer {
             }
             if name.contains("lora_up") {
               switch dataType {
-              case .Float16:
+              case .Float16, .BFloat16:
                 #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
                   var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
                   tensor.withUnsafeMutableBytes {
@@ -2358,7 +2358,7 @@ public struct LoRATrainer {
               }
             } else if orthonormalLoRADown && name.contains("lora_down") {
               switch dataType {
-              case .Float16:
+              case .Float16, .BFloat16:
                 #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
                   let tensor = Self.randomOrthonormalMatrix(
                     graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),
@@ -2400,7 +2400,7 @@ public struct LoRATrainer {
           }
           if name.contains("lora_up") {
             switch dataType {
-            case .Float16:
+            case .Float16, .BFloat16:
               #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
                 var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
                 tensor.withUnsafeMutableBytes {
@@ -2423,7 +2423,7 @@ public struct LoRATrainer {
             }
           } else if orthonormalLoRADown && name.contains("lora_down") {
             switch dataType {
-            case .Float16:
+            case .Float16, .BFloat16:
               #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
                 let tensor = Self.randomOrthonormalMatrix(
                   graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *),

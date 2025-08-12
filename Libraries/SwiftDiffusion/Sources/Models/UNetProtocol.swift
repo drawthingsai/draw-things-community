@@ -1093,7 +1093,7 @@ extension UNetFromNNC {
               batchSize: $0[0].shape[0],
               height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
               layers: 60, usesFlashAttention: usesFlashAttention ? .scale1 : .none,
-              LoRAConfiguration: configuration
+              isBF16: false, LoRAConfiguration: configuration
             ).1
           })
       } else {
@@ -1102,7 +1102,7 @@ extension UNetFromNNC {
             QwenImage(
               batchSize: $0[0].shape[0],
               height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
-              layers: 60, usesFlashAttention: usesFlashAttention ? .scale1 : .none
+              layers: 60, usesFlashAttention: usesFlashAttention ? .scale1 : .none, isBF16: false
             ).1
           })
       }

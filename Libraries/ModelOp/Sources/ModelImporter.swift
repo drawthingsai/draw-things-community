@@ -685,7 +685,7 @@ public final class ModelImporter {
               isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
             teaCache: TeaCacheConfiguration(
               coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0),
-            injectedControls: [], referenceImages: []
+            isBF16: false, injectedControls: [], referenceImages: []
           ).0.map({ DynamicGraph.Tensor<FloatType>($0).toCPU() })
         if modelVersion == .svdI2v {
           // Only take the first half (positive part).

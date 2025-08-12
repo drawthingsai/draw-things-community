@@ -607,8 +607,8 @@ extension ModelPreloader {
               isGuidanceEmbedEnabled: false, distilledGuidanceLayers: 0,
               textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
-              tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: [],
-              referenceImages: []
+              tiledDiffusion: tiledDiffusion, teaCache: teaCache, isBF16: false,
+              injectedControls: [], referenceImages: []
             ).0  // No need to pass lora, one off use.
         }
         let _ = unet.compileModel(

@@ -140,6 +140,8 @@ public struct LoRALoader {
         switch dataType {
         case .Float32:
           return .final(Tensor<Float32>(from: tensor))
+        case .BFloat16:
+          return .final(Tensor<BFloat16>(from: tensor))
         case .Float16:
           return .final(tensor)
         case .UInt8, .Int32, .Int64, .Float64:
@@ -284,6 +286,8 @@ public struct LoRALoader {
       switch dataType {
       case .Float32:
         return .final(Tensor<Float32>(from: tensor))
+      case .BFloat16:
+        return .final(Tensor<BFloat16>(from: tensor))
       case .Float16:
         return .final(tensor)
       case .UInt8, .Int32, .Int64, .Float64:
@@ -646,6 +650,8 @@ public struct LoRALoader {
       switch dataType {
       case .Float32:
         return .final(Tensor<Float32>(from: original.rawValue).toCPU())
+      case .BFloat16:
+        return .final(Tensor<BFloat16>(from: original.rawValue).toCPU())
       case .Float16:
         return .final(original.rawValue.toCPU())
       case .Float64, .Int64, .Int32, .UInt8:

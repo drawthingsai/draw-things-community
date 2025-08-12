@@ -238,8 +238,8 @@ extension LCMSampler: Sampler {
           batchSize: batchSize, startHeight: startHeight,
           startWidth: startWidth,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
-          tiledDiffusion: tiledDiffusion, teaCache: teaCache, injectedControls: injectedControls,
-          referenceImages: referenceImages)
+          tiledDiffusion: tiledDiffusion, teaCache: teaCache, isBF16: isBF16,
+          injectedControls: injectedControls, referenceImages: referenceImages)
         conditions = vector + encodings
         injectedControlsC = injectedControls.map {
           $0.model.encode(
@@ -344,7 +344,7 @@ extension LCMSampler: Sampler {
             return .continue(name)
           }
           switch dataType {
-          case .Float16:
+          case .Float16, .BFloat16:
             #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
               var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
               tensor.withUnsafeMutableBytes {
@@ -443,7 +443,7 @@ extension LCMSampler: Sampler {
                 batchSize: batchSize, startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
-                teaCache: teaCache, injectedControls: injectedControls,
+                teaCache: teaCache, isBF16: isBF16, injectedControls: injectedControls,
                 referenceImages: referenceImages
               ).0
             indexOffset = i

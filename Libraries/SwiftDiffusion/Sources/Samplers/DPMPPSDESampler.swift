@@ -214,7 +214,8 @@ extension DPMPPSDESampler: Sampler {
           textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
           startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
-          teaCache: teaCache, injectedControls: injectedControls, referenceImages: referenceImages)
+          teaCache: teaCache, isBF16: isBF16, injectedControls: injectedControls,
+          referenceImages: referenceImages)
         conditions = vector + encodings
         injectedControlsC = injectedControls.map {
           $0.model.encode(
@@ -429,7 +430,7 @@ extension DPMPPSDESampler: Sampler {
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
-                teaCache: teaCache, injectedControls: injectedControls,
+                teaCache: teaCache, isBF16: isBF16, injectedControls: injectedControls,
                 referenceImages: referenceImages
               ).0
             indexOffset = i
