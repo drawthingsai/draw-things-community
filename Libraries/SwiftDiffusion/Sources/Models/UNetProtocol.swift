@@ -228,7 +228,13 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         ].copied()
       })
   case .qwenImage:
-    fatalError()
+    return conditions[0..<2]
+      + conditions[2..<conditions.count].map {
+        let shape = $0.shape
+        return DynamicGraph.Tensor<Float>($0)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      }
   case .pixart:
     var extractedConditions = [conditions[0]]
     let layers = (conditions.count - 3) / 8
@@ -1070,7 +1076,28 @@ extension UNetFromNNC {
         }
       }
     case .qwenImage:
-      fatalError()
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        fatalError()
+      } else {
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            QwenImage(
+              height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
+              layers: 60, usesFlashAttention: usesFlashAttention ? .scale1 : .none
+            ).1
+          })
+      }
     case .hiDreamI1:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -1822,7 +1849,31 @@ extension UNetFromNNC {
       }
       return
     case .qwenImage:
-      fatalError()
+      guard isCfgEnabled else {
+        unet.compile(inputs: inputs)
+        // TODO: TeaCache insert here.
+        return
+      }
+      let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().map {
+        let shape = $0.1.shape
+        switch $0.0 {
+        case 0:
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+        case 1:
+          return $0.1
+        case 2:
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]
+          ]
+          .copied()
+        default:
+          return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
+        }
+      }
+      unet.compile(inputs: inputs)
+      // TODO: TeaCache insert here.
+      return
     }
     unet.compile(inputs: inputs)
   }
@@ -2137,7 +2188,90 @@ extension UNetFromNNC {
       }
       return Functional.concat(axis: 0, etUncond, etCond)
     case .qwenImage:
-      fatalError()
+      guard isCfgEnabled else {
+        let et = unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+        return et
+      }
+      let shape = firstInput.shape
+      let etUncond: DynamicGraph.Tensor<FloatType>
+      let etCond: DynamicGraph.Tensor<FloatType>
+      if tokenLengthCond > tokenLengthUncond {
+        // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ]
+        .copied()
+        let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 1:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+              0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+        etCond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etCond, etCond)
+        }
+        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 1:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+      } else {
+        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 1:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+        etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+        debugPrint(etUncond)
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etUncond, etUncond)
+        }
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ]
+        .copied()
+        let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 1:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+              0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+        debugPrint(etCond)
+      }
+      return Functional.concat(axis: 0, etUncond, etCond)
     case .flux1:
       if let teaCache = teaCache {
         let shape = firstInput.shape

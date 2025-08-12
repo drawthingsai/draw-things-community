@@ -124,7 +124,7 @@ func QwenVL<T: TensorNumeric & BinaryFloatingPoint>(
     let layer = TransformerBlock(
       prefix: "layers.\(i)", k: width / heads, h: heads, hk: 4, b: batchSize,
       t: tokenLength, MLP: MLP, usesFlashAttention: usesFlashAttention)
-    out = layer(out, rot)
+    out = layer(out, rot, causalAttentionMask)
     if let outputHiddenStates = outputHiddenStates, outputHiddenStates == i {
       hiddenStates = out
     }

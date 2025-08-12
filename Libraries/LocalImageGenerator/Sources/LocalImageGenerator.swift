@@ -1316,7 +1316,18 @@ extension LocalImageGenerator {
         paddingToken: 0, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
     case .qwenImage:
-      fatalError()
+      let promptWithTemplate =
+        "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
+      let negativePromptWithTemplate =
+        "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
+      var result = tokenize(
+        graph: graph, tokenizer: tokenizerQwen25, text: promptWithTemplate,
+        negativeText: negativePromptWithTemplate,
+        paddingToken: nil, conditionalLength: 3584, modifier: .qwen25, potentials: potentials,
+        startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
+      result.7 = result.7 - 34
+      result.8 = result.8 - 34
+      return result
     case .hiDreamI1:
       var tokenizerV1 = tokenizerV1
       tokenizerV1.textualInversions = []

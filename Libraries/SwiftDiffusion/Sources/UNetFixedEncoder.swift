@@ -1245,7 +1245,139 @@ extension UNetFixedEncoder {
       }
       return ([graph.variable(rot)] + conditions, nil)
     case .qwenImage:
-      fatalError()
+      let c0 = textEncoding[0]
+      let qwen25Length = c0.shape[1]
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let rotaryEmbedding = Tensor<FloatType>(
+        from: QwenImageRotaryPositionEmbedding(
+          height: h, width: w, tokenLength: qwen25Length, channels: 128)
+      ).toGPU(0)
+      let isGuidanceEmbedSupported =
+        (try?
+          (graph.openStore(
+            filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+          ) {
+            return $0.read(like: "__dit__[t-guidance_embedder_0-0-1]") != nil
+          }).get()) ?? false
+      let guidanceEmbeds: DynamicGraph.Tensor<FloatType>?
+      if isGuidanceEmbedSupported {
+        let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : guidanceEmbed
+        guidanceEmbeds = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: guidanceScale * 1_000, batchSize: 1, embeddingSize: 256,
+              maxPeriod: 10_000)
+          ).toGPU(0))
+      } else {
+        guidanceEmbeds = nil
+      }
+      var timeEmbeds = graph.variable(
+        .GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
+      var c = graph.variable(
+        .GPU(0),
+        .HWC(1, (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond, 3584),
+        of: FloatType.self)
+      if isCfgEnabled {
+        c[0..<1, 0..<tokenLengthUncond, 0..<3584] = c0[0..<1, 0..<tokenLengthUncond, 0..<3584]
+        c[0..<1, tokenLengthUncond..<(tokenLengthCond + tokenLengthUncond), 0..<3584] =
+          c0[1..<2, 0..<tokenLengthCond, 0..<3584]
+      } else {
+        c[0..<1, 0..<tokenLengthCond, 0..<3584] = c0[1..<2, 0..<tokenLengthCond, 0..<3584]
+      }
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
+      }
+      let unetFixed: Model
+      let lora = Array(
+        (OrderedDictionary<String, LoRAConfiguration>(
+          lora.filter({ $0.version == version }).map {
+            ($0.file, $0)
+          }
+        ) {
+          LoRAConfiguration(
+            file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
+            modifier: $0.modifier, mode: $0.mode)
+        })
+        .values
+      ).filter { $0.weight != 0 }
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        && canRunLoRASeparately
+      if shouldRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        fatalError()
+      } else {
+        unetFixed = QwenImageFixed(timesteps: timesteps.count, channels: 3072, layers: 60).1
+      }
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(
+        inputs: [c, timeEmbeds] + (guidanceEmbeds.map { [$0] } ?? []))
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !lora.isEmpty {
+          if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<(20 + 40)).map {
+                return ($0, $0)
+              })
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, format, shape in
+                let result = loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                  store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
+                )
+                switch result {
+                case .continue(let updatedName, _, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail  // Skip loading.
+                  }
+                case .fail, .final(_):
+                  return result
+                }
+              }
+            }
+          } else {
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
+              }
+            }
+          }
+        } else if !loadedFromWeightsCache {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
+      }
+      let conditions = unetFixed(
+        inputs: c, [timeEmbeds] + (guidanceEmbeds.map { [$0] } ?? [])
+      )
+      if lora.isEmpty || shouldRunLoRASeparately {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
+      return (
+        [graph.variable(rotaryEmbedding)] + conditions, nil
+      )
     case .hiDreamI1:
       let h = startHeight / 2
       let w = startWidth / 2

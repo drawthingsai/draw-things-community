@@ -101,7 +101,6 @@ private func JointTransformerBlock(
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
-  let c = Input()
   let rot = Input()
   let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in
     Input()
@@ -308,10 +307,11 @@ func QwenImage(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   var mappers = [ModelWeightMapper]()
-  var context = contextIn.to(.Float32)
-  var out = imgIn(x).to(.Float32)
   let h = height / 2
   let w = width / 2
+  var context = contextIn.to(.Float32)
+  var out = imgIn(x).reshaped(.HWC(1, h * w, channels)).to(.Float32)
+  let rotResized = rot.reshaped(.NHWC(1, h * w + textLength, 1, 128))
   for i in 0..<layers {
     let contextBlockPreOnly = i == layers - 1
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
@@ -320,7 +320,7 @@ func QwenImage(
       prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength, hw: h * w,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (i >= layers - 16 ? 16 : 2, i >= layers - 1 ? 256 : 16))
-    let blockOut = block([out, context, rot] + contextChunks + xChunks)
+    let blockOut = block([out, context, rotResized] + contextChunks + xChunks)
     if i == layers - 1 {
       out = blockOut
     } else {
@@ -365,13 +365,13 @@ private func JointTransformerBlockFixed(
   // Merge scale factor into the adaLN.
   contextChunks[0] = (1.0 / 8) * contextChunks[0].to(.Float32)
   contextChunks[1] = (1.0 / 8) * (1 + contextChunks[1].to(.Float32))
-  contextChunks[2] = (8 * scaleFactor.0) * contextChunks[2].to(.Float32)
   let xAdaLNs = (0..<6).map { Dense(count: k * h, name: "x_ada_ln_\($0)") }
   var xChunks = xAdaLNs.map { $0(c) }
   xChunks[0] = (1.0 / 8) * xChunks[0].to(.Float32)
   xChunks[1] = (1.0 / 8) * (1 + xChunks[1].to(.Float32))
   xChunks[2] = (8 * scaleFactor.0) * xChunks[2].to(.Float32)
   if !contextBlockPreOnly {
+    contextChunks[2] = (8 * scaleFactor.0) * contextChunks[2].to(.Float32)
     contextChunks[3] = contextChunks[3].to(.Float32)
     contextChunks[4] = 1 + contextChunks[4].to(.Float32)
     contextChunks[5] = contextChunks[5].to(.Float32)
@@ -396,7 +396,7 @@ private func JointTransformerBlockFixed(
   return (mapper, Model([c], contextChunks + xChunks))
 }
 
-func QwenImageFixed(channels: Int, layers: Int) -> (ModelWeightMapper, Model) {
+func QwenImageFixed(timesteps: Int, channels: Int, layers: Int) -> (ModelWeightMapper, Model) {
   let txt = Input()
   let t = Input()
   var outs = [Model.IO]()
@@ -404,8 +404,8 @@ func QwenImageFixed(channels: Int, layers: Int) -> (ModelWeightMapper, Model) {
   let txtIn = Dense(count: channels, name: "context_embedder")
   let (timeInMlp0, timeInMlp2, timeIn) = MLPEmbedder(channels: channels, name: "t")
   var vec = timeIn(t)
-  vec = vec.reshaped([1, 1, channels]).swish()
-  var context = txtIn(txtNorm(txt))
+  vec = vec.reshaped([timesteps, 1, channels]).swish()
+  let context = txtIn(txtNorm(txt))
   var mappers = [ModelWeightMapper]()
   outs.append(context)
   for i in 0..<layers {
