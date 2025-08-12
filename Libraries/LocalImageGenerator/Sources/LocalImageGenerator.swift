@@ -3211,11 +3211,7 @@ extension LocalImageGenerator {
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       return version
     }
     let tiledDecoding = TiledConfiguration(
@@ -3363,11 +3359,7 @@ extension LocalImageGenerator {
     let refiner: Refiner? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       let mmdit = ModelZoo.MMDiTForModel($0)
       return Refiner(
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
@@ -4224,11 +4216,7 @@ extension LocalImageGenerator {
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       return version
     }
     let tiledDecoding = TiledConfiguration(
@@ -4347,11 +4335,7 @@ extension LocalImageGenerator {
     let refiner: Refiner? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       let mmdit = ModelZoo.MMDiTForModel($0)
       return Refiner(
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
@@ -5104,11 +5088,7 @@ extension LocalImageGenerator {
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != configuration.model, ModelZoo.isModelDownloaded($0) else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       return version
     }
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
@@ -5171,11 +5151,7 @@ extension LocalImageGenerator {
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != configuration.model, ModelZoo.isModelDownloaded($0) else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       return version
     }
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
@@ -5533,11 +5509,7 @@ extension LocalImageGenerator {
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       return version
     }
     let tiledDecoding = TiledConfiguration(
@@ -5687,11 +5659,7 @@ extension LocalImageGenerator {
     let refiner: Refiner? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       let mmdit = ModelZoo.MMDiTForModel($0)
       return Refiner(
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),
@@ -6315,11 +6283,7 @@ extension LocalImageGenerator {
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       return version
     }
     let tiledDecoding = TiledConfiguration(
@@ -6469,11 +6433,7 @@ extension LocalImageGenerator {
     let refiner: Refiner? = configuration.refinerModel.flatMap {
       guard $0 != file, ModelZoo.isModelDownloaded($0) else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       let mmdit = ModelZoo.MMDiTForModel($0)
       return Refiner(
         start: configuration.refinerStart, filePath: ModelZoo.filePathForModelDownloaded($0),

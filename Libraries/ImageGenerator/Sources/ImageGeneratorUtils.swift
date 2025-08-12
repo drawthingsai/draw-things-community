@@ -194,11 +194,7 @@ public struct ImageGeneratorUtils {
       guard $0 != configuration.model, ModelZoo.isModelDownloaded($0, memorizedBy: memorizedBy)
       else { return nil }
       let version = ModelZoo.versionForModel($0)
-      guard
-        version == modelVersion
-          || ([.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
-            && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(modelVersion))
-      else { return nil }
+      guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       return ModelZoo.versionForModel($0)
     }
     var alternativeDecoderVersion: AlternativeDecoderVersion? = nil

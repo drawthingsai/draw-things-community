@@ -1956,4 +1956,33 @@ extension ModelZoo {
       ((Double(resolution.height) * Double(resolution.width)) * 16 - 256)
         * (1.15 - 0.5) / (4096 - 256) + 0.5)
   }
+
+  public static func isCompatibleRefiner(_ version: ModelVersion, refinerVersion: ModelVersion)
+    -> Bool
+  {
+    if version == refinerVersion {
+      return true
+    }
+    // All uses SDXL VAE.
+    if [.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
+      && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(refinerVersion)
+    {
+      return true
+    }
+    // All uses FLUX VAE.
+    if [.flux1, .hiDreamI1].contains(version) && [.flux1, .hiDreamI1].contains(refinerVersion) {
+      return true
+    }
+    // All uses SD3 VAE.
+    if [.sd3, .sd3Large].contains(version) && [.sd3, .sd3Large].contains(refinerVersion) {
+      return true
+    }
+    // All uses Wan VAE.
+    if [.wan21_1_3b, .wan21_14b, .qwenImage].contains(version)
+      && [.wan21_1_3b, .wan21_14b, .qwenImage].contains(refinerVersion)
+    {
+      return true
+    }
+    return false
+  }
 }
