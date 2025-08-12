@@ -294,7 +294,7 @@ private func JointTransformerBlock(
 }
 
 func QwenImage(
-  height: Int, width: Int, textLength: Int, channels: Int, layers: Int,
+  batchSize: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: Int,
   usesFlashAttention: FlashAttentionLevel
 ) -> (
   ModelWeightMapper, Model
@@ -310,14 +310,15 @@ func QwenImage(
   let h = height / 2
   let w = width / 2
   var context = contextIn.to(.Float32)
-  var out = imgIn(x).reshaped(.HWC(1, h * w, channels)).to(.Float32)
+  var out = imgIn(x).reshaped(.HWC(batchSize, h * w, channels)).to(.Float32)
   let rotResized = rot.reshaped(.NHWC(1, h * w + textLength, 1, 128))
   for i in 0..<layers {
     let contextBlockPreOnly = i == layers - 1
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = JointTransformerBlock(
-      prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128, b: 1, t: textLength, hw: h * w,
+      prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: textLength,
+      hw: h * w,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (i >= layers - 16 ? 16 : 2, i >= layers - 1 ? 256 : 16))
     let blockOut = block([out, context, rotResized] + contextChunks + xChunks)
@@ -336,9 +337,9 @@ func QwenImage(
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = scale .* normFinal(out).to(.Float16) + shift
   let projOut = Dense(count: 2 * 2 * 16, name: "linear")
-  out = projOut(out).reshaped([1, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous()
+  out = projOut(out).reshaped([batchSize, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous()
     .reshaped([
-      1, h * 2, w * 2, 16,
+      batchSize, h * 2, w * 2, 16,
     ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()

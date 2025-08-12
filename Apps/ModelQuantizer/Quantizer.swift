@@ -37,8 +37,7 @@ struct Quantizer: ParsableCommand {
       let keys = store.keys
 
       graph.openStore(outputFile) {
-        let total = keys.count
-        for (i, key) in keys.enumerated() {
+        for key in keys {
           guard let tensor = store.read(key, codec: [.q8p, .q8p, .ezm7, .externalData]) else {
             continue
           }
@@ -206,7 +205,6 @@ struct Quantizer: ParsableCommand {
                 $0.write(key, tensor: fp16, codec: .ezm7)
               }
             }
-          }
           case .qwenImage:
             if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {
               $0.write(key, tensor: fp16)
@@ -225,6 +223,7 @@ struct Quantizer: ParsableCommand {
                 $0.write(key, tensor: fp16, codec: .ezm7)
               }
             }
+          }
         }
       }
     }

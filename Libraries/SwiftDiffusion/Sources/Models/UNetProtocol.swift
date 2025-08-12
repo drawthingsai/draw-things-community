@@ -1093,6 +1093,7 @@ extension UNetFromNNC {
         unet = ModelBuilderOrModel.modelBuilder(
           ModelBuilder {
             QwenImage(
+              batchSize: $0[0].shape[0],
               height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
               layers: 60, usesFlashAttention: usesFlashAttention ? .scale1 : .none
             ).1

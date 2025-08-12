@@ -1276,14 +1276,16 @@ extension UNetFixedEncoder {
         .GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
       var c = graph.variable(
         .GPU(0),
-        .HWC(1, (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond, 3584),
+        .HWC(batchSize, (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond, 3584),
         of: FloatType.self)
       if isCfgEnabled {
-        c[0..<1, 0..<tokenLengthUncond, 0..<3584] = c0[0..<1, 0..<tokenLengthUncond, 0..<3584]
-        c[0..<1, tokenLengthUncond..<(tokenLengthCond + tokenLengthUncond), 0..<3584] =
-          c0[1..<2, 0..<tokenLengthCond, 0..<3584]
+        c[0..<batchSize, 0..<tokenLengthUncond, 0..<3584] =
+          c0[0..<batchSize, 0..<tokenLengthUncond, 0..<3584]
+        c[0..<batchSize, tokenLengthUncond..<(tokenLengthCond + tokenLengthUncond), 0..<3584] =
+          c0[batchSize..<(batchSize * 2), 0..<tokenLengthCond, 0..<3584]
       } else {
-        c[0..<1, 0..<tokenLengthCond, 0..<3584] = c0[1..<2, 0..<tokenLengthCond, 0..<3584]
+        c[0..<batchSize, 0..<tokenLengthCond, 0..<3584] =
+          c0[0..<batchSize, 0..<tokenLengthCond, 0..<3584]
       }
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(
@@ -1332,7 +1334,7 @@ extension UNetFixedEncoder {
         if !lora.isEmpty {
           if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
             let mapping: [Int: Int] = [Int: Int](
-              uniqueKeysWithValues: (0..<(20 + 40)).map {
+              uniqueKeysWithValues: (0..<60).map {
                 return ($0, $0)
               })
             LoRALoader.openStore(graph, lora: lora) { loader in
