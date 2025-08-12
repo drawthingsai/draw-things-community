@@ -282,7 +282,7 @@ extension FirstStage {
       }
       outputChannels = 3
     case .wan21_1_3b, .wan21_14b, .qwenImage:
-      let startDepth = shape[0]
+      let startDepth = version == .qwenImage ? 1 : shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       let sizeLimit: Int
@@ -864,7 +864,7 @@ extension FirstStage {
       }
       outputChannels = 32
     case .wan21_1_3b, .wan21_14b, .qwenImage:
-      let startDepth = (shape[0] - 1) / 4 + 1
+      let startDepth = version == .qwenImage ? 1 : (shape[0] - 1) / 4 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
       let sizeLimit: Int
@@ -897,6 +897,7 @@ extension FirstStage {
         ).1
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)
+        let batchSize = version == .qwenImage ? 1 : batchSize
         if highPrecision {
           encoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
