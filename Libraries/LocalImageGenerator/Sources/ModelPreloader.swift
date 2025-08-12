@@ -152,7 +152,9 @@ public final class ModelPreloader {
         configuration.refinerModel.map {
           guard $0 != configuration.model, ModelZoo.isModelDownloaded($0) else { return false }
           let version = ModelZoo.versionForModel($0)
-          guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return false }
+          guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else {
+            return false
+          }
           return true
         } ?? false
       lora = configuration.loras.compactMap {
@@ -911,7 +913,9 @@ extension ModelPreloader {
       newConfiguration.refinerModel.map {
         guard $0 != newModelFile, ModelZoo.isModelDownloaded($0) else { return false }
         let refinerVersion = ModelZoo.versionForModel($0)
-        guardModelZoo.isCompatibleRefiner(version, refinerVersion: refinerVersion) else { return false }
+        guard ModelZoo.isCompatibleRefiner(version, refinerVersion: refinerVersion) else {
+          return false
+        }
         return true
       } ?? false
     let newLora: [LoRAConfiguration] = newConfiguration.loras.compactMap {
