@@ -1088,7 +1088,15 @@ extension UNetFromNNC {
       if didRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
-        fatalError()
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            LoRAQwenImage(
+              batchSize: $0[0].shape[0],
+              height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
+              layers: 60, usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+              LoRAConfiguration: configuration
+            ).1
+          })
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
           ModelBuilder {

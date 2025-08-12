@@ -1319,7 +1319,10 @@ extension UNetFixedEncoder {
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
-        fatalError()
+        unetFixed =
+          LoRAQwenImageFixed(
+            timesteps: timesteps.count, channels: 3072, layers: 60, LoRAConfiguration: configuration
+          ).1
       } else {
         unetFixed = QwenImageFixed(timesteps: timesteps.count, channels: 3072, layers: 60).1
       }
