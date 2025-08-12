@@ -2248,7 +2248,6 @@ extension UNetFromNNC {
         }
         etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
         etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
-        debugPrint(etUncond)
         guard !isCancelled.load(ordering: .acquiring) else {
           return Functional.concat(axis: 0, etUncond, etUncond)
         }
@@ -2269,7 +2268,6 @@ extension UNetFromNNC {
           }
         }
         etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
-        debugPrint(etCond)
       }
       return Functional.concat(axis: 0, etUncond, etCond)
     case .flux1:
