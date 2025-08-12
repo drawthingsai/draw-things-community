@@ -60,8 +60,7 @@ public protocol UNetProtocol {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
-    causalInference: (Int, pad: Int),
-    weightsCache: WeightsCache
+    causalInference: (Int, pad: Int), isBF16: Bool, weightsCache: WeightsCache
   ) -> Bool
 
   func callAsFunction(
@@ -398,7 +397,7 @@ extension UNetFromNNC {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache teaCacheConfiguration: TeaCacheConfiguration,
-    causalInference: (Int, pad: Int), weightsCache: WeightsCache
+    causalInference: (Int, pad: Int), isBF16: Bool, weightsCache: WeightsCache
   ) -> Bool {
     guard unet == nil else { return true }
     isCancelled.store(false, ordering: .releasing)

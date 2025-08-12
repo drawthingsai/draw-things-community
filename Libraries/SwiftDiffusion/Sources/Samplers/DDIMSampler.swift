@@ -32,6 +32,7 @@ where UNet.FloatType == FloatType {
   public let teaCache: TeaCacheConfiguration
   public let causalInference: (Int, pad: Int)
   public let cfgZeroStar: CfgZeroStarConfiguration
+  public let isBF16: Bool
   private let discretization: Discretization
   private let weightsCache: WeightsCache
   public init(
@@ -44,7 +45,7 @@ where UNet.FloatType == FloatType {
     canRunLoRASeparately: Bool, deviceProperties: DeviceProperties,
     conditioning: Denoiser.Conditioning, tiledDiffusion: TiledConfiguration,
     teaCache: TeaCacheConfiguration, causalInference: (Int, pad: Int),
-    cfgZeroStar: CfgZeroStarConfiguration, discretization: Discretization,
+    cfgZeroStar: CfgZeroStarConfiguration, isBF16: Bool, discretization: Discretization,
     weightsCache: WeightsCache
   ) {
     self.filePath = filePath
@@ -72,6 +73,7 @@ where UNet.FloatType == FloatType {
     self.teaCache = teaCache
     self.causalInference = causalInference
     self.cfgZeroStar = cfgZeroStar
+    self.isBF16 = isBF16
     self.discretization = discretization
 
     self.weightsCache = weightsCache
@@ -287,7 +289,7 @@ extension DDIMSampler: Sampler {
           injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
           referenceImageCount: referenceImageCount,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          weightsCache: weightsCache)
+          isBF16: isBF16, weightsCache: weightsCache)
       }
       var noise: DynamicGraph.Tensor<FloatType>? = nil
       if mask != nil || version == .kandinsky21 {
@@ -452,7 +454,7 @@ extension DDIMSampler: Sampler {
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
             referenceImageCount: referenceImageCount,
             tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-            weightsCache: weightsCache)
+            isBF16: refiner.isBF16, weightsCache: weightsCache)
           refinerKickIn = -1
           unets.append(unet)
         }

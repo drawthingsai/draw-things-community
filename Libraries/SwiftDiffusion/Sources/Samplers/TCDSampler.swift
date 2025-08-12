@@ -31,6 +31,7 @@ where UNet.FloatType == FloatType {
   public let tiledDiffusion: TiledConfiguration
   public let teaCache: TeaCacheConfiguration
   public let causalInference: (Int, pad: Int)
+  public let isBF16: Bool
   private let discretization: Discretization
   private let weightsCache: WeightsCache
   public init(
@@ -43,7 +44,7 @@ where UNet.FloatType == FloatType {
     deviceProperties: DeviceProperties,
     stochasticSamplingGamma: Float, conditioning: Denoiser.Conditioning,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
-    causalInference: (Int, pad: Int),
+    causalInference: (Int, pad: Int), isBF16: Bool,
     discretization: Discretization, weightsCache: WeightsCache
   ) {
     self.filePath = filePath
@@ -70,6 +71,7 @@ where UNet.FloatType == FloatType {
     self.tiledDiffusion = tiledDiffusion
     self.teaCache = teaCache
     self.causalInference = causalInference
+    self.isBF16 = isBF16
     self.discretization = discretization
 
     self.weightsCache = weightsCache
@@ -305,7 +307,7 @@ extension TCDSampler: Sampler {
           injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
           referenceImageCount: referenceImageCount,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          weightsCache: weightsCache)
+          isBF16: isBF16, weightsCache: weightsCache)
       }
       let noise: DynamicGraph.Tensor<FloatType> = graph.variable(
         .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
@@ -460,7 +462,7 @@ extension TCDSampler: Sampler {
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
             referenceImageCount: referenceImageCount,
             tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-            weightsCache: weightsCache)
+            isBF16: refiner.isBF16, weightsCache: weightsCache)
           refinerKickIn = -1
           unets.append(unet)
         }

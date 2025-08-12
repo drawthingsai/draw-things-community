@@ -1718,6 +1718,11 @@ public struct ModelZoo: DownloadZoo {
     return (coefficients[0], coefficients[1], coefficients[2], coefficients[3], coefficients[4])
   }
 
+  public static func isBF16ForModel(_ name: String) -> Bool {
+    guard let specification = specificationForModel(name) else { return false }
+    return specification.isBf16 ?? false
+  }
+
   public static func defaultRefinerForModel(_ name: String) -> String? {
     guard let specification = specificationForModel(name) else { return nil }
     return specification.defaultRefiner

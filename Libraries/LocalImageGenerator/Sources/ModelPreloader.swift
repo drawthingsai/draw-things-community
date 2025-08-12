@@ -629,7 +629,7 @@ extension ModelPreloader {
           injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>(
             injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
             injectedAttentionKVs: []), referenceImageCount: 0, tiledDiffusion: tiledDiffusion,
-          teaCache: teaCache, causalInference: (0, 0), weightsCache: weightsCache
+          teaCache: teaCache, causalInference: (0, 0), isBF16: false, weightsCache: weightsCache
         )
         unetFilePath = modelPath
         unetExternalOnDemand = externalOnDemand

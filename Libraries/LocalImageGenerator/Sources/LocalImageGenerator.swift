@@ -85,7 +85,7 @@ extension LocalImageGenerator {
     conditioning: Denoiser.Conditioning, parameterization: Denoiser.Parameterization,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
     causalInference: (Int, pad: Int), cfgZeroStar: CfgZeroStarConfiguration,
-    weightsCache: WeightsCache, of: FloatType.Type
+    isBF16: Bool, weightsCache: WeightsCache, of: FloatType.Type
   ) -> any Sampler<FloatType, UNetWrapper<FloatType>> {
     let manualSubsteps: (Int) -> [Int] = {
       switch $0 {
@@ -160,7 +160,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .eulerA, .eulerASubstep, .eulerATrailing, .eulerAAYS:
@@ -178,7 +178,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .DDIM, .dDIMTrailing:
@@ -196,7 +196,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .PLMS:
@@ -214,7 +214,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .dPMPPSDEKarras, .dPMPPSDESubstep, .dPMPPSDETrailing, .DPMPPSDEAYS:
@@ -232,7 +232,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .uniPC, .uniPCAYS, .uniPCTrailing:
@@ -250,7 +250,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .LCM:
@@ -267,7 +267,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties,
           conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
-          causalInference: causalInference,
+          causalInference: causalInference, isBF16: isBF16,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       case .TCD:
@@ -285,7 +285,7 @@ extension LocalImageGenerator {
           deviceProperties: deviceProperties,
           stochasticSamplingGamma: stochasticSamplingGamma,
           conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
-          causalInference: causalInference,
+          causalInference: causalInference, isBF16: isBF16,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
       }
@@ -305,7 +305,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .DPMPP2MAYS:
@@ -326,7 +326,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing),
           weightsCache: weightsCache)
@@ -347,7 +347,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas),
           weightsCache: weightsCache)
@@ -368,7 +368,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
           weightsCache: weightsCache)
@@ -387,7 +387,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
@@ -405,7 +405,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .eulerATrailing:
@@ -422,7 +422,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
@@ -444,7 +444,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing),
           weightsCache: weightsCache)
@@ -465,7 +465,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas),
           weightsCache: weightsCache)
@@ -486,7 +486,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
           weightsCache: weightsCache)
@@ -505,7 +505,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading),
         weightsCache: weightsCache)
@@ -523,7 +523,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
@@ -541,7 +541,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .leading),
         weightsCache: weightsCache)
@@ -559,7 +559,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.KarrasDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .dPMPPSDETrailing:
@@ -576,7 +576,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
@@ -598,7 +598,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing),
           weightsCache: weightsCache)
@@ -619,7 +619,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas),
           weightsCache: weightsCache)
@@ -640,7 +640,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately,
           deviceProperties: deviceProperties, conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
           weightsCache: weightsCache)
@@ -659,7 +659,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .uniPCAYS:
@@ -678,7 +678,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
           conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.LinearDiscretization(
             parameterization, objective: objective, timestepSpacing: .trailing),
           weightsCache: weightsCache)
@@ -699,7 +699,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
           conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.AYSLogLinearInterpolatedKarrasDiscretization(
             parameterization, objective: objective, samplingSigmas: samplingSigmas),
           weightsCache: weightsCache)
@@ -720,7 +720,7 @@ extension LocalImageGenerator {
           canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
           conditioning: conditioning,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar,
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16,
           discretization: Denoiser.AYSLogLinearInterpolatedTimestepDiscretization(
             parameterization, objective: objective, samplingTimesteps: samplingTimesteps),
           weightsCache: weightsCache)
@@ -739,7 +739,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(
           parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
@@ -755,7 +755,7 @@ extension LocalImageGenerator {
         isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
-        causalInference: causalInference,
+        causalInference: causalInference, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .TCD:
@@ -771,7 +771,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         stochasticSamplingGamma: stochasticSamplingGamma,
         conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
-        causalInference: causalInference,
+        causalInference: causalInference, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
         weightsCache: weightsCache)
     case .eulerASubstep:
@@ -788,7 +788,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearManualDiscretization(
           parameterization, objective: objective, manual: manualSubsteps),
         weightsCache: weightsCache)
@@ -808,7 +808,7 @@ extension LocalImageGenerator {
         canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
         conditioning: conditioning,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar,
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16,
         discretization: Denoiser.LinearManualDiscretization(
           parameterization, objective: objective, manual: manualSubsteps),
         weightsCache: weightsCache)
@@ -3378,7 +3378,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: mmdit?.dualAttentionLayers ?? [],
         distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
         upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
-        builtinLora: ModelZoo.builtinLoRAForModel($0))
+        builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0))
     }
     let hiresFixStrength = configuration.hiresFixStrength
     let queueWatermark = DynamicGraph.queueWatermark
@@ -3390,6 +3390,7 @@ extension LocalImageGenerator {
         DynamicGraph.queueWatermark = queueWatermark
       }
     }
+    let isBF16 = ModelZoo.isBF16ForModel(file)
     let teaCache =
       ModelZoo.teaCacheCoefficientsForModel(file).map {
         var teaCacheEnd =
@@ -3427,7 +3428,7 @@ extension LocalImageGenerator {
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-      cfgZeroStar: cfgZeroStar, weightsCache: weightsCache, of: FloatType.self)
+      cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
     let initTimestep = sampler.timestep(for: hiresFixStrength, sampling: sampling)
     let hiresFixEnabled =
       configuration.hiresFix && initTimestep.startStep > 0 && configuration.hiresFixStartWidth > 0
@@ -4009,7 +4010,7 @@ extension LocalImageGenerator {
         stochasticSamplingGamma: configuration.stochasticSamplingGamma,
         conditioning: conditioning, parameterization: denoiserParameterization,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        cfgZeroStar: cfgZeroStar, weightsCache: weightsCache, of: FloatType.self)
+        cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
       let startStep: (integral: Int, fractional: Float)
       let xEnc: DynamicGraph.Tensor<FloatType>
       let secondPassTextGuidance: Float
@@ -4361,7 +4362,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: mmdit?.dualAttentionLayers ?? [],
         distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
         upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
-        builtinLora: ModelZoo.builtinLoRAForModel($0))
+        builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0))
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
       version: modelVersion,
@@ -4383,6 +4384,7 @@ extension LocalImageGenerator {
       scale: DeviceCapability.Scale(
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
+    let isBF16 = ModelZoo.isBF16ForModel(file)
     let teaCache =
       ModelZoo.teaCacheCoefficientsForModel(file).map {
         var teaCacheEnd =
@@ -4420,7 +4422,7 @@ extension LocalImageGenerator {
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-      cfgZeroStar: cfgZeroStar, weightsCache: weightsCache, of: FloatType.self)
+      cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     guard initTimestep.startStep > 0 || modelVersion == .svdI2v else {  // TODO: This check should be removed as text only should be capable of handling svdI2v too.
       return generateTextOnly(
@@ -4836,7 +4838,7 @@ extension LocalImageGenerator {
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
           conditioning: conditioning, parameterization: denoiserParameterization,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar, weightsCache: weightsCache, of: FloatType.self
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self
         )
         let noise = randomLatentNoise(
           graph: graph, batchSize: batchSize.0, startHeight: startHeight,
@@ -5700,7 +5702,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: mmdit?.dualAttentionLayers ?? [],
         distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
         upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
-        builtinLora: ModelZoo.builtinLoRAForModel($0))
+        builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0))
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
       version: modelVersion,
@@ -5722,6 +5724,7 @@ extension LocalImageGenerator {
       scale: DeviceCapability.Scale(
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
+    let isBF16 = ModelZoo.isBF16ForModel(file)
     let teaCache =
       ModelZoo.teaCacheCoefficientsForModel(file).map {
         var teaCacheEnd =
@@ -5759,7 +5762,7 @@ extension LocalImageGenerator {
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-      cfgZeroStar: cfgZeroStar, weightsCache: weightsCache, of: FloatType.self)
+      cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     let graph = DynamicGraph()
     if externalOnDemand
@@ -6118,7 +6121,7 @@ extension LocalImageGenerator {
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
           conditioning: conditioning, parameterization: denoiserParameterization,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar, weightsCache: weightsCache, of: FloatType.self
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self
         )
         let noise = randomLatentNoise(
           graph: graph, batchSize: batchSize.0, startHeight: startHeight,
@@ -6481,7 +6484,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: mmdit?.dualAttentionLayers ?? [],
         distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
         upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
-        builtinLora: ModelZoo.builtinLoRAForModel($0))
+        builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0))
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
       version: modelVersion,
@@ -6503,6 +6506,7 @@ extension LocalImageGenerator {
       scale: DeviceCapability.Scale(
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
+    let isBF16 = ModelZoo.isBF16ForModel(file)
     let teaCache =
       ModelZoo.teaCacheCoefficientsForModel(file).map {
         var teaCacheEnd =
@@ -6540,7 +6544,7 @@ extension LocalImageGenerator {
       stochasticSamplingGamma: configuration.stochasticSamplingGamma,
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-      cfgZeroStar: cfgZeroStar, weightsCache: weightsCache, of: FloatType.self)
+      cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     let graph = DynamicGraph()
     if externalOnDemand
@@ -7025,7 +7029,7 @@ extension LocalImageGenerator {
           stochasticSamplingGamma: configuration.stochasticSamplingGamma,
           conditioning: conditioning, parameterization: denoiserParameterization,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          cfgZeroStar: cfgZeroStar, weightsCache: weightsCache, of: FloatType.self
+          cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self
         )
         let noise = randomLatentNoise(
           graph: graph, batchSize: batchSize.0, startHeight: startHeight,
