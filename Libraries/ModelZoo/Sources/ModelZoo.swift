@@ -282,6 +282,7 @@ public struct ModelZoo: DownloadZoo {
     public var teaCacheCoefficients: [Float]?
     public var remoteApiModelConfig: RemoteApiModelConfig?
     public var framesPerSecond: Double?
+    public var isBf16: Bool?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -296,7 +297,8 @@ public struct ModelZoo: DownloadZoo {
       textEncoderVersion: TextEncoderVersion? = nil, guidanceEmbed: Bool? = nil,
       paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil,
       builtinLora: Bool? = nil, note: String? = nil, teaCacheCoefficients: [Float]? = nil,
-      remoteApiModelConfig: RemoteApiModelConfig? = nil, framesPerSecond: Double? = nil
+      remoteApiModelConfig: RemoteApiModelConfig? = nil, framesPerSecond: Double? = nil,
+      isBf16: Bool? = nil
     ) {
       self.name = name
       self.file = file
@@ -333,6 +335,7 @@ public struct ModelZoo: DownloadZoo {
       self.teaCacheCoefficients = teaCacheCoefficients
       self.remoteApiModelConfig = remoteApiModelConfig
       self.framesPerSecond = framesPerSecond
+      self.isBf16 = isBf16
     }
     fileprivate var predictV: Bool? = nil
   }

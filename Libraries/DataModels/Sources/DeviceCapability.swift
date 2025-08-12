@@ -190,7 +190,7 @@ public struct DeviceCapability {
       return true
     #else
       let physicalMemory = ProcessInfo.processInfo.physicalMemory
-      return physicalMemory >= 16_106_127_360  // This is 15 * 1024 * 1024 * 1024.
+      return physicalMemory >= 11_811_160_064  // This is 11 * 1024 * 1024 * 1024.
     #endif
   }()
   public static let isUltraPerformance: Bool = {
