@@ -434,7 +434,7 @@ extension UNetFromNNC {
       version: version, memoryCapacity: deviceProperties.memoryCapacity,
       externalOnDemand: externalOnDemand)
     let runLoRASeparatelyIsPreferred =
-      isQuantizedModel || externalOnDemand || externalOnDemandPartially
+      isQuantizedModel || externalOnDemand || externalOnDemandPartially || isBF16
     let isTeaCacheEnabled = teaCacheConfiguration.threshold > 0
     switch version {
     case .v1:
@@ -1092,8 +1092,9 @@ extension UNetFromNNC {
             LoRAQwenImage(
               batchSize: $0[0].shape[0],
               height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
-              layers: 60, usesFlashAttention: usesFlashAttention ? .scale1 : .none,
-              isBF16: false, LoRAConfiguration: configuration
+              layers: 60,
+              usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
+              isBF16: isBF16, LoRAConfiguration: configuration
             ).1
           })
       } else {
@@ -1102,7 +1103,9 @@ extension UNetFromNNC {
             QwenImage(
               batchSize: $0[0].shape[0],
               height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
-              layers: 60, usesFlashAttention: usesFlashAttention ? .scale1 : .none, isBF16: false
+              layers: 60,
+              usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
+              isBF16: isBF16
             ).1
           })
       }

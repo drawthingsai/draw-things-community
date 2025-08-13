@@ -657,7 +657,7 @@ extension UNetFixedEncoder {
         graph, of: lora.map { $0.file }, modelFile: filePath)
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
-      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
@@ -936,7 +936,7 @@ extension UNetFixedEncoder {
         graph, of: lora.map { $0.file }, modelFile: filePath)
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
-      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
@@ -1059,7 +1059,7 @@ extension UNetFixedEncoder {
         graph, of: lora.map { $0.file }, modelFile: filePath)
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
-      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
@@ -1312,7 +1312,7 @@ extension UNetFixedEncoder {
         graph, of: lora.map { $0.file }, modelFile: filePath)
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
-      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
@@ -1321,12 +1321,12 @@ extension UNetFixedEncoder {
         configuration.keys = keys
         unetFixed =
           LoRAQwenImageFixed(
-            timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: false,
+            timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: isBF16,
             LoRAConfiguration: configuration
           ).1
       } else {
         unetFixed =
-          QwenImageFixed(timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: false).1
+          QwenImageFixed(timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: isBF16).1
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(
@@ -1424,7 +1424,7 @@ extension UNetFixedEncoder {
         graph, of: lora.map { $0.file }, modelFile: filePath)
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
-      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately

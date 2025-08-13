@@ -122,7 +122,12 @@ private func JointTransformerBlock(
   let contextToKeys = Dense(count: k * h, name: "c_k")
   let contextToQueries = Dense(count: k * h, flags: [.Float16], name: "c_q")
   let contextToValues = Dense(count: k * h, name: "c_v")
-  let downcastContextOut = contextOut.to(.Float16)  // scale down factor merged into contextChunks.
+  let downcastContextOut: Model.IO
+  if isBF16 {
+    downcastContextOut = ((1.0 / 8) * contextOut).to(.Float16)  // scale down factor not merged. values path doesn't use the scale factor.
+  } else {
+    downcastContextOut = contextOut.to(.Float16)  // scale down factor merged into contextChunks.
+  }
   var contextK = contextToKeys(downcastContextOut).reshaped([b, t, h, k])
   let normAddedK = RMSNorm(
     epsilon: 1e-6 / (8.0 * 8.0 /* This is to remove the scale down factor */), axis: [3],
@@ -142,7 +147,12 @@ private func JointTransformerBlock(
   let xToKeys = Dense(count: k * h, name: "x_k")
   let xToQueries = Dense(count: k * h, flags: [.Float16], name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
-  let downcastXOut = xOut.to(.Float16)  // scale down factor merged into xChunks.
+  let downcastXOut: Model.IO
+  if isBF16 {
+    downcastXOut = ((1.0 / 8) * xOut).to(.Float16)  // scale down factor not merged.
+  } else {
+    downcastXOut = xOut.to(.Float16)  // scale down factor merged into xChunks.
+  }
   var xK = xToKeys(downcastXOut).reshaped([b, hw, h, k])
   let normK = RMSNorm(
     epsilon: 1e-6 / (8.0 * 8.0 /* This is to remove the scale down factor */), axis: [3],
@@ -222,7 +232,7 @@ private func JointTransformerBlock(
   xOut = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
     .contiguous()
   let xUnifyheads = Dense(count: k * h, name: "x_o")
-  xOut = xUnifyheads(isBF16 ? contextOut : (1.0 / scaleFactor.0) * xOut).to(of: x)  // scale up factor merged into xChunks.
+  xOut = xUnifyheads(isBF16 ? xOut : (1.0 / scaleFactor.0) * xOut).to(of: x)  // scale up factor merged into xChunks.
   if !contextBlockPreOnly {
     contextOut = context + contextChunks[2] .* contextOut
   }
