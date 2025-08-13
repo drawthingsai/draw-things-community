@@ -892,8 +892,8 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   {
     // Check if user has exceeded 24-hour limit
     if let dayStat = payload.stats["24_hour"],
-      let dayThrottlePolicy = throttlePolicies["24_hour"],
-      dayStat >= dayThrottlePolicy
+      let daySoftLimitThrottlePolicy = throttlePolicies["daily_soft_limit"],
+      dayStat >= daySoftLimitThrottlePolicy
     {
       switch priority {
       case "real":
@@ -1050,7 +1050,7 @@ public class ProxyCPUServer {
     self.controlConfigs = ControlConfigs(
       throttlePolicy: [
         "15_min": 300, "10_min": 200, "5_min": 100, "1_hour": 1000, "1_min": 30,
-        "24_hour": 10000,
+        "24_hour": 5000, "daily_soft_limit": 500,
       ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath,
       nonceSizeLimit: nonceSizeLimit)
     self.proxyMessageSigner = ProxyMessageSigner()

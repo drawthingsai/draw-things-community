@@ -296,7 +296,9 @@ public struct ModelZoo: DownloadZoo {
       latentsStd: [Float]? = nil, latentsScalingFactor: Float? = nil, stageModels: [String]? = nil,
       textEncoderVersion: TextEncoderVersion? = nil, guidanceEmbed: Bool? = nil,
       paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil,
-      builtinLora: Bool? = nil, teaCacheCoefficients: [Float]? = nil, framesPerSecond: Double? = nil, isBf16: Bool? = nil, remoteApiModelConfig: RemoteApiModelConfig? = nil, note: String? = nil
+      builtinLora: Bool? = nil, teaCacheCoefficients: [Float]? = nil,
+      framesPerSecond: Double? = nil, isBf16: Bool? = nil,
+      remoteApiModelConfig: RemoteApiModelConfig? = nil, note: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -624,7 +626,7 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24, isBf16: true,
       note:
-        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
     ),
     Specification(
       name: "Qwen Image 1.0", file: "qwen_image_1.0_q8p.ckpt", prefix: "",
@@ -1971,7 +1973,7 @@ extension ModelZoo {
     }
     // All uses SDXL VAE.
     if [.sdxlBase, .sdxlRefiner, .ssd1b, .auraflow, .pixart].contains(version)
-        && [.sdxlBase, .sdxlRefiner, .ssd1b, .auraflow, .pixart].contains(refinerVersion)
+      && [.sdxlBase, .sdxlRefiner, .ssd1b, .auraflow, .pixart].contains(refinerVersion)
     {
       return true
     }
