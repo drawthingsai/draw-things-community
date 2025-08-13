@@ -149,7 +149,7 @@ private func JointTransformerBlock(
   let xToValues = Dense(count: k * h, name: "x_v")
   let downcastXOut: Model.IO
   if isBF16 {
-    downcastXOut = ((1.0 / 8) * xOut).to(.Float16)  // scale down factor not merged.
+    downcastXOut = ((1.0 / 8) * xOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
   } else {
     downcastXOut = xOut.to(.Float16)  // scale down factor merged into xChunks.
   }
@@ -583,7 +583,12 @@ private func LoRAJointTransformerBlock(
     count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "c_q")
   let contextToValues = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "c_v")
-  let downcastContextOut = contextOut.to(.Float16)  // scale down factor merged into contextChunks.
+  let downcastContextOut: Model.IO
+  if isBF16 {
+    downcastContextOut = ((1.0 / 8) * contextOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
+  } else {
+    downcastContextOut = contextOut.to(.Float16)  // scale down factor merged into contextChunks.
+  }
   var contextK = contextToKeys(downcastContextOut).reshaped([b, t, h, k])
   let normAddedK = RMSNorm(
     epsilon: 1e-6 / (8.0 * 8.0 /* This is to remove the scale down factor */), axis: [3],
@@ -606,7 +611,12 @@ private func LoRAJointTransformerBlock(
     count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_q")
   let xToValues = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
-  let downcastXOut = xOut.to(.Float16)  // scale down factor merged into xChunks.
+  let downcastXOut: Model.IO
+  if isBF16 {
+    downcastXOut = ((1.0 / 8) * xOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
+  } else {
+    downcastXOut = xOut.to(.Float16)  // scale down factor merged into xChunks.
+  }
   var xK = xToKeys(downcastXOut).reshaped([b, hw, h, k])
   let normK = RMSNorm(
     epsilon: 1e-6 / (8.0 * 8.0 /* This is to remove the scale down factor */), axis: [3],
