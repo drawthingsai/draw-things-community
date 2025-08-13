@@ -44,7 +44,7 @@ public struct ModelZoo: DownloadZoo {
     case .wan21_1_3b:
       return "Wan v2.1 1.3B"
     case .wan21_14b:
-      return "Wan v2.1 14B"
+      return "Wan v2.x 14B"
     case .hiDreamI1:
       return "HiDream I1"
     case .qwenImage:
