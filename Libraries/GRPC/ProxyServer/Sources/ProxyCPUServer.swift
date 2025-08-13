@@ -17,12 +17,14 @@ import NIOSSL
 #endif
 
 public enum ProxyTaskPriority: Sendable {
+  case real
   case high
   case low
+  case background
 }
 
 struct WorkTask {
-  var priority: TaskPriority
+  var priority: ProxyTaskPriority
   var request: ImageGenerationRequest
   var context: StreamingResponseCallContext<ImageGenerationResponse>
   var promise: EventLoopPromise<GRPCStatus>
@@ -133,6 +135,8 @@ extension Worker {
 actor TaskQueue {
   private var highPriorityTasks: [WorkTask] = []
   private var lowPriorityTasks: [WorkTask] = []
+  private var realPriorityTasks: [WorkTask] = []
+  private var backgroundPriorityTasks: [WorkTask] = []
   private var pendingRemoveWorkerId = Set<String>()
   private var workers: [String: Worker]
   private let logger: Logger
@@ -166,39 +170,65 @@ actor TaskQueue {
   }
 
   func nextTaskForWorker(_ worker: Worker) async -> WorkTask? {
-    let isPrimaryHigh = worker.primaryPriority == .high
+    // Check worker's primary priority queue first
+    switch worker.primaryPriority {
+    case .real:
+      if let task = realPriorityTasks.first {
+        realPriorityTasks.removeFirst()
+        return task
+      }
+    case .high:
+      if let task = highPriorityTasks.first {
+        highPriorityTasks.removeFirst()
+        return task
+      }
+    case .low:
+      if let task = lowPriorityTasks.first {
+        lowPriorityTasks.removeFirst()
+        return task
+      }
+    case .background:
+      if let task = backgroundPriorityTasks.first {
+        backgroundPriorityTasks.removeFirst()
+        return task
+      }
+    }
 
-    // Try primary queue first
-    if isPrimaryHigh {
-      if let task = highPriorityTasks.first {
-        highPriorityTasks.removeFirst()
-        return task
-      }
-      if let task = lowPriorityTasks.first {
-        lowPriorityTasks.removeFirst()
-        return task
-      }
-    } else {
-      if let task = lowPriorityTasks.first {
-        lowPriorityTasks.removeFirst()
-        return task
-      }
-      if let task = highPriorityTasks.first {
-        highPriorityTasks.removeFirst()
-        return task
-      }
+    // If primary queue is empty, check other queues in priority order
+    if let task = realPriorityTasks.first {
+      realPriorityTasks.removeFirst()
+      return task
+    }
+    if let task = highPriorityTasks.first {
+      highPriorityTasks.removeFirst()
+      return task
+    }
+    if let task = lowPriorityTasks.first {
+      lowPriorityTasks.removeFirst()
+      return task
+    }
+    if let task = backgroundPriorityTasks.first {
+      backgroundPriorityTasks.removeFirst()
+      return task
     }
 
     return nil
   }
 
   func addTask(_ task: WorkTask) {
-    if task.priority == .high {
+    switch task.priority {
+    case .real:
+      logger.info("realPriorityTasks append task \(task.priority)")
+      realPriorityTasks.append(task)
+    case .high:
       logger.info("highPriorityTasks append task \(task.priority)")
       highPriorityTasks.append(task)
-    } else {
+    case .low:
       logger.info("lowPriorityTasks append task \(task.priority)")
       lowPriorityTasks.append(task)
+    case .background:
+      logger.info("backgroundPriorityTasks append task \(task.priority)")
+      backgroundPriorityTasks.append(task)
     }
   }
 
@@ -822,7 +852,9 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             code: .permissionDenied, message: message))
         return
       }
-      let priority = taskPriority(from: payload.priority)
+      let throttlePolicies = await controlConfigs.throttlePolicy
+      let priority = taskPriority(
+        from: payload.priority, payload: payload, throttlePolicies: throttlePolicies)
       // Enqueue task.
       let heartbeat = Task {
         while !Task.isCancelled {
@@ -855,14 +887,38 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     return promise.futureResult
   }
 
-  func taskPriority(from priority: String) -> TaskPriority {
+  func taskPriority(from priority: String, payload: JWTPayload, throttlePolicies: [String: Int])
+    -> ProxyTaskPriority
+  {
+    // Check if user has exceeded 24-hour limit
+    if let dayStat = payload.stats["24_hour"],
+      let dayThrottlePolicy = throttlePolicies["24_hour"],
+      dayStat >= dayThrottlePolicy
+    {
+      switch priority {
+      case "real":
+        return .real
+      case "plus":
+        logger.info("taskPriority downgrade priority from plus to low")
+        return .low
+      default:
+        logger.info("taskPriority downgrade priority to background")
+        return .background
+      }
+    }
+
+    // Otherwise map string to ProxyTaskPriority
     switch priority {
-    case "community":
-      return TaskPriority.low
+    case "real":
+      return .real
     case "plus":
-      return TaskPriority.high
+      return .high
+    case "community":
+      return .low
+    case "background":
+      return .background
     default:
-      return TaskPriority.low
+      return .low
     }
   }
 
