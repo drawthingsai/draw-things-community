@@ -678,7 +678,7 @@ extension Denoiser {
       }
       var scaledReverseTimesteps = [Int]()
       for i in 0..<steps {
-        let y = Double(i) / Double(steps - 1) * Double(ys.count - 1)
+        let y = Double(i) / Double(max(1, steps - 1)) * Double(ys.count - 1)
         let y0 = max(Int(y.rounded(.down)), 0)
         let y1 = min(Int(y.rounded(.up)), ys.count - 1)
         let a = y - Double(y0)
