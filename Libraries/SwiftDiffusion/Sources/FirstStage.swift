@@ -286,13 +286,17 @@ extension FirstStage {
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       let sizeLimit: Int
-      switch deviceProperties.memoryCapacity {
-      case .high:
-        sizeLimit = 1024  // Practically unlimited.
-      case .medium:
-        sizeLimit = 104
-      case .low:
-        sizeLimit = 32
+      if startDepth > 1 {
+        switch deviceProperties.memoryCapacity {
+        case .high:
+          sizeLimit = 1024  // Practically unlimited.
+        case .medium:
+          sizeLimit = 104
+        case .low:
+          sizeLimit = 32
+        }
+      } else {
+        sizeLimit = 1024
       }
       if startWidth > sizeLimit || startHeight > sizeLimit {
         // We turn on tiled decoding forcefully.
@@ -868,13 +872,17 @@ extension FirstStage {
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
       let sizeLimit: Int
-      switch deviceProperties.memoryCapacity {
-      case .high:
-        sizeLimit = 1024  // Practically unlimited.
-      case .medium:
-        sizeLimit = 104
-      case .low:
-        sizeLimit = 32
+      if startDepth > 1 {
+        switch deviceProperties.memoryCapacity {
+        case .high:
+          sizeLimit = 1024  // Practically unlimited.
+        case .medium:
+          sizeLimit = 104
+        case .low:
+          sizeLimit = 32
+        }
+      } else {
+        sizeLimit = 1024
       }
       if startWidth > sizeLimit || startHeight > sizeLimit {
         // We turn on tiled decoding forcefully.
