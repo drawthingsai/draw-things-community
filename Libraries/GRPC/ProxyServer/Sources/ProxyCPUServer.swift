@@ -887,30 +887,32 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     return promise.futureResult
   }
 
-  func taskPriority(from priority: String, payload: JWTPayload, throttlePolicies: [String: Int])
+  func taskPriority(from userClass: String, payload: JWTPayload, throttlePolicies: [String: Int])
     -> ProxyTaskPriority
   {
+    if payload.consumableType == "boost" {
+      return .real
+    }
+
     // Check if user has exceeded 24-hour limit
     if let dayStat = payload.stats["24_hour"],
-      let daySoftLimitThrottlePolicy = throttlePolicies["daily_soft_limit"],
-      dayStat >= daySoftLimitThrottlePolicy
+      let daySoftLimitLow = throttlePolicies["daily_soft_limit_low"],
+      let daySoftLimitHigh = throttlePolicies["daily_soft_limit_high"],
+      dayStat >= daySoftLimitLow
     {
-      switch priority {
-      case "real":
-        return .real
-      case "plus":
-        logger.info("taskPriority downgrade priority from plus to low")
+      if userClass == "plus" {
+        if dayStat >= daySoftLimitHigh {
+          logger.info("downgrade dt plus to background")
+          return .background
+        }
+        logger.info("downgrade dt plus to low")
         return .low
-      default:
-        logger.info("taskPriority downgrade priority to background")
+      } else {
         return .background
       }
     }
 
-    // Otherwise map string to ProxyTaskPriority
-    switch priority {
-    case "real":
-      return .real
+    switch userClass {
     case "plus":
       return .high
     case "community":
@@ -1050,7 +1052,7 @@ public class ProxyCPUServer {
     self.controlConfigs = ControlConfigs(
       throttlePolicy: [
         "15_min": 300, "10_min": 200, "5_min": 100, "1_hour": 1000, "1_min": 30,
-        "24_hour": 5000, "daily_soft_limit": 500,
+        "24_hour": 5000, "daily_soft_limit_low": 500, "daily_soft_limit_high": 750,
       ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath,
       nonceSizeLimit: nonceSizeLimit)
     self.proxyMessageSigner = ProxyMessageSigner()
