@@ -1978,6 +1978,16 @@ extension ModelZoo {
     {
       return true
     }
+    // All uses SD3 VAE.
+    if [.sd3, .sd3Large].contains(version) && [.sd3, .sd3Large].contains(refinerVersion) {
+      return true
+    }
+    // All uses Wan VAE.
+    if [.wan21_1_3b, .wan21_14b].contains(version)
+      && [.wan21_1_3b, .wan21_14b].contains(refinerVersion)
+    {
+      return true
+    }
     /*
     // All uses SDXL VAE.
     if [.sdxlBase, .sdxlRefiner, .ssd1b, .auraflow, .pixart].contains(version)
