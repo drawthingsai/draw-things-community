@@ -1957,12 +1957,28 @@ extension ModelZoo {
         * (1.15 - 0.5) / (4096 - 256) + 0.5)
   }
 
+  public static func isCLIPSkipAvailable(_ version: ModelVersion) -> Bool {
+    switch version {
+    case .pixart, .auraflow, .wan21_14b, .wan21_1_3b, .qwenImage, .svdI2v:
+      return false
+    case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .v1, .v2, .flux1, .hunyuanVideo, .hiDreamI1,
+      .ssd1b, .kandinsky21, .wurstchenStageB, .wurstchenStageC:
+      return true
+    }
+  }
+
   public static func isCompatibleRefiner(_ version: ModelVersion, refinerVersion: ModelVersion)
     -> Bool
   {
     if version == refinerVersion {
       return true
     }
+    if [.sdxlBase, .sdxlRefiner, .ssd1b].contains(version)
+      && [.sdxlBase, .sdxlRefiner, .ssd1b].contains(refinerVersion)
+    {
+      return true
+    }
+    /*
     // All uses SDXL VAE.
     if [.sdxlBase, .sdxlRefiner, .ssd1b, .auraflow, .pixart].contains(version)
       && [.sdxlBase, .sdxlRefiner, .ssd1b, .auraflow, .pixart].contains(refinerVersion)
@@ -1983,6 +1999,7 @@ extension ModelZoo {
     {
       return true
     }
+     */
     return false
   }
 }
