@@ -1920,20 +1920,21 @@ extension UNetFromNNC {
     inputs firstInput: DynamicGraph.Tensor<FloatType>,
     _ restInputs: [DynamicGraph.AnyTensor]
   ) -> DynamicGraph.Tensor<FloatType> {
+    guard let unet = unet else { return firstInput }
     switch version {
     case .hunyuanVideo:
       guard isCfgEnabled else {
         let shouldUseCache =
           teaCache?.shouldUseCacheForTimeEmbedding(
-            [firstInput] + restInputs, model: unet!, step: step, marker: index, of: FloatType.self)
+            [firstInput] + restInputs, model: unet, step: step, marker: index, of: FloatType.self)
           ?? false
         let et: DynamicGraph.Tensor<FloatType>
         if shouldUseCache,
-          let result = teaCache!(model: unet!, inputs: firstInput, restInputs, marker: index)
+          let result = teaCache!(model: unet, inputs: firstInput, restInputs, marker: index)
         {
           et = result
         } else {
-          let result = unet!(
+          let result = unet(
             inputs: firstInput, restInputs
           )
           et = result[0].as(of: FloatType.self)
@@ -1974,14 +1975,14 @@ extension UNetFromNNC {
         // While xCond == xUncond, the pooled condition (used for adaptive layernorm) is different between cond / uncond branches, therefore, we need to check this for both cond / uncond branches.
         let shouldUseCacheCond =
           teaCache?.shouldUseCacheForTimeEmbedding(
-            [xCond] + otherConds, model: unet!, step: step, marker: index * 2, of: FloatType.self)
+            [xCond] + otherConds, model: unet, step: step, marker: index * 2, of: FloatType.self)
           ?? false
         if shouldUseCacheCond,
-          let result = teaCache!(model: unet!, inputs: xCond, otherConds, marker: index * 2)
+          let result = teaCache!(model: unet, inputs: xCond, otherConds, marker: index * 2)
         {
           etCond = result
         } else {
-          let result = unet!(inputs: xCond, otherConds)
+          let result = unet(inputs: xCond, otherConds)
           etCond = result[0].as(of: FloatType.self)
           teaCache?.cache(outputs: result, marker: index * 2)
         }
@@ -2012,15 +2013,15 @@ extension UNetFromNNC {
         }
         let shouldUseCacheUncond =
           teaCache?.shouldUseCacheForTimeEmbedding(
-            [xUncond] + otherUnconds, model: unet!, step: step, marker: index * 2 + 1,
+            [xUncond] + otherUnconds, model: unet, step: step, marker: index * 2 + 1,
             of: FloatType.self)
           ?? false
         if shouldUseCacheUncond,
-          let result = teaCache!(model: unet!, inputs: xUncond, otherUnconds, marker: index * 2 + 1)
+          let result = teaCache!(model: unet, inputs: xUncond, otherUnconds, marker: index * 2 + 1)
         {
           etUncond = result
         } else {
-          let result = unet!(inputs: xUncond, otherUnconds)
+          let result = unet(inputs: xUncond, otherUnconds)
           etUncond = result[0].as(of: FloatType.self)
           teaCache?.cache(outputs: result, marker: index * 2 + 1)
         }
@@ -2048,15 +2049,15 @@ extension UNetFromNNC {
         }
         let shouldUseCacheUncond =
           teaCache?.shouldUseCacheForTimeEmbedding(
-            [xUncond] + otherUnconds, model: unet!, step: step, marker: index * 2 + 1,
+            [xUncond] + otherUnconds, model: unet, step: step, marker: index * 2 + 1,
             of: FloatType.self)
           ?? false
         if shouldUseCacheUncond,
-          let result = teaCache!(model: unet!, inputs: xUncond, otherUnconds, marker: index * 2 + 1)
+          let result = teaCache!(model: unet, inputs: xUncond, otherUnconds, marker: index * 2 + 1)
         {
           etUncond = result
         } else {
-          let result = unet!(inputs: xUncond, otherUnconds)
+          let result = unet(inputs: xUncond, otherUnconds)
           etUncond = result[0].as(of: FloatType.self)
           teaCache?.cache(outputs: result, marker: index * 2 + 1)
         }
@@ -2090,14 +2091,14 @@ extension UNetFromNNC {
         }
         let shouldUseCacheCond =
           teaCache?.shouldUseCacheForTimeEmbedding(
-            [xCond] + otherConds, model: unet!, step: step, marker: index * 2, of: FloatType.self)
+            [xCond] + otherConds, model: unet, step: step, marker: index * 2, of: FloatType.self)
           ?? false
         if shouldUseCacheCond,
-          let result = teaCache!(model: unet!, inputs: xCond, otherConds, marker: index * 2)
+          let result = teaCache!(model: unet, inputs: xCond, otherConds, marker: index * 2)
         {
           etCond = result
         } else {
-          let result = unet!(inputs: xCond, otherConds)
+          let result = unet(inputs: xCond, otherConds)
           etCond = result[0].as(of: FloatType.self)
           teaCache?.cache(outputs: result, marker: index * 2)
         }
@@ -2106,16 +2107,16 @@ extension UNetFromNNC {
     case .wan21_1_3b, .wan21_14b:
       let shouldUseCache =
         teaCache?.shouldUseCacheForTimeEmbedding(
-          Array(restInputs[1..<7]), model: unet!, step: step, marker: index * 2, of: Float.self)
+          Array(restInputs[1..<7]), model: unet, step: step, marker: index * 2, of: Float.self)
         ?? false
       guard isCfgEnabled else {
         let et: DynamicGraph.Tensor<FloatType>
         if shouldUseCache,
-          let result = teaCache!(model: unet!, inputs: firstInput, restInputs, marker: index * 2)
+          let result = teaCache!(model: unet, inputs: firstInput, restInputs, marker: index * 2)
         {
           et = result
         } else {
-          let result = unet!(
+          let result = unet(
             inputs: firstInput, restInputs
           )
           et = result[0].as(of: FloatType.self)
@@ -2169,11 +2170,11 @@ extension UNetFromNNC {
         }
       }
       if shouldUseCache,
-        let uncond = teaCache!(model: unet!, inputs: xUncond, restInputsUncond, marker: index * 2)
+        let uncond = teaCache!(model: unet, inputs: xUncond, restInputsUncond, marker: index * 2)
       {
         etUncond = uncond
       } else {
-        let result = unet!(
+        let result = unet(
           inputs: xUncond, restInputsUncond
         )
         etUncond = result[0].as(of: FloatType.self)
@@ -2212,11 +2213,11 @@ extension UNetFromNNC {
         }
       }
       if shouldUseCache,
-        let cond = teaCache!(model: unet!, inputs: xCond, restInputsCond, marker: index * 2 + 1)
+        let cond = teaCache!(model: unet, inputs: xCond, restInputsCond, marker: index * 2 + 1)
       {
         etCond = cond
       } else {
-        let result = unet!(
+        let result = unet(
           inputs: xCond, restInputsCond
         )
         etCond = result[0].as(of: FloatType.self)
@@ -2225,7 +2226,7 @@ extension UNetFromNNC {
       return Functional.concat(axis: 0, etUncond, etCond)
     case .qwenImage:
       guard isCfgEnabled else {
-        let et = unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+        let et = unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
         return et
       }
       let shape = firstInput.shape
@@ -2249,7 +2250,7 @@ extension UNetFromNNC {
             return $0.1
           }
         }
-        etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+        etCond = unet(inputs: xCond, otherConds)[0].as(of: FloatType.self)
         etCond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
         guard !isCancelled.load(ordering: .acquiring) else {
           return Functional.concat(axis: 0, etCond, etCond)
@@ -2267,7 +2268,7 @@ extension UNetFromNNC {
             return $0.1
           }
         }
-        etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+        etUncond = unet(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
       } else {
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
@@ -2282,7 +2283,7 @@ extension UNetFromNNC {
             return $0.1
           }
         }
-        etUncond = unet!(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+        etUncond = unet(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
         etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
         guard !isCancelled.load(ordering: .acquiring) else {
           return Functional.concat(axis: 0, etUncond, etUncond)
@@ -2303,7 +2304,7 @@ extension UNetFromNNC {
             return $0.1
           }
         }
-        etCond = unet!(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+        etCond = unet(inputs: xCond, otherConds)[0].as(of: FloatType.self)
       }
       return Functional.concat(axis: 0, etUncond, etCond)
     case .flux1:
@@ -2312,14 +2313,14 @@ extension UNetFromNNC {
         let batchSize = shape[0]
         guard batchSize > 1 else {
           let shouldUseCache = teaCache.shouldUseCacheForTimeEmbedding(
-            [firstInput] + restInputs, model: unet!, step: step, marker: index, of: FloatType.self)
+            [firstInput] + restInputs, model: unet, step: step, marker: index, of: FloatType.self)
           let et: DynamicGraph.Tensor<FloatType>
           if shouldUseCache,
-            let result = teaCache(model: unet!, inputs: firstInput, restInputs, marker: index)
+            let result = teaCache(model: unet, inputs: firstInput, restInputs, marker: index)
           {
             et = result
           } else {
-            let result = unet!(
+            let result = unet(
               inputs: firstInput, restInputs
             )
             et = result[0].as(of: FloatType.self)
@@ -2341,15 +2342,15 @@ extension UNetFromNNC {
           }
           let shouldUseCache =
             teaCache.shouldUseCacheForTimeEmbedding(
-              [x0] + others, model: unet!, step: step, marker: index * batchSize + i,
+              [x0] + others, model: unet, step: step, marker: index * batchSize + i,
               of: FloatType.self)
           let et0: DynamicGraph.Tensor<FloatType>
           if shouldUseCache,
-            let result = teaCache(model: unet!, inputs: x0, others, marker: index * batchSize + i)
+            let result = teaCache(model: unet, inputs: x0, others, marker: index * batchSize + i)
           {
             et0 = result
           } else {
-            let result = unet!(
+            let result = unet(
               inputs: x0, others
             )
             et0 = result[0].as(of: FloatType.self)
@@ -2376,16 +2377,16 @@ extension UNetFromNNC {
       if let teaCache = teaCache {
         let shouldUseCache =
           teaCache.shouldUseCacheForTimeEmbedding(
-            Array(restInputs[50..<51]), model: unet!, step: step, marker: index, of: Float.self)
+            Array(restInputs[50..<51]), model: unet, step: step, marker: index, of: Float.self)
         let batchSize = shape[0]
         guard batchSize > 1 else {
           let et: DynamicGraph.Tensor<FloatType>
           if shouldUseCache,
-            let result = teaCache(model: unet!, inputs: firstInput, restInputs, marker: index)
+            let result = teaCache(model: unet, inputs: firstInput, restInputs, marker: index)
           {
             et = result
           } else {
-            let result = unet!(
+            let result = unet(
               inputs: firstInput, Array(restInputs[0..<50]) + Array(restInputs[51...]))
             et = result[0].as(of: FloatType.self)
             teaCache.cache(outputs: result, marker: index)
@@ -2412,11 +2413,11 @@ extension UNetFromNNC {
           let et0: DynamicGraph.Tensor<FloatType>
           if shouldUseCache,
             let result = teaCache(
-              model: unet!, inputs: firstInput, restInputs, marker: index * batchSize + i)
+              model: unet, inputs: firstInput, restInputs, marker: index * batchSize + i)
           {
             et0 = result
           } else {
-            let result = unet!(inputs: x0, Array(others[0..<50]) + Array(others[51...]))
+            let result = unet(inputs: x0, Array(others[0..<50]) + Array(others[51...]))
             et0 = result[0].as(of: FloatType.self)
             teaCache.cache(outputs: result, marker: index * batchSize + i)
           }
@@ -2439,7 +2440,7 @@ extension UNetFromNNC {
       } else {
         let batchSize = shape[0]
         guard batchSize > 1 else {
-          let et = unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+          let et = unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
           if modifier == .editing {
             // remove the conditioning.
             return et[0..<shape[0], 0..<shape[1], 0..<(shape[2] / 2), 0..<shape[3]].copied()
@@ -2459,7 +2460,7 @@ extension UNetFromNNC {
               format: $0.format, shape: shape, offset: [i]
             ).copied()
           }
-          et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = unet!(inputs: x0, others)[0]
+          et[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = unet(inputs: x0, others)[0]
             .as(
               of: FloatType.self)
           guard !isCancelled.load(ordering: .acquiring) else {
@@ -2482,7 +2483,7 @@ extension UNetFromNNC {
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
     }
-    return unet!(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+    return unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
   }
 
   private func internalDiffuse(
