@@ -99,3 +99,27 @@ swift_library(
         ":CryptoBoringWrapper",
     ],
 )
+
+swift_library(
+    name = "_CryptoExtras",
+    srcs = glob(
+        [
+            "Sources/Crypto/CryptoKitErrors.swift",
+            "Sources/_CryptoExtras/**/*.swift",
+        ],
+        exclude = [
+            "Sources/_CryptoExtras/CMakeLists.txt",
+        ],
+    ),
+    defines = [
+        "MODULE_IS_CRYPTO",
+    ],
+    module_name = "_CryptoExtras",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":CCryptoBoringSSL",
+        ":CCryptoBoringSSLShims",
+        ":Crypto",
+        ":CryptoBoringWrapper",
+    ],
+)
