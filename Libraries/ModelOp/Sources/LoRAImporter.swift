@@ -759,7 +759,7 @@ public enum LoRAImporter {
           || $0.contains("single_stream_blocks.31.block.ff_i.shared_experts.w1.")
       }
       let isQwenImage = stateDict.keys.contains {
-        $0.contains("transformer_blocks.59.txt_mlp.net.0.")
+        $0.contains("transformer_blocks_37_attn_") || $0.contains("transformer_blocks.59.attn.")
       }
       let isSDOrSDXL = stateDict.keys.contains {
         $0.hasSuffix(
