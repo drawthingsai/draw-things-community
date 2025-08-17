@@ -329,8 +329,45 @@ extension FirstStage {
         }
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-        ) {
-          $0.read("decoder", model: decoder, codec: [.jit, externalData])
+        ) { store in
+          if startDepth > 1 {
+            store.read("decoder", model: decoder, codec: [.jit, externalData])
+          } else {
+            store.read("decoder", model: decoder, codec: [.jit, externalData]) {
+              name, dataType, format, shape in
+              guard
+                name.hasSuffix("-0]")
+                  && (name.hasPrefix("__decoder__[t-conv_in-")
+                    || name.hasPrefix("__decoder__[t-conv_out-")
+                    || name.hasPrefix("__decoder__[t-resnet_conv1-")
+                    || name.hasPrefix("__decoder__[t-resnet_conv2-"))
+              else {
+                return .continue(name)
+              }
+              guard
+                var tensor =
+                  (store.read(name, kind: .CPU, codec: [.jit, externalData]).map {
+                    Tensor<FloatType>(from: $0)
+                  })
+              else {
+                return .continue(name)
+              }
+              let channels = tensor.shape.reduce(1, *) / (3 * 3 * 3)  // Input channels and output channels.
+              let outChannels = shape.reduce(1, *) / (3 * 3)
+              tensor = tensor.reshaped(.NCHW(channels, 3, 3, 3))
+              // In case depth = 1, it reduces to 2D convolution.
+              guard channels < outChannels else {
+                return .final(tensor[0..<channels, 2..<3, 0..<3, 0..<3].contiguous())
+              }
+              // In case we needs more, allocate first.
+              var outTensor = Tensor<FloatType>(
+                Array(repeating: 0, count: outChannels * 3 * 3), .CPU, .NCHW(outChannels, 1, 3, 3))
+              outTensor[0..<channels, 0..<1, 0..<3, 0..<3] = tensor[
+                0..<channels, 2..<3, 0..<3, 0..<3
+              ].contiguous()
+              return .final(outTensor)
+            }
+          }
         }
       }
       outputChannels = 3
@@ -916,8 +953,45 @@ extension FirstStage {
         }
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-        ) {
-          $0.read("encoder", model: encoder, codec: [.jit, externalData])
+        ) { store in
+          if startDepth > 1 {
+            store.read("encoder", model: encoder, codec: [.jit, externalData])
+          } else {
+            store.read("encoder", model: encoder, codec: [.jit, externalData]) {
+              name, dataType, format, shape in
+              guard
+                name.hasSuffix("-0]")
+                  && (name.hasPrefix("__encoder__[t-conv_in-")
+                    || name.hasPrefix("__encoder__[t-conv_out-")
+                    || name.hasPrefix("__encoder__[t-resnet_conv1-")
+                    || name.hasPrefix("__encoder__[t-resnet_conv2-"))
+              else {
+                return .continue(name)
+              }
+              guard
+                var tensor =
+                  (store.read(name, kind: .CPU, codec: [.jit, externalData]).map {
+                    Tensor<FloatType>(from: $0)
+                  })
+              else {
+                return .continue(name)
+              }
+              let channels = tensor.shape.reduce(1, *) / (3 * 3 * 3)  // Input channels and output channels.
+              let outChannels = shape.reduce(1, *) / (3 * 3)
+              tensor = tensor.reshaped(.NCHW(channels, 3, 3, 3))
+              // In case depth = 1, it reduces to 2D convolution.
+              guard channels < outChannels else {
+                return .final(tensor[0..<channels, 2..<3, 0..<3, 0..<3].contiguous())
+              }
+              // In case we needs more, allocate first.
+              var outTensor = Tensor<FloatType>(
+                Array(repeating: 0, count: outChannels * 3 * 3), .CPU, .NCHW(outChannels, 1, 3, 3))
+              outTensor[0..<channels, 0..<1, 0..<3, 0..<3] = tensor[
+                0..<channels, 2..<3, 0..<3, 0..<3
+              ].contiguous()
+              return .final(outTensor)
+            }
+          }
         }
       }
       outputChannels = 32
