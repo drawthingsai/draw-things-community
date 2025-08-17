@@ -1967,6 +1967,23 @@ extension ModelZoo {
     }
   }
 
+  public static func isCompatibleSampler(_ model: String, sampler: SamplerType) -> Bool {
+    let objective = objectiveForModel(model)
+    switch objective {
+    case .edm(_), .v, .epsilon:
+      return true
+    case .u(_):
+      switch sampler {
+      case .DPMPP2MAYS, .DPMPPSDEAYS, .dDIMTrailing, .dPMPP2MTrailing, .dPMPPSDETrailing,
+        .eulerAAYS, .eulerATrailing, .uniPCAYS, .uniPCTrailing:
+        return true
+      case .DDIM, .PLMS, .LCM, .TCD, .dPMPP2MKarras, .dPMPPSDEKarras, .dPMPPSDESubstep, .eulerA,
+        .eulerASubstep, .uniPC:
+        return false
+      }
+    }
+  }
+
   public static func isCompatibleRefiner(_ version: ModelVersion, refinerVersion: ModelVersion)
     -> Bool
   {
