@@ -3481,6 +3481,9 @@ extension LocalImageGenerator {
         TensorData.makeExternalData(
           for: ModelZoo.filePathForModelDownloaded(stageModel), graph: graph)
       }
+      if let refiner = refiner {
+        TensorData.makeExternalData(for: refiner.filePath, graph: graph)
+      }
     }
     if textEncoderExternalOnDemand {
       TensorData.makeExternalData(
@@ -4458,6 +4461,9 @@ extension LocalImageGenerator {
       for stageModel in ModelZoo.stageModelsForModel(file) {
         TensorData.makeExternalData(
           for: ModelZoo.filePathForModelDownloaded(stageModel), graph: graph)
+      }
+      if let refiner = refiner {
+        TensorData.makeExternalData(for: refiner.filePath, graph: graph)
       }
     }
     if textEncoderExternalOnDemand {
@@ -5743,6 +5749,9 @@ extension LocalImageGenerator {
         TensorData.makeExternalData(
           for: ModelZoo.filePathForModelDownloaded(stageModel), graph: graph)
       }
+      if let refiner = refiner {
+        TensorData.makeExternalData(for: refiner.filePath, graph: graph)
+      }
     }
     if textEncoderExternalOnDemand {
       TensorData.makeExternalData(
@@ -6516,6 +6525,9 @@ extension LocalImageGenerator {
       for stageModel in ModelZoo.stageModelsForModel(file) {
         TensorData.makeExternalData(
           for: ModelZoo.filePathForModelDownloaded(stageModel), graph: graph)
+      }
+      if let refiner = refiner {
+        TensorData.makeExternalData(for: refiner.filePath, graph: graph)
       }
     }
     if textEncoderExternalOnDemand {
