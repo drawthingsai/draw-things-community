@@ -8,6 +8,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let version: ModelVersion
   public let modifier: SamplerModifier
   public let dualAttentionLayers: [Int]
+  public let activationFfnScaling: [Int: Int]
   public let usesFlashAttention: Bool
   public let zeroNegativePrompt: Bool
   public let isQuantizedModel: Bool
@@ -17,14 +18,15 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let weightsCache: WeightsCache
   public init(
     filePath: String, version: ModelVersion, modifier: SamplerModifier, dualAttentionLayers: [Int],
-    usesFlashAttention: Bool, zeroNegativePrompt: Bool, isQuantizedModel: Bool,
-    canRunLoRASeparately: Bool, externalOnDemand: Bool, deviceProperties: DeviceProperties,
-    weightsCache: WeightsCache
+    activationFfnScaling: [Int: Int], usesFlashAttention: Bool, zeroNegativePrompt: Bool,
+    isQuantizedModel: Bool, canRunLoRASeparately: Bool, externalOnDemand: Bool,
+    deviceProperties: DeviceProperties, weightsCache: WeightsCache
   ) {
     self.filePath = filePath
     self.version = version
     self.modifier = modifier
     self.dualAttentionLayers = dualAttentionLayers
+    self.activationFfnScaling = activationFfnScaling
     self.usesFlashAttention = usesFlashAttention
     self.zeroNegativePrompt = zeroNegativePrompt
     self.isQuantizedModel = isQuantizedModel
@@ -1322,11 +1324,14 @@ extension UNetFixedEncoder {
         unetFixed =
           LoRAQwenImageFixed(
             timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: isBF16,
-            LoRAConfiguration: configuration
+            activationFfnScaling: activationFfnScaling, LoRAConfiguration: configuration
           ).1
       } else {
         unetFixed =
-          QwenImageFixed(timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: isBF16).1
+          QwenImageFixed(
+            timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: isBF16,
+            activationFfnScaling: activationFfnScaling
+          ).1
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(

@@ -644,7 +644,7 @@ public final class ModelImporter {
         .sd3, .sd3Large, .auraflow:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, modifier: .none,
-          dualAttentionLayers: dualAttentionLayers,
+          dualAttentionLayers: dualAttentionLayers, activationFfnScaling: [:],
           usesFlashAttention: false, zeroNegativePrompt: false,
           isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false,
           deviceProperties: DeviceProperties(

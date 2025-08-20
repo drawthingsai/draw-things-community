@@ -13,6 +13,7 @@ where UNet.FloatType == FloatType {
   public let qkNorm: Bool
   public let dualAttentionLayers: [Int]
   public let distilledGuidanceLayers: Int
+  public let activationFfnScaling: [Int: Int]
   public let usesFlashAttention: Bool
   public let upcastAttention: Bool
   public let externalOnDemand: Bool
@@ -35,7 +36,8 @@ where UNet.FloatType == FloatType {
   private let weightsCache: WeightsCache
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
-    dualAttentionLayers: [Int], distilledGuidanceLayers: Int, usesFlashAttention: Bool,
+    dualAttentionLayers: [Int], distilledGuidanceLayers: Int, activationFfnScaling: [Int: Int],
+    usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
@@ -51,6 +53,7 @@ where UNet.FloatType == FloatType {
     self.qkNorm = qkNorm
     self.dualAttentionLayers = dualAttentionLayers
     self.distilledGuidanceLayers = distilledGuidanceLayers
+    self.activationFfnScaling = activationFfnScaling
     self.usesFlashAttention = usesFlashAttention
     self.upcastAttention = upcastAttention
     self.externalOnDemand = externalOnDemand
@@ -190,7 +193,7 @@ extension LCMSampler: Sampler {
       var conditions: [DynamicGraph.AnyTensor] = c
       let fixedEncoder = UNetFixedEncoder<FloatType>(
         filePath: filePath, version: version, modifier: modifier,
-        dualAttentionLayers: dualAttentionLayers,
+        dualAttentionLayers: dualAttentionLayers, activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand,
@@ -313,7 +316,7 @@ extension LCMSampler: Sampler {
           injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
           referenceImageCount: referenceImageCount,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          isBF16: isBF16, weightsCache: weightsCache)
+          isBF16: isBF16, activationFfnScaling: activationFfnScaling, weightsCache: weightsCache)
       }
       var noise: DynamicGraph.Tensor<FloatType>? = nil
       if mask != nil || version == .kandinsky21 {
@@ -420,6 +423,7 @@ extension LCMSampler: Sampler {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
             modifier: modifier, dualAttentionLayers: refiner.dualAttentionLayers,
+            activationFfnScaling: refiner.activationFfnScaling,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
             isQuantizedModel: refiner.isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
             externalOnDemand: refiner.externalOnDemand, deviceProperties: deviceProperties,
@@ -496,7 +500,8 @@ extension LCMSampler: Sampler {
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
             referenceImageCount: referenceImageCount,
             tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-            isBF16: refiner.isBF16, weightsCache: weightsCache)
+            isBF16: refiner.isBF16, activationFfnScaling: refiner.activationFfnScaling,
+            weightsCache: weightsCache)
           refinerKickIn = -1
           unets.append(unet)
         }

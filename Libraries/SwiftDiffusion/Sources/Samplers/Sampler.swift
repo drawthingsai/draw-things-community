@@ -170,11 +170,13 @@ public struct Refiner: Equatable {
   public var upcastAttention: Bool
   public var builtinLora: Bool
   public var isBF16: Bool
+  public var activationFfnScaling: [Int: Int]
   // We probably need to copy all the rest in sampler over, but for now, we will just ignore.
   public init(
     start: Float, filePath: String, externalOnDemand: Bool, version: ModelVersion,
     isQuantizedModel: Bool, isConsistencyModel: Bool, qkNorm: Bool, dualAttentionLayers: [Int],
-    distilledGuidanceLayers: Int, upcastAttention: Bool, builtinLora: Bool, isBF16: Bool
+    distilledGuidanceLayers: Int, upcastAttention: Bool, builtinLora: Bool, isBF16: Bool,
+    activationFfnScaling: [Int: Int]
   ) {
     self.start = start
     self.filePath = filePath
@@ -188,6 +190,7 @@ public struct Refiner: Equatable {
     self.upcastAttention = upcastAttention
     self.builtinLora = builtinLora
     self.isBF16 = isBF16
+    self.activationFfnScaling = activationFfnScaling
   }
 }
 

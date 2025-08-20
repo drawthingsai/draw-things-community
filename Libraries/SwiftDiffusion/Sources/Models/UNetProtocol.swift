@@ -60,7 +60,8 @@ public protocol UNetProtocol {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
-    causalInference: (Int, pad: Int), isBF16: Bool, weightsCache: WeightsCache
+    causalInference: (Int, pad: Int), isBF16: Bool, activationFfnScaling: [Int: Int],
+    weightsCache: WeightsCache
   ) -> Bool
 
   func callAsFunction(
@@ -397,7 +398,8 @@ extension UNetFromNNC {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache teaCacheConfiguration: TeaCacheConfiguration,
-    causalInference: (Int, pad: Int), isBF16: Bool, weightsCache: WeightsCache
+    causalInference: (Int, pad: Int), isBF16: Bool, activationFfnScaling: [Int: Int],
+    weightsCache: WeightsCache
   ) -> Bool {
     guard unet == nil else { return true }
     isCancelled.store(false, ordering: .releasing)
@@ -1094,7 +1096,8 @@ extension UNetFromNNC {
               height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
               layers: 60,
               usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
-              isBF16: isBF16, LoRAConfiguration: configuration
+              isBF16: isBF16, activationFfnScaling: activationFfnScaling,
+              LoRAConfiguration: configuration
             ).1
           })
       } else {
@@ -1105,7 +1108,7 @@ extension UNetFromNNC {
               height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
               layers: 60,
               usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
-              isBF16: isBF16
+              isBF16: isBF16, activationFfnScaling: activationFfnScaling
             ).1
           })
       }
