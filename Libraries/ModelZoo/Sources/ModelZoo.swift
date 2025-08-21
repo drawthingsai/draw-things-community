@@ -646,7 +646,7 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       note:
         "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
-    ),
+    ), /*
     Specification(
       name: "Qwen Image Edit 1.0", file: "qwen_image_edit_1.0_q8p.ckpt", prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
@@ -666,7 +666,7 @@ public struct ModelZoo: DownloadZoo {
       mmdit: .init(qkNorm: true, dualAttentionLayers: [], activationFfnScaling: [59: 2]),
       note:
         "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
-    ),
+    ),*/
     Specification(
       name: "HiDream I1 [fast]", file: "hidream_i1_fast_q8p.ckpt", prefix: "",
       version: .hiDreamI1, defaultScale: 16, textEncoder: "llama_3.1_8b_instruct_q8p.ckpt",
