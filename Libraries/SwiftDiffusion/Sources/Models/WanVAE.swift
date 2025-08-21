@@ -273,7 +273,7 @@ private func NHWCWanDecoderCausal3D(
         [min(startDepth - (d - 1), 4), startHeight, startWidth, 16],
         offset: [d - 1, 0, 0, 0],
         strides: [startHeight * startWidth * 16, startWidth * 16, 16, 1]
-      ).contiguous()
+      ).copied()
       if let last = last {
         out.add(dependencies: [last])
       }
@@ -556,7 +556,7 @@ private func NHWCWanEncoderCausal3D(
       out = input.reshaped(
         [depth + 2, height, width, 3], offset: [d * 4 - 1, 0, 0, 0],
         strides: [height * width * 3, width * 3, 3, 1]
-      ).contiguous()
+      ).copied()
       if let last = outs.last {
         out.add(dependencies: [last])
       }
@@ -1000,7 +1000,7 @@ func NCHWWanDecoderCausal3D(
         [16, min(startDepth - (d - 1), 4), startHeight, startWidth],
         offset: [0, d - 1, 0, 0],
         strides: [startDepth * startHeight * startWidth, startHeight * startWidth, startWidth, 1]
-      ).contiguous()
+      ).copied()
       if let last = last {
         out.add(dependencies: [last])
       }
@@ -1291,7 +1291,7 @@ private func NCHWWanEncoderCausal3D(
       out = input.reshaped(
         [3, depth + 2, height, width], offset: [0, d * 4 - 1, 0, 0],
         strides: [endDepth * height * width, height * width, width, 1]
-      ).contiguous()
+      ).copied()
       if let last = outs.last {
         out.add(dependencies: [last])
       }
