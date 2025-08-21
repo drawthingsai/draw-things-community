@@ -109,9 +109,35 @@ public enum TensorData {
     graph.openStore(filePath, externalStore: externalStoreFilePath) { store in
       let keys = store.keys
       do {
+        // Move ada_ln related weights to the beginning.
+        func first(_ key: String) -> Bool {
+          return key.contains("ada_ln")
+        }
         try store.withTransaction {
           let total = keys.count
-          for (i, key) in keys.enumerated() {
+          var i = 0
+          // First move the ada_ln related weights (mostly used by UNetFixed).
+          for key in keys {
+            guard first(key) else { continue }
+            i += 1
+            guard var codec = store.codec(for: key) else { continue }
+            // Only keep the other attributes for codec.
+            codec.subtract([.externalData, .jit, .externalOnDemand])
+            guard let tensor = store.read(key, kind: .CPU, codec: codec.union([.jit])) else {
+              continue
+            }
+            let shape = tensor.shape
+            // Now, check if we want ot move it to external storage. We check the shape of the tensor.
+            let squeezedDims = shape.reduce(0) { return $0 + ($1 > 1 ? 1 : 0) }  // Check how many axis this tensor has.
+            guard squeezedDims > 1 else { continue }
+            // Move this tensor to external storage.
+            try store.write(key, tensor: tensor, strict: true, codec: codec.union([.externalData]))
+            progress?(Double(i + 1) / Double(total))
+          }
+          // Then move the other weights (mostly used by UNet).
+          for key in keys {
+            guard !first(key) else { continue }
+            i += 1
             guard var codec = store.codec(for: key) else { continue }
             // Only keep the other attributes for codec.
             codec.subtract([.externalData, .jit, .externalOnDemand])

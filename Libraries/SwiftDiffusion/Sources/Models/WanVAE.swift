@@ -11,7 +11,7 @@ private struct NHWCResnetBlockCausal3D {
     if startDepth > 1 {
       conv1 = Convolution(
         groups: 1, filters: outChannels, filterSize: [3, 3, 3],
-        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW, name: "resnet_conv1")
     } else {
       conv1 = Convolution(
@@ -23,7 +23,7 @@ private struct NHWCResnetBlockCausal3D {
     if startDepth > 1 {
       conv2 = Convolution(
         groups: 1, filters: outChannels, filterSize: [3, 3, 3],
-        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW, name: "resnet_conv2")
     } else {
       conv2 = Convolution(
@@ -51,14 +51,16 @@ private struct NHWCResnetBlockCausal3D {
     var pre = out.swish()
     if let conv1Inputs = conv1Inputs {
       out = conv1(
-        Functional.concat(axis: 0, conv1Inputs, pre, flags: [.disableOpt]).reshaped([
-          1, depth + 2, height, width, inChannels,
+        Functional.concat(axis: 0, conv1Inputs, pre, flags: [.disableOpt]).padded(
+          .zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
+        ).reshaped([
+          1, depth + 2, height + 2, width + 2, inChannels,
         ]))
     } else {
       if depth > 1 {
         out = conv1(
-          pre.padded(.zero, begin: [2, 0, 0, 0], end: [0, 0, 0, 0]).reshaped([
-            1, depth + 2, height, width, inChannels,
+          pre.padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+            1, depth + 2, height + 2, width + 2, inChannels,
           ]))
       } else {
         out = conv1(pre)
@@ -78,14 +80,16 @@ private struct NHWCResnetBlockCausal3D {
     pre = out.swish()
     if let conv2Inputs = conv2Inputs {
       out = conv2(
-        Functional.concat(axis: 0, conv2Inputs, pre, flags: [.disableOpt]).reshaped([
-          1, depth + 2, height, width, outChannels,
+        Functional.concat(axis: 0, conv2Inputs, pre, flags: [.disableOpt]).padded(
+          .zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
+        ).reshaped([
+          1, depth + 2, height + 2, width + 2, outChannels,
         ]))
     } else {
       if depth > 1 {
         out = conv2(
-          pre.padded(.zero, begin: [2, 0, 0, 0], end: [0, 0, 0, 0]).reshaped([
-            1, depth + 2, height, width, outChannels,
+          pre.padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+            1, depth + 2, height + 2, width + 2, outChannels,
           ]))
       } else {
         out = conv2(pre)
@@ -200,11 +204,11 @@ private func NHWCWanDecoderCausal3D(
   if startDepth > 1 {
     convIn = Convolution(
       groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
-      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_in")
     convOut = Convolution(
       groups: 1, filters: paddingFinalConvLayer ? 4 : 3, filterSize: [3, 3, 3],
-      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_out")
   } else {
     convIn = Convolution(
@@ -261,8 +265,8 @@ private func NHWCWanDecoderCausal3D(
       ).contiguous()
       if startDepth > 1 {
         out = convIn(
-          out.padded(.zero, begin: [2, 0, 0, 0], end: [0, 0, 0, 0]).reshaped([
-            1, min(startDepth - d, 3) + 2, startHeight, startWidth, 16,
+          out.padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+            1, min(startDepth - d, 3) + 2, startHeight + 2, startWidth + 2, 16,
           ])
         ).reshaped([min(startDepth - d, 3), startHeight, startWidth, previousChannel])
       } else {
@@ -273,13 +277,13 @@ private func NHWCWanDecoderCausal3D(
         [min(startDepth - (d - 1), 4), startHeight, startWidth, 16],
         offset: [d - 1, 0, 0, 0],
         strides: [startHeight * startWidth * 16, startWidth * 16, 16, 1]
-      ).copied()
+      ).contiguous().padded(.zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0])
       if let last = last {
         out.add(dependencies: [last])
       }
       out = convIn(
         out.reshaped([
-          1, min(startDepth - (d - 1), 4), startHeight, startWidth, 16,
+          1, min(startDepth - (d - 1), 4), startHeight + 2, startWidth + 2, 16,
         ])
       ).reshaped([min(startDepth - (d - 1), 4) - 2, startHeight, startWidth, previousChannel])
     }
@@ -412,15 +416,17 @@ private func NHWCWanDecoderCausal3D(
     let pre = out.swish()
     if let convOutInputs = convOutInputs {
       out = convOut(
-        Functional.concat(axis: 0, convOutInputs, pre, flags: [.disableOpt]).reshaped([
-          1, depth + 2, height, width, channels[0],
+        Functional.concat(axis: 0, convOutInputs, pre, flags: [.disableOpt]).padded(
+          .zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
+        ).reshaped([
+          1, depth + 2, height + 2, width + 2, channels[0],
         ])
       )
     } else {
       if startDepth > 1 {
         out = convOut(
-          pre.padded(.zero, begin: [2, 0, 0, 0], end: [0, 0, 0, 0]).reshaped([
-            1, depth + 2, height, width, channels[0],
+          pre.padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+            1, depth + 2, height + 2, width + 2, channels[0],
           ])
         )
       } else {
@@ -475,7 +481,7 @@ private func NHWCWanEncoderCausal3D(
   if startDepth > 1 {
     convIn = Convolution(
       groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
-      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_in")
   } else {
     convIn = Convolution(
@@ -544,8 +550,8 @@ private func NHWCWanEncoderCausal3D(
         out = input.reshaped(
           [depth, height, width, 3],
           strides: [height * width * 3, width * 3, 3, 1]
-        ).contiguous().padded(.zero, begin: [2, 0, 0, 0], end: [0, 0, 0, 0])
-        out = convIn(out.reshaped([1, depth + 2, height, width, 3])).reshaped([
+        ).contiguous().padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0])
+        out = convIn(out.reshaped([1, depth + 2, height + 2, width + 2, 3])).reshaped([
           depth, height, width, previousChannel,
         ])
       } else {
@@ -556,11 +562,11 @@ private func NHWCWanEncoderCausal3D(
       out = input.reshaped(
         [depth + 2, height, width, 3], offset: [d * 4 - 1, 0, 0, 0],
         strides: [height * width * 3, width * 3, 3, 1]
-      ).copied()
+      ).contiguous().padded(.zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0])
       if let last = outs.last {
         out.add(dependencies: [last])
       }
-      out = convIn(out.reshaped([1, depth + 2, height, width, 3])).reshaped([
+      out = convIn(out.reshaped([1, depth + 2, height + 2, width + 2, 3])).reshaped([
         depth, height, width, previousChannel,
       ])
     }
@@ -679,11 +685,11 @@ private func NHWCWanEncoderCausal3D(
   if startDepth > 1 {
     convOut = Convolution(
       groups: 1, filters: 32, filterSize: [3, 3, 3],
-      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_out")
     out = convOut(
-      out.padded(.zero, begin: [2, 0, 0, 0], end: [0, 0, 0, 0]).reshaped([
-        1, depth + 2, height, width, previousChannel,
+      out.padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+        1, depth + 2, height + 2, width + 2, previousChannel,
       ])
     ).reshaped([depth, height, width, 32])
   } else {
@@ -724,7 +730,7 @@ private struct NCHWResnetBlockCausal3D {
     if startDepth > 1 {
       conv1 = Convolution(
         groups: 1, filters: outChannels, filterSize: [3, 3, 3],
-        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW, name: "resnet_conv1")
     } else {
       conv1 = Convolution(
@@ -736,7 +742,7 @@ private struct NCHWResnetBlockCausal3D {
     if startDepth > 1 {
       conv2 = Convolution(
         groups: 1, filters: outChannels, filterSize: [3, 3, 3],
-        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW, name: "resnet_conv2")
     } else {
       conv2 = Convolution(
@@ -764,14 +770,16 @@ private struct NCHWResnetBlockCausal3D {
     var pre = out.swish()
     if let conv1Inputs = conv1Inputs {
       out = conv1(
-        Functional.concat(axis: 1, conv1Inputs, pre, flags: [.disableOpt]).reshaped([
-          1, inChannels, depth + 2, height, width,
+        Functional.concat(axis: 1, conv1Inputs, pre, flags: [.disableOpt]).padded(
+          .zero, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
+        ).reshaped([
+          1, inChannels, depth + 2, height + 2, width + 2,
         ]))
     } else {
       if depth > 1 {
         out = conv1(
-          pre.padded(.zero, begin: [0, 2, 0, 0], end: [0, 0, 0, 0]).reshaped([
-            1, inChannels, depth + 2, height, width,
+          pre.padded(.zero, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]).reshaped([
+            1, inChannels, depth + 2, height + 2, width + 2,
           ]))
       } else {
         out = conv1(pre.reshaped([1, inChannels, height, width]))
@@ -791,14 +799,16 @@ private struct NCHWResnetBlockCausal3D {
     pre = out.swish()
     if let conv2Inputs = conv2Inputs {
       out = conv2(
-        Functional.concat(axis: 1, conv2Inputs, pre, flags: [.disableOpt]).reshaped([
-          1, outChannels, depth + 2, height, width,
+        Functional.concat(axis: 1, conv2Inputs, pre, flags: [.disableOpt]).padded(
+          .zero, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
+        ).reshaped([
+          1, outChannels, depth + 2, height + 2, width + 2,
         ]))
     } else {
       if depth > 1 {
         out = conv2(
-          pre.padded(.zero, begin: [0, 2, 0, 0], end: [0, 0, 0, 0]).reshaped([
-            1, outChannels, depth + 2, height, width,
+          pre.padded(.zero, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]).reshaped([
+            1, outChannels, depth + 2, height + 2, width + 2,
           ]))
       } else {
         out = conv2(pre.reshaped([1, outChannels, height, width]))
@@ -925,11 +935,11 @@ func NCHWWanDecoderCausal3D(
   if startDepth > 1 {
     convIn = Convolution(
       groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
-      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_in")
     convOut = Convolution(
       groups: 1, filters: paddingFinalConvLayer ? 4 : 3, filterSize: [3, 3, 3],
-      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_out")
   } else {
     convIn = Convolution(
@@ -986,8 +996,8 @@ func NCHWWanDecoderCausal3D(
       ).contiguous()
       if startDepth > 1 {
         out = convIn(
-          out.padded(.zero, begin: [0, 2, 0, 0], end: [0, 0, 0, 0]).reshaped([
-            1, 16, min(startDepth - d, 3) + 2, startHeight, startWidth,
+          out.padded(.zero, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]).reshaped([
+            1, 16, min(startDepth - d, 3) + 2, startHeight + 2, startWidth + 2,
           ])
         ).reshaped([previousChannel, min(startDepth - d, 3), startHeight, startWidth])
       } else {
@@ -1000,13 +1010,13 @@ func NCHWWanDecoderCausal3D(
         [16, min(startDepth - (d - 1), 4), startHeight, startWidth],
         offset: [0, d - 1, 0, 0],
         strides: [startDepth * startHeight * startWidth, startHeight * startWidth, startWidth, 1]
-      ).copied()
+      ).contiguous().padded(.zero, begin: [0, 0, 1, 1], end: [0, 0, 1, 1])
       if let last = last {
         out.add(dependencies: [last])
       }
       out = convIn(
         out.reshaped([
-          1, 16, min(startDepth - (d - 1), 4), startHeight, startWidth,
+          1, 16, min(startDepth - (d - 1), 4), startHeight + 2, startWidth + 2,
         ])
       ).reshaped([previousChannel, min(startDepth - (d - 1), 4) - 2, startHeight, startWidth])
     }
@@ -1141,15 +1151,17 @@ func NCHWWanDecoderCausal3D(
     let pre = out.swish()
     if let convOutInputs = convOutInputs {
       out = convOut(
-        Functional.concat(axis: 1, convOutInputs, pre, flags: [.disableOpt]).reshaped([
-          1, channels[0], depth + 2, height, width,
+        Functional.concat(axis: 1, convOutInputs, pre, flags: [.disableOpt]).padded(
+          .zero, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
+        ).reshaped([
+          1, channels[0], depth + 2, height + 2, width + 2,
         ])
       )
     } else {
       if startDepth > 1 {
         out = convOut(
-          pre.padded(.zero, begin: [0, 2, 0, 0], end: [0, 0, 0, 0]).reshaped([
-            1, channels[0], depth + 2, height, width,
+          pre.padded(.zero, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]).reshaped([
+            1, channels[0], depth + 2, height + 2, width + 2,
           ])
         )
       } else {
@@ -1208,7 +1220,7 @@ private func NCHWWanEncoderCausal3D(
   if startDepth > 1 {
     convIn = Convolution(
       groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
-      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_in")
   } else {
     convIn = Convolution(
@@ -1277,8 +1289,8 @@ private func NCHWWanEncoderCausal3D(
         out = input.reshaped(
           [3, depth, height, width],
           strides: [endDepth * height * width, height * width, width, 1]
-        ).contiguous().padded(.zero, begin: [0, 2, 0, 0], end: [0, 0, 0, 0])
-        out = convIn(out.reshaped([1, 3, depth + 2, height, width])).reshaped([
+        ).contiguous().padded(.zero, begin: [0, 2, 1, 1], end: [0, 0, 1, 1])
+        out = convIn(out.reshaped([1, 3, depth + 2, height + 2, width + 2])).reshaped([
           previousChannel, depth, height, width,
         ])
       } else {
@@ -1291,11 +1303,11 @@ private func NCHWWanEncoderCausal3D(
       out = input.reshaped(
         [3, depth + 2, height, width], offset: [0, d * 4 - 1, 0, 0],
         strides: [endDepth * height * width, height * width, width, 1]
-      ).copied()
+      ).contiguous().padded(.zero, begin: [0, 0, 1, 1], end: [0, 0, 1, 1])
       if let last = outs.last {
         out.add(dependencies: [last])
       }
-      out = convIn(out.reshaped([1, 3, depth + 2, height, width])).reshaped([
+      out = convIn(out.reshaped([1, 3, depth + 2, height + 2, width + 2])).reshaped([
         previousChannel, depth, height, width,
       ])
     }
@@ -1420,11 +1432,11 @@ private func NCHWWanEncoderCausal3D(
   if startDepth > 1 {
     convOut = Convolution(
       groups: 1, filters: 32, filterSize: [3, 3, 3],
-      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_out")
     out = convOut(
-      out.padded(.zero, begin: [0, 2, 0, 0], end: [0, 0, 0, 0]).reshaped([
-        1, previousChannel, depth + 2, height, width,
+      out.padded(.zero, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]).reshaped([
+        1, previousChannel, depth + 2, height + 2, width + 2,
       ])
     ).reshaped([1, 32, depth, height, width])
   } else {
