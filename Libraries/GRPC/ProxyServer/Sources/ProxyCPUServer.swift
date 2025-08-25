@@ -61,6 +61,20 @@ extension Worker {
       "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority))"
     )
     defer { task.heartbeat.cancel() }
+
+    // Check if task from throttle queue is over 1 hour old, reject if so (except boost tasks)
+    if task.priority == .background && task.payload.consumableType != "boost" {
+      let taskAge = Date().timeIntervalSince(task.creationTimestamp)
+      if taskAge > 3600 {
+        let errorMessage = "Task rejected: enqueue time exceeded 1 hour (\(Int(taskAge))s)"
+        logger.info("Worker \(id): \(errorMessage) (Priority: \(task.priority))")
+        let status = GRPCStatus(code: .aborted, message: errorMessage)
+        task.promise.succeed(status)
+        task.context.statusPromise.succeed(status)
+        return
+      }
+    }
+
     do {
       var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
       guard let client = client.client else {
