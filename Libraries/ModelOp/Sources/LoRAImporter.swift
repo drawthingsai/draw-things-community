@@ -144,10 +144,12 @@ public enum LoRAImporter {
         timesteps: 1, layers: (16, 32), outputTimesteps: false)
     case .qwenImage:
       (unetMapper, unet) = QwenImage(
-        batchSize: 1, height: 64, width: 64, textLength: 128, channels: 3_072, layers: 60,
-        usesFlashAttention: .scale1, isBF16: false, activationFfnScaling: [:])
+        batchSize: 1, height: 64, width: 64, textLength: 128, referenceSequenceLength: 0,
+        channels: 3_072, layers: 60, usesFlashAttention: .scale1, isBF16: false,
+        activationFfnScaling: [:])
       (unetFixedMapper, unetFixed) = QwenImageFixed(
-        timesteps: 1, channels: 3_072, layers: 60, isBF16: false, activationFfnScaling: [:])
+        timesteps: 1, channels: 3_072, layers: 60, isBF16: false, activationFfnScaling: [:],
+        numberOfReferenceImages: 0)
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -448,7 +450,7 @@ public enum LoRAImporter {
             graph.variable(
               Tensor<FloatType>(
                 from: QwenImageRotaryPositionEmbedding(
-                  height: 32, width: 32, tokenLength: 128, channels: 128)))
+                  height: 32, width: 32, tokenLength: 128, referenceSizes: [], channels: 128)))
           ]
           + QwenImageFixedOutputShapes(
             batchSize: 1, textLength: 128, channels: 3072, layers: 60

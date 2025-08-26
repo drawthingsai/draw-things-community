@@ -2,17 +2,22 @@ import Foundation
 import NNC
 
 public func QwenImageRotaryPositionEmbedding(
-  height: Int, width: Int, tokenLength: Int, channels: Int, heads: Int = 1
+  height: Int, width: Int, tokenLength: Int, referenceSizes: [(height: Int, width: Int)],
+  channels: Int, heads: Int = 1
 )
   -> Tensor<Float>
 {
-  var rotTensor = Tensor<Float>(.CPU, .NHWC(1, height * width + tokenLength, heads, channels))
+  var rotTensor = Tensor<Float>(
+    .CPU,
+    .NHWC(
+      1, height * width + tokenLength + referenceSizes.reduce(0) { $0 + $1.height * $1.width },
+      heads, channels))
   let dim0 = channels / 8
   let dim1 = channels * 7 / 16
   let dim2 = dim1
   assert(channels % 16 == 0)
   let maxImgIdx = max(height / 2, width / 2)
-  let imageLength = height * width
+  let imageLength = height * width + referenceSizes.reduce(0) { $0 + $1.height * $1.width }
   for i in 0..<tokenLength {
     for j in 0..<heads {
       for k in 0..<(dim0 / 2) {
@@ -68,6 +73,51 @@ public func QwenImageRotaryPositionEmbedding(
       }
     }
   }
+  var index = width * height
+  var h = 0
+  var w = 0
+  for referenceSize in referenceSizes {
+    let height = referenceSize.height
+    let width = referenceSize.width
+    var hOffset = 0
+    var wOffset = 0
+    if height + h > width + w {
+      wOffset = w
+    } else {
+      hOffset = h
+    }
+    for y in 0..<height {
+      for x in 0..<width {
+        let i = y * width + x + index
+        for j in 0..<heads {
+          for k in 0..<(dim0 / 2) {
+            let theta = 1 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))  // Use time index at 1.
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, k * 2] = Float(costheta)
+            rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim1 / 2) {
+            let theta = Double(y + hOffset) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+            rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim2 / 2) {
+            let theta = Double(x + wOffset) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+            rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+          }
+        }
+      }
+    }
+    index += height * width
+    h = max(h, height + hOffset)
+    w = max(w, width + wOffset)
+  }
   return rotTensor
 }
 
@@ -106,8 +156,9 @@ private func FeedForward(
 }
 
 private func JointTransformerBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  usesFlashAttention: FlashAttentionLevel, scaleFactor: (Float, Float), isBF16: Bool
+  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, referenceSequenceLength: Int,
+  contextBlockPreOnly: Bool, usesFlashAttention: FlashAttentionLevel, scaleFactor: (Float, Float),
+  isBF16: Bool
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -229,14 +280,25 @@ private func JointTransformerBlock(
   } else {
     contextUnifyheads = nil
   }
-  xOut = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
+  let xIn: Model.IO
+  if contextBlockPreOnly, referenceSequenceLength > 0 {
+    xIn = x.reshaped([b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1])
+      .contiguous()
+    xOut = out.reshaped(
+      [b, hw - referenceSequenceLength, h * k], strides: [(t + hw) * h * k, h * k, 1]
+    )
     .contiguous()
+  } else {
+    xIn = x
+    xOut = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
+      .contiguous()
+  }
   let xUnifyheads = Dense(count: k * h, name: "x_o")
   xOut = xUnifyheads(isBF16 ? xOut : (1.0 / scaleFactor.0) * xOut).to(of: x)  // scale up factor merged into xChunks.
   if !contextBlockPreOnly {
     contextOut = context + contextChunks[2] .* contextOut
   }
-  xOut = x + xChunks[2] .* xOut
+  xOut = xIn + xChunks[2] .* xOut
   // Attentions are now. Now run MLP.
   let contextLinear1: Model?
   let contextOutProjection: Model?
@@ -323,7 +385,8 @@ private func JointTransformerBlock(
 }
 
 public func QwenImage(
-  batchSize: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: Int,
+  batchSize: Int, height: Int, width: Int, textLength: Int, referenceSequenceLength: Int,
+  channels: Int, layers: Int,
   usesFlashAttention: FlashAttentionLevel, isBF16: Bool, activationFfnScaling: [Int: Int]
 ) -> (
   ModelWeightMapper, Model
@@ -335,12 +398,23 @@ public func QwenImage(
   let imgIn = Convolution(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var mappers = [ModelWeightMapper]()
+  let referenceLatents: Input?
   let h = height / 2
   let w = width / 2
+  var out: Model.IO
+  if referenceSequenceLength > 0 {
+    let latents = Input()
+    out = Functional.concat(
+      axis: 1, imgIn(x).reshaped([batchSize, h * w, channels]), latents, flags: [.disableOpt]
+    ).to(.Float32)
+    referenceLatents = latents
+  } else {
+    out = imgIn(x).reshaped(.HWC(batchSize, h * w, channels)).to(.Float32)
+    referenceLatents = nil
+  }
+  var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
-  var out = imgIn(x).reshaped(.HWC(batchSize, h * w, channels)).to(.Float32)
-  let rotResized = rot.reshaped(.NHWC(1, h * w + textLength, 1, 128))
+  let rotResized = rot.reshaped(.NHWC(1, h * w + referenceSequenceLength + textLength, 1, 128))
   for i in 0..<layers {
     let contextBlockPreOnly = i == layers - 1
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
@@ -348,7 +422,7 @@ public func QwenImage(
     let ffnScaling = activationFfnScaling[i] ?? 1
     let (mapper, block) = JointTransformerBlock(
       prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: textLength,
-      hw: h * w,
+      hw: h * w + referenceSequenceLength, referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (
         i >= layers - 16 ? 16 : 2,
@@ -385,7 +459,10 @@ public func QwenImage(
     mapping["proj_out.bias"] = [projOut.bias.name]
     return mapping
   }
-  return (mapper, Model([x, rot, contextIn] + adaLNChunks, [out]))
+  return (
+    mapper,
+    Model([x, rot] + (referenceLatents.map { [$0] } ?? []) + [contextIn] + adaLNChunks, [out])
+  )
 }
 
 private func JointTransformerBlockFixed(
@@ -443,13 +520,26 @@ private func JointTransformerBlockFixed(
 }
 
 public func QwenImageFixed(
-  timesteps: Int, channels: Int, layers: Int, isBF16: Bool, activationFfnScaling: [Int: Int]
+  timesteps: Int, channels: Int, layers: Int, isBF16: Bool, activationFfnScaling: [Int: Int],
+  numberOfReferenceImages: Int
 ) -> (
   ModelWeightMapper, Model
 ) {
   let txt = Input()
   let t = Input()
   var outs = [Model.IO]()
+  var referenceImages = [Input]()
+  if numberOfReferenceImages > 0 {
+    let imgIn = Convolution(
+      groups: 1, filters: channels, filterSize: [2, 2],
+      hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+    for _ in 0..<numberOfReferenceImages {
+      let x = Input()
+      let out = imgIn(x)
+      referenceImages.append(x)
+      outs.append(out)
+    }
+  }
   let txtNorm = RMSNorm(epsilon: 1e-6, axis: [2], name: "context_norm")
   let txtIn = Dense(count: channels, name: "context_embedder")
   let (timeInMlp0, timeInMlp2, timeIn) = MLPEmbedder(channels: channels, name: "t")
@@ -498,7 +588,7 @@ public func QwenImageFixed(
     mapping["norm_out.linear.bias"] = [scale.bias.name, shift.bias.name]
     return mapping
   }
-  return (mapper, Model([txt, t], outs))
+  return (mapper, Model([txt, t] + referenceImages, outs))
 }
 
 private func JointTransformerBlockFixedOutputShapes(
@@ -573,9 +663,9 @@ private func LoRAFeedForward(
 }
 
 private func LoRAJointTransformerBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  usesFlashAttention: FlashAttentionLevel, scaleFactor: (Float, Float), isBF16: Bool,
-  layerIndex: Int, configuration: LoRANetworkConfiguration
+  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, referenceSequenceLength: Int,
+  contextBlockPreOnly: Bool, usesFlashAttention: FlashAttentionLevel, scaleFactor: (Float, Float),
+  isBF16: Bool, layerIndex: Int, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -704,15 +794,26 @@ private func LoRAJointTransformerBlock(
   } else {
     contextUnifyheads = nil
   }
-  xOut = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
+  let xIn: Model.IO
+  if contextBlockPreOnly, referenceSequenceLength > 0 {
+    xIn = x.reshaped([b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1])
+      .contiguous()
+    xOut = out.reshaped(
+      [b, hw - referenceSequenceLength, h * k], strides: [(t + hw) * h * k, h * k, 1]
+    )
     .contiguous()
+  } else {
+    xIn = x
+    xOut = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
+      .contiguous()
+  }
   let xUnifyheads = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_o")
   xOut = xUnifyheads(isBF16 ? xOut : (1.0 / scaleFactor.0) * xOut).to(of: x)  // scale up factor merged into xChunks.
   if !contextBlockPreOnly {
     contextOut = context + contextChunks[2] .* contextOut
   }
-  xOut = x + xChunks[2] .* xOut
+  xOut = xIn + xChunks[2] .* xOut
   // Attentions are now. Now run MLP.
   let contextLinear1: Model?
   let contextOutProjection: Model?
@@ -799,9 +900,9 @@ private func LoRAJointTransformerBlock(
 }
 
 public func LoRAQwenImage(
-  batchSize: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: Int,
-  usesFlashAttention: FlashAttentionLevel, isBF16: Bool, activationFfnScaling: [Int: Int],
-  LoRAConfiguration: LoRANetworkConfiguration
+  batchSize: Int, height: Int, width: Int, textLength: Int, referenceSequenceLength: Int,
+  channels: Int, layers: Int, usesFlashAttention: FlashAttentionLevel, isBF16: Bool,
+  activationFfnScaling: [Int: Int], LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -812,12 +913,23 @@ public func LoRAQwenImage(
   let imgIn = LoRAConvolution(
     groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var mappers = [ModelWeightMapper]()
+  let referenceLatents: Input?
   let h = height / 2
   let w = width / 2
+  var out: Model.IO
+  if referenceSequenceLength > 0 {
+    let latents = Input()
+    out = Functional.concat(
+      axis: 1, imgIn(x).reshaped([batchSize, h * w, channels]), latents, flags: [.disableOpt]
+    ).to(.Float32)
+    referenceLatents = latents
+  } else {
+    out = imgIn(x).reshaped(.HWC(batchSize, h * w, channels)).to(.Float32)
+    referenceLatents = nil
+  }
+  var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
-  var out = imgIn(x).reshaped(.HWC(batchSize, h * w, channels)).to(.Float32)
-  let rotResized = rot.reshaped(.NHWC(1, h * w + textLength, 1, 128))
+  let rotResized = rot.reshaped(.NHWC(1, h * w + referenceSequenceLength + textLength, 1, 128))
   for i in 0..<layers {
     let contextBlockPreOnly = i == layers - 1
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
@@ -825,7 +937,7 @@ public func LoRAQwenImage(
     let ffnScaling = activationFfnScaling[i] ?? 1
     let (mapper, block) = LoRAJointTransformerBlock(
       prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: textLength,
-      hw: h * w,
+      hw: h * w + referenceSequenceLength, referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (
         i >= layers - 16 ? 16 : 2,
@@ -863,7 +975,10 @@ public func LoRAQwenImage(
     mapping["proj_out.bias"] = [projOut.bias.name]
     return mapping
   }
-  return (mapper, Model([x, rot, contextIn] + adaLNChunks, [out]))
+  return (
+    mapper,
+    Model([x, rot] + (referenceLatents.map { [$0] } ?? []) + [contextIn] + adaLNChunks, [out])
+  )
 }
 
 private func LoRAJointTransformerBlockFixed(
@@ -925,11 +1040,24 @@ private func LoRAJointTransformerBlockFixed(
 
 public func LoRAQwenImageFixed(
   timesteps: Int, channels: Int, layers: Int, isBF16: Bool,
-  activationFfnScaling: [Int: Int], LoRAConfiguration: LoRANetworkConfiguration
+  activationFfnScaling: [Int: Int], numberOfReferenceImages: Int,
+  LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let txt = Input()
   let t = Input()
   var outs = [Model.IO]()
+  var referenceImages = [Input]()
+  if numberOfReferenceImages > 0 {
+    let imgIn = LoRAConvolution(
+      groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
+      hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+    for _ in 0..<numberOfReferenceImages {
+      let x = Input()
+      let out = imgIn(x)
+      referenceImages.append(x)
+      outs.append(out)
+    }
+  }
   let txtNorm = RMSNorm(epsilon: 1e-6, axis: [2], name: "context_norm")
   let txtIn = LoRADense(
     count: channels, configuration: LoRAConfiguration, index: 0, name: "context_embedder")
@@ -982,5 +1110,5 @@ public func LoRAQwenImageFixed(
     mapping["norm_out.linear.bias"] = [scale.bias.name, shift.bias.name]
     return mapping
   }
-  return (mapper, Model([txt, t], outs))
+  return (mapper, Model([txt, t] + referenceImages, outs))
 }

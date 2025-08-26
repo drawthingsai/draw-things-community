@@ -1251,10 +1251,6 @@ extension UNetFixedEncoder {
       let qwen25Length = c0.shape[1]
       let h = startHeight / 2
       let w = startWidth / 2
-      let rotaryEmbedding = Tensor<FloatType>(
-        from: QwenImageRotaryPositionEmbedding(
-          height: h, width: w, tokenLength: qwen25Length, channels: 128)
-      ).toGPU(0)
       let isGuidanceEmbedSupported =
         (try?
           (graph.openStore(
@@ -1324,18 +1320,21 @@ extension UNetFixedEncoder {
         unetFixed =
           LoRAQwenImageFixed(
             timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: isBF16,
-            activationFfnScaling: activationFfnScaling, LoRAConfiguration: configuration
+            activationFfnScaling: activationFfnScaling,
+            numberOfReferenceImages: referenceImages.count, LoRAConfiguration: configuration
           ).1
       } else {
         unetFixed =
           QwenImageFixed(
             timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: isBF16,
-            activationFfnScaling: activationFfnScaling
+            activationFfnScaling: activationFfnScaling,
+            numberOfReferenceImages: referenceImages.count
           ).1
       }
+      let otherInputs: [DynamicGraph.AnyTensor] = guidanceEmbeds.map { [$0] } ?? []
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(
-        inputs: [c, timeEmbeds] + (guidanceEmbeds.map { [$0] } ?? []))
+        inputs: [c, timeEmbeds] + referenceImages + otherInputs)
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
@@ -1381,12 +1380,51 @@ extension UNetFixedEncoder {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
-      let conditions = unetFixed(
-        inputs: c, [timeEmbeds] + (guidanceEmbeds.map { [$0] } ?? [])
+      var conditions = unetFixed(
+        inputs: c, [timeEmbeds] + referenceImages + otherInputs
       )
       if lora.isEmpty || shouldRunLoRASeparately {
         weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       }
+      var referenceSizes: [(height: Int, width: Int)]
+      if referenceImages.count > 0 {
+        referenceSizes = conditions[0..<referenceImages.count].map {
+          let shape = $0.shape
+          return (height: shape[1], width: shape[2])
+        }
+        let refLatents = conditions[0..<referenceImages.count].map {
+          let shape = $0.shape
+          return DynamicGraph.Tensor<FloatType>($0).reshaped(
+            .HWC(shape[0], shape[1] * shape[2], shape[3]))
+        }
+        let sequenceLength = refLatents.reduce(0) { $0 + $1.shape[1] }
+        let shape = refLatents[0].shape
+        var reference = graph.variable(
+          .GPU(0), .HWC(shape[0], sequenceLength, shape[2]), of: FloatType.self)
+        var index = 0
+        for refLatent in refLatents {
+          let shape = refLatent.shape
+          reference[0..<shape[0], index..<(index + shape[1]), 0..<shape[2]] = refLatent
+          index += shape[1]
+        }
+        if shape[0] < batchSize {
+          let oldReference = reference
+          reference = graph.variable(
+            .GPU(0), .HWC(batchSize, sequenceLength, shape[2]), of: FloatType.self)
+          for i in 0..<batchSize {
+            reference[i..<(i + 1), 0..<sequenceLength, 0..<shape[2]] =
+              oldReference[0..<1, 0..<sequenceLength, 0..<shape[2]]
+          }
+        }
+        conditions = [reference] + conditions[referenceImages.count...]
+      } else {
+        referenceSizes = []
+      }
+      let rotaryEmbedding = Tensor<FloatType>(
+        from: QwenImageRotaryPositionEmbedding(
+          height: h, width: w, tokenLength: qwen25Length, referenceSizes: referenceSizes,
+          channels: 128)
+      ).toGPU(0)
       return (
         [graph.variable(rotaryEmbedding)] + conditions, nil
       )

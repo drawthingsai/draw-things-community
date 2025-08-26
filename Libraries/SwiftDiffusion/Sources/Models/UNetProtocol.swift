@@ -228,10 +228,16 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         ].copied()
       })
   case .qwenImage:
-    return conditions[0..<2]
-      + conditions[2..<conditions.count].map {
+    return conditions[0..<(conditions.count - 718)]
+      + conditions[(conditions.count - 718)..<(conditions.count - 2)].map {
         let shape = $0.shape
         return DynamicGraph.Tensor<Float>($0)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      }
+      + conditions[(conditions.count - 2)..<conditions.count].map {
+        let shape = $0.shape
+        return DynamicGraph.Tensor<FloatType>($0)[
           index..<(index + 1), 0..<shape[1], 0..<shape[2]
         ].copied()
       }
@@ -1091,10 +1097,19 @@ extension UNetFromNNC {
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
           ModelBuilder {
-            LoRAQwenImage(
-              batchSize: $0[0].shape[0],
-              height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
-              layers: 60,
+            let referenceSequenceLength: Int
+            let textLength: Int
+            if referenceImageCount > 0 {
+              referenceSequenceLength = $0[2].shape[1]
+              textLength = $0[3].shape[1]
+            } else {
+              referenceSequenceLength = 0
+              textLength = $0[2].shape[1]
+            }
+            return LoRAQwenImage(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: textLength, referenceSequenceLength: referenceSequenceLength,
+              channels: 3_072, layers: 60,
               usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
               isBF16: isBF16, activationFfnScaling: activationFfnScaling,
               LoRAConfiguration: configuration
@@ -1103,10 +1118,19 @@ extension UNetFromNNC {
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
           ModelBuilder {
-            QwenImage(
-              batchSize: $0[0].shape[0],
-              height: tiledHeight, width: tiledWidth, textLength: $0[2].shape[1], channels: 3_072,
-              layers: 60,
+            let referenceSequenceLength: Int
+            let textLength: Int
+            if referenceImageCount > 0 {
+              referenceSequenceLength = $0[2].shape[1]
+              textLength = $0[3].shape[1]
+            } else {
+              referenceSequenceLength = 0
+              textLength = $0[2].shape[1]
+            }
+            return QwenImage(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: textLength, referenceSequenceLength: referenceSequenceLength,
+              channels: 3_072, layers: 60,
               usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
               isBF16: isBF16, activationFfnScaling: activationFfnScaling
             ).1
@@ -1893,6 +1917,7 @@ extension UNetFromNNC {
         // TODO: TeaCache insert here.
         return
       }
+      let count = inputs.count
       let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().map {
         let shape = $0.1.shape
         switch $0.0 {
@@ -1901,13 +1926,13 @@ extension UNetFromNNC {
             0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
         case 1:
           return $0.1
-        case 2:
+        case count - 719:  // This is 2 when reference image not provided.
           return DynamicGraph.Tensor<FloatType>($0.1)[
             0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]
           ]
           .copied()
         default:
-          return DynamicGraph.Tensor<FloatType>($0.1)[0..<1, 0..<shape[1], 0..<shape[2]]
+          return $0.1
         }
       }
       unet.compile(inputs: inputs)
@@ -2241,10 +2266,11 @@ extension UNetFromNNC {
           (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
         ]
         .copied()
+        let count = restInputs.count
         let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case 1:
+          case count - 719:  // Offset for reference image.
             return DynamicGraph.Tensor<FloatType>($0.1)[
               0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
               0..<shape[2]
@@ -2263,7 +2289,7 @@ extension UNetFromNNC {
         let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case 1:
+          case count - 719:  // Offset for reference image.
             return DynamicGraph.Tensor<FloatType>($0.1)[
               0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
             ].copied()
@@ -2275,10 +2301,11 @@ extension UNetFromNNC {
       } else {
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
+        let count = restInputs.count
         let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case 1:
+          case count - 719:  // Offset for reference image.
             return DynamicGraph.Tensor<FloatType>($0.1)[
               0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
             ].copied()
@@ -2298,7 +2325,7 @@ extension UNetFromNNC {
         let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case 1:
+          case count - 719:  // Offset for reference image.
             return DynamicGraph.Tensor<FloatType>($0.1)[
               0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
               0..<shape[2]

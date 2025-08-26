@@ -2964,9 +2964,9 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage:
+        .hiDreamI1:
         return (nil, [])
-      case .flux1:
+      case .flux1, .qwenImage:
         var referenceEncoded = [DynamicGraph.Tensor<FloatType>]()
         if let image = image {
           let encoded = firstStage.encode(image, encoder: nil, cancellation: { _ in }).0
