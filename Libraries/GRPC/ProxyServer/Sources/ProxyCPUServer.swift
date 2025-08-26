@@ -58,7 +58,7 @@ extension Worker {
     )
     let taskQueueingTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
     logger.info(
-      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority))"
+      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority)), generationId: \(task.payload.generationId)"
     )
     defer { task.heartbeat.cancel() }
 
@@ -110,7 +110,7 @@ extension Worker {
         let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
         let totalExecutionTimeMs = Date().timeIntervalSince(taskExecuteStartTimestamp) * 1000
         logger.info(
-          "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority))"
+          "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority)), generationId: \(task.payload.generationId)"
         )
         logger.info("Succeed: {\"model\": \"\(task.model)\",\"images\":\(numberOfImages)}")
       }
