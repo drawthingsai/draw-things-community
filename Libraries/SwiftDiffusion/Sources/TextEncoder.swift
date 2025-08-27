@@ -1906,7 +1906,7 @@ extension TextEncoder {
         QwenVLViTRotaryEmbedding(gridX: gridX, gridY: gridY, of: FloatType.self).toGPU(0))
       let vit = QwenVLVisionTransformer(
         gridX: gridX, gridY: gridY, width: 1280, layers: 32, fullAttentionLayers: [7, 15, 23, 31],
-        heads: 16, MLP: 3420, batchSize: 1)
+        heads: 16, MLP: 3420, batchSize: 1, usesFlashAttention: usesFlashAttention)
       vit.compile(inputs: input, rotTensor)
       if !weightsCache.detach(filePaths[1], to: vit.parameters) {
         graph.openStore(
@@ -1917,7 +1917,81 @@ extension TextEncoder {
             "vit", model: vit, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
         }
       }
-      let c = vit(inputs: input, rotTensor)[0].as(of: FloatType.self)
+      var c = vit(inputs: input, rotTensor)[0].as(of: FloatType.self)
+      let resultShape = c.shape
+      // Unshuffle.
+      if gridX % 8 == 0, gridY % 8 == 0 {
+        // Can directly permuted into the patch required.
+        c = c.reshaped(
+          format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]]
+        ).permuted(0, 2, 1, 3, 4).copied().reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
+      } else if gridX % 8 == 0 {
+        let oldC = c
+        c = graph.variable(.GPU(0), .HWC(gridY / 2, gridX / 2, resultShape[1]))
+        let top = oldC[0..<(gridX / 2) * ((gridY / 8) * 4), 0..<resultShape[1]].copied().reshaped(
+          format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]]
+        ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+          .HWC((gridY / 8) * 4, gridX / 2, resultShape[1]))
+        let bottom = oldC[((gridX / 2) * ((gridY / 8) * 4))..<resultShape[0], 0..<resultShape[1]]
+          .copied()
+          .reshaped(format: .NHWC, shape: [1, gridX / 8, (gridY / 2) % 4, 4, resultShape[1]])
+          .permuted(0, 2, 1, 3, 4).copied().reshaped(
+            .HWC((gridY / 2) % 4, gridX / 2, resultShape[1]))
+        c[0..<((gridY / 8) * 4), 0..<(gridX / 2), 0..<resultShape[1]] = top
+        c[((gridY / 8) * 4)..<(gridY / 2), 0..<(gridX / 2), 0..<resultShape[1]] = bottom
+        c = c.reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
+      } else if gridY % 8 == 0 {
+        let oldC = c
+        c = graph.variable(.GPU(0), .HWC(gridY / 2, gridX / 2, resultShape[1]))
+        let left = oldC[0..<(gridY / 2) * ((gridX / 8) * 4), 0..<resultShape[1]].copied().reshaped(
+          format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]]
+        ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+          .HWC(gridY / 2, (gridX / 8) * 4, resultShape[1]))
+        let right = oldC[((gridY / 2) * ((gridX / 8) * 4))..<resultShape[0], 0..<resultShape[1]]
+          .copied()
+          .reshaped(format: .NHWC, shape: [gridY / 8, 1, 4, (gridX / 2) % 4, resultShape[1]])
+          .permuted(0, 2, 1, 3, 4).copied().reshaped(
+            .HWC(gridY / 2, (gridX / 2) % 4, resultShape[1]))
+        c[0..<(gridY / 2), 0..<((gridX / 8) * 4), 0..<resultShape[1]] = left
+        c[0..<(gridY / 2), ((gridX / 8) * 4)..<(gridX / 2), 0..<resultShape[1]] = right
+        c = c.reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
+      } else {
+        let oldC = c
+        c = graph.variable(.GPU(0), .HWC(gridY / 2, gridX / 2, resultShape[1]))
+        let topLeft = oldC[0..<(((gridY / 8) * 4) * ((gridX / 8) * 4)), 0..<resultShape[1]].copied()
+          .reshaped(format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]])
+          .permuted(0, 2, 1, 3, 4).copied().reshaped(
+            .HWC((gridY / 8) * 4, (gridX / 8) * 4, resultShape[1]))
+        let right = oldC[
+          (((gridY / 8) * 4) * ((gridX / 8) * 4))..<(((gridY / 8) * 4) * (gridX / 2)),
+          0..<resultShape[1]
+        ]
+        .copied().reshaped(
+          format: .NHWC, shape: [gridY / 8, 1, 4, (gridX / 2) % 4, resultShape[1]]
+        ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+          .HWC((gridY / 8) * 4, (gridX / 2) % 4, resultShape[1]))
+        let bottom = oldC[
+          (((gridY / 8) * 4) * (gridX / 2))
+          ..<(resultShape[0] - ((gridY / 2) % 4) * ((gridX / 2) % 4)), 0..<resultShape[1]
+        ]
+        .copied().reshaped(
+          format: .NHWC, shape: [1, gridX / 8, (gridY / 2) % 4, 4, resultShape[1]]
+        ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+          .HWC((gridY / 2) % 4, (gridX / 8) * 4, resultShape[1]))
+        let bottomRight = oldC[
+          (resultShape[0] - ((gridY / 2) % 4) * ((gridX / 2) % 4))..<resultShape[0],
+          0..<resultShape[1]
+        ].copied().reshaped(
+          format: .NHWC, shape: [1, 1, (gridY / 2) % 4, (gridX / 2) % 4, resultShape[1]]
+        ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+          .HWC((gridY / 2) % 4, (gridX / 2) % 4, resultShape[1]))
+        c[0..<((gridY / 8) * 4), 0..<((gridX / 8) * 4), 0..<resultShape[1]] = topLeft
+        c[0..<((gridY / 8) * 4), ((gridX / 8) * 4)..<(gridX / 2), 0..<resultShape[1]] = right
+        c[((gridY / 8) * 4)..<(gridY / 2), 0..<((gridX / 8) * 4), 0..<resultShape[1]] = bottom
+        c[((gridY / 8) * 4)..<(gridY / 2), ((gridX / 8) * 4)..<(gridX / 2), 0..<resultShape[1]] =
+          bottomRight
+        c = c.reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
+      }
       weightsCache.attach(filePaths[1], from: vit.parameters)
       // Try to find <|image_pad|> in negative prompt and positive prompt.
       var negativePromptPad: Int? = nil
@@ -1930,7 +2004,6 @@ extension TextEncoder {
           positivePromptPad = i
         }
       }
-      let resultShape = c.shape
       let oldTokenLength = tokenLength
       if negativePromptPad != nil || positivePromptPad != nil {
         tokenLength += resultShape[0] - 1

@@ -165,7 +165,8 @@ func QwenVL<T: TensorNumeric & BinaryFloatingPoint>(
 }
 
 private func QwenVLViTSelfAttention(
-  k: Int, h: Int, b: Int, t: Int, segments: [(Int, Int)], isFullAttention: Bool
+  k: Int, h: Int, b: Int, t: Int, segments: [(Int, Int)], isFullAttention: Bool,
+  usesFlashAttention: Bool
 ) -> (Model, Model, Model, Model, Model) {
   let x = Input()
   let rot = Input()
@@ -179,41 +180,55 @@ private func QwenVLViTSelfAttention(
   keys = Functional.cmul(left: keys, right: rot)
   var out: Model.IO
   if isFullAttention {
-    queries = queries.transposed(1, 2)
-    keys = keys.transposed(1, 2)
-    values = values.transposed(1, 2)
-    var dot = Matmul(transposeB: (2, 3))(queries, keys)
-    dot = dot.reshaped([b * h * t, t])
-    dot = dot.softmax()
-    dot = dot.reshaped([b, h, t, t])
-    out = dot * values
-    out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b * t, h * k])
+    if usesFlashAttention {
+      out = ScaledDotProductAttention(scale: 1)(queries, keys, values).reshaped([b * t, h * k])
+    } else {
+      queries = queries.transposed(1, 2)
+      keys = keys.transposed(1, 2)
+      values = values.transposed(1, 2)
+      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      dot = dot.reshaped([b * h * t, t])
+      dot = dot.softmax()
+      dot = dot.reshaped([b, h, t, t])
+      out = dot * values
+      out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b * t, h * k])
+    }
   } else {
     var offset = 0
     var outs = [Model.IO]()
     for segment in segments {
-      let query = queries.reshaped(
+      var query = queries.reshaped(
         [b * segment.0, segment.1, h, k], offset: [0, offset, 0, 0],
         strides: [segment.1 * h * k, h * k, k, 1]
-      ).contiguous().transposed(1, 2)
-      let key = keys.reshaped(
+      ).contiguous()
+      var key = keys.reshaped(
         [b * segment.0, segment.1, h, k], offset: [0, offset, 0, 0],
         strides: [segment.1 * h * k, h * k, k, 1]
-      ).contiguous().transposed(1, 2)
-      let value = values.reshaped(
+      ).contiguous()
+      var value = values.reshaped(
         [b * segment.0, segment.1, h, k], offset: [0, offset, 0, 0],
         strides: [segment.1 * h * k, h * k, k, 1]
-      ).contiguous().transposed(1, 2)
-      var dot = Matmul(transposeB: (2, 3))(query, key)
-      dot = dot.reshaped([b * segment.0 * h * segment.1, segment.1])
-      dot = dot.softmax()
-      dot = dot.reshaped([b * segment.0, h, segment.1, segment.1])
-      var out = dot * value
-      out = out.reshaped([b * segment.0, h, segment.1, k]).transposed(1, 2).reshaped([
-        b * segment.0 * segment.1, h * k,
-      ])
-      outs.append(out)
+      ).contiguous()
       offset += b * segment.0 * segment.1
+      if usesFlashAttention {
+        let out = ScaledDotProductAttention(scale: 1)(query, key, value).reshaped([
+          b * segment.0 * segment.1, h * k,
+        ])
+        outs.append(out)
+      } else {
+        query = query.transposed(1, 2)
+        key = key.transposed(1, 2)
+        value = value.transposed(1, 2)
+        var dot = Matmul(transposeB: (2, 3))(query, key)
+        dot = dot.reshaped([b * segment.0 * h * segment.1, segment.1])
+        dot = dot.softmax()
+        dot = dot.reshaped([b * segment.0, h, segment.1, segment.1])
+        var out = dot * value
+        out = out.reshaped([b * segment.0, h, segment.1, k]).transposed(1, 2).reshaped([
+          b * segment.0 * segment.1, h * k,
+        ])
+        outs.append(out)
+      }
     }
     out = Concat(axis: 0)(outs)
   }
@@ -236,13 +251,14 @@ private func QwenVLViTFeedForward(hiddenSize: Int, intermediateSize: Int, name: 
 
 private func QwenVLViTResidualAttentionBlock(
   prefix: String, k: Int, h: Int, b: Int, t: Int, segments: [(Int, Int)], MLP: Int,
-  isFullAttention: Bool
+  isFullAttention: Bool, usesFlashAttention: Bool
 ) -> Model {
   let x = Input()
   let rot = Input()
   let norm1 = RMSNorm(epsilon: 1e-6, axis: [2], name: "norm1")
   let (_, _, _, _, attention) = QwenVLViTSelfAttention(
-    k: k, h: h, b: b, t: t, segments: segments, isFullAttention: isFullAttention)
+    k: k, h: h, b: b, t: t, segments: segments, isFullAttention: isFullAttention,
+    usesFlashAttention: usesFlashAttention)
   var out = x.reshaped([b * t, h * k]) + attention(norm1(x), rot)
   let norm2 = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm2")
   let (_, _, _, ffn) = QwenVLViTFeedForward(
@@ -253,7 +269,7 @@ private func QwenVLViTResidualAttentionBlock(
 
 func QwenVLVisionTransformer(
   gridX: Int, gridY: Int, width: Int, layers: Int, fullAttentionLayers: Set<Int>, heads: Int,
-  MLP: Int, batchSize: Int
+  MLP: Int, batchSize: Int, usesFlashAttention: Bool
 ) -> Model {
   assert(gridX % 2 == 0)
   assert(gridY % 2 == 0)
@@ -288,7 +304,8 @@ func QwenVLVisionTransformer(
     let isFullAttention = fullAttentionLayers.contains(i)
     let block = QwenVLViTResidualAttentionBlock(
       prefix: "blocks.\(i)", k: width / heads, h: heads, b: batchSize,
-      t: gridX * gridY, segments: segments, MLP: MLP, isFullAttention: isFullAttention)
+      t: gridX * gridY, segments: segments, MLP: MLP, isFullAttention: isFullAttention,
+      usesFlashAttention: usesFlashAttention)
     out = block(out.reshaped([batchSize, gridX * gridY, width]), rot)
   }
   let normOut = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm_out")
