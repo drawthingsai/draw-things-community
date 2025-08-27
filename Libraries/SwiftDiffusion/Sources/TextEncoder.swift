@@ -1970,17 +1970,16 @@ extension TextEncoder {
           format: .NHWC, shape: [gridY / 8, 1, 4, (gridX / 2) % 4, resultShape[1]]
         ).permuted(0, 2, 1, 3, 4).copied().reshaped(
           .HWC((gridY / 8) * 4, (gridX / 2) % 4, resultShape[1]))
+        let lastCorner = resultShape[0] - ((gridY / 2) % 4) * ((gridX / 2) % 4)
         let bottom = oldC[
-          (((gridY / 8) * 4) * (gridX / 2))
-          ..<(resultShape[0] - ((gridY / 2) % 4) * ((gridX / 2) % 4)), 0..<resultShape[1]
+          (((gridY / 8) * 4) * (gridX / 2))..<lastCorner, 0..<resultShape[1]
         ]
         .copied().reshaped(
           format: .NHWC, shape: [1, gridX / 8, (gridY / 2) % 4, 4, resultShape[1]]
         ).permuted(0, 2, 1, 3, 4).copied().reshaped(
           .HWC((gridY / 2) % 4, (gridX / 8) * 4, resultShape[1]))
         let bottomRight = oldC[
-          (resultShape[0] - ((gridY / 2) % 4) * ((gridX / 2) % 4))..<resultShape[0],
-          0..<resultShape[1]
+          lastCorner..<resultShape[0], 0..<resultShape[1]
         ].copied().reshaped(
           format: .NHWC, shape: [1, 1, (gridY / 2) % 4, (gridX / 2) % 4, resultShape[1]]
         ).permuted(0, 2, 1, 3, 4).copied().reshaped(
