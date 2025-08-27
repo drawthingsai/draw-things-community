@@ -1296,7 +1296,7 @@ extension LocalImageGenerator {
 
   private func tokenize(
     graph: DynamicGraph, modelVersion: ModelVersion, textEncoderVersion: TextEncoderVersion?,
-    paddedTextEncodingLength: Int, text: String, negativeText: String,
+    modifier: SamplerModifier, paddedTextEncodingLength: Int, text: String, negativeText: String,
     negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool, clipL: String?,
     openClipG: String?, t5: String?
   ) -> (
@@ -1351,18 +1351,33 @@ extension LocalImageGenerator {
         paddingToken: 0, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
     case .qwenImage:
-      let promptWithTemplate =
-        "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
-      let negativePromptWithTemplate =
-        "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
-      var result = tokenize(
-        graph: graph, tokenizer: tokenizerQwen25, text: promptWithTemplate,
-        negativeText: negativePromptWithTemplate,
-        paddingToken: nil, conditionalLength: 3584, modifier: .qwen25, potentials: potentials,
-        startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
-      result.7 = result.7 - 34
-      result.8 = result.8 - 34
-      return result
+      if modifier == .kontext {
+        let promptWithTemplate =
+          "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>\(text)<|im_end|>\n<|im_start|>assistant\n"
+        let negativePromptWithTemplate =
+          "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
+        var result = tokenize(
+          graph: graph, tokenizer: tokenizerQwen25, text: promptWithTemplate,
+          negativeText: negativePromptWithTemplate,
+          paddingToken: nil, conditionalLength: 3584, modifier: .qwen25, potentials: potentials,
+          startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
+        result.7 = result.7 - 64
+        result.8 = result.8 - 64
+        return result
+      } else {
+        let promptWithTemplate =
+          "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
+        let negativePromptWithTemplate =
+          "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
+        var result = tokenize(
+          graph: graph, tokenizer: tokenizerQwen25, text: promptWithTemplate,
+          negativeText: negativePromptWithTemplate,
+          paddingToken: nil, conditionalLength: 3584, modifier: .qwen25, potentials: potentials,
+          startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
+        result.7 = result.7 - 34
+        result.8 = result.8 - 34
+        return result
+      }
     case .hiDreamI1:
       var tokenizerV1 = tokenizerV1
       tokenizerV1.textualInversions = []
@@ -3549,6 +3564,7 @@ extension LocalImageGenerator {
       lengthsOfCond
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion,
+      modifier: modifier,
       paddedTextEncodingLength: paddedTextEncodingLength, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
@@ -3564,7 +3580,7 @@ extension LocalImageGenerator {
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, cancellation: cancellation)
-      let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
+      var (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         injecteds: injectedTextEmbeddings)
       let tokenLength = max(tokenLengthUncond, tokenLengthCond)
@@ -3582,7 +3598,7 @@ extension LocalImageGenerator {
       }
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
-          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+          tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: image.map { [$0] } ?? [],
           lengthsOfUncond: lengthsOfUncond,
@@ -4536,6 +4552,7 @@ extension LocalImageGenerator {
       lengthsOfCond
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion,
+      modifier: modifier,
       paddedTextEncodingLength: paddedTextEncodingLength, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
@@ -4572,7 +4589,7 @@ extension LocalImageGenerator {
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, cancellation: cancellation)
-      let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
+      var (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         injecteds: injectedTextEmbeddings)
       let tokenLength = max(tokenLengthUncond, tokenLengthCond)
@@ -4589,7 +4606,7 @@ extension LocalImageGenerator {
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
-          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+          tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
@@ -5829,6 +5846,7 @@ extension LocalImageGenerator {
       lengthsOfCond
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion,
+      modifier: modifier,
       paddedTextEncodingLength: paddedTextEncodingLength, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
@@ -5856,7 +5874,7 @@ extension LocalImageGenerator {
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, cancellation: cancellation)
-      let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
+      var (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         injecteds: injectedTextEmbeddings)
       let tokenLength = max(tokenLengthUncond, tokenLengthCond)
@@ -5873,7 +5891,7 @@ extension LocalImageGenerator {
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
-          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+          tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
@@ -6612,6 +6630,7 @@ extension LocalImageGenerator {
       lengthsOfCond
     ) = tokenize(
       graph: graph, modelVersion: modelVersion, textEncoderVersion: textEncoderVersion,
+      modifier: modifier,
       paddedTextEncodingLength: paddedTextEncodingLength, text: text, negativeText: negativeText,
       negativePromptForImagePrior: configuration.negativePromptForImagePrior,
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
@@ -6638,7 +6657,7 @@ extension LocalImageGenerator {
         controls: configuration.controls,
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, cancellation: cancellation)
-      let (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
+      var (tokenLengthUncond, tokenLengthCond) = ControlModel<FloatType>.modifyTextEmbeddings(
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         injecteds: injectedTextEmbeddings)
       let tokenLength = max(tokenLengthUncond, tokenLengthCond)
@@ -6655,7 +6674,7 @@ extension LocalImageGenerator {
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
-          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+          tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,

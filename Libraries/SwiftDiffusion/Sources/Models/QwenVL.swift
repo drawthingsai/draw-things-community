@@ -98,17 +98,27 @@ private func TransformerBlock(
 }
 
 private func TextEmbedding<T: TensorNumeric & BinaryFloatingPoint>(
-  _ dataType: T.Type, batchSize: Int, vocabularySize: Int, maxLength: Int, embeddingSize: Int
+  _ dataType: T.Type, injectEmbeddings: Bool, batchSize: Int, vocabularySize: Int, maxLength: Int,
+  embeddingSize: Int
 ) -> Model {
   let tokens = Input()
   let tokenEmbed = Embedding(
     T.self, vocabularySize: vocabularySize, embeddingSize: embeddingSize, name: "tok_embeddings")
   let embedding = tokenEmbed(tokens)
-  return Model([tokens], [embedding])
+  if injectEmbeddings {
+    let tokenMask = Input()
+    let injectedEmbeddings = Input()
+    // Adding additional reshape to make sure the order between token embed and position embed never switch.
+    let finalEmbedding = embedding .* tokenMask + injectedEmbeddings
+    return Model([tokens, tokenMask, injectedEmbeddings], [finalEmbedding])
+  } else {
+    return Model([tokens], [embedding])
+  }
 }
 
 func QwenVL<T: TensorNumeric & BinaryFloatingPoint>(
-  _ dataType: T.Type, vocabularySize: Int, maxLength: Int, width: Int, tokenLength: Int,
+  _ dataType: T.Type, injectEmbeddings: Bool, vocabularySize: Int, maxLength: Int, width: Int,
+  tokenLength: Int,
   layers: Int, MLP: Int, heads: Int, outputHiddenStates: Int?, batchSize: Int,
   usesFlashAttention: Bool
 ) -> Model {
@@ -116,9 +126,23 @@ func QwenVL<T: TensorNumeric & BinaryFloatingPoint>(
   let rot = Input()
   let causalAttentionMask = Input()
   let embedding = TextEmbedding(
-    T.self, batchSize: batchSize, vocabularySize: vocabularySize, maxLength: maxLength,
+    T.self, injectEmbeddings: injectEmbeddings, batchSize: batchSize,
+    vocabularySize: vocabularySize, maxLength: maxLength,
     embeddingSize: width)
-  var out = embedding(tokens)
+  let tokenMask: Input?
+  let injectedEmbeddings: Input?
+  var out: Model.IO
+  if injectEmbeddings {
+    let mask = Input()
+    let embeddings = Input()
+    out = embedding(tokens, mask, embeddings)
+    injectedEmbeddings = embeddings
+    tokenMask = mask
+  } else {
+    out = embedding(tokens)
+    injectedEmbeddings = nil
+    tokenMask = nil
+  }
   var hiddenStates: Model.IO? = nil
   for i in 0..<layers {
     let layer = TransformerBlock(
@@ -131,5 +155,264 @@ func QwenVL<T: TensorNumeric & BinaryFloatingPoint>(
   }
   let norm = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm")
   out = norm(out)
-  return Model([tokens, rot, causalAttentionMask], (hiddenStates.map { [$0] } ?? []) + [out])
+  if injectEmbeddings, let tokenMask = tokenMask, let injectedEmbeddings = injectedEmbeddings {
+    return Model(
+      [tokens, rot, causalAttentionMask, tokenMask, injectedEmbeddings],
+      (hiddenStates.map { [$0] } ?? []) + [out])
+  } else {
+    return Model([tokens, rot, causalAttentionMask], (hiddenStates.map { [$0] } ?? []) + [out])
+  }
+}
+
+private func QwenVLViTSelfAttention(
+  k: Int, h: Int, b: Int, t: Int, segments: [(Int, Int)], isFullAttention: Bool
+) -> (Model, Model, Model, Model, Model) {
+  let x = Input()
+  let rot = Input()
+  let tokeys = Dense(count: k * h, name: "k_proj")
+  let toqueries = Dense(count: k * h, name: "q_proj")
+  let tovalues = Dense(count: k * h, name: "v_proj")
+  var keys = tokeys(x).reshaped([b, t, h, k])
+  var queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, t, h, k])
+  var values = tovalues(x).reshaped([b, t, h, k])
+  queries = Functional.cmul(left: queries, right: rot)
+  keys = Functional.cmul(left: keys, right: rot)
+  var out: Model.IO
+  if isFullAttention {
+    queries = queries.transposed(1, 2)
+    keys = keys.transposed(1, 2)
+    values = values.transposed(1, 2)
+    var dot = Matmul(transposeB: (2, 3))(queries, keys)
+    dot = dot.reshaped([b * h * t, t])
+    dot = dot.softmax()
+    dot = dot.reshaped([b, h, t, t])
+    out = dot * values
+    out = out.reshaped([b, h, t, k]).transposed(1, 2).reshaped([b * t, h * k])
+  } else {
+    var offset = 0
+    var outs = [Model.IO]()
+    for segment in segments {
+      let query = queries.reshaped(
+        [b * segment.0, segment.1, h, k], offset: [0, offset, 0, 0],
+        strides: [segment.1 * h * k, h * k, k, 1]
+      ).contiguous().transposed(1, 2)
+      let key = keys.reshaped(
+        [b * segment.0, segment.1, h, k], offset: [0, offset, 0, 0],
+        strides: [segment.1 * h * k, h * k, k, 1]
+      ).contiguous().transposed(1, 2)
+      let value = values.reshaped(
+        [b * segment.0, segment.1, h, k], offset: [0, offset, 0, 0],
+        strides: [segment.1 * h * k, h * k, k, 1]
+      ).contiguous().transposed(1, 2)
+      var dot = Matmul(transposeB: (2, 3))(query, key)
+      dot = dot.reshaped([b * segment.0 * h * segment.1, segment.1])
+      dot = dot.softmax()
+      dot = dot.reshaped([b * segment.0, h, segment.1, segment.1])
+      var out = dot * value
+      out = out.reshaped([b * segment.0, h, segment.1, k]).transposed(1, 2).reshaped([
+        b * segment.0 * segment.1, h * k,
+      ])
+      outs.append(out)
+      offset += b * segment.0 * segment.1
+    }
+    out = Concat(axis: 0)(outs)
+  }
+  let unifyheads = Dense(count: k * h, name: "out_proj")
+  out = unifyheads(out)
+  return (toqueries, tokeys, tovalues, unifyheads, Model([x, rot], [out]))
+}
+
+private func QwenVLViTFeedForward(hiddenSize: Int, intermediateSize: Int, name: String = "") -> (
+  Model, Model, Model, Model
+) {
+  let x = Input()
+  let w1 = Dense(count: intermediateSize, name: "\(name)_gate_proj")
+  let w3 = Dense(count: intermediateSize, name: "\(name)_up_proj")
+  var out = w3(x) .* w1(x).swish()
+  let w2 = Dense(count: hiddenSize, name: "\(name)_down_proj")
+  out = w2(out)
+  return (w1, w2, w3, Model([x], [out], name: name))
+}
+
+private func QwenVLViTResidualAttentionBlock(
+  prefix: String, k: Int, h: Int, b: Int, t: Int, segments: [(Int, Int)], MLP: Int,
+  isFullAttention: Bool
+) -> Model {
+  let x = Input()
+  let rot = Input()
+  let norm1 = RMSNorm(epsilon: 1e-6, axis: [2], name: "norm1")
+  let (_, _, _, _, attention) = QwenVLViTSelfAttention(
+    k: k, h: h, b: b, t: t, segments: segments, isFullAttention: isFullAttention)
+  var out = x.reshaped([b * t, h * k]) + attention(norm1(x), rot)
+  let norm2 = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm2")
+  let (_, _, _, ffn) = QwenVLViTFeedForward(
+    hiddenSize: k * h, intermediateSize: MLP, name: "mlp")
+  out = out + ffn(norm2(out))
+  return Model([x, rot], [out])
+}
+
+func QwenVLVisionTransformer(
+  gridX: Int, gridY: Int, width: Int, layers: Int, fullAttentionLayers: Set<Int>, heads: Int,
+  MLP: Int, batchSize: Int
+) -> Model {
+  assert(gridX % 2 == 0)
+  assert(gridY % 2 == 0)
+  var segments = [(Int, Int)]()  // This is determined by the gridX / gridY. If both are divisible by 8, then we only have one segment, otherwise we need 3~4 segments.
+  segments.append(((gridX / 8) * (gridY / 8), 64))
+  if gridX % 8 == 0, gridY % 8 == 0 {
+    // Don't need anything else.
+  } else if gridX % 8 == 0 {
+    // Adding parts of gridY that cannot be divided by 8.
+    segments.append((gridX / 8, 8 * (gridY % 8)))
+  } else if gridY % 8 == 0 {
+    // Adding parts of gridX that cannot be divided by 8.
+    segments.append((gridY / 8, 8 * (gridX % 8)))
+  } else if gridX % 8 == gridY % 8 {
+    // The piece on the right and bottom side.
+    segments.append((2 * (gridX / 8), 8 * (gridY % 8)))
+    // The last piece.
+    segments.append((1, (gridY % 8) * (gridX % 8)))
+  } else {
+    // The piece on the right side.
+    segments.append((gridY / 8, 8 * (gridX % 8)))
+    // The piece on the bottom side.
+    segments.append((gridX / 8, 8 * (gridY % 8)))
+    // The last piece.
+    segments.append((1, (gridY % 8) * (gridX % 8)))
+  }
+  let x = Input()
+  let rot = Input()
+  let conv1 = Dense(count: width, noBias: true, name: "conv_in")
+  var out = conv1(x).reshaped([batchSize, gridX * gridY, width])
+  for i in 0..<layers {
+    let isFullAttention = fullAttentionLayers.contains(i)
+    let block = QwenVLViTResidualAttentionBlock(
+      prefix: "blocks.\(i)", k: width / heads, h: heads, b: batchSize,
+      t: gridX * gridY, segments: segments, MLP: MLP, isFullAttention: isFullAttention)
+    out = block(out.reshaped([batchSize, gridX * gridY, width]), rot)
+  }
+  let normOut = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm_out")
+  out = normOut(out).reshaped([gridX * gridY / 4, 4 * width])
+  let mlp0 = Dense(count: 5120, name: "merger_mlp_0")
+  let mlp1 = Dense(count: 3584, name: "merger_mlp_1")
+  out = mlp1(mlp0(out).GELU())
+  return Model([x, rot], [out])
+}
+
+func QwenVLViTRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  gridX: Int, gridY: Int, of dataType: FloatType.Type = FloatType.self
+) -> Tensor<FloatType> {
+  var rotary = Tensor<FloatType>(.CPU, .NHWC(1, gridX * gridY, 1, 80))
+  var i = 0
+  for y0 in 0..<(gridY / 8) {
+    for x0 in 0..<(gridX / 8) {
+      for y1 in 0..<4 {
+        for x1 in 0..<4 {
+          for y2 in 0..<2 {
+            for x2 in 0..<2 {
+              for k in 0..<20 {
+                let theta = Double(y0 * 8 + y1 * 2 + y2) * 1.0 / pow(10_000, Double(k) * 2 / 40)
+                let sintheta = sin(theta)
+                let costheta = cos(theta)
+                rotary[0, i, 0, k * 2] = FloatType(costheta)
+                rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+              }
+              for k in 0..<20 {
+                let theta = Double(x0 * 8 + x1 * 2 + x2) * 1.0 / pow(10_000, Double(k) * 2 / 40)
+                let sintheta = sin(theta)
+                let costheta = cos(theta)
+                rotary[0, i, 0, 40 + k * 2] = FloatType(costheta)
+                rotary[0, i, 0, 40 + k * 2 + 1] = FloatType(sintheta)
+              }
+              i += 1
+            }
+          }
+        }
+      }
+    }
+  }
+  if gridX % 8 > 0 {
+    let x0 = gridX / 8
+    for y0 in 0..<(gridY / 8) {
+      for y1 in 0..<4 {
+        for x1 in 0..<(gridX % 8) / 2 {
+          for y2 in 0..<2 {
+            for x2 in 0..<2 {
+              for k in 0..<20 {
+                let theta = Double(y0 * 8 + y1 * 2 + y2) * 1.0 / pow(10_000, Double(k) * 2 / 40)
+                let sintheta = sin(theta)
+                let costheta = cos(theta)
+                rotary[0, i, 0, k * 2] = FloatType(costheta)
+                rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+              }
+              for k in 0..<20 {
+                let theta = Double(x0 * 8 + x1 * 2 + x2) * 1.0 / pow(10_000, Double(k) * 2 / 40)
+                let sintheta = sin(theta)
+                let costheta = cos(theta)
+                rotary[0, i, 0, 40 + k * 2] = FloatType(costheta)
+                rotary[0, i, 0, 40 + k * 2 + 1] = FloatType(sintheta)
+              }
+              i += 1
+            }
+          }
+        }
+      }
+    }
+  }
+  if gridY % 8 > 0 {
+    let y0 = gridY / 8
+    for x0 in 0..<(gridX / 8) {
+      for y1 in 0..<(gridY % 8) / 2 {
+        for x1 in 0..<4 {
+          for y2 in 0..<2 {
+            for x2 in 0..<2 {
+              for k in 0..<20 {
+                let theta = Double(y0 * 8 + y1 * 2 + y2) * 1.0 / pow(10_000, Double(k) * 2 / 40)
+                let sintheta = sin(theta)
+                let costheta = cos(theta)
+                rotary[0, i, 0, k * 2] = FloatType(costheta)
+                rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+              }
+              for k in 0..<20 {
+                let theta = Double(x0 * 8 + x1 * 2 + x2) * 1.0 / pow(10_000, Double(k) * 2 / 40)
+                let sintheta = sin(theta)
+                let costheta = cos(theta)
+                rotary[0, i, 0, 40 + k * 2] = FloatType(costheta)
+                rotary[0, i, 0, 40 + k * 2 + 1] = FloatType(sintheta)
+              }
+              i += 1
+            }
+          }
+        }
+      }
+    }
+  }
+  if gridY % 8 > 0, gridX % 8 > 0 {
+    let y0 = gridY / 8
+    let x0 = gridX / 8
+    for y1 in 0..<4 {
+      for x1 in 0..<4 {
+        for y2 in 0..<2 {
+          for x2 in 0..<2 {
+            for k in 0..<20 {
+              let theta = Double(y0 * 8 + y1 * 2 + y2) * 1.0 / pow(10_000, Double(k) * 2 / 40)
+              let sintheta = sin(theta)
+              let costheta = cos(theta)
+              rotary[0, i, 0, k * 2] = FloatType(costheta)
+              rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+            }
+            for k in 0..<20 {
+              let theta = Double(x0 * 8 + x1 * 2 + x2) * 1.0 / pow(10_000, Double(k) * 2 / 40)
+              let sintheta = sin(theta)
+              let costheta = cos(theta)
+              rotary[0, i, 0, 40 + k * 2] = FloatType(costheta)
+              rotary[0, i, 0, 40 + k * 2 + 1] = FloatType(sintheta)
+            }
+            i += 1
+          }
+        }
+      }
+    }
+  }
+  return rotary
 }
