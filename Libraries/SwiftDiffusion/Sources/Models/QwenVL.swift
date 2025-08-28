@@ -285,7 +285,7 @@ func QwenVLVisionTransformer(
     segments.append((gridY / 8, 8 * (gridX % 8)))
   } else if gridX % 8 == gridY % 8 {
     // The piece on the right and bottom side.
-    segments.append((2 * (gridX / 8), 8 * (gridY % 8)))
+    segments.append(((gridX / 8) + (gridY / 8), 8 * (gridY % 8)))
     // The last piece.
     segments.append((1, (gridY % 8) * (gridX % 8)))
   } else {
