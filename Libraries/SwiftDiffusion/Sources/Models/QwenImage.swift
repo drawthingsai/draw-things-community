@@ -526,7 +526,6 @@ public func QwenImageFixed(
   ModelWeightMapper, Model
 ) {
   let txt = Input()
-  let t = Input()
   var outs = [Model.IO]()
   var referenceImages = [Input]()
   if numberOfReferenceImages > 0 {
@@ -542,53 +541,78 @@ public func QwenImageFixed(
   }
   let txtNorm = RMSNorm(epsilon: 1e-6, axis: [2], name: "context_norm")
   let txtIn = Dense(count: channels, name: "context_embedder")
-  let (timeInMlp0, timeInMlp2, timeIn) = MLPEmbedder(channels: channels, name: "t")
-  var vec = timeIn(t)
-  vec = vec.reshaped([timesteps, 1, channels]).swish()
   let context = txtIn(txtNorm(txt))
-  var mappers = [ModelWeightMapper]()
   outs.append(context)
-  for i in 0..<layers {
-    let ffnScaling = activationFfnScaling[i] ?? 1
-    let (mapper, block) = JointTransformerBlockFixed(
-      prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
-      contextBlockPreOnly: i == layers - 1,
-      scaleFactor: (
-        i >= layers - 16 ? 16 : 2,
-        i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
-      ), isBF16: isBF16)
-    let blockOut = block(vec)
-    mappers.append(mapper)
-    outs.append(blockOut)
+  var mappers = [ModelWeightMapper]()
+  let t: Input?
+  let timeInMlp0: Model?
+  let timeInMlp2: Model?
+  let scale: Model?
+  let shift: Model?
+  if layers > 0 {
+    let tIn = Input()
+    let (inMlp0, inMlp2, timeIn) = MLPEmbedder(channels: channels, name: "t")
+    var vec = timeIn(tIn)
+    vec = vec.reshaped([timesteps, 1, channels]).swish()
+    for i in 0..<layers {
+      let ffnScaling = activationFfnScaling[i] ?? 1
+      let (mapper, block) = JointTransformerBlockFixed(
+        prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
+        contextBlockPreOnly: i == layers - 1,
+        scaleFactor: (
+          i >= layers - 16 ? 16 : 2,
+          i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
+        ), isBF16: isBF16)
+      let blockOut = block(vec)
+      mappers.append(mapper)
+      outs.append(blockOut)
+    }
+    let scaleIn = Dense(count: channels, name: "ada_ln_0")
+    let shiftIn = Dense(count: channels, name: "ada_ln_1")
+    outs.append(contentsOf: [shiftIn(vec), 1 + scaleIn(vec)])
+    t = tIn
+    timeInMlp0 = inMlp0
+    timeInMlp2 = inMlp2
+    scale = scaleIn
+    shift = shiftIn
+  } else {
+    t = nil
+    timeInMlp0 = nil
+    timeInMlp2 = nil
+    scale = nil
+    shift = nil
   }
-  let scale = Dense(count: channels, name: "ada_ln_0")
-  let shift = Dense(count: channels, name: "ada_ln_1")
-  outs.append(contentsOf: [shift(vec), 1 + scale(vec)])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     mapping["txt_norm.weight"] = [txtNorm.weight.name]
     mapping["txt_in.weight"] = [txtIn.weight.name]
     mapping["txt_in.bias"] = [txtIn.bias.name]
-    mapping[
-      "time_text_embed.timestep_embedder.linear_1.weight"
-    ] = [timeInMlp0.weight.name]
-    mapping[
-      "time_text_embed.timestep_embedder.linear_1.bias"
-    ] = [timeInMlp0.bias.name]
-    mapping[
-      "time_text_embed.timestep_embedder.linear_2.weight"
-    ] = [timeInMlp2.weight.name]
-    mapping[
-      "time_text_embed.timestep_embedder.linear_2.bias"
-    ] = [timeInMlp2.bias.name]
+    if let timeInMlp0 = timeInMlp0 {
+      mapping[
+        "time_text_embed.timestep_embedder.linear_1.weight"
+      ] = [timeInMlp0.weight.name]
+      mapping[
+        "time_text_embed.timestep_embedder.linear_1.bias"
+      ] = [timeInMlp0.bias.name]
+    }
+    if let timeInMlp2 = timeInMlp2 {
+      mapping[
+        "time_text_embed.timestep_embedder.linear_2.weight"
+      ] = [timeInMlp2.weight.name]
+      mapping[
+        "time_text_embed.timestep_embedder.linear_2.bias"
+      ] = [timeInMlp2.bias.name]
+    }
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
-    mapping["norm_out.linear.bias"] = [scale.bias.name, shift.bias.name]
+    if let scale = scale, let shift = shift {
+      mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
+      mapping["norm_out.linear.bias"] = [scale.bias.name, shift.bias.name]
+    }
     return mapping
   }
-  return (mapper, Model([txt, t] + referenceImages, outs))
+  return (mapper, Model([txt] + referenceImages + (t.map { [$0] } ?? []), outs))
 }
 
 private func JointTransformerBlockFixedOutputShapes(
@@ -1044,7 +1068,6 @@ public func LoRAQwenImageFixed(
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let txt = Input()
-  let t = Input()
   var outs = [Model.IO]()
   var referenceImages = [Input]()
   if numberOfReferenceImages > 0 {
@@ -1061,54 +1084,79 @@ public func LoRAQwenImageFixed(
   let txtNorm = RMSNorm(epsilon: 1e-6, axis: [2], name: "context_norm")
   let txtIn = LoRADense(
     count: channels, configuration: LoRAConfiguration, index: 0, name: "context_embedder")
-  let (timeInMlp0, timeInMlp2, timeIn) = LoRAMLPEmbedder(
-    channels: channels, configuration: LoRAConfiguration, index: 0, name: "t")
-  var vec = timeIn(t)
-  vec = vec.reshaped([timesteps, 1, channels]).swish()
   let context = txtIn(txtNorm(txt))
-  var mappers = [ModelWeightMapper]()
   outs.append(context)
-  for i in 0..<layers {
-    let ffnScaling = activationFfnScaling[i] ?? 1
-    let (mapper, block) = LoRAJointTransformerBlockFixed(
-      prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
-      contextBlockPreOnly: i == layers - 1,
-      scaleFactor: (
-        i >= layers - 16 ? 16 : 2,
-        i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
-      ), isBF16: isBF16, layerIndex: i, configuration: LoRAConfiguration)
-    let blockOut = block(vec)
-    mappers.append(mapper)
-    outs.append(blockOut)
+  var mappers = [ModelWeightMapper]()
+  let t: Input?
+  let timeInMlp0: Model?
+  let timeInMlp2: Model?
+  let scale: Model?
+  let shift: Model?
+  if layers > 0 {
+    let tIn = Input()
+    let (inMlp0, inMlp2, timeIn) = LoRAMLPEmbedder(
+      channels: channels, configuration: LoRAConfiguration, index: 0, name: "t")
+    var vec = timeIn(tIn)
+    vec = vec.reshaped([timesteps, 1, channels]).swish()
+    for i in 0..<layers {
+      let ffnScaling = activationFfnScaling[i] ?? 1
+      let (mapper, block) = LoRAJointTransformerBlockFixed(
+        prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
+        contextBlockPreOnly: i == layers - 1,
+        scaleFactor: (
+          i >= layers - 16 ? 16 : 2,
+          i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
+        ), isBF16: isBF16, layerIndex: i, configuration: LoRAConfiguration)
+      let blockOut = block(vec)
+      mappers.append(mapper)
+      outs.append(blockOut)
+    }
+    let scaleIn = LoRADense(
+      count: channels, configuration: LoRAConfiguration, index: 0, name: "ada_ln_0")
+    let shiftIn = LoRADense(
+      count: channels, configuration: LoRAConfiguration, index: 0, name: "ada_ln_1")
+    outs.append(contentsOf: [shiftIn(vec), 1 + scaleIn(vec)])
+    t = tIn
+    timeInMlp0 = inMlp0
+    timeInMlp2 = inMlp2
+    scale = scaleIn
+    shift = shiftIn
+  } else {
+    t = nil
+    timeInMlp0 = nil
+    timeInMlp2 = nil
+    scale = nil
+    shift = nil
   }
-  let scale = LoRADense(
-    count: channels, configuration: LoRAConfiguration, index: 0, name: "ada_ln_0")
-  let shift = LoRADense(
-    count: channels, configuration: LoRAConfiguration, index: 0, name: "ada_ln_1")
-  outs.append(contentsOf: [shift(vec), 1 + scale(vec)])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     mapping["txt_norm.weight"] = [txtNorm.weight.name]
     mapping["txt_in.weight"] = [txtIn.weight.name]
     mapping["txt_in.bias"] = [txtIn.bias.name]
-    mapping[
-      "time_text_embed.timestep_embedder.linear_1.weight"
-    ] = [timeInMlp0.weight.name]
-    mapping[
-      "time_text_embed.timestep_embedder.linear_1.bias"
-    ] = [timeInMlp0.bias.name]
-    mapping[
-      "time_text_embed.timestep_embedder.linear_2.weight"
-    ] = [timeInMlp2.weight.name]
-    mapping[
-      "time_text_embed.timestep_embedder.linear_2.bias"
-    ] = [timeInMlp2.bias.name]
+    if let timeInMlp0 = timeInMlp0 {
+      mapping[
+        "time_text_embed.timestep_embedder.linear_1.weight"
+      ] = [timeInMlp0.weight.name]
+      mapping[
+        "time_text_embed.timestep_embedder.linear_1.bias"
+      ] = [timeInMlp0.bias.name]
+    }
+    if let timeInMlp2 = timeInMlp2 {
+      mapping[
+        "time_text_embed.timestep_embedder.linear_2.weight"
+      ] = [timeInMlp2.weight.name]
+      mapping[
+        "time_text_embed.timestep_embedder.linear_2.bias"
+      ] = [timeInMlp2.bias.name]
+    }
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
-    mapping["norm_out.linear.bias"] = [scale.bias.name, shift.bias.name]
+    if let scale = scale, let shift = shift {
+      mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
+      mapping["norm_out.linear.bias"] = [scale.bias.name, shift.bias.name]
+    }
     return mapping
   }
-  return (mapper, Model([txt, t] + referenceImages, outs))
+  return (mapper, Model([txt] + referenceImages + (t.map { [$0] } ?? []), outs))
 }

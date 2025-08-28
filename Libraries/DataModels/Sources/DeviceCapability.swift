@@ -211,10 +211,14 @@ public struct DeviceCapability {
     return .low
   }()
   public static var isFreadPreferred: Bool = isUMA
+  public static var cacheUri: URL = {
+    let urls = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+    return urls.first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+  }()
   public static var deviceProperties: DeviceProperties {
     DeviceProperties(
       isFreadPreferred: isFreadPreferred, memoryCapacity: memoryCapacity,
-      isNHWCPreferred: isNHWCPreferred)
+      isNHWCPreferred: isNHWCPreferred, cacheUri: cacheUri)
   }
   public static var maxTotalWeightsCacheSize: UInt64 = {
     #if !canImport(Metal)

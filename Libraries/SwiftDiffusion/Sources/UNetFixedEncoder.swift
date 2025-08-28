@@ -37,6 +37,11 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   }
 }
 
+fileprivate struct TimestepEmbeddingKey: Codable {
+  var loras: [LoRAConfiguration]
+  var timesteps: [Float]
+}
+
 extension UNetFixedEncoder {
   static func isFixedEncoderRequired(version: ModelVersion) -> Bool {
     switch version {
@@ -1270,8 +1275,6 @@ extension UNetFixedEncoder {
       } else {
         guidanceEmbeds = nil
       }
-      var timeEmbeds = graph.variable(
-        .GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
       var c = graph.variable(
         .GPU(0),
         .HWC(batchSize, (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond, 3584),
@@ -1285,15 +1288,6 @@ extension UNetFixedEncoder {
         c[0..<batchSize, 0..<tokenLengthCond, 0..<3584] =
           c0[0..<batchSize, 0..<tokenLengthCond, 0..<3584]
       }
-      for (i, timestep) in timesteps.enumerated() {
-        let timeEmbed = graph.variable(
-          Tensor<FloatType>(
-            from: timeEmbedding(
-              timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
-          ).toGPU(0))
-        timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
-      }
-      let unetFixed: Model
       let lora = Array(
         (OrderedDictionary<String, LoRAConfiguration>(
           lora.filter({ $0.version == version }).map {
@@ -1306,6 +1300,44 @@ extension UNetFixedEncoder {
         })
         .values
       ).filter { $0.weight != 0 }
+      let cacheUri = deviceProperties.cacheUri.appendingPathComponent("qwen_image")
+      try? FileManager.default.createDirectory(at: cacheUri, withIntermediateDirectories: true)
+      let timestepEmbeddingCacheFilePath =
+        cacheUri.appendingPathComponent(
+          ((filePath as NSString).lastPathComponent as NSString).deletingPathExtension
+        ).path + "-time_embed.ckpt"
+      let jsonEncoder = JSONEncoder()
+      jsonEncoder.outputFormatting = [.sortedKeys]
+      let timestepEmbeddingKey =
+        ((try? jsonEncoder.encode(TimestepEmbeddingKey(loras: lora, timesteps: timesteps))).flatMap
+        { String(data: $0, encoding: .utf8).map { "cached_\($0)" } })
+      let timestepEmbeddingVectors: Tensor<Float>?
+      if let timestepEmbeddingKey = timestepEmbeddingKey {
+        timestepEmbeddingVectors = try? graph.openStore(
+          timestepEmbeddingCacheFilePath, flags: .readOnly
+        ) { (store) -> Tensor<Float>? in
+          return store.read(timestepEmbeddingKey, kind: .CPU).map { Tensor<Float>($0).toGPU(0) }
+        }.get()
+      } else {
+        timestepEmbeddingVectors = nil
+      }
+      let timeEmbeds: DynamicGraph.Tensor<FloatType>?
+      if timestepEmbeddingVectors == nil {
+        var embeds = graph.variable(
+          .GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
+        for (i, timestep) in timesteps.enumerated() {
+          let timeEmbed = graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+            ).toGPU(0))
+          embeds[i..<(i + 1), 0..<256] = timeEmbed
+        }
+        timeEmbeds = embeds
+      } else {
+        timeEmbeds = nil
+      }
+      let unetFixed: Model
       let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
         graph, of: lora.map { $0.file }, modelFile: filePath)
       let isLoHa = lora.contains { $0.isLoHa }
@@ -1319,22 +1351,27 @@ extension UNetFixedEncoder {
         configuration.keys = keys
         unetFixed =
           LoRAQwenImageFixed(
-            timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: isBF16,
+            timesteps: timesteps.count, channels: 3072,
+            layers: timestepEmbeddingVectors == nil ? 60 : 0, isBF16: isBF16,
             activationFfnScaling: activationFfnScaling,
             numberOfReferenceImages: referenceImages.count, LoRAConfiguration: configuration
           ).1
       } else {
         unetFixed =
           QwenImageFixed(
-            timesteps: timesteps.count, channels: 3072, layers: 60, isBF16: isBF16,
+            timesteps: timesteps.count, channels: 3072,
+            layers: timestepEmbeddingVectors == nil ? 60 : 0, isBF16: isBF16,
             activationFfnScaling: activationFfnScaling,
             numberOfReferenceImages: referenceImages.count
           ).1
       }
-      let otherInputs: [DynamicGraph.AnyTensor] = guidanceEmbeds.map { [$0] } ?? []
+      var otherInputs: [DynamicGraph.AnyTensor] = timeEmbeds.map { [$0] } ?? []
+      if let guidanceEmbeds = guidanceEmbeds {
+        otherInputs.append(guidanceEmbeds)
+      }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(
-        inputs: [c, timeEmbeds] + referenceImages + otherInputs)
+        inputs: [c] + referenceImages + otherInputs)
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
@@ -1381,10 +1418,47 @@ extension UNetFixedEncoder {
         }
       }
       var conditions = unetFixed(
-        inputs: c, [timeEmbeds] + referenceImages + otherInputs
+        inputs: c, referenceImages + otherInputs
       )
       if lora.isEmpty || shouldRunLoRASeparately {
         weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
+      if let timestepEmbeddingVectors = timestepEmbeddingVectors {
+        let shape = timestepEmbeddingVectors.shape
+        let count = timesteps.count
+        let vectors = graph.variable(timestepEmbeddingVectors).toGPU(0)
+        for i in 0..<(718 - 2) {
+          conditions.append(
+            vectors[(i * count)..<((i + 1) * count), 0..<shape[1], 0..<shape[2]].copied())
+        }
+        // The last two is Float16 type.
+        for i in (718 - 2)..<718 {
+          conditions.append(
+            DynamicGraph.Tensor<FloatType>(
+              from: vectors[(i * count)..<((i + 1) * count), 0..<shape[1], 0..<shape[2]].copied()))
+        }
+      } else if let timestepEmbeddingKey = timestepEmbeddingKey {
+        let timestepEmbeddings = Array(conditions.suffix(718))
+        if timestepEmbeddings.count == 718 {
+          let shape = timestepEmbeddings[0].shape
+          var timestepEmbedding = graph.variable(
+            .GPU(0), .HWC(718 * shape[0], shape[1], shape[2]), of: Float.self)
+          for (i, timestep) in timestepEmbeddings.enumerated() {
+            timestepEmbedding[(i * shape[0])..<((i + 1) * shape[0]), 0..<shape[1], 0..<shape[2]] =
+              DynamicGraph.Tensor<Float>(from: timestep)
+          }
+          graph.openStore(timestepEmbeddingCacheFilePath) {
+            let cachedKeys = $0.keys.filter {
+              $0.hasPrefix("cached_") && $0 != timestepEmbeddingKey
+            }
+            if cachedKeys.count >= 10 {  // Only retain 10 cache keys.
+              for cachedKey in cachedKeys.shuffled().prefix(cachedKeys.count - 9) {
+                $0.remove(cachedKey)
+              }
+            }
+            $0.write(timestepEmbeddingKey, tensor: timestepEmbedding.rawValue.toCPU())
+          }
+        }
       }
       var referenceSizes: [(height: Int, width: Int)]
       if referenceImages.count > 0 {

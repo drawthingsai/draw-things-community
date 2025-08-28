@@ -49,7 +49,7 @@ public enum SamplerModifier: String, Codable {
   case kontext = "kontext"
 }
 
-public struct LoRAConfiguration: Equatable {
+public struct LoRAConfiguration: Equatable, Codable {
   public enum Mode: String, Codable {
     case all
     case base
@@ -78,10 +78,14 @@ public struct DeviceProperties {
   public var isFreadPreferred: Bool
   public var memoryCapacity: MemoryCapacity
   public var isNHWCPreferred: Bool
-  public init(isFreadPreferred: Bool, memoryCapacity: MemoryCapacity, isNHWCPreferred: Bool) {
+  public var cacheUri: URL
+  public init(
+    isFreadPreferred: Bool, memoryCapacity: MemoryCapacity, isNHWCPreferred: Bool, cacheUri: URL
+  ) {
     self.isFreadPreferred = isFreadPreferred
     self.memoryCapacity = memoryCapacity
     self.isNHWCPreferred = isNHWCPreferred
+    self.cacheUri = cacheUri
   }
 }
 

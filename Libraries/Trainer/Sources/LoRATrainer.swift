@@ -2832,7 +2832,8 @@ public struct LoRATrainer {
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(
-                  isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true),
+                  isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
+                  cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(
@@ -2877,7 +2878,8 @@ public struct LoRATrainer {
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(
-                  isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true),
+                  isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
+                  cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(
@@ -2914,7 +2916,8 @@ public struct LoRATrainer {
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
                   deviceProperties: DeviceProperties(
-                    isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true),
+                    isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
+                    cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
                   weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
                 c =
                   unetFixEncoder.vector(
@@ -2938,7 +2941,8 @@ public struct LoRATrainer {
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
                   deviceProperties: DeviceProperties(
-                    isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true),
+                    isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
+                    cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
                   weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
                 c =
                   unetFixEncoder.vector(
@@ -2966,7 +2970,8 @@ public struct LoRATrainer {
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(
-                  isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true),
+                  isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
+                  cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(
