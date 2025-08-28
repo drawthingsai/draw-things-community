@@ -83,18 +83,30 @@ public class JWTDecoder {
   }
 }
 
+public enum UserClass: String, Codable {
+  case plus = "plus"
+  case community = "community"
+  case background = "background"
+}
+
+public enum ConsumableType: String, Codable {
+  case boost = "boost"
+}
+
 // JWT Payload structure matching your token
 public struct JWTPayload: Codable {
   public let checksum: String
   public let stats: [String: Int]
   public let nonce: String
-  public let priority: String
   public let iss: String
   public let exp: Int
   // These are for the consumable.
   public let generationId: String?
   public let amount: Int?
-  public let consumableType: String?
+  public let consumableType: ConsumableType?
+  public let api: Bool?
+  public let userId: String?
+  public let userClass: UserClass?
 }
 
 enum JWTError: Error {

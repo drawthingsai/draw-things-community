@@ -162,25 +162,27 @@ public enum ComputeUnits {
         * Double(max(configuration.strength, 0.05)) * Double(batchSize)).rounded(.up))
   }
 
-  public static func threshold(for priority: String) -> Int {
+  public static func threshold(for priority: String?) -> Int {
     switch priority {
     case "community":
       return 15000  // around 120s
     case "plus":
       return 40000  // around 300s
+    case nil:
+      return 15000
     default:
       return 15000
     }
   }
 
   public static func threshold(
-    for priority: String, computeUnitPolicy: [String: Int]?, expirationTimestamp: Date?
+    for priority: String?, computeUnitPolicy: [String: Int]?, expirationTimestamp: Date?
   ) -> Int {
     // Check if we have a valid policy and it's not expired
     let currentTimestamp = Date()
     if let policy = computeUnitPolicy,
       let expiration = expirationTimestamp,
-      currentTimestamp < expiration,
+      currentTimestamp < expiration, let priority = priority,
       let policyValue = policy[priority]
     {
       return policyValue

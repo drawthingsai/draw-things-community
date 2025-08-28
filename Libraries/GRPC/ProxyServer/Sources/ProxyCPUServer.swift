@@ -52,22 +52,25 @@ public struct Worker {
 }
 
 extension Worker {
-  func executeTask(_ task: WorkTask, proxyMessageSigner: ProxyMessageSigner) async throws {
+  func executeTask(
+    _ task: WorkTask, proxyMessageSigner: ProxyMessageSigner, throttleQueueTimeoutSeconds: Int
+  ) async throws {
     logger.info(
       "Worker \(id) primaryPriority:\(primaryPriority) starting task  (Priority: \(task.priority))"
     )
     let taskQueueingTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
     logger.info(
-      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority)), generationId: \(task.payload.generationId)"
+      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority))"
     )
     defer { task.heartbeat.cancel() }
 
     // Check if task from throttle queue is over 1 hour old, reject if so (except boost tasks)
-    if task.priority == .background && task.payload.consumableType != "boost" {
+    if task.priority == .background && task.payload.consumableType != .boost {
       let taskAge = Date().timeIntervalSince(task.creationTimestamp)
-      if taskAge > 3600 {
+      if taskAge > Double(throttleQueueTimeoutSeconds) {
         let errorMessage = "Task rejected: enqueue time exceeded 1 hour (\(Int(taskAge))s)"
-        logger.info("Worker \(id): \(errorMessage) (Priority: \(task.priority))")
+        logger.info("user: \(task.payload.userId), \(errorMessage) (Priority: \(task.priority))")
+        // intentionally abort task from throttle queue over 1 hour
         let status = GRPCStatus(code: .aborted, message: errorMessage)
         task.promise.succeed(status)
         task.context.statusPromise.succeed(status)
@@ -110,13 +113,15 @@ extension Worker {
         let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
         let totalExecutionTimeMs = Date().timeIntervalSince(taskExecuteStartTimestamp) * 1000
         logger.info(
-          "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority)), generationId: \(task.payload.generationId)"
+          "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority))"
         )
-        logger.info("Succeed: {\"model\": \"\(task.model)\",\"images\":\(numberOfImages)}")
+        logger.info(
+          "Succeed: {\"model\": \"\(task.model)\", \"userid\": \"\(task.payload.userId)\",  \"generationId\": \"\(task.payload.generationId)\", \"images\":\(numberOfImages)}"
+        )
       }
-      let isTaskSuccessful = status.code == .ok
+      let isTaskSuccessful = (status.code == .ok) && (numberOfImages > 0)
 
-      if task.payload.consumableType == "boost", let amount = task.payload.amount,
+      if task.payload.consumableType == .boost, let amount = task.payload.amount,
         let generationId = task.payload.generationId
       {
         await proxyMessageSigner.completeBoost(
@@ -127,10 +132,12 @@ extension Worker {
       task.promise.succeed(status)
       task.context.statusPromise.succeed(status)
 
-      logger.info("Worker \(id) completed task successfully (Priority: \(task.priority))")
+      logger.info(
+        "Worker \(id) completed \"generationId\": \"\(task.payload.generationId)\" successfully (Priority: \(task.priority))"
+      )
 
     } catch {
-      if task.payload.consumableType == "boost", let amount = task.payload.amount,
+      if task.payload.consumableType == .boost, let amount = task.payload.amount,
         let generationId = task.payload.generationId
       {
         await proxyMessageSigner.completeBoost(
@@ -153,6 +160,7 @@ actor TaskQueue {
   private var backgroundPriorityTasks: [WorkTask] = []
   private var pendingRemoveWorkerId = Set<String>()
   private var workers: [String: Worker]
+  private(set) var availableWorkerCount: Int = 0
   private let logger: Logger
   var workerIds: [String] {
     return Array(workers.keys)
@@ -165,6 +173,7 @@ actor TaskQueue {
   init(workers: [Worker], logger: Logger) {
     self.logger = logger
     self.workers = Dictionary(uniqueKeysWithValues: workers.map { ($0.id, $0) })
+    self.availableWorkerCount = workers.count
 
     (workerAvailabilityStream, availabilityContinuation) = AsyncStream.makeStream(of: Worker.self)
     for worker in workers {
@@ -175,6 +184,7 @@ actor TaskQueue {
   func nextWorker() async -> Worker? {
     for await worker in workerAvailabilityStream {
       if workers[worker.id] != nil {
+        availableWorkerCount -= 1
         return worker
       } else {
         logger.info("skip removed worker:\(worker) from workerAvailabilityStream")
@@ -183,7 +193,31 @@ actor TaskQueue {
     return nil
   }
 
-  func nextTaskForWorker(_ worker: Worker) async -> WorkTask? {
+  func nextTaskForWorker(_ worker: Worker, highThreshold: Int, communityThreshold: Int) async
+    -> WorkTask?
+  {
+    // When free workers are very low, only process real and high priority tasks
+    while availableWorkerCount < highThreshold {
+      if let task = realPriorityTasks.first {
+        realPriorityTasks.removeFirst()
+        return task
+      } else if let task = highPriorityTasks.first {
+        highPriorityTasks.removeFirst()
+        return task
+      } else if availableWorkerCount >= communityThreshold {
+        if let task = lowPriorityTasks.first {
+          lowPriorityTasks.removeFirst()
+          return task
+        }
+      }
+      do {
+        try await Task.sleep(for: .milliseconds(5))
+      } catch {
+        logger.error("Task.sleep failed with error: \(error)")
+        continue
+      }
+    }
+
     // Check worker's primary priority queue first
     switch worker.primaryPriority {
     case .real:
@@ -252,6 +286,7 @@ actor TaskQueue {
       return
     }
     logger.info("add worker:\(worker) back to worker stream")
+    availableWorkerCount += 1
     availabilityContinuation.yield(worker)
   }
 
@@ -267,6 +302,7 @@ actor TaskQueue {
       logger.info("worker:\(worker) already exists in workers, skip adding")
       return
     }
+    availableWorkerCount += 1
     availabilityContinuation.yield(worker)
     logger.info("add worker:\(worker) to worker TaskQueue and stream")
   }
@@ -278,6 +314,9 @@ actor TaskQueue {
     }
     try? worker.client.disconnect()
     workers[worker.id] = nil
+    // Note: We can't know if the worker was free or busy when removed,
+    // but we ensure the count doesn't go negative
+    availableWorkerCount = max(0, availableWorkerCount - 1)
     logger.info("remove worker:\(worker) from worker TaskQueue")
   }
 
@@ -731,9 +770,12 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     await self.controlConfigs.addProcessedNonce(payload.nonce)
     let throttlePolicies = await controlConfigs.throttlePolicy
     for (key, stat) in payload.stats {
-      if let throttlePolicy = throttlePolicies[key], throttlePolicy < stat {
+      let effectivePolicy = getEffectiveThrottlePolicy(
+        for: key, payload: payload, throttlePolicies: throttlePolicies)
+
+      if let throttlePolicy = effectivePolicy, throttlePolicy < stat {
         logger.error(
-          "user made \(stat) requests, while policy only allow \(throttlePolicy) for \(key)"
+          "user \(payload.userId) made \(stat) requests, while policy only allow \(throttlePolicy) for \(key)"
         )
         return (
           false, "user failed to pass throttlePolicy, \(key) in \(throttlePolicy)", nil
@@ -794,16 +836,33 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     return (true, "", model)
   }
 
+  func getEffectiveThrottlePolicy(
+    for key: String, payload: JWTPayload, throttlePolicies: [String: Int]
+  ) -> Int? {
+    // API users without boost get special API limits
+    if payload.api == true && payload.consumableType != .boost {
+      let apiThrottlePolicyKey = payload.userClass == .plus ? "\(key)_api_plus" : "\(key)_api"
+      return throttlePolicies[apiThrottlePolicyKey] ?? throttlePolicies[key]
+    }
+
+    let priorityKey = payload.userClass == .plus ? "\(key)_plus" : key
+    return throttlePolicies[priorityKey] ?? throttlePolicies[key]
+  }
+
   func costThreshold(
     payload: JWTPayload, computeUnitPolicy: [String: Int]?, expirationTimestamp: Date?,
     computeUnitPerBoost: Int
   ) -> Int {
     let costThresholdFromPolicy = ComputeUnits.threshold(
-      for: payload.priority,
+      for: payload.userClass?.rawValue,
       computeUnitPolicy: computeUnitPolicy,
       expirationTimestamp: expirationTimestamp
     )
+
     let costThresholdFromBoost = (payload.amount ?? 0) * computeUnitPerBoost
+    logger.info(
+      "Proxy Server payload.amount: \(payload.amount), computeUnitPerBoost: \(computeUnitPerBoost), generation id: \(payload.generationId) and costThresholdFromBoost: 、(costThresholdFromBoost)"
+    )
     if costThresholdFromBoost > costThresholdFromPolicy {
       logger.info(
         "Proxy Server applying consumable threshold \(costThresholdFromBoost) for generation id: \(payload.generationId)"
@@ -851,7 +910,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       let (isValidRequest, message, model) = await isValidRequest(
         payload: payload, encodedBlob: encodedBlob, request: request)
       guard isValidRequest, let model = model else {
-        if payload.consumableType == "boost", let amount = payload.amount,
+        if payload.consumableType == .boost, let amount = payload.amount,
           let generationId = payload.generationId
         {
           logger.info(
@@ -860,6 +919,10 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
           await proxyMessageSigner.completeBoost(
             action: .cancel, generationId: generationId, amount: amount,
             logger: logger)
+        } else {
+          logger.info(
+            "isValidRequest cancel generationId:\( payload.generationId), without completeBoost, consumableType:\(payload.consumableType), amount:\(payload.amount), message:\(message) "
+          )
         }
         promise.fail(
           GRPCStatus(
@@ -868,7 +931,8 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       }
       let throttlePolicies = await controlConfigs.throttlePolicy
       let priority = taskPriority(
-        from: payload.priority, payload: payload, throttlePolicies: throttlePolicies)
+        from: payload.userClass, payload: payload,
+        throttlePolicies: throttlePolicies)
       // Enqueue task.
       let heartbeat = Task {
         while !Task.isCancelled {
@@ -883,9 +947,16 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       await taskQueue.addTask(task)
       if let worker = await taskQueue.nextWorker() {
         // Note that the extracted task may not be the ones we just enqueued.
-        if let nextTaskForWorker = await taskQueue.nextTaskForWorker(worker) {
+        let highThreshold = throttlePolicies["high_free_worker_threshold"] ?? 8
+        let communityThreshold = throttlePolicies["community_free_worker_threshold"] ?? 0
+        let throttleQueueTimeoutSeconds = throttlePolicies["throttle_queue_timeout_seconds"] ?? 3600
+        if let nextTaskForWorker = await taskQueue.nextTaskForWorker(
+          worker, highThreshold: highThreshold, communityThreshold: communityThreshold)
+        {
           do {
-            try await worker.executeTask(nextTaskForWorker, proxyMessageSigner: proxyMessageSigner)
+            try await worker.executeTask(
+              nextTaskForWorker, proxyMessageSigner: proxyMessageSigner,
+              throttleQueueTimeoutSeconds: throttleQueueTimeoutSeconds)
             logger.info("Task execution completed successfully for worker \(worker.id)")
           } catch {
             logger.error("Task execution failed for worker \(worker.id): \(error)")
@@ -901,10 +972,12 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     return promise.futureResult
   }
 
-  func taskPriority(from userClass: String, payload: JWTPayload, throttlePolicies: [String: Int])
+  func taskPriority(
+    from userClass: UserClass?, payload: JWTPayload, throttlePolicies: [String: Int]
+  )
     -> ProxyTaskPriority
   {
-    if payload.consumableType == "boost" {
+    if payload.consumableType == .boost {
       return .real
     }
 
@@ -914,7 +987,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       let daySoftLimitHigh = throttlePolicies["daily_soft_limit_high"],
       dayStat >= daySoftLimitLow
     {
-      if userClass == "plus" {
+      if userClass == .plus {
         if dayStat >= daySoftLimitHigh {
           logger.info("downgrade dt plus to background")
           return .background
@@ -927,13 +1000,13 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     }
 
     switch userClass {
-    case "plus":
+    case .plus:
       return .high
-    case "community":
+    case .community:
       return .low
-    case "background":
+    case .background:
       return .background
-    default:
+    case nil:
       return .low
     }
   }
@@ -1066,7 +1139,11 @@ public class ProxyCPUServer {
     self.controlConfigs = ControlConfigs(
       throttlePolicy: [
         "15_min": 300, "10_min": 200, "5_min": 100, "1_hour": 1000, "1_min": 30,
-        "24_hour": 5000, "daily_soft_limit_low": 500, "daily_soft_limit_high": 750,
+        "24_hour_plus": 5000, "24_hour": 1500, "daily_soft_limit_low": 500,
+        "daily_soft_limit_high": 750, "high_free_worker_threshold": 8,
+        "community_free_worker_threshold": 0,
+        "throttle_queue_timeout_seconds": 3600,
+        "24_hour_api_plus": 500, "24_hour_api": 100,
       ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath,
       nonceSizeLimit: nonceSizeLimit)
     self.proxyMessageSigner = ProxyMessageSigner()
