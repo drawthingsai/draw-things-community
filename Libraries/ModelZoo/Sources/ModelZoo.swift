@@ -625,7 +625,7 @@ public struct ModelZoo: DownloadZoo {
     "qwen_image_edit_1.0_q8p.ckpt":
       "06810ad2fa2f95835ee9b9b579f9a84435c8477c37614f00d814f066ec6d4539",
     "qwen_image_edit_1.0_q6p.ckpt":
-      "ca7cc367447d95b36d601c954158a488f53b5a67cca454aef79bcfef80b0785d",
+      "c816944982f8fba4ae0bcf36279f25564825386416f03088c4f223c9911407c5",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
