@@ -31,7 +31,7 @@ private func createTemporaryDirectory() -> String {
   return tempDirURL.path
 }
 
-private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenerator {
+private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalImageGenerator) {
   let tempDir = createTemporaryDirectory()
   let workspace = SQLiteWorkspace(
     filePath: "\(tempDir)/config.sqlite3", fileProtectionLevel: .noProtection)
@@ -84,12 +84,15 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> LocalImageGenera
       "<|vision_end|>": 151653, "<|vision_pad|>": 151654, "<|vision_start|>": 151652,
     ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>")
 
-  return LocalImageGenerator(
-    queue: queue, configurations: configurations, workspace: workspace, tokenizerV1: tokenizerV1,
-    tokenizerV2: tokenizerV2, tokenizerXL: tokenizerXL, tokenizerKandinsky: tokenizerKandinsky,
-    tokenizerT5: tokenizerT5, tokenizerPileT5: tokenizerPileT5,
-    tokenizerChatGLM3: tokenizerChatGLM3, tokenizerLlama3: tokenizerLlama3,
-    tokenizerUMT5: tokenizerUMT5, tokenizerQwen25: tokenizerQwen25)
+  return (
+    tempDir,
+    LocalImageGenerator(
+      queue: queue, configurations: configurations, workspace: workspace, tokenizerV1: tokenizerV1,
+      tokenizerV2: tokenizerV2, tokenizerXL: tokenizerXL, tokenizerKandinsky: tokenizerKandinsky,
+      tokenizerT5: tokenizerT5, tokenizerPileT5: tokenizerPileT5,
+      tokenizerChatGLM3: tokenizerChatGLM3, tokenizerLlama3: tokenizerLlama3,
+      tokenizerUMT5: tokenizerUMT5, tokenizerQwen25: tokenizerQwen25)
+  )
 }
 
 #if os(Linux)
@@ -309,6 +312,12 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Prefer to fread by overriding system preferences.")
   var freadPreferred = false
 
+  @Option(
+    name: .long,
+    help: "The directory where some cached files can be stored."
+  )
+  var cacheUri: String?
+
   #if os(Linux)
     @Flag(help: "Supervise the server so it restarts upon a internal crash.")
     var supervised = false
@@ -469,7 +478,12 @@ struct gRPCServerCLI: ParsableCommand {
       try! group.syncShutdownGracefully()
     }
     let queue = DispatchQueue(label: "com.draw-things.edit", qos: .userInteractive)
-    let localImageGenerator = createLocalImageGenerator(queue: queue)
+    let (tempDir, localImageGenerator) = createLocalImageGenerator(queue: queue)
+    if let cacheUri = cacheUri {
+      DeviceCapability.cacheUri = URL(fileURLWithPath: cacheUri)
+    } else {
+      DeviceCapability.cacheUri = URL(fileURLWithPath: tempDir)
+    }
     let cancellationMonitor: ImageGenerationServiceImpl.CancellationMonitor?
     if let cancellationWarningTimeout = cancellationWarningTimeout,
       let cancellationCrashTimeout = cancellationCrashTimeout
