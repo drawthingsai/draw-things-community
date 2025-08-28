@@ -524,6 +524,11 @@ func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
         etUncond = DynamicGraph.Tensor<FloatType>(from: etUncondF32 .* stStar)
       }
       et = etUncond + textGuidanceScale * (etCond - etUncond)
+      /*
+      let etNorm = et.reduced(.norm2, axis: [3])
+      let etCondNorm = etCond.reduced(.norm2, axis: [3])
+      et = (etCondNorm ./ etNorm) .* et
+       */
     }
   } else {
     var etOut = etOut
