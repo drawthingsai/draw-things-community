@@ -623,7 +623,7 @@ public struct ModelZoo: DownloadZoo {
     "qwen_2.5_vl_7b_vit_f16.ckpt":
       "e670fe5e19d02d3bce73bb655824855869ad135a21ba88170966f13700a60504",
     "qwen_image_edit_1.0_q8p.ckpt":
-      "06810ad2fa2f95835ee9b9b579f9a84435c8477c37614f00d814f066ec6d4539",
+      "3e79e7b19b2ca152c7a13feeec4ba8545d383d9375a8f9072db10d364b484d6d",
     "qwen_image_edit_1.0_q6p.ckpt":
       "c816944982f8fba4ae0bcf36279f25564825386416f03088c4f223c9911407c5",
   ]
