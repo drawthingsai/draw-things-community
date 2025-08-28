@@ -12,12 +12,15 @@ public struct MultiLineAttentionCLIPTokenizer {
 
 extension MultiLineAttentionCLIPTokenizer: Tokenizer {
   var vocabulary: [String: Int32] { attention.vocabulary }
-  public func tokenize(text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?) -> (
+  public func tokenize(
+    text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?, addSpecialTokens: Bool
+  ) -> (
     [String], [Int32], [Float], [String?], [Int]
   ) {
     guard !text.isEmpty else {
       var (strs, ids, weights, canonicals, _) = attention.tokenize(
-        text: "", truncation: false, maxLength: 0, paddingToken: paddingToken)
+        text: "", truncation: false, maxLength: 0, paddingToken: paddingToken,
+        addSpecialTokens: addSpecialTokens)
       // We have to get correct lengths of each.
       let lengthOfEach = [ids.count - 2]
       if truncation {
@@ -56,7 +59,8 @@ extension MultiLineAttentionCLIPTokenizer: Tokenizer {
     var lengthOfEach = [Int]()
     for (i, line) in lines.enumerated() {
       var (strs, ids, weights, canonicals, _) = attention.tokenize(
-        text: String(line), truncation: false, maxLength: 0, paddingToken: paddingToken)
+        text: String(line), truncation: false, maxLength: 0, paddingToken: paddingToken,
+        addSpecialTokens: addSpecialTokens)
       lengthOfEach.append(ids.count - 2)  // Remove start / end regardless.
       if i > 0 {
         strs.removeFirst()

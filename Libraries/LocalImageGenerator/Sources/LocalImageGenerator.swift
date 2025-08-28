@@ -958,11 +958,11 @@ extension LocalImageGenerator {
     let (_, unconditionalTokens, _, _, _) = tokenizerKandinsky.tokenize(
       text: negativePromptForImagePrior ? "" : negativeText, truncation: true, maxLength: 77)
     let (_, CLIPTokens, _, _, lengthsOfCond) = tokenizerV1.tokenize(
-      text: text, truncation: true, maxLength: 77, paddingToken: 0)
+      text: text, truncation: true, maxLength: 77, paddingToken: 0, addSpecialTokens: true)
     let (_, unconditionalCLIPTokens, _, _, lengthsOfUncond) = tokenizerV1.tokenize(
-      text: negativeText, truncation: true, maxLength: 77, paddingToken: 0)
+      text: negativeText, truncation: true, maxLength: 77, paddingToken: 0, addSpecialTokens: true)
     let (_, zeroCLIPTokens, _, _, _) = tokenizerV1.tokenize(
-      text: "", truncation: true, maxLength: 77, paddingToken: 0)
+      text: "", truncation: true, maxLength: 77, paddingToken: 0, addSpecialTokens: true)
     let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [2 * 77], of: Int32.self)
     let positionTensor = graph.variable(.CPU, format: .NHWC, shape: [2 * 77], of: Int32.self)
     let CLIPTokensTensor = graph.variable(.CPU, format: .NHWC, shape: [3 * 77], of: Int32.self)
@@ -1004,7 +1004,8 @@ extension LocalImageGenerator {
   }
   private func tokenize(
     graph: DynamicGraph, tokenizer: Tokenizer & TextualInversionPoweredTokenizer,
-    text: String, negativeText: String, paddingToken: Int32?, conditionalLength: Int,
+    text: String, negativeText: String, paddingToken: Int32?, addSpecialTokens: Bool,
+    conditionalLength: Int,
     modifier: TextualInversionZoo.Modifier, potentials: [String], startLength: Int = 1,
     endLength: Int = 1, maxLength: Int = 77, paddingLength: Int = 77, minPadding: Int = 0
   ) -> (
@@ -1017,9 +1018,11 @@ extension LocalImageGenerator {
     let paddingLength = max(maxLength, paddingLength)
     var (_, unconditionalTokens, unconditionalAttentionWeights, _, lengthsOfUncond) =
       tokenizer.tokenize(
-        text: negativeText, truncation: false, maxLength: paddingLength, paddingToken: paddingToken)
+        text: negativeText, truncation: false, maxLength: paddingLength, paddingToken: paddingToken,
+        addSpecialTokens: addSpecialTokens)
     var (_, tokens, attentionWeights, _, lengthsOfCond) = tokenizer.tokenize(
-      text: text, truncation: false, maxLength: paddingLength, paddingToken: paddingToken)
+      text: text, truncation: false, maxLength: paddingLength, paddingToken: paddingToken,
+      addSpecialTokens: addSpecialTokens)
     var unconditionalTokensCount = unconditionalTokens.count
     // If textual inversion is multivector, add the count.
     for token in unconditionalTokens {
@@ -1090,9 +1093,11 @@ extension LocalImageGenerator {
       tokensCount += minPadding
       (_, unconditionalTokens, unconditionalAttentionWeights, _, lengthsOfUncond) =
         tokenizer.tokenize(
-          text: negativeText, truncation: true, maxLength: tokenLength, paddingToken: paddingToken)
+          text: negativeText, truncation: true, maxLength: tokenLength, paddingToken: paddingToken,
+          addSpecialTokens: addSpecialTokens)
       (_, tokens, attentionWeights, _, lengthsOfCond) = tokenizer.tokenize(
-        text: text, truncation: true, maxLength: tokenLength, paddingToken: paddingToken)
+        text: text, truncation: true, maxLength: tokenLength, paddingToken: paddingToken,
+        addSpecialTokens: addSpecialTokens)
     }
     // shift the token around to include the textual inversion, also record which textual inversion at which range.
     var unconditionalTextualInversionRanges = [(String, Range<Int>)]()
@@ -1311,11 +1316,13 @@ extension LocalImageGenerator {
     case .v1:
       return tokenize(
         graph: graph, tokenizer: tokenizerV1, text: text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials)
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 768, modifier: .clipL,
+        potentials: potentials)
     case .v2, .svdI2v:
       return tokenize(
         graph: graph, tokenizer: tokenizerV2, text: text, negativeText: negativeText,
-        paddingToken: 0, conditionalLength: 1024, modifier: .clipL, potentials: potentials)
+        paddingToken: 0, addSpecialTokens: true, conditionalLength: 1024, modifier: .clipL,
+        potentials: potentials)
     case .kandinsky21:
       let (tokenTensors, positionTensors, lengthsOfUncond, lengthsOfCond) = kandinskyTokenize(
         graph: graph, text: text, negativeText: negativeText,
@@ -1328,7 +1335,8 @@ extension LocalImageGenerator {
       let tokenizerV1 = tokenizerV1
       var result = tokenize(
         graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials)
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 768, modifier: .clipL,
+        potentials: potentials)
       assert(result.7 >= 77 && result.8 >= 77)
       let promptWithTemplate =
         "<|start_header_id|>system<|end_header_id|>\n\nDescribe the video by detailing the following aspects: 1. The main content and theme of the video.2. The color, shape, size, texture, quantity, text, and spatial relationships of the objects.3. Actions, events, behaviors temporal relationships, physical movement changes of the objects.4. background environment, light, style and atmosphere.5. camera angles, movements, and transitions used in the video:<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n\(text)<|eot_id|>"
@@ -1339,7 +1347,8 @@ extension LocalImageGenerator {
       ) = tokenize(
         graph: graph, tokenizer: tokenizerLlama3, text: promptWithTemplate,
         negativeText: negativePromptWithTemplate,
-        paddingToken: nil, conditionalLength: 4096, modifier: .llama3, potentials: potentials,
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 4096, modifier: .llama3,
+        potentials: potentials,
         startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
       result.0 = llama3Tokens + result.0
       result.7 = tokenLengthsUncond - 95  // Remove the leading template.
@@ -1348,7 +1357,8 @@ extension LocalImageGenerator {
     case .wan21_14b, .wan21_1_3b:
       return tokenize(
         graph: graph, tokenizer: tokenizerUMT5, text: text, negativeText: negativeText,
-        paddingToken: 0, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
+        paddingToken: 0, addSpecialTokens: true, conditionalLength: 4096, modifier: .t5xxl,
+        potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
     case .qwenImage:
       if modifier == .kontext {
@@ -1359,7 +1369,8 @@ extension LocalImageGenerator {
         var result = tokenize(
           graph: graph, tokenizer: tokenizerQwen25, text: promptWithTemplate,
           negativeText: negativePromptWithTemplate,
-          paddingToken: nil, conditionalLength: 3584, modifier: .qwen25, potentials: potentials,
+          paddingToken: nil, addSpecialTokens: false, conditionalLength: 3584, modifier: .qwen25,
+          potentials: potentials,
           startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
         result.7 = result.7 - 64
         result.8 = result.8 - 64
@@ -1372,7 +1383,8 @@ extension LocalImageGenerator {
         var result = tokenize(
           graph: graph, tokenizer: tokenizerQwen25, text: promptWithTemplate,
           negativeText: negativePromptWithTemplate,
-          paddingToken: nil, conditionalLength: 3584, modifier: .qwen25, potentials: potentials,
+          paddingToken: nil, addSpecialTokens: false, conditionalLength: 3584, modifier: .qwen25,
+          potentials: potentials,
           startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
         result.7 = result.7 - 34
         result.8 = result.8 - 34
@@ -1383,7 +1395,8 @@ extension LocalImageGenerator {
       tokenizerV1.textualInversions = []
       var result = tokenize(
         graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials,
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 768, modifier: .clipL,
+        potentials: potentials,
         maxLength: 248, paddingLength: 248)
       var tokenizerV2 = tokenizerXL
       tokenizerV2.textualInversions = []
@@ -1391,7 +1404,8 @@ extension LocalImageGenerator {
         tokens, positions, embedMask, injectedEmbeddings, _, _, _, _, _, _, _
       ) = tokenize(
         graph: graph, tokenizer: tokenizerV2, text: openClipG ?? text, negativeText: negativeText,
-        paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials,
+        paddingToken: 0, addSpecialTokens: true, conditionalLength: 1280, modifier: .clipG,
+        potentials: potentials,
         maxLength: 218, paddingLength: 218)
       result.0 = result.0 + tokens
       result.1 = result.1 + positions
@@ -1402,7 +1416,8 @@ extension LocalImageGenerator {
         t5LengthsOfUncond, t5LengthsOfCond
       ) = tokenize(
         graph: graph, tokenizer: tokenizerT5, text: t5 ?? text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 4096, modifier: .t5xxl,
+        potentials: potentials,
         maxLength: paddedTextEncodingLength, paddingLength: paddedTextEncodingLength)
       result.0 = result.0 + t5Tokens
       result.2 = result.2 + t5EmbedMask
@@ -1412,7 +1427,8 @@ extension LocalImageGenerator {
         llama3LengthsOfCond
       ) = tokenize(
         graph: graph, tokenizer: tokenizerLlama3, text: text, negativeText: negativeText,
-        paddingToken: 128009, conditionalLength: 4096, modifier: .llama3, potentials: potentials,
+        paddingToken: 128009, addSpecialTokens: true, conditionalLength: 4096, modifier: .llama3,
+        potentials: potentials,
         startLength: 0, endLength: 0, maxLength: paddedTextEncodingLength,
         paddingLength: paddedTextEncodingLength)
       result.0 = result.0 + llama3Tokens
@@ -1425,13 +1441,15 @@ extension LocalImageGenerator {
       // The difference between this and SDXL: paddingToken is no long '!' (indexed by 0) but unknown.
       return tokenize(
         graph: graph, tokenizer: tokenizerXL, text: text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 1280, modifier: .clipG,
+        potentials: potentials)
     case .sdxlBase, .sdxlRefiner, .ssd1b:
       switch textEncoderVersion {
       case .chatglm3_6b:
         var result = tokenize(
           graph: graph, tokenizer: tokenizerChatGLM3, text: text, negativeText: negativeText,
-          paddingToken: nil, conditionalLength: 4096, modifier: .chatglm3_6b,
+          paddingToken: nil, addSpecialTokens: true, conditionalLength: 4096,
+          modifier: .chatglm3_6b,
           potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
         result.7 = max(256, result.7 + 2)
         result.8 = max(256, result.8 + 2)
@@ -1442,10 +1460,12 @@ extension LocalImageGenerator {
         tokenizerV1.textualInversions = tokenizerV2.textualInversions
         var result = tokenize(
           graph: graph, tokenizer: tokenizerV2, text: text, negativeText: negativeText,
-          paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
+          paddingToken: 0, addSpecialTokens: true, conditionalLength: 1280, modifier: .clipG,
+          potentials: potentials)
         let (tokens, _, embedMask, injectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
           graph: graph, tokenizer: tokenizerV1, text: text, negativeText: negativeText,
-          paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials)
+          paddingToken: nil, addSpecialTokens: true, conditionalLength: 768, modifier: .clipL,
+          potentials: potentials)
         result.0 = tokens + result.0
         result.2 = embedMask + result.2
         result.3 = injectedEmbeddings + result.3
@@ -1454,25 +1474,29 @@ extension LocalImageGenerator {
     case .pixart:
       return tokenize(
         graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 4096, modifier: .t5xxl,
+        potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
     case .auraflow:
       return tokenize(
         graph: graph, tokenizer: tokenizerPileT5, text: text, negativeText: negativeText,
-        paddingToken: 1, conditionalLength: 2048, modifier: .pilet5xl, potentials: potentials,
+        paddingToken: 1, addSpecialTokens: true, conditionalLength: 2048, modifier: .pilet5xl,
+        potentials: potentials,
         startLength: 0, maxLength: 0, paddingLength: 0)
     case .flux1:
       let tokenizerV1 = tokenizerV1
       var result = tokenize(
         graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials)
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 768, modifier: .clipL,
+        potentials: potentials)
       assert(result.7 >= 77 && result.8 >= 77)
       let (
         t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, tokenLengthUncond, tokenLengthCond,
         _, _
       ) = tokenize(
         graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 4096, modifier: .t5xxl,
+        potentials: potentials,
         maxLength: paddedTextEncodingLength, paddingLength: paddedTextEncodingLength,
         minPadding: paddedTextEncodingLength == 0 ? 1 : 0)
       result.0 = t5Tokens + result.0
@@ -1487,13 +1511,15 @@ extension LocalImageGenerator {
       tokenizerV1.textualInversions = tokenizerV2.textualInversions
       var result = tokenize(
         graph: graph, tokenizer: tokenizerV2, text: openClipG ?? text, negativeText: negativeText,
-        paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
+        paddingToken: 0, addSpecialTokens: true, conditionalLength: 1280, modifier: .clipG,
+        potentials: potentials)
       assert(result.7 >= 77 && result.8 >= 77)
       let (
         tokens, _, embedMask, injectedEmbeddings, _, _, _, tokenLengthUncond, tokenLengthCond, _, _
       ) = tokenize(
         graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials,
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 768, modifier: .clipL,
+        potentials: potentials,
         paddingLength: max(result.7, result.8))
       result.0 = tokens + result.0
       result.2 = embedMask + result.2
@@ -1502,7 +1528,8 @@ extension LocalImageGenerator {
         // We need to redo this for initial result from OpenCLIP G to make sure they are aligned.
         result = tokenize(
           graph: graph, tokenizer: tokenizerV2, text: openClipG ?? text, negativeText: negativeText,
-          paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials,
+          paddingToken: 0, addSpecialTokens: true, conditionalLength: 1280, modifier: .clipG,
+          potentials: potentials,
           paddingLength: max(tokenLengthUncond, tokenLengthCond))
         result.0 = tokens + result.0
         result.2 = embedMask + result.2
@@ -1513,7 +1540,8 @@ extension LocalImageGenerator {
       if T5TextEncoder {
         let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
           graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
-          paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials)
+          paddingToken: nil, addSpecialTokens: true, conditionalLength: 4096, modifier: .t5xxl,
+          potentials: potentials)
         result.0 = result.0 + t5Tokens
         result.2 = result.2 + t5EmbedMask
         result.3 = result.3 + t5InjectedEmbeddings
@@ -1526,13 +1554,15 @@ extension LocalImageGenerator {
       tokenizerV1.textualInversions = tokenizerV2.textualInversions
       var result = tokenize(
         graph: graph, tokenizer: tokenizerV2, text: openClipG ?? text, negativeText: negativeText,
-        paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials)
+        paddingToken: 0, addSpecialTokens: true, conditionalLength: 1280, modifier: .clipG,
+        potentials: potentials)
       assert(result.7 >= 77 && result.8 >= 77)
       let (
         tokens, _, embedMask, injectedEmbeddings, _, _, _, tokenLengthUncond, tokenLengthCond, _, _
       ) = tokenize(
         graph: graph, tokenizer: tokenizerV1, text: clipL ?? text, negativeText: negativeText,
-        paddingToken: nil, conditionalLength: 768, modifier: .clipL, potentials: potentials,
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 768, modifier: .clipL,
+        potentials: potentials,
         paddingLength: max(result.7, result.8))
       result.0 = tokens + result.0
       result.2 = embedMask + result.2
@@ -1541,7 +1571,8 @@ extension LocalImageGenerator {
         // We need to redo this for initial result from OpenCLIP G to make sure they are aligned.
         result = tokenize(
           graph: graph, tokenizer: tokenizerV2, text: openClipG ?? text, negativeText: negativeText,
-          paddingToken: 0, conditionalLength: 1280, modifier: .clipG, potentials: potentials,
+          paddingToken: 0, addSpecialTokens: true, conditionalLength: 1280, modifier: .clipG,
+          potentials: potentials,
           paddingLength: max(tokenLengthUncond, tokenLengthCond))
         result.0 = tokens + result.0
         result.2 = embedMask + result.2
@@ -1552,7 +1583,8 @@ extension LocalImageGenerator {
       if T5TextEncoder {
         let (t5Tokens, _, t5EmbedMask, t5InjectedEmbeddings, _, _, _, _, _, _, _) = tokenize(
           graph: graph, tokenizer: tokenizerT5, text: text, negativeText: negativeText,
-          paddingToken: nil, conditionalLength: 4096, modifier: .t5xxl, potentials: potentials,
+          paddingToken: nil, addSpecialTokens: true, conditionalLength: 4096, modifier: .t5xxl,
+          potentials: potentials,
           maxLength: 256)
         result.0 = result.0 + t5Tokens
         result.2 = result.2 + t5EmbedMask

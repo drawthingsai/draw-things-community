@@ -34,12 +34,15 @@ extension TextualInversionAttentionCLIPTokenizer: Tokenizer & TextualInversionPo
     return Int(token) >= vocabulary.count
   }
   var vocabulary: [String: Int32] { multiLineAttention.vocabulary }
-  public func tokenize(text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?) -> (
+  public func tokenize(
+    text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?, addSpecialTokens: Bool
+  ) -> (
     [String], [Int32], [Float], [String?], [Int]
   ) {
     guard !text.isEmpty else {
       return multiLineAttention.tokenize(
-        text: text, truncation: truncation, maxLength: maxLength, paddingToken: paddingToken)
+        text: text, truncation: truncation, maxLength: maxLength, paddingToken: paddingToken,
+        addSpecialTokens: addSpecialTokens)
     }
     var i = text.startIndex
     var tiStart = text.endIndex
@@ -80,7 +83,8 @@ extension TextualInversionAttentionCLIPTokenizer: Tokenizer & TextualInversionPo
     }
     let newText = characters.joined()
     var (strs, ids, weights, canonicals, lengthOfEach) = multiLineAttention.tokenize(
-      text: newText, truncation: truncation, maxLength: maxLength, paddingToken: paddingToken)
+      text: newText, truncation: truncation, maxLength: maxLength, paddingToken: paddingToken,
+      addSpecialTokens: addSpecialTokens)
     let tiToken = Int32(vocabulary.count)
     let oldIds = ids
     for (i, id) in oldIds.enumerated() {

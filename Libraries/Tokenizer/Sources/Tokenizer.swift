@@ -1,7 +1,9 @@
 public protocol Tokenizer {
   var endToken: Int32 { get }
   var unknownToken: Int32 { get }
-  func tokenize(text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?) -> (
+  func tokenize(
+    text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?, addSpecialTokens: Bool
+  ) -> (
     [String], [Int32], [Float], [String?], [Int]
   )
 }
@@ -11,7 +13,9 @@ extension Tokenizer {
     //  return: (strs, tokens, weights, canonicals, lengthsOfEach)
     [String], [Int32], [Float], [String?], [Int]
   ) {
-    tokenize(text: text, truncation: truncation, maxLength: maxLength, paddingToken: nil)
+    tokenize(
+      text: text, truncation: truncation, maxLength: maxLength, paddingToken: nil,
+      addSpecialTokens: true)
   }
 }
 
@@ -24,7 +28,8 @@ public protocol TextualInversionPoweredTokenizer {
 extension Tokenizer {
   public func automaticLineBreak(_ prompt: String, maxLength: Int = 77) -> String {
     let (_, tokens, _, _, _) = tokenize(
-      text: prompt, truncation: false, maxLength: maxLength, paddingToken: endToken)
+      text: prompt, truncation: false, maxLength: maxLength, paddingToken: endToken,
+      addSpecialTokens: true)
     if tokens.count > maxLength {
       var indexOfWord = -1
       // -1 means no word, 0 means first word, to align the real index in the array which is 0 base

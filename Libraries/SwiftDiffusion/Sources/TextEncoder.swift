@@ -1787,6 +1787,7 @@ extension TextEncoder {
     var tokenLength = tokens[0].shape[0] / 2
     var tokens = tokens
     var injectedEmbeddings = [DynamicGraph.Tensor<FloatType>]()
+    var referenceSize: (height: Int, width: Int) = (height: 0, width: 0)
     if let image = image.first, filePaths.count > 1 {
       let mean = graph.variable(
         Tensor<FloatType>(
@@ -1909,6 +1910,7 @@ extension TextEncoder {
         heads: 16, MLP: 3420, batchSize: 1, usesFlashAttention: usesFlashAttention)
       vit.compile(inputs: input, rotTensor)
       if !weightsCache.detach(filePaths[1], to: vit.parameters) {
+        TensorData.makeExternalData(for: filePaths[1], graph: graph)
         graph.openStore(
           filePaths[1], flags: .readOnly,
           externalStore: TensorData.externalStore(filePath: filePaths[1])
@@ -2056,6 +2058,7 @@ extension TextEncoder {
             (tokenLength + positivePromptPad)..<(tokenLength + positivePromptPad + resultShape[0]),
             0..<resultShape[1]] = c
           tokenLengthCond += resultShape[0] - 1
+          referenceSize = (height: gridY / 2, gridX / 2)
         } else {
           for i in 0..<oldTokenLength {
             token[i + tokenLength] = tokens[0][i + oldTokenLength]
@@ -2086,7 +2089,10 @@ extension TextEncoder {
     }
     let tokensTensorGPU = tokens[0].toGPU(0)
     let rotaryTensorGPU = graph.variable(
-      QwenVLRotaryEmbedding(sequenceLength: tokenLength, of: FloatType.self).toGPU(0))
+      QwenVLRotaryEmbedding(
+        sequenceLength: tokenLength, token: tokens[0], referenceSize: referenceSize,
+        of: FloatType.self
+      ).toGPU(0))
     let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
     textModel.compile(
       inputs: [tokensTensorGPU, rotaryTensorGPU, causalAttentionMaskGPU] + injectedEmbeddings)

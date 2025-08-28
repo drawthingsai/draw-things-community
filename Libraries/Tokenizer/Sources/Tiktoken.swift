@@ -400,10 +400,12 @@ public struct TiktokenTokenizer {
 }
 
 extension TiktokenTokenizer: Tokenizer {
-  public func tokenize(text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?) -> (
+  public func tokenize(
+    text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?, addSpecialTokens: Bool
+  ) -> (
     [String], [Int32], [Float], [String?], [Int]
   ) {
-    var (ids, strs) = tokenize(text: text, addSpecialTokens: true)
+    var (ids, strs) = tokenize(text: text, addSpecialTokens: addSpecialTokens)
     let lengthOfTokens = ids.count
     let paddingToken = paddingToken ?? unknownToken
     if ids.count < maxLength {

@@ -16,7 +16,9 @@ public struct SentencePieceTokenizer: Tokenizer {
     self.tokenShift = tokenShift
   }
 
-  public func tokenize(text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?) -> (
+  public func tokenize(
+    text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?, addSpecialTokens: Bool
+  ) -> (
     [String], [Int32], [Float], [String?], [Int]
   ) {
     let result = sentencePiece.encode(text)

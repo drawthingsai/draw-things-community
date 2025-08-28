@@ -653,7 +653,9 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "qwen_image_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
-      mmdit: .init(qkNorm: true, dualAttentionLayers: [], activationFfnScaling: [59: 2]),
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
         "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
     ),
@@ -663,7 +665,9 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "qwen_image_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
-      mmdit: .init(qkNorm: true, dualAttentionLayers: [], activationFfnScaling: [59: 2]),
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
         "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
     ),

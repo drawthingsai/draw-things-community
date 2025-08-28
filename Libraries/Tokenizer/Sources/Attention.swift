@@ -12,12 +12,15 @@ public struct AttentionCLIPTokenizer {
 
 extension AttentionCLIPTokenizer: Tokenizer {
   var vocabulary: [String: Int32] { CLIP.vocabulary }
-  public func tokenize(text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?) -> (
+  public func tokenize(
+    text: String, truncation: Bool, maxLength: Int, paddingToken: Int32?, addSpecialTokens: Bool
+  ) -> (
     [String], [Int32], [Float], [String?], [Int]
   ) {
     guard !text.isEmpty else {
       return CLIP.tokenize(
-        text: text, truncation: truncation, maxLength: maxLength, paddingToken: paddingToken)
+        text: text, truncation: truncation, maxLength: maxLength, paddingToken: paddingToken,
+        addSpecialTokens: addSpecialTokens)
     }
     // Should support same syntax:
     // (abc) - increases attention to abc by a mupltiplier of 1.1
@@ -85,7 +88,8 @@ extension AttentionCLIPTokenizer: Tokenizer {
     characterWeights.reverse()
     let text = characters.reversed().joined().lowercased()
     let (strs, ids, _, canonicals, _) = CLIP.tokenize(
-      text: text, truncation: truncation, maxLength: maxLength, paddingToken: paddingToken)
+      text: text, truncation: truncation, maxLength: maxLength, paddingToken: paddingToken,
+      addSpecialTokens: addSpecialTokens)
     // Looking back each strs in the text to find its character weights. Note that this is quadratic, but we have 77 as length.
     var tokenWeights = [Float](repeating: 1, count: ids.count)
     var tokenLength = ids.count
