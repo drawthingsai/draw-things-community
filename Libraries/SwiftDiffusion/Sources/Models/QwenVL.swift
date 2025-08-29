@@ -479,8 +479,8 @@ func QwenVLViTRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   if gridY % 8 > 0, gridX % 8 > 0 {
     let y0 = gridY / 8
     let x0 = gridX / 8
-    for y1 in 0..<4 {
-      for x1 in 0..<4 {
+    for y1 in 0..<(gridY % 8) / 2 {
+      for x1 in 0..<(gridX % 8) / 2 {
         for y2 in 0..<2 {
           for x2 in 0..<2 {
             for k in 0..<20 {
