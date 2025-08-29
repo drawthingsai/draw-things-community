@@ -766,8 +766,13 @@ extension UNetFixedEncoder {
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c] + referenceImages + restInputs)
+      var suffix = ""
+      // If we have reference image, we need to load x_embedder weights, differentiate that.
+      if referenceImages.count > 0 {
+        suffix += ":ref"
+      }
       let loadedFromWeightsCache = weightsCache.detach(
-        "\(filePath):[fixed]", to: unetFixed.parameters)
+        "\(filePath):[fixed]\(suffix)", to: unetFixed.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
@@ -815,7 +820,7 @@ extension UNetFixedEncoder {
         $0.as(of: FloatType.self)
       }
       if lora.isEmpty || shouldRunLoRASeparately {
-        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+        weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
       }
       var referenceSizes: [(height: Int, width: Int)]
       if referenceImages.count > 0 {
@@ -1372,8 +1377,17 @@ extension UNetFixedEncoder {
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(
         inputs: [c] + referenceImages + otherInputs)
+      var suffix = ""
+      // If we have reference image, we need to load x_embedder weights, differentiate that.
+      if referenceImages.count > 0 {
+        suffix += ":ref"
+      }
+      // If we don't need to compute timestep embed, adding the suffix.
+      if timestepEmbeddingVectors != nil {
+        suffix += ":lite"
+      }
       let loadedFromWeightsCache = weightsCache.detach(
-        "\(filePath):[fixed]", to: unetFixed.parameters)
+        "\(filePath):[fixed]\(suffix)", to: unetFixed.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
@@ -1421,7 +1435,7 @@ extension UNetFixedEncoder {
         inputs: c, referenceImages + otherInputs
       )
       if lora.isEmpty || shouldRunLoRASeparately {
-        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+        weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
       }
       if let timestepEmbeddingVectors = timestepEmbeddingVectors {
         let shape = timestepEmbeddingVectors.shape
