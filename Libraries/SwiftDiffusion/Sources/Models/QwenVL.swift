@@ -101,12 +101,12 @@ private func SelfAttention(
   var keys = tokeys(x).reshaped([b, t, hk, k])
   var queries = toqueries(x).reshaped([b, t, h, k])
   var values = tovalues(x).reshaped([b, t, hk, k])
-  queries = Functional.cmul(left: queries, right: rot)
-  keys = Functional.cmul(left: keys, right: rot)
+  queries = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: queries, right: rot)
+  keys = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: keys, right: rot)
   var out: Model.IO
   if usesFlashAttention {
     out = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), isCausal: true, hasAttentionMask: true)(
+      scale: 1, isCausal: true, hasAttentionMask: true)(
         queries, keys, values, causalAttentionMask
       ).reshaped([b * t, h * k])
   } else {
@@ -128,7 +128,7 @@ private func SelfAttention(
       if let last = outs.last {
         dot.add(dependencies: [last])
       }
-      dot = (1.0 / Float(k).squareRoot()) * dot + causalAttentionMask
+      dot = dot + causalAttentionMask
       dot = dot.reshaped([b * (h / hk) * t, t])
       dot = dot.softmax()
       dot = dot.reshaped([b, h / hk, t, t])
