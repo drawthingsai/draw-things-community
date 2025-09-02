@@ -111,20 +111,24 @@ private func SelfAttention(
       ).reshaped([b * t, h * k])
   } else {
     values = values.transposed(1, 2)
-    queries = ((1.0 / Float(k).squareRoot()) * queries).transposed(1, 2)
+    queries = queries.transposed(1, 2)
     keys = keys.transposed(1, 2)
     var outs = [Model.IO]()
     for i in 0..<hk {
       let query = queries.reshaped(
-        [b, h / hk, t, k], offset: [0, i * (h / hk), 0, 0], strides: [h * t * k, t * k, k, 1])
+        [b, h / hk, t, k], offset: [0, i * (h / hk), 0, 0], strides: [h * t * k, t * k, k, 1]
+      ).contiguous()
       let key = keys.reshaped(
-        [b, 1, t, k], offset: [0, i, 0, 0], strides: [hk * t * k, t * k, k, 1])
+        [b, 1, t, k], offset: [0, i, 0, 0], strides: [hk * t * k, t * k, k, 1]
+      ).contiguous()
       let value = values.reshaped(
-        [b, 1, t, k], offset: [0, i, 0, 0], strides: [hk * t * k, t * k, k, 1])
-      var dot = Matmul(transposeB: (2, 3))(query, key) + causalAttentionMask
+        [b, 1, t, k], offset: [0, i, 0, 0], strides: [hk * t * k, t * k, k, 1]
+      ).contiguous()
+      var dot = Matmul(transposeB: (2, 3))(query, key)
       if let last = outs.last {
         dot.add(dependencies: [last])
       }
+      dot = (1.0 / Float(k).squareRoot()) * dot + causalAttentionMask
       dot = dot.reshaped([b * (h / hk) * t, t])
       dot = dot.softmax()
       dot = dot.reshaped([b, h / hk, t, t])
