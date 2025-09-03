@@ -98,14 +98,18 @@ public func QwenImageRotaryPositionEmbedding(
             rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
           }
           for k in 0..<(dim1 / 2) {
-            let theta = Double(y + hOffset) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
+            let theta =
+              Double(y + hOffset - (height - height / 2)) * 1.0
+              / pow(10_000, Double(k) * 2 / Double(dim1))
             let sintheta = sin(theta)
             let costheta = cos(theta)
             rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
             rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
           }
           for k in 0..<(dim2 / 2) {
-            let theta = Double(x + wOffset) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
+            let theta =
+              Double(x + wOffset - (width - width / 2)) * 1.0
+              / pow(10_000, Double(k) * 2 / Double(dim2))
             let sintheta = sin(theta)
             let costheta = cos(theta)
             rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
