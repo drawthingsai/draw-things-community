@@ -60,7 +60,7 @@ extension Worker {
     )
     let taskQueueingTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
     logger.info(
-      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority))"
+      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority)), userId: \(task.payload.userId)"
     )
     defer { task.heartbeat.cancel() }
 
@@ -761,6 +761,13 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     }
     logger.info("Proxy Server verified request checksum:\(checksum) success")
 
+    if payload.userClass == .banned {
+      logger.error(
+        "Proxy Server image generating request failed, \(payload.userClass) is banned. userid:\(payload.userId)"
+      )
+      return (false, "", nil)
+    }
+
     guard await !controlConfigs.isUsedNonce(payload.nonce) || isSharedSecretValid else {
       logger.error(
         "Proxy Server image generating request failed, \(payload.nonce) is a used nonce"
@@ -1006,7 +1013,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       return .low
     case .background:
       return .background
-    case nil:
+    default:
       return .low
     }
   }
