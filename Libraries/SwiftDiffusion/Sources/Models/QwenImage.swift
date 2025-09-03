@@ -16,7 +16,12 @@ public func QwenImageRotaryPositionEmbedding(
   let dim1 = channels * 7 / 16
   let dim2 = dim1
   assert(channels % 16 == 0)
-  let maxImgIdx = max(height / 2, width / 2)
+  var maxImgIdx = max(height / 2, width / 2)
+  for referenceSize in referenceSizes {
+    let height = referenceSize.height
+    let width = referenceSize.width
+    maxImgIdx = max(maxImgIdx, max(height / 2, width / 2))
+  }
   let imageLength = height * width + referenceSizes.reduce(0) { $0 + $1.height * $1.width }
   for i in 0..<tokenLength {
     for j in 0..<heads {
