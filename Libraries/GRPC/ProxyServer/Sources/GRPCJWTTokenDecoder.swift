@@ -89,13 +89,6 @@ public enum UserClass: String, Codable {
   case background = "background"
   case banned = "banned"
   case throttled = "throttled"
-  case unknown
-
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.singleValueContainer()
-    let value = try container.decode(String.self)
-    self = UserClass(rawValue: value) ?? .unknown
-  }
 }
 
 public enum ConsumableType: String, Codable {
