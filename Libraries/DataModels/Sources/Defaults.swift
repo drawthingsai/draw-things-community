@@ -103,7 +103,13 @@ extension SamplerType: CustomStringConvertible {
         self = SamplerType.eulerA
       }
     } else if sampler.contains("unipc") {
-      self = SamplerType.uniPC
+      if sampler.contains("trailing") {
+        self = SamplerType.uniPCTrailing
+      } else if sampler.contains("ays") {
+        self = SamplerType.uniPCAYS
+      } else {
+        self = SamplerType.uniPC
+      }
     } else if sampler.contains("plms") {
       self = SamplerType.PLMS
     } else if sampler.contains("ddim") {
