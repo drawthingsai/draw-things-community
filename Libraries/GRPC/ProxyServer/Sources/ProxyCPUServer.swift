@@ -60,7 +60,7 @@ extension Worker {
     )
     let taskQueueingTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
     logger.info(
-      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority)), userId: \(task.payload.userId)"
+      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority)), userId: \(task.payload.userId), generation id: \(task.payload.generationId)"
     )
     defer { task.heartbeat.cancel() }
 
