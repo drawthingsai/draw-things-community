@@ -88,6 +88,7 @@ public enum UserClass: String, Codable {
   case community = "community"
   case background = "background"
   case banned = "banned"
+  case throttled = "throttled"
   case unknown
 
   public init(from decoder: Decoder) throws {

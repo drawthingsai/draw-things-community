@@ -761,13 +761,6 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     }
     logger.info("Proxy Server verified request checksum:\(checksum) success")
 
-    if payload.userClass == .banned {
-      logger.error(
-        "Proxy Server image generating request failed, \(payload.userClass) is banned. userid:\(payload.userId)"
-      )
-      return (false, "", nil)
-    }
-
     guard await !controlConfigs.isUsedNonce(payload.nonce) || isSharedSecretValid else {
       logger.error(
         "Proxy Server image generating request failed, \(payload.nonce) is a used nonce"
@@ -1012,6 +1005,11 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     case .community:
       return .low
     case .background:
+      return .background
+    case .banned:
+      return .background
+    case .throttled:
+      logger.error(" userid:\(payload.userId), is throttled. priority as background")
       return .background
     default:
       return .low
