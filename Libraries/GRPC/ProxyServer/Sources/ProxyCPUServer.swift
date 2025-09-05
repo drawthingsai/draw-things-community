@@ -199,8 +199,10 @@ actor TaskQueue {
   func nextTaskForWorker(_ worker: Worker, highThreshold: Int, communityThreshold: Int) async
     -> WorkTask?
   {
+    let startTime = Date()
+    let timeout: TimeInterval = 30.0
     // When free workers are very low, only process real and high priority tasks
-    while availableWorkerCount < highThreshold {
+    while availableWorkerCount < highThreshold && Date().timeIntervalSince(startTime) < timeout {
       if let task = realPriorityTasks.first {
         realPriorityTasks.removeFirst()
         return task
@@ -219,6 +221,12 @@ actor TaskQueue {
         logger.error("Task.sleep failed with error: \(error)")
         continue
       }
+    }
+
+    if Date().timeIntervalSince(startTime) >= timeout {
+      logger.info(
+        "Throttling loop timed out after 30s. availableWorkerCount:\(availableWorkerCount), communityThreshold:\(communityThreshold), availableWorkerCount:\(availableWorkerCount)."
+      )
     }
 
     // Check worker's primary priority queue first
