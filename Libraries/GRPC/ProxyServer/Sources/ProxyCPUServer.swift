@@ -160,7 +160,7 @@ actor TaskQueue {
   private var backgroundPriorityTasks: [WorkTask] = []
   private var pendingRemoveWorkerId = Set<String>()
   private var workers: [String: Worker]
-  private(set) var availableWorkerCount: Int = 0
+  private var busyWorkerIDs: Set<String> = []
   private let logger: Logger
   var workerIds: [String] {
     return Array(workers.keys)
@@ -173,7 +173,6 @@ actor TaskQueue {
   init(workers: [Worker], logger: Logger) {
     self.logger = logger
     self.workers = Dictionary(uniqueKeysWithValues: workers.map { ($0.id, $0) })
-    self.availableWorkerCount = workers.count
 
     (workerAvailabilityStream, availabilityContinuation) = AsyncStream.makeStream(of: Worker.self)
     for worker in workers {
@@ -181,10 +180,14 @@ actor TaskQueue {
     }
   }
 
+  var availableWorkerCount: Int {
+    return workers.count - busyWorkerIDs.count
+  }
+
   func nextWorker() async -> Worker? {
     for await worker in workerAvailabilityStream {
       if workers[worker.id] != nil {
-        availableWorkerCount -= 1
+        busyWorkerIDs.insert(worker.id)
         return worker
       } else {
         logger.info("skip removed worker:\(worker) from workerAvailabilityStream")
@@ -283,10 +286,11 @@ actor TaskQueue {
   func returnWorker(_ worker: Worker) async {
     guard workers[worker.id] != nil else {
       logger.error("worker:\(worker) is removed, can not be added to worker stream")
+      busyWorkerIDs.remove(worker.id)
       return
     }
     logger.info("add worker:\(worker) back to worker stream")
-    availableWorkerCount += 1
+    busyWorkerIDs.remove(worker.id)
     availabilityContinuation.yield(worker)
   }
 
@@ -302,7 +306,6 @@ actor TaskQueue {
       logger.info("worker:\(worker) already exists in workers, skip adding")
       return
     }
-    availableWorkerCount += 1
     availabilityContinuation.yield(worker)
     logger.info("add worker:\(worker) to worker TaskQueue and stream")
   }
@@ -314,9 +317,7 @@ actor TaskQueue {
     }
     try? worker.client.disconnect()
     workers[worker.id] = nil
-    // Note: We can't know if the worker was free or busy when removed,
-    // but we ensure the count doesn't go negative
-    availableWorkerCount = max(0, availableWorkerCount - 1)
+    busyWorkerIDs.remove(worker.id)
     logger.info("remove worker:\(worker) from worker TaskQueue")
   }
 
