@@ -60,7 +60,7 @@ extension Worker {
     )
     let taskQueueingTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
     logger.info(
-      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority)), userId: \(task.payload.userId), generation id: \(task.payload.generationId)"
+      "Task queueing time: \(taskQueueingTimeMs)ms, (Priority: \(task.priority)), userId: \(task.payload.userId as Any), generation id: \(task.payload.generationId as Any)"
     )
     defer { task.heartbeat.cancel() }
 
@@ -69,7 +69,8 @@ extension Worker {
       let taskAge = Date().timeIntervalSince(task.creationTimestamp)
       if taskAge > Double(throttleQueueTimeoutSeconds) {
         let errorMessage = "Task rejected: enqueue time exceeded 1 hour (\(Int(taskAge))s)"
-        logger.info("user: \(task.payload.userId), \(errorMessage) (Priority: \(task.priority))")
+        logger.info(
+          "user: \(task.payload.userId as Any), \(errorMessage) (Priority: \(task.priority))")
         // intentionally abort task from throttle queue over 1 hour
         let status = GRPCStatus(code: .aborted, message: errorMessage)
         task.promise.succeed(status)
@@ -87,6 +88,7 @@ extension Worker {
       let logger = logger
       var numberOfImages = 0
       let taskExecuteStartTimestamp = Date()
+      let workerId = id
       let callInstance = client.generateImage(task.request) { response in
         if !response.generatedImages.isEmpty {
           numberOfImages += response.generatedImages.count
@@ -96,7 +98,7 @@ extension Worker {
           case .success:
             logger.debug("forward response: \(response)")
           case .failure(let error):
-            logger.error("Worker:\(self), forward response error \(error)")
+            logger.error("Worker: \(workerId), forward response error \(error)")
             call?.cancel(promise: nil)
             task.promise.fail(error)
           }
@@ -116,7 +118,7 @@ extension Worker {
           "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority))"
         )
         logger.info(
-          "Succeed: {\"model\": \"\(task.model)\", \"userid\": \"\(task.payload.userId)\",  \"generationId\": \"\(task.payload.generationId)\", \"images\":\(numberOfImages)}"
+          "Succeed: {\"model\": \"\(task.model)\", \"userid\": \"\(task.payload.userId as Any)\",  \"generationId\": \"\(task.payload.generationId as Any)\", \"images\":\(numberOfImages)}"
         )
       }
       let isTaskSuccessful = (status.code == .ok) && (numberOfImages > 0)
@@ -133,7 +135,7 @@ extension Worker {
       task.context.statusPromise.succeed(status)
 
       logger.info(
-        "Worker \(id) completed \"generationId\": \"\(task.payload.generationId)\" successfully (Priority: \(task.priority))"
+        "Worker \(id) completed, generationId: \(task.payload.generationId as Any), successfully (Priority: \(task.priority))"
       )
 
     } catch {
@@ -655,7 +657,7 @@ final class ControlPanelService: ControlPanelServiceProvider {
           await controlConfigs.getComputeUnitPolicyAndExpirationTimestamp()
 
         logMessage =
-          "Updated compute unit policies to \(updatedComputeUnitPolicies),  timestamp: \(updatedExpirationTimestamp)"
+          "Updated compute unit policies to \(updatedComputeUnitPolicies), timestamp: \(updatedExpirationTimestamp as Any)"
 
         response = UpdateComputeUnitResponse.with {
           $0.message = logMessage
@@ -784,7 +786,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
 
       if let throttlePolicy = effectivePolicy, throttlePolicy < stat {
         logger.error(
-          "user \(payload.userId) made \(stat) requests, while policy only allow \(throttlePolicy) for \(key)"
+          "user \(payload.userId as Any) made \(stat) requests, while policy only allow \(throttlePolicy) for \(key)"
         )
         return (
           false, "user failed to pass throttlePolicy, \(key) in \(throttlePolicy)", nil
@@ -870,11 +872,11 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
 
     let costThresholdFromBoost = (payload.amount ?? 0) * computeUnitPerBoost
     logger.info(
-      "Proxy Server payload.amount: \(payload.amount), computeUnitPerBoost: \(computeUnitPerBoost), generation id: \(payload.generationId) and costThresholdFromBoost: 、(costThresholdFromBoost)"
+      "Proxy Server payload.amount: \(payload.amount as Any), computeUnitPerBoost: \(computeUnitPerBoost), generation id: \(payload.generationId as Any) and costThresholdFromBoost: \(costThresholdFromBoost)"
     )
     if costThresholdFromBoost > costThresholdFromPolicy {
       logger.info(
-        "Proxy Server applying consumable threshold \(costThresholdFromBoost) for generation id: \(payload.generationId)"
+        "Proxy Server applying consumable threshold \(costThresholdFromBoost) for generation id: \(payload.generationId as Any)"
       )
     }
     return max(costThresholdFromPolicy, costThresholdFromBoost)
@@ -930,7 +932,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             logger: logger)
         } else {
           logger.info(
-            "isValidRequest cancel generationId:\( payload.generationId), without completeBoost, consumableType:\(payload.consumableType), amount:\(payload.amount), message:\(message) "
+            "isValidRequest cancel generationId:\( payload.generationId as Any), without completeBoost, consumableType:\(payload.consumableType as Any), amount:\(payload.amount as Any), message:\(message)"
           )
         }
         promise.fail(
@@ -1018,7 +1020,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     case .banned:
       return .background
     case .throttled:
-      logger.error(" userid:\(payload.userId), is throttled. priority as background")
+      logger.error(" userid: \(payload.userId as Any), is throttled. priority as background")
       return .background
     default:
       return .low
