@@ -198,11 +198,13 @@ actor TaskQueue {
     return nil
   }
 
-  func nextTaskForWorker(_ worker: Worker, highThreshold: Int, communityThreshold: Int) async
+  func nextTaskForWorker(
+    _ worker: Worker, highThreshold: Int, communityThreshold: Int, taskLoopBreakoutSeconds: Int
+  ) async
     -> WorkTask?
   {
     let startTime = Date()
-    let timeout: TimeInterval = 30.0
+    let timeout: TimeInterval = TimeInterval(taskLoopBreakoutSeconds)
     // When free workers are very low, only process real and high priority tasks
     while availableWorkerCount < highThreshold && Date().timeIntervalSince(startTime) < timeout {
       if let task = realPriorityTasks.first {
@@ -961,8 +963,10 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         let highThreshold = throttlePolicies["high_free_worker_threshold"] ?? 8
         let communityThreshold = throttlePolicies["community_free_worker_threshold"] ?? 0
         let throttleQueueTimeoutSeconds = throttlePolicies["throttle_queue_timeout_seconds"] ?? 3600
+        let taskLoopBreakoutSeconds = throttlePolicies["task_loop_breakout_seconds"] ?? 30
         if let nextTaskForWorker = await taskQueue.nextTaskForWorker(
-          worker, highThreshold: highThreshold, communityThreshold: communityThreshold)
+          worker, highThreshold: highThreshold, communityThreshold: communityThreshold,
+          taskLoopBreakoutSeconds: taskLoopBreakoutSeconds)
         {
           do {
             try await worker.executeTask(
@@ -1159,6 +1163,7 @@ public class ProxyCPUServer {
         "daily_soft_limit_high": 750, "high_free_worker_threshold": 8,
         "community_free_worker_threshold": 0,
         "throttle_queue_timeout_seconds": 3600,
+        "task_loop_breakout_seconds": 30,
         "24_hour_api_plus": 500, "24_hour_api": 100,
       ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath,
       nonceSizeLimit: nonceSizeLimit)
