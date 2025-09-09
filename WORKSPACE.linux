@@ -37,9 +37,9 @@ apple_support_dependencies()
 
 git_repository(
     name = "rules_xcodeproj",
-    commit = "637a94211aa7528ef92335b51825bf596b93bcf5",
+    commit = "b5265cf4c360a7607d82ab89e109d20f2a66188b",
     remote = "https://github.com/MobileNativeFoundation/rules_xcodeproj.git",
-    shallow_since = "1747165514 -0500",
+    shallow_since = "1753830850 -0500",
 )
 
 load(
