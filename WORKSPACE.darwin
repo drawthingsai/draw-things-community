@@ -23,6 +23,12 @@ load("@bazel_features//:deps.bzl", "bazel_features_deps")
 
 bazel_features_deps()
 
+http_archive(
+    name = "build_bazel_rules_swift",
+    sha256 = "5eff717c18bb513285b499add68f2331509cd4e411ff085e96a86b3342c1e5aa",
+    url = "https://github.com/bazelbuild/rules_swift/releases/download/3.1.2/rules_swift.3.1.2.tar.gz",
+)
+
 git_repository(
     name = "rules_xcodeproj",
     commit = "b5265cf4c360a7607d82ab89e109d20f2a66188b",
