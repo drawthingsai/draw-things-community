@@ -101,83 +101,83 @@ public final class JSGenerationConfiguration: Codable {
   public let id: Int64
   public var width: UInt32
   public var height: UInt32
-  public let seed: Int64
-  public let steps: UInt32
-  public let guidanceScale: Float32
-  public let strength: Float32
-  public let model: String?
-  public let sampler: Int8
-  public let hiresFix: Bool
+  public var seed: Int64
+  public var steps: UInt32
+  public var guidanceScale: Float32
+  public var strength: Float32
+  public var model: String?
+  public var sampler: Int8
+  public var hiresFix: Bool
   public var hiresFixWidth: UInt32
   public var hiresFixHeight: UInt32
-  public let hiresFixStrength: Float32
-  public let tiledDecoding: Bool
+  public var hiresFixStrength: Float32
+  public var tiledDecoding: Bool
   public var decodingTileWidth: UInt32
   public var decodingTileHeight: UInt32
   public var decodingTileOverlap: UInt32
-  public let tiledDiffusion: Bool
+  public var tiledDiffusion: Bool
   public var diffusionTileWidth: UInt32
   public var diffusionTileHeight: UInt32
   public var diffusionTileOverlap: UInt32
-  public let upscaler: String?
+  public var upscaler: String?
   public var upscalerScaleFactor: UInt8
-  public let imageGuidanceScale: Float32
-  public let seedMode: Int8
-  public let clipSkip: UInt32
-  public let controls: [JSControl]
-  public let loras: [JSLoRA]
-  public let maskBlur: Float32
-  public let maskBlurOutset: Int32
-  public let sharpness: Float32
-  public let faceRestoration: String?
-  public let clipWeight: Float32
-  public let negativePromptForImagePrior: Bool
-  public let imagePriorSteps: UInt32
-  public let refinerModel: String?
-  public let originalImageHeight: UInt32
-  public let originalImageWidth: UInt32
-  public let cropTop: Int32
-  public let cropLeft: Int32
-  public let targetImageHeight: UInt32
-  public let targetImageWidth: UInt32
-  public let aestheticScore: Float32
-  public let negativeAestheticScore: Float32
-  public let zeroNegativePrompt: Bool
-  public let refinerStart: Float32
-  public let negativeOriginalImageHeight: UInt32
-  public let negativeOriginalImageWidth: UInt32
-  public let batchCount: UInt32
-  public let batchSize: UInt32
-  public let numFrames: UInt32
-  public let fps: UInt32
-  public let motionScale: UInt32
-  public let guidingFrameNoise: Float32
-  public let startFrameGuidance: Float32
-  public let shift: Float32
-  public let stage2Steps: UInt32
-  public let stage2Guidance: Float32
-  public let stage2Shift: Float32
-  public let stochasticSamplingGamma: Float32
-  public let preserveOriginalAfterInpaint: Bool
-  public let t5TextEncoder: Bool
-  public let separateClipL: Bool
-  public let clipLText: String?
-  public let separateOpenClipG: Bool
-  public let openClipGText: String?
-  public let speedUpWithGuidanceEmbed: Bool
-  public let guidanceEmbed: Float32
-  public let resolutionDependentShift: Bool
-  public let teaCache: Bool
-  public let teaCacheStart: Int32
-  public let teaCacheEnd: Int32
-  public let teaCacheThreshold: Float32
-  public let teaCacheMaxSkipSteps: Int32
-  public let separateT5: Bool
-  public let t5Text: String?
-  public let causalInference: Int32
-  public let causalInferencePad: Int32
-  public let cfgZeroStar: Bool
-  public let cfgZeroInitSteps: Int32
+  public var imageGuidanceScale: Float32
+  public var seedMode: Int8
+  public var clipSkip: UInt32
+  public var controls: [JSControl]
+  public var loras: [JSLoRA]
+  public var maskBlur: Float32
+  public var maskBlurOutset: Int32
+  public var sharpness: Float32
+  public var faceRestoration: String?
+  public var clipWeight: Float32
+  public var negativePromptForImagePrior: Bool
+  public var imagePriorSteps: UInt32
+  public var refinerModel: String?
+  public var originalImageHeight: UInt32
+  public var originalImageWidth: UInt32
+  public var cropTop: Int32
+  public var cropLeft: Int32
+  public var targetImageHeight: UInt32
+  public var targetImageWidth: UInt32
+  public var aestheticScore: Float32
+  public var negativeAestheticScore: Float32
+  public var zeroNegativePrompt: Bool
+  public var refinerStart: Float32
+  public var negativeOriginalImageHeight: UInt32
+  public var negativeOriginalImageWidth: UInt32
+  public var batchCount: UInt32
+  public var batchSize: UInt32
+  public var numFrames: UInt32
+  public var fps: UInt32
+  public var motionScale: UInt32
+  public var guidingFrameNoise: Float32
+  public var startFrameGuidance: Float32
+  public var shift: Float32
+  public var stage2Steps: UInt32
+  public var stage2Guidance: Float32
+  public var stage2Shift: Float32
+  public var stochasticSamplingGamma: Float32
+  public var preserveOriginalAfterInpaint: Bool
+  public var t5TextEncoder: Bool
+  public var separateClipL: Bool
+  public var clipLText: String?
+  public var separateOpenClipG: Bool
+  public var openClipGText: String?
+  public var speedUpWithGuidanceEmbed: Bool
+  public var guidanceEmbed: Float32
+  public var resolutionDependentShift: Bool
+  public var teaCache: Bool
+  public var teaCacheStart: Int32
+  public var teaCacheEnd: Int32
+  public var teaCacheThreshold: Float32
+  public var teaCacheMaxSkipSteps: Int32
+  public var separateT5: Bool
+  public var t5Text: String?
+  public var causalInference: Int32
+  public var causalInferencePad: Int32
+  public var cfgZeroStar: Bool
+  public var cfgZeroInitSteps: Int32
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
