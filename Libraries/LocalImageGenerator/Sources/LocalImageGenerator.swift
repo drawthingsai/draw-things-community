@@ -3345,11 +3345,14 @@ extension LocalImageGenerator {
     }
     let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
     if !isMFAEnabled {
-      DynamicGraph.flags.insert(.disableMetalFlashAttention)
+      DynamicGraph.flags.insert(.disableMFA)
     } else {
-      DynamicGraph.flags.remove(.disableMetalFlashAttention)
+      DynamicGraph.flags.remove(.disableMFA)
       if !DeviceCapability.isMFAGEMMFaster {
         DynamicGraph.flags.insert(.disableMFAGEMM)
+      }
+      if !DeviceCapability.isMFAAttentionFaster {
+        DynamicGraph.flags.insert(.disableMFAAttention)
       }
     }
     var signposts = Set<ImageGeneratorSignpost>([
@@ -3872,11 +3875,14 @@ extension LocalImageGenerator {
         DynamicGraph.flags.insert(.disableMmapMTLBuffer)
       }
       if !isMFAEnabled {
-        DynamicGraph.flags.insert(.disableMetalFlashAttention)
+        DynamicGraph.flags.insert(.disableMFA)
       } else {
-        DynamicGraph.flags.remove(.disableMetalFlashAttention)
+        DynamicGraph.flags.remove(.disableMFA)
         if !DeviceCapability.isMFAGEMMFaster {
           DynamicGraph.flags.insert(.disableMFAGEMM)
+        }
+        if !DeviceCapability.isMFAAttentionFaster {
+          DynamicGraph.flags.insert(.disableMFAAttention)
         }
       }
       var firstStageResult: DynamicGraph.Tensor<FloatType>
@@ -4143,11 +4149,14 @@ extension LocalImageGenerator {
         DynamicGraph.flags.insert(.disableMmapMTLBuffer)
       }
       if !isMFAEnabled {
-        DynamicGraph.flags.insert(.disableMetalFlashAttention)
+        DynamicGraph.flags.insert(.disableMFA)
       } else {
-        DynamicGraph.flags.remove(.disableMetalFlashAttention)
+        DynamicGraph.flags.remove(.disableMFA)
         if !DeviceCapability.isMFAGEMMFaster {
           DynamicGraph.flags.insert(.disableMFAGEMM)
+        }
+        if !DeviceCapability.isMFAAttentionFaster {
+          DynamicGraph.flags.insert(.disableMFAAttention)
         }
       }
       guard
@@ -4200,11 +4209,14 @@ extension LocalImageGenerator {
         DynamicGraph.flags.insert(.disableMmapMTLBuffer)
       }
       if !isMFAEnabled {
-        DynamicGraph.flags.insert(.disableMetalFlashAttention)
+        DynamicGraph.flags.insert(.disableMFA)
       } else {
-        DynamicGraph.flags.remove(.disableMetalFlashAttention)
+        DynamicGraph.flags.remove(.disableMFA)
         if !DeviceCapability.isMFAGEMMFaster {
           DynamicGraph.flags.insert(.disableMFAGEMM)
+        }
+        if !DeviceCapability.isMFAAttentionFaster {
+          DynamicGraph.flags.insert(.disableMFAAttention)
         }
       }
       var secondPassResult = modelPreloader.consumeFirstStageDecode(
@@ -4363,11 +4375,14 @@ extension LocalImageGenerator {
     }
     let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
     if !isMFAEnabled {
-      DynamicGraph.flags.insert(.disableMetalFlashAttention)
+      DynamicGraph.flags.insert(.disableMFA)
     } else {
-      DynamicGraph.flags.remove(.disableMetalFlashAttention)
+      DynamicGraph.flags.remove(.disableMFA)
       if !DeviceCapability.isMFAGEMMFaster {
         DynamicGraph.flags.insert(.disableMFAGEMM)
+      }
+      if !DeviceCapability.isMFAAttentionFaster {
+        DynamicGraph.flags.insert(.disableMFAAttention)
       }
     }
     var hasHints = Set(hints.keys)
@@ -5002,11 +5017,14 @@ extension LocalImageGenerator {
         DynamicGraph.flags.insert(.disableMmapMTLBuffer)
       }
       if !isMFAEnabled {
-        DynamicGraph.flags.insert(.disableMetalFlashAttention)
+        DynamicGraph.flags.insert(.disableMFA)
       } else {
-        DynamicGraph.flags.remove(.disableMetalFlashAttention)
+        DynamicGraph.flags.remove(.disableMFA)
         if !DeviceCapability.isMFAGEMMFaster {
           DynamicGraph.flags.insert(.disableMFAGEMM)
+        }
+        if !DeviceCapability.isMFAAttentionFaster {
+          DynamicGraph.flags.insert(.disableMFAAttention)
         }
       }
       var firstStageResult = modelPreloader.consumeFirstStageDecode(
@@ -5666,11 +5684,14 @@ extension LocalImageGenerator {
     }
     let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
     if !isMFAEnabled {
-      DynamicGraph.flags.insert(.disableMetalFlashAttention)
+      DynamicGraph.flags.insert(.disableMFA)
     } else {
-      DynamicGraph.flags.remove(.disableMetalFlashAttention)
+      DynamicGraph.flags.remove(.disableMFA)
       if !DeviceCapability.isMFAGEMMFaster {
         DynamicGraph.flags.insert(.disableMFAGEMM)
+      }
+      if !DeviceCapability.isMFAAttentionFaster {
+        DynamicGraph.flags.insert(.disableMFAAttention)
       }
     }
     var hasHints = Set(hints.keys)
@@ -6289,11 +6310,14 @@ extension LocalImageGenerator {
         DynamicGraph.flags.insert(.disableMmapMTLBuffer)
       }
       if !isMFAEnabled {
-        DynamicGraph.flags.insert(.disableMetalFlashAttention)
+        DynamicGraph.flags.insert(.disableMFA)
       } else {
-        DynamicGraph.flags.remove(.disableMetalFlashAttention)
+        DynamicGraph.flags.remove(.disableMFA)
         if !DeviceCapability.isMFAGEMMFaster {
           DynamicGraph.flags.insert(.disableMFAGEMM)
+        }
+        if !DeviceCapability.isMFAAttentionFaster {
+          DynamicGraph.flags.insert(.disableMFAAttention)
         }
       }
       let result = DynamicGraph.Tensor<FloatType>(
@@ -6450,11 +6474,14 @@ extension LocalImageGenerator {
     }
     let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
     if !isMFAEnabled {
-      DynamicGraph.flags.insert(.disableMetalFlashAttention)
+      DynamicGraph.flags.insert(.disableMFA)
     } else {
-      DynamicGraph.flags.remove(.disableMetalFlashAttention)
+      DynamicGraph.flags.remove(.disableMFA)
       if !DeviceCapability.isMFAGEMMFaster {
         DynamicGraph.flags.insert(.disableMFAGEMM)
+      }
+      if !DeviceCapability.isMFAAttentionFaster {
+        DynamicGraph.flags.insert(.disableMFAAttention)
       }
     }
     var hasHints = Set(hints.keys)
@@ -7257,11 +7284,14 @@ extension LocalImageGenerator {
         DynamicGraph.flags.insert(.disableMmapMTLBuffer)
       }
       if !isMFAEnabled {
-        DynamicGraph.flags.insert(.disableMetalFlashAttention)
+        DynamicGraph.flags.insert(.disableMFA)
       } else {
-        DynamicGraph.flags.remove(.disableMetalFlashAttention)
+        DynamicGraph.flags.remove(.disableMFA)
         if !DeviceCapability.isMFAGEMMFaster {
           DynamicGraph.flags.insert(.disableMFAGEMM)
+        }
+        if !DeviceCapability.isMFAAttentionFaster {
+          DynamicGraph.flags.insert(.disableMFAAttention)
         }
       }
       let result = DynamicGraph.Tensor<FloatType>(

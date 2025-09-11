@@ -1664,11 +1664,14 @@ public struct LoRATrainer {
     }
     let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
     if !isMFAEnabled {
-      DynamicGraph.flags.insert(.disableMetalFlashAttention)
+      DynamicGraph.flags.insert(.disableMFA)
     } else {
-      DynamicGraph.flags.remove(.disableMetalFlashAttention)
+      DynamicGraph.flags.remove(.disableMFA)
       if !DeviceCapability.isMFAGEMMFaster {
         DynamicGraph.flags.insert(.disableMFAGEMM)
+      }
+      if !DeviceCapability.isMFAAttentionFaster {
+        DynamicGraph.flags.insert(.disableMFAAttention)
       }
     }
     graph.openStore(session, flags: .readOnly) { sessionStore in
