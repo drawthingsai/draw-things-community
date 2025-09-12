@@ -662,6 +662,7 @@ public final class ImageHistoryManager {
 
   public struct History {
     public var imageData: [ImageData]
+    public var reason: Reason
     public var preview: UIImage?
     public var textEdits: Int?
     public var textLineage: Int64?
@@ -675,13 +676,14 @@ public final class ImageHistoryManager {
     public var textPrompt: String?
     public var negativeTextPrompt: String?
     public init(
-      imageData: [ImageData], preview: UIImage?, textEdits: Int?, textLineage: Int64?,
+      imageData: [ImageData], reason: Reason, preview: UIImage?, textEdits: Int?, textLineage: Int64?,
       configuration: GenerationConfiguration, isGenerated: Bool,
       contentOffset: (x: Int32, y: Int32), scaleFactorBy120: Int32, scriptSessionId: UInt64?,
       shuffleData: [ShuffleData]? = nil, profile: GenerationProfile? = nil,
       textPrompt: String? = nil, negativeTextPrompt: String? = nil
     ) {
       self.imageData = imageData
+      self.reason = reason
       self.preview = preview
       self.textEdits = textEdits
       self.textLineage = textLineage
@@ -962,7 +964,9 @@ public final class ImageHistoryManager {
         causalInference: configuration.causalInference,
         causalInferencePad: configuration.causalInferencePad,
         cfgZeroStar: configuration.cfgZeroStar,
-        cfgZeroInitSteps: configuration.cfgZeroInitSteps
+        cfgZeroInitSteps: configuration.cfgZeroInitSteps,
+        generationTime: history.profile?.duration,
+        reason: history.reason
       )
       // Only needs to append
       clipData?.frames.append(

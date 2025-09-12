@@ -80,6 +80,18 @@ table LoRA {
   mode: LoRAMode = All;
 }
 
+enum Reason: int {
+  Other,
+  Generate,
+  Imported,
+  Draw,
+  Mask,
+  Scribble,
+  Moodboard,
+  DepthMap,
+  Clear,
+}
+
 table TensorHistoryNode {
   lineage: long (primary);
   logical_time: long (primary);
@@ -188,6 +200,8 @@ table TensorHistoryNode {
   causal_inference_pad: int = 0;
   cfg_zero_star: bool = false;
   cfg_zero_init_steps: int = 0;
+  generation_time: double = 0;
+  reason: Reason = Other;
 }
 
 root_type TensorHistoryNode;
