@@ -455,8 +455,8 @@ public final class ImageHistoryManager {
   public private(set) var scaleFactorBy120: Int32 = 120
   public private(set) var isVideo: Bool = false
   public private(set) var clipData: ClipData? = nil
+  public private(set) var project: Workspace
   private let filePath: String
-  private var project: Workspace
   private var previewCache = [Int64: UIImage]()  // Keyed by tensorId + maskId
   private var logicalVersion: Int = 0
   private var imageDataCache = [LogicalTimeAndLineage: ([TensorData], Int)]()  // Keyed by logical time and lineage
