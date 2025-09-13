@@ -212,9 +212,9 @@ public final class ModelPreloader {
       }
       if let _ = self.workspace.dictionary["mfa_guard", Bool.self] {
         if !DeviceCapability.isMFASupported {
-          self.workspace.dictionary["use_mfa_v2", Bool.self] = nil
+          self.workspace.dictionary["use_mfa_v3", Bool.self] = nil
         } else {
-          self.workspace.dictionary["use_mfa_v2", Bool.self] = false
+          self.workspace.dictionary["use_mfa_v3", Bool.self] = false
         }
         self.workspace.dictionary["mfa_guard", Bool.self] = nil
       }
@@ -335,7 +335,7 @@ public final class ModelPreloader {
         }
       }
     }
-    useMFASubscription = workspace.dictionary.subscribe("use_mfa_v2", of: Bool.self) {
+    useMFASubscription = workspace.dictionary.subscribe("use_mfa_v3", of: Bool.self) {
       value in
       queue.async { [weak self] in
         guard let self = self else { return }
