@@ -264,7 +264,7 @@ public struct TextualInversionZoo: DownloadZoo {
     case .flux1:
       count = 4096
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
-      .wan21_14b, .hiDreamI1, .qwenImage:
+      .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
       fatalError()
     }
     var tensor: Tensor<FloatType>? = nil
@@ -291,7 +291,7 @@ public struct TextualInversionZoo: DownloadZoo {
           tensorName = "string_to_param_qwen25"
         }
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
-        .wan21_14b, .hiDreamI1, .qwenImage:
+        .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
         fatalError()
       }
       guard let anyTensor = $0.read(tensorName) else { return }

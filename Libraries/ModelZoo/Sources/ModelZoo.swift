@@ -49,6 +49,8 @@ public struct ModelZoo: DownloadZoo {
       return "HiDream I1"
     case .qwenImage:
       return "Qwen Image"
+    case .wan22_5b:
+      return "Wan v2.2 5B"
     }
   }
 
@@ -626,6 +628,10 @@ public struct ModelZoo: DownloadZoo {
       "3e79e7b19b2ca152c7a13feeec4ba8545d383d9375a8f9072db10d364b484d6d",
     "qwen_image_edit_1.0_q6p.ckpt":
       "c816944982f8fba4ae0bcf36279f25564825386416f03088c4f223c9911407c5",
+    "wan_v2.2_5b_ti2v_f16.ckpt": "58b05be04f2f66f4d9e0c7605aebf9eb82c80b0c2c9498a43a1b95e9600f3389",
+    "wan_v2.2_5b_ti2v_q8p.ckpt": "e01bc2a772e1a4c5bb577fb2a98a9070638c359ecaf2ac62e6a017f517b9ab9b",
+    "wan_v2.2_video_vae_f16.ckpt":
+      "5e4dc4638ff09ed3a0173f907a78d2dde90c56ef855070059b594dd0c7a75a1e",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -868,6 +874,24 @@ public struct ModelZoo: DownloadZoo {
       ], framesPerSecond: 16,
       note:
         "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+    ),
+    Specification(
+      name: "Wan 2.2 TI2V 5B", file: "wan_v2.2_5b_ti2v_f16.ckpt",
+      prefix: "",
+      version: .wan22_5b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.2_video_vae_f16.ckpt", hiresFixScale: 16,
+      teaCacheCoefficients: nil, framesPerSecond: 24,
+      note:
+        "[Wan2.2 TI2V 5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) is a state-of-the-art text-image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 121 frames, with a recommended shift value of 5.0."
+    ),
+    Specification(
+      name: "Wan 2.2 TI2V 5B (8-bit)", file: "wan_v2.2_5b_ti2v_q8p.ckpt",
+      prefix: "",
+      version: .wan22_5b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
+      autoencoder: "wan_v2.2_video_vae_f16.ckpt", hiresFixScale: 16,
+      teaCacheCoefficients: nil, framesPerSecond: 24,
+      note:
+        "[Wan2.2 TI2V 5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) is a state-of-the-art text-image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 121 frames, with a recommended shift value of 5.0."
     ),
     Specification(
       name: "Wan 2.1 T2V 1.3B", file: "wan_v2.1_1.3b_480p_f16.ckpt", prefix: "",
@@ -1559,7 +1583,7 @@ public struct ModelZoo: DownloadZoo {
       .wurstchenStageB, .pixart:
       return .epsilon
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage:
+      .qwenImage, .wan22_5b:
       return .u(conditionScale: 1000)
     }
   }
@@ -1572,7 +1596,7 @@ public struct ModelZoo: DownloadZoo {
     switch specification.version {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b,
-      .wan21_14b, .hiDreamI1, .qwenImage:
+      .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
       return .timestep
     case .svdI2v:
       return .noise
@@ -1602,7 +1626,7 @@ public struct ModelZoo: DownloadZoo {
     case .wurstchenStageC, .wurstchenStageB:
       return .edm(.init(sigmaMin: 0.01, sigmaMax: 99.995))
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage:
+      .qwenImage, .wan22_5b:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
@@ -1626,7 +1650,7 @@ public struct ModelZoo: DownloadZoo {
       return 128
     case .hunyuanVideo, .qwenImage:
       return 0
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b:
       return 512
     }
   }
@@ -1667,6 +1691,23 @@ public struct ModelZoo: DownloadZoo {
         [
           2.8184, 1.4541, 2.3275, 2.6558, 1.2196, 1.7708, 2.6052, 2.0743,
           3.2687, 2.1526, 2.8652, 1.5579, 1.6382, 1.1253, 2.8251, 1.9160,
+        ], 1, nil
+      )
+    case .wan22_5b:
+      return (
+        [
+          -0.2289, -0.0052, -0.1323, -0.2339, -0.2799, 0.0174, 0.1838, 0.1557, -0.1382, 0.0542,
+          0.2813, 0.0891, 0.1570, -0.0098, 0.0375, -0.1825, -0.2246, -0.1207, -0.0698, 0.5109,
+          0.2665, -0.2108, -0.2158, 0.2502, -0.2055, -0.0322, 0.1109, 0.1567, -0.0729, 0.0899,
+          -0.2799, -0.1230, -0.0313, -0.1649, 0.0117, 0.0723, -0.2839, -0.2083, -0.0520, 0.3748,
+          0.0152, 0.1957, 0.1433, -0.2944, 0.3573, -0.0548, -0.1681, -0.0667,
+        ],
+        [
+          0.4765, 1.0364, 0.4514, 1.1677, 0.5313, 0.4990, 0.4818, 0.5013, 0.8158, 1.0344, 0.5894,
+          1.0901, 0.6885, 0.6165, 0.8454, 0.4978, 0.5759, 0.3523, 0.7135, 0.6804, 0.5833, 1.4146,
+          0.8986, 0.5659, 0.7069, 0.5338, 0.4889, 0.4917, 0.4069,
+          0.4999, 0.6866, 0.4093, 0.5709, 0.6065, 0.6415, 0.4944, 0.5726, 1.2042, 0.5458, 1.6887,
+          0.3971, 1.0600, 0.3943, 0.5537, 0.5444, 0.4089, 0.7468, 0.7744,
         ], 1, nil
       )
     }
@@ -1717,6 +1758,8 @@ public struct ModelZoo: DownloadZoo {
       return 30
     case .wan21_1_3b, .wan21_14b, .qwenImage:
       return 16
+    case .wan22_5b:
+      return 24
     case .v1, .v2, .auraflow, .flux1, .hiDreamI1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
       .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
       return 30
@@ -1740,7 +1783,8 @@ public struct ModelZoo: DownloadZoo {
     guard let coefficients = specification.teaCacheCoefficients else {
       switch specification.version {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .qwenImage:
+        .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .qwenImage,
+        .wan22_5b:
         return nil
       case .flux1:
         return (4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01)
@@ -1812,6 +1856,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 11 * 1_024 * 1_024 * 1_024
       case .wan21_1_3b:
         return fileSize < 2 * 1_024 * 1_024 * 1_024
+      case .wan22_5b:
+        return fileSize < 6 * 1_024 * 1_024 * 1_024
       case .wan21_14b:
         return fileSize < 13 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
       case .qwenImage:
@@ -1860,6 +1906,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 20 * 1_024 * 1_024 * 1_024
       case .wan21_1_3b:
         return fileSize < 2 * 1_024 * 1_024 * 1_024
+      case .wan22_5b:
+        return fileSize < 6 * 1_024 * 1_024 * 1_024
       case .wan21_14b:
         return fileSize < 15 * 1_024 * 1_024 * 1_024
       case .qwenImage:
@@ -1994,7 +2042,7 @@ extension ModelZoo {
 
   public static func isCLIPSkipAvailable(_ version: ModelVersion) -> Bool {
     switch version {
-    case .pixart, .auraflow, .wan21_14b, .wan21_1_3b, .qwenImage, .svdI2v:
+    case .pixart, .auraflow, .wan21_14b, .wan21_1_3b, .qwenImage, .svdI2v, .wan22_5b:
       return false
     case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .v1, .v2, .flux1, .hunyuanVideo, .hiDreamI1,
       .ssd1b, .kandinsky21, .wurstchenStageB, .wurstchenStageC:

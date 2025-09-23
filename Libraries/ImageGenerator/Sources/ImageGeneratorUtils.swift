@@ -182,7 +182,7 @@ public struct ImageGeneratorUtils {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hiDreamI1, .qwenImage:
       return false
-    case .hunyuanVideo, .svdI2v, .wan21_1_3b, .wan21_14b:
+    case .hunyuanVideo, .svdI2v, .wan21_1_3b, .wan21_14b, .wan22_5b:
       return true
     }
   }

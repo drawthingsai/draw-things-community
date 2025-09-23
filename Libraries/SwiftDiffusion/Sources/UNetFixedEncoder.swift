@@ -47,7 +47,7 @@ extension UNetFixedEncoder {
     switch version {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage:
+      .qwenImage, .wan22_5b:
       return true
     case .v1, .v2, .kandinsky21:
       return false
@@ -190,7 +190,7 @@ extension UNetFixedEncoder {
       // We don't need other vectors for sampling.
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage:
+      .hiDreamI1, .qwenImage, .wan22_5b:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -523,7 +523,7 @@ extension UNetFixedEncoder {
           dualAttentionLayers: [])
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage:
+        .hiDreamI1, .qwenImage, .wan22_5b:
         fatalError()
       }
       var timeEmbeds = graph.variable(
@@ -1025,7 +1025,7 @@ extension UNetFixedEncoder {
       return (
         [graph.variable(rot0), graph.variable(rot1)] + conditions, nil
       )
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b:
       let h = startHeight / 2
       let w = startWidth / 2
       let rot = Tensor<FloatType>(

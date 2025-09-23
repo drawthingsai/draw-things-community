@@ -532,7 +532,7 @@ extension ModelPreloader {
     case .sdxlBase, .sdxlRefiner, .ssd1b:
       conditionalLength = 1280
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-      .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
+      .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
       fatalError()
     }
     let cfgChannels: Int
@@ -749,7 +749,8 @@ extension ModelPreloader {
             ).0
           textModelLoRAPrefix = "__te2"
         case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-          .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
+          .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
+          .wan22_5b:
           fatalError()
         }
         let tokensTensor = graph.variable(.GPU(0), .C(2 * 77), of: Int32.self)
@@ -788,7 +789,7 @@ extension ModelPreloader {
                     }
                   case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
                     .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-                    .hiDreamI1, .qwenImage:
+                    .hiDreamI1, .qwenImage, .wan22_5b:
                     fatalError()
                   }
                   return loader.mergeLoRA(
@@ -831,7 +832,7 @@ extension ModelPreloader {
                   }
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
                   .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-                  .hiDreamI1, .qwenImage:
+                  .hiDreamI1, .qwenImage, .wan22_5b:
                   fatalError()
                 }
                 return .continue(name)
@@ -1145,7 +1146,7 @@ extension ModelPreloader {
             return false
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
             .wurstchenStageB, .wurstchenStageC, .svdI2v, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-            .hiDreamI1, .qwenImage:
+            .hiDreamI1, .qwenImage, .wan22_5b:
             return DeviceCapability.isLowPerformance
           }
         case .unet:
@@ -1379,7 +1380,7 @@ extension ModelPreloader {
     }
     switch sampler.version {
     case .auraflow, .flux1, .hiDreamI1, .hunyuanVideo, .sd3, .sd3Large, .wan21_14b, .wan21_1_3b,
-      .qwenImage:
+      .qwenImage, .wan22_5b:
       let unet: UNetWrapper<FloatType>? = {
         switch x {
         case .success(let x):

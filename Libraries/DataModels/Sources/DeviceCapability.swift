@@ -599,6 +599,10 @@ public struct DeviceCapability {
       guard (!isHighPerformance && !(isGoodPerformance && is8BitModel)) || force else {
         return false
       }
+    case .wan22_5b:
+      guard (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force else {
+        return false
+      }
     case .wan21_14b:
       guard
         (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force

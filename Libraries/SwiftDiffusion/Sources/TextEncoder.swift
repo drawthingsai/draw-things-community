@@ -2578,7 +2578,7 @@ extension TextEncoder {
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         injectedTextEmbeddings: injectedTextEmbeddings, textModels: existingTextModels)
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b:
       return encodeWan(
         image: image,
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
@@ -2667,7 +2667,7 @@ extension TextEncoder {
           ).0
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage:
+        .hiDreamI1, .qwenImage, .wan22_5b:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -2704,7 +2704,7 @@ extension TextEncoder {
                   }
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-                  .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
+                  .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -2743,7 +2743,7 @@ extension TextEncoder {
                 }
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-                .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
+                .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
                 fatalError()
               }
               return .continue(name)

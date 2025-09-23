@@ -104,7 +104,7 @@ extension UNetProtocol {
             maxPeriod: 10_000)
         ).toGPU(0))
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage:
+      .hiDreamI1, .qwenImage, .wan22_5b:
       return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
@@ -213,7 +213,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
               (index + timesteps)..<(index + timesteps + 1), 0..<shape[1], 0..<shape[2]])
         }
       }
-  case .wan21_1_3b, .wan21_14b:
+  case .wan21_1_3b, .wan21_14b, .wan22_5b:
     return conditions[0..<1]
       + conditions[1..<7].map({
         let shape = $0.shape
@@ -374,7 +374,7 @@ public func externalOnDemandPartially(
   case .medium, .low:
     switch version {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .wan21_1_3b:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .wan21_1_3b, .wan22_5b:
       return false
     case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .wan21_14b, .qwenImage:
       return true
@@ -1018,6 +1018,8 @@ extension UNetFromNNC {
             ).1)
         }
       }
+    case .wan22_5b:
+      fatalError()
     case .wan21_14b:
       let vaceContextExists = (c[7].shape.count == 1 && c[7].shape[0] == 1)
       let vaceLayers: [Int] = vaceContextExists ? (0..<8).map { $0 * 5 } : []
@@ -1228,7 +1230,7 @@ extension UNetFromNNC {
       case .flux1:
         c.append(contentsOf: injectedIPAdapters)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
+        .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
         fatalError()
       }
     }
@@ -1286,7 +1288,7 @@ extension UNetFromNNC {
     case .wurstchenStageC:
       modelKey = "stage_c"
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage:
+      .hiDreamI1, .qwenImage, .wan22_5b:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -1356,7 +1358,7 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<(20 + 40)).map {
                   return ($0, $0)
                 })
-            case .wan21_1_3b, .wan21_14b:
+            case .wan21_1_3b, .wan21_14b, .wan22_5b:
               return [Int: Int](
                 uniqueKeysWithValues: (0..<40).map {
                   return ($0, $0)
@@ -1719,7 +1721,7 @@ extension UNetFromNNC {
       case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
         break
-      case .wan21_1_3b, .wan21_14b:
+      case .wan21_1_3b, .wan21_14b, .wan22_5b:
         if $0.0 == 0 {
           let shape = $0.1.shape
           let t = shape[1] / ((originalShape[1] / 2) * (originalShape[2] / 2))
@@ -1817,7 +1819,7 @@ extension UNetFromNNC {
       unet.compile(inputs: inputs)
       teaCache?.compile(model: unet, inputs: inputs)
       return
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b:
       guard isCfgEnabled else {
         unet.compile(inputs: inputs)
         teaCache?.compile(model: unet, inputs: inputs)
@@ -2132,7 +2134,7 @@ extension UNetFromNNC {
         }
       }
       return Functional.concat(axis: 0, etUncond, etCond)
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b:
       let shouldUseCache =
         teaCache?.shouldUseCacheForTimeEmbedding(
           Array(restInputs[1..<7]), model: unet, step: step, marker: index * 2, of: Float.self)
@@ -2743,7 +2745,7 @@ extension UNetFromNNC {
         }
         c = newC
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
-        .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
+        .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
         fatalError()
       }
     }
@@ -2776,7 +2778,7 @@ extension UNetFromNNC {
       return x
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage:
+      .qwenImage, .wan22_5b:
       return x
     }
   }

@@ -39,6 +39,8 @@ public enum ComputeUnits {
       return 1.176470588 * 0.8
     case .wan21_14b:
       return 2.823529412 * 0.8
+    case .wan22_5b:
+      return 1.176470588 * 0.8
     case .hiDreamI1:
       return 2.84465488969
     case .qwenImage:
@@ -136,7 +138,7 @@ public enum ComputeUnits {
     case .hunyuanVideo:
       batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b:
       batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
       if configuration.causalInferenceEnabled && configuration.causalInference > 0

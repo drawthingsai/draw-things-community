@@ -136,6 +136,8 @@ public enum LoRAImporter {
       (unetFixedMapper, unetFixed) = WanFixed(
         timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, vaceLayers: [],
         textLength: 512, injectImage: true)
+    case .wan22_5b:
+      fatalError()
     case .hiDreamI1:
       (unet, unetMapper) = HiDream(
         batchSize: 1, height: 64, width: 64, textLength: (128, 128), layers: (16, 32),
@@ -196,7 +198,7 @@ public enum LoRAImporter {
       case .hunyuanVideo:
         inputDim = 16
         conditionalLength = 4096
-      case .wan21_1_3b, .wan21_14b:
+      case .wan21_1_3b, .wan21_14b, .wan22_5b:
         inputDim = 16
         conditionalLength = 4096
       case .hiDreamI1:
@@ -278,7 +280,7 @@ public enum LoRAImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .wan21_1_3b, .wan21_14b:
+      case .wan21_1_3b, .wan21_14b, .wan22_5b:
         isCfgEnabled = false
         isGuidanceEmbedEnabled = false
         crossattn = [
@@ -355,7 +357,7 @@ public enum LoRAImporter {
       case .svdI2v:
         vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
       case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-        .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
+        .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
         vectors = []
       case .kandinsky21, .v1, .v2:
         fatalError()
@@ -432,6 +434,8 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .wan22_5b:
+        fatalError()
       case .hiDreamI1:
         cArr =
           [
@@ -898,7 +902,7 @@ public enum LoRAImporter {
     case .hunyuanVideo:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
     case .hiDreamI1:
@@ -1180,7 +1184,7 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .wan21_1_3b, .wan21_14b:
+      case .wan21_1_3b, .wan21_14b, .wan22_5b:
         if let tensorDescUMT5XXL = stateDict["umt5_xxl"] {
           try archive.with(tensorDescUMT5XXL) {
             let tensor = Tensor<FloatType>(from: $0)
@@ -1257,7 +1261,7 @@ public enum LoRAImporter {
         modelPrefix = "stage_c"
         modelPrefixFixed = "stage_c_fixed"
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage:
+        .hiDreamI1, .qwenImage, .wan22_5b:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

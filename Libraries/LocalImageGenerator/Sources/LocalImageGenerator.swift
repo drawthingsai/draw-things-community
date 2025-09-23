@@ -131,7 +131,7 @@ extension LocalImageGenerator {
         700.00, 54.5, 15.886, 7.977, 4.248, 1.789, 0.981, 0.403, 0.173, 0.034, 0.002,
       ]
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB,
-      .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage:
+      .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1354,7 +1354,7 @@ extension LocalImageGenerator {
       result.7 = tokenLengthsUncond - 95  // Remove the leading template.
       result.8 = tokenLengthsCond - 95
       return result
-    case .wan21_14b, .wan21_1_3b:
+    case .wan21_14b, .wan21_1_3b, .wan22_5b:
       return tokenize(
         graph: graph, tokenizer: tokenizerUMT5, text: text, negativeText: negativeText,
         paddingToken: 0, addSpecialTokens: true, conditionalLength: 4096, modifier: .t5xxl,
@@ -2879,7 +2879,7 @@ extension LocalImageGenerator {
       case .hiDreamI1:
         // While HiDream uses CLIP, these are not meaningful because it only uses the pooling vector from CLIP.
         break
-      case .wan21_1_3b, .wan21_14b:
+      case .wan21_1_3b, .wan21_14b, .wan22_5b:
         fatalError()
       case .qwenImage:
         fatalError()
@@ -2976,7 +2976,7 @@ extension LocalImageGenerator {
         )
       case .hiDreamI1:
         fatalError()
-      case .wan21_1_3b, .wan21_14b:
+      case .wan21_1_3b, .wan21_14b, .wan22_5b:
         fatalError()
       case .qwenImage:
         fatalError()
@@ -2987,7 +2987,7 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage:
+        .hiDreamI1, .qwenImage, .wan22_5b:
         return (nil, [])
       case .flux1:
         guard
@@ -3011,7 +3011,7 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1:
+        .hiDreamI1, .wan22_5b:
         return (nil, [])
       case .flux1, .qwenImage:
         var referenceEncoded = [DynamicGraph.Tensor<FloatType>]()
@@ -3055,7 +3055,7 @@ extension LocalImageGenerator {
   private func isI2v(version: ModelVersion, modifier: SamplerModifier) -> Bool {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-      .ssd1b, .wurstchenStageB, .wurstchenStageC, .flux1, .hiDreamI1, .qwenImage:
+      .ssd1b, .wurstchenStageB, .wurstchenStageC, .flux1, .hiDreamI1, .qwenImage, .wan22_5b:
       return false
     case .svdI2v:
       return true
@@ -3071,7 +3071,7 @@ extension LocalImageGenerator {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1, .hiDreamI1,
-      .qwenImage:
+      .qwenImage, .wan22_5b:
       return (1, image, nil)
     case .wan21_14b, .wan21_1_3b:
       let shape = image.shape
@@ -3145,7 +3145,7 @@ extension LocalImageGenerator {
     hasCustom: Bool
   ) -> (Int, Int) {
     switch version {
-    case .wan21_14b, .wan21_1_3b:
+    case .wan21_14b, .wan21_1_3b, .wan22_5b:
       let referenceFrames =
         (canInjectControls ? (shuffleCount > 0 ? shuffleCount : (hasCustom ? 1 : 0)) : 0)
       return (
@@ -3186,7 +3186,7 @@ extension LocalImageGenerator {
       result[0..<min(shape[0], batchSize.0), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
         encodedImage[0..<min(shape[0], batchSize.0), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
       return result
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b:
       // For this mask, it contains 4 channels, each channel represent a frame (4x compression). First frame will use all 4 channels.
       let shape = encodedImage.shape
       var result = graph.variable(
@@ -3532,7 +3532,7 @@ extension LocalImageGenerator {
         * 8
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage:
+        .hiDreamI1, .qwenImage, .wan22_5b:
         firstPassChannels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -3701,7 +3701,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
-      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
@@ -4122,7 +4122,7 @@ extension LocalImageGenerator {
         let channels: Int
         switch modelVersion {
         case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-          .hiDreamI1, .qwenImage:
+          .hiDreamI1, .qwenImage, .wan22_5b:
           channels = 16
         case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
           .wurstchenStageB:
@@ -4548,7 +4548,7 @@ extension LocalImageGenerator {
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage:
+        .hiDreamI1, .qwenImage, .wan22_5b:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -4721,7 +4721,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
-      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
@@ -5761,7 +5761,7 @@ extension LocalImageGenerator {
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage:
+        .hiDreamI1, .qwenImage, .wan22_5b:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -6004,7 +6004,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
-      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
@@ -6551,7 +6551,7 @@ extension LocalImageGenerator {
       startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage:
+        .hiDreamI1, .qwenImage, .wan22_5b:
         channels = 16
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
@@ -6793,7 +6793,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
-      case .hunyuanVideo, .wan21_1_3b, .wan21_14b:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
