@@ -1082,6 +1082,8 @@ extension UNetFixedEncoder {
       let vaceLayers: [Int]
       if version == .wan21_1_3b {
         vaceLayers = vaceContext == nil ? [] : (0..<15).map { $0 * 2 }
+      } else if version == .wan22_5b {
+        vaceLayers = []
       } else {
         vaceLayers = vaceContext == nil ? [] : (0..<8).map { $0 * 5 }
       }
@@ -1092,6 +1094,13 @@ extension UNetFixedEncoder {
           unetFixed =
             LoRAWanFixed(
               timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 1_536,
+              layers: 30, vaceLayers: vaceLayers, textLength: textLength, injectImage: injectImage,
+              LoRAConfiguration: configuration
+            ).1
+        } else if version == .wan22_5b {
+          unetFixed =
+            LoRAWanFixed(
+              timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 3_072,
               layers: 30, vaceLayers: vaceLayers, textLength: textLength, injectImage: injectImage,
               LoRAConfiguration: configuration
             ).1
@@ -1108,6 +1117,12 @@ extension UNetFixedEncoder {
           unetFixed =
             WanFixed(
               timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 1_536,
+              layers: 30, vaceLayers: vaceLayers, textLength: textLength, injectImage: injectImage
+            ).1
+        } else if version == .wan22_5b {
+          unetFixed =
+            WanFixed(
+              timesteps: timesteps.count, batchSize: (isCfgEnabled ? 2 : 1, 1), channels: 3_072,
               layers: 30, vaceLayers: vaceLayers, textLength: textLength, injectImage: injectImage
             ).1
         } else {

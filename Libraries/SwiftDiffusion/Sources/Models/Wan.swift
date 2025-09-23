@@ -300,8 +300,7 @@ private func MLPProj(inChannels: Int, outChannels: Int, name: String) -> (
 public func Wan(
   channels: Int, layers: Int, vaceLayers: [Int], intermediateSize: Int, time: Int, height: Int,
   width: Int, textLength: Int, causalInference: (Int, pad: Int), injectImage: Bool,
-  usesFlashAttention: Bool,
-  outputResidual: Bool, inputResidual: Bool
+  usesFlashAttention: Bool, outputResidual: Bool, inputResidual: Bool, outputChannels: Int
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let imgIn = Convolution(
@@ -399,10 +398,11 @@ public func Wan(
   let shift = Input()
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = (scale .* normFinal(out) + shift).to(.Float16)
-  let projOut = Dense(count: 2 * 2 * 16, name: "linear")
-  out = projOut(out).reshaped([time, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
+  let projOut = Dense(count: 2 * 2 * outputChannels, name: "linear")
+  out = projOut(out).reshaped([time, h, w, 2, 2, outputChannels]).permuted(0, 1, 3, 2, 4, 5)
+    .contiguous()
     .reshaped([
-      time, h * 2, w * 2, 16,
+      time, h * 2, w * 2, outputChannels,
     ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -946,8 +946,8 @@ private func LoRAMLPProj(
 func LoRAWan(
   channels: Int, layers: Int, vaceLayers: [Int], intermediateSize: Int, time: Int, height: Int,
   width: Int, textLength: Int, causalInference: (Int, pad: Int), injectImage: Bool,
-  usesFlashAttention: Bool,
-  outputResidual: Bool, inputResidual: Bool, LoRAConfiguration: LoRANetworkConfiguration
+  usesFlashAttention: Bool, outputResidual: Bool, inputResidual: Bool, outputChannels: Int,
+  LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let imgIn = LoRAConvolution(
@@ -1046,10 +1046,11 @@ func LoRAWan(
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   out = (scale .* normFinal(out) + shift).to(.Float16)
   let projOut = LoRADense(
-    count: 2 * 2 * 16, configuration: LoRAConfiguration, index: 0, name: "linear")
-  out = projOut(out).reshaped([time, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
+    count: 2 * 2 * outputChannels, configuration: LoRAConfiguration, index: 0, name: "linear")
+  out = projOut(out).reshaped([time, h, w, 2, 2, outputChannels]).permuted(0, 1, 3, 2, 4, 5)
+    .contiguous()
     .reshaped([
-      time, h * 2, w * 2, 16,
+      time, h * 2, w * 2, outputChannels,
     ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()

@@ -655,7 +655,7 @@ public enum ImageConverter {
       let imageHeight = shape[1]
       let imageWidth = shape[2]
       let channels = shape[3]
-      guard channels == 4 || channels == 3 || channels == 16 else { return [] }
+      guard channels == 4 || channels == 3 || channels == 16 || channels == 48 else { return [] }
       return tensor.withUnsafeBytes {
         guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return [] }
         var images = [UIImage]()
@@ -778,7 +778,6 @@ public enum ImageConverter {
               bytes[i * 4 + 3] = 255
             }
           case .wan21_1_3b, .wan21_14b, .qwenImage:
-            // Need to update the coefficients.
             for i in 0..<imageHeight * imageWidth {
               let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
                 fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3],
@@ -811,7 +810,71 @@ public enum ImageConverter {
               bytes[i * 4 + 3] = 255
             }
           case .wan22_5b:
-            fatalError()
+            // Need to update the coefficients.
+            for i in 0..<imageHeight * imageWidth {
+              let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
+                fp16[i * 48], fp16[i * 48 + 1], fp16[i * 48 + 2], fp16[i * 48 + 3],
+                fp16[i * 48 + 4],
+                fp16[i * 48 + 5], fp16[i * 48 + 6], fp16[i * 48 + 7], fp16[i * 48 + 8],
+                fp16[i * 48 + 9], fp16[i * 48 + 10], fp16[i * 48 + 11], fp16[i * 48 + 12],
+                fp16[i * 48 + 13], fp16[i * 48 + 14], fp16[i * 48 + 15]
+              )
+              let (v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v27, v28, v29, v30, v31) =
+                (
+                  fp16[i * 48 + 16], fp16[i * 48 + 17], fp16[i * 48 + 18], fp16[i * 48 + 19],
+                  fp16[i * 48 + 20],
+                  fp16[i * 48 + 21], fp16[i * 48 + 22], fp16[i * 48 + 23], fp16[i * 48 + 24],
+                  fp16[i * 48 + 25], fp16[i * 48 + 26], fp16[i * 48 + 27], fp16[i * 48 + 28],
+                  fp16[i * 48 + 29], fp16[i * 48 + 30], fp16[i * 48 + 31]
+                )
+              let (v32, v33, v34, v35, v36, v37, v38, v39, v40, v41, v42, v43, v44, v45, v46, v47) =
+                (
+                  fp16[i * 48 + 32], fp16[i * 48 + 33], fp16[i * 48 + 34], fp16[i * 48 + 35],
+                  fp16[i * 48 + 36],
+                  fp16[i * 48 + 37], fp16[i * 48 + 38], fp16[i * 48 + 39], fp16[i * 48 + 40],
+                  fp16[i * 48 + 41], fp16[i * 48 + 42], fp16[i * 48 + 43], fp16[i * 48 + 44],
+                  fp16[i * 48 + 45], fp16[i * 48 + 46], fp16[i * 48 + 47]
+                )
+              // TBD, I may want to regress these coefficients myself.
+              let r: FloatType =
+                (0.0119 * v0 - 0.1062 * v1 + 0.0140 * v2 - 0.0813 * v3 + 0.0656 * v4 + 0.0264 * v5
+                  + 0.0295 * v6 - 0.0244 * v7 + 0.0443 * v8 - 0.0465 * v9 + 0.0359 * v10 - 0.0776
+                  * v11 + 0.0564 * v12 + 0.0006 * v13 - 0.0319 * v14 - 0.0268 * v15 + 0.0539 * v16
+                  - 0.0359 * v17 - 0.0285 * v18 + 0.1041 * v19 - 0.0086 * v20 + 0.0390 * v21
+                  + 0.0069 * v22 + 0.0006 * v23 + 0.0313 * v24 - 0.1454 * v25 + 0.0714 * v26
+                  - 0.0304 * v27 + 0.0401 * v28 - 0.0758 * v29 + 0.0568 * v30 - 0.0055 * v31
+                  + 0.0239 * v32 - 0.0663 * v33 - 0.0416 * v34 + 0.0166 * v35 - 0.0211 * v36
+                  + 0.1833 * v37 - 0.0368 * v38 - 0.3441 * v39 - 0.0479 * v40 - 0.0660 * v41
+                  - 0.0101 * v42 - 0.0690 * v43 - 0.0145 * v44 + 0.0421 * v45 + 0.0504 * v46
+                  - 0.0837 * v47) * 127.5 + 127.5
+              let g: FloatType =
+                (0.0103 * v0 - 0.0504 * v1 + 0.0409 * v2 - 0.0677 * v3 + 0.0851 * v4 + 0.0463 * v5
+                  + 0.0326 * v6 - 0.0270 * v7 - 0.0102 * v8 - 0.0090 * v9 + 0.0236 * v10 + 0.0854
+                  * v11 + 0.0264 * v12 + 0.0594 * v13 - 0.0542 * v14 + 0.0024 * v15 + 0.0265 * v16
+                  - 0.0312 * v17 - 0.1032 * v18 + 0.0537 * v19 - 0.0374 * v20 + 0.0670 * v21
+                  + 0.0144 * v22 - 0.0167 * v23 - 0.0574 * v24 - 0.0902 * v25 + 0.0827 * v26
+                  - 0.0574 * v27 + 0.0384 * v28 - 0.0297 * v29 + 0.1307 * v30 - 0.0310 * v31
+                  - 0.0305 * v32 - 0.0673 * v33 - 0.0047 * v34 + 0.0112 * v35 + 0.0011 * v36
+                  + 0.1466 * v37 + 0.0370 * v38 - 0.3543 * v39 - 0.0489 * v40 - 0.0153 * v41
+                  + 0.0068 * v42 - 0.0452 * v43 + 0.0041 * v44 + 0.0451 * v45 - 0.0483 * v46
+                  + 0.0168 * v47) * 127.5 + 127.5
+              let b: FloatType =
+                (0.0046 * v0 + 0.0165 * v1 + 0.0491 * v2 + 0.0607 * v3 + 0.0808 * v4 + 0.0912 * v5
+                  + 0.0590 * v6 + 0.0025 * v7 + 0.0288 * v8 - 0.0205 * v9 + 0.0082 * v10 + 0.1048
+                  * v11 + 0.0561 * v12 + 0.0418 * v13 - 0.0637 * v14 + 0.0260 * v15 + 0.0358 * v16
+                  - 0.0287 * v17 - 0.1237 * v18 + 0.0622 * v19 - 0.0051 * v20 + 0.2863 * v21
+                  + 0.0082 * v22 + 0.0079 * v23 - 0.0232 * v24 - 0.0481 * v25 + 0.0447 * v26
+                  - 0.0196 * v27 + 0.0204 * v28 - 0.0014 * v29 + 0.1372 * v30 - 0.0380 * v31
+                  + 0.0325 * v32 - 0.0140 * v33 - 0.0023 * v34 - 0.0093 * v35 + 0.0331 * v36
+                  + 0.2250 * v37 + 0.0295 * v38 - 0.2008 * v39 - 0.0420 * v40 + 0.0800 * v41
+                  + 0.0156 * v42 - 0.0927 * v43 + 0.0015 * v44 + 0.0373 * v45 - 0.0356 * v46
+                  + 0.0055 * v47) * 127.5
+                + 127.5
+              bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+              bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+              bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+              bytes[i * 4 + 3] = 255
+            }
           case .sdxlBase, .sdxlRefiner, .ssd1b, .pixart, .auraflow:
             for i in 0..<imageHeight * imageWidth {
               // We need to do some computations from the latent values.

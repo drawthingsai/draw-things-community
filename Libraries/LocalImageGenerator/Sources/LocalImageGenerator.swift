@@ -1358,8 +1358,7 @@ extension LocalImageGenerator {
       return tokenize(
         graph: graph, tokenizer: tokenizerUMT5, text: text, negativeText: negativeText,
         paddingToken: 0, addSpecialTokens: true, conditionalLength: 4096, modifier: .t5xxl,
-        potentials: potentials,
-        startLength: 0, maxLength: 0, paddingLength: 0)
+        potentials: potentials, startLength: 0, maxLength: 0, paddingLength: 0)
     case .qwenImage:
       if modifier == .kontext {
         let promptWithTemplate =
@@ -3520,23 +3519,45 @@ extension LocalImageGenerator {
     let firstPassStartWidth: Int
     let firstPassStartHeight: Int
     let firstPassChannels: Int
+    let firstPassScaleFactor: Int
     if modelVersion == .wurstchenStageC {
       (firstPassStartWidth, firstPassStartHeight) = stageCLatentsSize(configuration)
       firstPassChannels = 16
+      firstPassScaleFactor = 8  // This is not exactly right, but will work for the compute afterwards.
     } else {
-      firstPassStartWidth =
-        (hiresFixEnabled ? Int(configuration.hiresFixStartWidth) : Int(configuration.startWidth))
-        * 8
-      firstPassStartHeight =
-        (hiresFixEnabled ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
-        * 8
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b:
+        .hiDreamI1, .qwenImage:
         firstPassChannels = 16
+        firstPassScaleFactor = 8
+        firstPassStartWidth =
+          (hiresFixEnabled ? Int(configuration.hiresFixStartWidth) : Int(configuration.startWidth))
+          * 8
+        firstPassStartHeight =
+          (hiresFixEnabled
+            ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
+          * 8
+      case .wan22_5b:
+        firstPassChannels = 48
+        firstPassScaleFactor = 16
+        firstPassStartWidth =
+          (hiresFixEnabled ? Int(configuration.hiresFixStartWidth) : Int(configuration.startWidth))
+          * 4
+        firstPassStartHeight =
+          (hiresFixEnabled
+            ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
+          * 4
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
         firstPassChannels = 4
+        firstPassScaleFactor = 8
+        firstPassStartWidth =
+          (hiresFixEnabled ? Int(configuration.hiresFixStartWidth) : Int(configuration.startWidth))
+          * 8
+        firstPassStartHeight =
+          (hiresFixEnabled
+            ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
+          * 8
       }
     }
     let firstPassScale = DeviceCapability.Scale(
@@ -3680,12 +3701,16 @@ extension LocalImageGenerator {
           (image.map {
             let imageHeight = $0.shape[1]
             let imageWidth = $0.shape[2]
-            if imageHeight == firstPassStartHeight * 8 && imageWidth == firstPassStartWidth * 8 {
+            if imageHeight == firstPassStartHeight * firstPassScaleFactor
+              && imageWidth == firstPassStartWidth * firstPassScaleFactor
+            {
               return $0
             }
             return Upsample(
-              .bilinear, widthScale: Float(firstPassStartWidth * 8) / Float(imageWidth),
-              heightScale: Float(firstPassStartHeight * 8) / Float(imageHeight))($0)
+              .bilinear,
+              widthScale: Float(firstPassStartWidth * firstPassScaleFactor) / Float(imageWidth),
+              heightScale: Float(firstPassStartHeight * firstPassScaleFactor) / Float(imageHeight))(
+                $0)
           })
       }
       var firstStage = FirstStage<FloatType>(
@@ -3716,7 +3741,10 @@ extension LocalImageGenerator {
           firstPassImage
           ?? {
             let image = graph.variable(
-              .GPU(0), .NHWC(1, firstPassStartHeight * 8, firstPassStartWidth * 8, 3),
+              .GPU(0),
+              .NHWC(
+                1, firstPassStartHeight * firstPassScaleFactor,
+                firstPassStartWidth * firstPassScaleFactor, 3),
               of: FloatType.self)
             image.full(0)
             return image
@@ -3774,25 +3802,31 @@ extension LocalImageGenerator {
       let firstPassDepthImage = depthImage.map {
         let depthHeight = $0.shape[1]
         let depthWidth = $0.shape[2]
-        guard depthHeight != firstPassStartHeight * 8 || depthWidth != firstPassStartWidth * 8
+        guard
+          depthHeight != firstPassStartHeight * firstPassScaleFactor
+            || depthWidth != firstPassStartWidth * firstPassScaleFactor
         else {
           return $0
         }
         return Upsample(
-          .bilinear, widthScale: Float(firstPassStartHeight * 8) / Float(depthHeight),
-          heightScale: Float(firstPassStartWidth * 8) / Float(depthWidth))($0)
+          .bilinear,
+          widthScale: Float(firstPassStartHeight * firstPassScaleFactor) / Float(depthHeight),
+          heightScale: Float(firstPassStartWidth * firstPassScaleFactor) / Float(depthWidth))($0)
       }
       let customImage = custom.map { graph.variable($0.toGPU(0)) }
       let firstPassCustomImage = customImage.map {
         let customHeight = $0.shape[1]
         let customWidth = $0.shape[2]
-        guard customHeight != firstPassStartHeight * 8 || customWidth != firstPassStartWidth * 8
+        guard
+          customHeight != firstPassStartHeight * firstPassScaleFactor
+            || customWidth != firstPassStartWidth * firstPassScaleFactor
         else {
           return $0
         }
         return Upsample(
-          .bilinear, widthScale: Float(firstPassStartHeight * 8) / Float(customHeight),
-          heightScale: Float(firstPassStartWidth * 8) / Float(customWidth))($0)
+          .bilinear,
+          widthScale: Float(firstPassStartHeight * firstPassScaleFactor) / Float(customHeight),
+          heightScale: Float(firstPassStartWidth * firstPassScaleFactor) / Float(customWidth))($0)
       }
       let firstPassImageCond = encodeImageCond(
         startHeight: firstPassStartHeight, startWidth: firstPassStartWidth, graph: graph,
@@ -3926,12 +3960,19 @@ extension LocalImageGenerator {
       }
       let startWidth: Int
       let startHeight: Int
+      let startScaleFactor: Int
       if modelVersion == .wurstchenStageC {
         startWidth = Int(configuration.startWidth) * 16
         startHeight = Int(configuration.startHeight) * 16
+        startScaleFactor = 8
+      } else if modelVersion == .wan22_5b {
+        startWidth = Int(configuration.startWidth) * 16
+        startHeight = Int(configuration.startHeight) * 16
+        startScaleFactor = 4
       } else {
         startWidth = Int(configuration.startWidth) * 8
         startHeight = Int(configuration.startHeight) * 8
+        startScaleFactor = 8
       }
       let firstStageImage: DynamicGraph.Tensor<FloatType>
       let sample: DynamicGraph.Tensor<FloatType>
@@ -3962,14 +4003,16 @@ extension LocalImageGenerator {
         // TODO: Support this properly for Wurstchen models.
         var image =
           (image.flatMap {
-            if $0.shape[1] == startHeight * 8 && $0.shape[2] == startWidth * 8 {
+            if $0.shape[1] == startHeight * startScaleFactor
+              && $0.shape[2] == startWidth * startScaleFactor
+            {
               return $0
             }
             return nil
           })
           ?? {
             let image = graph.variable(
-              .GPU(0), .NHWC(1, startHeight * 8, startWidth * 8, 3),
+              .GPU(0), .NHWC(1, startHeight * startScaleFactor, startWidth * startScaleFactor, 3),
               of: FloatType.self)
             image.full(0)
             return image
@@ -4020,22 +4063,28 @@ extension LocalImageGenerator {
       let secondPassDepthImage = depthImage.map {
         let depthHeight = $0.shape[1]
         let depthWidth = $0.shape[2]
-        guard depthHeight != startHeight * 8 || depthWidth != startWidth * 8 else {
+        guard
+          depthHeight != startHeight * startScaleFactor
+            || depthWidth != startWidth * startScaleFactor
+        else {
           return $0
         }
         return Upsample(
-          .bilinear, widthScale: Float(startHeight * 8) / Float(depthHeight),
-          heightScale: Float(startWidth * 8) / Float(depthWidth))($0)
+          .bilinear, widthScale: Float(startHeight * startScaleFactor) / Float(depthHeight),
+          heightScale: Float(startWidth * startScaleFactor) / Float(depthWidth))($0)
       }
       let secondPassCustomImage = customImage.map {
         let customHeight = $0.shape[1]
         let customWidth = $0.shape[2]
-        guard customHeight != startHeight * 8 || customWidth != startWidth * 8 else {
+        guard
+          customHeight != startHeight * startScaleFactor
+            || customWidth != startWidth * startScaleFactor
+        else {
           return $0
         }
         return Upsample(
-          .bilinear, widthScale: Float(startHeight * 8) / Float(customHeight),
-          heightScale: Float(startWidth * 8) / Float(customWidth))($0)
+          .bilinear, widthScale: Float(startHeight * startScaleFactor) / Float(customHeight),
+          heightScale: Float(startWidth * startScaleFactor) / Float(customWidth))($0)
       }
       let secondPassImageCond = encodeImageCond(
         startHeight: startHeight, startWidth: startWidth, graph: graph,
@@ -4122,8 +4171,10 @@ extension LocalImageGenerator {
         let channels: Int
         switch modelVersion {
         case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-          .hiDreamI1, .qwenImage, .wan22_5b:
+          .hiDreamI1, .qwenImage:
           channels = 16
+        case .wan22_5b:
+          channels = 48
         case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
           .wurstchenStageB:
           channels = 4
@@ -4537,22 +4588,33 @@ extension LocalImageGenerator {
     precondition(image.shape[1] % (64 * imageScaleFactor) == 0)
     let startWidth: Int
     let startHeight: Int
+    let startScaleFactor: Int
     let channels: Int
     let firstStageFilePath: String
     if modelVersion == .wurstchenStageC {
       (startWidth, startHeight) = stageCLatentsSize(configuration)
       channels = 16
+      startScaleFactor = 8
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(file)
     } else {
-      startWidth = image.shape[2] / 8 / imageScaleFactor
-      startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b:
+        .hiDreamI1, .qwenImage:
         channels = 16
+        startScaleFactor = 8
+        startWidth = image.shape[2] / 8 / imageScaleFactor
+        startHeight = image.shape[1] / 8 / imageScaleFactor
+      case .wan22_5b:
+        channels = 48
+        startScaleFactor = 16
+        startWidth = image.shape[2] / 16 / imageScaleFactor
+        startHeight = image.shape[1] / 16 / imageScaleFactor
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
         channels = 4
+        startScaleFactor = 8
+        startWidth = image.shape[2] / 8 / imageScaleFactor
+        startHeight = image.shape[1] / 8 / imageScaleFactor
       }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
     }
@@ -4781,23 +4843,29 @@ extension LocalImageGenerator {
         let depthImage = graph.variable($0.toGPU(0))
         let depthHeight = depthImage.shape[1]
         let depthWidth = depthImage.shape[2]
-        guard depthHeight != startHeight * 8 || depthWidth != startWidth * 8 else {
+        guard
+          depthHeight != startHeight * startScaleFactor
+            || depthWidth != startWidth * startScaleFactor
+        else {
           return depthImage
         }
         return Upsample(
-          .bilinear, widthScale: Float(startHeight * 8) / Float(depthHeight),
-          heightScale: Float(startWidth * 8) / Float(depthWidth))(depthImage)
+          .bilinear, widthScale: Float(startHeight * startScaleFactor) / Float(depthHeight),
+          heightScale: Float(startWidth * startScaleFactor) / Float(depthWidth))(depthImage)
       }
       let customImage = custom.map {
         let customImage = graph.variable($0.toGPU(0))
         let customHeight = customImage.shape[1]
         let customWidth = customImage.shape[2]
-        guard customHeight != startHeight * 8 || customWidth != startWidth * 8 else {
+        guard
+          customHeight != startHeight * startScaleFactor
+            || customWidth != startWidth * startScaleFactor
+        else {
           return customImage
         }
         return Upsample(
-          .bilinear, widthScale: Float(startHeight * 8) / Float(customHeight),
-          heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
+          .bilinear, widthScale: Float(startHeight * startScaleFactor) / Float(customHeight),
+          heightScale: Float(startWidth * startScaleFactor) / Float(customWidth))(customImage)
       }
       let injectedControls = generateInjectedControls(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight, startWidth: startWidth,
@@ -5293,6 +5361,10 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 4 / scaleFactor
       startHeight = image.shape[1] / 4 / scaleFactor
       latentsZoomFactor = 4
+    } else if modelVersion == .wan22_5b {
+      startWidth = image.shape[2] / 16 / scaleFactor
+      startHeight = image.shape[1] / 16 / scaleFactor
+      latentsZoomFactor = 16
     } else {
       startWidth = image.shape[2] / 8 / scaleFactor
       startHeight = image.shape[1] / 8 / scaleFactor
@@ -5750,22 +5822,33 @@ extension LocalImageGenerator {
     precondition(image.shape[1] % (64 * imageScaleFactor) == 0)
     let startWidth: Int
     let startHeight: Int
+    let startScaleFactor: Int
     let channels: Int
     let firstStageFilePath: String
     if modelVersion == .wurstchenStageC {
       (startWidth, startHeight) = stageCLatentsSize(configuration)
       channels = 16
+      startScaleFactor = 8
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(file)
     } else {
-      startWidth = image.shape[2] / 8 / imageScaleFactor
-      startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b:
+        .hiDreamI1, .qwenImage:
         channels = 16
+        startScaleFactor = 8
+        startWidth = image.shape[2] / 8 / imageScaleFactor
+        startHeight = image.shape[1] / 8 / imageScaleFactor
+      case .wan22_5b:
+        channels = 48
+        startScaleFactor = 16
+        startWidth = image.shape[2] / 16 / imageScaleFactor
+        startHeight = image.shape[1] / 16 / imageScaleFactor
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
         channels = 4
+        startScaleFactor = 8
+        startWidth = image.shape[2] / 8 / imageScaleFactor
+        startHeight = image.shape[1] / 8 / imageScaleFactor
       }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
     }
@@ -6027,12 +6110,15 @@ extension LocalImageGenerator {
         let depthImage = graph.variable($0.toGPU(0))
         let depthHeight = depthImage.shape[1]
         let depthWidth = depthImage.shape[2]
-        guard depthHeight != startHeight * 8 || depthWidth != startWidth * 8 else {
+        guard
+          depthHeight != startHeight * startScaleFactor
+            || depthWidth != startWidth * startScaleFactor
+        else {
           return depthImage
         }
         return Upsample(
-          .bilinear, widthScale: Float(startHeight * 8) / Float(depthHeight),
-          heightScale: Float(startWidth * 8) / Float(depthWidth))(depthImage)
+          .bilinear, widthScale: Float(startHeight * startScaleFactor) / Float(depthHeight),
+          heightScale: Float(startWidth * startScaleFactor) / Float(depthWidth))(depthImage)
       }
       let injectedControls = generateInjectedControls(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight, startWidth: startWidth,
@@ -6114,12 +6200,15 @@ extension LocalImageGenerator {
         let customImage = graph.variable($0.toGPU(0))
         let customHeight = customImage.shape[1]
         let customWidth = customImage.shape[2]
-        guard customHeight != startHeight * 8 || customWidth != startWidth * 8 else {
+        guard
+          customHeight != startHeight * startScaleFactor
+            || customWidth != startWidth * startScaleFactor
+        else {
           return customImage
         }
         return Upsample(
-          .bilinear, widthScale: Float(startHeight * 8) / Float(customHeight),
-          heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
+          .bilinear, widthScale: Float(startHeight * startScaleFactor) / Float(customHeight),
+          heightScale: Float(startWidth * startScaleFactor) / Float(customWidth))(customImage)
       }
       let imageCond = encodeImageCond(
         startHeight: startHeight, startWidth: startWidth, graph: graph,
@@ -6540,22 +6629,33 @@ extension LocalImageGenerator {
     precondition(image.shape[1] % (64 * imageScaleFactor) == 0)
     let startWidth: Int
     let startHeight: Int
+    let startScaleFactor: Int
     let channels: Int
     let firstStageFilePath: String
     if modelVersion == .wurstchenStageC {
       (startWidth, startHeight) = stageCLatentsSize(configuration)
       channels = 16
+      startScaleFactor = 8
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(file)
     } else {
-      startWidth = image.shape[2] / 8 / imageScaleFactor
-      startHeight = image.shape[1] / 8 / imageScaleFactor
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b:
+        .hiDreamI1, .qwenImage:
         channels = 16
+        startScaleFactor = 8
+        startWidth = image.shape[2] / 8 / imageScaleFactor
+        startHeight = image.shape[1] / 8 / imageScaleFactor
+      case .wan22_5b:
+        channels = 48
+        startScaleFactor = 16
+        startWidth = image.shape[2] / 16 / imageScaleFactor
+        startHeight = image.shape[1] / 16 / imageScaleFactor
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
         channels = 4
+        startScaleFactor = 8
+        startWidth = image.shape[2] / 8 / imageScaleFactor
+        startHeight = image.shape[1] / 8 / imageScaleFactor
       }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
     }
@@ -6881,12 +6981,15 @@ extension LocalImageGenerator {
         let depthImage = graph.variable($0.toGPU(0))
         let depthHeight = depthImage.shape[1]
         let depthWidth = depthImage.shape[2]
-        guard depthHeight != startHeight * 8 || depthWidth != startWidth * 8 else {
+        guard
+          depthHeight != startHeight * startScaleFactor
+            || depthWidth != startWidth * startScaleFactor
+        else {
           return depthImage
         }
         return Upsample(
-          .bilinear, widthScale: Float(startHeight * 8) / Float(depthHeight),
-          heightScale: Float(startWidth * 8) / Float(depthWidth))(depthImage)
+          .bilinear, widthScale: Float(startHeight * startScaleFactor) / Float(depthHeight),
+          heightScale: Float(startWidth * startScaleFactor) / Float(depthWidth))(depthImage)
       }
       var injectedControls = generateInjectedControls(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight, startWidth: startWidth,
@@ -6927,12 +7030,15 @@ extension LocalImageGenerator {
         let customImage = graph.variable($0.toGPU(0))
         let customHeight = customImage.shape[1]
         let customWidth = customImage.shape[2]
-        guard customHeight != startHeight * 8 || customWidth != startWidth * 8 else {
+        guard
+          customHeight != startHeight * startScaleFactor
+            || customWidth != startWidth * startScaleFactor
+        else {
           return customImage
         }
         return Upsample(
-          .bilinear, widthScale: Float(startHeight * 8) / Float(customHeight),
-          heightScale: Float(startWidth * 8) / Float(customWidth))(customImage)
+          .bilinear, widthScale: Float(startHeight * startScaleFactor) / Float(customHeight),
+          heightScale: Float(startWidth * startScaleFactor) / Float(customWidth))(customImage)
       }
       let imageCond = encodeImageCond(
         startHeight: startHeight, startWidth: startWidth, graph: graph,

@@ -905,7 +905,7 @@ public final class ModelImporter {
           channels: 1_536, layers: 30, vaceLayers: [], intermediateSize: 8_960, time: 1, height: 64,
           width: 64,
           textLength: 512, causalInference: (0, 0), injectImage: true, usesFlashAttention: true,
-          outputResidual: false, inputResidual: false)
+          outputResidual: false, inputResidual: false, outputChannels: 16)
         (unetFixedMapper, unetFixed) = WanFixed(
           timesteps: 1, batchSize: (1, 1), channels: 1_536, layers: 30, vaceLayers: [],
           textLength: 512, injectImage: true)
@@ -914,7 +914,7 @@ public final class ModelImporter {
           channels: 5_120, layers: 40, vaceLayers: [], intermediateSize: 13_824, time: 1,
           height: 64, width: 64,
           textLength: 512, causalInference: (0, 0), injectImage: true, usesFlashAttention: true,
-          outputResidual: false, inputResidual: false)
+          outputResidual: false, inputResidual: false, outputChannels: 16)
         (unetFixedMapper, unetFixed) = WanFixed(
           timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, vaceLayers: [],
           textLength: 512, injectImage: true)

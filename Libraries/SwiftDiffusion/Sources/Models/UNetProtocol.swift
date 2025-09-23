@@ -979,7 +979,7 @@ extension UNetFromNNC {
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
-            inputResidual: false, LoRAConfiguration: configuration
+            inputResidual: false, outputChannels: 16, LoRAConfiguration: configuration
           ).1)
         if isTeaCacheEnabled {
           teaCache = TeaCache(
@@ -992,7 +992,7 @@ extension UNetFromNNC {
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
               injectImage: injectImage,
               usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true,
-              LoRAConfiguration: configuration
+              outputChannels: 16, LoRAConfiguration: configuration
             ).1)
         }
       } else {
@@ -1002,7 +1002,7 @@ extension UNetFromNNC {
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
-            inputResidual: false
+            inputResidual: false, outputChannels: 16
           ).1)
         if isTeaCacheEnabled {
           teaCache = TeaCache(
@@ -1013,13 +1013,43 @@ extension UNetFromNNC {
               channels: 1_536, layers: 0, vaceLayers: [], intermediateSize: 8_960,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
-              injectImage: injectImage,
-              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true
+              injectImage: injectImage, usesFlashAttention: usesFlashAttention,
+              outputResidual: false, inputResidual: true, outputChannels: 16
             ).1)
         }
       }
     case .wan22_5b:
-      fatalError()
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 4, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 4, startHeight) : startHeight
+      tileScaleFactor = 4
+      let textLength = c[7].shape[1]
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unet = ModelBuilderOrModel.model(
+          LoRAWan(
+            channels: 3_072, layers: 30, vaceLayers: [], intermediateSize: 14_336,
+            time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
+            textLength: textLength, causalInference: causalInference, injectImage: false,
+            usesFlashAttention: usesFlashAttention, outputResidual: false,
+            inputResidual: false, outputChannels: 48, LoRAConfiguration: configuration
+          ).1)
+      } else {
+        unet = ModelBuilderOrModel.model(
+          Wan(
+            channels: 3_072, layers: 30, vaceLayers: [], intermediateSize: 14_336,
+            time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
+            textLength: textLength, causalInference: causalInference, injectImage: false,
+            usesFlashAttention: usesFlashAttention, outputResidual: false,
+            inputResidual: false, outputChannels: 48
+          ).1)
+      }
     case .wan21_14b:
       let vaceContextExists = (c[7].shape.count == 1 && c[7].shape[0] == 1)
       let vaceLayers: [Int] = vaceContextExists ? (0..<8).map { $0 * 5 } : []
@@ -1045,7 +1075,7 @@ extension UNetFromNNC {
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
-            inputResidual: false, LoRAConfiguration: configuration
+            inputResidual: false, outputChannels: 16, LoRAConfiguration: configuration
           ).1)
         if isTeaCacheEnabled {
           teaCache = TeaCache(
@@ -1058,7 +1088,7 @@ extension UNetFromNNC {
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
               injectImage: injectImage,
               usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true,
-              LoRAConfiguration: configuration
+              outputChannels: 16, LoRAConfiguration: configuration
             ).1)
         }
       } else {
@@ -1068,7 +1098,7 @@ extension UNetFromNNC {
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
             usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
-            inputResidual: false
+            inputResidual: false, outputChannels: 16
           ).1)
         if isTeaCacheEnabled {
           teaCache = TeaCache(
@@ -1079,8 +1109,8 @@ extension UNetFromNNC {
               channels: 5_120, layers: 0, vaceLayers: [], intermediateSize: 13_824,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
-              injectImage: injectImage,
-              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true
+              injectImage: injectImage, usesFlashAttention: usesFlashAttention,
+              outputResidual: false, inputResidual: true, outputChannels: 16
             ).1)
         }
       }
