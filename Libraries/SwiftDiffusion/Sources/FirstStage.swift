@@ -524,6 +524,7 @@ extension FirstStage {
     // Hunyuan / Wan just do the decoding with the batch.
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
+        && version != .wan22_5b
     else {
       if highPrecision {
         let result: DynamicGraph.Tensor<Float>
@@ -1169,6 +1170,7 @@ extension FirstStage {
     }
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
+        && version != .wan22_5b
     else {
       if highPrecision {
         if tiledEncoding {
