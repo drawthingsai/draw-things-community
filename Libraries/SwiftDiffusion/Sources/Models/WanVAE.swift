@@ -187,16 +187,21 @@ private struct NHWCAttnBlockCausal3D {
   }
 }
 
+// Wan 2.2 VAE is a 16x VAE with some subtle differences with Wan 2.1 VAE (used by Wan 2.2 A14B, Wan 2.1 1.3B, Wan 2.1 14B, Qwen Image).
+// 1. The channel is not halved at the resample convolution time (Wan 2.2);
+// 2. The input is 48-channel, output is 12-channel and pixel shuffle back to 2x;
+// 3. There is a separate upsample shortcut such that the higher resolution res blocks should only learn high-frequency information.
 private func NHWCWanDecoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
-  startDepth: Int, paddingFinalConvLayer: Bool
+  startDepth: Int, paddingFinalConvLayer: Bool, wan22: Bool
 )
   -> (ModelWeightMapper, Model)
 {
   let x = Input()
   var previousChannel = channels[channels.count - 1]
+  let inputChannels = wan22 ? 48 : 16
   let postQuantConv = Convolution(
-    groups: 1, filters: 16, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
+    groups: 1, filters: inputChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
     format: .OIHW, name: "post_quant_conv")
   let postQuantX = postQuantConv(x)
   let convIn: Model
@@ -207,7 +212,7 @@ private func NHWCWanDecoderCausal3D(
       hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_in")
     convOut = Convolution(
-      groups: 1, filters: paddingFinalConvLayer ? 4 : 3, filterSize: [3, 3, 3],
+      groups: 1, filters: wan22 ? 12 : (paddingFinalConvLayer ? 4 : 3), filterSize: [3, 3, 3],
       hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_out")
   } else {
@@ -216,7 +221,7 @@ private func NHWCWanDecoderCausal3D(
       hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
       format: .OIHW, name: "conv_in")
     convOut = Convolution(
-      groups: 1, filters: paddingFinalConvLayer ? 4 : 3, filterSize: [3, 3],
+      groups: 1, filters: wan22 ? 12 : (paddingFinalConvLayer ? 4 : 3), filterSize: [3, 3],
       hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
       format: .OIHW, name: "conv_out")
   }
@@ -235,7 +240,7 @@ private func NHWCWanDecoderCausal3D(
           outChannels: channel, shortcut: previousChannel != channel, startDepth: startDepth))
       previousChannel = channel
     }
-    if i > 0 {
+    if i > 0 && !wan22 {
       previousChannel = channel / 2
     }
   }
@@ -246,8 +251,9 @@ private func NHWCWanDecoderCausal3D(
       format: .OIHW, name: "time_conv")
   }
   let upsampleConv2d = (0..<(channels.count - 1)).map { i in
+    let channels = wan22 ? channels[channels.count - i - 1] : channels[channels.count - i - 1] / 2
     return Convolution(
-      groups: 1, filters: channels[channels.count - i - 1] / 2, filterSize: [3, 3],
+      groups: 1, filters: channels, filterSize: [3, 3],
       hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
       format: .OIHW, name: "upsample")
   }
@@ -260,13 +266,15 @@ private func NHWCWanDecoderCausal3D(
     var out: Model.IO
     if d == 0 {
       out = postQuantX.reshaped(
-        [min(startDepth - d, 3), startHeight, startWidth, 16], offset: [d, 0, 0, 0],
-        strides: [startHeight * startWidth * 16, startWidth * 16, 16, 1]
+        [min(startDepth - d, 3), startHeight, startWidth, inputChannels], offset: [d, 0, 0, 0],
+        strides: [
+          startHeight * startWidth * inputChannels, startWidth * inputChannels, inputChannels, 1,
+        ]
       ).contiguous()
       if startDepth > 1 {
         out = convIn(
           out.padded(.zero, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
-            1, min(startDepth - d, 3) + 2, startHeight + 2, startWidth + 2, 16,
+            1, min(startDepth - d, 3) + 2, startHeight + 2, startWidth + 2, inputChannels,
           ])
         ).reshaped([min(startDepth - d, 3), startHeight, startWidth, previousChannel])
       } else {
@@ -274,16 +282,18 @@ private func NHWCWanDecoderCausal3D(
       }
     } else {
       out = postQuantX.reshaped(
-        [min(startDepth - (d - 1), 4), startHeight, startWidth, 16],
+        [min(startDepth - (d - 1), 4), startHeight, startWidth, inputChannels],
         offset: [d - 1, 0, 0, 0],
-        strides: [startHeight * startWidth * 16, startWidth * 16, 16, 1]
+        strides: [
+          startHeight * startWidth * inputChannels, startWidth * inputChannels, inputChannels, 1,
+        ]
       ).contiguous().padded(.zero, begin: [0, 1, 1, 0], end: [0, 1, 1, 0])
       if let last = last {
         out.add(dependencies: [last])
       }
       out = convIn(
         out.reshaped([
-          1, min(startDepth - (d - 1), 4), startHeight + 2, startWidth + 2, 16,
+          1, min(startDepth - (d - 1), 4), startHeight + 2, startWidth + 2, inputChannels,
         ])
       ).reshaped([min(startDepth - (d - 1), 4) - 2, startHeight, startWidth, previousChannel])
     }
@@ -312,7 +322,52 @@ private func NHWCWanDecoderCausal3D(
     out = midBlock2Out
     var j = 0
     var k = 0
+    var upShortcut: Model.IO? = nil
     for (i, channel) in channels.enumerated().reversed() {
+      if i > 0 && wan22 {
+        var shortcut = out
+        if i > 1 {
+          // Need to do temporal upscaling.
+          shortcut = shortcut.reshaped([depth, height, width, previousChannel])
+          if previousChannel != channel {
+            shortcut = Functional.concat(
+              axis: 3, shortcut, shortcut, shortcut, shortcut, flags: [.disableOpt])
+            shortcut = shortcut.reshaped([depth, height, width, 2, 2, channel, 2]).permuted(
+              0, 6, 1, 3, 2, 4, 5
+            ).copied().reshaped([depth * 2, height * 2, width * 2, channel]).copied()
+          } else {
+            shortcut = Functional.concat(
+              axis: 3, shortcut, shortcut, shortcut, shortcut, shortcut, shortcut, shortcut,
+              shortcut, flags: [.disableOpt])
+            shortcut = shortcut.reshaped([depth, height, width, 2, 2, 2, channel]).permuted(
+              0, 3, 1, 4, 2, 5, 6
+            ).copied().reshaped([depth * 2, height * 2, width * 2, channel]).copied()
+          }
+          if d == 0 {
+            shortcut = shortcut.reshaped(
+              [(depth - 1) * 2 + 1, height * 2, width * 2, channel], offset: [1, 0, 0, 0],
+              strides: [height * 2 * width * 2 * channel, width * 2 * channel, channel, 1]
+            ).contiguous().reshaped([(depth - 1) * 2 + 1, height * 2, width * 2, channel])
+          }
+        } else {
+          shortcut = shortcut.reshaped([depth, height, width, previousChannel])
+          if previousChannel != channel {
+            shortcut = Functional.concat(axis: 3, shortcut, shortcut, flags: [.disableOpt])
+            shortcut = shortcut.reshaped([depth, height, width, 2, channel, 2]).permuted(
+              0, 1, 5, 2, 3, 4
+            ).copied().reshaped([depth, height * 2, width * 2, channel])
+          } else {
+            shortcut = Functional.concat(
+              axis: 3, shortcut, shortcut, shortcut, shortcut, flags: [.disableOpt])
+            shortcut = shortcut.reshaped([depth, height, width, 2, 2, channel]).permuted(
+              0, 1, 3, 2, 4, 5
+            ).copied().reshaped([depth, height * 2, width * 2, channel])
+          }
+        }
+        upShortcut = shortcut
+      } else {
+        upShortcut = nil
+      }
       for _ in 0..<numRepeat + 1 {
         let (mapper, blockOut) = upBlockBuilders[j](
           input: out,
@@ -400,7 +455,12 @@ private func NHWCWanDecoderCausal3D(
         height *= 2
         let conv2d = upsampleConv2d[channels.count - i - 1]
         out = conv2d(out)
-        previousChannel = channel / 2
+        if let upShortcut = upShortcut {
+          out = upShortcut + out
+        }
+        if !wan22 {
+          previousChannel = channel / 2
+        }
         let upLayer = k
         let mapper: ModelWeightMapper = { _ in
           var mapping = ModelWeightMapping()
@@ -444,14 +504,20 @@ private func NHWCWanDecoderCausal3D(
     last = out
     outs.append(
       out.reshaped([
-        depth, height, width, paddingFinalConvLayer ? 4 : 3,
+        depth, height, width, wan22 ? 12 : (paddingFinalConvLayer ? 4 : 3),
       ]))
   }
-  let out: Model.IO
+  var out: Model.IO
   if outs.count > 1 {
     out = Concat(axis: 0)(outs)
   } else {
     out = outs[0]
+  }
+  if wan22 {
+    out = out.reshaped([(startDepth - 1) * 4 + 1, startHeight * 8, startWidth * 8, 3, 2, 2])
+      .permuted(0, 1, 4, 2, 5, 3).copied().reshaped([
+        (startDepth - 1) * 4 + 1, startHeight * 16, startWidth * 16, 3,
+      ])
   }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -1472,13 +1538,13 @@ private func NCHWWanEncoderCausal3D(
 
 func WanDecoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
-  startDepth: Int, paddingFinalConvLayer: Bool, format: TensorFormat
+  startDepth: Int, paddingFinalConvLayer: Bool, wan22: Bool, format: TensorFormat
 ) -> (ModelWeightMapper, Model) {
   switch format {
   case .NHWC:
     return NHWCWanDecoderCausal3D(
       channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
-      startDepth: startDepth, paddingFinalConvLayer: paddingFinalConvLayer)
+      startDepth: startDepth, paddingFinalConvLayer: paddingFinalConvLayer, wan22: wan22)
   case .NCHW:
     return NCHWWanDecoderCausal3D(
       channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,

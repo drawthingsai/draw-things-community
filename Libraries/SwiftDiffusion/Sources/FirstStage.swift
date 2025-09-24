@@ -318,7 +318,7 @@ extension FirstStage {
         ?? WanDecoderCausal3D(
           channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true,
-          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+          wan22: false, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -376,7 +376,96 @@ extension FirstStage {
       outputChannels = 3
       causalAttentionMask = nil
     case .wan22_5b:
-      fatalError()
+      let startDepth = shape[0]
+      var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
+      var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
+      let sizeLimit: Int
+      if startDepth > 1 {
+        switch deviceProperties.memoryCapacity {
+        case .high:
+          sizeLimit = 1024  // Practically unlimited.
+        case .medium:
+          sizeLimit = 104
+        case .low:
+          sizeLimit = 32
+        }
+      } else {
+        sizeLimit = 1024
+      }
+      if startWidth > sizeLimit || startHeight > sizeLimit {
+        // We turn on tiled decoding forcefully.
+        if !tiledDecoding {
+          decodingTileOverlap = 4
+        }
+        tiledDecoding = true
+        startWidth = min(startWidth, sizeLimit)
+        startHeight = min(startHeight, sizeLimit)
+        decodingTileSize.width = startWidth
+        decodingTileSize.height = startHeight
+        decodingTileSize.depth = startDepth
+      }
+      decoder =
+        existingDecoder
+        ?? WanDecoderCausal3D(
+          channels: [256, 512, 1024, 1024], numRepeat: 2, startWidth: startWidth,
+          startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true,
+          wan22: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+        ).1
+      if existingDecoder == nil {
+        decoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          decoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: z[0..<startDepth, 0..<startHeight, 0..<startWidth, 0..<shape[3]]))
+        } else {
+          decoder.compile(
+            inputs: z[0..<startDepth, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          if startDepth > 1 {
+            store.read("decoder", model: decoder, codec: [.jit, externalData])
+          } else {
+            store.read("decoder", model: decoder, codec: [.jit, externalData]) {
+              name, dataType, format, shape in
+              guard
+                name.hasSuffix("-0]")
+                  && (name.hasPrefix("__decoder__[t-conv_in-")
+                    || name.hasPrefix("__decoder__[t-conv_out-")
+                    || name.hasPrefix("__decoder__[t-resnet_conv1-")
+                    || name.hasPrefix("__decoder__[t-resnet_conv2-"))
+              else {
+                return .continue(name)
+              }
+              guard
+                var tensor =
+                  (store.read(name, kind: .CPU, codec: [.jit, externalData]).map {
+                    Tensor<FloatType>(from: $0)
+                  })
+              else {
+                return .continue(name)
+              }
+              let channels = tensor.shape.reduce(1, *) / (3 * 3 * 3)  // Input channels and output channels.
+              let outChannels = shape.reduce(1, *) / (3 * 3)
+              tensor = tensor.reshaped(.NCHW(channels, 3, 3, 3))
+              // In case depth = 1, it reduces to 2D convolution.
+              guard channels < outChannels else {
+                return .final(tensor[0..<channels, 2..<3, 0..<3, 0..<3].contiguous())
+              }
+              // In case we needs more, allocate first.
+              var outTensor = Tensor<FloatType>(
+                Array(repeating: 0, count: outChannels * 3 * 3), .CPU, .NCHW(outChannels, 1, 3, 3))
+              outTensor[0..<channels, 0..<1, 0..<3, 0..<3] = tensor[
+                0..<channels, 2..<3, 0..<3, 0..<3
+              ].contiguous()
+              return .final(outTensor)
+            }
+          }
+        }
+      }
+      outputChannels = 3
+      causalAttentionMask = nil
     case .kandinsky21:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
