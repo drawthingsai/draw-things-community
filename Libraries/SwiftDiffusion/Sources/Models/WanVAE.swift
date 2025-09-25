@@ -650,7 +650,7 @@ private func NHWCWanEncoderCausal3D(
     var k = 0
     for (i, channel) in channels.enumerated() {
       var downShortcut = out
-      if i < channels.count - 1 {
+      if i < channels.count - 1 && wan22 {
         if i > 0 && depth > 1 {
           let pad = (2 - depth % 2) % 2
           downShortcut = downShortcut.padded(.zero, begin: [pad, 0, 0, 0], end: [0, 0, 0, 0])
@@ -1479,7 +1479,7 @@ private func NCHWWanEncoderCausal3D(
     var k = 0
     for (i, channel) in channels.enumerated() {
       var downShortcut = out
-      if i < channels.count - 1 {
+      if i < channels.count - 1 && wan22 {
         if i > 0 && depth > 1 {
           let pad = (2 - depth % 2) % 2
           downShortcut = downShortcut.padded(.zero, begin: [0, pad, 0, 0], end: [0, 0, 0, 0])
