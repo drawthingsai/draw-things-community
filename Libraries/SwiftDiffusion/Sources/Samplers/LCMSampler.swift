@@ -126,7 +126,7 @@ extension LCMSampler: Sampler {
         inChannels = channels * 2
       case .double:
         inChannels = channels * 2
-      case .none, .kontext:
+      case .none, .kontext, .qwenimageEditPlus:
         inChannels = channels
       }
     }
@@ -158,7 +158,7 @@ extension LCMSampler: Sampler {
           i..<(i + 1), 0..<startHeight, 0..<startWidth, channels..<(channels + maskedImageChannels)] =
           maskedImage
       }
-    case .none, .kontext:
+    case .none, .kontext, .qwenimageEditPlus:
       break
     }
     var c = c

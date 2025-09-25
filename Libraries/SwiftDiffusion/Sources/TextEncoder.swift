@@ -2519,7 +2519,7 @@ extension TextEncoder {
     image: [DynamicGraph.Tensor<FloatType>], lengthsOfUncond: [Int], lengthsOfCond: [Int],
     injectedTextEmbeddings: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
-    )],
+    )], modifier: SamplerModifier,
     textModels existingTextModels: [Model?]
   )
     -> ([DynamicGraph.Tensor<FloatType>], [Model])

@@ -48,6 +48,7 @@ public enum SamplerModifier: String, Codable {
   case double = "double"
   case canny = "canny"
   case kontext = "kontext"
+  case qwenimageEditPlus = "qwenimage_edit_plus"
 }
 
 public struct LoRAConfiguration: Equatable, Codable {
@@ -310,7 +311,7 @@ public func cfgChannelsAndInputChannels(
     case .double:
       cfgChannels = isCfgEnabled ? 2 : 1
       inChannels = channels * 2
-    case .none, .kontext:
+    case .none, .kontext, .qwenimageEditPlus:
       cfgChannels = isCfgEnabled ? 2 : 1
       inChannels = channels
     }
@@ -403,7 +404,7 @@ func updateCfgInputAndConditions<FloatType: TensorNumeric & BinaryFloatingPoint>
           maskedImage
       }
     }
-  case .none, .kontext:
+  case .none, .kontext, .qwenimageEditPlus:
     break
   }
 }

@@ -2267,7 +2267,7 @@ public struct LoRATrainer {
       case .depth, .canny:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 5), of: FloatType.self)
-      case .none, .kontext:
+      case .none, .kontext, .qwenimageEditPlus:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 4), of: FloatType.self)
       }

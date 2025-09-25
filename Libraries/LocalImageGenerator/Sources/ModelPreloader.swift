@@ -550,7 +550,7 @@ extension ModelPreloader {
     case .double:
       cfgChannels = 2
       numberOfChannels = 8
-    case .none, .kontext:
+    case .none, .kontext, .qwenimageEditPlus:
       cfgChannels = 2
       numberOfChannels = 4
     }

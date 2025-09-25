@@ -632,6 +632,10 @@ public struct ModelZoo: DownloadZoo {
     "wan_v2.2_5b_ti2v_q8p.ckpt": "e01bc2a772e1a4c5bb577fb2a98a9070638c359ecaf2ac62e6a017f517b9ab9b",
     "wan_v2.2_video_vae_f16.ckpt":
       "5e4dc4638ff09ed3a0173f907a78d2dde90c56ef855070059b594dd0c7a75a1e",
+    "qwen_image_edit_2509_q8p.ckpt":
+      "4eed135a23b5c6a4a3b6f89eca5dcb73e96baeff521514d262a6db1bd0051f9e",
+    "qwen_image_edit_2509_q6p.ckpt":
+      "59727be82a7f7b3ebb3074ae008a710d9a57f1d9f1ecd7e1f03cff63100723fc",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -654,6 +658,30 @@ public struct ModelZoo: DownloadZoo {
         "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
     ),
     Specification(
+      name: "Qwen Image Edit 2509", file: "qwen_image_edit_2509_q8p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", modifier: .qwenimageEditPlus,
+      clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      note:
+        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025."
+    ),
+    Specification(
+      name: "Qwen Image Edit 2509 (6-bit)", file: "qwen_image_edit_2509_q6p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", modifier: .qwenimageEditPlus,
+      clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      note:
+        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025."
+    ),
+    Specification(
       name: "Qwen Image Edit 1.0", file: "qwen_image_edit_1.0_q8p.ckpt", prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
       autoencoder: "qwen_image_vae_f16.ckpt", modifier: .kontext,
@@ -663,7 +691,7 @@ public struct ModelZoo: DownloadZoo {
         qkNorm: true, dualAttentionLayers: [],
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
-        "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+        "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image-Edit) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
     ),
     Specification(
       name: "Qwen Image Edit 1.0 (6-bit)", file: "qwen_image_edit_1.0_q6p.ckpt", prefix: "",
@@ -675,7 +703,7 @@ public struct ModelZoo: DownloadZoo {
         qkNorm: true, dualAttentionLayers: [],
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
-        "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+        "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image-Edit) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
     ),
     Specification(
       name: "HiDream I1 [fast]", file: "hidream_i1_fast_q8p.ckpt", prefix: "",

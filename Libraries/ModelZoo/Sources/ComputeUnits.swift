@@ -123,7 +123,7 @@ public enum ComputeUnits {
     case .flux1, .qwenImage:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
-      if samplerModifier == .kontext {  // For Kontext, if the reference image is provided, we effectively double the cost at least.
+      if samplerModifier == .kontext || samplerModifier == .qwenimageEditPlus {  // For Kontext, if the reference image is provided, we effectively double the cost at least.
         root = root * Double(1 + (hasImage ? 1 : 0) + shuffleCount)
       }
     case .hiDreamI1:

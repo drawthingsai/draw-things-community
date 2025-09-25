@@ -1374,6 +1374,23 @@ extension LocalImageGenerator {
         result.7 = result.7 - 64
         result.8 = result.8 - 64
         return result
+      } else if modifier == .qwenimageEditPlus {
+        var promptWithTemplate =
+          "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
+        var negativePromptWithTemplate =
+          "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
+        let imagePromptTemplate = "Picture 1: <|vision_start|><|image_pad|><|vision_end|>"
+        promptWithTemplate += imagePromptTemplate
+        negativePromptWithTemplate += imagePromptTemplate
+        var result = tokenize(
+          graph: graph, tokenizer: tokenizerQwen25, text: promptWithTemplate,
+          negativeText: negativePromptWithTemplate,
+          paddingToken: nil, addSpecialTokens: false, conditionalLength: 3584, modifier: .qwen25,
+          potentials: potentials,
+          startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
+        result.7 = result.7 - 64
+        result.8 = result.8 - 64
+        return result
       } else {
         let promptWithTemplate =
           "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
@@ -3006,7 +3023,7 @@ extension LocalImageGenerator {
             encodedCanny[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied()), []
         )
       }
-    case .kontext:
+    case .kontext, .qwenimageEditPlus:
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
@@ -3657,8 +3674,8 @@ extension LocalImageGenerator {
           tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: image.map { [$0] } ?? [],
-          lengthsOfUncond: lengthsOfUncond,
-          lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
+          lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
+          injectedTextEmbeddings: injectedTextEmbeddings, modifier: modifier,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
         textEncoder: textEncoder)
       var c: [DynamicGraph.Tensor<FloatType>]
@@ -3693,7 +3710,8 @@ extension LocalImageGenerator {
       var mask: DynamicGraph.Tensor<FloatType>? = nil
       var firstPassImage: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modifier == .double
-        || modifier == .depth || modifier == .canny || modifier == .kontext || canInjectControls
+        || modifier == .depth || modifier == .canny || modifier == .kontext
+        || modifier == .qwenimageEditPlus || canInjectControls
         || canInjectT2IAdapters || !injectIPAdapterLengths.isEmpty
       {
         // TODO: This needs to be properly handled for Wurstchen (i.e. using EfficientNet to encode image).
@@ -4719,6 +4737,7 @@ extension LocalImageGenerator {
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
+          modifier: modifier,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
         textEncoder: textEncoder)
       var c: [DynamicGraph.Tensor<FloatType>]
@@ -6031,6 +6050,7 @@ extension LocalImageGenerator {
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
+          modifier: modifier,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
         textEncoder: textEncoder)
       var c: [DynamicGraph.Tensor<FloatType>]
@@ -6837,6 +6857,7 @@ extension LocalImageGenerator {
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
           injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
+          modifier: modifier,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
         textEncoder: textEncoder)
       var c: [DynamicGraph.Tensor<FloatType>]
