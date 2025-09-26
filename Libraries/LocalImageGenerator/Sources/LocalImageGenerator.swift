@@ -1375,13 +1375,11 @@ extension LocalImageGenerator {
         result.8 = result.8 - 64
         return result
       } else if modifier == .qwenimageEditPlus {
-        var promptWithTemplate =
-          "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
-        var negativePromptWithTemplate =
-          "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
         let imagePromptTemplate = "Picture 1: <|vision_start|><|image_pad|><|vision_end|>"
-        promptWithTemplate += imagePromptTemplate
-        negativePromptWithTemplate += imagePromptTemplate
+        let promptWithTemplate =
+          "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n\(imagePromptTemplate)\(text)<|im_end|>\n<|im_start|>assistant\n"
+        let negativePromptWithTemplate =
+          "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n\(imagePromptTemplate)\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
         var result = tokenize(
           graph: graph, tokenizer: tokenizerQwen25, text: promptWithTemplate,
           negativeText: negativePromptWithTemplate,
