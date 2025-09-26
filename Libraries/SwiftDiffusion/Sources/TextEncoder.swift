@@ -1776,7 +1776,7 @@ extension TextEncoder {
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
     tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
-    textModels existingTextModels: [Model?]
+    modifier: SamplerModifier, textModels existingTextModels: [Model?]
   )
     -> ([DynamicGraph.Tensor<FloatType>], [Model])
   {
@@ -1804,8 +1804,18 @@ extension TextEncoder {
       var input = (image.toGPU(0) - mean) .* invStd
       // Resize w / h to multiple of 28, it might have some stretches, it is OK. This is the smart_resize logic: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_vl/image_processing_qwen2_vl.py#L55
       let shape = input.shape
-      let height = shape[1]
-      let width = shape[2]
+      var height = shape[1]
+      var width = shape[2]
+      if modifier == .qwenimageEditPlus, height > 0 && width > 0 {
+        // Qwen Image Edit Plus pipeline modifies image to area of 384x384.
+        let ratio = Double(width) / Double(height)
+        let widthD = (384 * 384 * ratio).squareRoot()
+        let heightD = widthD / ratio
+        // https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/qwenimage/pipeline_qwenimage_edit_plus.py#L158
+        // choose to round to multiple of 32, but here we do 28 to avoid additional aspect ratio scaling artifacts.
+        width = Int((widthD / 28).rounded()) * 28
+        height = Int((heightD / 28).rounded()) * 28
+      }
       var hBar = (Double(height) / 28).rounded() * 28
       var wBar = (Double(width) / 28).rounded() * 28
       if hBar * wBar > 12_845_056 {  // https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct/blob/main/preprocessor_config.json#L3
@@ -2589,7 +2599,7 @@ extension TextEncoder {
         image: image,
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
-        textModels: existingTextModels)
+        modifier: modifier, textModels: existingTextModels)
     case .wurstchenStageC, .wurstchenStageB:
       return encodeWurstchen(
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
