@@ -44,7 +44,8 @@ extension UNetFromCoreML {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
-    causalInference: (Int, pad: Int), isBF16: Bool, activationFfnScaling: [Int: Int],
+    causalInference: (Int, pad: Int), isBF16: Bool, activationProjScaling: [Int: Int],
+    activationFfnScaling: [Int: Int],
     weightsCache: WeightsCache
   ) -> Bool {
     #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))

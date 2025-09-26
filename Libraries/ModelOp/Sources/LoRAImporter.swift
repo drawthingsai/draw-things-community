@@ -148,9 +148,10 @@ public enum LoRAImporter {
       (unetMapper, unet) = QwenImage(
         batchSize: 1, height: 64, width: 64, textLength: 128, referenceSequenceLength: 0,
         channels: 3_072, layers: 60, usesFlashAttention: .scale1, isBF16: false,
-        activationFfnScaling: [:])
+        activationProjScaling: [:], activationFfnScaling: [:])
       (unetFixedMapper, unetFixed) = QwenImageFixed(
-        timesteps: 1, channels: 3_072, layers: 60, isBF16: false, activationFfnScaling: [:],
+        timesteps: 1, channels: 3_072, layers: 60, isBF16: false, activationProjScaling: [:],
+        activationFfnScaling: [:],
         numberOfReferenceImages: 0)
     case .auraflow:
       fatalError()
@@ -337,7 +338,8 @@ public enum LoRAImporter {
       }
       let fixedEncoder = UNetFixedEncoder<FloatType>(
         filePath: "", version: version, modifier: .none, dualAttentionLayers: dualAttentionLayers,
-        activationFfnScaling: [:], usesFlashAttention: false, zeroNegativePrompt: false,
+        activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: false,
+        zeroNegativePrompt: false,
         isQuantizedModel: false,
         canRunLoRASeparately: false, externalOnDemand: false,
         deviceProperties: DeviceProperties(

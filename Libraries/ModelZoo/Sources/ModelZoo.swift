@@ -65,14 +65,16 @@ public struct ModelZoo: DownloadZoo {
       public var qkNorm: Bool
       public var dualAttentionLayers: [Int]
       public var distilledGuidanceLayers: Int?
+      public var activationProjScaling: [Int: Int]?
       public var activationFfnScaling: [Int: Int]?
       public init(
         qkNorm: Bool, dualAttentionLayers: [Int], distilledGuidanceLayers: Int? = nil,
-        activationFfnScaling: [Int: Int]? = nil
+        activationProjScaling: [Int: Int]? = nil, activationFfnScaling: [Int: Int]? = nil
       ) {
         self.qkNorm = qkNorm
         self.dualAttentionLayers = dualAttentionLayers
         self.distilledGuidanceLayers = distilledGuidanceLayers
+        self.activationProjScaling = activationProjScaling
         self.activationFfnScaling = activationFfnScaling
       }
     }
@@ -665,6 +667,7 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       mmdit: .init(
         qkNorm: true, dualAttentionLayers: [],
+        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<(60 - 16)).map { ($0, 2) }),
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
         "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025."
@@ -677,6 +680,7 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       mmdit: .init(
         qkNorm: true, dualAttentionLayers: [],
+        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<(60 - 16)).map { ($0, 2) }),
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
         "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025."

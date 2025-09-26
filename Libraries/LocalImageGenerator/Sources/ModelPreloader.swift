@@ -580,7 +580,7 @@ extension ModelPreloader {
         if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: modelPath, version: modelVersion, modifier: .none, dualAttentionLayers: [],
-            activationFfnScaling: [:], usesFlashAttention: useMFA,
+            activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: useMFA,
             zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
             externalOnDemand: false,
             deviceProperties: DeviceCapability.deviceProperties,
@@ -627,7 +627,8 @@ extension ModelPreloader {
           injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>(
             injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
             injectedAttentionKVs: []), referenceImageCount: 0, tiledDiffusion: tiledDiffusion,
-          teaCache: teaCache, causalInference: (0, 0), isBF16: false, activationFfnScaling: [:],
+          teaCache: teaCache, causalInference: (0, 0), isBF16: false, activationProjScaling: [:],
+          activationFfnScaling: [:],
           weightsCache: weightsCache
         )
         unetFilePath = modelPath

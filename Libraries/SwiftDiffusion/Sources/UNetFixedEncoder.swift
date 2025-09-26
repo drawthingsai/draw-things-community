@@ -8,6 +8,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let version: ModelVersion
   public let modifier: SamplerModifier
   public let dualAttentionLayers: [Int]
+  public let activationProjScaling: [Int: Int]
   public let activationFfnScaling: [Int: Int]
   public let usesFlashAttention: Bool
   public let zeroNegativePrompt: Bool
@@ -18,14 +19,15 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let weightsCache: WeightsCache
   public init(
     filePath: String, version: ModelVersion, modifier: SamplerModifier, dualAttentionLayers: [Int],
-    activationFfnScaling: [Int: Int], usesFlashAttention: Bool, zeroNegativePrompt: Bool,
-    isQuantizedModel: Bool, canRunLoRASeparately: Bool, externalOnDemand: Bool,
-    deviceProperties: DeviceProperties, weightsCache: WeightsCache
+    activationProjScaling: [Int: Int], activationFfnScaling: [Int: Int], usesFlashAttention: Bool,
+    zeroNegativePrompt: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
+    externalOnDemand: Bool, deviceProperties: DeviceProperties, weightsCache: WeightsCache
   ) {
     self.filePath = filePath
     self.version = version
     self.modifier = modifier
     self.dualAttentionLayers = dualAttentionLayers
+    self.activationProjScaling = activationProjScaling
     self.activationFfnScaling = activationFfnScaling
     self.usesFlashAttention = usesFlashAttention
     self.zeroNegativePrompt = zeroNegativePrompt
@@ -1373,6 +1375,7 @@ extension UNetFixedEncoder {
           LoRAQwenImageFixed(
             timesteps: timesteps.count, channels: 3072,
             layers: timestepEmbeddingVectors == nil ? 60 : 0, isBF16: isBF16,
+            activationProjScaling: activationProjScaling,
             activationFfnScaling: activationFfnScaling,
             numberOfReferenceImages: referenceImages.count, LoRAConfiguration: configuration
           ).1
@@ -1381,6 +1384,7 @@ extension UNetFixedEncoder {
           QwenImageFixed(
             timesteps: timesteps.count, channels: 3072,
             layers: timestepEmbeddingVectors == nil ? 60 : 0, isBF16: isBF16,
+            activationProjScaling: activationProjScaling,
             activationFfnScaling: activationFfnScaling,
             numberOfReferenceImages: referenceImages.count
           ).1

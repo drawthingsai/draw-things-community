@@ -395,8 +395,8 @@ private func JointTransformerBlock(
 
 public func QwenImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, referenceSequenceLength: Int,
-  channels: Int, layers: Int,
-  usesFlashAttention: FlashAttentionLevel, isBF16: Bool, activationFfnScaling: [Int: Int]
+  channels: Int, layers: Int, usesFlashAttention: FlashAttentionLevel, isBF16: Bool,
+  activationProjScaling: [Int: Int], activationFfnScaling: [Int: Int]
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -428,13 +428,14 @@ public func QwenImage(
     let contextBlockPreOnly = i == layers - 1
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
+    let projScaling = activationProjScaling[i] ?? 1
     let ffnScaling = activationFfnScaling[i] ?? 1
     let (mapper, block) = JointTransformerBlock(
       prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: textLength,
       hw: h * w + referenceSequenceLength, referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (
-        i >= layers - 16 ? 16 : 2,
+        i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling),
         i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
       ), isBF16: isBF16)
     let blockOut = block([out, context, rotResized] + contextChunks + xChunks)
@@ -529,8 +530,8 @@ private func JointTransformerBlockFixed(
 }
 
 public func QwenImageFixed(
-  timesteps: Int, channels: Int, layers: Int, isBF16: Bool, activationFfnScaling: [Int: Int],
-  numberOfReferenceImages: Int
+  timesteps: Int, channels: Int, layers: Int, isBF16: Bool, activationProjScaling: [Int: Int],
+  activationFfnScaling: [Int: Int], numberOfReferenceImages: Int
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -564,12 +565,13 @@ public func QwenImageFixed(
     var vec = timeIn(tIn)
     vec = vec.reshaped([timesteps, 1, channels]).swish()
     for i in 0..<layers {
+      let projScaling = activationProjScaling[i] ?? 1
       let ffnScaling = activationFfnScaling[i] ?? 1
       let (mapper, block) = JointTransformerBlockFixed(
         prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
         contextBlockPreOnly: i == layers - 1,
         scaleFactor: (
-          i >= layers - 16 ? 16 : 2,
+          i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling),
           i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
         ), isBF16: isBF16)
       let blockOut = block(vec)
@@ -935,7 +937,8 @@ private func LoRAJointTransformerBlock(
 public func LoRAQwenImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, referenceSequenceLength: Int,
   channels: Int, layers: Int, usesFlashAttention: FlashAttentionLevel, isBF16: Bool,
-  activationFfnScaling: [Int: Int], LoRAConfiguration: LoRANetworkConfiguration
+  activationProjScaling: [Int: Int], activationFfnScaling: [Int: Int],
+  LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -967,13 +970,14 @@ public func LoRAQwenImage(
     let contextBlockPreOnly = i == layers - 1
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
+    let projScaling = activationProjScaling[i] ?? 1
     let ffnScaling = activationFfnScaling[i] ?? 1
     let (mapper, block) = LoRAJointTransformerBlock(
       prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: textLength,
       hw: h * w + referenceSequenceLength, referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (
-        i >= layers - 16 ? 16 : 2,
+        i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling),
         i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
       ), isBF16: isBF16, layerIndex: i, configuration: LoRAConfiguration)
     let blockOut = block([out, context, rotResized] + contextChunks + xChunks)
@@ -1073,7 +1077,7 @@ private func LoRAJointTransformerBlockFixed(
 
 public func LoRAQwenImageFixed(
   timesteps: Int, channels: Int, layers: Int, isBF16: Bool,
-  activationFfnScaling: [Int: Int], numberOfReferenceImages: Int,
+  activationProjScaling: [Int: Int], activationFfnScaling: [Int: Int], numberOfReferenceImages: Int,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let txt = Input()
@@ -1108,12 +1112,13 @@ public func LoRAQwenImageFixed(
     var vec = timeIn(tIn)
     vec = vec.reshaped([timesteps, 1, channels]).swish()
     for i in 0..<layers {
+      let projScaling = activationProjScaling[i] ?? 1
       let ffnScaling = activationFfnScaling[i] ?? 1
       let (mapper, block) = LoRAJointTransformerBlockFixed(
         prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
         contextBlockPreOnly: i == layers - 1,
         scaleFactor: (
-          i >= layers - 16 ? 16 : 2,
+          i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling),
           i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
         ), isBF16: isBF16, layerIndex: i, configuration: LoRAConfiguration)
       let blockOut = block(vec)

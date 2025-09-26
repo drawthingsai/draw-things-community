@@ -13,6 +13,7 @@ where UNet.FloatType == FloatType {
   public let qkNorm: Bool
   public let dualAttentionLayers: [Int]
   public let distilledGuidanceLayers: Int
+  public let activationProjScaling: [Int: Int]
   public let activationFfnScaling: [Int: Int]
   public let usesFlashAttention: Bool
   public let upcastAttention: Bool
@@ -37,7 +38,8 @@ where UNet.FloatType == FloatType {
   private let weightsCache: WeightsCache
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
-    dualAttentionLayers: [Int], distilledGuidanceLayers: Int, activationFfnScaling: [Int: Int],
+    dualAttentionLayers: [Int], distilledGuidanceLayers: Int, activationProjScaling: [Int: Int],
+    activationFfnScaling: [Int: Int],
     usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
@@ -55,6 +57,7 @@ where UNet.FloatType == FloatType {
     self.qkNorm = qkNorm
     self.dualAttentionLayers = dualAttentionLayers
     self.distilledGuidanceLayers = distilledGuidanceLayers
+    self.activationProjScaling = activationProjScaling
     self.activationFfnScaling = activationFfnScaling
     self.usesFlashAttention = usesFlashAttention
     self.upcastAttention = upcastAttention
@@ -186,7 +189,8 @@ extension TCDSampler: Sampler {
       var conditions: [DynamicGraph.AnyTensor] = c
       let fixedEncoder = UNetFixedEncoder<FloatType>(
         filePath: filePath, version: version, modifier: modifier,
-        dualAttentionLayers: dualAttentionLayers, activationFfnScaling: activationFfnScaling,
+        dualAttentionLayers: dualAttentionLayers, activationProjScaling: activationProjScaling,
+        activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
         canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand,
@@ -310,7 +314,8 @@ extension TCDSampler: Sampler {
           injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
           referenceImageCount: referenceImageCount,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          isBF16: isBF16, activationFfnScaling: activationFfnScaling, weightsCache: weightsCache)
+          isBF16: isBF16, activationProjScaling: activationProjScaling,
+          activationFfnScaling: activationFfnScaling, weightsCache: weightsCache)
       }
       let noise: DynamicGraph.Tensor<FloatType> = graph.variable(
         .GPU(0), .NHWC(batchSize, startHeight, startWidth, channels))
@@ -394,6 +399,7 @@ extension TCDSampler: Sampler {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
             modifier: modifier, dualAttentionLayers: refiner.dualAttentionLayers,
+            activationProjScaling: refiner.activationProjScaling,
             activationFfnScaling: refiner.activationFfnScaling,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
             isQuantizedModel: refiner.isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
@@ -466,7 +472,8 @@ extension TCDSampler: Sampler {
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
             referenceImageCount: referenceImageCount,
             tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-            isBF16: refiner.isBF16, activationFfnScaling: refiner.activationFfnScaling,
+            isBF16: refiner.isBF16, activationProjScaling: refiner.activationProjScaling,
+            activationFfnScaling: refiner.activationFfnScaling,
             weightsCache: weightsCache)
           refinerKickIn = -1
           unets.append(unet)
