@@ -635,9 +635,9 @@ public struct ModelZoo: DownloadZoo {
     "wan_v2.2_video_vae_f16.ckpt":
       "5e4dc4638ff09ed3a0173f907a78d2dde90c56ef855070059b594dd0c7a75a1e",
     "qwen_image_edit_2509_q8p.ckpt":
-      "4eed135a23b5c6a4a3b6f89eca5dcb73e96baeff521514d262a6db1bd0051f9e",
+      "be2fe4fee9ed8181feb1bec8b5b20826ba722c4bbd942ddd262b540b2cc8c51f",
     "qwen_image_edit_2509_q6p.ckpt":
-      "59727be82a7f7b3ebb3074ae008a710d9a57f1d9f1ecd7e1f03cff63100723fc",
+      "83e04e84ee718abd53ff56be4dab1556603345659e823ba5a739ed7722868938",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
