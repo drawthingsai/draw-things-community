@@ -24,7 +24,7 @@ public final class ImageGenerationClientWrapper {
     host: String, port: Int, TLS: Bool, hostnameVerification: Bool, sharedSecret: String?
   ) throws {
     try? eventLoopGroup?.syncShutdownGracefully()
-    let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 2)
+    let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     let transportSecurity: GRPCChannelPool.Configuration.TransportSecurity
     if TLS {
       let bytes = [UInt8](BinaryResources.root_ca_crt)
