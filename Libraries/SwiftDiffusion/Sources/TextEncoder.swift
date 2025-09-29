@@ -446,9 +446,9 @@ extension TextEncoder {
   }
 
   private func encodeI2v(
-    image: [DynamicGraph.Tensor<FloatType>], textModels existingTextModels: [Model?]
+    images: [DynamicGraph.Tensor<FloatType>], textModels existingTextModels: [Model?]
   ) -> ([DynamicGraph.Tensor<FloatType>], [Model]) {
-    let graph = image[0].graph
+    let graph = images[0].graph
     let vit: Model
     let mean = graph.variable(
       Tensor<FloatType>(
@@ -462,7 +462,7 @@ extension TextEncoder {
           FloatType(0.5 / 0.26862954), FloatType(0.5 / 0.26130258), FloatType(0.5 / 0.27577711),
         ],
         .GPU(0), .NHWC(1, 1, 1, 3)))
-    var input = image[0]
+    var input = images[0]
     let inputHeight = input.shape[1]
     let inputWidth = input.shape[2]
     precondition(input.shape[3] == 3)
@@ -1674,7 +1674,7 @@ extension TextEncoder {
   }
 
   private func encodeWan(
-    image: [DynamicGraph.Tensor<FloatType>],
+    images: [DynamicGraph.Tensor<FloatType>],
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
     tokenLengthUncond: Int, tokenLengthCond: Int, textModels existingTextModels: [Model?]
@@ -1722,7 +1722,7 @@ extension TextEncoder {
       encoderMask[1, i, 0] = i < tokenLengthCond ? 1 : 0
     }
     c = c .* graph.variable(encoderMask.toGPU(0))
-    guard var input = image.first, filePaths.count >= 2 else {
+    guard var input = images.first, filePaths.count >= 2 else {
       return ([c], [textModel])
     }
     // Use OpenCLIP model to get clip embedding of the input image.
@@ -1772,7 +1772,7 @@ extension TextEncoder {
   }
 
   private func encodeQwen(
-    image: [DynamicGraph.Tensor<FloatType>],
+    images: [DynamicGraph.Tensor<FloatType>],
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
     tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
@@ -1788,7 +1788,7 @@ extension TextEncoder {
     var tokens = tokens
     var injectedEmbeddings = [DynamicGraph.Tensor<FloatType>]()
     var referenceSize: (height: Int, width: Int) = (height: 0, width: 0)
-    if let image = image.first, filePaths.count > 1 {
+    if let image = images.first, filePaths.count > 1 {
       let mean = graph.variable(
         Tensor<FloatType>(
           [
@@ -2526,7 +2526,7 @@ extension TextEncoder {
     tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
-    image: [DynamicGraph.Tensor<FloatType>], lengthsOfUncond: [Int], lengthsOfCond: [Int],
+    images: [DynamicGraph.Tensor<FloatType>], lengthsOfUncond: [Int], lengthsOfCond: [Int],
     injectedTextEmbeddings: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )], modifier: SamplerModifier,
@@ -2581,7 +2581,7 @@ extension TextEncoder {
           textModels: existingTextModels)
       }
     case .svdI2v:
-      return encodeI2v(image: image, textModels: existingTextModels)
+      return encodeI2v(images: images, textModels: existingTextModels)
     case .hunyuanVideo:
       return encodeHunyuan(
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
@@ -2590,13 +2590,13 @@ extension TextEncoder {
         injectedTextEmbeddings: injectedTextEmbeddings, textModels: existingTextModels)
     case .wan21_1_3b, .wan21_14b, .wan22_5b:
       return encodeWan(
-        image: image,
+        images: images,
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         textModels: existingTextModels)
     case .qwenImage:
       return encodeQwen(
-        image: image,
+        images: images,
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
         modifier: modifier, textModels: existingTextModels)

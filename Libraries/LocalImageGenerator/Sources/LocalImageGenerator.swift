@@ -3709,11 +3709,17 @@ extension LocalImageGenerator {
       let image = image.map {
         downscaleImageAndToGPU(graph.variable($0), scaleFactor: imageScaleFactor)
       }
+      let textImages: [DynamicGraph.Tensor<FloatType>]
+      if modifier == .kontext || modifier == .qwenimageEditPlus {
+        textImages = (image.map { [$0] } ?? []) + shuffles.map { graph.variable($0.0) }
+      } else {
+        textImages = image.map { [$0] } ?? []
+      }
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
           tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
-          injectedEmbeddings: injectedEmbeddings, image: image.map { [$0] } ?? [],
+          injectedEmbeddings: injectedEmbeddings, images: textImages,
           lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
           injectedTextEmbeddings: injectedTextEmbeddings, modifier: modifier,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
@@ -4778,11 +4784,18 @@ extension LocalImageGenerator {
         maxLength: tokenLength, clipSkip: clipSkip, lora: lora)
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
+      let textImages: [DynamicGraph.Tensor<FloatType>]
+      if modifier == .kontext || modifier == .qwenimageEditPlus {
+        textImages = [image] + shuffles.map { graph.variable($0.0) }
+      } else {
+        textImages = [image]
+      }
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
           tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
-          injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
+          injectedEmbeddings: injectedEmbeddings, images: textImages,
+          lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
           modifier: modifier,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
@@ -6098,11 +6111,18 @@ extension LocalImageGenerator {
         maxLength: tokenLength, clipSkip: clipSkip, lora: lora)
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
+      let textImages: [DynamicGraph.Tensor<FloatType>]
+      if modifier == .kontext || modifier == .qwenimageEditPlus {
+        textImages = [image] + shuffles.map { graph.variable($0.0) }
+      } else {
+        textImages = [image]
+      }
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
           tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
-          injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
+          injectedEmbeddings: injectedEmbeddings, images: textImages,
+          lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
           modifier: modifier,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
@@ -6912,11 +6932,18 @@ extension LocalImageGenerator {
         maxLength: tokenLength, clipSkip: clipSkip, lora: lora)
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
+      let textImages: [DynamicGraph.Tensor<FloatType>]
+      if modifier == .kontext || modifier == .qwenimageEditPlus {
+        textImages = [image] + shuffles.map { graph.variable($0.0) }
+      } else {
+        textImages = [image]
+      }
       let textEncodings = modelPreloader.consumeTextModels(
         textEncoder.encode(
           tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
           tokens: tokensTensors, positions: positionTensors, mask: embedMask,
-          injectedEmbeddings: injectedEmbeddings, image: [image], lengthsOfUncond: lengthsOfUncond,
+          injectedEmbeddings: injectedEmbeddings, images: textImages,
+          lengthsOfUncond: lengthsOfUncond,
           lengthsOfCond: lengthsOfCond, injectedTextEmbeddings: injectedTextEmbeddings,
           modifier: modifier,
           textModels: modelPreloader.retrieveTextModels(textEncoder: textEncoder)),
