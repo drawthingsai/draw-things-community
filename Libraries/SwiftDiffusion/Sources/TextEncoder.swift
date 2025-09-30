@@ -1787,296 +1787,325 @@ extension TextEncoder {
     var tokenLength = tokens[0].shape[0] / 2
     var tokens = tokens
     var injectedEmbeddings = [DynamicGraph.Tensor<FloatType>]()
-    var referenceSize: (height: Int, width: Int) = (height: 0, width: 0)
-    if let image = images.first, filePaths.count > 1 {
-      let mean = graph.variable(
-        Tensor<FloatType>(
-          [
-            FloatType(2 * 0.48145466 - 1), FloatType(2 * 0.4578275 - 1),
-            FloatType(2 * 0.40821073 - 1),
-          ], .GPU(0), .NHWC(1, 1, 1, 3)))
-      let invStd = graph.variable(
-        Tensor<FloatType>(
-          [
-            FloatType(0.5 / 0.26862954), FloatType(0.5 / 0.26130258), FloatType(0.5 / 0.27577711),
-          ],
-          .GPU(0), .NHWC(1, 1, 1, 3)))
-      var input = (image.toGPU(0) - mean) .* invStd
-      // Resize w / h to multiple of 28, it might have some stretches, it is OK. This is the smart_resize logic: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_vl/image_processing_qwen2_vl.py#L55
-      let shape = input.shape
-      var height = shape[1]
-      var width = shape[2]
-      if modifier == .qwenimageEditPlus, height > 0 && width > 0 {
-        // Qwen Image Edit Plus pipeline modifies image to area of 384x384.
-        let ratio = Double(width) / Double(height)
-        let widthD = (384 * 384 * ratio).squareRoot()
-        let heightD = widthD / ratio
-        // https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/qwenimage/pipeline_qwenimage_edit_plus.py#L158
-        // choose to round to multiple of 32, but here we do 28 to avoid additional aspect ratio scaling artifacts.
-        width = Int((widthD / 28).rounded()) * 28
-        height = Int((heightD / 28).rounded()) * 28
-      }
-      var hBar = (Double(height) / 28).rounded() * 28
-      var wBar = (Double(width) / 28).rounded() * 28
-      if hBar * wBar > 12_845_056 {  // https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct/blob/main/preprocessor_config.json#L3
-        let beta = (Double(height * width) / 12_845_056).squareRoot()
-        hBar = max(28, (Double(height) / beta / 28).rounded(.down) * 28)
-        wBar = max(28, (Double(width) / beta / 28).rounded(.down) * 28)
-      } else if hBar * wBar < 3156 {
-        let beta = (3156 / Double(height * width)).squareRoot()
-        hBar = (Double(height) / beta / 28).rounded(.up) * 28
-        wBar = (Double(width) / beta / 28).rounded(.up) * 28
-      }
-      let targetHeight = Int(hBar)
-      let targetWidth = Int(wBar)
-      if shape[1] != targetHeight || shape[2] != targetWidth {
-        // Use high-quality resize operation.
-        let f32 = Tensor<Float>(
-          from: input.rawValue.toCPU().reshaped(.HWC(shape[1], shape[2], shape[3])))
-        var b: UnsafeMutablePointer<ccv_dense_matrix_t>? = ccv_dense_matrix_new(
-          Int32(targetHeight), Int32(targetWidth), Int32(CCV_C3 | CCV_32F), nil, 0)
-        ccv_resample(
-          UnsafeMutableRawPointer(f32.cTensor).assumingMemoryBound(to: ccv_dense_matrix_t.self),
-          &b,
-          0, hBar / Double(shape[1]), wBar / Double(shape[2]),
-          Int32(CCV_INTER_AREA | CCV_INTER_CUBIC)
-        )
-        input = graph.variable(
-          Tensor<FloatType>(
-            from: Tensor<Float>(
-              .CPU, format: .NHWC, shape: [1, targetHeight, targetWidth, 3],
-              unsafeMutablePointer: b!.pointee.data.f32, bindLifetimeOf: b!
-            ).copied()
-          ).toGPU(0))
-        ccv_matrix_free(b)
-      }
-      // Input is in h, w, 3 format, the expected format for QwenVL is complicated, let's break it down step-by-step:
-      // 1. reformat to NCHW: 1, 3, h, w.
-      // 2. move it into 14x14 patch: 1, 3, h / 14, 14, w / 14, 14, then move it to: h / 14, w / 14, 3, 14, 14
-      // 3. making it two frames: h / 14, w / 14, 3, 2, 14, 14
-      // 4. coordinating with the rotary encoding, but move it further into compact 2x2 blocks: h / 28, 2, w / 28, 2, 3, 2, 14, 14 -> h / 28, w / 28, 2, 2, 3, 2, 14, 14
-      // 5. (optional) doing additional work to make sure it is a further 8x8 patch (112x112 in pixel space) for windowed attention.
-      input = input.permuted(0, 3, 1, 2).copied().reshaped(
-        format: .NHWC, shape: [3, targetHeight / 14, 14, targetWidth / 14, 14]
-      ).permuted(1, 3, 0, 2, 4).copied().reshaped(
-        .NHWC((targetHeight / 14) * (targetWidth / 14), 3, 14, 14))
-      input = Functional.concat(axis: 2, input, input).reshaped(
-        format: .NHWC, shape: [targetHeight / 28, 2, targetWidth / 28, 2, 3 * 2 * 14 * 14]
-      ).permuted(0, 2, 1, 3, 4).copied().reshaped(
-        .HWC(targetHeight / 28, targetWidth / 28, 4 * 3 * 2 * 14 * 14))
-      // Step 4 is done, now doing step 5, copying it over to a 8x8 patch (in this case, 4x4 patch because already clustered to 2x2 patch).
-      let gridX = targetWidth / 14
-      let gridY = targetHeight / 14
-      if gridX % 8 == 0, gridY % 8 == 0 {
-        // Can directly permuted into the patch required.
-        input = input.reshaped(
-          format: .NHWC, shape: [gridY / 8, 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14]
-        ).permuted(0, 2, 1, 3, 4).copied().reshaped(.WC(gridY * gridX, 3 * 2 * 14 * 14))
-      } else if gridX % 8 == 0 {
-        let shape = input.shape
-        let top = input[0..<((gridY / 8) * 4), 0..<shape[1], 0..<shape[2]].copied().reshaped(
-          format: .NHWC, shape: [gridY / 8, 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14]
-        ).permuted(0, 2, 1, 3, 4).copied().reshaped(.WC((gridY / 8) * 8 * gridX, 3 * 2 * 14 * 14))
-        let bottom = input[((gridY / 8) * 4)..<shape[0], 0..<shape[1], 0..<shape[2]].copied()
-          .reshaped(format: .NHWC, shape: [1, (gridY / 2) % 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14])
-          .permuted(0, 2, 1, 3, 4).copied().reshaped(.WC((gridY % 8) * gridX, 3 * 2 * 14 * 14))
-        input = Functional.concat(axis: 0, top, bottom)
-      } else if gridY % 8 == 0 {
-        let shape = input.shape
-        let left = input[0..<shape[0], 0..<((gridX / 8) * 4), 0..<shape[2]].copied().reshaped(
-          format: .NHWC, shape: [gridY / 8, 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14]
-        ).permuted(0, 2, 1, 3, 4).copied().reshaped(.WC(gridY * (gridX / 8) * 8, 3 * 2 * 14 * 14))
-        let right = input[0..<shape[0], ((gridX / 8) * 4)..<shape[1], 0..<shape[2]].copied()
-          .reshaped(format: .NHWC, shape: [gridY / 8, 4, 1, (gridX / 2) % 4, 4 * 3 * 2 * 14 * 14])
-          .permuted(0, 2, 1, 3, 4).copied().reshaped(.WC(gridY * (gridX % 8), 3 * 2 * 14 * 14))
-        input = Functional.concat(axis: 0, left, right)
-      } else {
-        let shape = input.shape
-        let topLeft = input[0..<((gridY / 8) * 4), 0..<((gridX / 8) * 4), 0..<shape[2]].copied()
-          .reshaped(format: .NHWC, shape: [gridY / 8, 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14])
-          .permuted(0, 2, 1, 3, 4).copied().reshaped(
-            .WC((gridY / 8) * 8 * (gridX / 8) * 8, 3 * 2 * 14 * 14))
-        let right = input[0..<((gridY / 8) * 4), ((gridX / 8) * 4)..<shape[1], 0..<shape[2]]
-          .copied().reshaped(
-            format: .NHWC, shape: [gridY / 8, 4, 1, (gridX / 2) % 4, 4 * 3 * 2 * 14 * 14]
-          ).permuted(0, 2, 1, 3, 4).copied().reshaped(
-            .WC((gridY / 8) * 8 * (gridX % 8), 3 * 2 * 14 * 14))
-        let bottom = input[((gridY / 8) * 4)..<shape[0], 0..<((gridX / 8) * 4), 0..<shape[2]]
-          .copied().reshaped(
-            format: .NHWC, shape: [1, (gridY / 2) % 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14]
-          ).permuted(0, 2, 1, 3, 4).copied().reshaped(
-            .WC((gridY % 8) * (gridX / 8) * 8, 3 * 2 * 14 * 14))
-        let bottomRight = input[
-          ((gridY / 8) * 4)..<shape[0], ((gridX / 8) * 4)..<shape[1], 0..<shape[2]
-        ].copied().reshaped(
-          format: .NHWC, shape: [1, (gridY / 2) % 4, 1, (gridX / 2) % 4, 4 * 3 * 2 * 14 * 14]
-        ).permuted(0, 2, 1, 3, 4).copied().reshaped(.WC((gridY % 8) * (gridX % 8), 3 * 2 * 14 * 14))
-        input = Functional.concat(axis: 0, topLeft, right, bottom, bottomRight)
-      }
-      let rotTensor = graph.variable(
-        QwenVLViTRotaryEmbedding(gridX: gridX, gridY: gridY, of: FloatType.self).toGPU(0))
-      let vit = QwenVLVisionTransformer(
-        gridX: gridX, gridY: gridY, width: 1280, layers: 32, fullAttentionLayers: [7, 15, 23, 31],
-        heads: 16, MLP: 3420, batchSize: 1, usesFlashAttention: usesFlashAttention)
-      vit.compile(inputs: input, rotTensor)
-      if !weightsCache.detach(filePaths[1], to: vit.parameters) {
-        TensorData.makeExternalData(for: filePaths[1], graph: graph)
-        graph.openStore(
-          filePaths[1], flags: .readOnly,
-          externalStore: TensorData.externalStore(filePath: filePaths[1])
-        ) {
-          $0.read(
-            "vit", model: vit, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
-        }
-      }
-      var c = vit(inputs: input, rotTensor)[0].as(of: FloatType.self)
-      let resultShape = c.shape
-      // Unshuffle.
-      if gridX % 8 == 0, gridY % 8 == 0 {
-        // Can directly permuted into the patch required.
-        c = c.reshaped(
-          format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]]
-        ).permuted(0, 2, 1, 3, 4).copied().reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
-      } else if gridX % 8 == 0 {
-        let oldC = c
-        c = graph.variable(.GPU(0), .HWC(gridY / 2, gridX / 2, resultShape[1]))
-        let top = oldC[0..<(gridX / 2) * ((gridY / 8) * 4), 0..<resultShape[1]].copied().reshaped(
-          format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]]
-        ).permuted(0, 2, 1, 3, 4).copied().reshaped(
-          .HWC((gridY / 8) * 4, gridX / 2, resultShape[1]))
-        let bottom = oldC[((gridX / 2) * ((gridY / 8) * 4))..<resultShape[0], 0..<resultShape[1]]
-          .copied()
-          .reshaped(format: .NHWC, shape: [1, gridX / 8, (gridY / 2) % 4, 4, resultShape[1]])
-          .permuted(0, 2, 1, 3, 4).copied().reshaped(
-            .HWC((gridY / 2) % 4, gridX / 2, resultShape[1]))
-        c[0..<((gridY / 8) * 4), 0..<(gridX / 2), 0..<resultShape[1]] = top
-        c[((gridY / 8) * 4)..<(gridY / 2), 0..<(gridX / 2), 0..<resultShape[1]] = bottom
-        c = c.reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
-      } else if gridY % 8 == 0 {
-        let oldC = c
-        c = graph.variable(.GPU(0), .HWC(gridY / 2, gridX / 2, resultShape[1]))
-        let left = oldC[0..<(gridY / 2) * ((gridX / 8) * 4), 0..<resultShape[1]].copied().reshaped(
-          format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]]
-        ).permuted(0, 2, 1, 3, 4).copied().reshaped(
-          .HWC(gridY / 2, (gridX / 8) * 4, resultShape[1]))
-        let right = oldC[((gridY / 2) * ((gridX / 8) * 4))..<resultShape[0], 0..<resultShape[1]]
-          .copied()
-          .reshaped(format: .NHWC, shape: [gridY / 8, 1, 4, (gridX / 2) % 4, resultShape[1]])
-          .permuted(0, 2, 1, 3, 4).copied().reshaped(
-            .HWC(gridY / 2, (gridX / 2) % 4, resultShape[1]))
-        c[0..<(gridY / 2), 0..<((gridX / 8) * 4), 0..<resultShape[1]] = left
-        c[0..<(gridY / 2), ((gridX / 8) * 4)..<(gridX / 2), 0..<resultShape[1]] = right
-        c = c.reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
-      } else {
-        let oldC = c
-        c = graph.variable(.GPU(0), .HWC(gridY / 2, gridX / 2, resultShape[1]))
-        let topLeft = oldC[0..<(((gridY / 8) * 4) * ((gridX / 8) * 4)), 0..<resultShape[1]].copied()
-          .reshaped(format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]])
-          .permuted(0, 2, 1, 3, 4).copied().reshaped(
-            .HWC((gridY / 8) * 4, (gridX / 8) * 4, resultShape[1]))
-        let right = oldC[
-          (((gridY / 8) * 4) * ((gridX / 8) * 4))..<(((gridY / 8) * 4) * (gridX / 2)),
-          0..<resultShape[1]
-        ]
-        .copied().reshaped(
-          format: .NHWC, shape: [gridY / 8, 1, 4, (gridX / 2) % 4, resultShape[1]]
-        ).permuted(0, 2, 1, 3, 4).copied().reshaped(
-          .HWC((gridY / 8) * 4, (gridX / 2) % 4, resultShape[1]))
-        let lastCorner = resultShape[0] - ((gridY / 2) % 4) * ((gridX / 2) % 4)
-        let bottom = oldC[
-          (((gridY / 8) * 4) * (gridX / 2))..<lastCorner, 0..<resultShape[1]
-        ]
-        .copied().reshaped(
-          format: .NHWC, shape: [1, gridX / 8, (gridY / 2) % 4, 4, resultShape[1]]
-        ).permuted(0, 2, 1, 3, 4).copied().reshaped(
-          .HWC((gridY / 2) % 4, (gridX / 8) * 4, resultShape[1]))
-        let bottomRight = oldC[
-          lastCorner..<resultShape[0], 0..<resultShape[1]
-        ].copied().reshaped(
-          format: .NHWC, shape: [1, 1, (gridY / 2) % 4, (gridX / 2) % 4, resultShape[1]]
-        ).permuted(0, 2, 1, 3, 4).copied().reshaped(
-          .HWC((gridY / 2) % 4, (gridX / 2) % 4, resultShape[1]))
-        c[0..<((gridY / 8) * 4), 0..<((gridX / 8) * 4), 0..<resultShape[1]] = topLeft
-        c[0..<((gridY / 8) * 4), ((gridX / 8) * 4)..<(gridX / 2), 0..<resultShape[1]] = right
-        c[((gridY / 8) * 4)..<(gridY / 2), 0..<((gridX / 8) * 4), 0..<resultShape[1]] = bottom
-        c[((gridY / 8) * 4)..<(gridY / 2), ((gridX / 8) * 4)..<(gridX / 2), 0..<resultShape[1]] =
-          bottomRight
-        c = c.reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
-      }
-      weightsCache.attach(filePaths[1], from: vit.parameters)
+    var referenceSizes = [(height: Int, width: Int)]()
+    if !images.isEmpty, filePaths.count > 1 {
       // Try to find <|image_pad|> in negative prompt and positive prompt.
-      var negativePromptPad: Int? = nil
-      var positivePromptPad: Int? = nil
+      var negativePromptPad = [Int]()
+      var positivePromptPad = [Int]()
       for i in 0..<tokenLength {
-        if tokens[0][i] == 151655, negativePromptPad == nil {
-          negativePromptPad = i
+        if tokens[0][i] == 151655, negativePromptPad.count < images.count {
+          negativePromptPad.append(i)
         }
-        if tokens[0][i + tokenLength] == 151655, positivePromptPad == nil {
-          positivePromptPad = i
+        if tokens[0][i + tokenLength] == 151655, positivePromptPad.count < images.count {
+          positivePromptPad.append(i)
         }
       }
-      let oldTokenLength = tokenLength
-      if negativePromptPad != nil || positivePromptPad != nil {
-        tokenLength += resultShape[0] - 1
+      if !negativePromptPad.isEmpty && negativePromptPad.count == positivePromptPad.count
+        && negativePromptPad.count <= images.count
+      {
+        let c = images[0..<negativePromptPad.count].map { image in
+          let mean = graph.variable(
+            Tensor<FloatType>(
+              [
+                FloatType(2 * 0.48145466 - 1), FloatType(2 * 0.4578275 - 1),
+                FloatType(2 * 0.40821073 - 1),
+              ], .GPU(0), .NHWC(1, 1, 1, 3)))
+          let invStd = graph.variable(
+            Tensor<FloatType>(
+              [
+                FloatType(0.5 / 0.26862954), FloatType(0.5 / 0.26130258),
+                FloatType(0.5 / 0.27577711),
+              ],
+              .GPU(0), .NHWC(1, 1, 1, 3)))
+          var input = (image.toGPU(0) - mean) .* invStd
+          // Resize w / h to multiple of 28, it might have some stretches, it is OK. This is the smart_resize logic: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_vl/image_processing_qwen2_vl.py#L55
+          let shape = input.shape
+          var height = shape[1]
+          var width = shape[2]
+          if modifier == .qwenimageEditPlus, height > 0 && width > 0 {
+            // Qwen Image Edit Plus pipeline modifies image to area of 384x384.
+            let ratio = Double(width) / Double(height)
+            let widthD = (384 * 384 * ratio).squareRoot()
+            let heightD = widthD / ratio
+            // https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/qwenimage/pipeline_qwenimage_edit_plus.py#L158
+            // choose to round to multiple of 32, but here we do 28 to avoid additional aspect ratio scaling artifacts.
+            width = Int((widthD / 28).rounded()) * 28
+            height = Int((heightD / 28).rounded()) * 28
+          }
+          var hBar = (Double(height) / 28).rounded() * 28
+          var wBar = (Double(width) / 28).rounded() * 28
+          if hBar * wBar > 12_845_056 {  // https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct/blob/main/preprocessor_config.json#L3
+            let beta = (Double(height * width) / 12_845_056).squareRoot()
+            hBar = max(28, (Double(height) / beta / 28).rounded(.down) * 28)
+            wBar = max(28, (Double(width) / beta / 28).rounded(.down) * 28)
+          } else if hBar * wBar < 3156 {
+            let beta = (3156 / Double(height * width)).squareRoot()
+            hBar = (Double(height) / beta / 28).rounded(.up) * 28
+            wBar = (Double(width) / beta / 28).rounded(.up) * 28
+          }
+          let targetHeight = Int(hBar)
+          let targetWidth = Int(wBar)
+          if shape[1] != targetHeight || shape[2] != targetWidth {
+            // Use high-quality resize operation.
+            let f32 = Tensor<Float>(
+              from: input.rawValue.toCPU().reshaped(.HWC(shape[1], shape[2], shape[3])))
+            var b: UnsafeMutablePointer<ccv_dense_matrix_t>? = ccv_dense_matrix_new(
+              Int32(targetHeight), Int32(targetWidth), Int32(CCV_C3 | CCV_32F), nil, 0)
+            ccv_resample(
+              UnsafeMutableRawPointer(f32.cTensor).assumingMemoryBound(to: ccv_dense_matrix_t.self),
+              &b,
+              0, hBar / Double(shape[1]), wBar / Double(shape[2]),
+              Int32(CCV_INTER_AREA | CCV_INTER_CUBIC)
+            )
+            input = graph.variable(
+              Tensor<FloatType>(
+                from: Tensor<Float>(
+                  .CPU, format: .NHWC, shape: [1, targetHeight, targetWidth, 3],
+                  unsafeMutablePointer: b!.pointee.data.f32, bindLifetimeOf: b!
+                ).copied()
+              ).toGPU(0))
+            ccv_matrix_free(b)
+          }
+          // Input is in h, w, 3 format, the expected format for QwenVL is complicated, let's break it down step-by-step:
+          // 1. reformat to NCHW: 1, 3, h, w.
+          // 2. move it into 14x14 patch: 1, 3, h / 14, 14, w / 14, 14, then move it to: h / 14, w / 14, 3, 14, 14
+          // 3. making it two frames: h / 14, w / 14, 3, 2, 14, 14
+          // 4. coordinating with the rotary encoding, but move it further into compact 2x2 blocks: h / 28, 2, w / 28, 2, 3, 2, 14, 14 -> h / 28, w / 28, 2, 2, 3, 2, 14, 14
+          // 5. (optional) doing additional work to make sure it is a further 8x8 patch (112x112 in pixel space) for windowed attention.
+          input = input.permuted(0, 3, 1, 2).copied().reshaped(
+            format: .NHWC, shape: [3, targetHeight / 14, 14, targetWidth / 14, 14]
+          ).permuted(1, 3, 0, 2, 4).copied().reshaped(
+            .NHWC((targetHeight / 14) * (targetWidth / 14), 3, 14, 14))
+          input = Functional.concat(axis: 2, input, input).reshaped(
+            format: .NHWC, shape: [targetHeight / 28, 2, targetWidth / 28, 2, 3 * 2 * 14 * 14]
+          ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+            .HWC(targetHeight / 28, targetWidth / 28, 4 * 3 * 2 * 14 * 14))
+          // Step 4 is done, now doing step 5, copying it over to a 8x8 patch (in this case, 4x4 patch because already clustered to 2x2 patch).
+          let gridX = targetWidth / 14
+          let gridY = targetHeight / 14
+          if gridX % 8 == 0, gridY % 8 == 0 {
+            // Can directly permuted into the patch required.
+            input = input.reshaped(
+              format: .NHWC, shape: [gridY / 8, 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14]
+            ).permuted(0, 2, 1, 3, 4).copied().reshaped(.WC(gridY * gridX, 3 * 2 * 14 * 14))
+          } else if gridX % 8 == 0 {
+            let shape = input.shape
+            let top = input[0..<((gridY / 8) * 4), 0..<shape[1], 0..<shape[2]].copied().reshaped(
+              format: .NHWC, shape: [gridY / 8, 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14]
+            ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+              .WC((gridY / 8) * 8 * gridX, 3 * 2 * 14 * 14))
+            let bottom = input[((gridY / 8) * 4)..<shape[0], 0..<shape[1], 0..<shape[2]].copied()
+              .reshaped(
+                format: .NHWC, shape: [1, (gridY / 2) % 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14]
+              )
+              .permuted(0, 2, 1, 3, 4).copied().reshaped(.WC((gridY % 8) * gridX, 3 * 2 * 14 * 14))
+            input = Functional.concat(axis: 0, top, bottom)
+          } else if gridY % 8 == 0 {
+            let shape = input.shape
+            let left = input[0..<shape[0], 0..<((gridX / 8) * 4), 0..<shape[2]].copied().reshaped(
+              format: .NHWC, shape: [gridY / 8, 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14]
+            ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+              .WC(gridY * (gridX / 8) * 8, 3 * 2 * 14 * 14))
+            let right = input[0..<shape[0], ((gridX / 8) * 4)..<shape[1], 0..<shape[2]].copied()
+              .reshaped(
+                format: .NHWC, shape: [gridY / 8, 4, 1, (gridX / 2) % 4, 4 * 3 * 2 * 14 * 14]
+              )
+              .permuted(0, 2, 1, 3, 4).copied().reshaped(.WC(gridY * (gridX % 8), 3 * 2 * 14 * 14))
+            input = Functional.concat(axis: 0, left, right)
+          } else {
+            let shape = input.shape
+            let topLeft = input[0..<((gridY / 8) * 4), 0..<((gridX / 8) * 4), 0..<shape[2]].copied()
+              .reshaped(format: .NHWC, shape: [gridY / 8, 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14])
+              .permuted(0, 2, 1, 3, 4).copied().reshaped(
+                .WC((gridY / 8) * 8 * (gridX / 8) * 8, 3 * 2 * 14 * 14))
+            let right = input[0..<((gridY / 8) * 4), ((gridX / 8) * 4)..<shape[1], 0..<shape[2]]
+              .copied().reshaped(
+                format: .NHWC, shape: [gridY / 8, 4, 1, (gridX / 2) % 4, 4 * 3 * 2 * 14 * 14]
+              ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+                .WC((gridY / 8) * 8 * (gridX % 8), 3 * 2 * 14 * 14))
+            let bottom = input[((gridY / 8) * 4)..<shape[0], 0..<((gridX / 8) * 4), 0..<shape[2]]
+              .copied().reshaped(
+                format: .NHWC, shape: [1, (gridY / 2) % 4, gridX / 8, 4, 4 * 3 * 2 * 14 * 14]
+              ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+                .WC((gridY % 8) * (gridX / 8) * 8, 3 * 2 * 14 * 14))
+            let bottomRight = input[
+              ((gridY / 8) * 4)..<shape[0], ((gridX / 8) * 4)..<shape[1], 0..<shape[2]
+            ].copied().reshaped(
+              format: .NHWC, shape: [1, (gridY / 2) % 4, 1, (gridX / 2) % 4, 4 * 3 * 2 * 14 * 14]
+            ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+              .WC((gridY % 8) * (gridX % 8), 3 * 2 * 14 * 14))
+            input = Functional.concat(axis: 0, topLeft, right, bottom, bottomRight)
+          }
+          let rotTensor = graph.variable(
+            QwenVLViTRotaryEmbedding(gridX: gridX, gridY: gridY, of: FloatType.self).toGPU(0))
+          let vit = QwenVLVisionTransformer(
+            gridX: gridX, gridY: gridY, width: 1280, layers: 32,
+            fullAttentionLayers: [7, 15, 23, 31],
+            heads: 16, MLP: 3420, batchSize: 1, usesFlashAttention: usesFlashAttention)
+          vit.compile(inputs: input, rotTensor)
+          if !weightsCache.detach(filePaths[1], to: vit.parameters) {
+            TensorData.makeExternalData(for: filePaths[1], graph: graph)
+            graph.openStore(
+              filePaths[1], flags: .readOnly,
+              externalStore: TensorData.externalStore(filePath: filePaths[1])
+            ) {
+              $0.read(
+                "vit", model: vit, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+            }
+          }
+          var c = vit(inputs: input, rotTensor)[0].as(of: FloatType.self)
+          let resultShape = c.shape
+          // Unshuffle.
+          if gridX % 8 == 0, gridY % 8 == 0 {
+            // Can directly permuted into the patch required.
+            c = c.reshaped(
+              format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]]
+            ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+              .WC((gridY / 2) * (gridX / 2), resultShape[1]))
+          } else if gridX % 8 == 0 {
+            let oldC = c
+            c = graph.variable(.GPU(0), .HWC(gridY / 2, gridX / 2, resultShape[1]))
+            let top = oldC[0..<(gridX / 2) * ((gridY / 8) * 4), 0..<resultShape[1]].copied()
+              .reshaped(
+                format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]]
+              ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+                .HWC((gridY / 8) * 4, gridX / 2, resultShape[1]))
+            let bottom = oldC[
+              ((gridX / 2) * ((gridY / 8) * 4))..<resultShape[0], 0..<resultShape[1]
+            ]
+            .copied()
+            .reshaped(format: .NHWC, shape: [1, gridX / 8, (gridY / 2) % 4, 4, resultShape[1]])
+            .permuted(0, 2, 1, 3, 4).copied().reshaped(
+              .HWC((gridY / 2) % 4, gridX / 2, resultShape[1]))
+            c[0..<((gridY / 8) * 4), 0..<(gridX / 2), 0..<resultShape[1]] = top
+            c[((gridY / 8) * 4)..<(gridY / 2), 0..<(gridX / 2), 0..<resultShape[1]] = bottom
+            c = c.reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
+          } else if gridY % 8 == 0 {
+            let oldC = c
+            c = graph.variable(.GPU(0), .HWC(gridY / 2, gridX / 2, resultShape[1]))
+            let left = oldC[0..<(gridY / 2) * ((gridX / 8) * 4), 0..<resultShape[1]].copied()
+              .reshaped(
+                format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]]
+              ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+                .HWC(gridY / 2, (gridX / 8) * 4, resultShape[1]))
+            let right = oldC[((gridY / 2) * ((gridX / 8) * 4))..<resultShape[0], 0..<resultShape[1]]
+              .copied()
+              .reshaped(format: .NHWC, shape: [gridY / 8, 1, 4, (gridX / 2) % 4, resultShape[1]])
+              .permuted(0, 2, 1, 3, 4).copied().reshaped(
+                .HWC(gridY / 2, (gridX / 2) % 4, resultShape[1]))
+            c[0..<(gridY / 2), 0..<((gridX / 8) * 4), 0..<resultShape[1]] = left
+            c[0..<(gridY / 2), ((gridX / 8) * 4)..<(gridX / 2), 0..<resultShape[1]] = right
+            c = c.reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
+          } else {
+            let oldC = c
+            c = graph.variable(.GPU(0), .HWC(gridY / 2, gridX / 2, resultShape[1]))
+            let topLeft = oldC[0..<(((gridY / 8) * 4) * ((gridX / 8) * 4)), 0..<resultShape[1]]
+              .copied()
+              .reshaped(format: .NHWC, shape: [gridY / 8, gridX / 8, 4, 4, resultShape[1]])
+              .permuted(0, 2, 1, 3, 4).copied().reshaped(
+                .HWC((gridY / 8) * 4, (gridX / 8) * 4, resultShape[1]))
+            let right = oldC[
+              (((gridY / 8) * 4) * ((gridX / 8) * 4))..<(((gridY / 8) * 4) * (gridX / 2)),
+              0..<resultShape[1]
+            ]
+            .copied().reshaped(
+              format: .NHWC, shape: [gridY / 8, 1, 4, (gridX / 2) % 4, resultShape[1]]
+            ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+              .HWC((gridY / 8) * 4, (gridX / 2) % 4, resultShape[1]))
+            let lastCorner = resultShape[0] - ((gridY / 2) % 4) * ((gridX / 2) % 4)
+            let bottom = oldC[
+              (((gridY / 8) * 4) * (gridX / 2))..<lastCorner, 0..<resultShape[1]
+            ]
+            .copied().reshaped(
+              format: .NHWC, shape: [1, gridX / 8, (gridY / 2) % 4, 4, resultShape[1]]
+            ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+              .HWC((gridY / 2) % 4, (gridX / 8) * 4, resultShape[1]))
+            let bottomRight = oldC[
+              lastCorner..<resultShape[0], 0..<resultShape[1]
+            ].copied().reshaped(
+              format: .NHWC, shape: [1, 1, (gridY / 2) % 4, (gridX / 2) % 4, resultShape[1]]
+            ).permuted(0, 2, 1, 3, 4).copied().reshaped(
+              .HWC((gridY / 2) % 4, (gridX / 2) % 4, resultShape[1]))
+            c[0..<((gridY / 8) * 4), 0..<((gridX / 8) * 4), 0..<resultShape[1]] = topLeft
+            c[0..<((gridY / 8) * 4), ((gridX / 8) * 4)..<(gridX / 2), 0..<resultShape[1]] = right
+            c[((gridY / 8) * 4)..<(gridY / 2), 0..<((gridX / 8) * 4), 0..<resultShape[1]] = bottom
+            c[
+              ((gridY / 8) * 4)..<(gridY / 2), ((gridX / 8) * 4)..<(gridX / 2), 0..<resultShape[1]] =
+              bottomRight
+            c = c.reshaped(.WC((gridY / 2) * (gridX / 2), resultShape[1]))
+          }
+          weightsCache.attach(filePaths[1], from: vit.parameters)
+          referenceSizes.append((height: gridY / 2, gridX / 2))
+          return c
+        }
+        let oldTokenLength = tokenLength
+        tokenLength += c.reduce(0) {
+          $0 + $1.shape[0] - 1
+        }
+
         var token = Tensor<Int32>(.CPU, format: .NHWC, shape: [tokenLength * 2])
         var mask = Tensor<FloatType>(.CPU, .WC(tokenLength * 2, 1))
         var embeddings = graph.variable(
-          .GPU(0), .WC(tokenLength * 2, resultShape[1]), of: FloatType.self)
+          .GPU(0), .WC(tokenLength * 2, c[0].shape[1]), of: FloatType.self)
         embeddings.full(0)
-        if let negativePromptPad = negativePromptPad {
-          // Copy negative ones over, inject as much pad as needed.
-          for i in 0..<negativePromptPad {
-            token[i] = tokens[0][i]
-            mask[i, 0] = 1
-          }
+        // Copy negative ones over, inject as much pad as needed.
+        for i in 0..<negativePromptPad[0] {
+          token[i] = tokens[0][i]
+          mask[i, 0] = 1
+        }
+        var offset = negativePromptPad[0]
+        var oldOffset = negativePromptPad[0]
+        for k in 0..<negativePromptPad.count {
+          let resultShape = c[k].shape
           for i in 0..<resultShape[0] {
-            token[i + negativePromptPad] = 151655
-            mask[i + negativePromptPad, 0] = 0
+            token[i + offset] = 151655
+            mask[i + offset, 0] = 0
           }
-          for i in (negativePromptPad + 1)..<oldTokenLength {
-            token[i + resultShape[0] - 1] = tokens[0][i]
-            mask[i + resultShape[0] - 1, 0] = 1
+          embeddings[offset..<(offset + resultShape[0]), 0..<resultShape[1]] =
+            c[k]
+          offset += resultShape[0]
+          oldOffset += 1
+          for i
+            in 0..<((k + 1 < negativePromptPad.count ? negativePromptPad[k + 1] : oldTokenLength)
+            - negativePromptPad[k])
+          {
+            token[i + offset] = tokens[0][i + oldOffset]
+            mask[i + offset, 0] = 1
           }
-          embeddings[negativePromptPad..<(negativePromptPad + resultShape[0]), 0..<resultShape[1]] =
-            c
           tokenLengthUncond += resultShape[0] - 1
-        } else {
-          for i in 0..<oldTokenLength {
-            token[i] = tokens[0][i]
-            mask[i, 0] = 1
-          }
-          for i in oldTokenLength..<tokenLength {
-            token[i] = 151643  // <|endoftext|>
-            mask[i, 0] = 1
+          if k < negativePromptPad.count - 1 {
+            offset += negativePromptPad[k + 1] - negativePromptPad[k] - 1
+            oldOffset += negativePromptPad[k + 1] - negativePromptPad[k] - 1
           }
         }
-        if let positivePromptPad = positivePromptPad {
-          // Copy negative ones over, inject as much pad as needed.
-          for i in 0..<positivePromptPad {
-            token[i + tokenLength] = tokens[0][i + oldTokenLength]
-            mask[i + tokenLength, 0] = 1
-          }
+        for i in 0..<positivePromptPad[0] {
+          token[i + tokenLength] = tokens[0][i + oldTokenLength]
+          mask[i + tokenLength, 0] = 1
+        }
+        offset = positivePromptPad[0]
+        oldOffset = positivePromptPad[0]
+        for k in 0..<positivePromptPad.count {
+          let resultShape = c[k].shape
           for i in 0..<resultShape[0] {
-            token[i + tokenLength + positivePromptPad] = 151655
-            mask[i + tokenLength + positivePromptPad, 0] = 0
-          }
-          for i in (positivePromptPad + 1)..<oldTokenLength {
-            token[i + tokenLength + resultShape[0] - 1] = tokens[0][i + oldTokenLength]
-            mask[i + tokenLength + resultShape[0] - 1, 0] = 1
+            token[i + tokenLength + offset] = 151655
+            mask[i + tokenLength + offset, 0] = 0
           }
           embeddings[
-            (tokenLength + positivePromptPad)..<(tokenLength + positivePromptPad + resultShape[0]),
-            0..<resultShape[1]] = c
-          tokenLengthCond += resultShape[0] - 1
-          referenceSize = (height: gridY / 2, gridX / 2)
-        } else {
-          for i in 0..<oldTokenLength {
-            token[i + tokenLength] = tokens[0][i + oldTokenLength]
-            mask[i + tokenLength, 0] = 1
+            (offset + tokenLength)..<(offset + tokenLength + resultShape[0]), 0..<resultShape[1]] =
+            c[k]
+          offset += resultShape[0]
+          oldOffset += 1
+          for i
+            in 0..<((k + 1 < positivePromptPad.count ? positivePromptPad[k + 1] : oldTokenLength)
+            - positivePromptPad[k])
+          {
+            token[i + tokenLength + offset] = tokens[0][i + oldTokenLength + oldOffset]
+            mask[i + tokenLength + offset, 0] = 1
           }
-          for i in oldTokenLength..<tokenLength {
-            token[i + tokenLength] = 151643  // <|endoftext|>
-            mask[i + tokenLength, 0] = 1
+          tokenLengthCond += resultShape[0] - 1
+          if k < positivePromptPad.count - 1 {
+            offset += positivePromptPad[k + 1] - positivePromptPad[k] - 1
+            oldOffset += positivePromptPad[k + 1] - positivePromptPad[k] - 1
           }
         }
         tokens[0] = graph.variable(token)
@@ -2100,7 +2129,7 @@ extension TextEncoder {
     let tokensTensorGPU = tokens[0].toGPU(0)
     let rotaryTensorGPU = graph.variable(
       QwenVLRotaryEmbedding(
-        sequenceLength: tokenLength, token: tokens[0], referenceSize: referenceSize,
+        sequenceLength: tokenLength, token: tokens[0], referenceSizes: referenceSizes,
         of: FloatType.self
       ).toGPU(0))
     let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))

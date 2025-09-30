@@ -638,6 +638,14 @@ public struct ModelZoo: DownloadZoo {
       "d3e5bf87e24d732285c39e76efcb4fadcbac0f37204f99e27ba6c7083f116a2a",
     "qwen_image_edit_2509_q6p.ckpt":
       "3ab7456121e770008e6f434405548a6ca5b3b83053b8acee89947939252146f5",
+    "qwen_image_1.0_bf16_q8p.ckpt":
+      "4c38f4da338ec63038adea4cc076e7a46dcd70c79086e7a7b53b7d880a80fcd9",
+    "qwen_image_1.0_bf16_q6p.ckpt":
+      "52aba4938362a0faad933bb91e20716e3a41c196b799daadf411c9689d3772a7",
+    "qwen_image_edit_2509_bf16_q8p.ckpt":
+      "01a56e3f4c5d2d1aae0e8d8cee6405498679722128cd47c2c93d6323e24d7552",
+    "qwen_image_edit_2509_bf16_q6p.ckpt":
+      "5ace7c50b133854b8242a2b03ab9b687036c126f2c3f0d80571cd17e977c3eaa",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -658,6 +666,22 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       note:
         "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+    ),
+    Specification(
+      name: "Qwen Image 1.0 (BF16)", file: "qwen_image_1.0_bf16_q8p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24, isBf16: true,
+      note:
+        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. The BF16 version is only compatible with macOS 15, iOS 18 and above."
+    ),
+    Specification(
+      name: "Qwen Image 1.0 (BF16, 6-bit)", file: "qwen_image_1.0_bf16_q6p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24, isBf16: true,
+      note:
+        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. The BF16 version is only compatible with macOS 15, iOS 18 and above."
     ),
     Specification(
       name: "Qwen Image Edit 2509", file: "qwen_image_edit_2509_q8p.ckpt", prefix: "",
@@ -684,6 +708,35 @@ public struct ModelZoo: DownloadZoo {
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
         "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025."
+    ),
+    Specification(
+      name: "Qwen Image Edit 2509 (BF16)", file: "qwen_image_edit_2509_bf16_q8p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", modifier: .qwenimageEditPlus,
+      clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      isBf16: true,
+      note:
+        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025. The BF16 version is only compatible with macOS 15, iOS 18 and above."
+    ),
+    Specification(
+      name: "Qwen Image Edit 2509 (BF16, 6-bit)", file: "qwen_image_edit_2509_bf16_q6p.ckpt",
+      prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", modifier: .qwenimageEditPlus,
+      clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      isBf16: true,
+      note:
+        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025. The BF16 version is only compatible with macOS 15, iOS 18 and above."
     ),
     Specification(
       name: "Qwen Image Edit 1.0", file: "qwen_image_edit_1.0_q8p.ckpt", prefix: "",

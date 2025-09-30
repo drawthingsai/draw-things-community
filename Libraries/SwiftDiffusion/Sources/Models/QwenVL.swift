@@ -2,11 +2,12 @@ import Foundation
 import NNC
 
 func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  sequenceLength: Int, token: DynamicGraph.Tensor<Int32>, referenceSize: (height: Int, width: Int),
+  sequenceLength: Int, token: DynamicGraph.Tensor<Int32>,
+  referenceSizes: [(height: Int, width: Int)],
   of dataType: FloatType.Type = FloatType.self
 ) -> Tensor<FloatType> {
   var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, 128))
-  guard referenceSize.width > 0 && referenceSize.height > 0 else {
+  guard !referenceSizes.isEmpty else {
     for i in 0..<sequenceLength {
       for k in 0..<64 {
         let theta = Double(i) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
@@ -19,14 +20,19 @@ func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
     return rotary
   }
   // First, find vision pad.
-  var visionPad: Int? = nil
+  var visionPad = [Int]()
+  var first = true
   for i in 0..<sequenceLength {
     if token[i + sequenceLength] == 151655 {
-      visionPad = i
-      break
+      if first {
+        visionPad.append(i)
+        first = false
+      }
+    } else {
+      first = true
     }
   }
-  guard let visionPad = visionPad else {
+  guard !visionPad.isEmpty else {
     for i in 0..<sequenceLength {
       for k in 0..<64 {
         let theta = Double(i) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
@@ -39,7 +45,7 @@ func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
     return rotary
   }
   // Go up to vision pad with normal 1d rotary encoding.
-  for i in 0..<visionPad {
+  for i in 0..<visionPad[0] {
     for k in 0..<64 {
       let theta = Double(i) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
       let sintheta = sin(theta)
@@ -48,42 +54,47 @@ func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
       rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
     }
   }
-  var i = visionPad
-  for y in 0..<referenceSize.height {
-    for x in 0..<referenceSize.width {
-      for k in 0..<16 {
-        let theta = Double(visionPad) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        rotary[0, i, 0, k * 2] = FloatType(costheta)
-        rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+  var i = visionPad[0]
+  var startIndex = visionPad[0]
+  for (n, referenceSize) in referenceSizes.enumerated() {
+    for y in 0..<referenceSize.height {
+      for x in 0..<referenceSize.width {
+        for k in 0..<16 {
+          let theta = Double(startIndex) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
+          let sintheta = sin(theta)
+          let costheta = cos(theta)
+          rotary[0, i, 0, k * 2] = FloatType(costheta)
+          rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+        }
+        for k in 16..<40 {
+          let theta = Double(y + startIndex) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
+          let sintheta = sin(theta)
+          let costheta = cos(theta)
+          rotary[0, i, 0, k * 2] = FloatType(costheta)
+          rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+        }
+        for k in 40..<64 {
+          let theta = Double(x + startIndex) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
+          let sintheta = sin(theta)
+          let costheta = cos(theta)
+          rotary[0, i, 0, k * 2] = FloatType(costheta)
+          rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+        }
+        i += 1
       }
-      for k in 16..<40 {
-        let theta = Double(y + visionPad) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        rotary[0, i, 0, k * 2] = FloatType(costheta)
-        rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
-      }
-      for k in 40..<64 {
-        let theta = Double(x + visionPad) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        rotary[0, i, 0, k * 2] = FloatType(costheta)
-        rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
-      }
-      i += 1
     }
-  }
-  let endIndex = i
-  let startIndex = visionPad + max(referenceSize.height, referenceSize.width)
-  for i in endIndex..<sequenceLength {
-    for k in 0..<64 {
-      let theta = Double(i - endIndex + startIndex) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
-      let sintheta = sin(theta)
-      let costheta = cos(theta)
-      rotary[0, i, 0, k * 2] = FloatType(costheta)
-      rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+    startIndex += max(referenceSize.height, referenceSize.width)
+    let nextLength = n + 1 < visionPad.count ? visionPad[n + 1] : sequenceLength
+    while i < nextLength {
+      for k in 0..<64 {
+        let theta = Double(startIndex) * 1.0 / pow(1_000_000, Double(k) * 2 / 128)
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotary[0, i, 0, k * 2] = FloatType(costheta)
+        rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+      }
+      startIndex += 1
+      i += 1
     }
   }
   return rotary

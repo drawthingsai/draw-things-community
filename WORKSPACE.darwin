@@ -24,6 +24,12 @@ load("@bazel_features//:deps.bzl", "bazel_features_deps")
 bazel_features_deps()
 
 http_archive(
+    name = "build_bazel_rules_apple",
+    sha256 = "ef8a5744b2ffff49f47647226f69f0f06522ca2e8a6fa1aaf5d65d5314813c34",
+    url = "https://github.com/bazelbuild/rules_apple/releases/download/4.2.0/rules_apple.4.2.0.tar.gz",
+)
+
+http_archive(
     name = "build_bazel_rules_swift",
     sha256 = "5eff717c18bb513285b499add68f2331509cd4e411ff085e96a86b3342c1e5aa",
     url = "https://github.com/bazelbuild/rules_swift/releases/download/3.1.2/rules_swift.3.1.2.tar.gz",
@@ -72,9 +78,9 @@ dflat_deps()
 
 git_repository(
     name = "s4nnc",
-    commit = "93b728b8072fb4b70c05c539d67aa907f0e9780b",
+    commit = "075755073f45817cb5cbfa54eda9fb29ba3d2172",
     remote = "https://github.com/liuliu/s4nnc.git",
-    shallow_since = "1758215293 -0400",
+    shallow_since = "1759173972 -0400",
 )
 
 load("@s4nnc//:deps.bzl", "s4nnc_deps")

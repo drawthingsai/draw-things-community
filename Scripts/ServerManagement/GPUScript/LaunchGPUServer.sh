@@ -2,6 +2,48 @@
 
 # Script to start 8 separate Docker containers, each running one gRPCServerCLI process
 # Each container will automatically restart if the process crashes
+# Usage: ./script.sh <address> <models_path> <utils_path> <lora_models_path>
+
+# Check if all required arguments are provided
+if [ $# -ne 4 ]; then
+    echo "Usage: $0 <address> <models_path> <utils_path> <lora_models_path>"
+    echo "Example: $0 192.168.1.100 /disk1/official-models/ /root/utils /disk2/loraModels/"
+    exit 1
+fi
+
+# Configuration from command line arguments
+ADDRESS=$1
+MODELS_PATH=$2
+UTILS_PATH=$3
+LORA_MODELS_PATH=$4
+
+# Validate that paths exist
+if [ ! -d "$MODELS_PATH" ]; then
+    echo "Error: Models path '$MODELS_PATH' does not exist"
+    exit 1
+fi
+
+if [ ! -d "$UTILS_PATH" ]; then
+    echo "Error: Utils path '$UTILS_PATH' does not exist"
+    exit 1
+fi
+
+if [ ! -d "$LORA_MODELS_PATH" ]; then
+    echo "Error: LoRA models path '$LORA_MODELS_PATH' does not exist"
+    exit 1
+fi
+
+echo "Configuration:"
+echo "  Address: $ADDRESS"
+echo "  Models path: $MODELS_PATH"
+echo "  Utils path: $UTILS_PATH"
+echo "  LoRA models path: $LORA_MODELS_PATH"
+echo ""
+
+copy_tmpfs() {
+    echo "Mount tmpfs..."
+	$(UTILS_PATH)/mount_overlay.sh -s $MODELS_PATH -l $MODELS_PATH -f $(UTILS_PATH)/tmpfs.ls -m /mnt/unified-models/ -z 448G
+}
 
 # Function to check if all GPUs are idle using nvidia-smi
 check_gpu_idle() {
@@ -79,18 +121,14 @@ wait_for_gpu_idle
 
 # Stop and remove any existing containers
 echo "Stopping and removing existing containers..."
-for i in $(seq 0 3); do
+for i in $(seq 0 7); do
     CONTAINER_NAME="grpc_service_$i"
     sudo docker stop $CONTAINER_NAME 2>/dev/null || true
     sudo docker rm $CONTAINER_NAME 2>/dev/null || true
 done
 
-
-# Configuration
-ADDRESS=$1  # Default address, can be modified as needed
-
-# Start 8 separate containers
-for i in $(seq 0 3); do
+# Start 4 separate containers
+for i in $(seq 0 7); do
     PORT=$((40001 + i))
     GPU=$i
     CONTAINER_NAME="grpc_service_$i"
@@ -102,9 +140,10 @@ for i in $(seq 0 3); do
         --network=host \
         --restart=unless-stopped \
         --gpus '"device='$GPU'"' \
-        -v /disk1/official-models/:/models \
-        -v /root/utils:/utils \
-        -v /disk2/loraModels/:/loraModels \
+        --tmpfs /tmp \
+        -v "${MODELS_PATH}:/models" \
+        -v "${UTILS_PATH}:/utils" \
+        -v "${LORA_MODELS_PATH}:/loraModels" \
         drawthingsai/draw-things-grpc-server-cli:latest \
         /utils/start_single_grpc.sh $PORT $GPU $ADDRESS
         
@@ -120,4 +159,4 @@ done
 
 echo "All containers started. Use 'sudo docker ps' to check status."
 echo "To view logs for a specific container, use: sudo docker logs grpc_service_<number>"
-echo "To stop all containers, run: sudo docker stop \$(sudo docker ps -q --filter name=grpc_service_)" 
+echo "To stop all containers, run: sudo docker stop \$(sudo docker ps -q --filter name=grpc_service_)"

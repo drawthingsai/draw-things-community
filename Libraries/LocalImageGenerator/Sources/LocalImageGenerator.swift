@@ -1339,7 +1339,7 @@ extension LocalImageGenerator {
     graph: DynamicGraph, modelVersion: ModelVersion, textEncoderVersion: TextEncoderVersion?,
     modifier: SamplerModifier, paddedTextEncodingLength: Int, text: String, negativeText: String,
     negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool, clipL: String?,
-    openClipG: String?, t5: String?
+    openClipG: String?, t5: String?, images: Int
   ) -> (
     //  return:
     //  tokensTensors, positionTensors, embedMask, injectedEmbeddings, unconditionalAttentionWeights,
@@ -1411,7 +1411,9 @@ extension LocalImageGenerator {
         result.8 = result.8 - 64
         return result
       } else if modifier == .qwenimageEditPlus {
-        let imagePromptTemplate = "Picture 1: <|vision_start|><|image_pad|><|vision_end|>"
+        let imagePromptTemplate =
+          ((1...images).map { "Picture \($0): <|vision_start|><|image_pad|><|vision_end|>" })
+          .joined(separator: "")
         let promptWithTemplate =
           "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n\(imagePromptTemplate)\(text)<|im_end|>\n<|im_start|>assistant\n"
         let negativePromptWithTemplate =
@@ -3683,7 +3685,8 @@ extension LocalImageGenerator {
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil,
-      t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil
+      t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil,
+      images: (image == nil ? 0 : 1) + shuffles.count
     )
     return graph.withNoGrad {
       let injectedTextEmbeddings = generateInjectedTextEmbeddings(
@@ -4738,7 +4741,8 @@ extension LocalImageGenerator {
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil,
-      t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil
+      t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil,
+      images: 1 + shuffles.count
     )
     var signposts = Set<ImageGeneratorSignpost>([
       .textEncoded, .imageEncoded, .sampling(sampling.steps - initTimestep.roundedDownStartStep),
@@ -6074,7 +6078,8 @@ extension LocalImageGenerator {
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil,
-      t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil
+      t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil,
+      images: 1 + shuffles.count
     )
     signposts.formUnion([
       .textEncoded, .imageEncoded, .sampling(sampling.steps - initTimestep.roundedDownStartStep),
@@ -6896,7 +6901,8 @@ extension LocalImageGenerator {
       potentials: potentials, T5TextEncoder: configuration.t5TextEncoder,
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil,
-      t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil
+      t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil,
+      images: 1 + shuffles.count
     )
     signposts.formUnion([
       .textEncoded, .imageEncoded, .sampling(sampling.steps), .imageDecoded,
