@@ -28,7 +28,7 @@ public final class LocalLoRAManager {
   /// - Returns: A tuple with success status and the downloaded file size
   private func downloadRemoteLoRA(
     _ modelNames: [String], index: Int, results: [String: Bool], session: URLSession,
-    progress: @escaping (Int64, Int64, Int) -> Void,
+    objCResponder: R2Client.ObjCResponder,
     cancellation: @escaping (@escaping () -> Void) -> Void,
     completion: @escaping ([String: Bool]) -> Void
   ) {
@@ -41,8 +41,9 @@ public final class LocalLoRAManager {
     let dirURL = URL(fileURLWithPath: localDirectory)
     let logger = logger
     logger.info("Downloading LoRA \(modelName)")
+    objCResponder.index = index
     let task = r2Client.downloadObject(
-      key: modelName, session: session, index: index, progress: progress
+      key: modelName, session: session, objCResponder: objCResponder
     ) { result in
       switch result {
       case .success(let tempUrl):
@@ -83,7 +84,7 @@ public final class LocalLoRAManager {
         }
         self.downloadRemoteLoRA(
           modelNames, index: index + 1, results: results, session: session,
-          progress: progress, cancellation: cancellation, completion: completion)
+          objCResponder: objCResponder, cancellation: cancellation, completion: completion)
       case .failure(let error):
         logger.info("Error downloading model \(modelName): \(error.localizedDescription)")
         results[modelName] = false
@@ -107,12 +108,12 @@ public final class LocalLoRAManager {
     completion: @escaping ([String: Bool]) -> Void
   ) {
     let total = modelNames.count
-    let progress: (Int64, Int64, Int) -> Void = { bytesReceived, bytesExpected, index in
+    let objCResponder = R2Client.ObjCResponder { bytesReceived, bytesExpected, index in
       progress(bytesReceived, bytesExpected, index, total)
     }
     downloadRemoteLoRA(
       modelNames, index: 0, results: [:],
-      session: URLSession(configuration: .default, delegate: nil, delegateQueue: nil),
-      progress: progress, cancellation: cancellation, completion: completion)
+      session: URLSession(configuration: .default, delegate: objCResponder, delegateQueue: nil),
+      objCResponder: objCResponder, cancellation: cancellation, completion: completion)
   }
 }
