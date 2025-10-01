@@ -8,41 +8,47 @@ import Foundation
 public struct R2Client: Sendable {
   public enum Error: Swift.Error {
     case invalidURL
-    case missingFileURL
+    case missingData
     case invalidHTTPResponse
     case httpError(_: Int)
   }
 
   final class ObjCResponder: NSObject {
+    var lastUpdated: Date? = nil
+    var task: URLSessionDataTask? = nil
+    let taskLock = DispatchQueue(label: "task.lock")
+    var downloadTask: DownloadTask? = nil
+    var index: Int = 0
+    let progress: (Int64, Int64, Int) -> Void
+    var totalBytesExpectedToWrite: Int64 = 0
+    var data: Data = Data()
+    init(
+      progress: @escaping (Int64, Int64, Int) -> Void
+    ) {
+      self.progress = progress
+    }
+  }
+
+  struct DownloadTask: Sendable {
     let client: R2Client
     let url: URL
     let session: URLSession
     let key: String
     let index: Int
-    var totalBytesExpectedToWrite: Int64 = 0
-    var lastUpdated: Date? = nil
-    var task: URLSessionDataTask? = nil
-    let taskLock = DispatchQueue(label: "task.lock")
-    var data: Data = Data()
-    var completion: (@Sendable (URL?, URLResponse?, (any Swift.Error)?) -> Void)? = nil
-    let progress: (Int64, Int64, Int) -> Void
+    var completion: (@Sendable (Data?, URLResponse?, (any Swift.Error)?) -> Void)
+    private let objCResponder: ObjCResponder
     init(
       client: R2Client, url: URL, session: URLSession, key: String, index: Int,
-      progress: @escaping (Int64, Int64, Int) -> Void
+      objCResponder: ObjCResponder,
+      completion: @escaping (@Sendable (Data?, URLResponse?, (any Swift.Error)?) -> Void)
     ) {
       self.client = client
       self.url = url
       self.session = session
       self.key = key
       self.index = index
-      self.progress = progress
-    }
-  }
-
-  struct DownloadTask: Sendable {
-    private let objCResponder: ObjCResponder
-    init(objCResponder: ObjCResponder) {
       self.objCResponder = objCResponder
+      self.completion = completion
     }
     func cancel() {
       objCResponder.cancel()
@@ -67,9 +73,8 @@ public struct R2Client: Sendable {
 
   // Update your R2Client.downloadObject method with better error handling
   func downloadObject(
-    key: String, session: URLSession, index: Int,
-    progress: @escaping (Int64, Int64, Int) -> Void,
-    completion: @escaping (Result<URL, Swift.Error>) -> Void
+    key: String, session: URLSession, objCResponder: ObjCResponder,
+    completion: @escaping (Result<Data, Swift.Error>) -> Void
   )
     -> DownloadTask?
   {
@@ -82,16 +87,17 @@ public struct R2Client: Sendable {
       print("Attempting to download from URL: \(url.absoluteString)")
     }
 
-    let objCResponder = ObjCResponder(
-      client: self, url: url, session: session, key: key, index: index, progress: progress)
-    objCResponder.completion = { tempUrl, response, error in
+    let downloadTask = DownloadTask(
+      client: self, url: url, session: session, key: key, index: objCResponder.index,
+      objCResponder: objCResponder
+    ) { data, response, error in
       if let error = error {
         completion(.failure(error))
         return
       }
 
-      guard let tempUrl = tempUrl else {
-        completion(.failure(Error.missingFileURL))
+      guard let data = data else {
+        completion(.failure(Error.missingData))
         return
       }
 
@@ -108,18 +114,12 @@ public struct R2Client: Sendable {
         // Extract error message from response if possible
         var errorMessage = "HTTP Error: \(httpResponse.statusCode)"
 
-        do {
-          let errorData = try Data(contentsOf: tempUrl)
-          if let responseString = String(data: errorData, encoding: .utf8) {
-            if self.debug {
-              print("Error response body: \(responseString)")
-            }
-            errorMessage += " - Response: \(responseString)"
-          }
-        } catch {
+        let errorData = data
+        if let responseString = String(data: errorData, encoding: .utf8) {
           if self.debug {
-            print("Could not read error data from temporary file")
+            print("Error response body: \(responseString)")
           }
+          errorMessage += " - Response: \(responseString)"
         }
 
         completion(.failure(Error.httpError(httpResponse.statusCode)))
@@ -127,7 +127,7 @@ public struct R2Client: Sendable {
       }
 
       // Return the temporary URL for the downloaded file
-      completion(.success(tempUrl))
+      completion(.success(data))
     }
 
     // Create a signed request
@@ -146,12 +146,11 @@ public struct R2Client: Sendable {
     }
 
     let task = session.dataTask(with: request)
-    task.delegate = objCResponder
     objCResponder.task = task
-    let wrappedTask = DownloadTask(objCResponder: objCResponder)
+    objCResponder.downloadTask = downloadTask
     task.resume()
 
-    return wrappedTask
+    return downloadTask
   }
 
   private func signRequest(_ request: inout URLRequest, key: String) {
@@ -248,8 +247,8 @@ public struct R2Client: Sendable {
   }
 }
 
-extension R2Client.ObjCResponder {
-  private func isTransient(_ e: NSError) -> Bool {
+extension R2Client.DownloadTask {
+  func isTransient(_ e: NSError) -> Bool {
     if e.domain == NSURLErrorDomain {
       let code = URLError.Code(rawValue: e.code)
       switch code {
@@ -263,7 +262,7 @@ extension R2Client.ObjCResponder {
     return false
   }
 
-  private func resume(data: Data?) {
+  func resume(data: Data?) {
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
 
@@ -282,14 +281,15 @@ extension R2Client.ObjCResponder {
     }
     let task = session.dataTask(with: request)
     // Since cancel can be called from anywhere, need to protect the access.
-    taskLock.sync {
-      self.task = task
+    objCResponder.taskLock.sync {
+      objCResponder.task = task
     }
-    task.delegate = self
-    self.data = data ?? Data()
+    objCResponder.data = data ?? Data()
     task.resume()
   }
+}
 
+extension R2Client.ObjCResponder {
   func cancel() {
     // Protect access to task, cancel can be called from anywhere.
     taskLock.sync {
@@ -313,10 +313,11 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
     _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
   ) {
+    guard let downloadTask = downloadTask else { return }
     guard let httpResponse = response as? HTTPURLResponse else {
       completionHandler(.cancel)
-      completion?(nil, response, R2Client.Error.invalidHTTPResponse)
-      completion = nil
+      downloadTask.completion(nil, response, R2Client.Error.invalidHTTPResponse)
+      self.downloadTask = nil
       return
     }
     // Check for valid response codes
@@ -329,18 +330,18 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
       completionHandler(.allow)
     case 416:  // Range Not Satisfiable - file already complete
       completionHandler(.cancel)
-      completion?(nil, response, nil)
-      completion = nil
+      downloadTask.completion(nil, response, nil)
+      self.downloadTask = nil
       return
     case 500...599:
       completionHandler(.cancel)
-      completion?(nil, response, R2Client.Error.httpError(httpResponse.statusCode))
-      completion = nil
+      downloadTask.completion(nil, response, R2Client.Error.httpError(httpResponse.statusCode))
+      self.downloadTask = nil
       return
     default:
       completionHandler(.cancel)
-      completion?(nil, response, R2Client.Error.httpError(httpResponse.statusCode))
-      completion = nil
+      downloadTask.completion(nil, response, R2Client.Error.httpError(httpResponse.statusCode))
+      self.downloadTask = nil
       return
     }
   }
@@ -348,25 +349,28 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
   func urlSession(
     _ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?
   ) {
+    guard let downloadTask = downloadTask else { return }
     guard let error = error else { return }
     let isTransientError: Bool
     let nsError = error as NSError
-    if isTransient(nsError) {
+    if downloadTask.isTransient(nsError) {
       isTransientError = true
     } else {
       isTransientError = false
     }
     if !isTransientError {
       lastUpdated = nil
-      completion?(nil, task.response, error)
-      completion = nil
+      downloadTask.completion(data, task.response, error)
+      self.data = Data()
+      self.downloadTask = nil
+      return
     }
     // At the end, cancel the download request.
     if isTransientError {
       let resumeData = data
       // Restart in 200ms.
       DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(200)) {
-        self.resume(data: resumeData)
+        downloadTask.resume(data: resumeData)
       }
     }
   }
