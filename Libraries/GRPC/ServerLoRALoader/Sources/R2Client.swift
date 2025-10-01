@@ -5,7 +5,7 @@ import Foundation
   import FoundationNetworking
 #endif
 
-public struct R2Client {
+public struct R2Client: Sendable {
   public enum Error: Swift.Error {
     case invalidURL
     case missingFileURL
@@ -13,14 +13,39 @@ public struct R2Client {
     case httpError(_: Int)
   }
 
-  public final class ObjCResponder: NSObject {
-    var index: Int = 0
+  final class ObjCResponder: NSObject {
+    let client: R2Client
+    let url: URL
+    let session: URLSession
+    let key: String
+    let index: Int
     var totalBytesExpectedToWrite: Int64 = 0
     var lastUpdated: Date? = nil
+    var task: URLSessionDataTask? = nil
+    let taskLock = DispatchQueue(label: "task.lock")
+    var data: Data = Data()
     var completion: (@Sendable (URL?, URLResponse?, (any Swift.Error)?) -> Void)? = nil
     let progress: (Int64, Int64, Int) -> Void
-    init(progress: @escaping (Int64, Int64, Int) -> Void) {
+    init(
+      client: R2Client, url: URL, session: URLSession, key: String, index: Int,
+      progress: @escaping (Int64, Int64, Int) -> Void
+    ) {
+      self.client = client
+      self.url = url
+      self.session = session
+      self.key = key
+      self.index = index
       self.progress = progress
+    }
+  }
+
+  struct DownloadTask: Sendable {
+    private let objCResponder: ObjCResponder
+    init(objCResponder: ObjCResponder) {
+      self.objCResponder = objCResponder
+    }
+    func cancel() {
+      objCResponder.cancel()
     }
   }
 
@@ -41,11 +66,12 @@ public struct R2Client {
   }
 
   // Update your R2Client.downloadObject method with better error handling
-  public func downloadObject(
-    key: String, session: URLSession, objCResponder: ObjCResponder,
+  func downloadObject(
+    key: String, session: URLSession, index: Int,
+    progress: @escaping (Int64, Int64, Int) -> Void,
     completion: @escaping (Result<URL, Swift.Error>) -> Void
   )
-    -> URLSessionDownloadTask?
+    -> DownloadTask?
   {
     // Create the request URL
     guard let url = URL(string: "\(endpoint)/\(bucket)/\(key)") else {
@@ -56,21 +82,8 @@ public struct R2Client {
       print("Attempting to download from URL: \(url.absoluteString)")
     }
 
-    // Create a signed request
-    var request = URLRequest(url: url)
-    request.httpMethod = "GET"
-
-    // Increase timeout for larger files
-    request.timeoutInterval = 300  // 5 minutes
-
-    // Generate signature (AWS Signature V4)
-    signRequest(&request, key: key, date: "")
-
-    // Print request details for debugging
-    if self.debug {
-      print("Request headers: \(request.allHTTPHeaderFields ?? [:])")
-    }
-
+    let objCResponder = ObjCResponder(
+      client: self, url: url, session: session, key: key, index: index, progress: progress)
     objCResponder.completion = { tempUrl, response, error in
       if let error = error {
         completion(.failure(error))
@@ -116,13 +129,32 @@ public struct R2Client {
       // Return the temporary URL for the downloaded file
       completion(.success(tempUrl))
     }
-    let task = session.downloadTask(with: request)
+
+    // Create a signed request
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+
+    // Increase timeout for larger files
+    request.timeoutInterval = 300  // 5 minutes
+
+    // Generate signature (AWS Signature V4)
+    signRequest(&request, key: key)
+
+    // Print request details for debugging
+    if self.debug {
+      print("Request headers: \(request.allHTTPHeaderFields ?? [:])")
+    }
+
+    let task = session.dataTask(with: request)
+    task.delegate = objCResponder
+    objCResponder.task = task
+    let wrappedTask = DownloadTask(objCResponder: objCResponder)
     task.resume()
 
-    return task
+    return wrappedTask
   }
 
-  private func signRequest(_ request: inout URLRequest, key: String, date: String) {
+  private func signRequest(_ request: inout URLRequest, key: String) {
     // Create the current date in UTC
     let currentDate = Date()
 
@@ -216,33 +248,126 @@ public struct R2Client {
   }
 }
 
-extension R2Client.ObjCResponder: URLSessionDownloadDelegate {
-  public func urlSession(
-    _ session: URLSession, downloadTask: URLSessionDownloadTask,
-    didFinishDownloadingTo location: URL
-  ) {
-    progress(totalBytesExpectedToWrite, totalBytesExpectedToWrite, index)
-    lastUpdated = nil
-    completion?(location, downloadTask.response, nil)
-    completion = nil
+extension R2Client.ObjCResponder {
+  private func isTransient(_ e: NSError) -> Bool {
+    if e.domain == NSURLErrorDomain {
+      let code = URLError.Code(rawValue: e.code)
+      switch code {
+      case .timedOut, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+        .networkConnectionLost, .notConnectedToInternet:
+        return true
+      default: break
+      }
+    }
+    if e.domain == NSPOSIXErrorDomain, e.code == 54 || e.code == 32 { return true }  // ECONNRESET/EPIPE
+    return false
   }
-  public func urlSession(
-    _ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?
-  ) {
-    guard let error = error else { return }
-    lastUpdated = nil
-    completion?(nil, task.response, error)
-    completion = nil
+
+  private func resume(data: Data?) {
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+
+    // Increase timeout for larger files
+    request.timeoutInterval = 300  // 5 minutes
+
+    // Generate signature (AWS Signature V4)
+    client.signRequest(&request, key: key)
+
+    // Print request details for debugging
+    if client.debug {
+      print("Request headers: \(request.allHTTPHeaderFields ?? [:])")
+    }
+    if let data = data {
+      request.addValue("bytes=\(data.count)-", forHTTPHeaderField: "Range")
+    }
+    let task = session.dataTask(with: request)
+    // Since cancel can be called from anywhere, need to protect the access.
+    taskLock.sync {
+      self.task = task
+    }
+    task.delegate = self
+    self.data = data ?? Data()
+    task.resume()
   }
-  public func urlSession(
-    _ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
-    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
-  ) {
+
+  func cancel() {
+    // Protect access to task, cancel can be called from anywhere.
+    taskLock.sync {
+      task?.cancel()
+      task = nil
+    }
+  }
+}
+
+extension R2Client.ObjCResponder: URLSessionDataDelegate {
+  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    self.data.append(data)
     let date = Date()
     let timeElapsed = lastUpdated.map { date.timeIntervalSince($0) } ?? 1
     guard timeElapsed >= 0.25 else { return }
-    self.totalBytesExpectedToWrite = totalBytesExpectedToWrite
-    progress(totalBytesWritten, totalBytesExpectedToWrite, index)
+    progress(Int64(self.data.count), totalBytesExpectedToWrite, index)
     lastUpdated = date
+  }
+
+  func urlSession(
+    _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+  ) {
+    guard let httpResponse = response as? HTTPURLResponse else {
+      completionHandler(.cancel)
+      completion?(nil, response, R2Client.Error.invalidHTTPResponse)
+      completion = nil
+      return
+    }
+    // Check for valid response codes
+    switch httpResponse.statusCode {
+    case 200, 206:  // 200 OK or 206 Partial Content
+      let contentLength =
+        httpResponse.value(forHTTPHeaderField: "Content-Length")
+        .flatMap { Int64($0) } ?? 0
+      totalBytesExpectedToWrite = Int64(data.count) + contentLength
+      completionHandler(.allow)
+    case 416:  // Range Not Satisfiable - file already complete
+      completionHandler(.cancel)
+      completion?(nil, response, nil)
+      completion = nil
+      return
+    case 500...599:
+      completionHandler(.cancel)
+      completion?(nil, response, R2Client.Error.httpError(httpResponse.statusCode))
+      completion = nil
+      return
+    default:
+      completionHandler(.cancel)
+      completion?(nil, response, R2Client.Error.httpError(httpResponse.statusCode))
+      completion = nil
+      return
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?
+  ) {
+    guard let error = error else { return }
+    let isTransientError: Bool
+    let nsError = error as NSError
+    if isTransient(nsError) {
+      isTransientError = true
+    } else {
+      isTransientError = false
+    }
+    if !isTransientError {
+      lastUpdated = nil
+      completion?(nil, task.response, error)
+      completion = nil
+    }
+    // At the end, cancel the download request.
+    if isTransientError {
+      let resumeData = data
+      // Restart in 200ms.
+      DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(200)) {
+        self.resume(data: resumeData)
+      }
+    }
   }
 }
