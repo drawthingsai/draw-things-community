@@ -350,7 +350,14 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
     _ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?
   ) {
     guard let downloadTask = downloadTask else { return }
-    guard let error = error else { return }
+    guard let error = error else {
+      let data = self.data
+      self.data = Data()
+      self.downloadTask = nil
+      progress(Int64(data.count), totalBytesExpectedToWrite, index)
+      downloadTask.completion(data, task.response, error)
+      return
+    }
     let isTransientError: Bool
     let nsError = error as NSError
     if downloadTask.isTransient(nsError) {
@@ -360,7 +367,7 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
     }
     if !isTransientError {
       lastUpdated = nil
-      downloadTask.completion(data, task.response, error)
+      downloadTask.completion(nil, task.response, error)
       self.data = Data()
       self.downloadTask = nil
       return
