@@ -346,44 +346,88 @@ private func JointTransformerBlock(
     mapping["\(prefix).attn.add_k_proj.weight"] = [contextToKeys.weight.name]
     mapping["\(prefix).attn.add_k_proj.bias"] = ModelWeightElement(
       [contextToKeys.bias.name], scale: 1.0 / 8)
-    mapping["\(prefix).attn.add_v_proj.weight"] = [contextToValues.weight.name]
-    mapping["\(prefix).attn.add_v_proj.bias"] = ModelWeightElement(
-      [contextToValues.bias.name], scale: 1.0 / 8)
+    if isBF16 {
+      mapping["\(prefix).attn.add_v_proj.weight"] = ModelWeightElement(
+        [contextToValues.weight.name], isBF16: true)
+      mapping["\(prefix).attn.add_v_proj.bias"] = ModelWeightElement(
+        [contextToValues.bias.name], isBF16: true)
+    } else {
+      mapping["\(prefix).attn.add_v_proj.weight"] = [contextToValues.weight.name]
+      mapping["\(prefix).attn.add_v_proj.bias"] = ModelWeightElement(
+        [contextToValues.bias.name], scale: 1.0 / 8)
+    }
     mapping["\(prefix).attn.norm_added_k.weight"] = [normAddedK.weight.name]
     mapping["\(prefix).attn.norm_added_q.weight"] = [normAddedQ.weight.name]
     mapping["\(prefix).attn.to_q.weight"] = [xToQueries.weight.name]
     mapping["\(prefix).attn.to_q.bias"] = ModelWeightElement([xToQueries.bias.name], scale: 1.0 / 8)
     mapping["\(prefix).attn.to_k.weight"] = [xToKeys.weight.name]
     mapping["\(prefix).attn.to_k.bias"] = ModelWeightElement([xToKeys.bias.name], scale: 1.0 / 8)
-    mapping["\(prefix).attn.to_v.weight"] = [xToValues.weight.name]
-    mapping["\(prefix).attn.to_v.bias"] = ModelWeightElement([xToValues.bias.name], scale: 1.0 / 8)
+    if isBF16 {
+      mapping["\(prefix).attn.to_v.weight"] = ModelWeightElement(
+        [xToValues.weight.name], isBF16: true)
+      mapping["\(prefix).attn.to_v.bias"] = ModelWeightElement([xToValues.bias.name], isBF16: true)
+    } else {
+      mapping["\(prefix).attn.to_v.weight"] = [xToValues.weight.name]
+      mapping["\(prefix).attn.to_v.bias"] = ModelWeightElement(
+        [xToValues.bias.name], scale: 1.0 / 8)
+    }
     mapping["\(prefix).attn.norm_k.weight"] = [normK.weight.name]
     mapping["\(prefix).attn.norm_q.weight"] = [normQ.weight.name]
     if let contextUnifyheads = contextUnifyheads {
-      mapping["\(prefix).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
-      mapping["\(prefix).attn.to_add_out.bias"] = ModelWeightElement(
-        [contextUnifyheads.bias.name], scale: 1.0 / (8 * scaleFactor.0))
+      if isBF16 {
+        mapping["\(prefix).attn.to_add_out.weight"] = ModelWeightElement(
+          [contextUnifyheads.weight.name], isBF16: true)
+        mapping["\(prefix).attn.to_add_out.bias"] = ModelWeightElement(
+          [contextUnifyheads.bias.name], isBF16: true)
+      } else {
+        mapping["\(prefix).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
+        mapping["\(prefix).attn.to_add_out.bias"] = ModelWeightElement(
+          [contextUnifyheads.bias.name], scale: 1.0 / (8 * scaleFactor.0))
+      }
     }
-    mapping["\(prefix).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
-    mapping["\(prefix).attn.to_out.0.bias"] = ModelWeightElement(
-      [xUnifyheads.bias.name], scale: 1.0 / (8 * scaleFactor.0))
+    if isBF16 {
+      mapping["\(prefix).attn.to_out.0.weight"] = ModelWeightElement(
+        [xUnifyheads.weight.name], isBF16: true)
+      mapping["\(prefix).attn.to_out.0.bias"] = ModelWeightElement(
+        [xUnifyheads.bias.name], isBF16: true)
+    } else {
+      mapping["\(prefix).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
+      mapping["\(prefix).attn.to_out.0.bias"] = ModelWeightElement(
+        [xUnifyheads.bias.name], scale: 1.0 / (8 * scaleFactor.0))
+    }
     if let contextLinear1 = contextLinear1,
       let contextOutProjection = contextOutProjection
     {
       mapping["\(prefix).txt_mlp.net.0.proj.weight"] = [contextLinear1.weight.name]
       mapping["\(prefix).txt_mlp.net.0.proj.bias"] = [contextLinear1.bias.name]
-      mapping[
-        "\(prefix).txt_mlp.net.2.weight"
-      ] = [contextOutProjection.weight.name]
-      mapping[
-        "\(prefix).txt_mlp.net.2.bias"
-      ] = ModelWeightElement([contextOutProjection.bias.name], scale: 1.0 / scaleFactor.1)
+      if isBF16 {
+        mapping[
+          "\(prefix).txt_mlp.net.2.weight"
+        ] = ModelWeightElement([contextOutProjection.weight.name], isBF16: true)
+        mapping[
+          "\(prefix).txt_mlp.net.2.bias"
+        ] = ModelWeightElement([contextOutProjection.bias.name], isBF16: true)
+      } else {
+        mapping[
+          "\(prefix).txt_mlp.net.2.weight"
+        ] = [contextOutProjection.weight.name]
+        mapping[
+          "\(prefix).txt_mlp.net.2.bias"
+        ] = ModelWeightElement([contextOutProjection.bias.name], scale: 1.0 / scaleFactor.1)
+      }
     }
     mapping["\(prefix).img_mlp.net.0.proj.weight"] = [xLinear1.weight.name]
     mapping["\(prefix).img_mlp.net.0.proj.bias"] = [xLinear1.bias.name]
-    mapping["\(prefix).img_mlp.net.2.weight"] = [xOutProjection.weight.name]
-    mapping["\(prefix).img_mlp.net.2.bias"] = ModelWeightElement(
-      [xOutProjection.bias.name], scale: 1.0 / scaleFactor.1)
+    if isBF16 {
+      mapping["\(prefix).img_mlp.net.2.weight"] = ModelWeightElement(
+        [xOutProjection.weight.name], isBF16: true)
+      mapping["\(prefix).img_mlp.net.2.bias"] = ModelWeightElement(
+        [xOutProjection.bias.name], isBF16: true)
+    } else {
+      mapping["\(prefix).img_mlp.net.2.weight"] = [xOutProjection.weight.name]
+      mapping["\(prefix).img_mlp.net.2.bias"] = ModelWeightElement(
+        [xOutProjection.bias.name], scale: 1.0 / scaleFactor.1)
+    }
     return mapping
   }
   if !contextBlockPreOnly {
@@ -887,44 +931,88 @@ private func LoRAJointTransformerBlock(
     mapping["\(prefix).attn.add_k_proj.weight"] = [contextToKeys.weight.name]
     mapping["\(prefix).attn.add_k_proj.bias"] = ModelWeightElement(
       [contextToKeys.bias.name], scale: 1.0 / 8)
-    mapping["\(prefix).attn.add_v_proj.weight"] = [contextToValues.weight.name]
-    mapping["\(prefix).attn.add_v_proj.bias"] = ModelWeightElement(
-      [contextToValues.bias.name], scale: 1.0 / 8)
+    if isBF16 {
+      mapping["\(prefix).attn.add_v_proj.weight"] = ModelWeightElement(
+        [contextToValues.weight.name], isBF16: true)
+      mapping["\(prefix).attn.add_v_proj.bias"] = ModelWeightElement(
+        [contextToValues.bias.name], isBF16: true)
+    } else {
+      mapping["\(prefix).attn.add_v_proj.weight"] = [contextToValues.weight.name]
+      mapping["\(prefix).attn.add_v_proj.bias"] = ModelWeightElement(
+        [contextToValues.bias.name], scale: 1.0 / 8)
+    }
     mapping["\(prefix).attn.norm_added_k.weight"] = [normAddedK.weight.name]
     mapping["\(prefix).attn.norm_added_q.weight"] = [normAddedQ.weight.name]
     mapping["\(prefix).attn.to_q.weight"] = [xToQueries.weight.name]
     mapping["\(prefix).attn.to_q.bias"] = ModelWeightElement([xToQueries.bias.name], scale: 1.0 / 8)
     mapping["\(prefix).attn.to_k.weight"] = [xToKeys.weight.name]
     mapping["\(prefix).attn.to_k.bias"] = ModelWeightElement([xToKeys.bias.name], scale: 1.0 / 8)
-    mapping["\(prefix).attn.to_v.weight"] = [xToValues.weight.name]
-    mapping["\(prefix).attn.to_v.bias"] = ModelWeightElement([xToValues.bias.name], scale: 1.0 / 8)
+    if isBF16 {
+      mapping["\(prefix).attn.to_v.weight"] = ModelWeightElement(
+        [xToValues.weight.name], isBF16: true)
+      mapping["\(prefix).attn.to_v.bias"] = ModelWeightElement([xToValues.bias.name], isBF16: true)
+    } else {
+      mapping["\(prefix).attn.to_v.weight"] = [xToValues.weight.name]
+      mapping["\(prefix).attn.to_v.bias"] = ModelWeightElement(
+        [xToValues.bias.name], scale: 1.0 / 8)
+    }
     mapping["\(prefix).attn.norm_k.weight"] = [normK.weight.name]
     mapping["\(prefix).attn.norm_q.weight"] = [normQ.weight.name]
     if let contextUnifyheads = contextUnifyheads {
-      mapping["\(prefix).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
-      mapping["\(prefix).attn.to_add_out.bias"] = ModelWeightElement(
-        [contextUnifyheads.bias.name], scale: 1.0 / (8 * scaleFactor.0))
+      if isBF16 {
+        mapping["\(prefix).attn.to_add_out.weight"] = ModelWeightElement(
+          [contextUnifyheads.weight.name], isBF16: true)
+        mapping["\(prefix).attn.to_add_out.bias"] = ModelWeightElement(
+          [contextUnifyheads.bias.name], isBF16: true)
+      } else {
+        mapping["\(prefix).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
+        mapping["\(prefix).attn.to_add_out.bias"] = ModelWeightElement(
+          [contextUnifyheads.bias.name], scale: 1.0 / (8 * scaleFactor.0))
+      }
     }
-    mapping["\(prefix).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
-    mapping["\(prefix).attn.to_out.0.bias"] = ModelWeightElement(
-      [xUnifyheads.bias.name], scale: 1.0 / (8 * scaleFactor.0))
+    if isBF16 {
+      mapping["\(prefix).attn.to_out.0.weight"] = ModelWeightElement(
+        [xUnifyheads.weight.name], isBF16: true)
+      mapping["\(prefix).attn.to_out.0.bias"] = ModelWeightElement(
+        [xUnifyheads.bias.name], isBF16: true)
+    } else {
+      mapping["\(prefix).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
+      mapping["\(prefix).attn.to_out.0.bias"] = ModelWeightElement(
+        [xUnifyheads.bias.name], scale: 1.0 / (8 * scaleFactor.0))
+    }
     if let contextLinear1 = contextLinear1,
       let contextOutProjection = contextOutProjection
     {
       mapping["\(prefix).txt_mlp.net.0.proj.weight"] = [contextLinear1.weight.name]
       mapping["\(prefix).txt_mlp.net.0.proj.bias"] = [contextLinear1.bias.name]
-      mapping[
-        "\(prefix).txt_mlp.net.2.weight"
-      ] = [contextOutProjection.weight.name]
-      mapping[
-        "\(prefix).txt_mlp.net.2.bias"
-      ] = ModelWeightElement([contextOutProjection.bias.name], scale: 1.0 / scaleFactor.1)
+      if isBF16 {
+        mapping[
+          "\(prefix).txt_mlp.net.2.weight"
+        ] = ModelWeightElement([contextOutProjection.weight.name], isBF16: true)
+        mapping[
+          "\(prefix).txt_mlp.net.2.bias"
+        ] = ModelWeightElement([contextOutProjection.bias.name], isBF16: true)
+      } else {
+        mapping[
+          "\(prefix).txt_mlp.net.2.weight"
+        ] = [contextOutProjection.weight.name]
+        mapping[
+          "\(prefix).txt_mlp.net.2.bias"
+        ] = ModelWeightElement([contextOutProjection.bias.name], scale: 1.0 / scaleFactor.1)
+      }
     }
     mapping["\(prefix).img_mlp.net.0.proj.weight"] = [xLinear1.weight.name]
     mapping["\(prefix).img_mlp.net.0.proj.bias"] = [xLinear1.bias.name]
-    mapping["\(prefix).img_mlp.net.2.weight"] = [xOutProjection.weight.name]
-    mapping["\(prefix).img_mlp.net.2.bias"] = ModelWeightElement(
-      [xOutProjection.bias.name], scale: 1.0 / scaleFactor.1)
+    if isBF16 {
+      mapping["\(prefix).img_mlp.net.2.weight"] = ModelWeightElement(
+        [xOutProjection.weight.name], isBF16: true)
+      mapping["\(prefix).img_mlp.net.2.bias"] = ModelWeightElement(
+        [xOutProjection.bias.name], isBF16: true)
+    } else {
+      mapping["\(prefix).img_mlp.net.2.weight"] = [xOutProjection.weight.name]
+      mapping["\(prefix).img_mlp.net.2.bias"] = ModelWeightElement(
+        [xOutProjection.bias.name], scale: 1.0 / scaleFactor.1)
+    }
     return mapping
   }
   if !contextBlockPreOnly {

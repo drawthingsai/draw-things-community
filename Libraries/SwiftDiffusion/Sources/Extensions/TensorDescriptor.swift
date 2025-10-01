@@ -40,6 +40,20 @@ extension ModelWeightElement {
     graph: DynamicGraph, to store: DynamicGraph.Store, tensor: Tensor<FloatType>, format: Format,
     isDiagonalUp: Bool, isDiagonalDown: Bool, renamer: (String) -> String
   ) {
+    if isBF16 && FloatType.self != BFloat16.self {
+      internalWrite(
+        graph: graph, to: store, tensor: Tensor<BFloat16>(from: tensor), format: format,
+        isDiagonalUp: isDiagonalUp, isDiagonalDown: isDiagonalDown, renamer: renamer)
+      return
+    }
+    internalWrite(
+      graph: graph, to: store, tensor: tensor, format: format, isDiagonalUp: isDiagonalUp,
+      isDiagonalDown: isDiagonalDown, renamer: renamer)
+  }
+  private func internalWrite<FloatType: TensorNumeric>(
+    graph: DynamicGraph, to store: DynamicGraph.Store, tensor: Tensor<FloatType>, format: Format,
+    isDiagonalUp: Bool, isDiagonalDown: Bool, renamer: (String) -> String
+  ) {
     var tensor = tensor
     if scale != 1 {
       // Scale the tensor if needed.

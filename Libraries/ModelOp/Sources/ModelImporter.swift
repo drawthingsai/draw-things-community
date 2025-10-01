@@ -159,6 +159,9 @@ public final class ModelImporter {
       $0.contains("double_stream_blocks.15.block.ff_i.experts.0.")
         || $0.contains("single_stream_blocks.31.block.ff_i.experts.0.")
     }
+    var isQwenImage = stateDict.keys.contains {
+      $0.contains("transformer_blocks.59.txt_mlp.")
+    }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
     let inputDim: Int
@@ -228,6 +231,7 @@ public final class ModelImporter {
       isWan21_14B = false
       isWan21_1_3B = false
       isHiDream = false
+      isQwenImage = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -306,6 +310,12 @@ public final class ModelImporter {
       modifier = .none
       inputDim = 16
       expectedTotalAccess = 1857
+      isDiffusersFormat = true  // Only Diffusers format available.
+    } else if isQwenImage {
+      modelVersion = .qwenImage
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 3121
       isDiffusersFormat = true  // Only Diffusers format available.
     } else {
       throw UnpickleError.tensorNotFound
@@ -621,7 +631,8 @@ public final class ModelImporter {
       conditionalLength = 4096
       batchSize = 1
     case .qwenImage:
-      fatalError()
+      conditionalLength = 3854
+      batchSize = 1
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -763,7 +774,18 @@ public final class ModelImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .qwenImage:
-        fatalError()
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: QwenImageRotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 128, referenceSizes: [], channels: 128)))
+          ]
+          + QwenImageFixedOutputShapes(
+            batchSize: 1, textLength: 128, channels: 3072, layers: 60
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -928,7 +950,14 @@ public final class ModelImporter {
         (unetFixed, unetFixedMapper) = HiDreamFixed(
           timesteps: 1, layers: (16, 32), outputTimesteps: false)
       case .qwenImage:
-        fatalError()
+        (unetMapper, unet) = QwenImage(
+          batchSize: 1, height: 64, width: 64, textLength: 128, referenceSequenceLength: 0,
+          channels: 3_072, layers: 60, usesFlashAttention: .scale1, isBF16: true,
+          activationProjScaling: [:], activationFfnScaling: [:])
+        (unetFixedMapper, unetFixed) = QwenImageFixed(
+          timesteps: 1, channels: 3_072, layers: 60, isBF16: true, activationProjScaling: [:],
+          activationFfnScaling: [:],
+          numberOfReferenceImages: 0)
       case .auraflow:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
@@ -1022,7 +1051,12 @@ public final class ModelImporter {
           }
         tEmb = nil
       case .qwenImage:
-        fatalError()
+        crossattn =
+          [
+            graph.variable(.CPU, .HWC(1, 256, 3854), of: FloatType.self),
+            graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+          ]
+        tEmb = nil
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1101,7 +1135,18 @@ public final class ModelImporter {
             stateDict[String(key.dropFirst(6))] = value
           }
         }
-      } else if modelVersion == .wan21_1_3b || modelVersion == .wan21_14b {
+      } else if modelVersion == .wan21_1_3b || modelVersion == .wan21_14b
+        || modelVersion == .wan22_5b
+      {
+        // Remove the model.diffusion_model / model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          } else if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
+          }
+        }
+      } else if modelVersion == .qwenImage {
         // Remove the model.diffusion_model / model prefix.
         for (key, value) in stateDict {
           if key.hasPrefix("model.diffusion_model.") {
@@ -1187,7 +1232,7 @@ public final class ModelImporter {
             modelPrefix = "stage_c"
             modelPrefixFixed = "stage_c_fixed"
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
-            .wan22_5b:
+            .wan22_5b, .qwenImage:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1196,8 +1241,6 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .qwenImage:
-            fatalError()
           case .auraflow:
             fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
@@ -1431,7 +1474,9 @@ public final class ModelImporter {
         case .wan22_5b:
           fatalError()
         case .qwenImage:
-          fatalError()
+          if $0.keys.count != 3121 {
+            throw Error.tensorWritesFailed
+          }
         case .auraflow:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
@@ -1676,7 +1721,9 @@ extension ModelImporter {
     case .wan22_5b:
       fatalError()
     case .qwenImage:
-      fatalError()
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_qwen_2.5_vl_7b_f16.ckpt")
+      }
     case .wurstchenStageC:
       textEncoder = nil
     case .kandinsky21, .wurstchenStageB:
@@ -1846,7 +1893,17 @@ extension ModelImporter {
       // For HiDream, the hires fix trigger scale is 1.5 of the finetune scale.
       specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
     case .qwenImage:
-      fatalError()
+      if specification.textEncoder == nil {
+        specification.textEncoder = "qwen_2.5_vl_7b_q8p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "qwen_image_vae_f16.ckpt"
+      }
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
+      specification.isBf16 = true
     case .sd3, .sd3Large:
       if specification.textEncoder == nil {
         specification.textEncoder = "open_clip_vit_bigg14_f16.ckpt"
