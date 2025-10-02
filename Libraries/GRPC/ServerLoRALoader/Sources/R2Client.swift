@@ -134,8 +134,7 @@ public struct R2Client: Sendable {
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
 
-    // Increase timeout for larger files
-    request.timeoutInterval = 300  // 5 minutes
+    request.timeoutInterval = 30  // 30s
 
     // Generate signature (AWS Signature V4)
     signRequest(&request, key: key)
@@ -268,8 +267,7 @@ extension R2Client.DownloadTask {
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
 
-    // Increase timeout for larger files
-    request.timeoutInterval = 300  // 5 minutes
+    request.timeoutInterval = 30  // 30s
 
     // Generate signature (AWS Signature V4)
     client.signRequest(&request, key: key)
@@ -383,7 +381,7 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
     if downloadTask.isTransient(nsError) {
       let resumeData = data
       // Restart in 200ms.
-      DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(200)) {
+      DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(200)) {
         downloadTask.resume(data: resumeData)
       }
     } else {
