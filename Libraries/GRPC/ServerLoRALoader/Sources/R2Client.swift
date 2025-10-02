@@ -146,8 +146,10 @@ public struct R2Client: Sendable {
     }
 
     let task = session.dataTask(with: request)
-    objCResponder.task = task
-    objCResponder.downloadTask = downloadTask
+    objCResponder.taskLock.sync {
+      objCResponder.task = task
+      objCResponder.downloadTask = downloadTask
+    }
     task.resume()
 
     return downloadTask
@@ -295,6 +297,7 @@ extension R2Client.ObjCResponder {
     taskLock.sync {
       task?.cancel()
       task = nil
+      downloadTask = nil
     }
   }
 }
@@ -313,11 +316,15 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
     _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
   ) {
-    guard let downloadTask = downloadTask else { return }
+    let (downloadTask, task) = taskLock.sync { (self.downloadTask, self.task) }
+    guard let downloadTask = downloadTask, task === dataTask else { return }
     guard let httpResponse = response as? HTTPURLResponse else {
       completionHandler(.cancel)
+      taskLock.sync {
+        self.task = nil
+        self.downloadTask = nil
+      }
       downloadTask.completion(nil, response, R2Client.Error.invalidHTTPResponse)
-      self.downloadTask = nil
       return
     }
     // Check for valid response codes
@@ -330,18 +337,27 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
       completionHandler(.allow)
     case 416:  // Range Not Satisfiable - file already complete
       completionHandler(.cancel)
+      taskLock.sync {
+        self.task = nil
+        self.downloadTask = nil
+      }
       downloadTask.completion(nil, response, nil)
-      self.downloadTask = nil
       return
     case 500...599:
       completionHandler(.cancel)
+      taskLock.sync {
+        self.task = nil
+        self.downloadTask = nil
+      }
       downloadTask.completion(nil, response, R2Client.Error.httpError(httpResponse.statusCode))
-      self.downloadTask = nil
       return
     default:
       completionHandler(.cancel)
+      taskLock.sync {
+        self.task = nil
+        self.downloadTask = nil
+      }
       downloadTask.completion(nil, response, R2Client.Error.httpError(httpResponse.statusCode))
-      self.downloadTask = nil
       return
     }
   }
@@ -349,11 +365,15 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
   func urlSession(
     _ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?
   ) {
-    guard let downloadTask = downloadTask else { return }
+    let (downloadTask, selfTask) = taskLock.sync { (self.downloadTask, self.task) }
+    guard let downloadTask = downloadTask, selfTask === task else { return }
     guard let error = error else {
       let data = self.data
       self.data = Data()
-      self.downloadTask = nil
+      taskLock.sync {
+        self.task = nil
+        self.downloadTask = nil
+      }
       progress(Int64(data.count), totalBytesExpectedToWrite, index)
       downloadTask.completion(data, task.response, error)
       return
@@ -367,9 +387,12 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
     }
     if !isTransientError {
       lastUpdated = nil
-      downloadTask.completion(nil, task.response, error)
       self.data = Data()
-      self.downloadTask = nil
+      taskLock.sync {
+        self.task = nil
+        self.downloadTask = nil
+      }
+      downloadTask.completion(nil, task.response, error)
       return
     }
     // At the end, cancel the download request.
