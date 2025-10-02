@@ -381,11 +381,12 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
     let isTransientError: Bool
     let nsError = error as NSError
     if downloadTask.isTransient(nsError) {
-      isTransientError = true
+      let resumeData = data
+      // Restart in 200ms.
+      DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(200)) {
+        downloadTask.resume(data: resumeData)
+      }
     } else {
-      isTransientError = false
-    }
-    if !isTransientError {
       lastUpdated = nil
       self.data = Data()
       taskLock.sync {
@@ -393,15 +394,6 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
         self.downloadTask = nil
       }
       downloadTask.completion(nil, task.response, error)
-      return
-    }
-    // At the end, cancel the download request.
-    if isTransientError {
-      let resumeData = data
-      // Restart in 200ms.
-      DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(200)) {
-        downloadTask.resume(data: resumeData)
-      }
     }
   }
 }
