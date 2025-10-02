@@ -1412,8 +1412,9 @@ extension LocalImageGenerator {
         return result
       } else if modifier == .qwenimageEditPlus {
         let imagePromptTemplate =
-          ((1...images).map { "Picture \($0): <|vision_start|><|image_pad|><|vision_end|>" })
-          .joined(separator: "")
+          images >= 1
+          ? ((1...images).map { "Picture \($0): <|vision_start|><|image_pad|><|vision_end|>" })
+            .joined(separator: "") : ""
         let promptWithTemplate =
           "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n\(imagePromptTemplate)\(text)<|im_end|>\n<|im_start|>assistant\n"
         let negativePromptWithTemplate =
