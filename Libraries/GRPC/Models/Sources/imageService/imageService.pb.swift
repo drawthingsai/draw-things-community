@@ -164,6 +164,9 @@ public struct EchoReply: Sendable {
   /// Clears the value of `thresholds`. Subsequent reads from it will return its default value.
   public mutating func clearThresholds() {self._thresholds = nil}
 
+  /// A 64-bit server identifier for system to distinguish whether this is a remote server or the same server from the app.
+  public var serverIdentifier: UInt64 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -941,6 +944,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     3: .same(proto: "override"),
     4: .same(proto: "sharedSecretMissing"),
     5: .same(proto: "thresholds"),
+    6: .same(proto: "serverIdentifier"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -954,6 +958,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
       case 3: try { try decoder.decodeSingularMessageField(value: &self._override) }()
       case 4: try { try decoder.decodeSingularBoolField(value: &self.sharedSecretMissing) }()
       case 5: try { try decoder.decodeSingularMessageField(value: &self._thresholds) }()
+      case 6: try { try decoder.decodeSingularUInt64Field(value: &self.serverIdentifier) }()
       default: break
       }
     }
@@ -979,6 +984,9 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     try { if let v = self._thresholds {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
     } }()
+    if self.serverIdentifier != 0 {
+      try visitor.visitSingularUInt64Field(value: self.serverIdentifier, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -988,6 +996,7 @@ extension EchoReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementation
     if lhs._override != rhs._override {return false}
     if lhs.sharedSecretMissing != rhs.sharedSecretMissing {return false}
     if lhs._thresholds != rhs._thresholds {return false}
+    if lhs.serverIdentifier != rhs.serverIdentifier {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -124,13 +124,13 @@ public final class ImageGenerationClientWrapper {
         controlNets: [ControlNetZoo.Specification],
         textualInversions: [TextualInversionZoo.Specification]
       ),
-      LabHours?
+      LabHours?, UInt64
     ) -> Void
   ) {
     guard let client = client else {
       callback(
         false, false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []),
-        nil)
+        nil, 0)
       return
     }
 
@@ -177,11 +177,11 @@ public final class ImageGenerationClientWrapper {
           (
             files: result.files, models: models, LoRAs: loras, controlNets: controlNets,
             textualInversions: textualInversions
-          ), labHours)
+          ), labHours, result.serverIdentifier)
       case .failure(_):
         callback(
           false, false, (files: [], models: [], LoRAs: [], controlNets: [], textualInversions: []),
-          nil)
+          nil, 0)
       }
     }
   }

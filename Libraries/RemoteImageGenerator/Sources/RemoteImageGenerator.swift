@@ -33,6 +33,7 @@ extension DeviceType {
 public struct RemoteImageGenerator: ImageGenerator {
   private let logger = Logger(label: "com.draw-things.remote-image-generator")
   public let client: ImageGenerationClientWrapper
+  public let serverIdentifier: UInt64
   public let name: String
   public let deviceType: ImageGeneratorDeviceType
   private var fileExistsCall: UnaryCall<FileListRequest, FileExistenceResponse>? = nil
@@ -42,6 +43,7 @@ public struct RemoteImageGenerator: ImageGenerator {
 
   public init(
     name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper,
+    serverIdentifier: UInt64,
     authenticationHandler: (
       (Data, GenerationConfiguration, Bool, Int, (@escaping () -> Void) -> Void) -> String?
     )?,
@@ -50,6 +52,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     self.name = name
     self.deviceType = deviceType
     self.client = client
+    self.serverIdentifier = serverIdentifier
     self.authenticationHandler = authenticationHandler
     self.requestExceedLimitHandler = requestExceedLimitHandler
   }

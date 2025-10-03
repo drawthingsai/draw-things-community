@@ -27,6 +27,7 @@ message EchoReply {
   optional MetadataOverride override = 3;
   bool sharedSecretMissing = 4; // If this is true, sharedSecret is required.
   optional ComputeUnitThreshold thresholds = 5; // The thresholds currently imposed by the server.
+  uint64 serverIdentifier = 6; // A 64-bit server identifier for system to distinguish whether this is a remote server or the same server from the app.
 }
 
 message FileListRequest {

@@ -108,6 +108,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   private let backupQueue: DispatchQueue
   private let imageGenerator: ImageGenerator
   private let serverConfigurationRewriter: ServerConfigurationRewriter?
+  public let serverIdentifier: UInt64
   public weak var delegate: ImageGenerationServiceDelegate? = nil
   public var interceptors: ImageGenerationServiceServerInterceptorFactoryProtocol? = nil
   private let logger = Logger(label: "com.draw-things.image-generation-service")
@@ -139,7 +140,8 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     self.serverConfigurationRewriter = serverConfigurationRewriter
     self.cancellationMonitor = cancellationMonitor
     self.echoOnQueue = echoOnQueue
-    self.logger.info("ImageGenerationServiceImpl init")
+    serverIdentifier = UInt64.random(in: UInt64.min...UInt64.max)
+    logger.info("ImageGenerationServiceImpl init")
   }
 
   static private func cancellationMonitoring(
@@ -626,6 +628,7 @@ public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
           return
         }
       }
+      $0.serverIdentifier = serverIdentifier
       $0.sharedSecretMissing = false
       $0.message = "HELLO \(request.name)"
       if enableModelBrowsing {
