@@ -193,4 +193,12 @@ public enum ComputeUnits {
     // Fallback to original default setup
     return threshold(for: priority)
   }
+
+  public static let perBoost: Int = 60000
+
+  public static func boost(for computeUnits: Int, threshold: Int) -> Int {
+    return 1
+      + Int(
+        (Double(computeUnits - max(threshold, Self.perBoost)) / Double(Self.perBoost)).rounded(.up))
+  }
 }
