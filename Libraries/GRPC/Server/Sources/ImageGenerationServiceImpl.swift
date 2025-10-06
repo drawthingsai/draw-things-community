@@ -102,7 +102,7 @@ public enum ImageGenerationServiceError: Error {
   case sharedSecret
 }
 
-public class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
+public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
 
   private let queue: DispatchQueue
   private let backupQueue: DispatchQueue
