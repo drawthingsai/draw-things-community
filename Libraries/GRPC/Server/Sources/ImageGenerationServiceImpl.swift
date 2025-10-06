@@ -106,13 +106,19 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
 
   private let queue: DispatchQueue
   private let backupQueue: DispatchQueue
-  private let imageGenerator: ImageGenerator
+  private let imageGeneratorLock: DispatchQueue
+  public var imageGenerator: ImageGenerator {
+    get { imageGeneratorLock.sync { internalImageGenerator } }
+    set { imageGeneratorLock.sync { internalImageGenerator = newValue } }
+  }
+  private var internalImageGenerator: ImageGenerator
   private let serverConfigurationRewriter: ServerConfigurationRewriter?
   public let serverIdentifier: UInt64
   public weak var delegate: ImageGenerationServiceDelegate? = nil
   public var interceptors: ImageGenerationServiceServerInterceptorFactoryProtocol? = nil
   private let logger = Logger(label: "com.draw-things.image-generation-service")
   public let usesBackupQueue = ManagedAtomic<Bool>(false)
+  public let bridgeMode = ManagedAtomic<Bool>(false)
   public let responseCompression = ManagedAtomic<Bool>(false)
   public let enableModelBrowsing = ManagedAtomic<Bool>(false)
   public var sharedSecret: String? = nil
@@ -134,12 +140,13 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     serverConfigurationRewriter: ServerConfigurationRewriter? = nil,
     cancellationMonitor: CancellationMonitor? = nil, echoOnQueue: Bool = false
   ) {
-    self.imageGenerator = imageGenerator
+    self.internalImageGenerator = imageGenerator
     self.queue = queue
     self.backupQueue = backupQueue
     self.serverConfigurationRewriter = serverConfigurationRewriter
     self.cancellationMonitor = cancellationMonitor
     self.echoOnQueue = echoOnQueue
+    imageGeneratorLock = DispatchQueue(label: "ImageGenerationServiceImpl.imageGeneratorLock")
     serverIdentifier = UInt64.random(in: UInt64.min...UInt64.max)
     logger.info("ImageGenerationServiceImpl init")
   }
