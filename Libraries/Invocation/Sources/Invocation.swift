@@ -31,22 +31,25 @@ public struct Invocation {
   public let prompt: String?
   public let negativePrompt: String?
   public let mask: PrefersDefaultOptional<Tensor<UInt8>>
+  public let fromHTTPServer: Bool
 
   public init(
     image: PrefersDefaultOptional<Tensor<FloatType>>, configuration: GenerationConfiguration,
-    prompt: String?, negativePrompt: String?, mask: PrefersDefaultOptional<Tensor<UInt8>>
+    prompt: String?, negativePrompt: String?, mask: PrefersDefaultOptional<Tensor<UInt8>>,
+    fromHTTPServer: Bool
   ) {
     self.image = image
     self.configuration = configuration
     self.prompt = prompt
     self.negativePrompt = negativePrompt
     self.mask = mask
+    self.fromHTTPServer = fromHTTPServer
   }
 
   public init(
     faceRestorationModel: String?,
     image: PrefersDefaultOptional<Tensor<FloatType>>, mask: PrefersDefaultOptional<Tensor<UInt8>>,
-    parameters: Parameters, resizingOccurred: inout Bool
+    parameters: Parameters, resizingOccurred: inout Bool, fromHTTPServer: Bool
   ) throws {
     let model = try unwrapOrThrow(
       parameters.modelParameter.value, errorMessage: "Missing 'model' parameter")
@@ -194,6 +197,7 @@ public struct Invocation {
       configuration.startWidth * 64 != parameters.widthParameter.value
       || configuration.startHeight * 64 != parameters.heightParameter.value
     self.mask = mask
+    self.fromHTTPServer = fromHTTPServer
   }
 }
 

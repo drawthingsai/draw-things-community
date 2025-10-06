@@ -91,7 +91,8 @@ public final class HTTPAPIServer {
       }
       let invocation = try Invocation(
         faceRestorationModel: faceRestorationModel,
-        image: image, mask: mask, parameters: parameters, resizingOccurred: &resizingOccurred)
+        image: image, mask: mask, parameters: parameters, resizingOccurred: &resizingOccurred,
+        fromHTTPServer: true)
       let (images, _) = try delegate?.generateImages(forInvocation: invocation) ?? ([], false)
       let response = SuccessResponse(images: images)
       let body = try JSONEncoder().encode(response)
