@@ -58,4 +58,4 @@ docker run -d \
   --control-port 50000 \
   --cert "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" \
   --key "/etc/letsencrypt/live/$DOMAIN/privkey.pem" \
-  -d "$DEVICE_KEY"
+  -d "$DATADOG_KEY"
