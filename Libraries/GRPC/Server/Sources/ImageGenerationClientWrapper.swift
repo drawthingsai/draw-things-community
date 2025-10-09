@@ -1,12 +1,56 @@
+import Atomics
 import BinaryResources
 import Foundation
 import GRPC
 import GRPCImageServiceModels
 import ModelZoo
 import NIO
+import NIOHTTP2
 import NIOSSL
 
 public final class ImageGenerationClientWrapper {
+  public final class MonitoringHandler: ChannelDuplexHandler {
+    public struct Statistics {
+      public var bytesSent: Int
+      public var bytesReceived: Int
+      public init(bytesSent: Int, bytesReceived: Int) {
+        self.bytesSent = bytesSent
+        self.bytesReceived = bytesReceived
+      }
+    }
+    public static var statistics: Statistics {
+      return Statistics(
+        bytesSent: bytesSent.load(ordering: .acquiring),
+        bytesReceived: bytesReceived.load(ordering: .acquiring))
+    }
+    private static let bytesSent = ManagedAtomic<Int>(0)
+    private static let bytesReceived = ManagedAtomic<Int>(0)
+
+    public typealias InboundIn = ByteBuffer
+    public typealias InboundOut = ByteBuffer
+    public typealias OutboundIn = ByteBuffer
+    public typealias OutboundOut = ByteBuffer
+
+    public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+      // Unwrap the NIOAny to get a ByteBuffer
+      let buffer = self.unwrapInboundIn(data)
+      let byteCount = buffer.readableBytes
+      Self.bytesReceived.wrappingIncrement(by: byteCount, ordering: .acquiringAndReleasing)
+      // Forward the bytes we read
+      context.fireChannelRead(data)
+    }
+
+    public func write(
+      context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?
+    ) {
+      // Unwrap the NIOAny to get a ByteBuffer
+      let buffer = self.unwrapOutboundIn(data)
+      let byteCount = buffer.readableBytes
+      Self.bytesSent.wrappingIncrement(by: byteCount, ordering: .acquiringAndReleasing)
+      // Forward the bytes
+      context.write(data, promise: promise)
+    }
+  }
   public enum Error: Swift.Error {
     case invalidRootCA
   }
@@ -51,6 +95,17 @@ public final class ImageGenerationClientWrapper {
       target: .host(host, port: port),
       transportSecurity: transportSecurity,
       eventLoopGroup: eventLoopGroup)
+    configuration.debugChannelInitializer = { channel in
+      channel.eventLoop.makeCompletedFuture {
+        let sync = channel.pipeline.syncOperations
+        let http2Handler = try sync.handler(type: NIOHTTP2Handler.self)
+        // Note: this closure is called for every new connection, so you should
+        // emit any events to a shared `Sendable` object held by the `ByteRecordingHandler`.
+        // That object will be the bridge between the connection and your application.
+        let monitoringHandler = MonitoringHandler()
+        try sync.addHandler(monitoringHandler, position: .before(http2Handler))
+      }
+    }
     configuration.maximumReceiveMessageLength = 1024 * 1024 * 1024
     let channel = try GRPCChannelPool.with(configuration: configuration)
     let client = ImageGenerationServiceNIOClient(channel: channel)
