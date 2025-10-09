@@ -4,7 +4,7 @@ hidream_i1_dev_q8p.ckpt-tensordata
 hidream_i1_fast_q8p.ckpt-tensordata
 hidream_i1_full_q8p.ckpt-tensordata
 qwen_image_1.0_q6p.ckpt-tensordata
-qwen_image_edit_1.0_q6p.ckpt-tensordata
+qwen_image_edit_2509_q6p.ckpt-tensordata
 wan_v2.2_a14b_hne_i2v_q8p.ckpt-tensordata
 wan_v2.2_a14b_lne_i2v_q8p.ckpt-tensordata
 wan_v2.2_a14b_hne_t2v_q8p.ckpt-tensordata
@@ -28,6 +28,7 @@ sd3_large_3.5_q8p.ckpt-tensordata
 sd3_large_turbo_3.5_q8p.ckpt-tensordata
 llava_llama_3_8b_v1.1_q8p.ckpt-tensordata
 llama_3.1_8b_instruct_q8p.ckpt-tensordata
+qwen_2.5_vl_7b_vit_f16.ckpt
 qwen_2.5_vl_7b_q8p.ckpt-tensordata
 umt5_xxl_encoder_q8p.ckpt-tensordata
 wan_v2.1_14b_vace_720p_f16.ckpt-tensordata
