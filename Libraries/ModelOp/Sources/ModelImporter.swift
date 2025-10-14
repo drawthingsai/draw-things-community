@@ -295,13 +295,24 @@ public final class ModelImporter {
         $0.contains("blocks.39.attn2.to_v.")
       }
     } else if isWan21_1_3B {
-      modelVersion = .wan21_1_3b
-      modifier =
-        stateDict.keys.contains {
-          $0.contains("blocks.29.cross_attn.v_img.") || $0.contains("blocks.29.attn2.add_v_proj.")
-        } ? .inpainting : .none
-      inputDim = 16
-      expectedTotalAccess = 986 + (modifier == .inpainting ? 158 : 0)
+      if let patchEmbeddingWeight =
+        (stateDict.first {
+          $0.key.contains("patch_embedding.weight")
+        }), patchEmbeddingWeight.value.shape[0] == 3_072
+      {
+        modelVersion = .wan22_5b
+        modifier = .none
+        inputDim = 48
+        expectedTotalAccess = 986
+      } else {
+        modelVersion = .wan21_1_3b
+        modifier =
+          stateDict.keys.contains {
+            $0.contains("blocks.29.cross_attn.v_img.") || $0.contains("blocks.29.attn2.add_v_proj.")
+          } ? .inpainting : .none
+        inputDim = 16
+        expectedTotalAccess = 986 + (modifier == .inpainting ? 158 : 0)
+      }
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("blocks.29.attn2.to_v.")
       }
@@ -759,7 +770,18 @@ public final class ModelImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .wan22_5b:
-        fatalError()
+        let rot = Tensor<FloatType>(
+          from: WanRotaryPositionEmbedding(
+            height: 64, width: 64, time: 1, channels: 128)
+        )
+        cArr =
+          [graph.variable(rot)]
+          + WanFixedOutputShapes(
+            timesteps: 1, batchSize: (1, 1), channels: 3_072, layers: 30, textLength: 512,
+            injectImage: true
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .hiDreamI1:
         cArr =
           [
@@ -942,7 +964,17 @@ public final class ModelImporter {
           timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, vaceLayers: [],
           textLength: 512, injectImage: true)
       case .wan22_5b:
-        fatalError()
+        (unetMapper, unet) = Wan(
+          channels: 3_072, layers: 30, vaceLayers: [], intermediateSize: 14_336,
+          time: 1, height: 64, width: 64,
+          textLength: 512, causalInference: (0, 0), injectImage: true,
+          usesFlashAttention: true, outputResidual: false,
+          inputResidual: false, outputChannels: 48
+        )
+        (unetFixedMapper, unetFixed) = WanFixed(
+          timesteps: 1, batchSize: (1, 1), channels: 3_072,
+          layers: 30, vaceLayers: [], textLength: 512, injectImage: true
+        )
       case .hiDreamI1:
         (unet, unetMapper) = HiDream(
           batchSize: 1, height: 64, width: 64, textLength: (128, 128), layers: (16, 32),
@@ -1472,7 +1504,10 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .wan22_5b:
-          fatalError()
+          let count = $0.keys.count
+          if count != 986 {
+            throw Error.tensorWritesFailed
+          }
         case .qwenImage:
           if $0.keys.count != 3121 {
             throw Error.tensorWritesFailed
@@ -1719,7 +1754,9 @@ extension ModelImporter {
         $0.hasSuffix("_t5_xxl_encoder_f16.ckpt")
       }
     case .wan22_5b:
-      fatalError()
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_umt5_xxl_encoder_q8p.ckpt")
+      }
     case .qwenImage:
       textEncoder = fileNames.first {
         $0.hasSuffix("_qwen_2.5_vl_7b_f16.ckpt")
@@ -1869,7 +1906,17 @@ extension ModelImporter {
       // For Wan, the hires fix trigger scale is 1.5 of the finetune scale.
       specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
     case .wan22_5b:
-      fatalError()
+      if specification.textEncoder == nil {
+        specification.textEncoder = "umt5_xxl_encoder_q8p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "wan_v2.2_video_vae_f16.ckpt"
+      }
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      // For Wan, the hires fix trigger scale is 1.5 of the finetune scale.
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
     case .hiDreamI1:
       if specification.textEncoder == nil {
         specification.textEncoder = "llama_3.1_8b_instruct_q8p.ckpt"

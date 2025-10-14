@@ -146,7 +146,7 @@ public enum LoRAImporter {
       )
       (unetFixedMapper, unetFixed) = WanFixed(
         timesteps: 1, batchSize: (1, 1), channels: 3_072,
-        layers: 30, vaceLayers: [], textLength: 512, injectImage: false
+        layers: 30, vaceLayers: [], textLength: 512, injectImage: true
       )
     case .hiDreamI1:
       (unet, unetMapper) = HiDream(
@@ -788,6 +788,9 @@ public enum LoRAImporter {
       let isWan21_1_3B = stateDict.keys.contains {
         $0.contains("blocks.29.cross_attn.v.") || $0.contains("blocks_29_cross_attn_v.")
       }
+      let isWan22_5B = stateDict.keys.contains {
+        $0.contains("blocks.29.cross_attn.v.") || $0.contains("blocks_29_cross_attn_v.")
+      }
       let isHiDream = stateDict.keys.contains {
         $0.contains("double_stream_blocks.15.block.ff_i.shared_experts.w1.")
           || $0.contains("single_stream_blocks.31.block.ff_i.shared_experts.w1.")
@@ -811,9 +814,10 @@ public enum LoRAImporter {
       // Only confident about these if there is no ambiguity. If there are, we will use force version value.
       switch (
         isSDOrSDXL, isSD3Medium, isSD3Large, isPixArtSigmaXL, isFlux1, isHunyuan, isWan21_1_3B,
+        isWan22_5B,
         isWan21_14B, isHiDream, isQwenImage
       ) {
-      case (true, false, false, false, false, false, false, false, false, false):
+      case (true, false, false, false, false, false, false, false, false, false, false):
         if let tokey = stateDict.first(where: {
           $0.key.hasSuffix(
             "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -862,24 +866,26 @@ public enum LoRAImporter {
           }
           throw Error.modelVersionFailed
         }
-      case (false, true, false, false, false, false, false, false, false, false):
+      case (false, true, false, false, false, false, false, false, false, false, false):
         return .sd3
-      case (false, false, true, false, false, false, false, false, false, false):
+      case (false, false, true, false, false, false, false, false, false, false, false):
         return .sd3Large
-      case (false, false, false, true, false, false, false, false, false, false):
+      case (false, false, false, true, false, false, false, false, false, false, false):
         return .pixart
-      case (false, false, false, false, true, false, false, false, false, false):
+      case (false, false, false, false, true, false, false, false, false, false, false):
         return .flux1
-      case (false, false, false, false, false, true, false, false, false, false):
+      case (false, false, false, false, false, true, false, false, false, false, false):
         return .hunyuanVideo
-      case (false, false, false, false, false, false, true, false, false, false):
+      case (false, false, false, false, false, false, true, false, false, false, false):
         return .wan21_1_3b
-      case (false, false, false, false, false, false, false, true, false, false),
-        (false, false, false, false, false, false, true, true, false, false):
+      case (false, false, false, false, false, false, false, true, false, false, false):
+        return .wan22_5b
+      case (false, false, false, false, false, false, false, false, true, false, false),
+        (false, false, false, false, false, false, true, true, true, false, false):
         return .wan21_14b
-      case (false, false, false, false, false, false, false, false, true, false):
+      case (false, false, false, false, false, false, false, false, false, true, false):
         return .hiDreamI1
-      case (false, false, false, false, false, false, false, false, false, true):
+      case (false, false, false, false, false, false, false, false, false, false, true):
         return .qwenImage
       default:
         if let forceVersion = forceVersion {
