@@ -137,7 +137,17 @@ public enum LoRAImporter {
         timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, vaceLayers: [],
         textLength: 512, injectImage: true)
     case .wan22_5b:
-      fatalError()
+      (unetMapper, unet) = Wan(
+        channels: 3_072, layers: 30, vaceLayers: [], intermediateSize: 14_336,
+        time: 1, height: 64, width: 64,
+        textLength: 512, causalInference: (0, 0), injectImage: true,
+        usesFlashAttention: true, outputResidual: false,
+        inputResidual: false, outputChannels: 48
+      )
+      (unetFixedMapper, unetFixed) = WanFixed(
+        timesteps: 1, batchSize: (1, 1), channels: 3_072,
+        layers: 30, vaceLayers: [], textLength: 512, injectImage: false
+      )
     case .hiDreamI1:
       (unet, unetMapper) = HiDream(
         batchSize: 1, height: 64, width: 64, textLength: (128, 128), layers: (16, 32),
@@ -199,8 +209,11 @@ public enum LoRAImporter {
       case .hunyuanVideo:
         inputDim = 16
         conditionalLength = 4096
-      case .wan21_1_3b, .wan21_14b, .wan22_5b:
+      case .wan21_1_3b, .wan21_14b:
         inputDim = 16
+        conditionalLength = 4096
+      case .wan22_5b:
+        inputDim = 48
         conditionalLength = 4096
       case .hiDreamI1:
         inputDim = 16
@@ -437,7 +450,18 @@ public enum LoRAImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .wan22_5b:
-        fatalError()
+        let rot = Tensor<FloatType>(
+          from: WanRotaryPositionEmbedding(
+            height: 64, width: 64, time: 1, channels: 128)
+        )
+        cArr =
+          [graph.variable(rot)]
+          + WanFixedOutputShapes(
+            timesteps: 1, batchSize: (1, 1), channels: 3_072, layers: 30, textLength: 512,
+            injectImage: true
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .hiDreamI1:
         cArr =
           [
