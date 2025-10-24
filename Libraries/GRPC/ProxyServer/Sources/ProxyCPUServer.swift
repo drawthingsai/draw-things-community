@@ -1171,37 +1171,36 @@ public class ProxyCPUServer {
     self.taskQueue = TaskQueue(workers: workers, logger: logger)
   }
 
-  public func startControlPanel(hosts: [String], port: Int) throws {
-    Task {
-      logger.info("Control Panel Service starting on \(hosts) , port \(port)")
-      let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-      defer {
-        try! group.syncShutdownGracefully()
-      }
-      let controlPanelService = ControlPanelService(
-        taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger,
-        proxyMessageSigner: proxyMessageSigner)
+  public func startControlPanel(hosts: [String], port: Int) async throws {
+    logger.info("Control Panel Service starting on \(hosts) , port \(port)")
+    let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
-      var serverBindings: [EventLoopFuture<Server>] = []
+    let controlPanelService = ControlPanelService(
+      taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger,
+      proxyMessageSigner: proxyMessageSigner)
 
-      // Start all servers
-      for host in hosts {
-        let binding = Server.insecure(group: group)
-          .withServiceProviders([controlPanelService])
-          .bind(host: host, port: port)
-        serverBindings.append(binding)
-        logger.info("Control Panel Service started on \(host):\(port)")
-      }
+    var serverBindings: [EventLoopFuture<Server>] = []
 
-      // Wait for all servers to bind
-      let servers = try EventLoopFuture.whenAllSucceed(serverBindings, on: group.next()).wait()
-
-      // Wait for any server to close (first one that closes)
-      let onCloseFutures = servers.map { $0.onClose }
-      let _ = try EventLoopFuture.whenAllComplete(onCloseFutures, on: group.next()).wait()
-
-      logger.info("Leave Control Panel Service, something may be wrong")
+    for host in hosts {
+      let binding = Server.insecure(group: group)
+        .withServiceProviders([controlPanelService])
+        .bind(host: host, port: port)
+      serverBindings.append(binding)
+      logger.info("Control Panel Service started on \(host):\(port)")
     }
+
+    let servers = try await EventLoopFuture.whenAllSucceed(serverBindings, on: group.next()).get()
+    let onCloseFutures = servers.map { $0.onClose }
+
+    do {
+      let _ = try await EventLoopFuture.whenAllComplete(onCloseFutures, on: group.next()).get()
+      logger.info("Control Panel Service closed")
+    } catch {
+      logger.error("Control Panel Service error: \(error)")
+      throw error
+    }
+
+    try await group.shutdownGracefully()
   }
 
   private static func certificatesFromPEMFile(_ path: String) throws -> [NIOSSLCertificate] {
@@ -1234,12 +1233,10 @@ public class ProxyCPUServer {
     return certificates
   }
 
-  public func startAndWait(
+  public func startProxyService(
     host: String, port: Int, TLS: Bool, certPath: String, keyPath: String, numberOfThreads: Int,
     healthCheck: Bool
-  )
-    throws
-  {
+  ) async throws {
     logger.info("ImageGenerationProxyService starting on \(host):\(port)")
     let group = MultiThreadedEventLoopGroup(numberOfThreads: numberOfThreads)
     let proxyService = ImageGenerationProxyService(
@@ -1261,24 +1258,34 @@ public class ProxyCPUServer {
           bytes: [UInt8](BinaryResources.server_key_key), format: .pem)
       }
       let certificateSources = certificates.map { NIOSSLCertificateSource.certificate($0) }
-      imageServer = try Server.usingTLS(
+      imageServer = try await Server.usingTLS(
         with: GRPCTLSConfiguration.makeServerConfigurationBackedByNIOSSL(
           certificateChain: certificateSources, privateKey: .privateKey(privateKey)),
         on: group
       )
       .withServiceProviders([proxyService])
       .withMaximumReceiveMessageLength(1024 * 1024 * 1024)
-      .bind(host: host, port: port).wait()
+      .bind(host: host, port: port).get()
     } else {
 
-      imageServer = try Server.insecure(group: group)
+      imageServer = try await Server.insecure(group: group)
         .withServiceProviders([proxyService])
         .withMaximumReceiveMessageLength(1024 * 1024 * 1024)
-        .bind(host: host, port: port).wait()
+        .bind(host: host, port: port).get()
     }
 
     logger.info("Image Generation Proxy Service started on port \(host):\(port)")
-    try imageServer.onClose.wait()
+
+    do {
+      try await imageServer.onClose.get()
+      logger.info("Image Generation Proxy Service closed")
+    } catch {
+      logger.error("Image Generation Proxy Service error: \(error)")
+      throw error
+    }
+
+    // Shutdown gracefully after server closes
+    try await group.shutdownGracefully()
   }
 
 }
