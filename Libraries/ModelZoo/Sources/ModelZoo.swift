@@ -103,6 +103,13 @@ public struct ModelZoo: DownloadZoo {
           case .fraction(let value): try container.encode(value)
           }
         }
+        
+        public var value: Any {
+          switch self {
+          case .fraction(let value): return value
+          case .integer(let value): return value
+          }
+        }
       }
 
       public enum JSONValue: Codable {
@@ -135,7 +142,7 @@ public struct ModelZoo: DownloadZoo {
         public var value: Any {
           switch self {
           case .string(let value): return value
-          case .number(let value): return value
+          case .number(let number): return number.value
           case .bool(let value): return value
           }
         }
