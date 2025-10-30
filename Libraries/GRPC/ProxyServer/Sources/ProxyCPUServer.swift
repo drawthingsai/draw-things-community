@@ -1171,13 +1171,10 @@ public class ProxyCPUServer {
     self.taskQueue = TaskQueue(workers: workers, logger: logger)
   }
 
-  public func startControlPanel(hosts: [String], port: Int) throws {
+  public func startControlPanel(hosts: [String], port: Int) async throws {
     Task {
       logger.info("Control Panel Service starting on \(hosts) , port \(port)")
       let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-      defer {
-        try! group.syncShutdownGracefully()
-      }
       let controlPanelService = ControlPanelService(
         taskQueue: taskQueue, controlConfigs: controlConfigs, logger: logger,
         proxyMessageSigner: proxyMessageSigner)
@@ -1194,13 +1191,14 @@ public class ProxyCPUServer {
       }
 
       // Wait for all servers to bind
-      let servers = try EventLoopFuture.whenAllSucceed(serverBindings, on: group.next()).wait()
+      let servers = try await EventLoopFuture.whenAllSucceed(serverBindings, on: group.next()).get()
 
       // Wait for any server to close (first one that closes)
       let onCloseFutures = servers.map { $0.onClose }
-      let _ = try EventLoopFuture.whenAllComplete(onCloseFutures, on: group.next()).wait()
+      let _ = try await EventLoopFuture.whenAllComplete(onCloseFutures, on: group.next()).get()
 
       logger.info("Leave Control Panel Service, something may be wrong")
+      try await group.syncShutdownGracefully()
     }
   }
 
@@ -1238,7 +1236,7 @@ public class ProxyCPUServer {
     host: String, port: Int, TLS: Bool, certPath: String, keyPath: String, numberOfThreads: Int,
     healthCheck: Bool
   )
-    throws
+    async throws
   {
     logger.info("ImageGenerationProxyService starting on \(host):\(port)")
     let group = MultiThreadedEventLoopGroup(numberOfThreads: numberOfThreads)
@@ -1278,7 +1276,8 @@ public class ProxyCPUServer {
     }
 
     logger.info("Image Generation Proxy Service started on port \(host):\(port)")
-    try imageServer.onClose.wait()
+    try await imageServer.onClose.get()
+    try await group.syncShutdownGracefully()
   }
 
 }
