@@ -127,8 +127,7 @@ public struct DeviceCapability {
     #else
       if #available(iOS 16, macOS 13, macCatalyst 16, *) {
         if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple7) {
-          // MPS GEMM is faster on Neural Accelerators.
-          return device.supportsFamily(.apple10) ? false : true
+          return true
         }
         return false
       }
