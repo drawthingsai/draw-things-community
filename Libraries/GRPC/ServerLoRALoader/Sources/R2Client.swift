@@ -372,7 +372,8 @@ extension R2Client.ObjCResponder: URLSessionDataDelegate {
         self.task = nil
         self.downloadTask = nil
       }
-      progress(Int64(data.count), totalBytesExpectedToWrite, index)
+      let totalBytes = Int64(data.count)
+      progress(totalBytes, totalBytes, index)
       downloadTask.completion(data, task.response, error)
       return
     }

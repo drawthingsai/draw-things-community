@@ -705,7 +705,7 @@ extension UNetFromNNC {
               batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
               width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: qkNorm,
               dualAttentionLayers: dualAttentionLayers, posEmbedMaxSize: posEmbedMaxSize,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: usesFlashAttention ? .scale1 : .none,
               LoRAConfiguration: configuration, of: FloatType.self
             ).1)
       } else {
@@ -715,7 +715,7 @@ extension UNetFromNNC {
               batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
               width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: qkNorm,
               dualAttentionLayers: dualAttentionLayers, posEmbedMaxSize: posEmbedMaxSize,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self
+              usesFlashAttention: usesFlashAttention ? .scale1 : .none, of: FloatType.self
             ).1)
       }
     case .sd3Large:
@@ -737,7 +737,7 @@ extension UNetFromNNC {
               batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
               width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
               dualAttentionLayers: [], posEmbedMaxSize: 192,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: usesFlashAttention ? .scale1 : .none,
               LoRAConfiguration: configuration, of: FloatType.self
             ).1)
       } else {
@@ -747,7 +747,7 @@ extension UNetFromNNC {
               batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
               width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
               dualAttentionLayers: [], posEmbedMaxSize: 192,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self
+              usesFlashAttention: usesFlashAttention ? .scale1 : .none, of: FloatType.self
             ).1)
       }
     case .pixart:
