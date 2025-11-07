@@ -267,6 +267,11 @@ public final class JSGenerationConfiguration: Codable {
     let controls: [DataModels.Control] = controls.map { $0.createControl() }
     // Treat empty as nil.
     let refinerModel = refinerModel?.isEmpty == true ? nil : refinerModel
+    let upscaler = upscaler?.isEmpty == true ? nil : upscaler
+    let faceRestoration = faceRestoration?.isEmpty == true ? nil : faceRestoration
+    let clipLText = clipLText?.isEmpty == true ? nil : clipLText
+    let openClipGText = openClipGText?.isEmpty == true ? nil : openClipGText
+    let t5Text = t5Text?.isEmpty == true ? nil : t5Text
     return GenerationConfiguration(
       id: id, startWidth: UInt16(width / 64), startHeight: UInt16(height / 64),
       seed: seed >= 0 ? UInt32(seed) : UInt32.random(in: UInt32.min...UInt32.max), steps: steps,

@@ -24,7 +24,7 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -
 }
 
 private func JointTransformerBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
+  prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
   usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
@@ -147,28 +147,33 @@ private func JointTransformerBlock(
   xOut = x + xChunks[5] .* xFF(xNorm2(xOut) .* xChunks[4] + xChunks[3])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).attn.add_q_proj.weight"] = [contextToQueries.weight.name]
-    mapping["\(prefix).attn.add_k_proj.weight"] = [contextToKeys.weight.name]
-    mapping["\(prefix).attn.add_v_proj.weight"] = [contextToValues.weight.name]
-    mapping["\(prefix).attn.to_q.weight"] = [xToQueries.weight.name]
-    mapping["\(prefix).attn.to_k.weight"] = [xToKeys.weight.name]
-    mapping["\(prefix).attn.to_v.weight"] = [xToValues.weight.name]
-    if let contextUnifyheads = contextUnifyheads {
-      mapping["\(prefix).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
+    switch format {
+    case .diffusers:
+      mapping["\(prefix.1).attn.add_q_proj.weight"] = [contextToQueries.weight.name]
+      mapping["\(prefix.1).attn.add_k_proj.weight"] = [contextToKeys.weight.name]
+      mapping["\(prefix.1).attn.add_v_proj.weight"] = [contextToValues.weight.name]
+      mapping["\(prefix.1).attn.to_q.weight"] = [xToQueries.weight.name]
+      mapping["\(prefix.1).attn.to_k.weight"] = [xToKeys.weight.name]
+      mapping["\(prefix.1).attn.to_v.weight"] = [xToValues.weight.name]
+      if let contextUnifyheads = contextUnifyheads {
+        mapping["\(prefix.1).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
+      }
+      mapping["\(prefix.1).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
+      if let contextLinear1 = contextLinear1, let contextLinear2 = contextLinear2,
+        let contextOutProjection = contextOutProjection
+      {
+        mapping["\(prefix.1).ff_context.linear_1.weight"] = [contextLinear1.weight.name]
+        mapping["\(prefix.1).ff_context.linear_2.weight"] = [contextLinear2.weight.name]
+        mapping[
+          "\(prefix.1).ff_context.out_projection.weight"
+        ] = [contextOutProjection.weight.name]
+      }
+      mapping["\(prefix.1).ff.linear_1.weight"] = [xLinear1.weight.name]
+      mapping["\(prefix.1).ff.linear_2.weight"] = [xLinear2.weight.name]
+      mapping["\(prefix.1).ff.out_projection.weight"] = [xOutProjection.weight.name]
+    case .generativeModels:
+      break
     }
-    mapping["\(prefix).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
-    if let contextLinear1 = contextLinear1, let contextLinear2 = contextLinear2,
-      let contextOutProjection = contextOutProjection
-    {
-      mapping["\(prefix).ff_context.linear_1.weight"] = [contextLinear1.weight.name]
-      mapping["\(prefix).ff_context.linear_2.weight"] = [contextLinear2.weight.name]
-      mapping[
-        "\(prefix).ff_context.out_projection.weight"
-      ] = [contextOutProjection.weight.name]
-    }
-    mapping["\(prefix).ff.linear_1.weight"] = [xLinear1.weight.name]
-    mapping["\(prefix).ff.linear_2.weight"] = [xLinear2.weight.name]
-    mapping["\(prefix).ff.out_projection.weight"] = [xOutProjection.weight.name]
     return mapping
   }
   if !contextBlockPreOnly {
@@ -179,7 +184,7 @@ private func JointTransformerBlock(
 }
 
 private func SingleTransformerBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
+  prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
   usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -264,13 +269,18 @@ private func SingleTransformerBlock(
   out = xIn + xChunks[5] .* xFF(xNorm2(out) .* xChunks[4] + xChunks[3])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).attn.to_q.weight"] = [xToQueries.weight.name]
-    mapping["\(prefix).attn.to_k.weight"] = [xToKeys.weight.name]
-    mapping["\(prefix).attn.to_v.weight"] = [xToValues.weight.name]
-    mapping["\(prefix).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
-    mapping["\(prefix).ff.linear_1.weight"] = [xLinear1.weight.name]
-    mapping["\(prefix).ff.linear_2.weight"] = [xLinear2.weight.name]
-    mapping["\(prefix).ff.out_projection.weight"] = [xOutProjection.weight.name]
+    switch format {
+    case .diffusers:
+      mapping["\(prefix.1).attn.to_q.weight"] = [xToQueries.weight.name]
+      mapping["\(prefix.1).attn.to_k.weight"] = [xToKeys.weight.name]
+      mapping["\(prefix.1).attn.to_v.weight"] = [xToValues.weight.name]
+      mapping["\(prefix.1).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
+      mapping["\(prefix.1).ff.linear_1.weight"] = [xLinear1.weight.name]
+      mapping["\(prefix.1).ff.linear_2.weight"] = [xLinear2.weight.name]
+      mapping["\(prefix.1).ff.out_projection.weight"] = [xOutProjection.weight.name]
+    case .generativeModels:
+      break
+    }
     return mapping
   }
   return (mapper, Model([x] + xChunks, [out]))
@@ -312,7 +322,8 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
     let contextChunks = (0..<6).map { _ in Input() }
     let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = JointTransformerBlock(
-      prefix: "joint_transformer_blocks.\(i)", k: 256, h: channels / 256, b: batchSize,
+      prefix: ("double_layers.\(i)", "joint_transformer_blocks.\(i)"), k: 256, h: channels / 256,
+      b: batchSize,
       t: tokenLength + 8,
       hw: h * w, contextBlockPreOnly: false, usesFlashAttention: usesFlashAttention)
     let blockOut = block([context, out] + contextChunks + xChunks)
@@ -325,7 +336,8 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
   for i in 0..<layers.1 {
     let xChunks = (0..<6).map { _ in Input() }
     let (mapper, block) = SingleTransformerBlock(
-      prefix: "single_transformer_blocks.\(i)", k: 256, h: channels / 256, b: batchSize,
+      prefix: ("single_layers.\(i)", "single_transformer_blocks.\(i)"), k: 256, h: channels / 256,
+      b: batchSize,
       t: tokenLength + 8,
       hw: h * w,
       contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
@@ -348,17 +360,25 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["pos_embed.proj.weight"] = [xEmbedder.weight.name]
-    mapping["pos_embed.proj.bias"] = [xEmbedder.bias.name]
-    mapping["pos_embed.pos_embed"] = [posEmbed.weight.name]
-    mapping["proj_out.weight"] = [projOut.weight.name]
+    switch format {
+    case .diffusers:
+      mapping["pos_embed.proj.weight"] = [xEmbedder.weight.name]
+      mapping["pos_embed.proj.bias"] = [xEmbedder.bias.name]
+      mapping["pos_embed.pos_embed"] = [posEmbed.weight.name]
+      mapping["proj_out.weight"] = [projOut.weight.name]
+    case .generativeModels:
+      mapping["init_x_linear.weight"] = [xEmbedder.weight.name]
+      mapping["init_x_linear.bias"] = [xEmbedder.bias.name]
+      mapping["positional_encoding"] = [posEmbed.weight.name]
+      mapping["final_linear.weight"] = [projOut.weight.name]
+    }
     return mapping
   }
   return (mapper, Model([x, contextIn] + adaLNChunks, [out]))
 }
 
 private func JointTransformerBlockFixed(
-  prefix: String, k: Int, h: Int, contextBlockPreOnly: Bool
+  prefix: (String, String), k: Int, h: Int, contextBlockPreOnly: Bool
 ) -> (ModelWeightMapper, Model) {
   let c = Input()
   let contextAdaLNs = (0..<(contextBlockPreOnly ? 2 : 6)).map {
@@ -375,23 +395,28 @@ private func JointTransformerBlockFixed(
   xChunks[4] = 1 + xChunks[4]
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping[
-      "\(prefix).norm1_context.linear.weight"
-    ] = ModelWeightElement(
-      (0..<(contextBlockPreOnly ? 2 : 6)).map {
-        contextAdaLNs[$0].weight.name
-      })
-    mapping["\(prefix).norm1.linear.weight"] = ModelWeightElement(
-      (0..<6).map {
-        xAdaLNs[$0].weight.name
-      })
+    switch format {
+    case .diffusers:
+      mapping[
+        "\(prefix.1).norm1_context.linear.weight"
+      ] = ModelWeightElement(
+        (0..<(contextBlockPreOnly ? 2 : 6)).map {
+          contextAdaLNs[$0].weight.name
+        })
+      mapping["\(prefix.1).norm1.linear.weight"] = ModelWeightElement(
+        (0..<6).map {
+          xAdaLNs[$0].weight.name
+        })
+    case .generativeModels:
+      break
+    }
     return mapping
   }
   return (mapper, Model([c], contextChunks + xChunks))
 }
 
 private func SingleTransformerBlockFixed(
-  prefix: String, k: Int, h: Int
+  prefix: (String, String), k: Int, h: Int
 ) -> (ModelWeightMapper, Model) {
   let c = Input()
   let xAdaLNs = (0..<6).map { Dense(count: k * h, noBias: true, name: "x_ada_ln_\($0)") }
@@ -400,10 +425,15 @@ private func SingleTransformerBlockFixed(
   xChunks[4] = 1 + xChunks[4]
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).norm1.linear.weight"] = ModelWeightElement(
-      (0..<6).map {
-        xAdaLNs[$0].weight.name
-      })
+    switch format {
+    case .diffusers:
+      mapping["\(prefix.1).norm1.linear.weight"] = ModelWeightElement(
+        (0..<6).map {
+          xAdaLNs[$0].weight.name
+        })
+    case .generativeModels:
+      break
+    }
     return mapping
   }
   return (mapper, Model([c], xChunks))
@@ -427,7 +457,8 @@ func AuraFlowFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
     let (mapper, block) = JointTransformerBlockFixed(
-      prefix: "joint_transformer_blocks.\(i)", k: 256, h: channels / 256, contextBlockPreOnly: false
+      prefix: ("double_layers.\(i)", "joint_transformer_blocks.\(i)"), k: 256, h: channels / 256,
+      contextBlockPreOnly: false
     )
     let blockOut = block(c)
     mappers.append(mapper)
@@ -435,7 +466,7 @@ func AuraFlowFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   }
   for i in 0..<layers.1 {
     let (mapper, block) = SingleTransformerBlockFixed(
-      prefix: "single_transformer_blocks.\(i)", k: 256, h: channels / 256)
+      prefix: ("single_layers.\(i)", "single_transformer_blocks.\(i)"), k: 256, h: channels / 256)
     let blockOut = block(c)
     mappers.append(mapper)
     outs.append(blockOut)
@@ -448,13 +479,24 @@ func AuraFlowFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["time_step_proj.linear_1.weight"] = [tMlp0.weight.name]
-    mapping["time_step_proj.linear_1.bias"] = [tMlp0.bias.name]
-    mapping["time_step_proj.linear_2.weight"] = [tMlp2.weight.name]
-    mapping["time_step_proj.linear_2.bias"] = [tMlp2.bias.name]
-    mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
-    mapping["register_tokens"] = [registerTokens.weight.name]
-    mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
+    switch format {
+    case .diffusers:
+      mapping["time_step_proj.linear_1.weight"] = [tMlp0.weight.name]
+      mapping["time_step_proj.linear_1.bias"] = [tMlp0.bias.name]
+      mapping["time_step_proj.linear_2.weight"] = [tMlp2.weight.name]
+      mapping["time_step_proj.linear_2.bias"] = [tMlp2.bias.name]
+      mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
+      mapping["register_tokens"] = [registerTokens.weight.name]
+      mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
+    case .generativeModels:
+      mapping["t_embedder.mlp.0.weight"] = [tMlp0.weight.name]
+      mapping["t_embedder.mlp.0.bias"] = [tMlp0.bias.name]
+      mapping["t_embedder.mlp.2.weight"] = [tMlp2.weight.name]
+      mapping["t_embedder.mlp.2.bias"] = [tMlp2.bias.name]
+      mapping["cond_seq_linear.weight"] = [contextEmbedder.weight.name]
+      mapping["register_tokens"] = [registerTokens.weight.name]
+      mapping["modF.1.weight"] = [scale.weight.name, shift.weight.name]
+    }
     return mapping
   }
   return (mapper, Model([contextIn, timestep], outs))
