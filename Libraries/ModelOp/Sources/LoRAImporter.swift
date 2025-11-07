@@ -716,6 +716,23 @@ public enum LoRAImporter {
         stateDict[newKey + ".lora_down.weight"] = stateDict[key]
       }
     }
+    // Fix the LoRA formulation from OneTrainer.
+    for key in keys {
+      guard key.hasSuffix(".lora_up.weight") || key.hasSuffix(".lora_down.weight")
+      else { continue }
+      var components = key.components(separatedBy: ".")
+      guard components.count >= 4 else { continue }
+      if components[0] == "transformer" {
+        components.remove(at: 0)
+      }
+      let newKey = components[0..<(components.count - 2)].joined(separator: "_")
+      let isUp = key.hasSuffix(".lora_up.weight")
+      if isUp {
+        stateDict[newKey + ".lora_up.weight"] = stateDict[key]
+      } else {
+        stateDict[newKey + ".lora_down.weight"] = stateDict[key]
+      }
+    }
     // Fix for another LoRA formulation (commonly found in SD-Forge, particularly, layerdiffuse).
     for key in keys {
       guard key.hasSuffix("::lora::0") || key.hasSuffix("::lora::1") else { continue }
