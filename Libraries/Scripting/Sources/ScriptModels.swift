@@ -265,6 +265,8 @@ public final class JSGenerationConfiguration: Codable {
   public func createGenerationConfiguration() -> GenerationConfiguration {
     let loras: [DataModels.LoRA] = loras.map { $0.createLora() }
     let controls: [DataModels.Control] = controls.map { $0.createControl() }
+    // Treat empty as nil.
+    let refinerModel = refinerModel?.isEmpty == true ? nil : refinerModel
     return GenerationConfiguration(
       id: id, startWidth: UInt16(width / 64), startHeight: UInt16(height / 64),
       seed: seed >= 0 ? UInt32(seed) : UInt32.random(in: UInt32.min...UInt32.max), steps: steps,
