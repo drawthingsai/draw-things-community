@@ -141,6 +141,15 @@ public final class ModelImporter {
       $0.contains("double_blocks.19.img_attn_qkv.")
         || $0.contains("single_transformer_blocks.39.")
     }
+    var isAuraFlow =
+      (stateDict.keys.contains {
+        $0.contains("double_layers.3.attn.w2q.")
+          || $0.contains("transformer_blocks.3.attn.add_q_proj.")
+      })
+      && (stateDict.keys.contains {
+        $0.contains("single_layers.31.attn.w1q.")
+          || $0.contains("single_transformer_blocks.31.attn.to_q.")
+      })
     var isFlux1 =
       !isHunyuan
       && stateDict.keys.contains {
@@ -232,6 +241,7 @@ public final class ModelImporter {
       isWan21_1_3B = false
       isHiDream = false
       isQwenImage = false
+      isAuraFlow = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -328,6 +338,14 @@ public final class ModelImporter {
       inputDim = 16
       expectedTotalAccess = 3121
       isDiffusersFormat = true  // Only Diffusers format available.
+    } else if isAuraFlow {
+      modelVersion = .auraflow
+      modifier = .none
+      inputDim = 4
+      expectedTotalAccess = 532
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("single_transformer_blocks.31.attn.")
+      }
     } else {
       throw UnpickleError.tensorNotFound
     }
@@ -628,7 +646,7 @@ public final class ModelImporter {
       batchSize = 2
     case .auraflow:
       conditionalLength = 2048
-      batchSize = 2
+      batchSize = 1
     case .flux1:
       conditionalLength = 4096
       batchSize = 1
@@ -991,7 +1009,14 @@ public final class ModelImporter {
           activationFfnScaling: [:],
           numberOfReferenceImages: 0)
       case .auraflow:
-        fatalError()
+        (unetMapper, unet) = AuraFlow(
+          batchSize: 1, tokenLength: 256,
+          height: 64, width: 64, maxSequence: 64, channels: 3072, layers: (4, 32),
+          usesFlashAttention: .scaleMerged, of: FloatType.self
+        )
+        (unetFixedMapper, unetFixed) = AuraFlowFixed(
+          batchSize: (1, 1), channels: 3072, layers: (4, 32),
+          of: FloatType.self)
       case .kandinsky21, .wurstchenStageB:
         fatalError()
       }
@@ -1090,7 +1115,11 @@ public final class ModelImporter {
           ]
         tEmb = nil
       case .auraflow:
-        fatalError()
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 256, 2048), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
       }
@@ -1187,6 +1216,15 @@ public final class ModelImporter {
             stateDict[String(key.dropFirst(6))] = value
           }
         }
+      } else if modelVersion == .auraflow {
+        // Remove the model.diffusion_model / model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          } else if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
+          }
+        }
       }
       // In case it is not on high performance device and it is SDXL model, read the parameters directly from the mapping.
       if let unetReader = unetReader {
@@ -1264,7 +1302,7 @@ public final class ModelImporter {
             modelPrefix = "stage_c"
             modelPrefixFixed = "stage_c_fixed"
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
-            .wan22_5b, .qwenImage:
+            .wan22_5b, .qwenImage, .auraflow:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1273,8 +1311,6 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .auraflow:
-            fatalError()
           case .v1, .v2, .kandinsky21, .wurstchenStageB:
             fatalError()
           }
@@ -1513,7 +1549,9 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .auraflow:
-          fatalError()
+          if $0.keys.count != 532 {
+            throw Error.tensorWritesFailed
+          }
         case .kandinsky21, .wurstchenStageB:
           fatalError()
         }

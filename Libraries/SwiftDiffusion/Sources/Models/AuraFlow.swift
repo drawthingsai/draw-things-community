@@ -172,7 +172,28 @@ private func JointTransformerBlock(
       mapping["\(prefix.1).ff.linear_2.weight"] = [xLinear2.weight.name]
       mapping["\(prefix.1).ff.out_projection.weight"] = [xOutProjection.weight.name]
     case .generativeModels:
-      break
+      mapping["\(prefix.0).attn.w1q.weight"] = [contextToQueries.weight.name]
+      mapping["\(prefix.0).attn.w1k.weight"] = [contextToKeys.weight.name]
+      mapping["\(prefix.0).attn.w1v.weight"] = [contextToValues.weight.name]
+      mapping["\(prefix.0).attn.w2q.weight"] = [xToQueries.weight.name]
+      mapping["\(prefix.0).attn.w2k.weight"] = [xToKeys.weight.name]
+      mapping["\(prefix.0).attn.w2v.weight"] = [xToValues.weight.name]
+      if let contextUnifyheads = contextUnifyheads {
+        mapping["\(prefix.0).attn.w1o.weight"] = [contextUnifyheads.weight.name]
+      }
+      mapping["\(prefix.0).attn.w2o.weight"] = [xUnifyheads.weight.name]
+      if let contextLinear1 = contextLinear1, let contextLinear2 = contextLinear2,
+        let contextOutProjection = contextOutProjection
+      {
+        mapping["\(prefix.0).mlpC.c_fc1.weight"] = [contextLinear1.weight.name]
+        mapping["\(prefix.0).mlpC.c_fc2.weight"] = [contextLinear2.weight.name]
+        mapping[
+          "\(prefix.0).mlpC.c_proj.weight"
+        ] = [contextOutProjection.weight.name]
+      }
+      mapping["\(prefix.0).mlpX.c_fc1.weight"] = [xLinear1.weight.name]
+      mapping["\(prefix.0).mlpX.c_fc2.weight"] = [xLinear2.weight.name]
+      mapping["\(prefix.0).mlpX.c_proj.weight"] = [xOutProjection.weight.name]
     }
     return mapping
   }
@@ -279,15 +300,22 @@ private func SingleTransformerBlock(
       mapping["\(prefix.1).ff.linear_2.weight"] = [xLinear2.weight.name]
       mapping["\(prefix.1).ff.out_projection.weight"] = [xOutProjection.weight.name]
     case .generativeModels:
-      break
+      mapping["\(prefix.0).attn.w1q.weight"] = [xToQueries.weight.name]
+      mapping["\(prefix.0).attn.w1k.weight"] = [xToKeys.weight.name]
+      mapping["\(prefix.0).attn.w1v.weight"] = [xToValues.weight.name]
+      mapping["\(prefix.0).attn.w1o.weight"] = [xUnifyheads.weight.name]
+      mapping["\(prefix.0).mlp.c_fc1.weight"] = [xLinear1.weight.name]
+      mapping["\(prefix.0).mlp.c_fc2.weight"] = [xLinear2.weight.name]
+      mapping["\(prefix.0).mlp.c_proj.weight"] = [xOutProjection.weight.name]
     }
     return mapping
   }
   return (mapper, Model([x] + xChunks, [out]))
 }
 
-func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int, layers: (Int, Int),
+public func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  batchSize: Int, tokenLength: Int, height: Int, width: Int, maxSequence: Int, channels: Int,
+  layers: (Int, Int),
   usesFlashAttention: FlashAttentionLevel, of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -298,20 +326,22 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   var out = xEmbedder(x).reshaped([batchSize, h * w, channels])
-  let posEmbed = Parameter<FloatType>(.GPU(0), .NHWC(1, 64, 64, channels), name: "pos_embed")
+  let posEmbed = Parameter<FloatType>(
+    .GPU(0), .NHWC(1, maxSequence, maxSequence, channels), name: "pos_embed")
   let spatialPosEmbed: Model.IO
   let maxDim = max(h, w)
-  if maxDim > 64 {
+  if maxDim > maxSequence {
     spatialPosEmbed = Upsample(
-      .bilinear, widthScale: Float(maxDim) / 64, heightScale: Float(maxDim) / 64)(posEmbed)
+      .bilinear, widthScale: Float(maxDim) / Float(maxSequence),
+      heightScale: Float(maxDim) / Float(maxSequence))(posEmbed)
       .reshaped(
         [1, h, w, channels], offset: [0, (maxDim - h) / 2, (maxDim - w) / 2, 0],
         strides: [maxDim * maxDim * channels, maxDim * channels, channels, 1]
       ).contiguous().reshaped([1, h * w, channels])
   } else {
     spatialPosEmbed = posEmbed.reshaped(
-      [1, h, w, channels], offset: [0, (64 - h) / 2, (64 - w) / 2, 0],
-      strides: [64 * 64 * channels, 64 * channels, channels, 1]
+      [1, h, w, channels], offset: [0, (maxSequence - h) / 2, (maxSequence - w) / 2, 0],
+      strides: [maxSequence * maxSequence * channels, maxSequence * channels, channels, 1]
     ).contiguous().reshaped([1, h * w, channels])
   }
   out = spatialPosEmbed + out
@@ -349,7 +379,7 @@ func AuraFlow<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let scale = Input()
   adaLNChunks.append(contentsOf: [shift, scale])
   out = scale .* out + shift
-  let projOut = Dense(count: 2 * 2 * 4, name: "linear")
+  let projOut = Dense(count: 2 * 2 * 4, noBias: true, name: "linear")
   out = projOut(out)
   // Unpatchify
   out = out.reshaped([batchSize, h, w, 2, 2, 4]).permuted(0, 1, 3, 2, 4, 5).contiguous().reshaped([
@@ -408,7 +438,16 @@ private func JointTransformerBlockFixed(
           xAdaLNs[$0].weight.name
         })
     case .generativeModels:
-      break
+      mapping[
+        "\(prefix.0).modC.1.weight"
+      ] = ModelWeightElement(
+        (0..<(contextBlockPreOnly ? 2 : 6)).map {
+          contextAdaLNs[$0].weight.name
+        })
+      mapping["\(prefix.0).modX.1.weight"] = ModelWeightElement(
+        (0..<6).map {
+          xAdaLNs[$0].weight.name
+        })
     }
     return mapping
   }
@@ -432,14 +471,17 @@ private func SingleTransformerBlockFixed(
           xAdaLNs[$0].weight.name
         })
     case .generativeModels:
-      break
+      mapping["\(prefix.0).modCX.1.weight"] = ModelWeightElement(
+        (0..<6).map {
+          xAdaLNs[$0].weight.name
+        })
     }
     return mapping
   }
   return (mapper, Model([c], xChunks))
 }
 
-func AuraFlowFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
+public func AuraFlowFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
   batchSize: (Int, Int), channels: Int, layers: (Int, Int),
   of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
@@ -471,8 +513,8 @@ func AuraFlowFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
     mappers.append(mapper)
     outs.append(blockOut)
   }
-  let scale = Dense(count: channels, name: "ada_ln_0")
-  let shift = Dense(count: channels, name: "ada_ln_1")
+  let scale = Dense(count: channels, noBias: true, name: "ada_ln_0")
+  let shift = Dense(count: channels, noBias: true, name: "ada_ln_1")
   outs.append(contentsOf: [shift(c), 1 + scale(c)])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -495,7 +537,7 @@ func AuraFlowFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
       mapping["t_embedder.mlp.2.bias"] = [tMlp2.bias.name]
       mapping["cond_seq_linear.weight"] = [contextEmbedder.weight.name]
       mapping["register_tokens"] = [registerTokens.weight.name]
-      mapping["modF.1.weight"] = [scale.weight.name, shift.weight.name]
+      mapping["modF.1.weight"] = [shift.weight.name, scale.weight.name]
     }
     return mapping
   }

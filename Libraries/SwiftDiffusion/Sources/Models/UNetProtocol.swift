@@ -787,10 +787,21 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
       didRunLoRASeparately = false
+      let maxSequence =
+        (try?
+          (graph.openStore(
+            filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+          ) {
+            guard let tensor = $0.read(like: "__dit__[t-pos_embed-0-0]") else { return 64 }
+            let shape = tensor.shape
+            let maxSequenceSquared = Double(shape.reduce(1, *) / 3072)
+            return Int(maxSequenceSquared.squareRoot().rounded())
+          }).get()) ?? 64
       unet = ModelBuilderOrModel.model(
         AuraFlow(
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
-          height: tiledHeight, width: tiledWidth, channels: 3072, layers: (4, 32),
+          height: tiledHeight, width: tiledWidth, maxSequence: maxSequence, channels: 3072,
+          layers: (4, 32),
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self
         ).1)
     case .flux1:
