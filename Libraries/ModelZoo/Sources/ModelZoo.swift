@@ -103,7 +103,7 @@ public struct ModelZoo: DownloadZoo {
           case .fraction(let value): try container.encode(value)
           }
         }
-        
+
         public var value: Any {
           switch self {
           case .fraction(let value): return value
@@ -299,6 +299,7 @@ public struct ModelZoo: DownloadZoo {
     public var framesPerSecond: Double?
     public var isBf16: Bool?
     public var note: String?
+    public var copyright: String?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -314,7 +315,8 @@ public struct ModelZoo: DownloadZoo {
       paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil,
       builtinLora: Bool? = nil, teaCacheCoefficients: [Float]? = nil,
       framesPerSecond: Double? = nil, isBf16: Bool? = nil,
-      remoteApiModelConfig: RemoteApiModelConfig? = nil, note: String? = nil
+      remoteApiModelConfig: RemoteApiModelConfig? = nil, note: String? = nil,
+      copyright: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -352,6 +354,7 @@ public struct ModelZoo: DownloadZoo {
       self.framesPerSecond = framesPerSecond
       self.isBf16 = isBf16
       self.note = note
+      self.copyright = copyright
     }
     fileprivate var predictV: Bool? = nil
   }
@@ -664,7 +667,8 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       note:
-        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Qwen Image 1.0 (6-bit)", file: "qwen_image_1.0_q6p.ckpt", prefix: "",
@@ -672,7 +676,8 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       note:
-        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Qwen Image 1.0 (BF16)", file: "qwen_image_1.0_bf16_q8p.ckpt", prefix: "",
@@ -680,7 +685,8 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24, isBf16: true,
       note:
-        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. The BF16 version is only compatible with macOS 15, iOS 18 and above."
+        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Qwen Image 1.0 (BF16, 6-bit)", file: "qwen_image_1.0_bf16_q6p.ckpt", prefix: "",
@@ -688,7 +694,8 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24, isBf16: true,
       note:
-        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. The BF16 version is only compatible with macOS 15, iOS 18 and above."
+        "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Qwen Image Edit 2509", file: "qwen_image_edit_2509_q8p.ckpt", prefix: "",
@@ -701,7 +708,8 @@ public struct ModelZoo: DownloadZoo {
         activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
-        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025."
+        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Qwen Image Edit 2509 (6-bit)", file: "qwen_image_edit_2509_q6p.ckpt", prefix: "",
@@ -714,7 +722,8 @@ public struct ModelZoo: DownloadZoo {
         activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
-        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025."
+        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Qwen Image Edit 2509 (BF16)", file: "qwen_image_edit_2509_bf16_q8p.ckpt", prefix: "",
@@ -728,7 +737,8 @@ public struct ModelZoo: DownloadZoo {
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       isBf16: true,
       note:
-        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025. The BF16 version is only compatible with macOS 15, iOS 18 and above."
+        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Qwen Image Edit 2509 (BF16, 6-bit)", file: "qwen_image_edit_2509_bf16_q6p.ckpt",
@@ -743,7 +753,8 @@ public struct ModelZoo: DownloadZoo {
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       isBf16: true,
       note:
-        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025. The BF16 version is only compatible with macOS 15, iOS 18 and above."
+        "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Qwen Image Edit 1.0", file: "qwen_image_edit_1.0_q8p.ckpt", prefix: "",
@@ -755,7 +766,8 @@ public struct ModelZoo: DownloadZoo {
         qkNorm: true, dualAttentionLayers: [],
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
-        "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image-Edit) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+        "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image-Edit) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Qwen Image Edit 1.0 (6-bit)", file: "qwen_image_edit_1.0_q6p.ckpt", prefix: "",
@@ -767,7 +779,8 @@ public struct ModelZoo: DownloadZoo {
         qkNorm: true, dualAttentionLayers: [],
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
-        "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image-Edit) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+        "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image-Edit) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "HiDream I1 [fast]", file: "hidream_i1_fast_q8p.ckpt", prefix: "",
@@ -886,7 +899,8 @@ public struct ModelZoo: DownloadZoo {
         -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.2 High Noise Expert T2V A14B (6-bit, SVDQuant)",
@@ -898,7 +912,8 @@ public struct ModelZoo: DownloadZoo {
         -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.2 Low Noise Expert T2V A14B", file: "wan_v2.2_a14b_lne_t2v_q8p.ckpt", prefix: "",
@@ -908,7 +923,8 @@ public struct ModelZoo: DownloadZoo {
         -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.2 Low Noise Expert T2V A14B (6-bit, SVDQuant)",
@@ -919,7 +935,8 @@ public struct ModelZoo: DownloadZoo {
         -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.2 High Noise Expert I2V A14B", file: "wan_v2.2_a14b_hne_i2v_q8p.ckpt",
@@ -930,7 +947,8 @@ public struct ModelZoo: DownloadZoo {
         2.57151496e+05, -3.54229917e+04, 1.40286849e+03, -1.35890334e+01, 1.32517977e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.2 High Noise Expert I2V A14B (6-bit, SVDQuant)",
@@ -943,7 +961,8 @@ public struct ModelZoo: DownloadZoo {
         2.57151496e+05, -3.54229917e+04, 1.40286849e+03, -1.35890334e+01, 1.32517977e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.2 Low Noise Expert I2V A14B", file: "wan_v2.2_a14b_lne_i2v_q8p.ckpt", prefix: "",
@@ -953,7 +972,8 @@ public struct ModelZoo: DownloadZoo {
         2.57151496e+05, -3.54229917e+04, 1.40286849e+03, -1.35890334e+01, 1.32517977e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.2 Low Noise Expert I2V A14B (6-bit, SVDQuant)",
@@ -965,7 +985,8 @@ public struct ModelZoo: DownloadZoo {
         2.57151496e+05, -3.54229917e+04, 1.40286849e+03, -1.35890334e+01, 1.32517977e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.2 TI2V 5B", file: "wan_v2.2_5b_ti2v_f16.ckpt",
@@ -974,7 +995,8 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "wan_v2.2_video_vae_f16.ckpt", hiresFixScale: 16,
       teaCacheCoefficients: nil, framesPerSecond: 24,
       note:
-        "[Wan2.2 TI2V 5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) is a state-of-the-art text-image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 121 frames, with a recommended shift value of 5.0."
+        "[Wan2.2 TI2V 5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) is a state-of-the-art text-image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 121 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.2 TI2V 5B (8-bit)", file: "wan_v2.2_5b_ti2v_q8p.ckpt",
@@ -983,7 +1005,8 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "wan_v2.2_video_vae_f16.ckpt", hiresFixScale: 16,
       teaCacheCoefficients: nil, framesPerSecond: 24,
       note:
-        "[Wan2.2 TI2V 5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) is a state-of-the-art text-image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 121 frames, with a recommended shift value of 5.0."
+        "[Wan2.2 TI2V 5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) is a state-of-the-art text-image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 121 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.1 T2V 1.3B", file: "wan_v2.1_1.3b_480p_f16.ckpt", prefix: "",
@@ -993,7 +1016,8 @@ public struct ModelZoo: DownloadZoo {
         -5.21862437e+04, 9.23041404e+03, -5.28275948e+02, 1.36987616e+01, -4.99875664e-02,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.1 T2V 1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 6.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs."
+        "[Wan2.1 T2V 1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 6.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.1 T2V 1.3B (8-bit)", file: "wan_v2.1_1.3b_480p_q8p.ckpt", prefix: "",
@@ -1003,7 +1027,8 @@ public struct ModelZoo: DownloadZoo {
         -5.21862437e+04, 9.23041404e+03, -5.28275948e+02, 1.36987616e+01, -4.99875664e-02,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.1 T2V 1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 6.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs."
+        "[Wan2.1 T2V 1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 6.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.1 T2V 14B", file: "wan_v2.1_14b_720p_q8p.ckpt", prefix: "",
@@ -1013,7 +1038,8 @@ public struct ModelZoo: DownloadZoo {
         -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs."
+        "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.1 T2V 14B (6-bit, SVDQuant)", file: "wan_v2.1_14b_720p_q6p_svd.ckpt", prefix: "",
@@ -1023,7 +1049,8 @@ public struct ModelZoo: DownloadZoo {
         -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.1 T2V 14B (5-bit, SVDQuant)", file: "wan_v2.1_14b_720p_q5p_svd.ckpt", prefix: "",
@@ -1034,7 +1061,8 @@ public struct ModelZoo: DownloadZoo {
         -3.03318725e+05, 4.90537029e+04, -2.65530556e+03, 5.87365115e+01, -3.15583525e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.1 I2V 14B 480p", file: "wan_v2.1_14b_i2v_480p_q8p.ckpt", prefix: "",
@@ -1045,7 +1073,8 @@ public struct ModelZoo: DownloadZoo {
         2.57151496e+05, -3.54229917e+04, 1.40286849e+03, -1.35890334e+01, 1.32517977e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.1 I2V 14B 480P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.1 I2V 14B 480P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.1 I2V 14B 480p (6-bit, SVDQuant)", file: "wan_v2.1_14b_i2v_480p_q6p_svd.ckpt",
@@ -1058,7 +1087,8 @@ public struct ModelZoo: DownloadZoo {
         2.57151496e+05, -3.54229917e+04, 1.40286849e+03, -1.35890334e+01, 1.32517977e-01,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.1 I2V 14B 480P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.1 I2V 14B 480P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.1 I2V 14B 720p", file: "wan_v2.1_14b_i2v_720p_q8p.ckpt", prefix: "",
@@ -1069,7 +1099,8 @@ public struct ModelZoo: DownloadZoo {
         8.10705460e+03, 2.13393892e+03, -3.72934672e+02, 1.66203073e+01, -4.17769401e-02,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.1 I2V 14B 720P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.1 I2V 14B 720P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Wan 2.1 I2V 14B 720p (6-bit, SVDQuant)", file: "wan_v2.1_14b_i2v_720p_q6p_svd.ckpt",
@@ -1082,7 +1113,8 @@ public struct ModelZoo: DownloadZoo {
         8.10705460e+03, 2.13393892e+03, -3.72934672e+02, 1.66203073e+01, -4.17769401e-02,
       ], framesPerSecond: 16,
       note:
-        "[Wan2.1 I2V 14B 720P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0."
+        "[Wan2.1 I2V 14B 720P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "FLUX.1 [schnell]", file: "flux_1_schnell_q8p.ckpt", prefix: "",
@@ -1645,6 +1677,11 @@ public struct ModelZoo: DownloadZoo {
   public static func noteForModel(_ name: String) -> String {
     guard let specification = specificationForModel(name) else { return "" }
     return specification.note ?? ""
+  }
+
+  public static func copyrightForModel(_ name: String) -> String {
+    guard let specification = specificationForModel(name) else { return "" }
+    return specification.copyright ?? ""
   }
 
   public static func autoencoderForModel(_ name: String) -> String? {
