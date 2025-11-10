@@ -1159,7 +1159,7 @@ public class ProxyCPUServer {
     self.controlConfigs = ControlConfigs(
       throttlePolicy: [
         "15_min": 300, "10_min": 200, "5_min": 100, "1_hour": 1000, "1_min": 30,
-        "24_hour_plus": 5000, "24_hour": 1500, "daily_soft_limit_low": 500,
+        "24_hour_plus": 5000, "24_hour": 1000, "daily_soft_limit_low": 500,
         "daily_soft_limit_high": 750, "high_free_worker_threshold": 8,
         "community_free_worker_threshold": 0,
         "throttle_queue_timeout_seconds": 3600,
