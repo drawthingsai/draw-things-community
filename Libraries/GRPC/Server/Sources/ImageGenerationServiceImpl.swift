@@ -457,9 +457,10 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       }
     }
     do {
+      let trace = ImageGeneratorTrace(fromBridge: true)
       // Note that the imageGenerator must be local image generator, otherwise it throws.
       let (images, scaleFactor) = try self.imageGenerator.generate(
-        image, scaleFactor: Int(request.scaleFactor), mask: mask, hints: hints,
+        trace: trace, image: image, scaleFactor: Int(request.scaleFactor), mask: mask, hints: hints,
         text: request.prompt, negativeText: request.negativePrompt, configuration: configuration,
         fileMapping: [:],
         keywords: request.keywords,

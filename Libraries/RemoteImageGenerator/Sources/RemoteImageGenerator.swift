@@ -38,14 +38,14 @@ public struct RemoteImageGenerator: ImageGenerator {
   public let deviceType: ImageGeneratorDeviceType
   private var fileExistsCall: UnaryCall<FileListRequest, FileExistenceResponse>? = nil
   private var authenticationHandler:
-    ((Data, GenerationConfiguration, Bool, Int, (@escaping () -> Void) -> Void) -> String?)?
+    ((Bool, Data, GenerationConfiguration, Bool, Int, (@escaping () -> Void) -> Void) -> String?)?
   private var requestExceedLimitHandler: (() -> Void)?
 
   public init(
     name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper,
     serverIdentifier: UInt64,
     authenticationHandler: (
-      (Data, GenerationConfiguration, Bool, Int, (@escaping () -> Void) -> Void) -> String?
+      (Bool, Data, GenerationConfiguration, Bool, Int, (@escaping () -> Void) -> Void) -> String?
     )?,
     requestExceedLimitHandler: (() -> Void)?
   ) {
@@ -74,7 +74,8 @@ public struct RemoteImageGenerator: ImageGenerator {
   public var transferDataCallback: TransferDataCallback? = nil
 
   public func generate(
-    _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
+    trace: ImageGeneratorTrace,
+    image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     fileMapping: [String: String], keywords: [String], cancellation: (@escaping () -> Void) -> Void,
@@ -202,6 +203,7 @@ public struct RemoteImageGenerator: ImageGenerator {
         return $0 + shuffleCount
       }
       bearer = authenticationHandler(
+        trace.fromBridge,
         encodedBlob, configuration, hasImage, shuffleCount, cancellation)
     } else {
       bearer = nil

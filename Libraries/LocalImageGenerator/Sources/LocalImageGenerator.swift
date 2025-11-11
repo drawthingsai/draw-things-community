@@ -896,7 +896,8 @@ extension LocalImageGenerator {
     modelPreloader.stopGenerating()
   }
   public func generate(
-    _ image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
+    trace: ImageGeneratorTrace,
+    image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     fileMapping: [String: String], keywords: [String], cancellation: (@escaping () -> Void) -> Void,
