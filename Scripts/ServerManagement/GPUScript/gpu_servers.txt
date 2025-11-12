@@ -1,0 +1,16 @@
+# GPU Server Configuration
+# One server per line in format: user@hostname
+# Lines starting with # are comments
+# Empty lines are ignored
+#
+# Format: user@hostname
+# Example: root@dfw-026-001
+#
+# Add your GPU servers below:
+
+root@dfw-026-001
+root@dfw-032-002
+root@dfw-039-004
+root@dfw-043-003
+root@dt-thpc-001
+root@dt-thpc-002
