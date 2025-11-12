@@ -106,7 +106,7 @@ public struct JWTPayload: Codable {
   public let generationId: String?
   public let amount: Int?
   public let consumableType: ConsumableType?
-  public let api: Bool?
+  public let fromBridge: Bool?  // request from sdk / api
   public let userId: String?
   public let userClass: UserClass?
 }

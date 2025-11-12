@@ -853,7 +853,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     for key: String, payload: JWTPayload, throttlePolicies: [String: Int]
   ) -> Int? {
     // API users without boost get special API limits
-    if payload.api == true && payload.consumableType != .boost {
+    if payload.fromBridge == true && payload.consumableType != .boost {
       let apiThrottlePolicyKey = payload.userClass == .plus ? "\(key)_api_plus" : "\(key)_api"
       return throttlePolicies[apiThrottlePolicyKey] ?? throttlePolicies[key]
     }
