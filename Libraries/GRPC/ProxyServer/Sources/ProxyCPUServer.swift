@@ -996,18 +996,10 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       return .real
     }
 
-    var daySoftLimitLow = throttlePolicies["daily_soft_limit_low"]
-    var daySoftLimitHigh = throttlePolicies["daily_soft_limit_high"]
-
-    if payload.fromBridge == true {
-      daySoftLimitLow = throttlePolicies["24_hour_api"]
-      daySoftLimitHigh = throttlePolicies["24_hour_api_plus"]
-    }
-
     // Check if user has exceeded 24-hour limit
     if let dayStat = payload.stats["24_hour"],
-      let daySoftLimitLow = daySoftLimitLow,
-      let daySoftLimitHigh = daySoftLimitHigh,
+      let daySoftLimitLow = throttlePolicies["daily_soft_limit_low"],
+      let daySoftLimitHigh = throttlePolicies["daily_soft_limit_high"],
       dayStat >= daySoftLimitLow
     {
       if userClass == .plus {

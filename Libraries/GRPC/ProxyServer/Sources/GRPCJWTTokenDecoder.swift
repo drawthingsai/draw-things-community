@@ -109,7 +109,6 @@ public struct JWTPayload: Codable {
   public let api: Bool?
   public let userId: String?
   public let userClass: UserClass?
-  public let fromBridge: Bool?
 }
 
 enum JWTError: Error {
