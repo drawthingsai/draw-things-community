@@ -71,6 +71,115 @@ public struct R2Client: Sendable {
     self.debug = debug
   }
 
+  /// List objects in the bucket with a given prefix
+  /// - Parameters:
+  ///   - prefix: The prefix to filter objects
+  ///   - completion: Completion handler with result containing array of object keys
+  /// - Returns: Optional URLSessionDataTask for cancellation
+  @discardableResult
+  public func listObjects(
+    prefix: String,
+    completion: @escaping (Result<[String], Swift.Error>) -> Void
+  ) -> URLSessionDataTask? {
+    // Create the request URL with list-type=2 for ListObjectsV2
+    guard let url = URL(string: "\(endpoint)/\(bucket)?list-type=2&prefix=\(prefix)") else {
+      completion(.failure(Error.invalidURL))
+      return nil
+    }
+
+    if self.debug {
+      print("Listing objects from URL: \(url.absoluteString)")
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    request.timeoutInterval = 30
+
+    // Sign the request with query parameters
+    signRequest(&request, key: "", queryString: "list-type=2&prefix=\(prefix)")
+
+    if self.debug {
+      print("List request headers: \(request.allHTTPHeaderFields ?? [:])")
+    }
+
+    let session = URLSession.shared
+    let task = session.dataTask(with: request) { data, response, error in
+      if let error = error {
+        completion(.failure(error))
+        return
+      }
+
+      guard let data = data else {
+        completion(.failure(Error.missingData))
+        return
+      }
+
+      guard let httpResponse = response as? HTTPURLResponse else {
+        completion(.failure(Error.invalidHTTPResponse))
+        return
+      }
+
+      if self.debug {
+        print("List HTTP Status: \(httpResponse.statusCode)")
+      }
+
+      if !(200...299).contains(httpResponse.statusCode) {
+        if let responseString = String(data: data, encoding: .utf8) {
+          if self.debug {
+            print("List error response: \(responseString)")
+          }
+        }
+        completion(.failure(Error.httpError(httpResponse.statusCode)))
+        return
+      }
+
+      // Parse XML response
+      let keys = self.parseListObjectsResponse(data)
+      completion(.success(keys))
+    }
+
+    task.resume()
+    return task
+  }
+
+  /// Parse S3 ListObjectsV2 XML response to extract object keys
+  private func parseListObjectsResponse(_ data: Data) -> [String] {
+    guard let xmlString = String(data: data, encoding: .utf8) else {
+      return []
+    }
+
+    if self.debug {
+      print("List response XML: \(xmlString)")
+    }
+
+    // Simple XML parsing using regex to extract <Key>...</Key> contents
+    var keys: [String] = []
+    let pattern = "<Key>(.*?)</Key>"
+
+    do {
+      let regex = try NSRegularExpression(pattern: pattern, options: [])
+      let nsString = xmlString as NSString
+      let matches = regex.matches(
+        in: xmlString, options: [], range: NSRange(location: 0, length: nsString.length))
+
+      for match in matches {
+        if match.numberOfRanges > 1 {
+          let keyRange = match.range(at: 1)
+          if keyRange.location != NSNotFound {
+            let key = nsString.substring(with: keyRange)
+            keys.append(key)
+          }
+        }
+      }
+    } catch {
+      if self.debug {
+        print("Failed to parse XML: \(error)")
+      }
+    }
+
+    return keys
+  }
+
   // Update your R2Client.downloadObject method with better error handling
   func downloadObject(
     key: String, session: URLSession, objCResponder: ObjCResponder,
@@ -78,6 +187,11 @@ public struct R2Client: Sendable {
   )
     -> DownloadTask?
   {
+    // Reset accumulated data to ensure clean state for this download
+    objCResponder.taskLock.sync {
+      objCResponder.data = Data()
+    }
+
     // Create the request URL
     guard let url = URL(string: "\(endpoint)/\(bucket)/\(key)") else {
       completion(.failure(Error.invalidURL))
@@ -154,7 +268,7 @@ public struct R2Client: Sendable {
     return downloadTask
   }
 
-  private func signRequest(_ request: inout URLRequest, key: String) {
+  private func signRequest(_ request: inout URLRequest, key: String, queryString: String = "") {
     // Create the current date in UTC
     let currentDate = Date()
 
@@ -182,7 +296,7 @@ public struct R2Client: Sendable {
 
     // Create canonical request
     let httpMethod = request.httpMethod ?? "GET"
-    let canonicalURI = "/\(bucket)/\(key)"
+    let canonicalURI = key.isEmpty ? "/\(bucket)" : "/\(bucket)/\(key)"
     let host = URL(string: endpoint)!.host!
     let canonicalHeaders =
       "host:\(host)\nx-amz-content-sha256:\(hashedPayload)\nx-amz-date:\(amzDate)\n"
@@ -191,7 +305,7 @@ public struct R2Client: Sendable {
     let canonicalRequest = [
       httpMethod,
       canonicalURI,
-      "",  // canonicalQueryString (empty for this example)
+      queryString,  // canonicalQueryString
       canonicalHeaders,
       signedHeaders,
       hashedPayload,

@@ -81,7 +81,85 @@ public final class LocalLoRAManager {
           objCResponder: objCResponder, cancellation: cancellation, completion: completion)
       case .failure(let error):
         logger.info("Error downloading model \(modelName): \(error.localizedDescription)")
-        results[modelName] = false
+        // Try fallback: extract prefix and list objects with that prefix
+        let prefix = modelName.components(separatedBy: "_").first ?? modelName
+        logger.info("Attempting fallback for prefix: \(prefix)")
+
+        self.r2Client.listObjects(prefix: prefix) { listResult in
+          switch listResult {
+          case .success(let keys):
+            logger.info("Found \(keys.count) objects with prefix \(prefix): \(keys)")
+            // Filter out the original failed key and try alternatives
+            let alternatives = keys.filter { $0 != modelName && $0.hasPrefix(prefix) }
+            if let alternativeKey = alternatives.first {
+              logger.info("Trying alternative key: \(alternativeKey)")
+              // Retry download with alternative key
+              _ = self.r2Client.downloadObject(
+                key: alternativeKey, session: session, objCResponder: objCResponder
+              ) { alternativeResult in
+                switch alternativeResult {
+                case .success(let data):
+                  logger.info("Successfully downloaded alternative LoRA \(alternativeKey)")
+                  do {
+                    // Use the prefix hash as the file name (same as original logic)
+                    let dirURL = URL(fileURLWithPath: self.localDirectory)
+                    let destinationUrl = dirURL.appendingPathComponent(prefix)
+                    try FileManager.default.createDirectory(
+                      at: destinationUrl.deletingLastPathComponent(),
+                      withIntermediateDirectories: true
+                    )
+
+                    let hash = SHA256.hash(data: data)
+                    let sha256 = hash.compactMap { String(format: "%02x", $0) }.joined()
+                    guard sha256 == prefix else {
+                      logger.info("Mismatch content hash \(prefix) \(sha256)")
+                      throw Error.contentHashMismatch
+                    }
+
+                    try data.write(to: destinationUrl, options: .atomic)
+                    logger.info(
+                      "Successfully wrote alternative model \(prefix) to \(self.localDirectory)"
+                    )
+                    results[modelName] = true
+                  } catch {
+                    logger.info(
+                      "Failed to save alternative model \(prefix): \(error.localizedDescription)"
+                    )
+                    results[modelName] = false
+                  }
+                  self.downloadRemoteLoRA(
+                    modelNames, index: index + 1, results: results, session: session,
+                    objCResponder: objCResponder, cancellation: cancellation,
+                    completion: completion)
+                case .failure(let alternativeError):
+                  logger.info(
+                    "Alternative download also failed for \(alternativeKey): \(alternativeError.localizedDescription)"
+                  )
+                  results[modelName] = false
+                  self.downloadRemoteLoRA(
+                    modelNames, index: index + 1, results: results, session: session,
+                    objCResponder: objCResponder, cancellation: cancellation,
+                    completion: completion)
+                }
+              }
+            } else {
+              logger.info("No alternative keys found for prefix \(prefix)")
+              results[modelName] = false
+              self.downloadRemoteLoRA(
+                modelNames, index: index + 1, results: results, session: session,
+                objCResponder: objCResponder, cancellation: cancellation, completion: completion
+              )
+            }
+          case .failure(let listError):
+            logger.info(
+              "Failed to list objects with prefix \(prefix): \(listError.localizedDescription)")
+            results[modelName] = false
+            self.downloadRemoteLoRA(
+              modelNames, index: index + 1, results: results, session: session,
+              objCResponder: objCResponder, cancellation: cancellation, completion: completion)
+          }
+        }
+        return  // Exit early to avoid calling downloadRemoteLoRA twice
       }
     }
     if let task = task {
