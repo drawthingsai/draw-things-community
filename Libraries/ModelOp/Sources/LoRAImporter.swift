@@ -828,11 +828,16 @@ public enum LoRAImporter {
         // || $0.hasSuffix("encoder_layers_0_self_attn_k_proj.lora_down.weight")
         // || $0.hasSuffix("encoder_layers_0_self_attn_k_proj.hada_w1_b")
       }
-      // Only confident about these if there is no ambiguity. If there are, we will use force version value.
+      func forceVersionOr(_ version: ModelVersion) -> ModelVersion {
+        if let forceVersion = forceVersion {
+          return forceVersion
+        }
+        return version
+      }
+      // Only confident about these if it is SD or SDXL. In any other cases, prefer the force version.
       switch (
         isSDOrSDXL, isSD3Medium, isSD3Large, isPixArtSigmaXL, isFlux1, isHunyuan, isWan21_1_3B,
-        isWan22_5B,
-        isWan21_14B, isHiDream, isQwenImage
+        isWan22_5B, isWan21_14B, isHiDream, isQwenImage
       ) {
       case (true, false, false, false, false, false, false, false, false, false, false):
         if let tokey = stateDict.first(where: {
@@ -884,26 +889,26 @@ public enum LoRAImporter {
           throw Error.modelVersionFailed
         }
       case (false, true, false, false, false, false, false, false, false, false, false):
-        return .sd3
+        return forceVersionOr(.sd3)
       case (false, false, true, false, false, false, false, false, false, false, false):
-        return .sd3Large
+        return forceVersionOr(.sd3Large)
       case (false, false, false, true, false, false, false, false, false, false, false):
-        return .pixart
+        return forceVersionOr(.pixart)
       case (false, false, false, false, true, false, false, false, false, false, false):
-        return .flux1
+        return forceVersionOr(.flux1)
       case (false, false, false, false, false, true, false, false, false, false, false):
-        return .hunyuanVideo
+        return forceVersionOr(.hunyuanVideo)
       case (false, false, false, false, false, false, true, false, false, false, false):
-        return .wan21_1_3b
+        return forceVersionOr(.wan21_1_3b)
       case (false, false, false, false, false, false, false, true, false, false, false):
-        return .wan22_5b
+        return forceVersionOr(.wan22_5b)
       case (false, false, false, false, false, false, false, false, true, false, false),
         (false, false, false, false, false, false, true, true, true, false, false):
-        return .wan21_14b
+        return forceVersionOr(.wan21_14b)
       case (false, false, false, false, false, false, false, false, false, true, false):
-        return .hiDreamI1
+        return forceVersionOr(.hiDreamI1)
       case (false, false, false, false, false, false, false, false, false, false, true):
-        return .qwenImage
+        return forceVersionOr(.qwenImage)
       default:
         if let forceVersion = forceVersion {
           return forceVersion
