@@ -861,7 +861,7 @@ public enum LoRAImporter {
               $0.contains("mid_block_attentions_0_transformer_blocks_")
                 || $0.contains("middle_block_1_transformer_blocks_")
             }) {
-              return .ssd1b
+              return forceVersionOr(.ssd1b)
             } else {
               return .sdxlBase
             }
