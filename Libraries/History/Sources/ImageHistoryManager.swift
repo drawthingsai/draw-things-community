@@ -708,7 +708,6 @@ public final class ImageHistoryManager {
     precondition(lineage <= maxLineage)
     // If logicalTime is 0, we don't need to deal with fork.
     if logicalTime != maxLogicalTime || lineage != maxLineage {
-      let newLineage = maxLineage + 1
       if logicalTime > 0 {
         // If we are not the sacred lineage (as whether I am the maxLineage at this particular time)
         // Below: fetch the image history at this particular logical time from the sacred lineage.
@@ -724,6 +723,7 @@ public final class ImageHistoryManager {
         if lineage < minLogicalTimeImageHistory.lineage {
           let imageHistories = project.fetch(for: TensorHistoryNode.self).where(
             TensorHistoryNode.lineage == lineage)
+          let newLineage = maxLineage + 1
           maxLineage = newLineage
           var imageVersions = [Int]()
           var imageData = [TensorData]()
@@ -804,7 +804,7 @@ public final class ImageHistoryManager {
           }
         }
       }
-      lineage = newLineage
+      lineage = maxLineage + 1
       maxLineage = lineage
       maxLogicalTime = logicalTime
       maxLogicalTimeForLineage[lineage] = maxLogicalTime
