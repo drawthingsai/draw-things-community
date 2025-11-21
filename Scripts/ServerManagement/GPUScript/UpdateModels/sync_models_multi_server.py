@@ -203,6 +203,7 @@ def download_files_from_nas(gpu_server, files):
     """Download files from NAS HTTP server to GPU server one by one
 
     Uses wget -O to download and overwrite existing files automatically.
+    After each successful download, updates sha256sum.csv on the GPU server.
 
     Args:
         gpu_server: Server spec in format user@hostname:/path
@@ -230,8 +231,7 @@ def download_files_from_nas(gpu_server, files):
         dest_path = f"{path}/{filename}"
 
         # Show progress
-        if i == 1 or i % 10 == 0 or i == len(files):
-            print(f"   [{i}/{len(files)}] {filename}")
+        print(f"   [{i}/{len(files)}] {filename}")
 
         # Download file using wget with progress bar
         # -O will overwrite existing file automatically (no need for rm)
@@ -247,6 +247,25 @@ def download_files_from_nas(gpu_server, files):
 
         if result.returncode == 0:
             success_count += 1
+
+            # Calculate and update sha256sum.csv immediately after download
+            print(f"      Updating checksum for {filename}...")
+            checksum_cmd = f'cd "{path}" && ' \
+                          f'checksum=$(sha256sum "{filename}" | cut -d" " -f1) && ' \
+                          f'{{ grep -v ",{filename}$" sha256-list.csv 2>/dev/null || true; echo "$checksum,{filename}"; }} | ' \
+                          f'sort -t, -k2 > /tmp/sorted.csv && mv /tmp/sorted.csv sha256-list.csv'
+
+            checksum_result = subprocess.run(
+                ['ssh', hostname, checksum_cmd],
+                text=True,
+                capture_output=True,
+                timeout=300  # 5 minutes for checksum
+            )
+
+            if checksum_result.returncode == 0:
+                print(f"      ✅ Checksum updated")
+            else:
+                print(f"      ⚠️  Failed to update checksum: {checksum_result.stderr}")
         else:
             print(f"   ⚠️  Failed: {filename}")
             if i <= 3:  # Show error for first few failures

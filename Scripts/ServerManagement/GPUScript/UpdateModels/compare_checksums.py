@@ -175,7 +175,7 @@ def list_remote_files(ssh_host, remote_path):
         return []
 
 
-def update_csv_with_checksums(directory, csv_file, dry_run=False, ssh_host=None, remote_path=None):
+def update_csv_with_checksums(directory, csv_file, dry_run=False, ssh_host=None, remote_path=None, force=False):
     """
     Function 1: Update CSV file with SHA256 checksums.
 
@@ -185,13 +185,16 @@ def update_csv_with_checksums(directory, csv_file, dry_run=False, ssh_host=None,
         dry_run: If True, only print what would be done without writing files
         ssh_host: SSH host (user@host) if working with remote directory
         remote_path: Path on remote system
+        force: If True, recalculate all checksums even if they already exist
 
-    If sha256sum already exists for a file, skip it. Otherwise calculate and fill it.
+    If sha256sum already exists for a file, skip it (unless force=True). Otherwise calculate and fill it.
     """
     display_path = f"{ssh_host}:{remote_path}" if ssh_host else directory
     print(f"\n=== Processing directory: {display_path} ===")
     if dry_run:
         print("(DRY-RUN MODE: No files will be written)")
+    if force:
+        print("(FORCE MODE: Recalculating all checksums)")
 
     # Read existing CSV data
     checksums = {}
@@ -222,31 +225,39 @@ def update_csv_with_checksums(directory, csv_file, dry_run=False, ssh_host=None,
     print(f"  Files in directory:         {len(tensordata_files)}")
 
     # Count files that need processing
-    new_files = [f for f in tensordata_files if f not in checksums or not checksums[f]]
-    print(f"  New files to process:       {len(new_files)}")
-    print(f"  Files with checksums:       {csv_entry_count - len(new_files) if csv_entry_count >= len(new_files) else 0}")
-
-    # Ensure all files are in the dictionary
-    for filename in tensordata_files:
-        if filename not in checksums:
+    if force:
+        # In force mode, all files need processing (clear existing checksums)
+        for filename in tensordata_files:
             checksums[filename] = ''
+        new_files = tensordata_files
+        print(f"  Files to process (force):   {len(new_files)}")
+    else:
+        new_files = [f for f in tensordata_files if f not in checksums or not checksums[f]]
+        print(f"  New files to process:       {len(new_files)}")
+        print(f"  Files with checksums:       {csv_entry_count - len(new_files) if csv_entry_count >= len(new_files) else 0}")
+
+        # Ensure all files are in the dictionary
+        for filename in tensordata_files:
+            if filename not in checksums:
+                checksums[filename] = ''
 
     if dry_run:
         # Dry-run mode: just print what would be done
-        print(f"\nFiles that would be added to {csv_file}:")
-        new_files = [f for f in tensordata_files if f not in checksums or not checksums[f]]
-        if new_files:
-            for filename in new_files:
+        files_to_process = [f for f in tensordata_files if f not in checksums or not checksums[f]]
+        if files_to_process:
+            print(f"\nFiles that would be processed:")
+            for filename in files_to_process:
                 print(f"  - {filename}")
-            print(f"\nTotal: {len(new_files)} file(s) would be processed")
+            print(f"\nTotal: {len(files_to_process)} file(s) would be processed")
         else:
-            print("  (No new files to add)")
+            print("  (No files to process)")
 
-        existing_files = [f for f in tensordata_files if f in checksums and checksums[f]]
-        if existing_files:
-            print(f"\nFiles with existing checksums (would be skipped):")
-            for filename in existing_files:
-                print(f"  - {filename}")
+        if not force:
+            existing_files = [f for f in tensordata_files if f in checksums and checksums[f]]
+            if existing_files:
+                print(f"\nFiles with existing checksums (would be skipped):")
+                for filename in existing_files:
+                    print(f"  - {filename}")
         return checksums
 
     # Calculate missing checksums and identify problematic files
@@ -293,8 +304,63 @@ def update_csv_with_checksums(directory, csv_file, dry_run=False, ssh_host=None,
             checksums[filename] = sha256
             updated = True
             print(f"  -> {sha256}")
+
+            # In local mode, update CSV immediately after each checksum
+            if not ssh_host:
+                with open(csv_file, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['filename', 'sha256sum'])
+                    for fn in sorted(checksums.keys()):
+                        writer.writerow([fn, checksums[fn]])
         else:
-            print(f"Skipping {filename} (checksum already exists)")
+            if force:
+                # Force mode: recalculate even if checksum exists
+                print(f"Recalculating SHA256 for: {filename} (force mode)")
+
+                # First check file size
+                if ssh_host:
+                    file_size = get_file_size(filename, ssh_host, remote_path)
+                else:
+                    file_path = os.path.join(directory, filename)
+                    file_size = get_file_size(file_path)
+
+                # Mark zero-size files for removal
+                if file_size == 0:
+                    print(f"⚠ Zero-size file detected: {filename}")
+                    files_to_remove.append(filename)
+                    checksums[filename] = "ZeroSize"
+                    continue
+                elif file_size == -1:
+                    print(f"⚠ Error getting file size: {filename}")
+                    files_to_remove.append(filename)
+                    checksums[filename] = "Error"
+                    continue
+
+                # Calculate checksum
+                if ssh_host:
+                    sha256 = calculate_sha256(filename, ssh_host, remote_path)
+                else:
+                    file_path = os.path.join(directory, filename)
+                    sha256 = calculate_sha256(file_path)
+
+                # Mark files with checksum errors for removal
+                if sha256 == "Error":
+                    print(f"⚠ Checksum calculation failed: {filename}")
+                    files_to_remove.append(filename)
+
+                checksums[filename] = sha256
+                updated = True
+                print(f"  -> {sha256}")
+
+                # In local mode, update CSV immediately after each checksum
+                if not ssh_host:
+                    with open(csv_file, 'w', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(['filename', 'sha256sum'])
+                        for fn in sorted(checksums.keys()):
+                            writer.writerow([fn, checksums[fn]])
+            else:
+                print(f"Skipping {filename} (checksum already exists)")
 
     # Remove corrupted and zero-size files
     if files_to_remove:
@@ -525,14 +591,16 @@ def main():
     # Check for flags
     dry_run = '--dry-run' in sys.argv
     verbose = '--verbose' in sys.argv or '-v' in sys.argv
-    args = [arg for arg in sys.argv[1:] if arg not in ['--dry-run', '--verbose', '-v']]
+    force = '--force' in sys.argv
+    args = [arg for arg in sys.argv[1:] if arg not in ['--dry-run', '--verbose', '-v', '--force']]
 
     if len(args) < 1 or len(args) > 2:
-        print("Usage: python compare_checksums.py [--dry-run] [--verbose|-v] <directory|csv1> [csv2]")
+        print("Usage: python compare_checksums.py [--dry-run] [--verbose|-v] [--force] <directory|csv1> [csv2]")
         print()
         print("Options:")
         print("  --dry-run: Print what would be done without writing files or calculating checksums")
         print("  --verbose, -v: Show detailed output in CSV comparison mode")
+        print("  --force: Recalculate all checksums even if they already exist (single directory mode only)")
         print()
         print("Modes:")
         print("  1. Single directory mode: Creates and fills sha256-list.csv")
@@ -559,6 +627,9 @@ def main():
 
         # CSV comparison mode - both arguments should be CSV files
         if first_arg.endswith('.csv') and second_arg.endswith('.csv'):
+            if force:
+                print("Warning: --force flag is ignored in CSV comparison mode")
+
             if not os.path.isfile(first_arg):
                 print(f"Error: {first_arg} is not a valid file")
                 sys.exit(1)
@@ -600,7 +671,7 @@ def main():
             initialize_csv_from_directory(None, csv_file1, dry_run, ssh_host, dir_path)
 
             # Function 1: Update CSV with checksums (also cleans up corrupted files)
-            update_csv_with_checksums(None, csv_file1, dry_run, ssh_host, dir_path)
+            update_csv_with_checksums(None, csv_file1, dry_run, ssh_host, dir_path, force)
 
             # Upload the updated CSV back to remote
             if not dry_run:
@@ -620,7 +691,7 @@ def main():
             initialize_csv_from_directory(dir1, csv_file1, dry_run)
 
             # Function 1: Update CSV with checksums
-            update_csv_with_checksums(dir1, csv_file1, dry_run)
+            update_csv_with_checksums(dir1, csv_file1, dry_run, force=force)
 
         if dry_run:
             print("\n✓ Dry-run completed (no files modified)")
