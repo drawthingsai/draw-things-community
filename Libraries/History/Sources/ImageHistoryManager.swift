@@ -721,18 +721,27 @@ public final class ImageHistoryManager {
           ).first!
         // If is smaller than the sacred one.
         if lineage < minLogicalTimeImageHistory.lineage {
+          // Find all histories on the lineage. Note that in theory we can keep
+          // this lineage and only move the ancestors, but to keep the logic
+          // consistent with previous implementation, we do this for all history,
+          // but we +2 for ancestors.
           let imageHistories = project.fetch(for: TensorHistoryNode.self).where(
             TensorHistoryNode.lineage == lineage)
           let newLineage = maxLineage + 1
           maxLineage = newLineage
+          let canOverwrite = imageData.isEmpty && shuffleData.isEmpty
           var imageVersions = [Int]()
           var imageData = [TensorData]()
           var shuffleData = [TensorMoodboardData]()
           for imageHistory in imageHistories {
+            // If we can override the same logicalTime / lineage, then it is +2 for that one too (hence overwrite).
+            let isAncestor =
+              canOverwrite
+              ? imageHistory.logicalTime <= logicalTime : imageHistory.logicalTime < logicalTime
             let uniqueVersion = uniqueVersion()
             imageVersions.append(uniqueVersion)
             var builder = TensorHistoryNodeBuilder(from: imageHistory)
-            builder.lineage = newLineage
+            builder.lineage = isAncestor ? newLineage + 1 : newLineage
             let node = (builder.build(), uniqueVersion)
             nodeCache[imageHistory.logicalTime] = node
             let logicalTimeAndLineage = LogicalTimeAndLineage(
@@ -751,20 +760,29 @@ public final class ImageHistoryManager {
             shuffleDataCache[logicalTimeAndLineage] = (shuffleDataForHistory, uniqueVersion)
             shuffleData.append(contentsOf: shuffleDataForHistory)
           }
+          let logicalTime = logicalTime
           project.performChanges([
             TensorHistoryNode.self, TensorData.self, TensorMoodboardData.self,
           ]) { transactionContext in
             for imageHistory in imageHistories {
               guard let changeRequest = TensorHistoryNodeChangeRequest.changeRequest(imageHistory)
               else { continue }
-              changeRequest.lineage = newLineage
+              // If we can override the same logicalTime / lineage, then it is +2 for that one too (hence overwrite).
+              let isAncestor =
+                canOverwrite
+                ? changeRequest.logicalTime <= logicalTime : changeRequest.logicalTime < logicalTime
+              changeRequest.lineage = isAncestor ? newLineage + 1 : newLineage
               transactionContext.try(submit: changeRequest)
             }
             for item in imageData {
               guard let changeRequest = TensorDataChangeRequest.changeRequest(item) else {
                 continue
               }
-              changeRequest.lineage = newLineage
+              // If we can override the same logicalTime / lineage, then it is +2 for that one too (hence overwrite).
+              let isAncestor =
+                canOverwrite
+                ? changeRequest.logicalTime <= logicalTime : changeRequest.logicalTime < logicalTime
+              changeRequest.lineage = isAncestor ? newLineage + 1 : newLineage
               transactionContext.try(submit: changeRequest)
             }
             for shuffleItem in shuffleData {
@@ -772,7 +790,11 @@ public final class ImageHistoryManager {
               else {
                 continue
               }
-              changeRequest.lineage = newLineage
+              // If we can override the same logicalTime / lineage, then it is +2 for that one too (hence overwrite).
+              let isAncestor =
+                canOverwrite
+                ? changeRequest.logicalTime <= logicalTime : changeRequest.logicalTime < logicalTime
+              changeRequest.lineage = isAncestor ? newLineage + 1 : newLineage
               transactionContext.try(submit: changeRequest)
             }
           } completionHandler: { _ in
