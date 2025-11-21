@@ -15,6 +15,8 @@ import OrderedCollections
 
 public enum RemoteImageGeneratorError: Error {
   case notConnected
+  case failedWithStatus(GRPCStatus)
+  case failedWithError(Error)
 }
 
 extension DeviceType {
@@ -292,6 +294,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     call = callInstance
 
     // This is only for logging purpose, if you want to actually get the result, use the result of wait.
+    var completionError: RemoteImageGeneratorError? = nil
     callInstance.status.whenComplete { result in
       switch result {
       case .success(let status):
@@ -306,12 +309,17 @@ public struct RemoteImageGenerator: ImageGenerator {
           {
             requestExceedLimitHandler()
           }
+          completionError = .failedWithStatus(status)
         }
       case .failure(let error):
         logger.error("Stream failed with error: \(error)")
+        completionError = .failedWithError(error)
       }
     }
     let _ = try callInstance.status.wait()
+    if let completionError {
+      throw completionError
+    }
     return (tensors, scaleFactor)
   }
 }
