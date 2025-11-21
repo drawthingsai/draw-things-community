@@ -202,8 +202,11 @@ def update_csv_with_checksums(directory, csv_file, dry_run=False, ssh_host=None,
     if os.path.exists(csv_file):
         with open(csv_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
+            # Strip whitespace from field names to handle malformed headers
+            if reader.fieldnames:
+                reader.fieldnames = [name.strip() for name in reader.fieldnames]
             for row in reader:
-                filename = row.get('filename', '')
+                filename = row.get('filename', '').strip()
                 sha256 = row.get('sha256sum', '').strip()
                 checksums[filename] = sha256
                 csv_entry_count += 1
@@ -411,8 +414,11 @@ def compare_checksums(csv_file1, csv_file2, verbose=False):
     checksums1 = {}
     with open(csv_file1, 'r', newline='') as f:
         reader = csv.DictReader(f)
+        # Strip whitespace from field names to handle malformed headers
+        if reader.fieldnames:
+            reader.fieldnames = [name.strip() for name in reader.fieldnames]
         for row in reader:
-            filename = row.get('filename', '')
+            filename = row.get('filename', '').strip()
             sha256 = row.get('sha256sum', '').strip()
             checksums1[filename] = sha256
 
@@ -420,8 +426,11 @@ def compare_checksums(csv_file1, csv_file2, verbose=False):
     checksums2 = {}
     with open(csv_file2, 'r', newline='') as f:
         reader = csv.DictReader(f)
+        # Strip whitespace from field names to handle malformed headers
+        if reader.fieldnames:
+            reader.fieldnames = [name.strip() for name in reader.fieldnames]
         for row in reader:
-            filename = row.get('filename', '')
+            filename = row.get('filename', '').strip()
             sha256 = row.get('sha256sum', '').strip()
             checksums2[filename] = sha256
 

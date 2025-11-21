@@ -248,12 +248,14 @@ def download_files_from_nas(gpu_server, files):
         if result.returncode == 0:
             success_count += 1
 
-            # Calculate and update sha256sum.csv immediately after download
+            # Calculate and update sha256-list.csv immediately after download
             print(f"      Updating checksum for {filename}...")
             checksum_cmd = f'cd "{path}" && ' \
                           f'checksum=$(sha256sum "{filename}" | cut -d" " -f1) && ' \
-                          f'{{ grep -v ",{filename}$" sha256-list.csv 2>/dev/null || true; echo "$checksum,{filename}"; }} | ' \
-                          f'sort -t, -k2 > /tmp/sorted.csv && mv /tmp/sorted.csv sha256-list.csv'
+                          f'{{ echo "filename,sha256sum"; ' \
+                          f'{{ cat sha256-list.csv 2>/dev/null | grep -v "^filename,sha256sum$" | grep -v "^{filename}," || true; }} ; ' \
+                          f'echo "{filename},$checksum"; }} | ' \
+                          f'{{ read header; echo "$header"; sort -t, -k1; }} > /tmp/sorted.csv && mv /tmp/sorted.csv sha256-list.csv'
 
             checksum_result = subprocess.run(
                 ['ssh', hostname, checksum_cmd],
