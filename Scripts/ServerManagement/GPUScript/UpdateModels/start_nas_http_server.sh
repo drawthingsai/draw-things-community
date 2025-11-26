@@ -3,7 +3,7 @@
 
 NAS_HOST="root@dt-thpc-nas01"
 NAS_PATH="/zfs/data/official-models-ckpt-tensordata"
-NAS_IP="100.104.93.82"
+NAS_IP="192.168.88.14"
 HTTP_PORT="8000"
 
 echo "Starting HTTP server on NAS..."
