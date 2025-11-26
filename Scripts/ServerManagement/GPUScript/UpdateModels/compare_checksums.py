@@ -206,6 +206,8 @@ def update_csv_with_checksums(directory, csv_file, dry_run=False, ssh_host=None,
             if reader.fieldnames:
                 reader.fieldnames = [name.strip() for name in reader.fieldnames]
             for row in reader:
+                if not row:  # Skip None or empty rows
+                    continue
                 filename = row.get('filename', '').strip()
                 sha256 = row.get('sha256sum', '').strip()
                 checksums[filename] = sha256
@@ -418,6 +420,8 @@ def compare_checksums(csv_file1, csv_file2, verbose=False):
         if reader.fieldnames:
             reader.fieldnames = [name.strip() for name in reader.fieldnames]
         for row in reader:
+            if not row:  # Skip None or empty rows
+                continue
             filename = row.get('filename', '').strip()
             sha256 = row.get('sha256sum', '').strip()
             checksums1[filename] = sha256
@@ -430,6 +434,8 @@ def compare_checksums(csv_file1, csv_file2, verbose=False):
         if reader.fieldnames:
             reader.fieldnames = [name.strip() for name in reader.fieldnames]
         for row in reader:
+            if not row:  # Skip None or empty rows
+                continue
             filename = row.get('filename', '').strip()
             sha256 = row.get('sha256sum', '').strip()
             checksums2[filename] = sha256
