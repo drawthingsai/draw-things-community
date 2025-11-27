@@ -208,8 +208,8 @@ def update_csv_with_checksums(directory, csv_file, dry_run=False, ssh_host=None,
             for row in reader:
                 if not row:  # Skip None or empty rows
                     continue
-                filename = row.get('filename', '').strip()
-                sha256 = row.get('sha256sum', '').strip()
+                filename = (row.get('filename', '') or '').strip()
+                sha256 = (row.get('sha256sum', '') or '').strip()
                 checksums[filename] = sha256
                 csv_entry_count += 1
 
@@ -422,8 +422,8 @@ def compare_checksums(csv_file1, csv_file2, verbose=False):
         for row in reader:
             if not row:  # Skip None or empty rows
                 continue
-            filename = row.get('filename', '').strip()
-            sha256 = row.get('sha256sum', '').strip()
+            filename = (row.get('filename', '') or '').strip()
+            sha256 = (row.get('sha256sum', '') or '').strip()
             checksums1[filename] = sha256
 
     # Read second CSV
@@ -436,8 +436,8 @@ def compare_checksums(csv_file1, csv_file2, verbose=False):
         for row in reader:
             if not row:  # Skip None or empty rows
                 continue
-            filename = row.get('filename', '').strip()
-            sha256 = row.get('sha256sum', '').strip()
+            filename = (row.get('filename', '') or '').strip()
+            sha256 = (row.get('sha256sum', '') or '').strip()
             checksums2[filename] = sha256
 
     # Get all unique filenames
