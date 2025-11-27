@@ -221,8 +221,14 @@ extension LoRATrainerCheckpoint {
             return ($0, $0)
           })
         modelName = "dit"
+      case .qwenImage:
+        UNetMapping = [Int: Int](
+          uniqueKeysWithValues: (0..<60).map {
+            return ($0, $0)
+          })
+        modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-        .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
+        .wan21_1_3b, .wan21_14b, .hiDreamI1, .wan22_5b:
         fatalError()
       case .ssd1b:
         UNetMapping = LoRAMapping.SDUNetXLSSD1B
@@ -367,8 +373,14 @@ extension LoRATrainerCheckpoint {
             return ($0, $0)
           })
         modelName = "dit"
+      case .qwenImage:
+        UNetMapping = [Int: Int](
+          uniqueKeysWithValues: (0..<60).map {
+            return ($0, $0)
+          })
+        modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-        .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
+        .wan21_1_3b, .wan21_14b, .hiDreamI1, .wan22_5b:
         fatalError()
       case .ssd1b:
         UNetMapping = LoRAMapping.SDUNetXLSSD1B

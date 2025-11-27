@@ -1,7 +1,7 @@
 import Foundation
 import NNC
 
-func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+public func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   sequenceLength: Int, token: DynamicGraph.Tensor<Int32>,
   referenceSizes: [(height: Int, width: Int)],
   of dataType: FloatType.Type = FloatType.self
@@ -203,7 +203,7 @@ private func TextEmbedding<T: TensorNumeric & BinaryFloatingPoint>(
   }
 }
 
-func QwenVL<T: TensorNumeric & BinaryFloatingPoint>(
+public func QwenVL<T: TensorNumeric & BinaryFloatingPoint>(
   _ dataType: T.Type, injectEmbeddings: Bool, vocabularySize: Int, maxLength: Int, width: Int,
   tokenLength: Int,
   layers: Int, MLP: Int, heads: Int, outputHiddenStates: Int?, batchSize: Int,
