@@ -146,9 +146,15 @@ def load_gpu_servers(filepath="gpu_servers.txt"):
     """Load GPU servers from file
 
     Format: user@hostname
+       or:  user@hostname|nas_ip:port  (custom NAS URL override)
     Example: root@dfw-026-001
+             root@dt-thpc-001|192.168.88.14:8000
 
     The default path will be appended automatically.
+
+    Returns:
+        list of tuples: [(server_with_path, nas_url), ...]
+        where nas_url is None for default NAS or "ip:port" for custom
     """
     servers = []
 
@@ -164,6 +170,11 @@ def load_gpu_servers(filepath="gpu_servers.txt"):
             if not line or line.startswith('#'):
                 continue
 
+            # Parse optional custom NAS URL (format: user@host|nas_ip:port)
+            custom_nas_url = None
+            if '|' in line:
+                line, custom_nas_url = line.split('|', 1)
+
             # Validate format: user@hostname
             if '@' not in line:
                 print(f"⚠️  Line {line_num}: Invalid format (expected user@hostname) - {line}")
@@ -171,10 +182,19 @@ def load_gpu_servers(filepath="gpu_servers.txt"):
 
             # Append default path
             server_with_path = f"{line}:{DEFAULT_GPU_PATH}"
-            servers.append(server_with_path)
+            servers.append((server_with_path, custom_nas_url))
 
     print(f"✅ Loaded {len(servers)} GPU server(s)")
     print(f"   Using default path: {DEFAULT_GPU_PATH}")
+
+    # Show any custom NAS URLs
+    custom_servers = [(s, n) for s, n in servers if n]
+    if custom_servers:
+        print(f"   Custom NAS URLs:")
+        for server, nas_url in custom_servers:
+            hostname = server.split('@')[-1].split(':')[0]
+            print(f"     {hostname} -> http://{nas_url}")
+
     return servers
 
 
@@ -358,7 +378,7 @@ def download_nas_csv():
 
 
 
-def download_files_from_nas(gpu_server, files, log_file=None, server_name=None):
+def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, custom_nas_url=None):
     """Download files from NAS HTTP server to GPU server one by one
 
     Uses wget -O to download and overwrite existing files automatically.
@@ -370,6 +390,7 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None):
         files: List of filenames to download
         log_file: Optional file object to write logs to
         server_name: Server name for progress tracking
+        custom_nas_url: Optional custom NAS URL in format "ip:port"
 
     Returns:
         int: Number of files successfully downloaded
@@ -380,7 +401,12 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None):
 
     # Extract hostname and path
     hostname, path = gpu_server.split(':')
-    http_url = f"http://{NAS_IP}:{HTTP_PORT}"
+
+    # Use custom NAS URL if provided, otherwise use default
+    if custom_nas_url:
+        http_url = f"http://{custom_nas_url}"
+    else:
+        http_url = f"http://{NAS_IP}:{HTTP_PORT}"
 
     log_print(log_file, f"\n📥 Downloading {len(files)} file(s) from NAS...")
     log_print(log_file, f"   From: {http_url}")
@@ -448,7 +474,7 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None):
                 ['ssh', hostname, checksum_cmd],
                 text=True,
                 capture_output=True,
-                timeout=300  # 5 minutes for checksum
+                timeout=600  # 10 minutes for checksum
             )
 
             if checksum_result.returncode == 0:
@@ -470,7 +496,7 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None):
 
 
 
-def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=None):
+def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=None, custom_nas_url=None):
     """Sync a single GPU server with NAS
 
     Workflow:
@@ -484,12 +510,15 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
         nas_csv_local: Local path to NAS CSV file (source of truth)
         log_file: Optional file object to write logs to
         server_name: Server name for progress tracking
+        custom_nas_url: Optional custom NAS URL in format "ip:port"
 
     Returns:
         bool: True if sync successful, False otherwise
     """
     log_print(log_file, f"\n{'='*70}")
     log_print(log_file, f"Syncing: {gpu_server}")
+    if custom_nas_url:
+        log_print(log_file, f"Using custom NAS: http://{custom_nas_url}")
     log_print(log_file, '='*70)
 
     try:
@@ -524,7 +553,7 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
             print_step(3, 4, "Download files from NAS")
         else:
             log_print(log_file, f"\n[Step 3/4] Download files from NAS")
-        success_count = download_files_from_nas(gpu_server, files_to_download, log_file, server_name)
+        success_count = download_files_from_nas(gpu_server, files_to_download, log_file, server_name, custom_nas_url)
 
         if success_count < len(files_to_download):
             log_print(log_file, f"\n⚠️  Warning: Only {success_count}/{len(files_to_download)} files downloaded successfully")
@@ -555,13 +584,14 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
         return False
 
 
-def sync_server_with_logging(server, nas_csv_local, log_dir="."):
+def sync_server_with_logging(server, nas_csv_local, log_dir=".", custom_nas_url=None):
     """Wrapper to sync a single server with logging to file
 
     Args:
         server: Server spec in format user@hostname:/path
         nas_csv_local: Local path to NAS CSV file (source of truth)
         log_dir: Directory to write log files to
+        custom_nas_url: Optional custom NAS URL in format "ip:port"
 
     Returns:
         bool: True if sync successful, False otherwise
@@ -575,12 +605,14 @@ def sync_server_with_logging(server, nas_csv_local, log_dir="."):
         # Write header to log
         log_file.write("="*70 + "\n")
         log_file.write(f"Sync Log for {server}\n")
+        if custom_nas_url:
+            log_file.write(f"Custom NAS: http://{custom_nas_url}\n")
         log_file.write(f"Started at: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         log_file.write("="*70 + "\n\n")
         log_file.flush()
 
         # Sync the server
-        success = sync_single_server(server, nas_csv_local, log_file, hostname)
+        success = sync_single_server(server, nas_csv_local, log_file, hostname, custom_nas_url)
 
         # Write footer to log
         log_file.write("\n" + "="*70 + "\n")
@@ -654,8 +686,11 @@ Examples:
             sys.exit(1)
 
         print(f"\nServers to sync:")
-        for i, server in enumerate(servers, 1):
-            print(f"  {i}. {server}")
+        for i, (server, custom_nas) in enumerate(servers, 1):
+            if custom_nas:
+                print(f"  {i}. {server} (NAS: http://{custom_nas})")
+            else:
+                print(f"  {i}. {server}")
 
         # Step 3: Download NAS CSV (source of truth) via HTTP
         print_step(3, 4, "Download NAS CSV (source of truth)")
@@ -676,7 +711,7 @@ Examples:
             print(f"   Detailed logs will be written to sync-*.log files\n")
 
             # Display initial status
-            for server in servers:
+            for server, custom_nas in servers:
                 hostname = server.split('@')[-1].split(':')[0]
                 log_filename = f"sync-{hostname}.log"
                 update_progress(hostname, "Starting", 0, 0)
@@ -701,13 +736,13 @@ Examples:
             with ThreadPoolExecutor(max_workers=len(servers)) as executor:
                 # Submit all server sync tasks
                 future_to_server = {
-                    executor.submit(sync_server_with_logging, server, nas_csv_local, "."): server
-                    for server in servers
+                    executor.submit(sync_server_with_logging, server, nas_csv_local, ".", custom_nas): (server, custom_nas)
+                    for server, custom_nas in servers
                 }
 
                 # Process results as they complete
                 for future in as_completed(future_to_server):
-                    server = future_to_server[future]
+                    server, custom_nas = future_to_server[future]
                     hostname = server.split('@')[-1].split(':')[0]
                     try:
                         success = future.result()
@@ -735,12 +770,12 @@ Examples:
 
         else:
             # Sequential execution - sync servers one at a time
-            for i, server in enumerate(servers, 1):
+            for i, (server, custom_nas) in enumerate(servers, 1):
                 print(f"\n{'#'*70}")
                 print(f"# Server {i}/{len(servers)}")
                 print(f"{'#'*70}")
 
-                success = sync_single_server(server, nas_csv_local)
+                success = sync_single_server(server, nas_csv_local, custom_nas_url=custom_nas)
                 results[server] = success
 
         # Summary
