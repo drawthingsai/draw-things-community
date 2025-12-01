@@ -293,14 +293,16 @@ public struct RemoteImageGenerator: ImageGenerator {
     }
     call = callInstance
 
+    var unknownFailures: RemoteImageGeneratorError? = nil
     // This is only for logging purpose, if you want to actually get the result, use the result of wait.
-    var completionError: RemoteImageGeneratorError? = nil
     callInstance.status.whenComplete { result in
       switch result {
       case .success(let status):
-        switch status {
+        switch status.code {
         case .ok:
           logger.info("Stream completed with status: \(status)")
+        case .cancelled:
+          logger.info("Stream cancelled with status: \(status)")
         default:
           logger.info("Stream failed with status: \(status)")
           if status.code == GRPCStatus.Code.permissionDenied, let message = status.message,
@@ -309,16 +311,16 @@ public struct RemoteImageGenerator: ImageGenerator {
           {
             requestExceedLimitHandler()
           }
-          completionError = .failedWithStatus(status)
+          unknownFailures = .failedWithStatus(status)
         }
       case .failure(let error):
         logger.error("Stream failed with error: \(error)")
-        completionError = .failedWithError(error)
+        unknownFailures = .failedWithError(error)
       }
     }
     let _ = try callInstance.status.wait()
-    if let completionError {
-      throw completionError
+    if let unknownFailures {
+      throw unknownFailures
     }
     return (tensors, scaleFactor)
   }
