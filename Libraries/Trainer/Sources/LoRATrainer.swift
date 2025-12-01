@@ -1326,7 +1326,7 @@ public struct LoRATrainer {
         .GPU(0), .WC(batch.count, 256), of: FloatType.self)
       // Text encodings must be Float16 to match quantized checkpoint outputs
       var textEncodings = graph.variable(
-        .GPU(0), .HWC(batch.count, paddedTextEncodingLength, 3584), of: Float16.self)
+        .GPU(0), .HWC(batch.count, paddedTextEncodingLength, 3584), of: FloatType.self)
       for (i, item) in batch.enumerated() {
         let timeEmbed = graph.variable(
           Tensor<FloatType>(
