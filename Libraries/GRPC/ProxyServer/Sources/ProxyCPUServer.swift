@@ -871,8 +871,10 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       computeUnitPolicy: computeUnitPolicy,
       expirationTimestamp: expirationTimestamp
     )
-
-    let costThresholdFromBoost = (payload.amount ?? 0) * computeUnitPerBoost
+    let boostsToSpend = payload.amount ?? 0
+    let costThresholdFromBoost =
+      (boostsToSpend - 1) * ComputeUnits.perBoost
+      + max(costThresholdFromPolicy, ComputeUnits.perBoost)
     logger.info(
       "Proxy Server payload.amount: \(payload.amount as Any), computeUnitPerBoost: \(computeUnitPerBoost), generation id: \(payload.generationId as Any) and costThresholdFromBoost: \(costThresholdFromBoost)"
     )
