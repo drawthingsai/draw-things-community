@@ -319,7 +319,8 @@ public struct RemoteImageGenerator: ImageGenerator {
       }
     }
     let _ = try callInstance.status.wait()
-    if let unknownFailures {
+    // If no result, and there is a failure, propagate out.
+    if tensors.isEmpty, let unknownFailures {
       throw unknownFailures
     }
     return (tensors, scaleFactor)
