@@ -1937,8 +1937,8 @@ extension TextEncoder {
             input = Functional.concat(axis: 0, topLeft, right, bottom, bottomRight)
           }
           let rotTensor = graph.variable(
-            QwenVLViTRotaryEmbedding(gridX: gridX, gridY: gridY, of: FloatType.self).toGPU(0))
-          let vit = QwenVLVisionTransformer(
+            Qwen2VLViTRotaryEmbedding(gridX: gridX, gridY: gridY, of: FloatType.self).toGPU(0))
+          let vit = Qwen2VLVisionTransformer(
             gridX: gridX, gridY: gridY, width: 1280, layers: 32,
             fullAttentionLayers: [7, 15, 23, 31],
             heads: 16, MLP: 3420, batchSize: 1, usesFlashAttention: usesFlashAttention)
@@ -2112,7 +2112,7 @@ extension TextEncoder {
         injectedEmbeddings.append(contentsOf: [graph.variable(mask.toGPU(0)), embeddings])
       }
     }
-    let textModel = QwenVL(
+    let textModel = Qwen2VL(
       FloatType.self, injectEmbeddings: !injectedEmbeddings.isEmpty, vocabularySize: 152_064,
       maxLength: tokenLength, width: 3_584,
       tokenLength: tokenLength, layers: 28, MLP: 18_944, heads: 28, outputHiddenStates: 28,
@@ -2128,7 +2128,7 @@ extension TextEncoder {
     }
     let tokensTensorGPU = tokens[0].toGPU(0)
     let rotaryTensorGPU = graph.variable(
-      QwenVLRotaryEmbedding(
+      Qwen2VLRotaryEmbedding(
         sequenceLength: tokenLength, token: tokens[0], referenceSizes: referenceSizes,
         of: FloatType.self
       ).toGPU(0))
@@ -2594,6 +2594,8 @@ extension TextEncoder {
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         textModels: existingTextModels)
+    case .zImage:
+      fatalError()
     case .kandinsky21:
       return encodeKandinsky(tokens: tokens, positions: positions)
     case .sdxlBase, .sdxlRefiner, .ssd1b:
@@ -2706,7 +2708,7 @@ extension TextEncoder {
           ).0
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -2743,7 +2745,7 @@ extension TextEncoder {
                   }
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-                  .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
+                  .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -2782,7 +2784,7 @@ extension TextEncoder {
                 }
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-                .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
+                .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
                 fatalError()
               }
               return .continue(name)

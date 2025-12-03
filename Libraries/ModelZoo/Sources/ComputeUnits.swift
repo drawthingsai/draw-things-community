@@ -45,6 +45,8 @@ public enum ComputeUnits {
       return 2.84465488969
     case .qwenImage:
       return 2.84465488969
+    case .zImage:
+      return 1.176470588
     }
   }
 
@@ -129,7 +131,7 @@ public enum ComputeUnits {
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
-    case .flux1, .qwenImage:
+    case .flux1, .qwenImage, .zImage:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
       if samplerModifier == .kontext || samplerModifier == .qwenimageEditPlus {  // For Kontext, if the reference image is provided, we effectively double the cost at least.

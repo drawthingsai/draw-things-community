@@ -1,7 +1,7 @@
 import Foundation
 import NNC
 
-public func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+public func Qwen2VLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   sequenceLength: Int, token: DynamicGraph.Tensor<Int32>,
   referenceSizes: [(height: Int, width: Int)],
   of dataType: FloatType.Type = FloatType.self
@@ -203,7 +203,7 @@ private func TextEmbedding<T: TensorNumeric & BinaryFloatingPoint>(
   }
 }
 
-public func QwenVL<T: TensorNumeric & BinaryFloatingPoint>(
+public func Qwen2VL<T: TensorNumeric & BinaryFloatingPoint>(
   _ dataType: T.Type, injectEmbeddings: Bool, vocabularySize: Int, maxLength: Int, width: Int,
   tokenLength: Int,
   layers: Int, MLP: Int, heads: Int, outputHiddenStates: Int?, batchSize: Int,
@@ -251,7 +251,7 @@ public func QwenVL<T: TensorNumeric & BinaryFloatingPoint>(
   }
 }
 
-private func QwenVLViTSelfAttention(
+private func Qwen2VLViTSelfAttention(
   k: Int, h: Int, b: Int, t: Int, segments: [(Int, Int)], isFullAttention: Bool,
   usesFlashAttention: Bool
 ) -> (Model, Model, Model, Model, Model) {
@@ -324,7 +324,7 @@ private func QwenVLViTSelfAttention(
   return (toqueries, tokeys, tovalues, unifyheads, Model([x, rot], [out]))
 }
 
-private func QwenVLViTFeedForward(hiddenSize: Int, intermediateSize: Int, name: String = "") -> (
+private func Qwen2VLViTFeedForward(hiddenSize: Int, intermediateSize: Int, name: String = "") -> (
   Model, Model, Model, Model
 ) {
   let x = Input()
@@ -336,25 +336,25 @@ private func QwenVLViTFeedForward(hiddenSize: Int, intermediateSize: Int, name: 
   return (w1, w2, w3, Model([x], [out], name: name))
 }
 
-private func QwenVLViTResidualAttentionBlock(
+private func Qwen2VLViTResidualAttentionBlock(
   prefix: String, k: Int, h: Int, b: Int, t: Int, segments: [(Int, Int)], MLP: Int,
   isFullAttention: Bool, usesFlashAttention: Bool
 ) -> Model {
   let x = Input()
   let rot = Input()
   let norm1 = RMSNorm(epsilon: 1e-6, axis: [2], name: "norm1")
-  let (_, _, _, _, attention) = QwenVLViTSelfAttention(
+  let (_, _, _, _, attention) = Qwen2VLViTSelfAttention(
     k: k, h: h, b: b, t: t, segments: segments, isFullAttention: isFullAttention,
     usesFlashAttention: usesFlashAttention)
   var out = x.reshaped([b * t, h * k]) + attention(norm1(x), rot)
   let norm2 = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm2")
-  let (_, _, _, ffn) = QwenVLViTFeedForward(
+  let (_, _, _, ffn) = Qwen2VLViTFeedForward(
     hiddenSize: k * h, intermediateSize: MLP, name: "mlp")
   out = out + ffn(norm2(out))
   return Model([x, rot], [out])
 }
 
-func QwenVLVisionTransformer(
+func Qwen2VLVisionTransformer(
   gridX: Int, gridY: Int, width: Int, layers: Int, fullAttentionLayers: Set<Int>, heads: Int,
   MLP: Int, batchSize: Int, usesFlashAttention: Bool
 ) -> Model {
@@ -389,7 +389,7 @@ func QwenVLVisionTransformer(
   var out = conv1(x).reshaped([batchSize, gridX * gridY, width])
   for i in 0..<layers {
     let isFullAttention = fullAttentionLayers.contains(i)
-    let block = QwenVLViTResidualAttentionBlock(
+    let block = Qwen2VLViTResidualAttentionBlock(
       prefix: "blocks.\(i)", k: width / heads, h: heads, b: batchSize,
       t: gridX * gridY, segments: segments, MLP: MLP, isFullAttention: isFullAttention,
       usesFlashAttention: usesFlashAttention)
@@ -403,7 +403,7 @@ func QwenVLVisionTransformer(
   return Model([x, rot], [out])
 }
 
-func QwenVLViTRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+func Qwen2VLViTRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   gridX: Int, gridY: Int, of dataType: FloatType.Type = FloatType.self
 ) -> Tensor<FloatType> {
   var rotary = Tensor<FloatType>(.CPU, .NHWC(1, gridX * gridY, 1, 80))

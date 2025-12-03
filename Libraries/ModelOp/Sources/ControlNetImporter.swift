@@ -266,7 +266,7 @@ public final class ControlNetImporter {
       dim = 2048
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .sdxlRefiner,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b:
+      .qwenImage, .wan22_5b, .zImage:
       fatalError()
     }
     let c = graph.variable(.CPU, .HWC(2, 77, dim), of: FloatType.self)
@@ -362,7 +362,7 @@ public final class ControlNetImporter {
       controlNetReader = nil
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .ssd1b, .svdI2v, .sdxlRefiner,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b:
+      .qwenImage, .wan22_5b, .zImage:
       fatalError()
     }
 
@@ -409,7 +409,7 @@ public final class ControlNetImporter {
           }
         case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .ssd1b, .v1, .v2,
           .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
-          .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
+          .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
           fatalError()
         }
         store.removeAll()

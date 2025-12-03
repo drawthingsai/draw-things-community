@@ -601,6 +601,10 @@ public struct DeviceCapability {
       guard (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force else {
         return false
       }
+    case .zImage:
+      guard (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force else {
+        return false
+      }
     case .wan21_14b:
       guard
         (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force

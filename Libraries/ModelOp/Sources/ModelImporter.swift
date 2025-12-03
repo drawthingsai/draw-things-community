@@ -411,6 +411,8 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .hiDreamI1:
         throw Error.noTextEncoder
+      case .zImage:
+        throw Error.noTextEncoder
       case .kandinsky21:
         fatalError()
       }
@@ -482,7 +484,7 @@ public final class ModelImporter {
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
-            .wan22_5b:
+            .wan22_5b, .zImage:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -522,7 +524,7 @@ public final class ModelImporter {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .qwenImage, .wan22_5b:
+              .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
               fatalError()
             }
           }
@@ -662,6 +664,9 @@ public final class ModelImporter {
     case .qwenImage:
       conditionalLength = 3854
       batchSize = 1
+    case .zImage:
+      conditionalLength = 2560
+      batchSize = 1
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -710,7 +715,7 @@ public final class ModelImporter {
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-          .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b:
+          .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -826,6 +831,8 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .zImage:
+        fatalError()
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -1017,6 +1024,8 @@ public final class ModelImporter {
         (unetFixedMapper, unetFixed) = AuraFlowFixed(
           batchSize: (1, 1), channels: 3072, layers: (4, 32),
           of: FloatType.self)
+      case .zImage:
+        fatalError()
       case .kandinsky21, .wurstchenStageB:
         fatalError()
       }
@@ -1114,6 +1123,8 @@ public final class ModelImporter {
             graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
           ]
         tEmb = nil
+      case .zImage:
+        fatalError()
       case .auraflow:
         crossattn = [
           graph.variable(.CPU, .HWC(1, 256, 2048), of: FloatType.self),
@@ -1302,7 +1313,7 @@ public final class ModelImporter {
             modelPrefix = "stage_c"
             modelPrefixFixed = "stage_c_fixed"
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
-            .wan22_5b, .qwenImage, .auraflow:
+            .wan22_5b, .qwenImage, .auraflow, .zImage:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1552,6 +1563,8 @@ public final class ModelImporter {
           if $0.keys.count != 532 {
             throw Error.tensorWritesFailed
           }
+        case .zImage:
+          fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()
         }
@@ -1799,6 +1812,8 @@ extension ModelImporter {
       textEncoder = fileNames.first {
         $0.hasSuffix("_qwen_2.5_vl_7b_f16.ckpt")
       }
+    case .zImage:
+      fatalError()
     case .wurstchenStageC:
       textEncoder = nil
     case .kandinsky21, .wurstchenStageB:
@@ -2008,6 +2023,8 @@ extension ModelImporter {
       specification.objective = .u(conditionScale: 1000)
       specification.noiseDiscretization = .rf(
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+    case .zImage:
+      fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }

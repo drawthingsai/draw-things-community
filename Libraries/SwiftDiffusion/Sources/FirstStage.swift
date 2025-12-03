@@ -91,7 +91,7 @@ extension FirstStage {
     let scaleFactor: Int
     switch version {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v, .kandinsky21, .hiDreamI1:
+      .svdI2v, .kandinsky21, .hiDreamI1, .zImage:
       scaleFactor = 8
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage:
@@ -174,7 +174,7 @@ extension FirstStage {
         outputChannels = 3
       }
       causalAttentionMask = nil
-    case .sd3, .sd3Large, .flux1, .hiDreamI1:
+    case .sd3, .sd3Large, .flux1, .hiDreamI1, .zImage:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       decoder =
@@ -859,7 +859,7 @@ extension FirstStage {
     let scaleFactorZ: Int
     switch version {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v, .kandinsky21, .hiDreamI1:
+      .svdI2v, .kandinsky21, .hiDreamI1, .zImage:
       scaleFactor = 8
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage:
@@ -917,7 +917,7 @@ extension FirstStage {
       }
       outputChannels = 8
       causalAttentionMask = nil
-    case .sd3, .sd3Large, .flux1, .hiDreamI1:
+    case .sd3, .sd3Large, .flux1, .hiDreamI1, .zImage:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight
       encoder =
