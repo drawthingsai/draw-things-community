@@ -48,6 +48,15 @@ public enum ComputeUnits {
     }
   }
 
+  public static func thresholdAfterBoost(
+    policyThreshold: Int,
+    boostsToSpend: Int
+  ) -> Int {
+    return max(
+      policyThreshold,
+      (boostsToSpend - 1) * ComputeUnits.perBoost + max(policyThreshold, ComputeUnits.perBoost))
+  }
+
   public static func from(
     _ configuration: GenerationConfiguration,
     hasImage: Bool, shuffleCount: Int,

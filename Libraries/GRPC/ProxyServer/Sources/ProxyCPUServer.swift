@@ -872,9 +872,8 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
       expirationTimestamp: expirationTimestamp
     )
     let boostsToSpend = payload.amount ?? 0
-    let costThresholdFromBoost =
-      (boostsToSpend - 1) * ComputeUnits.perBoost
-      + max(costThresholdFromPolicy, ComputeUnits.perBoost)
+    let costThresholdFromBoost = ComputeUnits.thresholdAfterBoost(
+      policyThreshold: costThresholdFromPolicy, boostsToSpend: boostsToSpend)
     logger.info(
       "Proxy Server payload.amount: \(payload.amount as Any), computeUnitPerBoost: \(computeUnitPerBoost), generation id: \(payload.generationId as Any) and costThresholdFromBoost: \(costThresholdFromBoost)"
     )
@@ -883,7 +882,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         "Proxy Server applying consumable threshold \(costThresholdFromBoost) for generation id: \(payload.generationId as Any)"
       )
     }
-    return max(costThresholdFromPolicy, costThresholdFromBoost)
+    return costThresholdFromBoost
   }
 
   func generateImage(
