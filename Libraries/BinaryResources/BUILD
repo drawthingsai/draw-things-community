@@ -10,6 +10,7 @@ resource_library(
         "Resources/merges.txt",
         "Resources/merges_llama3.txt",
         "Resources/merges_qwen2.5.txt",
+        "Resources/merges_qwen3.txt",
         "Resources/pile_t5.spiece.model",
         "Resources/root_ca.crt",
         "Resources/server_crt.crt",
@@ -20,6 +21,7 @@ resource_library(
         "Resources/vocab_16e6.json",
         "Resources/vocab_llama3.json",
         "Resources/vocab_qwen2.5.json",
+        "Resources/vocab_qwen3.json",
         "Resources/xlmroberta.bpe.model",
     ],
 )

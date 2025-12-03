@@ -83,6 +83,19 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalIm
       "<|quad_start|>": 151650, "<|repo_name|>": 151663, "<|video_pad|>": 151656,
       "<|vision_end|>": 151653, "<|vision_pad|>": 151654, "<|vision_start|>": 151652,
     ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>")
+  let tokenizerQwen3 = TiktokenTokenizer(
+    vocabulary: BinaryResources.vocab_qwen3_json, merges: BinaryResources.merges_qwen3_txt,
+    specialTokens: [
+      "<|endoftext|>": 151643, "<|im_start|>": 151644, "<|im_end|>": 151645,
+      "<|object_ref_start|>": 151646, "<|object_ref_end|>": 151647, "<|box_start|>": 151648,
+      "<|box_end|>": 151649, "<|quad_start|>": 151650, "<|quad_end|>": 151651,
+      "<|vision_start|>": 151652, "<|vision_end|>": 151653, "<|vision_pad|>": 151654,
+      "<|image_pad|>": 151655, "<|video_pad|>": 151656, "<tool_call>": 151657,
+      "</tool_call>": 151658, "<|fim_prefix|>": 151659, "<|fim_middle|>": 151660,
+      "<|fim_suffix|>": 151661, "<|fim_pad|>": 151662, "<|repo_name|>": 151663,
+      "<|file_sep|>": 151664, "<tool_response>": 151665, "</tool_response>": 151666,
+      "<think>": 151667, "</think>": 151668,
+    ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>")
 
   return (
     tempDir,
@@ -91,7 +104,8 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalIm
       tokenizerV2: tokenizerV2, tokenizerXL: tokenizerXL, tokenizerKandinsky: tokenizerKandinsky,
       tokenizerT5: tokenizerT5, tokenizerPileT5: tokenizerPileT5,
       tokenizerChatGLM3: tokenizerChatGLM3, tokenizerLlama3: tokenizerLlama3,
-      tokenizerUMT5: tokenizerUMT5, tokenizerQwen25: tokenizerQwen25)
+      tokenizerUMT5: tokenizerUMT5, tokenizerQwen25: tokenizerQwen25, tokenizerQwen3: tokenizerQwen3
+    )
   )
 }
 

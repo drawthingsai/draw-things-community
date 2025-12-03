@@ -658,6 +658,12 @@ public struct ModelZoo: DownloadZoo {
       "01a56e3f4c5d2d1aae0e8d8cee6405498679722128cd47c2c93d6323e24d7552",
     "qwen_image_edit_2509_bf16_q6p.ckpt":
       "5ace7c50b133854b8242a2b03ab9b687036c126f2c3f0d80571cd17e977c3eaa",
+    "qwen_3_vl_4b_instruct_q8p.ckpt":
+      "81bb4dfdeaa101a6948174ca827f7ebec0c8864f1f878f91231a7446ce96a9e2",
+    "z_image_turbo_1.0_q6p.ckpt":
+      "252683bda4661be9c64d94e718c2a9c36a6217867464ca09d03db7013a45f20f",
+    "z_image_turbo_1.0_q8p.ckpt":
+      "fb2f636c4f310c092fd87b6c07aabb1f4549fd4d74b66b09a5d034c95da655e6",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -756,6 +762,24 @@ public struct ModelZoo: DownloadZoo {
       isBf16: true,
       note:
         "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Z Image Turbo 1.0", file: "z_image_turbo_1.0_q8p.ckpt", prefix: "",
+      version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Z Image Turbo 1.0 (6-bit)", file: "z_image_turbo_1.0_q6p.ckpt", prefix: "",
+      version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
       copyright: "© 2025 Alibaba"
     ),
     Specification(

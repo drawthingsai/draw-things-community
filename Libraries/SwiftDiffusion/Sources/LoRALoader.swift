@@ -156,6 +156,7 @@ public struct LoRALoader {
       infix = String(infix.prefix(upTo: infix.index(before: infix.endIndex)))
     }
     let originalPrefix: String
+    // This is problematic especially there is more than 1 part of the naming.
     if infix.isEmpty {
       originalPrefix = "\(components[0])-\(originalIndex)-0]"
     } else {

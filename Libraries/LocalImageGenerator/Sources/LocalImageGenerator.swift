@@ -37,6 +37,7 @@ public struct LocalImageGenerator: ImageGenerator {
   public var tokenizerLlama3: TiktokenTokenizer
   public var tokenizerUMT5: SentencePieceTokenizer
   public var tokenizerQwen25: TiktokenTokenizer
+  public var tokenizerQwen3: TiktokenTokenizer
   private let queue: DispatchQueue
   private let weightsCache: WeightsCache
   public init(
@@ -50,7 +51,8 @@ public struct LocalImageGenerator: ImageGenerator {
     tokenizerChatGLM3: SentencePieceTokenizer,
     tokenizerLlama3: TiktokenTokenizer,
     tokenizerUMT5: SentencePieceTokenizer,
-    tokenizerQwen25: TiktokenTokenizer
+    tokenizerQwen25: TiktokenTokenizer,
+    tokenizerQwen3: TiktokenTokenizer
   ) {
     self.queue = queue
     self.tokenizerV1 = tokenizerV1
@@ -63,6 +65,7 @@ public struct LocalImageGenerator: ImageGenerator {
     self.tokenizerLlama3 = tokenizerLlama3
     self.tokenizerUMT5 = tokenizerUMT5
     self.tokenizerQwen25 = tokenizerQwen25
+    self.tokenizerQwen3 = tokenizerQwen3
     weightsCache = WeightsCache(
       maxTotalCacheSize: DeviceCapability.maxTotalWeightsCacheSize,
       memorySubsystem: DeviceCapability.isUMA ? .UMA : .dGPU)
