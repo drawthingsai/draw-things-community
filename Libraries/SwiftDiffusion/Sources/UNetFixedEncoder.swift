@@ -1536,7 +1536,27 @@ extension UNetFixedEncoder {
         [graph.variable(rotaryEmbedding)] + conditions, nil
       )
     case .zImage:
-      fatalError()
+      let c0 = textEncoding[0]
+      let textLength = c0.shape[1]
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let (xRotaryEmbedding, txtRotaryEmbedding) = ZImageRotaryPositionEmbedding(
+        height: h, width: w, tokenLength: textLength)
+      var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: 1_000 - timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
+      }
+      return (
+        [
+          graph.variable(Tensor<FloatType>(from: xRotaryEmbedding).toGPU(0)), c0,
+          graph.variable(Tensor<FloatType>(from: txtRotaryEmbedding).toGPU(0)), timeEmbeds,
+        ], nil
+      )
     case .hiDreamI1:
       let h = startHeight / 2
       let w = startWidth / 2

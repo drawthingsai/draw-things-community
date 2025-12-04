@@ -2219,7 +2219,7 @@ extension TextEncoder {
       inputs: tokensTensorGPU, [rotaryTensorGPU, causalAttentionMaskGPU])[0]
       .as(
         of: FloatType.self
-      ).reshaped(.HWC(2, tokenLength, 2560))[0..<2, 0..<tokenLength, 0..<2560].contiguous()
+      ).reshaped(.HWC(2, tokenLength, 2560))
     weightsCache.attach(filePaths[0], from: textModel.parameters)
     return ([c], [textModel])
   }
