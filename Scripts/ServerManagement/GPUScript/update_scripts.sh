@@ -70,11 +70,19 @@ upload_to_server() {
 
         SOURCE_FILE="$SCRIPT_DIR/$file"
         if [ -f "$SOURCE_FILE" ]; then
-            echo "  Copying: $file"
+            echo "  Removing old & copying: $file"
+            ssh "$HOST" "rm -rf '$REMOTE_DIR/$file'" < /dev/null
             scp -q "$SOURCE_FILE" "$HOST:$REMOTE_DIR/"
+            # Make .sh files executable
+            if [[ "$file" == *.sh ]]; then
+                ssh "$HOST" "chmod +x '$REMOTE_DIR/$file'" < /dev/null
+            fi
         elif [ -d "$SOURCE_FILE" ]; then
-            echo "  Copying directory: $file"
+            echo "  Removing old & copying directory: $file"
+            ssh "$HOST" "rm -rf '$REMOTE_DIR/$file'" < /dev/null
             scp -rq "$SOURCE_FILE" "$HOST:$REMOTE_DIR/"
+            # Make all .sh files in directory executable
+            ssh "$HOST" "find '$REMOTE_DIR/$file' -name '*.sh' -exec chmod +x {} \;" < /dev/null
         else
             echo "  Warning: File not found: $file (skipping)"
         fi

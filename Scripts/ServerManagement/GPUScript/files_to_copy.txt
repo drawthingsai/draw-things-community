@@ -2,7 +2,7 @@
 # One file per line, relative to the script directory
 # Lines starting with # are comments
 
-VerifyGPUSetup.sh
+verify_gpu_setup.sh
 LaunchGPU
 UpdateModels
 README.md
