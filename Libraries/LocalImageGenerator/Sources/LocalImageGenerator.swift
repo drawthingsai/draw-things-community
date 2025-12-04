@@ -1449,7 +1449,16 @@ extension LocalImageGenerator {
         return result
       }
     case .zImage:
-      fatalError()
+      let promptWithTemplate =
+        "<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
+      let negativePromptWithTemplate =
+        "<|im_start|>user\n\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
+      let result = tokenize(
+        graph: graph, tokenizer: tokenizerQwen3, text: promptWithTemplate,
+        negativeText: negativePromptWithTemplate,
+        paddingToken: nil, addSpecialTokens: false, conditionalLength: 2560, modifier: .qwen3,
+        potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
+      return result
     case .hiDreamI1:
       var tokenizerV1 = tokenizerV1
       tokenizerV1.textualInversions = []

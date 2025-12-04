@@ -230,6 +230,7 @@ public struct TextualInversionZoo: DownloadZoo {
     case chatglm3_6b
     case llama3
     case qwen25
+    case qwen3
   }
 
   public static func embeddingForModel<FloatType: TensorNumeric>(
@@ -256,6 +257,8 @@ public struct TextualInversionZoo: DownloadZoo {
         count = 2048
       case .qwen25:
         count = 3584
+      case .qwen3:
+        count = 2560
       }
     case .pixart:
       count = 4096
@@ -289,6 +292,8 @@ public struct TextualInversionZoo: DownloadZoo {
           tensorName = "string_to_param_chatglm3_6b"
         case .qwen25:
           tensorName = "string_to_param_qwen25"
+        case .qwen3:
+          tensorName = "string_to_param_qwen3"
         }
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
         .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage:

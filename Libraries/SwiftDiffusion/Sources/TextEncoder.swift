@@ -2166,6 +2166,64 @@ extension TextEncoder {
     }
   }
 
+  private func encodeZImage(
+    images: [DynamicGraph.Tensor<FloatType>],
+    tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
+    mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
+    tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
+    modifier: SamplerModifier, textModels existingTextModels: [Model?]
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let graph = tokens[0].graph
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || deviceProperties.memoryCapacity != .high
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    var tokenLength = tokens[0].shape[0] / 2
+    var tokens = tokens
+    let textModel = Qwen3VL(
+      FloatType.self, vocabularySize: 151_936,
+      maxLength: tokenLength, width: 2_560,
+      tokenLength: tokenLength, layers: 36, MLP: 9_728, heads: 32, outputHiddenStates: 34,
+      batchSize: 2, usesFlashAttention: usesFlashAttention)
+    var causalAttentionMask = Tensor<FloatType>(
+      Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
+      .NHWC(1, 1, tokenLength, tokenLength)
+    )
+    for i in 0..<(tokenLength - 1) {
+      for j in (i + 1)..<tokenLength {
+        causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    let tokensTensorGPU = tokens[0].toGPU(0)
+    let rotaryTensorGPU = graph.variable(
+      Qwen3VLRotaryEmbedding(
+        sequenceLength: tokenLength, of: FloatType.self
+      ).toGPU(0))
+    let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
+    textModel.compile(
+      inputs: [tokensTensorGPU, rotaryTensorGPU, causalAttentionMaskGPU])
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+      // Move Qwen 2.5 VL to on-demand.
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        store.read(
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+      }
+    }
+    let c = textModel(
+      inputs: tokensTensorGPU, [rotaryTensorGPU, causalAttentionMaskGPU])[0]
+      .as(
+        of: FloatType.self
+      ).reshaped(.HWC(2, tokenLength, 2560))[0..<2, 0..<tokenLength, 0..<2560].contiguous()
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
+    return ([c], [textModel])
+  }
+
   private func encodeHiDreamI1(
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
@@ -2595,7 +2653,11 @@ extension TextEncoder {
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         textModels: existingTextModels)
     case .zImage:
-      fatalError()
+      return encodeZImage(
+        images: images,
+        tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
+        tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
+        modifier: modifier, textModels: existingTextModels)
     case .kandinsky21:
       return encodeKandinsky(tokens: tokens, positions: positions)
     case .sdxlBase, .sdxlRefiner, .ssd1b:
