@@ -242,8 +242,8 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         ].copied()
       }
   case .zImage:
-    return conditions[0..<3]
-      + conditions[3..<conditions.count].map {
+    return conditions[0..<2]
+      + conditions[2..<conditions.count].map {
         let shape = $0.shape
         if shape.count == 2 {
           return DynamicGraph.Tensor<Float>($0)[

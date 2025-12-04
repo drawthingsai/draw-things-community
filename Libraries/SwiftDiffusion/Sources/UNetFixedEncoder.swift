@@ -1540,8 +1540,9 @@ extension UNetFixedEncoder {
       let textLength = c0.shape[1]
       let h = startHeight / 2
       let w = startWidth / 2
-      let (xRotaryEmbedding, txtRotaryEmbedding) = ZImageRotaryPositionEmbedding(
-        height: h, width: w, tokenLength: textLength)
+      let txtRotaryEmbedding = Tensor<FloatType>(
+        from: ZImageRotaryPositionEmbedding(height: 0, width: 0, tokenLength: textLength)
+      ).toGPU(0)
       var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(
@@ -1551,11 +1552,31 @@ extension UNetFixedEncoder {
           ).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
       }
+      precondition(timesteps.count > 0)
+      let unetFixed = ZImageFixed(batchSize: 1, textLength: textLength, channels: 3_840, layers: 30)
+        .0
+      unetFixed.maxConcurrency = .limit(4)
+      let txtRot = graph.variable(txtRotaryEmbedding)
+      unetFixed.compile(inputs: [c0, txtRot, timeEmbeds])
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !loadedFromWeightsCache {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
+      }
+      let conditions = unetFixed(
+        inputs: c0, [txtRot, timeEmbeds]
+      )
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      let rotaryEmbedding = Tensor<FloatType>(
+        from: ZImageRotaryPositionEmbedding(
+          height: h, width: w, tokenLength: textLength)
+      ).toGPU(0)
       return (
-        [
-          graph.variable(Tensor<FloatType>(from: xRotaryEmbedding).toGPU(0)), c0,
-          graph.variable(Tensor<FloatType>(from: txtRotaryEmbedding).toGPU(0)), timeEmbeds,
-        ], nil
+        [graph.variable(rotaryEmbedding)] + conditions, nil
       )
     case .hiDreamI1:
       let h = startHeight / 2

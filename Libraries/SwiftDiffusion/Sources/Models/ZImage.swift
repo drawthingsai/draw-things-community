@@ -3,39 +3,11 @@ import NNC
 
 public func ZImageRotaryPositionEmbedding(
   height: Int, width: Int, tokenLength: Int, heads: Int = 1
-)
-  -> (Tensor<Float>, Tensor<Float>)
-{
-  var xRotTensor = Tensor<Float>(.CPU, .NHWC(1, height * width, heads, 128))
-  var txtRotTensor = Tensor<Float>(.CPU, .NHWC(1, tokenLength, heads, 128))
+) -> Tensor<Float> {
+  var rotTensor = Tensor<Float>(.CPU, .NHWC(1, height * width + tokenLength, heads, 128))
   let dim0 = 32
   let dim1 = 48
   let dim2 = 48
-  for i in 0..<tokenLength {
-    for j in 0..<heads {
-      for k in 0..<(dim0 / 2) {
-        let theta = Double(i + 1) * 1.0 / pow(256, Double(k) * 2 / Double(dim0))
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        txtRotTensor[0, i, j, k * 2] = Float(costheta)
-        txtRotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
-      }
-      for k in 0..<(dim1 / 2) {
-        let theta = Double(0) * 1.0 / pow(256, Double(k) * 2 / Double(dim1))
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        txtRotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
-        txtRotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
-      }
-      for k in 0..<(dim2 / 2) {
-        let theta = Double(0) * 1.0 / pow(256, Double(k) * 2 / Double(dim2))
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        txtRotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
-        txtRotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
-      }
-    }
-  }
   for y in 0..<height {
     for x in 0..<width {
       let i = y * width + x
@@ -44,29 +16,55 @@ public func ZImageRotaryPositionEmbedding(
           let theta = Double(tokenLength + 1) * 1.0 / pow(256, Double(k) * 2 / Double(dim0))
           let sintheta = sin(theta)
           let costheta = cos(theta)
-          xRotTensor[0, i, j, k * 2] = Float(costheta)
-          xRotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
+          rotTensor[0, i, j, k * 2] = Float(costheta)
+          rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
         }
         for k in 0..<(dim1 / 2) {
           let theta =
             Double(y) * 1.0 / pow(256, Double(k) * 2 / Double(dim1))
           let sintheta = sin(theta)
           let costheta = cos(theta)
-          xRotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
-          xRotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+          rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+          rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
         }
         for k in 0..<(dim2 / 2) {
           let theta =
             Double(x) * 1.0 / pow(256, Double(k) * 2 / Double(dim2))
           let sintheta = sin(theta)
           let costheta = cos(theta)
-          xRotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
-          xRotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+          rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+          rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
         }
       }
     }
   }
-  return (xRotTensor, txtRotTensor)
+  let offset = height * width
+  for i in 0..<tokenLength {
+    for j in 0..<heads {
+      for k in 0..<(dim0 / 2) {
+        let theta = Double(i + 1) * 1.0 / pow(256, Double(k) * 2 / Double(dim0))
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotTensor[0, offset + i, j, k * 2] = Float(costheta)
+        rotTensor[0, offset + i, j, k * 2 + 1] = Float(sintheta)
+      }
+      for k in 0..<(dim1 / 2) {
+        let theta = Double(0) * 1.0 / pow(256, Double(k) * 2 / Double(dim1))
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotTensor[0, offset + i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+        rotTensor[0, offset + i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+      }
+      for k in 0..<(dim2 / 2) {
+        let theta = Double(0) * 1.0 / pow(256, Double(k) * 2 / Double(dim2))
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotTensor[0, offset + i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+        rotTensor[0, offset + i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+      }
+    }
+  }
+  return rotTensor
 }
 
 private func MLPEmbedder(channels: Int, intermediateSize: Int, name: String) -> (
@@ -108,19 +106,10 @@ private func ZImageTransformerBlock(
   modulation: Bool
 ) -> (Model, ModelWeightMapper) {
   let x = Input()
-  let tEmbed: Input?
-  let chunks: [Model.IO]
-  let adaLNs: [Model]
+  let chunks: [Input]
   if modulation {
-    let t = Input()
-    adaLNs = (0..<4).map {
-      Dense(count: k * h, name: name.isEmpty ? "ada_ln_\($0)" : "\(name)_ada_ln_\($0)")
-    }
-    chunks = adaLNs.map { $0(t) }
-    tEmbed = t
+    chunks = (0..<4).map { _ in Input() }
   } else {
-    tEmbed = nil
-    adaLNs = []
     chunks = []
   }
   let rot = Input()
@@ -131,7 +120,7 @@ private func ZImageTransformerBlock(
     epsilon: 1e-5, axis: [2], name: name.isEmpty ? "attention_norm1" : "\(name)_attention_norm_1")
   var out = attentionNorm1(x)
   if modulation {
-    out = (chunks[0] + 1).to(of: out) .* out
+    out = chunks[0] .* out
   }
   out = out.to(.Float16)
   var keys = tokeys(out).reshaped([b, t.0, h, k])
@@ -167,7 +156,7 @@ private func ZImageTransformerBlock(
     epsilon: 1e-5, axis: [2], name: name.isEmpty ? "attention_norm2" : "\(name)_attention_norm2")
   out = attentionNorm2(out)
   if modulation {
-    out = chunks[1].tanh().to(of: out) .* out
+    out = chunks[1] .* out
   }
   out = xIn + out
   let (w1, w2, w3, ffn) = FeedForward(
@@ -180,12 +169,12 @@ private func ZImageTransformerBlock(
   let residual = out
   out = feedForwardNorm1(out)
   if modulation {
-    out = (chunks[2] + 1).to(of: out) .* out
+    out = chunks[2] .* out
   }
   out = out.to(.Float16)
   out = feedForwardNorm2(ffn(out))  // Already converted to Float32.
   if modulation {
-    out = chunks[3].tanh().to(of: out) .* out
+    out = chunks[3] .* out
   }
   out = residual + out
   let mapper: ModelWeightMapper = { _ in
@@ -203,15 +192,9 @@ private func ZImageTransformerBlock(
     mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
     mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
     mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
-    if modulation {
-      mapping["\(prefix).adaLN_modulation.0.weight"] = ModelWeightElement(
-        (0..<4).map { adaLNs[$0].weight.name })
-      mapping["\(prefix).adaLN_modulation.0.bias"] = ModelWeightElement(
-        (0..<4).map { adaLNs[$0].bias.name })
-    }
     return mapping
   }
-  return (Model([x, rot] + (tEmbed.map { [$0] } ?? []), [out]), mapper)
+  return (Model([x, rot] + chunks, [out]), mapper)
 }
 
 func ZImage(
@@ -221,10 +204,8 @@ func ZImage(
   Model, ModelWeightMapper
 ) {
   let x = Input()
-  let xRot = Input()
-  let txt = Input()
-  let txtRot = Input()
-  let t = Input()
+  let rot = Input()
+  let txtIn = Input()
   let imgIn = Dense(count: channels, name: "x_embedder")
   let h = height / 2
   let w = width / 2
@@ -232,6 +213,82 @@ func ZImage(
     x.reshaped([batchSize, h, 2, w, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
       .reshaped([batchSize, h * w, 2 * 2 * 16], format: .NHWC)
   ).to(.Float32)
+  var mappers = [ModelWeightMapper]()
+  var adaLNChunks = [Input]()
+  let xRot = rot.reshaped([1, h * w, 1, 128])
+  for i in 0..<2 {
+    let chunks = (0..<4).map { _ in Input() }
+    let (block, mapper) = ZImageTransformerBlock(
+      prefix: "noise_refiner.\(i)", name: "noise_refiner", k: 128, h: channels / 128, b: 1,
+      t: (h * w, h * w), scaleFactor: (4, 32), modulation: true)
+    xOut = block([xOut, xRot] + chunks)
+    adaLNChunks.append(contentsOf: chunks)
+    mappers.append(mapper)
+  }
+  var out = Functional.concat(axis: 1, xOut, txtIn)
+  for i in 0..<layers {
+    let chunks = (0..<4).map { _ in Input() }
+    let (block, mapper) = ZImageTransformerBlock(
+      prefix: "layers.\(i)", name: "", k: 128, h: channels / 128, b: 1,
+      t: (h * w + textLength, i == layers - 1 ? h * w : h * w + textLength), scaleFactor: (4, 32),
+      modulation: true)
+    out = block([out, rot] + chunks)
+    adaLNChunks.append(contentsOf: chunks)
+    mappers.append(mapper)
+  }
+  let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  let scale = Input()
+  adaLNChunks.append(scale)
+  let projOut = Dense(count: 2 * 2 * 16, name: "linear_final")
+  out = scale .* normFinal(out).to(.Float16)
+  out = (-projOut(out)).reshaped([batchSize, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5)
+    .contiguous()
+    .reshaped([
+      batchSize, h * 2, w * 2, 16,
+    ])
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    mapping["all_x_embedder.2-1.weight"] = [imgIn.weight.name]
+    mapping["all_x_embedder.2-1.bias"] = [imgIn.bias.name]
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    mapping["all_final_layer.2-1.linear.weight"] = [projOut.weight.name]
+    mapping["all_final_layer.2-1.linear.bias"] = [projOut.bias.name]
+    return mapping
+  }
+  return (Model([x, rot, txtIn] + adaLNChunks, [out]), mapper)
+}
+
+private func ZImageTransformerBlockFixed(
+  prefix: String, name: String, channels: Int
+) -> (Model, ModelWeightMapper) {
+  let tEmbed = Input()
+  let adaLNs = (0..<4).map {
+    Dense(count: channels, name: name.isEmpty ? "ada_ln_\($0)" : "\(name)_ada_ln_\($0)")
+  }
+  var chunks = adaLNs.map { $0(tEmbed) }
+  chunks[0] = (1 + chunks[0]).to(.Float32)
+  chunks[1] = chunks[1].tanh().to(.Float32)
+  chunks[2] = (1 + chunks[2]).to(.Float32)
+  chunks[3] = chunks[3].tanh().to(.Float32)
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).adaLN_modulation.0.weight"] = ModelWeightElement(
+      (0..<4).map { adaLNs[$0].weight.name })
+    mapping["\(prefix).adaLN_modulation.0.bias"] = ModelWeightElement(
+      (0..<4).map { adaLNs[$0].bias.name })
+    return mapping
+  }
+  return (Model([tEmbed], chunks), mapper)
+}
+
+func ZImageFixed(batchSize: Int, textLength: Int, channels: Int, layers: Int) -> (
+  Model, ModelWeightMapper
+) {
+  let txt = Input()
+  let txtRot = Input()
+  let t = Input()
   let txtNorm = RMSNorm(epsilon: 1e-5, axis: [2], name: "cap_norm")
   let txtIn = Dense(count: channels, name: "cap_embedder")
   var txtOut = txtIn(txtNorm(txt)).to(.Float32)
@@ -242,42 +299,27 @@ func ZImage(
   for i in 0..<2 {
     let (block, mapper) = ZImageTransformerBlock(
       prefix: "context_refiner.\(i)", name: "context_refiner", k: 128, h: channels / 128,
-      b: batchSize,
-      t: (textLength, textLength), scaleFactor: (2, 2), modulation: false)
+      b: batchSize, t: (textLength, textLength), scaleFactor: (2, 2), modulation: false)
     txtOut = block(txtOut, txtRot)
     mappers.append(mapper)
   }
+  var outs = [txtOut]
   for i in 0..<2 {
-    let (block, mapper) = ZImageTransformerBlock(
-      prefix: "noise_refiner.\(i)", name: "noise_refiner", k: 128, h: channels / 128, b: 1,
-      t: (h * w, h * w),
-      scaleFactor: (4, 32), modulation: true)
-    xOut = block(xOut, xRot, tOut)
+    let (block, mapper) = ZImageTransformerBlockFixed(
+      prefix: "noise_refiner.\(i)", name: "noise_refiner", channels: channels)
+    outs.append(block(tOut))
     mappers.append(mapper)
   }
-  var out = Functional.concat(axis: 1, xOut, txtOut)
-  let rot = Functional.concat(axis: 1, xRot, txtRot)
   for i in 0..<layers {
-    let (block, mapper) = ZImageTransformerBlock(
-      prefix: "layers.\(i)", name: "", k: 128, h: channels / 128, b: 1,
-      t: (h * w + textLength, i == layers - 1 ? h * w : h * w + textLength), scaleFactor: (4, 32),
-      modulation: true)
-    out = block(out, rot, tOut)
+    let (block, mapper) = ZImageTransformerBlockFixed(
+      prefix: "layers.\(i)", name: "", channels: channels)
+    outs.append(block(tOut))
     mappers.append(mapper)
   }
-  let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   let scale = Dense(count: channels, name: "ada_ln_final")
-  let projOut = Dense(count: 2 * 2 * 16, name: "linear_final")
-  out = (1 + scale(tOut.swish())) .* normFinal(out).to(.Float16)
-  out = (-projOut(out)).reshaped([batchSize, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5)
-    .contiguous()
-    .reshaped([
-      batchSize, h * 2, w * 2, 16,
-    ])
+  outs.append(1 + scale(tOut.swish()))
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["all_x_embedder.2-1.weight"] = [imgIn.weight.name]
-    mapping["all_x_embedder.2-1.bias"] = [imgIn.bias.name]
     mapping["cap_embedder.0.weight"] = [txtNorm.weight.name]
     mapping["cap_embedder.1.weight"] = [txtIn.weight.name]
     mapping["cap_embedder.1.bias"] = [txtIn.bias.name]
@@ -290,9 +332,7 @@ func ZImage(
     }
     mapping["all_final_layer.2-1.adaLN_modulation.1.weight"] = [scale.weight.name]
     mapping["all_final_layer.2-1.adaLN_modulation.1.bias"] = [scale.bias.name]
-    mapping["all_final_layer.2-1.linear.weight"] = [projOut.weight.name]
-    mapping["all_final_layer.2-1.linear.bias"] = [projOut.bias.name]
     return mapping
   }
-  return (Model([x, xRot, txt, txtRot, t], [out, txtOut]), mapper)
+  return (Model([txt, txtRot, t], outs), mapper)
 }
