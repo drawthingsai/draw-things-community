@@ -161,15 +161,20 @@ private func ZImageTransformerBlock(
       var outs = [Model.IO]()
       for segment in segments {
         let query = queries.reshaped(
-          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.query * h * k, h * k, k, 1])
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.query * h * k, h * k, k, 1]
+        ).contiguous()
         let key = keys.reshaped(
-          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1]
+        ).contiguous()
         let value = values.reshaped(
-          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1]
+        ).contiguous()
         outs.append(scaledDotProductAttention(query, key, value))
         offset += segment
       }
-      out = Concat(axis: 1)(outs)
+      let concat = Concat(axis: 1)
+      concat.flags = .disableOpt
+      out = concat(outs)
     } else {
       out = scaledDotProductAttention(
         queries, keys, values
@@ -182,15 +187,20 @@ private func ZImageTransformerBlock(
       var outs = [Model.IO]()
       for segment in segments {
         let query = queries.reshaped(
-          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.query * h * k, h * k, k, 1])
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.query * h * k, h * k, k, 1]
+        ).contiguous()
         let key = keys.reshaped(
-          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1]
+        ).contiguous()
         let value = values.reshaped(
-          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1]
+        ).contiguous()
         outs.append(scaledDotProductAttention(query, key, value))
         offset += segment
       }
-      out = Concat(axis: 1)(outs)
+      let concat = Concat(axis: 1)
+      concat.flags = .disableOpt
+      out = concat(outs)
     } else {
       out = scaledDotProductAttention(
         queries, keys, values
@@ -204,11 +214,14 @@ private func ZImageTransformerBlock(
       var finalOuts = [Model.IO]()
       for segment in segments {
         var subQueries = queries.reshaped(
-          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.query * h * k, h * k, k, 1])
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.query * h * k, h * k, k, 1]
+        ).contiguous()
         var subKeys = keys.reshaped(
-          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1]
+        ).contiguous()
         var subValues = values.reshaped(
-          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1]
+        ).contiguous()
         subKeys = subKeys.transposed(1, 2)
         subQueries = subQueries.transposed(1, 2)
         subValues = subValues.transposed(1, 2)

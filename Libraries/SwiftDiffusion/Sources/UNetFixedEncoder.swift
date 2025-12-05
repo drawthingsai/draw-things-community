@@ -1565,7 +1565,7 @@ extension UNetFixedEncoder {
       }
       precondition(timesteps.count > 0)
       let unetFixed = ZImageFixed(
-        batchSize: 1, tokenLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond),
+        batchSize: batchSize, tokenLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond),
         channels: 3_840, layers: 30,
         usesFlashAttention: usesFlashAttention ? .scale1 : .none
       )
@@ -1600,13 +1600,29 @@ extension UNetFixedEncoder {
           isCfgEnabled
           ? roundUpTokenLengthUncond - tokenLengthUncond + roundUpTokenLengthCond - tokenLengthCond
           : roundUpTokenLengthCond - tokenLengthCond
-        capPadTokens = Tensor<FloatType>(.CPU, .HWC(1, padLength, 3_840))
+        capPadTokens = Tensor<FloatType>(.CPU, .HWC(batchSize, padLength, 3_840))
       } else {
         capPadTokens = nil
       }
       unetFixed.compile(
         inputs: [c, txtRot, timeEmbeds] + (capPadTokens.map { [graph.variable($0.toGPU(0))] } ?? [])
       )
+      let tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      let tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      let tiledH = tiledHeight / 2
+      let tiledW = tiledWidth / 2
+      /*
+      let imagePaddedLength = (tiledH * tiledW + 31) / 32 * 32 - tiledH * tiledW
+      var xPadTokens: Tensor<FloatType>?
+      if imagePaddedLength > 0 {
+        xPadTokens = Tensor<FloatType>(.)
+      } else {
+        xPadTokens = nil
+      }
+       */
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
@@ -1619,8 +1635,11 @@ extension UNetFixedEncoder {
               "cap_pad_token", kind: .CPU, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
             ).map { Tensor<FloatType>(from: $0) })
         {
-          for i in 0..<shape[1] {
-            capPadTokens?[0..<1, i..<(i + 1), 0..<3_840] = capPadToken.reshaped(.HWC(1, 1, 3840))
+          let padToken = capPadToken.reshaped(.HWC(1, 1, 3840))
+          for i in 0..<shape[0] {
+            for j in 0..<shape[1] {
+              capPadTokens?[i..<(i + 1), j..<(j + 1), 0..<3_840] = padToken
+            }
           }
         }
         if !loadedFromWeightsCache {
