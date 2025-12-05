@@ -1849,7 +1849,32 @@ extension UNetFromNNC {
           return finalEncoding
         }
       case .zImage:
-        // TODO: this is mostly for tiled diffusion.
+        if $0.0 == 0 {
+          let shape = $0.1.shape
+          let tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
+          let graph = $0.1.graph
+          let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], 0..<(shape[1] - tokenLength), 0..<shape[2], 0..<shape[3]
+          ].copied().reshaped(
+            .NHWC(1, originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+          let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], (shape[1] - tokenLength)..<shape[1], 0..<shape[2], 0..<shape[3]
+          ]
+          .copied()
+          let h = inputEndYPad / 2 - inputStartYPad / 2
+          let w = inputEndXPad / 2 - inputStartXPad / 2
+          let sliceEncoding = imageEncoding[
+            0..<1, (inputStartYPad / 2)..<(inputEndYPad / 2),
+            (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[3]
+          ].copied().reshaped(.NHWC(shape[0], h * w, 1, shape[3]))
+          var finalEncoding = graph.variable(
+            $0.1.kind, .NHWC(shape[0], h * w + tokenLength, 1, shape[3]), of: FloatType.self)
+          finalEncoding[0..<shape[0], 0..<(h * w), 0..<1, 0..<shape[3]] = sliceEncoding
+          finalEncoding[
+            0..<shape[0], (h * w)..<(tokenLength + h * w), 0..<1, 0..<shape[3]] =
+            tokenEncoding
+          return finalEncoding
+        }
         break
       }
       let shape = $0.1.shape
