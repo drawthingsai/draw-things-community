@@ -146,7 +146,7 @@ private func ZImageTransformerBlock(
     queries = Functional.cmul(
       left: queries,
       right: rot.reshaped(
-        [b, t.query, 1, k], offset: [0, 0, 0, 0], strides: [t.keyValue * k, k, k, 1]))
+        [1, t.query, 1, k], offset: [0, 0, 0, 0], strides: [t.keyValue * k, k, k, 1]))
   } else {
     queries = Functional.cmul(left: queries, right: rot)
   }
@@ -338,7 +338,7 @@ func ZImage(
   for i in 0..<2 {
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = ZImageTransformerBlock(
-      prefix: "noise_refiner.\(i)", name: "noise_refiner", k: 128, h: channels / 128, b: 1,
+      prefix: "noise_refiner.\(i)", name: "noise_refiner", k: 128, h: channels / 128, b: batchSize,
       t: (keyValue: h * w, query: h * w), segments: [], scaleFactor: (4, 32), modulation: true,
       usesFlashAttention: usesFlashAttention)
     xOut = block([xOut, xRot] + chunks)
@@ -350,7 +350,7 @@ func ZImage(
   for i in 0..<layers {
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = ZImageTransformerBlock(
-      prefix: "layers.\(i)", name: "", k: 128, h: channels / 128, b: 1,
+      prefix: "layers.\(i)", name: "", k: 128, h: channels / 128, b: batchSize,
       t: (keyValue: h * w + textLength, query: i == layers - 1 ? h * w : h * w + textLength),
       segments: [], scaleFactor: (4, 32), modulation: true, usesFlashAttention: usesFlashAttention)
     out = block([out, rotResized] + chunks)

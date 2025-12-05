@@ -1202,7 +1202,6 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      let textLength = c[1].shape[1]
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
