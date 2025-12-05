@@ -124,7 +124,14 @@ private func ZImageTransformerBlock(
   }
   out = out.to(.Float16)
   var keys = tokeys(out).reshaped([b, t.0, h, k])
-  var queries = toqueries(out).reshaped([b, t.0, h, k])
+  var queries: Model.IO
+  if t.0 != t.1 {
+    queries = toqueries(
+      out.reshaped([b, t.1, k * h], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1])
+    ).reshaped([b, t.1, h, k])
+  } else {
+    queries = toqueries(out).reshaped([b, t.0, h, k])
+  }
   let normK = RMSNorm(epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_k" : "\(name)_norm_k")
   keys = normK(keys)
   let normQ = RMSNorm(epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_q" : "\(name)_norm_q")
@@ -134,7 +141,16 @@ private func ZImageTransformerBlock(
   }
   var values = tovalues(out)
   values = values.reshaped([b, t.0, h, k])
-  queries = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: queries, right: rot)
+  if t.0 != t.1 {
+    queries =
+      (1.0 / Float(k).squareRoot().squareRoot())
+      * Functional.cmul(
+        left: queries,
+        right: rot.reshaped([b, t.1, 1, k], offset: [0, 0, 0, 0], strides: [t.0 * k, k, k, 1]))
+  } else {
+    queries =
+      (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: queries, right: rot)
+  }
   keys = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: keys, right: rot)
   out = ScaledDotProductAttention(scale: 1)(
     queries, keys, values
@@ -142,7 +158,7 @@ private func ZImageTransformerBlock(
   let xIn: Model.IO
   if t.0 > t.1 {
     xIn = x.reshaped([b, t.1, h * k], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1])
-    out = out.reshaped([b, t.1, h * k], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1])
+    out = out.reshaped([b, t.1, h * k])
   } else {
     xIn = x
     out = out.reshaped([b, t.0, h * k])
