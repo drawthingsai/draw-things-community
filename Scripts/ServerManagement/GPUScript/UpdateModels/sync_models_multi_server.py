@@ -69,7 +69,7 @@ def print_step(step, total, message):
     print('='*70)
 
 
-def update_progress(server, phase, files_synced=0, total_files=0, status="running"):
+def update_progress(server, phase, files_synced=0, total_files=0, status="running", error_msg=None):
     """Update progress data for a server (thread-safe)
 
     Args:
@@ -78,13 +78,15 @@ def update_progress(server, phase, files_synced=0, total_files=0, status="runnin
         files_synced: Number of files synced so far
         total_files: Total number of files to sync
         status: Status ("running", "completed", "failed")
+        error_msg: Optional error message when status is "failed"
     """
     with PROGRESS_LOCK:
         PROGRESS_DATA[server] = {
             "phase": phase,
             "files_synced": files_synced,
             "total_files": total_files,
-            "status": status
+            "status": status,
+            "error_msg": error_msg
         }
 
 
@@ -118,6 +120,7 @@ def display_progress_status():
             files_synced = data["files_synced"]
             total_files = data["total_files"]
             status = data["status"]
+            error_msg = data.get("error_msg")
 
             # Format status line
             if status == "completed":
@@ -128,7 +131,12 @@ def display_progress_status():
                     status_text = f"{status_icon} Completed (already in sync)"
             elif status == "failed":
                 status_icon = "❌"
-                status_text = f"{status_icon} Failed"
+                if error_msg:
+                    # Truncate error message if too long
+                    short_error = error_msg[:50] + "..." if len(error_msg) > 50 else error_msg
+                    status_text = f"{status_icon} FAILED: {short_error}"
+                else:
+                    status_text = f"{status_icon} FAILED"
             else:
                 if total_files > 0:
                     status_text = f"{phase}... ({files_synced}/{total_files} files)"
@@ -519,12 +527,73 @@ def download_nas_csv():
 
 
 
-def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, custom_nas_url=None):
+def load_nas_checksums(nas_csv_local):
+    """Load checksums from NAS CSV file
+
+    Args:
+        nas_csv_local: Path to NAS CSV file
+
+    Returns:
+        dict: {filename: sha256sum}
+    """
+    import csv
+    checksums = {}
+    with open(nas_csv_local, 'r', newline='') as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames:
+            reader.fieldnames = [name.strip() for name in reader.fieldnames]
+        for row in reader:
+            if not row:
+                continue
+            filename = (row.get('filename', '') or '').strip()
+            sha256 = (row.get('sha256sum', '') or '').strip()
+            if filename and sha256:
+                checksums[filename] = sha256
+    return checksums
+
+
+def compute_remote_hash(hostname, filepath, log_file=None):
+    """Compute SHA256 hash of a file on remote server
+
+    Args:
+        hostname: SSH hostname (user@host)
+        filepath: Full path to file on remote server
+        log_file: Optional file object to write logs to
+
+    Returns:
+        str: SHA256 hash or None if failed
+    """
+    cmd = f'sha256sum "{filepath}" | cut -d" " -f1'
+    result = subprocess.run(
+        ['ssh', hostname, cmd],
+        capture_output=True,
+        text=True,
+        timeout=600  # 10 minutes for hash computation
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    else:
+        log_print(log_file, f"      Failed to compute hash: {result.stderr}")
+        return None
+
+
+def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, custom_nas_url=None, nas_csv_local=None):
     """Download files from NAS HTTP server to GPU server one by one
 
     Uses wget -O to download and overwrite existing files automatically.
     Uses dot format (--progress=dot:mega) for cleaner log output.
-    After each successful download, updates sha256sum.csv on the GPU server.
+    After each successful download, verifies hash against NAS CSV.
+    If hash mismatch: recompute once, then retry download once.
+    If still mismatch after retry, stops sync for this server.
+
+    Verification flow for each file:
+        Download -> Compute Hash -> Match?
+          |-- Yes -> Success, next file
+          |-- No  -> Recompute Hash -> Match?
+                       |-- Yes -> Success (was transient)
+                       |-- No  -> Retry Download -> Compute Hash -> Match?
+                                    |-- Yes -> Success
+                                    |-- No  -> FATAL: Stop sync for this server
 
     Args:
         gpu_server: Server spec in format user@hostname:/path
@@ -532,13 +601,15 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, 
         log_file: Optional file object to write logs to
         server_name: Server name for progress tracking
         custom_nas_url: Optional custom NAS URL in format "ip:port"
+        nas_csv_local: Path to NAS CSV file for hash verification
 
     Returns:
-        int: Number of files successfully downloaded
+        tuple: (success_count, error_message) - error_message is None if all OK,
+               or a string describing the fatal error that should stop sync
     """
     if not files:
         log_print(log_file, "   ✅ No files to download")
-        return 0
+        return (0, None)
 
     # Extract hostname and path
     hostname, path = gpu_server.split(':')
@@ -548,6 +619,12 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, 
         http_url = f"http://{custom_nas_url}"
     else:
         http_url = f"http://{NAS_IP}:{HTTP_PORT}"
+
+    # Load expected checksums from NAS CSV
+    expected_checksums = {}
+    if nas_csv_local:
+        expected_checksums = load_nas_checksums(nas_csv_local)
+        log_print(log_file, f"   Loaded {len(expected_checksums)} checksums from NAS CSV")
 
     log_print(log_file, f"\n📥 Downloading {len(files)} file(s) from NAS...")
     log_print(log_file, f"   From: {http_url}")
@@ -561,9 +638,9 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, 
             log_print(log_file, f"   [{i}/{len(files)}] {filename}")
             log_print(log_file, f"      From: {file_url}")
             log_print(log_file, f"      To:   {dest_path}")
-            log_print(log_file, f"      [DRY RUN] Would update checksum after download")
+            log_print(log_file, f"      [DRY RUN] Would verify hash after download")
         log_print(log_file, f"\n   [DRY RUN] Would download {len(files)} file(s)")
-        return len(files)
+        return (len(files), None)
 
     success_count = 0
 
@@ -578,37 +655,100 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, 
         # Show progress
         log_print(log_file, f"   [{i}/{len(files)}] {filename}")
 
-        # Download file using wget with dot format for cleaner logs
-        # -O will overwrite existing file automatically (no need for rm)
-        # --progress=dot:mega shows progress in dot format (cleaner for logs)
-        wget_cmd = f'wget --progress=dot:mega "{file_url}" -O "{dest_path}"'
+        # Get expected hash
+        expected_hash = expected_checksums.get(filename)
+        if not expected_hash:
+            log_print(log_file, f"      ⚠️  No expected hash found in NAS CSV, skipping verification")
 
-        # Stream output to log file if provided
-        if log_file:
-            result = subprocess.run(
-                ['ssh', hostname, wget_cmd],
-                text=True,
-                stdout=log_file,
-                stderr=log_file,
-                timeout=3600  # 1 hour per file
-            )
-        else:
-            result = subprocess.run(
-                ['ssh', hostname, wget_cmd],
-                text=True,
-                timeout=3600  # 1 hour per file
-            )
+        # Try download (with one retry on hash mismatch)
+        max_attempts = 2
+        download_success = False
+        last_failure_reason = None  # Track why the last attempt failed
 
-        if result.returncode == 0:
+        for attempt in range(1, max_attempts + 1):
+            if attempt > 1:
+                log_print(log_file, f"      🔄 Retry attempt {attempt}/{max_attempts}...")
+
+            # Download file using wget with dot format for cleaner logs
+            # -O will overwrite existing file automatically (no need for rm)
+            # --progress=dot:mega shows progress in dot format (cleaner for logs)
+            wget_cmd = f'wget --progress=dot:mega "{file_url}" -O "{dest_path}"'
+
+            # Stream output to log file if provided
+            if log_file:
+                result = subprocess.run(
+                    ['ssh', hostname, wget_cmd],
+                    text=True,
+                    stdout=log_file,
+                    stderr=log_file,
+                    timeout=3600  # 1 hour per file
+                )
+            else:
+                result = subprocess.run(
+                    ['ssh', hostname, wget_cmd],
+                    text=True,
+                    timeout=3600  # 1 hour per file
+                )
+
+            if result.returncode != 0:
+                log_print(log_file, f"      ❌ wget failed with code {result.returncode}")
+                last_failure_reason = f"wget failed with code {result.returncode}"
+                continue  # Try again if we have retries left
+
+            # Download succeeded, now verify hash
+            if not expected_hash:
+                # No expected hash, skip verification
+                download_success = True
+                break
+
+            # Compute hash of downloaded file
+            log_print(log_file, f"      Computing hash...")
+            computed_hash = compute_remote_hash(hostname, dest_path, log_file)
+
+            if computed_hash is None:
+                log_print(log_file, f"      ❌ Failed to compute hash")
+                last_failure_reason = "hash computation failed"
+                continue  # Try again
+
+            if computed_hash == expected_hash:
+                log_print(log_file, f"      ✅ Hash verified: {computed_hash[:16]}...")
+                download_success = True
+                break
+
+            # Hash mismatch - recompute once to rule out transient error
+            log_print(log_file, f"      ⚠️  Hash mismatch! Expected: {expected_hash[:16]}..., Got: {computed_hash[:16]}...")
+            log_print(log_file, f"      Recomputing hash to confirm...")
+
+            recomputed_hash = compute_remote_hash(hostname, dest_path, log_file)
+
+            if recomputed_hash == expected_hash:
+                log_print(log_file, f"      ✅ Hash verified on recompute: {recomputed_hash[:16]}...")
+                download_success = True
+                break
+
+            # Still mismatch after recompute
+            if recomputed_hash is None:
+                log_print(log_file, f"      ❌ Recompute hash failed")
+                last_failure_reason = "hash recomputation failed"
+            elif recomputed_hash != computed_hash:
+                log_print(log_file, f"      ⚠️  Recomputed hash differs: {recomputed_hash[:16]}...")
+                last_failure_reason = f"hash mismatch (expected: {expected_hash[:16]}..., got: {recomputed_hash[:16]}...)"
+            else:
+                last_failure_reason = f"hash mismatch (expected: {expected_hash[:16]}..., got: {computed_hash[:16]}...)"
+
+            log_print(log_file, f"      ❌ Hash verification failed after recompute")
+            # Will retry download if attempts remain
+
+        if download_success:
             success_count += 1
 
-            # Calculate and update sha256-list.csv immediately after download
-            log_print(log_file, f"      Updating checksum for {filename}...")
+            # Update sha256-list.csv on the GPU server with verified hash
+            log_print(log_file, f"      Updating checksum in CSV...")
+            checksum_to_save = expected_hash if expected_hash else computed_hash
             checksum_cmd = f'cd "{path}" && ' \
-                          f'checksum=$(sha256sum "{filename}" | cut -d" " -f1) && ' \
                           f'{{ echo "filename,sha256sum"; ' \
                           f'{{ cat sha256-list.csv 2>/dev/null | grep -v "^filename,sha256sum$" | grep -v "^{filename}," || true; }} ; ' \
-                          f'echo "{filename},$checksum"; }} | ' \
+                          f'echo "{filename},{checksum_to_save}"; }} | ' \
                           f'{{ read header; echo "$header"; sort -t, -k1; }} > /tmp/sorted.csv && mv /tmp/sorted.csv sha256-list.csv'
 
             checksum_result = subprocess.run(
@@ -619,20 +759,22 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, 
             )
 
             if checksum_result.returncode == 0:
-                log_print(log_file, f"      ✅ Checksum updated")
+                log_print(log_file, f"      ✅ Checksum saved to CSV")
             else:
-                log_print(log_file, f"      ⚠️  Failed to update checksum: {checksum_result.stderr}")
+                log_print(log_file, f"      ⚠️  Failed to update CSV: {checksum_result.stderr}")
 
             # Update progress after successful download
             if server_name:
                 update_progress(server_name, "Downloading", success_count, len(files))
         else:
-            log_print(log_file, f"   ⚠️  Failed: {filename}")
-            if i <= 3:  # Show error for first few failures
-                log_print(log_file, f"      Error: wget returned code {result.returncode}")
+            # Failed after all retries - this is a fatal error, stop sync for this server
+            error_msg = f"{filename}: {last_failure_reason}"
+            log_print(log_file, f"   ❌ FATAL: {error_msg}")
+            log_print(log_file, f"   ❌ Stopping sync for this server")
+            return (success_count, error_msg)
 
-    log_print(log_file, f"   ✅ Downloaded {success_count}/{len(files)} file(s)")
-    return success_count
+    log_print(log_file, f"   ✅ Downloaded and verified {success_count}/{len(files)} file(s)")
+    return (success_count, None)
 
 
 
@@ -694,7 +836,16 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
             print_step(3, 4, "Download files from NAS")
         else:
             log_print(log_file, f"\n[Step 3/4] Download files from NAS")
-        success_count = download_files_from_nas(gpu_server, files_to_download, log_file, server_name, custom_nas_url)
+        success_count, error_msg = download_files_from_nas(
+            gpu_server, files_to_download, log_file, server_name, custom_nas_url, nas_csv_local
+        )
+
+        # Check for fatal error (hash verification failure)
+        if error_msg:
+            if server_name:
+                update_progress(server_name, "Failed", success_count, len(files_to_download), status="failed", error_msg=error_msg)
+            log_print(log_file, f"\n❌ Sync stopped due to error: {error_msg}")
+            return False
 
         if success_count < len(files_to_download):
             log_print(log_file, f"\n⚠️  Warning: Only {success_count}/{len(files_to_download)} files downloaded successfully")
