@@ -2067,8 +2067,10 @@ extension UNetFromNNC {
           return DynamicGraph.Tensor<FloatType>($0.1)[
             0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
         case 2:
+          let roundUpTokenLengthUncond = (tokenLengthUncond + 31) / 32 * 32
+          let roundUpTokenLengthCond = (tokenLengthCond + 31) / 32 * 32
           return DynamicGraph.Tensor<FloatType>($0.1)[
-            0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]]
+            0..<shape[0], 0..<max(roundUpTokenLengthUncond, roundUpTokenLengthCond), 0..<shape[2]]
         default:
           return $0.1
         }
@@ -2539,7 +2541,9 @@ extension UNetFromNNC {
       let shape = firstInput.shape
       let etUncond: DynamicGraph.Tensor<FloatType>
       let etCond: DynamicGraph.Tensor<FloatType>
-      if tokenLengthCond > tokenLengthUncond {
+      let roundUpTokenLengthUncond = (tokenLengthUncond + 31) / 32 * 32
+      let roundUpTokenLengthCond = (tokenLengthCond + 31) / 32 * 32
+      if roundUpTokenLengthCond > roundUpTokenLengthUncond {
         // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
         let xCond = firstInput[
           (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
@@ -2550,7 +2554,8 @@ extension UNetFromNNC {
           switch $0.0 {
           case 1:  // Offset for text condition.
             return DynamicGraph.Tensor<FloatType>($0.1)[
-              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+              0..<shape[0],
+              roundUpTokenLengthUncond..<(roundUpTokenLengthUncond + roundUpTokenLengthCond),
               0..<shape[2]
             ].copied()
           default:
@@ -2569,7 +2574,7 @@ extension UNetFromNNC {
           switch $0.0 {
           case 1:  // Offset for text condition.
             return DynamicGraph.Tensor<FloatType>($0.1)[
-              0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
+              0..<shape[0], 0..<roundUpTokenLengthUncond, 0..<shape[2]
             ].copied()
           default:
             return $0.1
@@ -2584,7 +2589,7 @@ extension UNetFromNNC {
           switch $0.0 {
           case 1:  // Offset for text condition.
             return DynamicGraph.Tensor<FloatType>($0.1)[
-              0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
+              0..<shape[0], 0..<roundUpTokenLengthUncond, 0..<shape[2]
             ].copied()
           default:
             return $0.1
@@ -2604,7 +2609,8 @@ extension UNetFromNNC {
           switch $0.0 {
           case 1:  // Offset for text condition.
             return DynamicGraph.Tensor<FloatType>($0.1)[
-              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+              0..<shape[0],
+              roundUpTokenLengthUncond..<(roundUpTokenLengthUncond + roundUpTokenLengthCond),
               0..<shape[2]
             ].copied()
           default:

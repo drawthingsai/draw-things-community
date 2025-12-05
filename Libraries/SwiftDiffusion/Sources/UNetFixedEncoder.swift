@@ -1571,39 +1571,70 @@ extension UNetFixedEncoder {
       )
       .0
       unetFixed.maxConcurrency = .limit(4)
+      let roundUpTokenLengthUncond = (tokenLengthUncond + 31) / 32 * 32
+      let roundUpTokenLengthCond = (tokenLengthCond + 31) / 32 * 32
       let txtRot: DynamicGraph.Tensor<FloatType>
       if isCfgEnabled {
         let txtRotaryEmbeddingUncond = Tensor<FloatType>(
-          from: ZImageRotaryPositionEmbedding(height: 0, width: 0, tokenLength: tokenLengthUncond)
+          from: ZImageRotaryPositionEmbedding(
+            height: 0, width: 0, tokenLength: roundUpTokenLengthUncond)
         ).toGPU(0)
         let txtRotaryEmbeddingCond = Tensor<FloatType>(
-          from: ZImageRotaryPositionEmbedding(height: 0, width: 0, tokenLength: tokenLengthCond)
+          from: ZImageRotaryPositionEmbedding(
+            height: 0, width: 0, tokenLength: roundUpTokenLengthCond)
         ).toGPU(0)
         txtRot = Functional.concat(
           axis: 1, graph.variable(txtRotaryEmbeddingUncond), graph.variable(txtRotaryEmbeddingCond))
       } else {
         let txtRotaryEmbedding = Tensor<FloatType>(
-          from: ZImageRotaryPositionEmbedding(height: 0, width: 0, tokenLength: tokenLengthCond)
+          from: ZImageRotaryPositionEmbedding(
+            height: 0, width: 0, tokenLength: roundUpTokenLengthCond)
         ).toGPU(0)
         txtRot = graph.variable(txtRotaryEmbedding)
       }
-      unetFixed.compile(inputs: [c, txtRot, timeEmbeds])
+      var capPadTokens: Tensor<FloatType>?
+      if (isCfgEnabled && roundUpTokenLengthUncond != tokenLengthUncond)
+        || roundUpTokenLengthCond != tokenLengthCond
+      {
+        let padLength =
+          isCfgEnabled
+          ? roundUpTokenLengthUncond - tokenLengthUncond + roundUpTokenLengthCond - tokenLengthCond
+          : roundUpTokenLengthCond - tokenLengthCond
+        capPadTokens = Tensor<FloatType>(.CPU, .HWC(1, padLength, 3_840))
+      } else {
+        capPadTokens = nil
+      }
+      unetFixed.compile(
+        inputs: [c, txtRot, timeEmbeds] + (capPadTokens.map { [graph.variable($0.toGPU(0))] } ?? [])
+      )
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
+        // let xPadToken = store.read("x_pad_token", kind: .CPU, codec: [.jit, .q6p, .q8p, .ezm7, externalData]).map { Tensor<FloatType>(from: $0) }
+        if let shape = capPadTokens?.shape,
+          let capPadToken =
+            (store.read(
+              "cap_pad_token", kind: .CPU, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+            ).map { Tensor<FloatType>(from: $0) })
+        {
+          for i in 0..<shape[1] {
+            capPadTokens?[0..<1, i..<(i + 1), 0..<3_840] = capPadToken.reshaped(.HWC(1, 1, 3840))
+          }
+        }
         if !loadedFromWeightsCache {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
       let conditions = unetFixed(
-        inputs: c, [txtRot, timeEmbeds]
+        inputs: c,
+        [txtRot, timeEmbeds] + (capPadTokens.map { [graph.variable($0.toGPU(0))] } ?? [])
       )
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       let rotaryEmbedding = Tensor<FloatType>(
         from: ZImageRotaryPositionEmbedding(
-          height: h, width: w, tokenLength: textLength)
+          height: h, width: w, tokenLength: (textLength + 31) / 32 * 32)
       ).toGPU(0)
       return (
         [graph.variable(rotaryEmbedding)] + conditions, nil

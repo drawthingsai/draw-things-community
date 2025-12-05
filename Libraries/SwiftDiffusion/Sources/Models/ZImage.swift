@@ -415,14 +415,59 @@ func ZImageFixed(
   let t = Input()
   let txtNorm = RMSNorm(epsilon: 1e-5, axis: [2], name: "cap_norm")
   let txtIn = Dense(count: channels, name: "cap_embedder")
-  var txtOut = txtIn(txtNorm(txt)).to(.Float32)
+  var txtOut = txtIn(txtNorm(txt))
+  let roundUpTokenLength = ((tokenLength.0 + 31) / 32 * 32, (tokenLength.1 + 31) / 32 * 32)
+  let capPadTokens: Input?
+  if roundUpTokenLength.0 != tokenLength.0 || roundUpTokenLength.1 != tokenLength.1 {
+    let padTokens = Input()
+    if tokenLength.0 > 0 {
+      var txtOut0 = txtOut.reshaped(
+        [batchSize, tokenLength.0, channels], offset: [0, 0, 0],
+        strides: [(tokenLength.0 + tokenLength.1) * channels, channels, 1]
+      ).contiguous()
+      if roundUpTokenLength.0 != tokenLength.0 {
+        let padTokens0 = padTokens.reshaped(
+          [batchSize, roundUpTokenLength.0 - tokenLength.0, channels], offset: [0, 0, 0],
+          strides: [
+            (roundUpTokenLength.0 - tokenLength.0 + roundUpTokenLength.1 - tokenLength.1)
+              * channels, channels, 1,
+          ]
+        ).contiguous()
+        txtOut0 = Functional.concat(axis: 1, txtOut0, padTokens0, flags: .disableOpt)
+      }
+      var txtOut1 = txtOut.reshaped(
+        [batchSize, tokenLength.1, channels], offset: [0, tokenLength.0, 0],
+        strides: [(tokenLength.0 + tokenLength.1) * channels, channels, 1]
+      ).contiguous()
+      if roundUpTokenLength.1 != tokenLength.1 {
+        let padTokens1 = padTokens.reshaped(
+          [batchSize, roundUpTokenLength.1 - tokenLength.1, channels],
+          offset: [0, roundUpTokenLength.0 - tokenLength.0, 0],
+          strides: [
+            (roundUpTokenLength.0 - tokenLength.0 + roundUpTokenLength.1 - tokenLength.1)
+              * channels, channels, 1,
+          ]
+        ).contiguous()
+        txtOut1 = Functional.concat(axis: 1, txtOut1, padTokens1, flags: .disableOpt)
+      }
+      txtOut = Functional.concat(axis: 1, txtOut0, txtOut1, flags: .disableOpt)
+    } else {
+      if roundUpTokenLength.1 != tokenLength.1 {
+        txtOut = Functional.concat(axis: 1, txtOut, padTokens, flags: .disableOpt)
+      }
+    }
+    capPadTokens = padTokens
+  } else {
+    capPadTokens = nil
+  }
+  txtOut = txtOut.to(.Float32)
   let (timeInMlp0, timeInMlp2, timeIn) = MLPEmbedder(
     channels: 256, intermediateSize: 1024, name: "t")
   let tOut = timeIn(t)
   var mappers = [ModelWeightMapper]()
   let segments: [Int]
-  if tokenLength.0 > 0 {
-    segments = [tokenLength.0, tokenLength.1]
+  if roundUpTokenLength.0 > 0 {
+    segments = [roundUpTokenLength.0, roundUpTokenLength.1]
   } else {
     segments = []
   }
@@ -430,7 +475,10 @@ func ZImageFixed(
     let (block, mapper) = ZImageTransformerBlock(
       prefix: "context_refiner.\(i)", name: "context_refiner", k: 128, h: channels / 128,
       b: batchSize,
-      t: (keyValue: tokenLength.0 + tokenLength.1, query: tokenLength.0 + tokenLength.1),
+      t: (
+        keyValue: roundUpTokenLength.0 + roundUpTokenLength.1,
+        query: roundUpTokenLength.0 + roundUpTokenLength.1
+      ),
       segments: segments, scaleFactor: (2, 2), modulation: false,
       usesFlashAttention: usesFlashAttention)
     txtOut = block(txtOut, txtRot)
@@ -467,5 +515,5 @@ func ZImageFixed(
     mapping["all_final_layer.2-1.adaLN_modulation.1.bias"] = [scale.bias.name]
     return mapping
   }
-  return (Model([txt, txtRot, t], outs), mapper)
+  return (Model([txt, txtRot, t] + (capPadTokens.map { [$0] } ?? []), outs), mapper)
 }
