@@ -1553,8 +1553,11 @@ extension UNetFixedEncoder {
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
       }
       precondition(timesteps.count > 0)
-      let unetFixed = ZImageFixed(batchSize: 1, textLength: textLength, channels: 3_840, layers: 30)
-        .0
+      let unetFixed = ZImageFixed(
+        batchSize: 1, textLength: textLength, channels: 3_840, layers: 30,
+        usesFlashAttention: usesFlashAttention ? .scale1 : .none
+      )
+      .0
       unetFixed.maxConcurrency = .limit(4)
       let txtRot = graph.variable(txtRotaryEmbedding)
       unetFixed.compile(inputs: [c0, txtRot, timeEmbeds])

@@ -2179,8 +2179,7 @@ extension TextEncoder {
     let externalData: DynamicGraph.Store.Codec =
       externalOnDemand || deviceProperties.memoryCapacity != .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
-    var tokenLength = tokens[0].shape[0] / 2
-    var tokens = tokens
+    let tokenLength = tokens[0].shape[0] / 2
     let textModel = Qwen3VL(
       FloatType.self, vocabularySize: 151_936,
       maxLength: tokenLength, width: 2_560,
