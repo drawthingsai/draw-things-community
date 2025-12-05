@@ -250,7 +250,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
             index..<(index + 1), 0..<shape[1]
           ].copied()
         } else {
-          return DynamicGraph.Tensor<FloatType>($0)[
+          return DynamicGraph.Tensor<Float>($0)[
             index..<(index + 1), 0..<shape[1], 0..<shape[2]
           ].copied()
         }
@@ -1206,12 +1206,16 @@ extension UNetFromNNC {
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      unet = ModelBuilderOrModel.model(
-        ZImage(
-          batchSize: 1, height: tiledHeight, width: tiledWidth, textLength: textLength,
-          channels: 3_840, layers: 30,
-          usesFlashAttention: usesFlashAttention ? .scale1 : .none
-        ).0)
+      unet = ModelBuilderOrModel.modelBuilder(
+        ModelBuilder {
+          let textLength = $0[2].shape[1]
+          return ZImage(
+            batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+            textLength: textLength,
+            channels: 3_840, layers: 30,
+            usesFlashAttention: usesFlashAttention ? .scale1 : .none
+          ).0
+        })
     case .hiDreamI1:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -2038,8 +2042,9 @@ extension UNetFromNNC {
         case 0:
           return DynamicGraph.Tensor<FloatType>($0.1)[
             0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-        case 1:
-          return $0.1
+        case 2:
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]]
         default:
           return $0.1
         }
@@ -2516,11 +2521,10 @@ extension UNetFromNNC {
           (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
         ]
         .copied()
-        let count = restInputs.count
         let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case count - 719:  // Offset for reference image.
+          case 1:  // Offset for text condition.
             return DynamicGraph.Tensor<FloatType>($0.1)[
               0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
               0..<shape[2]
@@ -2539,7 +2543,7 @@ extension UNetFromNNC {
         let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case count - 719:  // Offset for reference image.
+          case 1:  // Offset for text condition.
             return DynamicGraph.Tensor<FloatType>($0.1)[
               0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
             ].copied()
@@ -2551,11 +2555,10 @@ extension UNetFromNNC {
       } else {
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        let count = restInputs.count
         let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case count - 719:  // Offset for reference image.
+          case 1:  // Offset for text condition.
             return DynamicGraph.Tensor<FloatType>($0.1)[
               0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
             ].copied()
@@ -2575,7 +2578,7 @@ extension UNetFromNNC {
         let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case count - 719:  // Offset for reference image.
+          case 1:  // Offset for text condition.
             return DynamicGraph.Tensor<FloatType>($0.1)[
               0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
               0..<shape[2]

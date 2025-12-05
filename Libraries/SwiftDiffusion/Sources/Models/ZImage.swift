@@ -102,7 +102,8 @@ private func FeedForward(
 }
 
 private func ZImageTransformerBlock(
-  prefix: String, name: String, k: Int, h: Int, b: Int, t: (Int, Int), scaleFactor: (Float, Float),
+  prefix: String, name: String, k: Int, h: Int, b: Int, t: (keyValue: Int, query: Int),
+  segments: [Int], scaleFactor: (Float, Float),
   modulation: Bool, usesFlashAttention: FlashAttentionLevel
 ) -> (Model, ModelWeightMapper) {
   let x = Input()
@@ -123,12 +124,12 @@ private func ZImageTransformerBlock(
     out = chunks[0] .* out
   }
   out = out.to(.Float16)
-  var keys = tokeys(out).reshaped([b, t.0, h, k])
+  var keys = tokeys(out).reshaped([b, t.keyValue, h, k])
   var queries: Model.IO
-  if t.0 != t.1 {
+  if t.keyValue != t.query {
     queries = toqueries(
-      out.reshaped([b, t.1, k * h], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1])
-    ).reshaped([b, t.1, h, k])
+      out.reshaped([b, t.query, k * h], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1])
+    ).reshaped([b, t.query, h, k])
   } else {
     queries = toqueries(out).reshaped([b, t.0, h, k])
   }
@@ -141,10 +142,11 @@ private func ZImageTransformerBlock(
   }
   var values = tovalues(out)
   values = values.reshaped([b, t.0, h, k])
-  if t.0 != t.1 {
+  if t.keyValue != t.query {
     queries = Functional.cmul(
       left: queries,
-      right: rot.reshaped([b, t.1, 1, k], offset: [0, 0, 0, 0], strides: [t.0 * k, k, k, 1]))
+      right: rot.reshaped(
+        [b, t.query, 1, k], offset: [0, 0, 0, 0], strides: [t.keyValue * k, k, k, 1]))
   } else {
     queries = Functional.cmul(left: queries, right: rot)
   }
@@ -153,41 +155,113 @@ private func ZImageTransformerBlock(
   case .scale1:
     queries = (1.0 / Float(k).squareRoot().squareRoot()) * queries
     keys = (1.0 / Float(k).squareRoot().squareRoot()) * keys
-    out = ScaledDotProductAttention(scale: 1)(
-      queries, keys, values
-    )
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1)
+    if segments.count > 1 {
+      var offset = 0
+      var outs = [Model.IO]()
+      for segment in segments {
+        let query = queries.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.query * h * k, h * k, k, 1])
+        let key = keys.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+        let value = values.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+        outs.append(scaledDotProductAttention(query, key, value))
+        offset += segment
+      }
+      out = Concat(axis: 1)(outs)
+    } else {
+      out = scaledDotProductAttention(
+        queries, keys, values
+      )
+    }
   case .scaleMerged:
-    out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())(
-      queries, keys, values
-    )
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot())
+    if segments.count > 1 {
+      var offset = 0
+      var outs = [Model.IO]()
+      for segment in segments {
+        let query = queries.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.query * h * k, h * k, k, 1])
+        let key = keys.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+        let value = values.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+        outs.append(scaledDotProductAttention(query, key, value))
+        offset += segment
+      }
+      out = Concat(axis: 1)(outs)
+    } else {
+      out = scaledDotProductAttention(
+        queries, keys, values
+      )
+    }
   case .none:
     queries = (1.0 / Float(k).squareRoot().squareRoot()) * queries
     keys = (1.0 / Float(k).squareRoot().squareRoot()) * keys
-    keys = keys.transposed(1, 2)
-    queries = queries.transposed(1, 2)
-    values = values.transposed(1, 2)
-    var outs = [Model.IO]()
-    for i in 0..<(b * h) {
-      let key = keys.reshaped([1, t.0, k], offset: [i, 0, 0], strides: [t.0 * k, k, 1])
-      let query = queries.reshaped(
-        [1, t.1, k], offset: [i, 0, 0], strides: [t.1 * k, k, 1])
-      let value = values.reshaped(
-        [1, t.0, k], offset: [i, 0, 0], strides: [t.0 * k, k, 1])
-      var dot = Matmul(transposeB: (1, 2))(query, key)
-      if let last = outs.last {
-        dot.add(dependencies: [last])
+    if segments.count > 1 {
+      var offset = 0
+      var finalOuts = [Model.IO]()
+      for segment in segments {
+        var subQueries = queries.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.query * h * k, h * k, k, 1])
+        var subKeys = keys.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+        var subValues = values.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1])
+        subKeys = subKeys.transposed(1, 2)
+        subQueries = subQueries.transposed(1, 2)
+        subValues = subValues.transposed(1, 2)
+        var outs = [Model.IO]()
+        for i in 0..<(b * h) {
+          let key = subKeys.reshaped(
+            [1, segment, k], offset: [i, 0, 0], strides: [segment * k, k, 1])
+          let query = subQueries.reshaped(
+            [1, segment, k], offset: [i, 0, 0], strides: [segment * k, k, 1])
+          let value = subValues.reshaped(
+            [1, segment, k], offset: [i, 0, 0], strides: [segment * k, k, 1])
+          var dot = Matmul(transposeB: (1, 2))(query, key)
+          if let last = outs.last {
+            dot.add(dependencies: [last])
+          }
+          dot = dot.reshaped([segment, segment])
+          dot = dot.softmax()
+          dot = dot.reshaped([1, segment, segment])
+          outs.append(dot * value)
+        }
+        finalOuts.append(Concat(axis: 0)(outs).reshaped([b, h, segment, k]).transposed(1, 2))
+        offset += segment
       }
-      dot = dot.reshaped([t.1, t.0])
-      dot = dot.softmax()
-      dot = dot.reshaped([1, t.1, t.0])
-      outs.append(dot * value)
+      out = Concat(axis: 1)(finalOuts)
+    } else {
+      keys = keys.transposed(1, 2)
+      queries = queries.transposed(1, 2)
+      values = values.transposed(1, 2)
+      var outs = [Model.IO]()
+      for i in 0..<(b * h) {
+        let key = keys.reshaped(
+          [1, t.keyValue, k], offset: [i, 0, 0], strides: [t.keyValue * k, k, 1])
+        let query = queries.reshaped(
+          [1, t.query, k], offset: [i, 0, 0], strides: [t.query * k, k, 1])
+        let value = values.reshaped(
+          [1, t.keyValue, k], offset: [i, 0, 0], strides: [t.keyValue * k, k, 1])
+        var dot = Matmul(transposeB: (1, 2))(query, key)
+        if let last = outs.last {
+          dot.add(dependencies: [last])
+        }
+        dot = dot.reshaped([t.query, t.keyValue])
+        dot = dot.softmax()
+        dot = dot.reshaped([1, t.query, t.keyValue])
+        outs.append(dot * value)
+      }
+      out = Concat(axis: 0)(outs).reshaped([b, h, t.query, k]).transposed(1, 2)
     }
-    out = Concat(axis: 0)(outs).reshaped([b, h, t.1, k]).transposed(1, 2)
   }
   let xIn: Model.IO
-  if t.0 > t.1 {
-    xIn = x.reshaped([b, t.1, h * k], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1])
-    out = out.reshaped([b, t.1, h * k])
+  if t.keyValue > t.query {
+    xIn = x.reshaped(
+      [b, t.query, h * k], offset: [0, 0, 0], strides: [t.keyValue * h * k, h * k, 1])
+    out = out.reshaped([b, t.query, h * k])
   } else {
     xIn = x
     out = out.reshaped([b, t.0, h * k])
@@ -265,20 +339,21 @@ func ZImage(
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = ZImageTransformerBlock(
       prefix: "noise_refiner.\(i)", name: "noise_refiner", k: 128, h: channels / 128, b: 1,
-      t: (h * w, h * w), scaleFactor: (4, 32), modulation: true,
+      t: (keyValue: h * w, query: h * w), segments: [], scaleFactor: (4, 32), modulation: true,
       usesFlashAttention: usesFlashAttention)
     xOut = block([xOut, xRot] + chunks)
     adaLNChunks.append(contentsOf: chunks)
     mappers.append(mapper)
   }
   var out = Functional.concat(axis: 1, xOut, txtIn)
+  let rotResized = rot.reshaped(.NHWC(1, h * w + textLength, 1, 128))
   for i in 0..<layers {
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = ZImageTransformerBlock(
       prefix: "layers.\(i)", name: "", k: 128, h: channels / 128, b: 1,
-      t: (h * w + textLength, i == layers - 1 ? h * w : h * w + textLength), scaleFactor: (4, 32),
-      modulation: true, usesFlashAttention: usesFlashAttention)
-    out = block([out, rot] + chunks)
+      t: (keyValue: h * w + textLength, query: i == layers - 1 ? h * w : h * w + textLength),
+      segments: [], scaleFactor: (4, 32), modulation: true, usesFlashAttention: usesFlashAttention)
+    out = block([out, rotResized] + chunks)
     adaLNChunks.append(contentsOf: chunks)
     mappers.append(mapper)
   }
@@ -330,7 +405,7 @@ private func ZImageTransformerBlockFixed(
 }
 
 func ZImageFixed(
-  batchSize: Int, textLength: Int, channels: Int, layers: Int,
+  batchSize: Int, tokenLength: (Int, Int), channels: Int, layers: Int,
   usesFlashAttention: FlashAttentionLevel
 ) -> (
   Model, ModelWeightMapper
@@ -345,10 +420,18 @@ func ZImageFixed(
     channels: 256, intermediateSize: 1024, name: "t")
   let tOut = timeIn(t)
   var mappers = [ModelWeightMapper]()
+  let segments: [Int]
+  if tokenLength.0 > 0 {
+    segments = [tokenLength.0, tokenLength.1]
+  } else {
+    segments = []
+  }
   for i in 0..<2 {
     let (block, mapper) = ZImageTransformerBlock(
       prefix: "context_refiner.\(i)", name: "context_refiner", k: 128, h: channels / 128,
-      b: batchSize, t: (textLength, textLength), scaleFactor: (2, 2), modulation: false,
+      b: batchSize,
+      t: (keyValue: tokenLength.0 + tokenLength.1, query: tokenLength.0 + tokenLength.1),
+      segments: segments, scaleFactor: (2, 2), modulation: false,
       usesFlashAttention: usesFlashAttention)
     txtOut = block(txtOut, txtRot)
     mappers.append(mapper)

@@ -1540,27 +1540,54 @@ extension UNetFixedEncoder {
       let textLength = c0.shape[1]
       let h = startHeight / 2
       let w = startWidth / 2
-      let txtRotaryEmbedding = Tensor<FloatType>(
-        from: ZImageRotaryPositionEmbedding(height: 0, width: 0, tokenLength: textLength)
-      ).toGPU(0)
       var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(
           Tensor<FloatType>(
             from: timeEmbedding(
-              timestep: 1_000 - timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+              timestep: 1_000 - timestep, batchSize: batchSize, embeddingSize: 256,
+              maxPeriod: 10_000)
           ).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
       }
+      var c = graph.variable(
+        .GPU(0),
+        .HWC(batchSize, (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond, 2560),
+        of: FloatType.self)
+      if isCfgEnabled {
+        c[0..<batchSize, 0..<tokenLengthUncond, 0..<2560] =
+          c0[0..<batchSize, 0..<tokenLengthUncond, 0..<2560]
+        c[0..<batchSize, tokenLengthUncond..<(tokenLengthCond + tokenLengthUncond), 0..<2560] =
+          c0[batchSize..<(batchSize * 2), 0..<tokenLengthCond, 0..<2560]
+      } else {
+        c[0..<batchSize, 0..<tokenLengthCond, 0..<2560] =
+          c0[0..<batchSize, 0..<tokenLengthCond, 0..<2560]
+      }
       precondition(timesteps.count > 0)
       let unetFixed = ZImageFixed(
-        batchSize: 1, textLength: textLength, channels: 3_840, layers: 30,
+        batchSize: 1, tokenLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond),
+        channels: 3_840, layers: 30,
         usesFlashAttention: usesFlashAttention ? .scale1 : .none
       )
       .0
       unetFixed.maxConcurrency = .limit(4)
-      let txtRot = graph.variable(txtRotaryEmbedding)
-      unetFixed.compile(inputs: [c0, txtRot, timeEmbeds])
+      let txtRot: DynamicGraph.Tensor<FloatType>
+      if isCfgEnabled {
+        let txtRotaryEmbeddingUncond = Tensor<FloatType>(
+          from: ZImageRotaryPositionEmbedding(height: 0, width: 0, tokenLength: tokenLengthUncond)
+        ).toGPU(0)
+        let txtRotaryEmbeddingCond = Tensor<FloatType>(
+          from: ZImageRotaryPositionEmbedding(height: 0, width: 0, tokenLength: tokenLengthCond)
+        ).toGPU(0)
+        txtRot = Functional.concat(
+          axis: 1, graph.variable(txtRotaryEmbeddingUncond), graph.variable(txtRotaryEmbeddingCond))
+      } else {
+        let txtRotaryEmbedding = Tensor<FloatType>(
+          from: ZImageRotaryPositionEmbedding(height: 0, width: 0, tokenLength: tokenLengthCond)
+        ).toGPU(0)
+        txtRot = graph.variable(txtRotaryEmbedding)
+      }
+      unetFixed.compile(inputs: [c, txtRot, timeEmbeds])
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
@@ -1571,7 +1598,7 @@ extension UNetFixedEncoder {
         }
       }
       let conditions = unetFixed(
-        inputs: c0, [txtRot, timeEmbeds]
+        inputs: c, [txtRot, timeEmbeds]
       )
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       let rotaryEmbedding = Tensor<FloatType>(
