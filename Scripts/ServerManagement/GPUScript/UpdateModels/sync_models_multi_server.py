@@ -2,19 +2,20 @@
 """
 Multi-Server Model Sync with NAS HTTP Server
 
-Prerequisites:
-- NAS HTTP server must be running on root@dt-thpc-nas01:8000
-- Start server manually with: ./start_nas_http_server.sh
+This script automatically manages the NAS HTTP server lifecycle - starting it
+at the beginning and stopping it at the end.
 
 Workflow:
-1. Check if NAS HTTP server is accessible
-2. Load GPU servers from gpu_servers.txt
-3. Download NAS sha256-list.csv as source of truth
-4. For each GPU server:
+1. Start NAS HTTP server (if not already running)
+2. Check if NAS HTTP server is accessible
+3. Load GPU servers from gpu_servers.txt
+4. Download NAS sha256-list.csv as source of truth
+5. For each GPU server:
    a. Update checksums on GPU server using compare_checksums.py
    b. Compare GPU server CSV with NAS CSV to get files to download
    c. Download missing/corrupted files from NAS HTTP server
    d. Update GPU server checksums again to verify
+6. Stop NAS HTTP server
 
 Usage:
   # Perform actual sync (sequential)
@@ -30,6 +31,7 @@ Usage:
   python3 sync_models_multi_server.py --parallel --dry-run
 
 Notes:
+  - NAS HTTP server is automatically started/stopped by this script
   - In parallel mode, detailed output goes to sync-{hostname}.log files
   - Terminal shows real-time progress updates every 30 seconds
   - wget uses dot format (--progress=dot:mega) for cleaner logs
@@ -303,6 +305,148 @@ def get_files_to_download(gpu_csv_local, nas_csv_local, log_file=None):
     return files_to_download
 
 
+def start_nas_http_server():
+    """Start HTTP server on NAS for model distribution
+
+    The server binds to 0.0.0.0:8000 so it's accessible from both internal
+    and external networks. Clients connect via NAS_IP:HTTP_PORT (external)
+    or internal_ip:8000 (internal, configured in gpu_servers.txt).
+
+    Returns:
+        bool: True if server started successfully or already running, False otherwise
+    """
+    nas_bind_ip = "0.0.0.0"
+    nas_bind_port = 8000
+
+    print(f"\n🚀 Starting HTTP server on NAS...")
+    print(f"   Host: {NAS_HOST}")
+    print(f"   Path: {NAS_PATH}")
+    print(f"   Bind: {nas_bind_ip}:{nas_bind_port}")
+
+    # Note: We always start the server, even in dry-run mode, because we need
+    # it to download the CSV and determine what files would be synced.
+
+    # Check if already running
+    print(f"   Checking if server is already running...")
+    result = subprocess.run(
+        ['ssh', '-T', NAS_HOST, f'lsof -ti:{nas_bind_port}'],
+        capture_output=True,
+        text=True
+    )
+    existing_pid = result.stdout.strip()
+
+    if existing_pid:
+        print(f"   ✅ HTTP server already running (PID: {existing_pid})")
+        return True
+
+    # Start the HTTP server
+    print(f"   Starting HTTP server...")
+    start_cmd = f"setsid sh -c 'cd {NAS_PATH} && python3 -m http.server {nas_bind_port} --bind {nas_bind_ip} </dev/null >/dev/null 2>&1 &'"
+    subprocess.run(
+        ['ssh', '-T', '-n', NAS_HOST, start_cmd],
+        capture_output=True
+    )
+
+    print(f"   Server starting...")
+
+    # Wait for server to start
+    time.sleep(2)
+
+    # Verify it's listening
+    print(f"   Verifying server is listening...")
+    result = subprocess.run(
+        ['ssh', '-T', NAS_HOST, f'lsof -ti:{nas_bind_port}'],
+        capture_output=True,
+        text=True
+    )
+    verify_pid = result.stdout.strip()
+
+    if not verify_pid:
+        print(f"   ❌ Server started but not listening on port {nas_bind_port}")
+        return False
+
+    print(f"   ✅ HTTP server started successfully")
+    print(f"   PID: {verify_pid}")
+    return True
+
+
+def stop_nas_http_server():
+    """Stop HTTP server on NAS for model distribution
+
+    The server runs on port 8000 (bound to 0.0.0.0).
+
+    Returns:
+        bool: True if server stopped successfully or wasn't running, False otherwise
+    """
+    nas_bind_port = 8000
+
+    print(f"\n🛑 Stopping HTTP server on NAS...")
+    print(f"   Host: {NAS_HOST}")
+    print(f"   Port: {nas_bind_port}")
+
+    # Note: We always stop the server, even in dry-run mode, because we started it.
+
+    # Find process listening on the port
+    print(f"   Checking for running server...")
+    result = subprocess.run(
+        ['ssh', '-T', NAS_HOST, f'lsof -ti:{nas_bind_port}'],
+        capture_output=True,
+        text=True
+    )
+    existing_pid = result.stdout.strip()
+
+    if not existing_pid:
+        print(f"   ℹ️  No HTTP server running on port {nas_bind_port}")
+        return True
+
+    print(f"   Found server process (PID: {existing_pid})")
+
+    # Kill the process
+    print(f"   Stopping server...")
+    result = subprocess.run(
+        ['ssh', NAS_HOST, f'kill {existing_pid}'],
+        capture_output=True
+    )
+
+    if result.returncode != 0:
+        print(f"   ❌ Failed to stop server (PID: {existing_pid})")
+        print(f"   Try: ssh {NAS_HOST} 'kill -9 {existing_pid}'")
+        return False
+
+    # Wait a moment for graceful shutdown
+    time.sleep(1)
+
+    # Verify it's stopped
+    result = subprocess.run(
+        ['ssh', '-T', NAS_HOST, f'lsof -ti:{nas_bind_port}'],
+        capture_output=True,
+        text=True
+    )
+    verify_pid = result.stdout.strip()
+
+    if verify_pid:
+        print(f"   ⚠️  Server still running, forcing shutdown...")
+        subprocess.run(
+            ['ssh', NAS_HOST, f'kill -9 {verify_pid}'],
+            capture_output=True
+        )
+        time.sleep(1)
+
+        # Final check
+        result = subprocess.run(
+            ['ssh', '-T', NAS_HOST, f'lsof -ti:{nas_bind_port}'],
+            capture_output=True,
+            text=True
+        )
+        final_pid = result.stdout.strip()
+        if final_pid:
+            print(f"   ❌ Failed to force stop server")
+            return False
+
+    print(f"   ✅ HTTP server stopped successfully")
+    return True
+
+
 def check_nas_http_server():
     """Check if NAS HTTP server is accessible
 
@@ -331,9 +475,6 @@ def check_nas_http_server():
         return True
     else:
         print(f"   ❌ NAS HTTP server is NOT accessible")
-        print(f"\n   Please start the NAS HTTP server first:")
-        print(f"   On NAS: cd /root/utils && ./start_nas_http_server.sh")
-        print(f"   Or run: ssh {NAS_HOST} 'cd /root/utils && ./start_nas_http_server.sh'")
         return False
 
 
@@ -671,14 +812,20 @@ Examples:
     print(f"Server List: gpu_servers.txt")
 
     try:
-        # Step 1: Check if NAS HTTP server is accessible
-        print_step(1, 4, "Check NAS HTTP server")
+        # Step 1: Start NAS HTTP server
+        print_step(1, 5, "Start NAS HTTP server")
+        if not start_nas_http_server():
+            print("\n❌ Failed to start NAS HTTP server. Exiting.")
+            sys.exit(1)
+
+        # Step 2: Check if NAS HTTP server is accessible
+        print_step(2, 5, "Check NAS HTTP server")
         if not check_nas_http_server():
             print("\n❌ NAS HTTP server is not accessible. Exiting.")
             sys.exit(1)
 
-        # Step 2: Load GPU servers
-        print_step(2, 4, "Load GPU servers from gpu_servers.txt")
+        # Step 3: Load GPU servers
+        print_step(3, 5, "Load GPU servers from gpu_servers.txt")
         servers = load_gpu_servers()
 
         if not servers:
@@ -692,16 +839,16 @@ Examples:
             else:
                 print(f"  {i}. {server}")
 
-        # Step 3: Download NAS CSV (source of truth) via HTTP
-        print_step(3, 4, "Download NAS CSV (source of truth)")
+        # Step 4: Download NAS CSV (source of truth) via HTTP
+        print_step(4, 5, "Download NAS CSV (source of truth)")
         nas_csv_local = download_nas_csv()
 
         if not nas_csv_local:
             print("❌ Failed to download NAS CSV")
             sys.exit(1)
 
-        # Step 4: Sync each GPU server
-        print_step(4, 4, "Sync GPU servers")
+        # Step 5: Sync each GPU server
+        print_step(5, 5, "Sync GPU servers")
 
         results = {}
 
@@ -794,20 +941,26 @@ Examples:
 
         if success_count == len(servers):
             print("\n🎉 All servers synced successfully!")
-            sys.exit(0)
+            exit_code = 0
         else:
             print(f"\n⚠️  {len(servers) - success_count} server(s) failed to sync")
-            sys.exit(1)
+            exit_code = 1
 
     except KeyboardInterrupt:
         print("\n\n⚠️  Sync interrupted by user")
-        sys.exit(1)
+        exit_code = 1
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        exit_code = 1
+
+    finally:
+        # Always stop the NAS HTTP server at the end
+        stop_nas_http_server()
+
+    sys.exit(exit_code)
 
 
 if __name__ == '__main__':
