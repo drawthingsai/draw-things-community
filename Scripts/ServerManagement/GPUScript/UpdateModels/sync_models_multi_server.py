@@ -32,7 +32,7 @@ Usage:
 
 Notes:
   - NAS HTTP server is automatically started/stopped by this script
-  - In parallel mode, detailed output goes to sync-{hostname}.log files
+  - In parallel mode, detailed output goes to logs/sync-{hostname}.log files
   - Terminal shows real-time progress updates every 30 seconds
   - wget uses dot format (--progress=dot:mega) for cleaner logs
 """
@@ -145,7 +145,7 @@ def display_progress_status():
 
             # Get log filename
             hostname = server.split('@')[-1].split(':')[0]
-            log_file_name = f"sync-{hostname}.log"
+            log_file_name = f"logs/sync-{hostname}.log"
 
             print(f"[{hostname:15}] {status_text:40} | Log: {log_file_name}")
 
@@ -222,9 +222,10 @@ def update_gpu_server_checksums(gpu_server, log_file=None):
     """
     log_print(log_file, f"\n📊 Updating checksums on {gpu_server}...")
 
-    # Extract hostname for CSV file
+    # Extract hostname for CSV file - save in logs directory
     hostname = gpu_server.split('@')[-1].split(':')[0]
-    gpu_csv_local = f"sha256-list-{hostname}.csv"
+    logs_dir = SCRIPT_DIR / "logs"
+    gpu_csv_local = str(logs_dir / f"sha256-list-{hostname}.csv")
 
     if DRY_RUN:
         log_print(log_file, f"   [DRY RUN] Downloading existing checksums (read-only)")
@@ -495,7 +496,8 @@ def download_nas_csv():
     print(f"\n📥 Downloading NAS CSV (source of truth) via HTTP...")
 
     nas_csv_url = f"http://{NAS_IP}:{HTTP_PORT}/sha256-list.csv"
-    nas_csv_local = SCRIPT_DIR / 'nas-sha256-list.csv'
+    logs_dir = SCRIPT_DIR / "logs"
+    nas_csv_local = logs_dir / 'nas-sha256-list.csv'
 
     if DRY_RUN:
         # In dry-run mode, still download the CSV for comparison purposes
@@ -951,6 +953,10 @@ Examples:
     args = parser.parse_args()
     DRY_RUN = args.dry_run
 
+    # Create logs directory if it doesn't exist
+    logs_dir = SCRIPT_DIR / "logs"
+    logs_dir.mkdir(exist_ok=True)
+
     print("="*70)
     print("Multi-Server Model Sync with NAS HTTP Server")
     if DRY_RUN:
@@ -1006,12 +1012,12 @@ Examples:
         if args.parallel:
             # Parallel execution - sync all servers simultaneously
             print(f"\n🚀 Syncing {len(servers)} servers in parallel...")
-            print(f"   Detailed logs will be written to sync-*.log files\n")
+            print(f"   Detailed logs will be written to logs/sync-*.log files\n")
 
             # Display initial status
             for server, custom_nas in servers:
                 hostname = server.split('@')[-1].split(':')[0]
-                log_filename = f"sync-{hostname}.log"
+                log_filename = f"logs/sync-{hostname}.log"
                 update_progress(hostname, "Starting", 0, 0)
                 print(f"[{hostname:15}] Starting...{' '*25} | Log: {log_filename}")
 
@@ -1034,7 +1040,7 @@ Examples:
             with ThreadPoolExecutor(max_workers=len(servers)) as executor:
                 # Submit all server sync tasks
                 future_to_server = {
-                    executor.submit(sync_server_with_logging, server, nas_csv_local, ".", custom_nas): (server, custom_nas)
+                    executor.submit(sync_server_with_logging, server, nas_csv_local, str(logs_dir), custom_nas): (server, custom_nas)
                     for server, custom_nas in servers
                 }
 

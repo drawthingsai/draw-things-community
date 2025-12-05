@@ -674,9 +674,14 @@ def main():
             print(f"Remote directory mode: {ssh_host}:{dir_path}")
 
             # Create a local CSV file based on the remote hostname
+            # Save in logs subdirectory
+            script_dir = Path(__file__).parent
+            logs_dir = script_dir / "logs"
+            logs_dir.mkdir(exist_ok=True)
+
             # Extract hostname from ssh_host (user@hostname -> hostname)
             hostname = ssh_host.split('@')[-1] if '@' in ssh_host else ssh_host
-            csv_file1 = f"sha256-list-{hostname}.csv"
+            csv_file1 = str(logs_dir / f"sha256-list-{hostname}.csv")
 
             # Try to download existing CSV from remote host first
             if not dry_run:
