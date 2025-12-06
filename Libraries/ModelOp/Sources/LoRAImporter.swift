@@ -164,7 +164,13 @@ public enum LoRAImporter {
         activationFfnScaling: [:],
         numberOfReferenceImages: 0)
     case .zImage:
-      fatalError()
+      (unet, unetMapper) = ZImage(
+        batchSize: 1, height: 64, width: 64, textLength: 32, channels: 3840, layers: 30,
+        usesFlashAttention: .scale1)
+      (unetFixed, unetFixedMapper) = ZImageFixed(
+        batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 32,
+        usesFlashAttention: .scale1
+      )
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -331,7 +337,17 @@ public enum LoRAImporter {
           ]
         tEmb = nil
       case .zImage:
-        fatalError()
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 32, 2560), of: FloatType.self),
+          graph.variable(
+            Tensor<FloatType>(
+              from: ZImageRotaryPositionEmbedding(
+                height: 0, width: 0, tokenLength: 32, imagePaddedLength: 0))),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -496,7 +512,18 @@ public enum LoRAImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .zImage:
-        fatalError()
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: ZImageRotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 32, imagePaddedLength: 0)))
+          ]
+          + ZImageFixedOutputShapes(
+            batchSize: 1, tokenLength: 32, channels: 3840, layers: 30
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .kandinsky21, .v1, .v2:
         fatalError()
       }
@@ -824,6 +851,9 @@ public enum LoRAImporter {
       let isQwenImage = stateDict.keys.contains {
         $0.contains("transformer_blocks_37_attn_") || $0.contains("transformer_blocks.59.attn.")
       }
+      let isZImage = stateDict.keys.contains {
+        $0.contains("layers_29_feed_forward_w3") || $0.contains("layers.29.feed_forward.w3.")
+      }
       let isSDOrSDXL = stateDict.keys.contains {
         $0.hasSuffix(
           "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -846,9 +876,9 @@ public enum LoRAImporter {
       // Only confident about these if it is SD or SDXL. In any other cases, prefer the force version.
       switch (
         isSDOrSDXL, isSD3Medium, isSD3Large, isPixArtSigmaXL, isFlux1, isHunyuan, isWan21_1_3B,
-        isWan22_5B, isWan21_14B, isHiDream, isQwenImage
+        isWan22_5B, isWan21_14B, isHiDream, isQwenImage, isZImage
       ) {
-      case (true, false, false, false, false, false, false, false, false, false, false):
+      case (true, false, false, false, false, false, false, false, false, false, false, false):
         if let tokey = stateDict.first(where: {
           $0.key.hasSuffix(
             "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -897,27 +927,29 @@ public enum LoRAImporter {
           }
           throw Error.modelVersionFailed
         }
-      case (false, true, false, false, false, false, false, false, false, false, false):
+      case (false, true, false, false, false, false, false, false, false, false, false, false):
         return forceVersionOr(.sd3)
-      case (false, false, true, false, false, false, false, false, false, false, false):
+      case (false, false, true, false, false, false, false, false, false, false, false, false):
         return forceVersionOr(.sd3Large)
-      case (false, false, false, true, false, false, false, false, false, false, false):
+      case (false, false, false, true, false, false, false, false, false, false, false, false):
         return forceVersionOr(.pixart)
-      case (false, false, false, false, true, false, false, false, false, false, false):
+      case (false, false, false, false, true, false, false, false, false, false, false, false):
         return forceVersionOr(.flux1)
-      case (false, false, false, false, false, true, false, false, false, false, false):
+      case (false, false, false, false, false, true, false, false, false, false, false, false):
         return forceVersionOr(.hunyuanVideo)
-      case (false, false, false, false, false, false, true, false, false, false, false):
+      case (false, false, false, false, false, false, true, false, false, false, false, false):
         return forceVersionOr(.wan21_1_3b)
-      case (false, false, false, false, false, false, false, true, false, false, false):
+      case (false, false, false, false, false, false, false, true, false, false, false, false):
         return forceVersionOr(.wan22_5b)
-      case (false, false, false, false, false, false, false, false, true, false, false),
-        (false, false, false, false, false, false, true, true, true, false, false):
+      case (false, false, false, false, false, false, false, false, true, false, false, false),
+        (false, false, false, false, false, false, true, true, true, false, false, false):
         return forceVersionOr(.wan21_14b)
-      case (false, false, false, false, false, false, false, false, false, true, false):
+      case (false, false, false, false, false, false, false, false, false, true, false, false):
         return forceVersionOr(.hiDreamI1)
-      case (false, false, false, false, false, false, false, false, false, false, true):
+      case (false, false, false, false, false, false, false, false, false, false, true, false):
         return forceVersionOr(.qwenImage)
+      case (false, false, false, false, false, false, false, false, false, false, false, true):
+        return forceVersionOr(.zImage)
       default:
         if let forceVersion = forceVersion {
           return forceVersion
@@ -1279,13 +1311,13 @@ public enum LoRAImporter {
           }
         }
       case .qwenImage:
-        if let tensorDescLlama = stateDict["qwen25"] {
-          try archive.with(tensorDescLlama) {
+        if let tensorDescQwen25 = stateDict["qwen25"] {
+          try archive.with(tensorDescQwen25) {
             let tensor = Tensor<FloatType>(from: $0)
             store.write("string_to_param_qwen25", tensor: tensor)
-            let textEmbeddingLengthLlama =
-              tensorDescLlama.shape.count > 1 ? tensorDescLlama.shape[0] : 1
-            guard textEmbeddingLengthLlama == textEmbeddingLength else {
+            let textEmbeddingLengthQwen25 =
+              tensorDescQwen25.shape.count > 1 ? tensorDescQwen25.shape[0] : 1
+            guard textEmbeddingLengthQwen25 == textEmbeddingLength else {
               textEmbeddingLength = 0
               return
             }
@@ -1293,7 +1325,19 @@ public enum LoRAImporter {
           }
         }
       case .zImage:
-        fatalError()
+        if let tensorDescQwen3 = stateDict["qwen3"] {
+          try archive.with(tensorDescQwen3) {
+            let tensor = Tensor<FloatType>(from: $0)
+            store.write("string_to_param_qwen3", tensor: tensor)
+            let textEmbeddingLengthQwen3 =
+              tensorDescQwen3.shape.count > 1 ? tensorDescQwen3.shape[0] : 1
+            guard textEmbeddingLengthQwen3 == textEmbeddingLength else {
+              textEmbeddingLength = 0
+              return
+            }
+            didImportTIEmbedding = true
+          }
+        }
       case .auraflow:
         fatalError()
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:

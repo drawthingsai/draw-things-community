@@ -1564,12 +1564,35 @@ extension UNetFixedEncoder {
           c0[0..<batchSize, 0..<tokenLengthCond, 0..<2560]
       }
       precondition(timesteps.count > 0)
-      let unetFixed = ZImageFixed(
-        batchSize: batchSize, tokenLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond),
-        channels: 3_840, layers: 30,
-        usesFlashAttention: usesFlashAttention ? .scale1 : .none
-      )
-      .0
+      let unetFixed: Model
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        && canRunLoRASeparately
+      if shouldRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unetFixed =
+          LoRAZImageFixed(
+            batchSize: batchSize,
+            tokenLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond),
+            channels: 3_840, layers: 30,
+            usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+            LoRAConfiguration: configuration
+          ).0
+      } else {
+        unetFixed =
+          ZImageFixed(
+            batchSize: batchSize,
+            tokenLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond),
+            channels: 3_840, layers: 30,
+            usesFlashAttention: usesFlashAttention ? .scale1 : .none
+          ).0
+      }
       unetFixed.maxConcurrency = .limit(4)
       let roundUpTokenLengthUncond = (tokenLengthUncond + 31) / 32 * 32
       let roundUpTokenLengthCond = (tokenLengthCond + 31) / 32 * 32
@@ -1651,7 +1674,43 @@ extension UNetFixedEncoder {
             }
           }
         }
-        if !loadedFromWeightsCache {
+        if !lora.isEmpty {
+          if !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0 && canRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<30).map {
+                return ($0, $0)
+              })
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, format, shape in
+                let result = loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                  store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
+                )
+                switch result {
+                case .continue(let updatedName, _, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail  // Skip loading.
+                  }
+                case .fail, .final(_):
+                  return result
+                }
+              }
+            }
+          } else {
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
+              }
+            }
+          }
+        } else if !loadedFromWeightsCache {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }

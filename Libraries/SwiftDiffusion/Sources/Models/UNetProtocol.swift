@@ -1206,16 +1206,32 @@ extension UNetFromNNC {
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
-      unet = ModelBuilderOrModel.modelBuilder(
-        ModelBuilder {
-          let textLength = $0[$0.count - 130].shape[1]
-          return ZImage(
-            batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
-            textLength: textLength,
-            channels: 3_840, layers: 30,
-            usesFlashAttention: usesFlashAttention ? .scale1 : .none
-          ).0
-        })
+      if didRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let textLength = $0[$0.count - 130].shape[1]
+            return LoRAZImage(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: textLength,
+              channels: 3_840, layers: 30,
+              usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+              LoRAConfiguration: configuration
+            ).0
+          })
+      } else {
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let textLength = $0[$0.count - 130].shape[1]
+            return ZImage(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: textLength,
+              channels: 3_840, layers: 30,
+              usesFlashAttention: usesFlashAttention ? .scale1 : .none
+            ).0
+          })
+      }
     case .hiDreamI1:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
