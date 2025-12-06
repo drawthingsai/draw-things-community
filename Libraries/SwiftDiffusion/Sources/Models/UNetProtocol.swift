@@ -1382,11 +1382,14 @@ extension UNetFromNNC {
       guard name.hasSuffix("-0]") else {  // Only weights, not bias.
         return false
       }
+      // These are generic for MMDiT.
       if name.contains("c_q") || name.contains("c_k") || name.contains("c_v")  // context q, k, v projection
         || name.contains("x_q") || name.contains("x_k") || name.contains("x_v")  // x q, k, v projection
         || name.contains("c_w1") || name.contains("c_w2")  // HiDream's context FFN, no proj up.
         || name.contains("x_shared") || name.contains("x_moe_w1") || name.contains("x_moe_w2")  // HiDream's x FFN, including MoE, half proj up (w1), all proj down (w2).
         || name.contains("x_linear1") || name.contains("c_linear1")  // Wan 2.1, Hunyuan, FLUX.1 FFNs, proj up.
+        || name.contains("-q-") || name.contains("-k-") || name.contains("-v-")  // q, k, v projection for Z Image.
+        || name.contains("_gate_proj-") || name.contains("_down_proj-")  // Z Image FFN half proj up (gate), all proj down.
       {
         return true
       }
