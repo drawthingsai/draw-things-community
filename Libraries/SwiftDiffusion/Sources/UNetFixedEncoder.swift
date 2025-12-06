@@ -1577,18 +1577,18 @@ extension UNetFixedEncoder {
       if isCfgEnabled {
         let txtRotaryEmbeddingUncond = Tensor<FloatType>(
           from: ZImageRotaryPositionEmbedding(
-            height: 0, width: 0, tokenLength: roundUpTokenLengthUncond)
+            height: 0, width: 0, tokenLength: roundUpTokenLengthUncond, imagePaddedLength: 0)
         ).toGPU(0)
         let txtRotaryEmbeddingCond = Tensor<FloatType>(
           from: ZImageRotaryPositionEmbedding(
-            height: 0, width: 0, tokenLength: roundUpTokenLengthCond)
+            height: 0, width: 0, tokenLength: roundUpTokenLengthCond, imagePaddedLength: 0)
         ).toGPU(0)
         txtRot = Functional.concat(
           axis: 1, graph.variable(txtRotaryEmbeddingUncond), graph.variable(txtRotaryEmbeddingCond))
       } else {
         let txtRotaryEmbedding = Tensor<FloatType>(
           from: ZImageRotaryPositionEmbedding(
-            height: 0, width: 0, tokenLength: roundUpTokenLengthCond)
+            height: 0, width: 0, tokenLength: roundUpTokenLengthCond, imagePaddedLength: 0)
         ).toGPU(0)
         txtRot = graph.variable(txtRotaryEmbedding)
       }
@@ -1614,21 +1614,30 @@ extension UNetFixedEncoder {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       let tiledH = tiledHeight / 2
       let tiledW = tiledWidth / 2
-      /*
       let imagePaddedLength = (tiledH * tiledW + 31) / 32 * 32 - tiledH * tiledW
       var xPadTokens: Tensor<FloatType>?
       if imagePaddedLength > 0 {
-        xPadTokens = Tensor<FloatType>(.)
+        xPadTokens = Tensor<FloatType>(.CPU, .HWC(batchSize, imagePaddedLength, 3840))
       } else {
         xPadTokens = nil
       }
-       */
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
-        // let xPadToken = store.read("x_pad_token", kind: .CPU, codec: [.jit, .q6p, .q8p, .ezm7, externalData]).map { Tensor<FloatType>(from: $0) }
+        if let shape = xPadTokens?.shape,
+          let xPadToken =
+            (store.read("x_pad_token", kind: .CPU, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+              .map { Tensor<FloatType>(from: $0) })
+        {
+          let padToken = xPadToken.reshaped(.HWC(1, 1, 3840))
+          for i in 0..<shape[0] {
+            for j in 0..<shape[1] {
+              xPadTokens?[i..<(i + 1), j..<(j + 1), 0..<3_840] = padToken
+            }
+          }
+        }
         if let shape = capPadTokens?.shape,
           let capPadToken =
             (store.read(
@@ -1653,10 +1662,12 @@ extension UNetFixedEncoder {
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       let rotaryEmbedding = Tensor<FloatType>(
         from: ZImageRotaryPositionEmbedding(
-          height: h, width: w, tokenLength: (textLength + 31) / 32 * 32)
+          height: h, width: w, tokenLength: (textLength + 31) / 32 * 32,
+          imagePaddedLength: imagePaddedLength)
       ).toGPU(0)
       return (
-        [graph.variable(rotaryEmbedding)] + conditions, nil
+        (xPadTokens.map { [graph.variable($0.toGPU(0))] } ?? []) + [graph.variable(rotaryEmbedding)]
+          + conditions, nil
       )
     case .hiDreamI1:
       let h = startHeight / 2

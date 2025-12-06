@@ -242,8 +242,9 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         ].copied()
       }
   case .zImage:
-    return conditions[0..<2]
-      + conditions[2..<conditions.count].map {
+    let count = conditions.count
+    return conditions[0..<(count - 129)]
+      + conditions[(count - 129)..<conditions.count].map {
         let shape = $0.shape
         if shape.count == 2 {
           return DynamicGraph.Tensor<Float>($0)[
@@ -1207,7 +1208,7 @@ extension UNetFromNNC {
         && canRunLoRASeparately
       unet = ModelBuilderOrModel.modelBuilder(
         ModelBuilder {
-          let textLength = $0[2].shape[1]
+          let textLength = $0[$0.count - 130].shape[1]
           return ZImage(
             batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
             textLength: textLength,
@@ -1680,6 +1681,7 @@ extension UNetFromNNC {
     index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int,
     modifier: SamplerModifier, referenceImageCount: Int
   ) -> [DynamicGraph.AnyTensor] {
+    let count = inputs.count
     return inputs.enumerated().map {
       // For FLUX.1, if it is the first one, we need to handle its slicing (rotary encoding).
       switch version {
@@ -1848,7 +1850,7 @@ extension UNetFromNNC {
           return finalEncoding
         }
       case .zImage:
-        if $0.0 == 0 {
+        if $0.0 == count - 131 {
           let shape = $0.1.shape
           let tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
           let graph = $0.1.graph
@@ -2060,16 +2062,17 @@ extension UNetFromNNC {
         // TODO: TeaCache insert here.
         return
       }
+      let count = inputs.count
       let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().map {
         let shape = $0.1.shape
         switch $0.0 {
         case 0:
           return DynamicGraph.Tensor<FloatType>($0.1)[
             0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-        case 2:
+        case count - 130:
           let roundUpTokenLengthUncond = (tokenLengthUncond + 31) / 32 * 32
           let roundUpTokenLengthCond = (tokenLengthCond + 31) / 32 * 32
-          return DynamicGraph.Tensor<FloatType>($0.1)[
+          return DynamicGraph.Tensor<Float>($0.1)[
             0..<shape[0], 0..<max(roundUpTokenLengthUncond, roundUpTokenLengthCond), 0..<shape[2]]
         default:
           return $0.1
@@ -2543,6 +2546,7 @@ extension UNetFromNNC {
       let etCond: DynamicGraph.Tensor<FloatType>
       let roundUpTokenLengthUncond = (tokenLengthUncond + 31) / 32 * 32
       let roundUpTokenLengthCond = (tokenLengthCond + 31) / 32 * 32
+      let count = restInputs.count
       if roundUpTokenLengthCond > roundUpTokenLengthUncond {
         // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
         let xCond = firstInput[
@@ -2552,8 +2556,8 @@ extension UNetFromNNC {
         let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case 1:  // Offset for text condition.
-            return DynamicGraph.Tensor<FloatType>($0.1)[
+          case count - 130:  // Offset for text condition.
+            return DynamicGraph.Tensor<Float>($0.1)[
               0..<shape[0],
               roundUpTokenLengthUncond..<(roundUpTokenLengthUncond + roundUpTokenLengthCond),
               0..<shape[2]
@@ -2572,8 +2576,8 @@ extension UNetFromNNC {
         let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case 1:  // Offset for text condition.
-            return DynamicGraph.Tensor<FloatType>($0.1)[
+          case count - 130:  // Offset for text condition.
+            return DynamicGraph.Tensor<Float>($0.1)[
               0..<shape[0], 0..<roundUpTokenLengthUncond, 0..<shape[2]
             ].copied()
           default:
@@ -2587,8 +2591,8 @@ extension UNetFromNNC {
         let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case 1:  // Offset for text condition.
-            return DynamicGraph.Tensor<FloatType>($0.1)[
+          case count - 130:  // Offset for text condition.
+            return DynamicGraph.Tensor<Float>($0.1)[
               0..<shape[0], 0..<roundUpTokenLengthUncond, 0..<shape[2]
             ].copied()
           default:
@@ -2607,8 +2611,8 @@ extension UNetFromNNC {
         let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case 1:  // Offset for text condition.
-            return DynamicGraph.Tensor<FloatType>($0.1)[
+          case count - 130:  // Offset for text condition.
+            return DynamicGraph.Tensor<Float>($0.1)[
               0..<shape[0],
               roundUpTokenLengthUncond..<(roundUpTokenLengthUncond + roundUpTokenLengthCond),
               0..<shape[2]

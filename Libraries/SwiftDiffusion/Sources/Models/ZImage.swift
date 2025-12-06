@@ -2,9 +2,10 @@ import Foundation
 import NNC
 
 public func ZImageRotaryPositionEmbedding(
-  height: Int, width: Int, tokenLength: Int, heads: Int = 1
+  height: Int, width: Int, tokenLength: Int, imagePaddedLength: Int, heads: Int = 1
 ) -> Tensor<Float> {
-  var rotTensor = Tensor<Float>(.CPU, .NHWC(1, height * width + tokenLength, heads, 128))
+  var rotTensor = Tensor<Float>(
+    .CPU, .NHWC(1, height * width + imagePaddedLength + tokenLength, heads, 128))
   let dim0 = 32
   let dim1 = 48
   let dim2 = 48
@@ -38,7 +39,36 @@ public func ZImageRotaryPositionEmbedding(
       }
     }
   }
-  let offset = height * width
+  if imagePaddedLength > 0 {
+    for i in (height * width)..<(height * width + imagePaddedLength) {
+      for j in 0..<heads {
+        for k in 0..<(dim0 / 2) {
+          let theta = Double(0) * 1.0 / pow(256, Double(k) * 2 / Double(dim0))
+          let sintheta = sin(theta)
+          let costheta = cos(theta)
+          rotTensor[0, i, j, k * 2] = Float(costheta)
+          rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
+        }
+        for k in 0..<(dim1 / 2) {
+          let theta =
+            Double(0) * 1.0 / pow(256, Double(k) * 2 / Double(dim1))
+          let sintheta = sin(theta)
+          let costheta = cos(theta)
+          rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+          rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+        }
+        for k in 0..<(dim2 / 2) {
+          let theta =
+            Double(0) * 1.0 / pow(256, Double(k) * 2 / Double(dim2))
+          let sintheta = sin(theta)
+          let costheta = cos(theta)
+          rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+          rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+        }
+      }
+    }
+  }
+  let offset = height * width + imagePaddedLength
   for i in 0..<tokenLength {
     for j in 0..<heads {
       for k in 0..<(dim0 / 2) {
@@ -344,27 +374,40 @@ func ZImage(
   var xOut = imgIn(
     x.reshaped([batchSize, h, 2, w, 2, 16]).permuted(0, 1, 3, 2, 4, 5).contiguous()
       .reshaped([batchSize, h * w, 2 * 2 * 16], format: .NHWC)
-  ).to(.Float32)
+  )
   var mappers = [ModelWeightMapper]()
   var adaLNChunks = [Input]()
-  let xRot = rot.reshaped([1, h * w, 1, 128])
+  let roundUpHW = (h * w + 31) / 32 * 32
+  let xPadTokens: Input?
+  if roundUpHW != h * w {
+    let padTokens = Input()
+    xOut = Functional.concat(axis: 1, xOut, padTokens, flags: .disableOpt)
+    xPadTokens = padTokens
+  } else {
+    xPadTokens = nil
+  }
+  xOut = xOut.to(.Float32)
+  let xRot = rot.reshaped([1, roundUpHW, 1, 128])
   for i in 0..<2 {
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = ZImageTransformerBlock(
       prefix: "noise_refiner.\(i)", name: "noise_refiner", k: 128, h: channels / 128, b: batchSize,
-      t: (keyValue: h * w, query: h * w), segments: [], scaleFactor: (4, 32), modulation: true,
+      t: (keyValue: roundUpHW, query: roundUpHW), segments: [], scaleFactor: (4, 32),
+      modulation: true,
       usesFlashAttention: usesFlashAttention)
     xOut = block([xOut, xRot] + chunks)
     adaLNChunks.append(contentsOf: chunks)
     mappers.append(mapper)
   }
   var out = Functional.concat(axis: 1, xOut, txtIn)
-  let rotResized = rot.reshaped(.NHWC(1, h * w + textLength, 1, 128))
+  let rotResized = rot.reshaped(.NHWC(1, roundUpHW + textLength, 1, 128))
   for i in 0..<layers {
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = ZImageTransformerBlock(
       prefix: "layers.\(i)", name: "", k: 128, h: channels / 128, b: batchSize,
-      t: (keyValue: h * w + textLength, query: i == layers - 1 ? h * w : h * w + textLength),
+      t: (
+        keyValue: roundUpHW + textLength, query: i == layers - 1 ? h * w : roundUpHW + textLength
+      ),
       segments: [], scaleFactor: (4, 32), modulation: true, usesFlashAttention: usesFlashAttention)
     out = block([out, rotResized] + chunks)
     adaLNChunks.append(contentsOf: chunks)
@@ -391,7 +434,7 @@ func ZImage(
     mapping["all_final_layer.2-1.linear.bias"] = [projOut.bias.name]
     return mapping
   }
-  return (Model([x, rot, txtIn] + adaLNChunks, [out]), mapper)
+  return (Model([x] + (xPadTokens.map { [$0] } ?? []) + [rot, txtIn] + adaLNChunks, [out]), mapper)
 }
 
 private func ZImageTransformerBlockFixed(
