@@ -159,6 +159,16 @@ public struct LoRALoader {
       return infix
     }
     replaced = replaced.filter { !$0.isEmpty }
+    if replaced.count > 3, let _ = Int(replaced[replaced.count - 2]),
+      let _ = Int(replaced[replaced.count - 3])
+    {
+      // If last 3 are all integers, remove the 3rd to last one.
+      if replaced.count - 3 > 2 {
+        replaced.remove(at: replaced.count - 3)
+      } else {
+        replaced.remove(at: replaced.count - 2)
+      }
+    }
     let originalPrefix = replaced.joined(separator: "-")
     let isUp = name.contains("lora_up")
     var rank = 0
