@@ -596,7 +596,6 @@ public func ZImageFixedOutputShapes(
     outs.append(contentsOf: outputShapes)
   }
   for i in 0..<layers {
-    let contextBlockPreOnly = i == layers - 1
     let outputShapes = ZImageTransformerBlockFixedOutputShapes(
       prefix: "layers.\(i)", name: "", batchSize: batchSize, channels: channels)
     outs.append(contentsOf: outputShapes)
