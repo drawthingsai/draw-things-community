@@ -83,7 +83,7 @@ public func LoRAConvolution(
 
 public func LoRADense(
   count: Int, configuration: LoRANetworkConfiguration, noBias: Bool = false,
-  flags: Functional.GEMMFlag = [], index: Int? = nil, name: String = ""
+  flags: Functional.GEMMFlag = [], prefix: String? = nil, index: Int? = nil, name: String = ""
 ) -> Model {
   let dense = Dense(count: count, noBias: noBias, flags: flags, name: name)
   guard configuration.rank > 0 else {
@@ -91,10 +91,18 @@ public func LoRADense(
   }
   if let keys = configuration.keys {
     let key: String
-    if let index = index {
-      key = "\(name)-\(index)-"
+    if let prefix = prefix {
+      if let index = index {
+        key = "\(prefix)-\(index)-\(name)-"
+      } else {
+        key = "\(prefix)-"
+      }
     } else {
-      key = "\(name)-"
+      if let index = index {
+        key = "\(name)-\(index)-"
+      } else {
+        key = "\(name)-"
+      }
     }
     // If cannot find existing key that matches the prefix, return vanilla dense layer.
     if !keys.contains(where: { $0.hasPrefix(key) }) {

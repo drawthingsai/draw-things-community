@@ -633,10 +633,11 @@ private func LoRAFeedForward(
 {
   let x = Input()
   let w1 = LoRADense(
-    count: intermediateSize, configuration: configuration, noBias: true, index: index,
+    count: intermediateSize, configuration: configuration, noBias: true, flags: [.Float16],
+    prefix: name, index: index,
     name: "\(name)_gate_proj")
   let w3 = LoRADense(
-    count: intermediateSize, configuration: configuration, noBias: true, index: index,
+    count: intermediateSize, configuration: configuration, noBias: true, prefix: name, index: index,
     name: "\(name)_up_proj")
   var out = w3(x)
   if let scaleFactor = scaleFactor {
@@ -644,7 +645,7 @@ private func LoRAFeedForward(
   }
   out = out .* w1(x).swish()
   let w2 = LoRADense(
-    count: hiddenSize, configuration: configuration, noBias: true, index: index,
+    count: hiddenSize, configuration: configuration, noBias: true, prefix: name, index: index,
     name: "\(name)_down_proj")
   out = w2(out).to(.Float32)
   if let scaleFactor = scaleFactor {
@@ -671,7 +672,7 @@ private func LoRAZImageTransformerBlock(
     count: k * h, configuration: configuration, noBias: true, index: layerIndex,
     name: name.isEmpty ? "k" : "\(name)_k")
   let toqueries = LoRADense(
-    count: k * h, configuration: configuration, noBias: true, index: layerIndex,
+    count: k * h, configuration: configuration, noBias: true, flags: [.Float16], index: layerIndex,
     name: name.isEmpty ? "q" : "\(name)_q")
   let tovalues = LoRADense(
     count: k * h, configuration: configuration, noBias: true, index: layerIndex,

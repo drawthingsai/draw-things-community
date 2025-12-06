@@ -130,7 +130,7 @@ public struct LoRALoader {
       let size = shape.reduce(MemoryLayout<FloatType>.size, *)
       memset($0.baseAddress!, 0, size)
     }
-    let components = name.split(separator: "-")
+    var components = name.split(separator: "-")
     guard components.count >= 3, let index = Int(components[2]),
       let originalIndex = LoRAMapping[index]
     else {
@@ -149,19 +149,17 @@ public struct LoRALoader {
         }
       }
     }
-    var infix = components[1].replacingOccurrences(of: "lora_up", with: "").replacingOccurrences(
-      of: "lora_down", with: "")
-    // In case infix has _, remove them.
-    if infix.hasSuffix("_") {
-      infix = String(infix.prefix(upTo: infix.index(before: infix.endIndex)))
+    components[2] = "\(originalIndex)"
+    var replaced: [String] = components.map {
+      var infix = $0.replacingOccurrences(of: "lora_up", with: "").replacingOccurrences(
+        of: "lora_down", with: "")
+      if infix.hasSuffix("_") {
+        infix = String(infix.prefix(upTo: infix.index(before: infix.endIndex)))
+      }
+      return infix
     }
-    let originalPrefix: String
-    // This is problematic especially there is more than 1 part of the naming.
-    if infix.isEmpty {
-      originalPrefix = "\(components[0])-\(originalIndex)-0]"
-    } else {
-      originalPrefix = "\(components[0])-\(infix)-\(originalIndex)-0]"
-    }
+    replaced = replaced.filter { !$0.isEmpty }
+    let originalPrefix = replaced.joined(separator: "-")
     let isUp = name.contains("lora_up")
     var rank = 0
     let tensorShape = tensor.shape
