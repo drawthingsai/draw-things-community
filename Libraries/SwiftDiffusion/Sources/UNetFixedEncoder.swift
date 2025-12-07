@@ -1545,7 +1545,7 @@ extension UNetFixedEncoder {
         let timeEmbed = graph.variable(
           Tensor<FloatType>(
             from: timeEmbedding(
-              timestep: 1_000 - timestep, batchSize: batchSize, embeddingSize: 256,
+              timestep: 1_000 - timestep, batchSize: 1, embeddingSize: 256,
               maxPeriod: 10_000)
           ).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<256] = timeEmbed
