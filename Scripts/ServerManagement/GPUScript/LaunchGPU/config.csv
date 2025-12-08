@@ -1,0 +1,12 @@
+# GPU Server Configuration
+# Format: remote_host, models_path, utils_path, lora_models_path, [--skip-tmpfs]
+#
+# Lines starting with # are comments
+# Empty lines are ignored
+
+root@dfw-026-001, /mnt/models/official-models, /root/utils, /mnt/loraModels, --skip-tmpfs
+root@dfw-032-002, /mnt/models/official-models, /root/utils, /mnt/loraModels, --skip-tmpfs
+root@dfw-039-004, /mnt/models/official-models, /root/utils, /mnt/loraModels, --skip-tmpfs
+root@dfw-043-003, /mnt/models/official-models, /root/utils, /mnt/loraModels, --skip-tmpfs
+root@dt-thpc-001, /mnt/models/official-models, /root/utils, /mnt/loraModels
+root@dt-thpc-002, /mnt/models/official-models, /root/utils, /mnt/loraModels

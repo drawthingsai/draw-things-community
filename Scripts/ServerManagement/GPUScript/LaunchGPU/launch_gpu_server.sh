@@ -3,11 +3,75 @@
 # Script to start 8 separate Docker containers, each running one gRPCServerCLI process
 # Each container will automatically restart if the process crashes
 # Usage:
-#   Local:  ./LaunchGPUServer.sh <address> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]
-#   Remote: ./LaunchGPUServer.sh <remote_host> <address> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]
+#   Remote: ./LaunchGPUServer.sh <remote_host> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]
+#   Local:  ./LaunchGPUServer.sh <address_or_hostname> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]
+#
+# For remote execution, the address is automatically derived from <remote_host> (e.g., root@dfw-026-001 -> dfw-026-001)
+#
+# Default paths (commonly used):
+#   models_path:      /mnt/models/official-models
+#   utils_path:       /root/utils
+#   lora_models_path: /mnt/loraModels
+#
+# Environment variables:
+#   PROXY_HOST - Proxy server host (default: 100.80.251.87)
+#   PROXY_PORT - Proxy server port (default: 50002)
+#   DRAW_THINGS_DIR - Path to draw-things repo for bazel commands (default: auto-detect)
 
 # Exit immediately if a command exits with a non-zero status
 set -e
+
+# Proxy server configuration (can be overridden via environment variables)
+PROXY_HOST="${PROXY_HOST:-100.80.251.87}"
+PROXY_PORT="${PROXY_PORT:-50002}"
+
+# Auto-detect draw-things directory (4 levels up from script location)
+DRAW_THINGS_DIR="${DRAW_THINGS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
+
+# Function to resolve hostname to IP address (via Tailscale)
+resolve_hostname_to_ip() {
+    local input="$1"
+
+    # Check if input is already an IP address (IPv4)
+    if [[ "$input" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "$input"
+        return 0
+    fi
+
+    # Resolve via Tailscale
+    local resolved_ip
+    resolved_ip=$(tailscale ip -4 "$input" 2>/dev/null)
+
+    if [ -z "$resolved_ip" ]; then
+        echo "Error: Could not resolve hostname '$input' via Tailscale" >&2
+        return 1
+    fi
+
+    echo "$resolved_ip"
+    return 0
+}
+
+# Function to remove GPU from proxy server
+remove_gpu_from_proxy() {
+    local address="$1"
+    local port_range="40001-40008"
+
+    echo "Removing GPU from proxy server..."
+    echo "  Proxy: ${PROXY_HOST}:${PROXY_PORT}"
+    echo "  GPU address: ${address}:${port_range}"
+
+    # Check if we're in a directory with bazel access
+    if [ -d "$DRAW_THINGS_DIR" ] && [ -f "$DRAW_THINGS_DIR/WORKSPACE" ]; then
+        echo "  Running: bazel run Apps:ProxyServerControlPanelCLI -- -h $PROXY_HOST -p $PROXY_PORT remove-gpu ${address}:${port_range}"
+        (cd "$DRAW_THINGS_DIR" && bazel run Apps:ProxyServerControlPanelCLI -- -h "$PROXY_HOST" -p "$PROXY_PORT" remove-gpu "${address}:${port_range}") || {
+            echo "  ⚠️ Warning: Failed to remove GPU from proxy server (may not exist or proxy unreachable)"
+        }
+        echo "  ✅ GPU removal command completed"
+    else
+        echo "  ⚠️ Warning: draw-things directory not found at $DRAW_THINGS_DIR"
+        echo "  Skipping proxy server GPU removal"
+    fi
+}
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,21 +82,40 @@ if [ $# -lt 4 ]; then
     echo "Error: Insufficient arguments"
     echo ""
     echo "Usage:"
+    echo "  Remote: $SCRIPT_NAME <remote_host> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]"
     echo "  Local:  $SCRIPT_NAME <address> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]"
-    echo "  Remote: $SCRIPT_NAME <remote_host> <address> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]"
     echo ""
     echo "Options:"
     echo "  --skip-tmpfs    Skip tmpfs overlay setup and use models path directly"
     echo ""
+    echo "Environment variables:"
+    echo "  PROXY_HOST       Proxy server host (default: 100.80.251.87)"
+    echo "  PROXY_PORT       Proxy server port (default: 50002)"
+    echo "  DRAW_THINGS_DIR  Path to draw-things repo (default: auto-detect)"
+    echo ""
+    echo "Default paths (commonly used):"
+    echo "  models_path:      /mnt/models/official-models"
+    echo "  utils_path:       /root/utils"
+    echo "  lora_models_path: /mnt/loraModels"
+    echo ""
     echo "Examples:"
-    echo "  Local:  $SCRIPT_NAME 192.168.1.100 /fast/models/official-models /root/utils /disk2/loraModels/"
-    echo "  Remote: $SCRIPT_NAME root@hostname 192.168.1.100 /fast/models/official-models /root/utils /disk2/loraModels/"
-    echo "  Skip tmpfs: $SCRIPT_NAME 192.168.1.100 /fast/models/official-models /root/utils /disk2/loraModels/ --skip-tmpfs"
+    echo "  Remote: $SCRIPT_NAME root@dfw-026-001 /mnt/models/official-models /root/utils /mnt/loraModels"
+    echo "  Local:  $SCRIPT_NAME 192.168.1.100 /mnt/models/official-models /root/utils /mnt/loraModels"
+    echo ""
+    echo "Note: For remote execution, address is derived from remote_host (e.g., root@dfw-026-001 -> dfw-026-001)"
+    echo "      Hostnames are resolved to IP via 'tailscale ip -4'"
     exit 1
 fi
 
-# Initialize skip tmpfs flag
+# Initialize flags
 SKIP_TMPFS=false
+
+# Parse optional flags from all arguments
+for arg in "$@"; do
+    case "$arg" in
+        --skip-tmpfs) SKIP_TMPFS=true ;;
+    esac
+done
 
 # Check if first argument is a remote host
 REMOTE_HOST=""
@@ -68,48 +151,49 @@ if [ -n "$REMOTE_HOST" ]; then
     echo "✅ SSH connection successful"
     echo ""
 
-    # Parse remaining arguments for remote execution
-    ADDRESS=$1
-    MODELS_PATH=$2
-    UTILS_PATH=$3
-    LORA_MODELS_PATH=$4
+    # Extract hostname from remote_host (strip user@ prefix)
+    ADDRESS_HOSTNAME="${REMOTE_HOST#*@}"
 
-    # Check for --skip-tmpfs flag
-    if [ "$5" = "--skip-tmpfs" ]; then
-        SKIP_TMPFS=true
-    fi
+    # Parse remaining arguments for remote execution
+    MODELS_PATH=$1
+    UTILS_PATH=$2
+    LORA_MODELS_PATH=$3
 
     # Validate argument count
     if [ -z "$LORA_MODELS_PATH" ]; then
         echo "Error: Missing required arguments"
-        echo "Usage: $SCRIPT_NAME $REMOTE_HOST <address> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]"
+        echo "Usage: $SCRIPT_NAME $REMOTE_HOST <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]"
+        exit 1
+    fi
+
+    # Resolve hostname to IP
+    RESOLVED_ADDRESS=$(resolve_hostname_to_ip "$ADDRESS_HOSTNAME")
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to resolve address '$ADDRESS_HOSTNAME'"
         exit 1
     fi
 
     echo "Configuration:"
-    echo "  Address: $ADDRESS"
+    echo "  Remote host: $REMOTE_HOST"
+    echo "  Address (hostname): $ADDRESS_HOSTNAME"
+    echo "  Address (resolved): $RESOLVED_ADDRESS"
     echo "  Models path: $MODELS_PATH"
     echo "  Utils path: $UTILS_PATH"
     echo "  LoRA models path: $LORA_MODELS_PATH"
     echo "  Skip tmpfs: $SKIP_TMPFS"
     echo ""
 
-    # Copy script and dependencies to remote server
-    echo "Copying scripts to remote server..."
-
-    # Create remote directory
-    REMOTE_DIR="${UTILS_PATH}/LaunchGPU"
-    ssh "$REMOTE_HOST" "mkdir -p $REMOTE_DIR"
-
-    # Copy all files from the script directory
-    scp -q "${SCRIPT_DIR}/"* "$REMOTE_HOST:$REMOTE_DIR/"
-    ssh "$REMOTE_HOST" "chmod +x $REMOTE_DIR/*.sh"
-
-    echo "✅ Scripts copied to $REMOTE_HOST:$REMOTE_DIR"
+    # Remove GPU from proxy server before launching
+    echo "=================================================="
+    echo "  Proxy Server GPU Removal"
+    echo "=================================================="
+    remove_gpu_from_proxy "$RESOLVED_ADDRESS"
     echo ""
 
-    # Build remote command
-    REMOTE_CMD="cd $REMOTE_DIR && sudo bash $SCRIPT_NAME $ADDRESS $MODELS_PATH $UTILS_PATH $LORA_MODELS_PATH"
+    # Build remote command (use resolved IP address)
+    # Scripts are expected to be synced via update_scripts.sh
+    REMOTE_DIR="${UTILS_PATH}/LaunchGPU"
+    REMOTE_CMD="cd $REMOTE_DIR && sudo bash $SCRIPT_NAME $RESOLVED_ADDRESS $MODELS_PATH $UTILS_PATH $LORA_MODELS_PATH"
     if [ "$SKIP_TMPFS" = true ]; then
         REMOTE_CMD="$REMOTE_CMD --skip-tmpfs"
     fi
@@ -128,14 +212,16 @@ fi
 
 # If we reach here, we're running locally
 # Configuration from command line arguments
-ADDRESS=$1
+ADDRESS_INPUT=$1
 MODELS_PATH=$2
 UTILS_PATH=$3
 LORA_MODELS_PATH=$4
 
-# Check for --skip-tmpfs flag
-if [ "$5" = "--skip-tmpfs" ]; then
-    SKIP_TMPFS=true
+# Resolve hostname to IP if needed (for local execution)
+ADDRESS=$(resolve_hostname_to_ip "$ADDRESS_INPUT")
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to resolve address '$ADDRESS_INPUT'"
+    exit 1
 fi
 
 # Validate that paths exist
@@ -158,7 +244,8 @@ echo "=================================================="
 echo "  Local GPU Server Launch"
 echo "=================================================="
 echo "Configuration:"
-echo "  Address: $ADDRESS"
+echo "  Address (input): $ADDRESS_INPUT"
+echo "  Address (resolved): $ADDRESS"
 echo "  Models path: $MODELS_PATH"
 echo "  Utils path: $UTILS_PATH"
 echo "  LoRA models path: $LORA_MODELS_PATH"
