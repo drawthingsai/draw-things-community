@@ -171,6 +171,9 @@ public final class ModelImporter {
     var isQwenImage = stateDict.keys.contains {
       $0.contains("transformer_blocks.59.txt_mlp.")
     }
+    var isZImage = stateDict.keys.contains {
+      $0.contains("layers.29.feed_forward.w3.")
+    }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
     let inputDim: Int
@@ -242,6 +245,7 @@ public final class ModelImporter {
       isHiDream = false
       isQwenImage = false
       isAuraFlow = false
+      isZImage = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -346,6 +350,12 @@ public final class ModelImporter {
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("single_transformer_blocks.31.attn.")
       }
+    } else if isZImage {
+      modelVersion = .zImage
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 1652
+      isDiffusersFormat = true
     } else {
       throw UnpickleError.tensorNotFound
     }
@@ -832,7 +842,18 @@ public final class ModelImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .zImage:
-        fatalError()
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: ZImageRotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 32, imagePaddedLength: 0)))
+          ]
+          + ZImageFixedOutputShapes(
+            batchSize: 1, tokenLength: 32, channels: 3840, layers: 30
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -1025,7 +1046,13 @@ public final class ModelImporter {
           batchSize: (1, 1), channels: 3072, layers: (4, 32),
           of: FloatType.self)
       case .zImage:
-        fatalError()
+        (unet, unetMapper) = ZImage(
+          batchSize: 1, height: 64, width: 64, textLength: 32, channels: 3840, layers: 30,
+          usesFlashAttention: .scale1)
+        (unetFixed, unetFixedMapper) = ZImageFixed(
+          batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 32,
+          usesFlashAttention: .scale1
+        )
       case .kandinsky21, .wurstchenStageB:
         fatalError()
       }
@@ -1124,7 +1151,15 @@ public final class ModelImporter {
           ]
         tEmb = nil
       case .zImage:
-        fatalError()
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 32, 2560), of: FloatType.self),
+          graph.variable(
+            Tensor<FloatType>(
+              from: ZImageRotaryPositionEmbedding(
+                height: 0, width: 0, tokenLength: 32, imagePaddedLength: 0))),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
       case .auraflow:
         crossattn = [
           graph.variable(.CPU, .HWC(1, 256, 2048), of: FloatType.self),
@@ -1228,6 +1263,15 @@ public final class ModelImporter {
           }
         }
       } else if modelVersion == .auraflow {
+        // Remove the model.diffusion_model / model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          } else if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
+          }
+        }
+      } else if modelVersion == .zImage {
         // Remove the model.diffusion_model / model prefix.
         for (key, value) in stateDict {
           if key.hasPrefix("model.diffusion_model.") {
@@ -1349,6 +1393,18 @@ public final class ModelImporter {
               try archive.with(encoderHidProjBiasDescriptor) { tensor in
                 let tensor = Tensor<FloatType>(from: tensor)
                 store.write("__encoder_hid_proj__[t-0-1]", tensor: tensor)
+              }
+            }
+            if modelVersion == .zImage, let xPadTokenDescriptor = stateDict["x_pad_token"],
+              let capPadTokenDescriptor = stateDict["cap_pad_token"]
+            {
+              try archive.with(xPadTokenDescriptor) { tensor in
+                let tensor = Tensor<FloatType>(from: tensor)
+                store.write("x_pad_token", tensor: tensor)
+              }
+              try archive.with(capPadTokenDescriptor) { tensor in
+                let tensor = Tensor<FloatType>(from: tensor)
+                store.write("cap_pad_token", tensor: tensor)
               }
             }
             var consumed = Set<String>()
@@ -1564,7 +1620,9 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .zImage:
-          fatalError()
+          if $0.keys.count != 713 {
+            throw Error.tensorWritesFailed
+          }
         case .kandinsky21, .wurstchenStageB:
           fatalError()
         }
@@ -1785,7 +1843,7 @@ extension ModelImporter {
       }
     case .wan21_1_3b, .wan21_14b:
       textEncoder = fileNames.first {
-        $0.hasSuffix("_umt5_xxl_encoder_q8p.ckpt")
+        $0.hasSuffix("_umt5_xxl_encoder_f16.ckpt")
       }
       clipEncoder = fileNames.first {
         $0.hasSuffix("_open_clip_xlm_roberta_large_vit_h14_f16.ckpt")
@@ -1806,14 +1864,16 @@ extension ModelImporter {
       }
     case .wan22_5b:
       textEncoder = fileNames.first {
-        $0.hasSuffix("_umt5_xxl_encoder_q8p.ckpt")
+        $0.hasSuffix("_umt5_xxl_encoder_f16.ckpt")
       }
     case .qwenImage:
       textEncoder = fileNames.first {
         $0.hasSuffix("_qwen_2.5_vl_7b_f16.ckpt")
       }
     case .zImage:
-      fatalError()
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_qwen_3_vl_4b_instruct_f16.ckpt")
+      }
     case .wurstchenStageC:
       textEncoder = nil
     case .kandinsky21, .wurstchenStageB:
@@ -2024,7 +2084,16 @@ extension ModelImporter {
       specification.noiseDiscretization = .rf(
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     case .zImage:
-      fatalError()
+      if specification.textEncoder == nil {
+        specification.textEncoder = "qwen_3_vl_4b_instruct_q8p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "flux_1_vae_f16.ckpt"
+      }
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
