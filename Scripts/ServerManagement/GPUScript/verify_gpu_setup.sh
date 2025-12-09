@@ -2,6 +2,20 @@
 
 # GPU Setup Verification Script
 # This script verifies that Docker, CUDA, and NVIDIA Container Toolkit are properly installed
+#
+# Usage:
+#   ./verify_gpu_setup.sh                    # Run locally
+#   ./verify_gpu_setup.sh user@hostname      # Run on remote host via SSH
+
+REMOTE_HOST="$1"
+
+# If remote host provided, run via SSH
+if [ -n "$REMOTE_HOST" ]; then
+    echo "Running verification on remote host: $REMOTE_HOST"
+    echo ""
+    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$REMOTE_HOST" 'bash -s' < "$0"
+    exit $?
+fi
 
 echo ""
 echo "🔍 GPU Server Setup Verification"
@@ -43,21 +57,8 @@ else
 fi
 echo ""
 
-# --- Check CUDA Toolkit ---
-echo "3️⃣  Checking CUDA Toolkit..."
-if command -v nvcc &> /dev/null; then
-    CUDA_VERSION=$(nvcc --version | grep "release" | awk '{print $5}' | cut -d',' -f1)
-    echo "   ✅ CUDA Toolkit is installed: version $CUDA_VERSION"
-    echo "      Path: $(which nvcc)"
-else
-    echo "   ❌ CUDA Toolkit not found (nvcc command not available)"
-    echo "      Note: You may need to source /etc/profile.d/cuda.sh or logout/login"
-    EXIT_CODE=1
-fi
-echo ""
-
 # --- Check NVIDIA Container Toolkit ---
-echo "4️⃣  Checking NVIDIA Container Toolkit..."
+echo "3️⃣  Checking NVIDIA Container Toolkit..."
 if command -v nvidia-ctk &> /dev/null; then
     NVIDIA_CTK_VERSION=$(nvidia-ctk --version 2>&1 | head -n 1)
     echo "   ✅ NVIDIA Container Toolkit is installed: $NVIDIA_CTK_VERSION"
@@ -68,7 +69,7 @@ fi
 echo ""
 
 # --- Check Docker GPU Integration ---
-echo "5️⃣  Checking Docker GPU Integration..."
+echo "4️⃣  Checking Docker GPU Integration..."
 if command -v docker &> /dev/null && sudo docker info &> /dev/null; then
     # Check if nvidia runtime is configured
     if sudo docker info 2>/dev/null | grep -q "nvidia"; then
@@ -98,13 +99,11 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo ""
     echo "You can now:"
     echo "  • Run nvidia-smi to check GPU status"
-    echo "  • Run nvcc --version to verify CUDA"
     echo "  • Run Docker containers with GPU access using --gpus all flag"
 else
     echo "⚠️  Some checks failed. Please review the output above."
     echo ""
     echo "Common fixes:"
-    echo "  • If CUDA is not in PATH, run: source /etc/profile.d/cuda.sh"
     echo "  • If Docker daemon is not running, run: sudo systemctl start docker"
     echo "  • A system reboot may be required after installation"
 fi
