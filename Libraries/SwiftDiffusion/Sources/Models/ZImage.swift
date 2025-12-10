@@ -342,21 +342,38 @@ private func ZImageTransformerBlock(
     out = chunks[3] .* out
   }
   out = residual + out
-  let mapper: ModelWeightMapper = { _ in
+  let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).attention.to_q.weight"] = [toqueries.weight.name]
-    mapping["\(prefix).attention.to_k.weight"] = [tokeys.weight.name]
-    mapping["\(prefix).attention.norm_q.weight"] = [normQ.weight.name]
-    mapping["\(prefix).attention.norm_k.weight"] = [normK.weight.name]
-    mapping["\(prefix).attention.to_v.weight"] = [tovalues.weight.name]
-    mapping["\(prefix).attention.to_out.0.weight"] = [unifyheads.weight.name]
-    mapping["\(prefix).attention_norm1.weight"] = [attentionNorm1.weight.name]
-    mapping["\(prefix).attention_norm2.weight"] = [attentionNorm2.weight.name]
-    mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
-    mapping["\(prefix).feed_forward.w2.weight"] = [w2.weight.name]
-    mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
-    mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
-    mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
+    switch format {
+    case .generativeModels:
+      mapping["\(prefix).attention.qkv.weight"] = [
+        toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
+      ]
+      mapping["\(prefix).attention.q_norm.weight"] = [normQ.weight.name]
+      mapping["\(prefix).attention.k_norm.weight"] = [normK.weight.name]
+      mapping["\(prefix).attention.out.weight"] = [unifyheads.weight.name]
+      mapping["\(prefix).attention_norm1.weight"] = [attentionNorm1.weight.name]
+      mapping["\(prefix).attention_norm2.weight"] = [attentionNorm2.weight.name]
+      mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
+      mapping["\(prefix).feed_forward.w2.weight"] = [w2.weight.name]
+      mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
+      mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
+      mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
+    case .diffusers:
+      mapping["\(prefix).attention.to_q.weight"] = [toqueries.weight.name]
+      mapping["\(prefix).attention.to_k.weight"] = [tokeys.weight.name]
+      mapping["\(prefix).attention.norm_q.weight"] = [normQ.weight.name]
+      mapping["\(prefix).attention.norm_k.weight"] = [normK.weight.name]
+      mapping["\(prefix).attention.to_v.weight"] = [tovalues.weight.name]
+      mapping["\(prefix).attention.to_out.0.weight"] = [unifyheads.weight.name]
+      mapping["\(prefix).attention_norm1.weight"] = [attentionNorm1.weight.name]
+      mapping["\(prefix).attention_norm2.weight"] = [attentionNorm2.weight.name]
+      mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
+      mapping["\(prefix).feed_forward.w2.weight"] = [w2.weight.name]
+      mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
+      mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
+      mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
+    }
     return mapping
   }
   return (Model([x, rot] + chunks, [out]), mapper)
@@ -428,13 +445,21 @@ public func ZImage(
     ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["all_x_embedder.2-1.weight"] = [imgIn.weight.name]
-    mapping["all_x_embedder.2-1.bias"] = [imgIn.bias.name]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["all_final_layer.2-1.linear.weight"] = [projOut.weight.name]
-    mapping["all_final_layer.2-1.linear.bias"] = [projOut.bias.name]
+    switch format {
+    case .generativeModels:
+      mapping["x_embedder.weight"] = [imgIn.weight.name]
+      mapping["x_embedder.bias"] = [imgIn.bias.name]
+      mapping["final_layer.linear.weight"] = [projOut.weight.name]
+      mapping["final_layer.linear.bias"] = [projOut.bias.name]
+    case .diffusers:
+      mapping["all_x_embedder.2-1.weight"] = [imgIn.weight.name]
+      mapping["all_x_embedder.2-1.bias"] = [imgIn.bias.name]
+      mapping["all_final_layer.2-1.linear.weight"] = [projOut.weight.name]
+      mapping["all_final_layer.2-1.linear.bias"] = [projOut.bias.name]
+    }
     return mapping
   }
   return (Model([x] + (xPadTokens.map { [$0] } ?? []) + [rot, txtIn] + adaLNChunks, [out]), mapper)
@@ -570,8 +595,14 @@ public func ZImageFixed(
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["all_final_layer.2-1.adaLN_modulation.1.weight"] = [scale.weight.name]
-    mapping["all_final_layer.2-1.adaLN_modulation.1.bias"] = [scale.bias.name]
+    switch format {
+    case .generativeModels:
+      mapping["final_layer.adaLN_modulation.1.weight"] = [scale.weight.name]
+      mapping["final_layer.adaLN_modulation.1.bias"] = [scale.bias.name]
+    case .diffusers:
+      mapping["all_final_layer.2-1.adaLN_modulation.1.weight"] = [scale.weight.name]
+      mapping["all_final_layer.2-1.adaLN_modulation.1.bias"] = [scale.bias.name]
+    }
     return mapping
   }
   return (Model([txt, txtRot, t] + (capPadTokens.map { [$0] } ?? []), outs), mapper)
@@ -872,21 +903,38 @@ private func LoRAZImageTransformerBlock(
     out = chunks[3] .* out
   }
   out = residual + out
-  let mapper: ModelWeightMapper = { _ in
+  let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).attention.to_q.weight"] = [toqueries.weight.name]
-    mapping["\(prefix).attention.to_k.weight"] = [tokeys.weight.name]
-    mapping["\(prefix).attention.norm_q.weight"] = [normQ.weight.name]
-    mapping["\(prefix).attention.norm_k.weight"] = [normK.weight.name]
-    mapping["\(prefix).attention.to_v.weight"] = [tovalues.weight.name]
-    mapping["\(prefix).attention.to_out.0.weight"] = [unifyheads.weight.name]
-    mapping["\(prefix).attention_norm1.weight"] = [attentionNorm1.weight.name]
-    mapping["\(prefix).attention_norm2.weight"] = [attentionNorm2.weight.name]
-    mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
-    mapping["\(prefix).feed_forward.w2.weight"] = [w2.weight.name]
-    mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
-    mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
-    mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
+    switch format {
+    case .generativeModels:
+      mapping["\(prefix).attention.qkv.weight"] = [
+        toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
+      ]
+      mapping["\(prefix).attention.q_norm.weight"] = [normQ.weight.name]
+      mapping["\(prefix).attention.k_norm.weight"] = [normK.weight.name]
+      mapping["\(prefix).attention.out.weight"] = [unifyheads.weight.name]
+      mapping["\(prefix).attention_norm1.weight"] = [attentionNorm1.weight.name]
+      mapping["\(prefix).attention_norm2.weight"] = [attentionNorm2.weight.name]
+      mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
+      mapping["\(prefix).feed_forward.w2.weight"] = [w2.weight.name]
+      mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
+      mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
+      mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
+    case .diffusers:
+      mapping["\(prefix).attention.to_q.weight"] = [toqueries.weight.name]
+      mapping["\(prefix).attention.to_k.weight"] = [tokeys.weight.name]
+      mapping["\(prefix).attention.norm_q.weight"] = [normQ.weight.name]
+      mapping["\(prefix).attention.norm_k.weight"] = [normK.weight.name]
+      mapping["\(prefix).attention.to_v.weight"] = [tovalues.weight.name]
+      mapping["\(prefix).attention.to_out.0.weight"] = [unifyheads.weight.name]
+      mapping["\(prefix).attention_norm1.weight"] = [attentionNorm1.weight.name]
+      mapping["\(prefix).attention_norm2.weight"] = [attentionNorm2.weight.name]
+      mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
+      mapping["\(prefix).feed_forward.w2.weight"] = [w2.weight.name]
+      mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
+      mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
+      mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
+    }
     return mapping
   }
   return (Model([x, rot] + chunks, [out]), mapper)
@@ -961,13 +1009,21 @@ public func LoRAZImage(
     ])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["all_x_embedder.2-1.weight"] = [imgIn.weight.name]
-    mapping["all_x_embedder.2-1.bias"] = [imgIn.bias.name]
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["all_final_layer.2-1.linear.weight"] = [projOut.weight.name]
-    mapping["all_final_layer.2-1.linear.bias"] = [projOut.bias.name]
+    switch format {
+    case .generativeModels:
+      mapping["x_embedder.weight"] = [imgIn.weight.name]
+      mapping["x_embedder.bias"] = [imgIn.bias.name]
+      mapping["final_layer.linear.weight"] = [projOut.weight.name]
+      mapping["final_layer.linear.bias"] = [projOut.bias.name]
+    case .diffusers:
+      mapping["all_x_embedder.2-1.weight"] = [imgIn.weight.name]
+      mapping["all_x_embedder.2-1.bias"] = [imgIn.bias.name]
+      mapping["all_final_layer.2-1.linear.weight"] = [projOut.weight.name]
+      mapping["all_final_layer.2-1.linear.bias"] = [projOut.bias.name]
+    }
     return mapping
   }
   return (Model([x] + (xPadTokens.map { [$0] } ?? []) + [rot, txtIn] + adaLNChunks, [out]), mapper)
@@ -1110,8 +1166,14 @@ public func LoRAZImageFixed(
     for mapper in mappers {
       mapping.merge(mapper(format)) { v, _ in v }
     }
-    mapping["all_final_layer.2-1.adaLN_modulation.1.weight"] = [scale.weight.name]
-    mapping["all_final_layer.2-1.adaLN_modulation.1.bias"] = [scale.bias.name]
+    switch format {
+    case .generativeModels:
+      mapping["final_layer.adaLN_modulation.1.weight"] = [scale.weight.name]
+      mapping["final_layer.adaLN_modulation.1.bias"] = [scale.bias.name]
+    case .diffusers:
+      mapping["all_final_layer.2-1.adaLN_modulation.1.weight"] = [scale.weight.name]
+      mapping["all_final_layer.2-1.adaLN_modulation.1.bias"] = [scale.bias.name]
+    }
     return mapping
   }
   return (Model([txt, txtRot, t] + (capPadTokens.map { [$0] } ?? []), outs), mapper)

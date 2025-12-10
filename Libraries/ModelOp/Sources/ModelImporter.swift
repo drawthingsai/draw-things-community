@@ -355,7 +355,9 @@ public final class ModelImporter {
       modifier = .none
       inputDim = 16
       expectedTotalAccess = 1652
-      isDiffusersFormat = true
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("layers.29.attention.to_out.0.")
+      }
     } else {
       throw UnpickleError.tensorNotFound
     }
