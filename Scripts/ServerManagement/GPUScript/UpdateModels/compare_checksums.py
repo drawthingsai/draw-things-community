@@ -20,6 +20,9 @@ from pathlib import Path
 # CSV column names
 CSV_COLUMNS = ['filename', 'sha256sum', '8k_sha256sum', 'filesize']
 
+# Default remote script directory (where scripts are deployed on remote servers)
+DEFAULT_REMOTE_SCRIPTS_DIR = "/root/utils/UpdateModels"
+
 
 def parse_remote_path(path):
     """
@@ -67,7 +70,7 @@ def get_file_size(file_path, ssh_host=None, remote_base_path=None):
         return -1
 
 
-def calculate_8k_hash(file_path, ssh_host=None, remote_base_path=None):
+def calculate_8k_hash(file_path, ssh_host=None, remote_base_path=None, remote_scripts_dir=None):
     """
     Calculate SHA256 hash of first 4KB + last 4KB of a file.
 
@@ -75,6 +78,7 @@ def calculate_8k_hash(file_path, ssh_host=None, remote_base_path=None):
         file_path: Local file path or just filename if remote
         ssh_host: SSH host (user@host) if calculating remotely
         remote_base_path: Base path on remote system
+        remote_scripts_dir: Directory containing scripts on remote system (default: /root/utils/UpdateModels)
 
     Returns:
         str: SHA256 hash of 8K sample, or "Error" if calculation failed
@@ -83,7 +87,8 @@ def calculate_8k_hash(file_path, ssh_host=None, remote_base_path=None):
         if ssh_host:
             # Remote file - use 8k_hash.py script on remote server
             full_remote_path = f"{remote_base_path}/{file_path}"
-            script_path = "/root/utils/UpdateModels/8k_hash.py"
+            scripts_dir = remote_scripts_dir or DEFAULT_REMOTE_SCRIPTS_DIR
+            script_path = f"{scripts_dir}/8k_hash.py"
             result = subprocess.run(
                 ['ssh', ssh_host, f'python3 "{script_path}" "{full_remote_path}"'],
                 capture_output=True,
@@ -280,7 +285,7 @@ def write_csv(csv_file, checksums):
             ])
 
 
-def update_csv_with_level(directory, csv_file, level, dry_run=False, ssh_host=None, remote_path=None, force=False, specific_files=None):
+def update_csv_with_level(directory, csv_file, level, dry_run=False, ssh_host=None, remote_path=None, force=False, specific_files=None, remote_scripts_dir=None):
     """
     Update CSV file with checksums at the specified level.
 
@@ -293,6 +298,7 @@ def update_csv_with_level(directory, csv_file, level, dry_run=False, ssh_host=No
         remote_path: Path on remote system
         force: If True, recalculate even if value already exists
         specific_files: List of specific filenames to update (if None, process all files)
+        remote_scripts_dir: Directory containing scripts on remote system (default: /root/utils/UpdateModels)
     """
     display_path = f"{ssh_host}:{remote_path}" if ssh_host else directory
     print(f"\n=== Processing directory: {display_path} ===")
@@ -405,7 +411,7 @@ def update_csv_with_level(directory, csv_file, level, dry_run=False, ssh_host=No
         elif level == 'L2':
             # Calculate 8K hash
             if ssh_host:
-                value = calculate_8k_hash(filename, ssh_host, remote_path)
+                value = calculate_8k_hash(filename, ssh_host, remote_path, remote_scripts_dir)
             else:
                 value = calculate_8k_hash(file_ref)
 
@@ -804,6 +810,7 @@ def main():
     # Parse --file argument (can be specified multiple times or comma-separated)
     specific_files = []
     args_to_filter = []
+    remote_scripts_dir = None
     i = 1
     while i < len(sys.argv):
         arg = sys.argv[i]
@@ -821,10 +828,20 @@ def main():
             specific_files.extend([f.strip() for f in file_arg.split(',') if f.strip()])
             args_to_filter.append(arg)
             i += 1
+        elif arg == '--remote-scripts-dir' and i + 1 < len(sys.argv):
+            # Handle --remote-scripts-dir path format
+            remote_scripts_dir = sys.argv[i + 1]
+            args_to_filter.extend([arg, sys.argv[i + 1]])
+            i += 2
+        elif arg.startswith('--remote-scripts-dir='):
+            # Handle --remote-scripts-dir=path format
+            remote_scripts_dir = arg.split('=', 1)[1]
+            args_to_filter.append(arg)
+            i += 1
         else:
             i += 1
 
-    args = [arg for arg in sys.argv[1:] if arg not in ['--dry-run', '--verbose', '-v', '--force', 'L1', 'L2', 'L3', 'l1', 'l2', 'l3', 'all', 'ALL', 'query'] + args_to_filter and not arg.startswith('--level=') and not arg.startswith('--file=')]
+    args = [arg for arg in sys.argv[1:] if arg not in ['--dry-run', '--verbose', '-v', '--force', 'L1', 'L2', 'L3', 'l1', 'l2', 'l3', 'all', 'ALL', 'query'] + args_to_filter and not arg.startswith('--level=') and not arg.startswith('--file=') and not arg.startswith('--remote-scripts-dir=')]
 
     # Check for query mode
     query_mode = 'query' in sys.argv
@@ -846,6 +863,9 @@ def main():
         print("  --dry-run: Print what would be done without writing files")
         print("  --verbose, -v: Show detailed output in comparison mode")
         print("  --force: Recalculate all values even if they exist")
+        print("  --remote-scripts-dir=<path>: Path to scripts directory on remote server")
+        print("       Default: /root/utils/UpdateModels")
+        print("       Used for L2 (8K hash) calculation on remote servers")
         print()
         print("CSV format: filename, sha256sum, 8k_sha256sum, filesize")
         print()
@@ -882,6 +902,9 @@ def main():
         print()
         print("  # Update L3 for specific files on remote server")
         print("  ./compare_checksums.py L3 --file=model.ckpt root@server:/mnt/models")
+        print()
+        print("  # Update L2 on remote server with custom scripts directory")
+        print("  ./compare_checksums.py L2 --remote-scripts-dir=/opt/scripts root@server:/mnt/models")
         print()
         print("  # Compare two CSVs using file size (L1)")
         print("  ./compare_checksums.py L1 local.csv remote.csv")
@@ -989,7 +1012,7 @@ def main():
             initialize_csv_from_directory(None, csv_file1, dry_run, ssh_host, dir_path)
 
             for lvl in levels_to_process:
-                update_csv_with_level(None, csv_file1, lvl, dry_run, ssh_host, dir_path, force, specific_files if specific_files else None)
+                update_csv_with_level(None, csv_file1, lvl, dry_run, ssh_host, dir_path, force, specific_files if specific_files else None, remote_scripts_dir)
 
             if not dry_run:
                 upload_csv_to_remote(ssh_host, dir_path, csv_file1)
