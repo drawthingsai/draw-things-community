@@ -11,10 +11,12 @@ Workflow:
 3. Load GPU servers from gpu_servers.txt
 4. Download NAS sha256-list.csv as source of truth
 5. For each GPU server:
-   a. Update checksums on GPU server using compare_checksums.py
-   b. Compare GPU server CSV with NAS CSV to get files to download
-   c. Download missing/corrupted files from NAS HTTP server
-   d. Update GPU server checksums again to verify
+   a. Force refresh L1 (filesize) on GPU server (unless --skip-l1-refresh)
+   b. Update checksums on GPU server using compare_checksums.py
+   c. Compare GPU server CSV with NAS CSV at all levels (L1, L2, L3)
+   d. Download missing/corrupted files from NAS HTTP server
+      - Updates sha256sum in CSV immediately after each file download
+   e. Run 'compare_checksums.py all' to fill in L1/L2 checksums for downloaded files
 6. Stop NAS HTTP server
 
 Usage:
@@ -30,11 +32,16 @@ Usage:
   # Parallel dry-run
   python3 sync_models_multi_server.py --parallel --dry-run
 
+  # Skip L1 (filesize) refresh for faster sync
+  python3 sync_models_multi_server.py --skip-l1-refresh
+
 Notes:
   - NAS HTTP server is automatically started/stopped by this script
   - In parallel mode, detailed output goes to logs/sync-{hostname}.log files
   - Terminal shows real-time progress updates every 30 seconds
   - wget uses dot format (--progress=dot:mega) for cleaner logs
+  - By default, L1 (filesize) is force-refreshed on each GPU server before comparison
+  - Use --skip-l1-refresh to use cached filesize values (faster but may miss changes)
 """
 
 import os
@@ -54,8 +61,9 @@ HTTP_PORT = 61767
 SCRIPT_DIR = Path(__file__).parent
 DEFAULT_GPU_PATH = "/mnt/models/official-models"  # Default path for GPU servers
 
-# Global dry-run flag
+# Global flags
 DRY_RUN = False
+SKIP_L1_REFRESH = False
 
 # Global progress tracking for parallel mode
 PROGRESS_LOCK = threading.Lock()
@@ -208,7 +216,7 @@ def load_gpu_servers(filepath="gpu_servers.txt"):
     return servers
 
 
-def update_gpu_server_checksums(gpu_server, log_file=None):
+def update_gpu_server_checksums(gpu_server, log_file=None, refresh_l1=True):
     """Update checksums on GPU server using compare_checksums.py
 
     This will generate/update sha256-list.csv on the GPU server and
@@ -219,6 +227,7 @@ def update_gpu_server_checksums(gpu_server, log_file=None):
     Args:
         gpu_server: Server spec in format user@hostname:/path
         log_file: Optional file object to write logs to
+        refresh_l1: If True, force refresh L1 (filesize) before comparison
     """
     log_print(log_file, f"\n📊 Updating checksums on {gpu_server}...")
 
@@ -249,6 +258,28 @@ def update_gpu_server_checksums(gpu_server, log_file=None):
 
         return gpu_csv_local
 
+    # If refresh_l1 is True and not skipped globally, force refresh L1 (filesize)
+    if refresh_l1 and not SKIP_L1_REFRESH:
+        log_print(log_file, f"   🔄 Refreshing L1 (filesize) on GPU server...")
+        cmd_l1 = [
+            'python3',
+            str(SCRIPT_DIR / 'compare_checksums.py'),
+            'L1',
+            '--force',
+            gpu_server
+        ]
+
+        if log_file:
+            result = subprocess.run(cmd_l1, text=True, stdout=log_file, stderr=log_file)
+        else:
+            result = subprocess.run(cmd_l1, text=True)
+
+        if result.returncode != 0:
+            log_print(log_file, f"   ⚠️  Warning: L1 refresh returned code {result.returncode}")
+        else:
+            log_print(log_file, f"   ✅ L1 (filesize) refreshed")
+
+    # Run standard checksum update (L3 by default, fills in missing values)
     cmd = [
         'python3',
         str(SCRIPT_DIR / 'compare_checksums.py'),
@@ -271,6 +302,9 @@ def update_gpu_server_checksums(gpu_server, log_file=None):
 def get_files_to_download(gpu_csv_local, nas_csv_local, log_file=None):
     """Compare GPU server CSV with NAS CSV to get list of files to download
 
+    Uses 'all' level to compare at all levels (L1, L2, L3) for comprehensive
+    detection of missing or corrupted files.
+
     Args:
         gpu_csv_local: Local path to GPU server CSV
         nas_csv_local: Local path to NAS CSV (source of truth)
@@ -279,7 +313,7 @@ def get_files_to_download(gpu_csv_local, nas_csv_local, log_file=None):
     Returns:
         list: Filenames that need to be downloaded
     """
-    log_print(log_file, f"\n📋 Comparing checksums to determine files to download...")
+    log_print(log_file, f"\n📋 Comparing checksums at all levels to determine files to download...")
     log_print(log_file, f"   GPU server CSV: {gpu_csv_local}")
     log_print(log_file, f"   NAS CSV (source of truth): {nas_csv_local}")
 
@@ -293,6 +327,7 @@ def get_files_to_download(gpu_csv_local, nas_csv_local, log_file=None):
     cmd = [
         'python3',
         str(SCRIPT_DIR / 'compare_checksums.py'),
+        'all',
         gpu_csv_local,
         nas_csv_local
     ]
@@ -745,25 +780,30 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, 
             success_count += 1
 
             # Update sha256-list.csv on the GPU server with verified hash
+            # Uses 4-column format: filename,sha256sum,8k_sha256sum,filesize
             log_print(log_file, f"      Updating checksum in CSV...")
             checksum_to_save = expected_hash if expected_hash else computed_hash
-            checksum_cmd = f'cd "{path}" && ' \
-                          f'{{ echo "filename,sha256sum"; ' \
-                          f'{{ cat sha256-list.csv 2>/dev/null | grep -v "^filename,sha256sum$" | grep -v "^{filename}," || true; }} ; ' \
-                          f'echo "{filename},{checksum_to_save}"; }} | ' \
-                          f'{{ read header; echo "$header"; sort -t, -k1; }} > /tmp/sorted.csv && mv /tmp/sorted.csv sha256-list.csv'
+            if checksum_to_save:
+                # Filter out both old (2-col) and new (4-col) headers, preserve existing data
+                checksum_cmd = f'cd "{path}" && ' \
+                              f'{{ echo "filename,sha256sum,8k_sha256sum,filesize"; ' \
+                              f'{{ cat sha256-list.csv 2>/dev/null | grep -v "^filename," | grep -v "^{filename}," || true; }} ; ' \
+                              f'echo "{filename},{checksum_to_save},,"; }} | ' \
+                              f'{{ read header; echo "$header"; sort -t, -k1; }} > /tmp/sorted.csv && mv /tmp/sorted.csv sha256-list.csv'
 
-            checksum_result = subprocess.run(
-                ['ssh', hostname, checksum_cmd],
-                text=True,
-                capture_output=True,
-                timeout=600  # 10 minutes for checksum
-            )
+                checksum_result = subprocess.run(
+                    ['ssh', hostname, checksum_cmd],
+                    text=True,
+                    capture_output=True,
+                    timeout=60
+                )
 
-            if checksum_result.returncode == 0:
-                log_print(log_file, f"      ✅ Checksum saved to CSV")
+                if checksum_result.returncode == 0:
+                    log_print(log_file, f"      ✅ Checksum saved to CSV")
+                else:
+                    log_print(log_file, f"      ⚠️  Failed to update CSV: {checksum_result.stderr}")
             else:
-                log_print(log_file, f"      ⚠️  Failed to update CSV: {checksum_result.stderr}")
+                log_print(log_file, f"      ⚠️  No checksum to save")
 
             # Update progress after successful download
             if server_name:
@@ -787,8 +827,8 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
     Workflow:
     1. Update checksums on GPU server
     2. Compare checksums to get files to download
-    3. Download files from NAS HTTP server
-    4. Update checksums on GPU server again to verify
+    3. Download files from NAS HTTP server (updates sha256sum in CSV after each file)
+    4. Run 'compare_checksums.py all' to fill in L1/L2 checksums for downloaded files
 
     Args:
         gpu_server: Server spec in format user@hostname:/path
@@ -852,14 +892,26 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
         if success_count < len(files_to_download):
             log_print(log_file, f"\n⚠️  Warning: Only {success_count}/{len(files_to_download)} files downloaded successfully")
 
-        # Step 4: Update checksums on GPU server again to verify
-        if server_name:
-            update_progress(server_name, "Verifying checksums", success_count, len(files_to_download))
-        if not log_file:
-            print_step(4, 4, f"Verify checksums on {gpu_server}")
-        else:
-            log_print(log_file, f"\n[Step 4/4] Verify checksums on {gpu_server}")
-        update_gpu_server_checksums(gpu_server, log_file)
+        # Update all checksums (L1, L2, L3) for downloaded files using 'all' mode
+        # This fills in missing values only - L3 (sha256sum) is already saved during download
+        if success_count > 0 and not DRY_RUN:
+            if server_name:
+                update_progress(server_name, "Updating checksums", success_count, len(files_to_download))
+            log_print(log_file, f"\n📊 Updating checksums for downloaded files (all levels)...")
+            cmd = [
+                'python3',
+                str(SCRIPT_DIR / 'compare_checksums.py'),
+                'all',
+                gpu_server
+            ]
+            if log_file:
+                result = subprocess.run(cmd, text=True, stdout=log_file, stderr=log_file)
+            else:
+                result = subprocess.run(cmd, text=True)
+            if result.returncode != 0:
+                log_print(log_file, f"   ⚠️  Checksum update returned code {result.returncode}")
+            else:
+                log_print(log_file, f"   ✅ Checksums updated")
 
         if server_name:
             update_progress(server_name, "Completed", success_count, len(files_to_download), status="completed")
@@ -918,7 +970,7 @@ def sync_server_with_logging(server, nas_csv_local, log_dir=".", custom_nas_url=
 
 
 def main():
-    global DRY_RUN
+    global DRY_RUN, SKIP_L1_REFRESH
 
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
@@ -937,6 +989,9 @@ Examples:
 
   # Parallel dry-run
   python3 sync_models_multi_server.py --parallel --dry-run
+
+  # Skip L1 (filesize) refresh for faster sync (use cached values)
+  python3 sync_models_multi_server.py --skip-l1-refresh
         """
     )
     parser.add_argument(
@@ -949,9 +1004,15 @@ Examples:
         action='store_true',
         help='Sync all servers in parallel (faster but more resource intensive)'
     )
+    parser.add_argument(
+        '--skip-l1-refresh',
+        action='store_true',
+        help='Skip L1 (filesize) refresh before comparison (use cached values)'
+    )
 
     args = parser.parse_args()
     DRY_RUN = args.dry_run
+    SKIP_L1_REFRESH = args.skip_l1_refresh
 
     # Create logs directory if it doesn't exist
     logs_dir = SCRIPT_DIR / "logs"
@@ -963,6 +1024,10 @@ Examples:
         print("[DRY RUN MODE - No changes will be made]")
     if args.parallel:
         print("[PARALLEL MODE - All servers synced simultaneously]")
+    if SKIP_L1_REFRESH:
+        print("[SKIP L1 REFRESH - Using cached filesize values]")
+    else:
+        print("[L1 REFRESH ENABLED - Refreshing filesize on each GPU server]")
     print("="*70)
     print(f"NAS Source: {NAS_HOST}:{NAS_PATH}")
     print(f"NAS HTTP: http://{NAS_IP}:{HTTP_PORT}")

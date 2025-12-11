@@ -13,7 +13,6 @@ CSV format: filename, sha256sum, 8k_sha256sum, filesize
 import os
 import sys
 import csv
-import hashlib
 import subprocess
 from pathlib import Path
 
@@ -82,61 +81,27 @@ def calculate_8k_hash(file_path, ssh_host=None, remote_base_path=None):
     """
     try:
         if ssh_host:
-            # Remote file - use dd and sha256sum via SSH
+            # Remote file - use 8k_hash.py script on remote server
             full_remote_path = f"{remote_base_path}/{file_path}"
-            # Get file size first
-            size_result = subprocess.run(
-                ['ssh', ssh_host, f'stat -c %s "{full_remote_path}"'],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            file_size = int(size_result.stdout.strip())
-
-            if file_size <= 8192:
-                # File is 8KB or smaller, just hash the whole file
-                result = subprocess.run(
-                    ['ssh', ssh_host, f'sha256sum "{full_remote_path}"'],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                return result.stdout.split()[0]
-
-            # Calculate offset for last 4KB
-            last_4k_offset = file_size - 4096
-
-            # Read first 4KB and last 4KB, concatenate and hash
-            # Using a bash script to combine both reads
-            cmd = f'''
-                (dd if="{full_remote_path}" bs=4096 count=1 2>/dev/null; \
-                 dd if="{full_remote_path}" bs=1 skip={last_4k_offset} count=4096 2>/dev/null) | sha256sum
-            '''
+            script_path = "/root/utils/UpdateModels/8k_hash.py"
             result = subprocess.run(
-                ['ssh', ssh_host, cmd],
+                ['ssh', ssh_host, f'python3 "{script_path}" "{full_remote_path}"'],
                 capture_output=True,
                 text=True,
                 check=True
             )
-            return result.stdout.split()[0]
+            return result.stdout.strip()
         else:
-            # Local file
-            file_size = os.path.getsize(file_path)
-
-            if file_size <= 8192:
-                # File is 8KB or smaller, just hash the whole file
-                with open(file_path, 'rb') as f:
-                    return hashlib.sha256(f.read()).hexdigest()
-
-            # Read first 4KB and last 4KB
-            with open(file_path, 'rb') as f:
-                first_4k = f.read(4096)
-                f.seek(-4096, 2)  # Seek to 4KB before end
-                last_4k = f.read(4096)
-
-            # Combine and hash
-            combined = first_4k + last_4k
-            return hashlib.sha256(combined).hexdigest()
+            # Local file - use 8k_hash.py script
+            script_dir = Path(__file__).parent
+            script_path = script_dir / "8k_hash.py"
+            result = subprocess.run(
+                ['python3', str(script_path), file_path],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return result.stdout.strip()
 
     except (subprocess.CalledProcessError, OSError, ValueError) as e:
         print(f"Error calculating 8K hash for {file_path}: {e}")
@@ -737,6 +702,65 @@ def upload_csv_to_remote(ssh_host, remote_path, local_csv_file):
         return False
 
 
+def query_csv_entries(csv_file, filenames):
+    """
+    Query and display CSV entries for specific filenames.
+
+    Args:
+        csv_file: Path to CSV file
+        filenames: List of filenames to query
+
+    Returns:
+        dict: Queried entries {filename: data}
+    """
+    checksums = read_csv(csv_file)
+
+    if not checksums:
+        print(f"Error: CSV file is empty or not found: {csv_file}")
+        return {}
+
+    results = {}
+    not_found = []
+
+    for filename in filenames:
+        if filename in checksums:
+            results[filename] = checksums[filename]
+        else:
+            not_found.append(filename)
+
+    # Display results
+    if results:
+        for filename, data in results.items():
+            print(f"\n{filename}:")
+            filesize = data.get('filesize', '')
+            hash_8k = data.get('8k_sha256sum', '')
+            sha256 = data.get('sha256sum', '')
+
+            # Format filesize with human readable size
+            if filesize and isinstance(filesize, int):
+                if filesize >= 1024 * 1024 * 1024:
+                    size_str = f"{filesize} ({filesize / (1024*1024*1024):.2f} GB)"
+                elif filesize >= 1024 * 1024:
+                    size_str = f"{filesize} ({filesize / (1024*1024):.2f} MB)"
+                elif filesize >= 1024:
+                    size_str = f"{filesize} ({filesize / 1024:.2f} KB)"
+                else:
+                    size_str = str(filesize)
+            else:
+                size_str = str(filesize) if filesize else "(not computed)"
+
+            print(f"  L1 (filesize):    {size_str}")
+            print(f"  L2 (8k_sha256):   {hash_8k if hash_8k else '(not computed)'}")
+            print(f"  L3 (sha256):      {sha256 if sha256 else '(not computed)'}")
+
+    if not_found:
+        print(f"\nNot found in CSV:")
+        for f in not_found:
+            print(f"  - {f}")
+
+    return results
+
+
 def initialize_csv_from_directory(directory, csv_file, dry_run=False, ssh_host=None, remote_path=None):
     """Create CSV file with filenames if it doesn't exist."""
     if not os.path.exists(csv_file):
@@ -800,7 +824,10 @@ def main():
         else:
             i += 1
 
-    args = [arg for arg in sys.argv[1:] if arg not in ['--dry-run', '--verbose', '-v', '--force', 'L1', 'L2', 'L3', 'l1', 'l2', 'l3', 'all', 'ALL'] + args_to_filter and not arg.startswith('--level=') and not arg.startswith('--file=')]
+    args = [arg for arg in sys.argv[1:] if arg not in ['--dry-run', '--verbose', '-v', '--force', 'L1', 'L2', 'L3', 'l1', 'l2', 'l3', 'all', 'ALL', 'query'] + args_to_filter and not arg.startswith('--level=') and not arg.startswith('--file=')]
+
+    # Check for query mode
+    query_mode = 'query' in sys.argv
 
     if len(args) < 1 or len(args) > 2:
         print("Usage: python compare_checksums.py [options] <directory|csv1> [csv2]")
@@ -824,13 +851,18 @@ def main():
         print()
         print("Modes:")
         print("  1. Single directory mode: Update sha256-list.csv at specified level")
-        print("     Local:  ./compare_checksums_v2.py L1 /path/to/dir1")
-        print("     Remote: ./compare_checksums_v2.py L2 root@host:/path/to/dir1")
+        print("     Local:  ./compare_checksums.py L1 /path/to/dir1")
+        print("     Remote: ./compare_checksums.py L2 root@host:/path/to/dir1")
         print()
         print("  2. CSV comparison mode: Compare two CSV files at specified level")
-        print("     Example: ./compare_checksums_v2.py L1 csv1.csv csv2.csv")
+        print("     Example: ./compare_checksums.py L1 csv1.csv csv2.csv")
         print("     Output: List of files with differences (one per line)")
         print("     Note: csv2 is treated as the source of truth")
+        print()
+        print("  3. Query mode: Look up entry from CSV by filename (read-only)")
+        print("     ./compare_checksums.py query <directory> --file=<filename>")
+        print("     Local:  ./compare_checksums.py query /path/to/dir --file=model.ckpt")
+        print("     Remote: ./compare_checksums.py query root@host:/path --file=model.ckpt")
         print()
         print("Examples:")
         print("  # Update file sizes (L1) for local directory")
@@ -856,9 +888,49 @@ def main():
         print()
         print("  # Compare two CSVs at all levels")
         print("  ./compare_checksums.py all local.csv remote.csv")
+        print()
+        print("  # Query a specific file's checksums from remote server")
+        print("  ./compare_checksums.py query root@server:/mnt/models --file=model.ckpt")
+        print()
+        print("  # Query multiple files")
+        print("  ./compare_checksums.py query /mnt/models --file=model1.ckpt,model2.ckpt")
         sys.exit(1)
 
     first_arg = args[0]
+
+    # Handle query mode
+    if query_mode:
+        if not specific_files:
+            print("Error: Query mode requires --file argument")
+            print("Usage: ./compare_checksums.py query <directory> --file=<filename>")
+            sys.exit(1)
+
+        dir_arg = first_arg
+        is_remote, ssh_host, dir_path = parse_remote_path(dir_arg)
+
+        if is_remote:
+            # Download remote CSV to local temp location
+            script_dir = Path(__file__).parent
+            logs_dir = script_dir / "logs"
+            logs_dir.mkdir(exist_ok=True)
+
+            hostname = ssh_host.split('@')[-1] if '@' in ssh_host else ssh_host
+            csv_file = str(logs_dir / f"sha256-list-{hostname}.csv")
+
+            print(f"Query mode: {ssh_host}:{dir_path}")
+            if not download_remote_csv(ssh_host, dir_path, csv_file):
+                print("Error: Could not download CSV from remote server")
+                sys.exit(1)
+        else:
+            csv_file = os.path.join(dir_path, 'sha256-list.csv')
+            print(f"Query mode: {dir_path}")
+
+            if not os.path.exists(csv_file):
+                print(f"Error: CSV file not found: {csv_file}")
+                sys.exit(1)
+
+        results = query_csv_entries(csv_file, specific_files)
+        sys.exit(0 if results else 1)
 
     # Check if second argument is provided
     if len(args) == 2:
