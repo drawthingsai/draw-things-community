@@ -192,7 +192,7 @@ if [ -n "$REMOTE_HOST" ]; then
 
     # Build remote command (use resolved IP address)
     # Scripts are expected to be synced via update_scripts.sh
-    REMOTE_DIR="${UTILS_PATH}/LaunchGPU"
+    REMOTE_DIR="${UTILS_PATH}"
     REMOTE_CMD="cd $REMOTE_DIR && sudo bash $SCRIPT_NAME $RESOLVED_ADDRESS $MODELS_PATH $UTILS_PATH $LORA_MODELS_PATH"
     if [ "$SKIP_TMPFS" = true ]; then
         REMOTE_CMD="$REMOTE_CMD --skip-tmpfs"
