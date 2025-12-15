@@ -148,6 +148,8 @@ struct Converter: ParsableCommand {
       fatalError()
     case .zImage:
       fatalError()
+    case .flux2:
+      fatalError()
     case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow:
       fatalError()
     }
