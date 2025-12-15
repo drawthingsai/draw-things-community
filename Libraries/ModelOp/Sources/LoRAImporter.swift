@@ -171,6 +171,8 @@ public enum LoRAImporter {
         batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 32,
         usesFlashAttention: .scale1
       )
+    case .flux2:
+      fatalError()
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -232,6 +234,9 @@ public enum LoRAImporter {
       case .zImage:
         inputDim = 16
         conditionalLength = 2560
+      case .flux2:
+        inputDim = 32
+        conditionalLength = 15360
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
@@ -348,6 +353,8 @@ public enum LoRAImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
+      case .flux2:
+        fatalError()
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -395,7 +402,7 @@ public enum LoRAImporter {
       case .svdI2v:
         vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
       case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-        .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
+        .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
         vectors = []
       case .kandinsky21, .v1, .v2:
         fatalError()
@@ -524,6 +531,8 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .flux2:
+        fatalError()
       case .kandinsky21, .v1, .v2:
         fatalError()
       }
@@ -1009,6 +1018,9 @@ public enum LoRAImporter {
     case .zImage:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
+    case .flux2:
+      textModelMapping1 = [:]
+      textModelMapping2 = [:]
     case .auraflow:
       fatalError()
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -1338,6 +1350,20 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
+      case .flux2:
+        if let tensorDescMistral3 = stateDict["mistral3"] {
+          try archive.with(tensorDescMistral3) {
+            let tensor = Tensor<FloatType>(from: $0)
+            store.write("string_to_param_mistral3", tensor: tensor)
+            let textEmbeddingLengthMistral3 =
+              tensorDescMistral3.shape.count > 1 ? tensorDescMistral3.shape[0] : 1
+            guard textEmbeddingLengthMistral3 == textEmbeddingLength else {
+              textEmbeddingLength = 0
+              return
+            }
+            didImportTIEmbedding = true
+          }
+        }
       case .auraflow:
         fatalError()
       case .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
@@ -1373,7 +1399,7 @@ public enum LoRAImporter {
         modelPrefix = "stage_c"
         modelPrefixFixed = "stage_c_fixed"
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

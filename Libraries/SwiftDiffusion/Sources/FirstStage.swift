@@ -91,7 +91,7 @@ extension FirstStage {
     let scaleFactor: Int
     switch version {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v, .kandinsky21, .hiDreamI1, .zImage:
+      .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .flux2:
       scaleFactor = 8
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage:
@@ -185,6 +185,62 @@ extension FirstStage {
           highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: false,
           paddingFinalConvLayer: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW,
           quantLayer: false
+        ).0
+      if existingDecoder == nil {
+        decoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          decoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]]))
+        } else {
+          decoder.compile(inputs: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("decoder", model: decoder, codec: [.jit, externalData])
+        }
+      }
+      if let alternativeFilePath = alternativeFilePath, alternativeDecoderVersion == .transparent {
+        let decoder = TransparentVAEDecoder(
+          startHeight: startHeight * 8, startWidth: startWidth * 8,
+          usesFlashAttention: alternativeUsesFlashAttention ? .scaleMerged : .none)
+        decoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          let pixels = graph.variable(
+            .GPU(0), .NHWC(1, startHeight * 8, startWidth * 8, 3), of: Float.self)
+          decoder.compile(
+            inputs: pixels,
+            DynamicGraph.Tensor<Float>(
+              from: z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]]))
+        } else {
+          let pixels = graph.variable(
+            .GPU(0), .NHWC(1, startHeight * 8, startWidth * 8, 3), of: FloatType.self)
+          decoder.compile(inputs: pixels, z[0..<1, 0..<startHeight, 0..<startWidth, 0..<shape[3]])
+        }
+        graph.openStore(
+          alternativeFilePath, flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: alternativeFilePath)
+        ) {
+          $0.read("decoder", model: decoder, codec: [.jit, .ezm7, externalData])
+        }
+        transparentDecoder = decoder
+        outputChannels = 4
+      } else {
+        outputChannels = 3
+      }
+      causalAttentionMask = nil
+    case .flux2:
+      let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
+      let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
+      decoder =
+        existingDecoder
+        ?? Decoder(
+          channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
+          startHeight: startHeight, inputChannels: 32,
+          highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: false,
+          paddingFinalConvLayer: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW,
+          quantLayer: true
         ).0
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -859,7 +915,7 @@ extension FirstStage {
     let scaleFactorZ: Int
     switch version {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v, .kandinsky21, .hiDreamI1, .zImage:
+      .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .flux2:
       scaleFactor = 8
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage:
@@ -946,6 +1002,36 @@ extension FirstStage {
         }
       }
       outputChannels = 32
+      causalAttentionMask = nil
+    case .flux2:
+      let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
+      let startHeight = tiledEncoding ? encodingTileSize.height : startHeight
+      encoder =
+        existingEncoder
+        ?? Encoder(
+          channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
+          startHeight: startHeight, usesFlashAttention: false,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW, quantLayer: true,
+          outputChannels: 32
+        ).0
+      // Don't use FP32 for SD3 / FLUX.1 encoding pass.
+      if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          encoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: x[0..<1, 0..<(startHeight * 8), 0..<(startWidth * 8), 0..<shape[3]]))
+        } else {
+          encoder.compile(
+            inputs: x[0..<1, 0..<(startHeight * 8), 0..<(startWidth * 8), 0..<shape[3]])
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("encoder", model: encoder, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 64
       causalAttentionMask = nil
     case .hunyuanVideo:
       var startDepth = (shape[0] - 1) / 4 + 1

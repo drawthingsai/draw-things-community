@@ -47,6 +47,8 @@ public enum ComputeUnits {
       return 2.84465488969
     case .zImage:
       return 1.176470588
+    case .flux2:
+      return 2.588235294 * 2
     }
   }
 
@@ -131,10 +133,12 @@ public enum ComputeUnits {
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
-    case .flux1, .qwenImage, .zImage:
+    case .flux1, .qwenImage, .zImage, .flux2:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
-      if samplerModifier == .kontext || samplerModifier == .qwenimageEditPlus {  // For Kontext, if the reference image is provided, we effectively double the cost at least.
+      if samplerModifier == .kontext || samplerModifier == .qwenimageEditPlus
+        || modelVersion == .flux2
+      {  // For Kontext, if the reference image is provided, we effectively double the cost at least.
         root = root * Double(1 + (hasImage ? 1 : 0) + shuffleCount)
       }
     case .hiDreamI1:

@@ -421,6 +421,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (Wan v2.2 5B)"
     case .zImage:
       return " (Z Image)"
+    case .flux2:
+      return " (FLUX.2)"
     }
   }
 

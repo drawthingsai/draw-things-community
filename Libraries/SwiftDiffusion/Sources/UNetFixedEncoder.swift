@@ -49,7 +49,7 @@ extension UNetFixedEncoder {
     switch version {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage:
+      .qwenImage, .wan22_5b, .zImage, .flux2:
       return true
     case .v1, .v2, .kandinsky21:
       return false
@@ -192,7 +192,7 @@ extension UNetFixedEncoder {
       // We don't need other vectors for sampling.
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -525,7 +525,7 @@ extension UNetFixedEncoder {
           dualAttentionLayers: [])
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
         fatalError()
       }
       var timeEmbeds = graph.variable(
@@ -1728,6 +1728,8 @@ extension UNetFixedEncoder {
         (xPadTokens.map { [graph.variable($0.toGPU(0))] } ?? []) + [graph.variable(rotaryEmbedding)]
           + conditions, nil
       )
+    case .flux2:
+      fatalError()
     case .hiDreamI1:
       let h = startHeight / 2
       let w = startWidth / 2

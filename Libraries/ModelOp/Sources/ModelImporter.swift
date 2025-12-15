@@ -425,6 +425,8 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .zImage:
         throw Error.noTextEncoder
+      case .flux2:
+        throw Error.noTextEncoder
       case .kandinsky21:
         fatalError()
       }
@@ -496,7 +498,7 @@ public final class ModelImporter {
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
-            .wan22_5b, .zImage:
+            .wan22_5b, .zImage, .flux2:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -536,7 +538,7 @@ public final class ModelImporter {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
+              .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
               fatalError()
             }
           }
@@ -679,6 +681,9 @@ public final class ModelImporter {
     case .zImage:
       conditionalLength = 2560
       batchSize = 1
+    case .flux2:
+      conditionalLength = 15360
+      batchSize = 1
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -727,7 +732,8 @@ public final class ModelImporter {
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-          .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage:
+          .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
+          .flux2:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -856,6 +862,8 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .flux2:
+        fatalError()
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -1055,6 +1063,8 @@ public final class ModelImporter {
           batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 32,
           usesFlashAttention: .scale1
         )
+      case .flux2:
+        fatalError()
       case .kandinsky21, .wurstchenStageB:
         fatalError()
       }
@@ -1168,6 +1178,8 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
+      case .flux2:
+        fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
       }
@@ -1359,7 +1371,7 @@ public final class ModelImporter {
             modelPrefix = "stage_c"
             modelPrefixFixed = "stage_c_fixed"
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
-            .wan22_5b, .qwenImage, .auraflow, .zImage:
+            .wan22_5b, .qwenImage, .auraflow, .zImage, .flux2:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1625,6 +1637,8 @@ public final class ModelImporter {
           if $0.keys.count != 713 {
             throw Error.tensorWritesFailed
           }
+        case .flux2:
+          fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()
         }
@@ -1876,6 +1890,8 @@ extension ModelImporter {
       textEncoder = fileNames.first {
         $0.hasSuffix("_qwen_3_vl_4b_instruct_f16.ckpt")
       }
+    case .flux2:
+      fatalError()
     case .wurstchenStageC:
       textEncoder = nil
     case .kandinsky21, .wurstchenStageB:
@@ -2096,6 +2112,8 @@ extension ModelImporter {
       specification.noiseDiscretization = .rf(
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
       specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
+    case .flux2:
+      fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
