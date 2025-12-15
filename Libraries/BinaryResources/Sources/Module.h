@@ -17,3 +17,5 @@
 #include "Libraries/BinaryResources/merges_qwen2.5_generated.h"
 #include "Libraries/BinaryResources/vocab_qwen3_generated.h"
 #include "Libraries/BinaryResources/merges_qwen3_generated.h"
+#include "Libraries/BinaryResources/vocab_mistral3_generated.h"
+#include "Libraries/BinaryResources/merges_mistral3_generated.h"

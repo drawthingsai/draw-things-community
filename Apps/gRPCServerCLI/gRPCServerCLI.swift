@@ -96,7 +96,14 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalIm
       "<|file_sep|>": 151664, "<tool_response>": 151665, "</tool_response>": 151666,
       "<think>": 151667, "</think>": 151668,
     ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>")
-
+  let tokenizerMistral3 = TiktokenTokenizer(
+    vocabulary: BinaryResources.vocab_mistral3_json, merges: BinaryResources.merges_mistral3_txt,
+    specialTokens: [
+      "<unk>": 0, "<s>": 1, "</s>": 2, "[INST]": 3, "[/INST]": 4, "[AVAILABLE_TOOLS]": 5,
+      "[/AVAILABLE_TOOLS]": 6, "[TOOL_RESULTS]": 7, "[/TOOL_RESULTS]": 8, "[TOOL_CALLS]": 9,
+      "[IMG]": 10, "<pad>": 11, "[IMG_BREAK]": 12, "[IMG_END]": 13, "[PREFIX]": 14, "[MIDDLE]": 15,
+      "[SUFFIX]": 16, "[SYSTEM_PROMPT]": 17, "[/SYSTEM_PROMPT]": 18, "[TOOL_CONTENT]": 19,
+    ], unknownToken: "<unk>", startToken: "<s>", endToken: "</s>")
   return (
     tempDir,
     LocalImageGenerator(
@@ -104,7 +111,8 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalIm
       tokenizerV2: tokenizerV2, tokenizerXL: tokenizerXL, tokenizerKandinsky: tokenizerKandinsky,
       tokenizerT5: tokenizerT5, tokenizerPileT5: tokenizerPileT5,
       tokenizerChatGLM3: tokenizerChatGLM3, tokenizerLlama3: tokenizerLlama3,
-      tokenizerUMT5: tokenizerUMT5, tokenizerQwen25: tokenizerQwen25, tokenizerQwen3: tokenizerQwen3
+      tokenizerUMT5: tokenizerUMT5, tokenizerQwen25: tokenizerQwen25,
+      tokenizerQwen3: tokenizerQwen3, tokenizerMistral3: tokenizerMistral3
     )
   )
 }

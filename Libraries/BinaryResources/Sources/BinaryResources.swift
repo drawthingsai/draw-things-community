@@ -58,4 +58,10 @@ public enum BinaryResources {
   public static let vocab_qwen3_json = Data(
     bytesNoCopy: C_Resources.vocab_qwen3_json()!, count: C_Resources.vocab_qwen3_json_size,
     deallocator: .none)
+  public static let merges_mistral3_txt = Data(
+    bytesNoCopy: C_Resources.merges_mistral3_txt()!, count: C_Resources.merges_mistral3_txt_size,
+    deallocator: .none)
+  public static let vocab_mistral3_json = Data(
+    bytesNoCopy: C_Resources.vocab_mistral3_json()!, count: C_Resources.vocab_mistral3_json_size,
+    deallocator: .none)
 }
