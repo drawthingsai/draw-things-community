@@ -2608,6 +2608,105 @@ extension TextEncoder {
     return ([pooled, c2] + c3, [])
   }
 
+  private func encodeFlux2(
+    images: [DynamicGraph.Tensor<FloatType>],
+    tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
+    mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
+    tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
+    modifier: SamplerModifier, textModels existingTextModels: [Model?]
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let graph = tokens[0].graph
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || deviceProperties.memoryCapacity != .high
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    let tokenLength = tokens[0].shape[0] / 2
+    let textModel = Mistral3(
+      FloatType.self, vocabularySize: 131_072, maxLength: tokenLength, width: 5_120,
+      tokenLength: tokenLength,
+      layers: 30 /* Should be 40, but only 30 is enough for this purpose */, MLP: 32_768,
+      heads: 32, outputHiddenStates: [9, 19, 29], batchSize: 2,
+      usesFlashAttention: usesFlashAttention)
+    var causalAttentionMask = Tensor<FloatType>(
+      Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
+      .NHWC(1, 1, tokenLength, tokenLength)
+    )
+    for i in 0..<(tokenLength - 1) {
+      for j in (i + 1)..<tokenLength {
+        causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    let tokensTensorGPU = tokens[0].toGPU(0)
+    let rotaryTensorGPUUncond = graph.variable(
+      Mistral3RotaryEmbedding(
+        sequenceLength: tokenLength, endAligned: max(0, 512 - tokenLengthUncond), of: FloatType.self
+      ).toGPU(0))
+    let rotaryTensorGPUCond = graph.variable(
+      Mistral3RotaryEmbedding(
+        sequenceLength: tokenLength, endAligned: max(0, 512 - tokenLengthCond), of: FloatType.self
+      ).toGPU(0))
+    let rotaryTensorGPU = Functional.concat(axis: 0, rotaryTensorGPUUncond, rotaryTensorGPUCond)
+    let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
+    // The pad token.
+    let padToken = Tensor<Int32>([11], kind: .CPU, format: .NHWC, shape: [1])
+    let padTokenGPU = graph.variable(padToken.toGPU(0))
+    textModel.compile(
+      inputs: [tokensTensorGPU, rotaryTensorGPU, causalAttentionMaskGPU, padTokenGPU])
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        store.read(
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+      }
+    }
+    var c = textModel(
+      inputs: tokensTensorGPU, [rotaryTensorGPU, causalAttentionMaskGPU, padTokenGPU]
+    ).map { $0.as(of: FloatType.self) }
+    c.remove(at: 3)  // The final output is not needed.
+    c[0] = c[0].reshaped(.HWC(2, tokenLength, 5120))
+    c[1] = c[1].reshaped(.HWC(2, tokenLength, 5120))
+    c[2] = c[2].reshaped(.HWC(2, tokenLength, 5120))
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
+    // Now handles C.
+    let paddedTokenLength = max(tokenLength, 512)
+    var newC = graph.variable(.GPU(0), .HWC(2, paddedTokenLength, 15360), of: FloatType.self)
+    newC[0..<1, (paddedTokenLength - tokenLengthUncond)..<paddedTokenLength, 0..<5120] =
+      c[0][0..<1, 0..<tokenLengthUncond, 0..<5120]
+    newC[0..<1, (paddedTokenLength - tokenLengthUncond)..<paddedTokenLength, 5120..<10240] =
+      c[1][0..<1, 0..<tokenLengthUncond, 0..<5120]
+    newC[0..<1, (paddedTokenLength - tokenLengthUncond)..<paddedTokenLength, 10240..<15360] =
+      c[2][0..<1, 0..<tokenLengthUncond, 0..<5120]
+    let padEmbed = c[3].reshaped(.HWC(1, 1, 5120))
+    if tokenLengthUncond < paddedTokenLength {
+      // Copy pad token to the beginning.
+      for i in 0..<(paddedTokenLength - tokenLengthUncond) {
+        newC[0..<1, i..<(i + 1), 0..<5120] = padEmbed
+        newC[0..<1, i..<(i + 1), 5120..<10240] = padEmbed
+        newC[0..<1, i..<(i + 1), 10240..<15360] = padEmbed
+      }
+    }
+    newC[1..<2, (paddedTokenLength - tokenLengthCond)..<paddedTokenLength, 0..<5120] =
+      c[0][1..<2, 0..<tokenLengthCond, 0..<5120]
+    newC[1..<2, (paddedTokenLength - tokenLengthCond)..<paddedTokenLength, 5120..<10240] =
+      c[1][1..<2, 0..<tokenLengthCond, 0..<5120]
+    newC[1..<2, (paddedTokenLength - tokenLengthCond)..<paddedTokenLength, 10240..<15360] =
+      c[2][1..<2, 0..<tokenLengthCond, 0..<5120]
+    if tokenLengthCond < paddedTokenLength {
+      // Copy pad token to the beginning.
+      for i in 0..<(paddedTokenLength - tokenLengthCond) {
+        newC[0..<1, i..<(i + 1), 0..<5120] = padEmbed
+        newC[0..<1, i..<(i + 1), 5120..<10240] = padEmbed
+        newC[0..<1, i..<(i + 1), 10240..<15360] = padEmbed
+      }
+    }
+    return ([newC], [textModel])
+  }
+
   public func encode(
     tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
@@ -2653,12 +2752,16 @@ extension TextEncoder {
         textModels: existingTextModels)
     case .zImage:
       return encodeZImage(
-        images: images,
-        tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
+        images: images, tokens: tokens, positions: positions, mask: mask,
+        injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
         modifier: modifier, textModels: existingTextModels)
     case .flux2:
-      fatalError()
+      return encodeFlux2(
+        images: images, tokens: tokens, positions: positions, mask: mask,
+        injectedEmbeddings: injectedEmbeddings,
+        tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
+        modifier: modifier, textModels: existingTextModels)
     case .kandinsky21:
       return encodeKandinsky(tokens: tokens, positions: positions)
     case .sdxlBase, .sdxlRefiner, .ssd1b:

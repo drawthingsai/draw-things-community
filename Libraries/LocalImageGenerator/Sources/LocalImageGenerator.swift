@@ -1463,7 +1463,16 @@ extension LocalImageGenerator {
         potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
       return result
     case .flux2:
-      fatalError()
+      let promptWithTemplate =
+        "<s>[SYSTEM_PROMPT]You are an AI that reasons about image descriptions. You give structured responses focusing on object relationships, object\nattribution and actions without speculation.[/SYSTEM_PROMPT][INST]\(text)[/INST]"
+      let negativePromptWithTemplate =
+        "<s>[SYSTEM_PROMPT]You are an AI that reasons about image descriptions. You give structured responses focusing on object relationships, object\nattribution and actions without speculation.[/SYSTEM_PROMPT][INST]\(negativeText)[/INST]"
+      let result = tokenize(
+        graph: graph, tokenizer: tokenizerMistral3, text: promptWithTemplate,
+        negativeText: negativePromptWithTemplate,
+        paddingToken: nil, addSpecialTokens: false, conditionalLength: 15360, modifier: .mistral3,
+        potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
+      return result
     case .hiDreamI1:
       var tokenizerV1 = tokenizerV1
       tokenizerV1.textualInversions = []
