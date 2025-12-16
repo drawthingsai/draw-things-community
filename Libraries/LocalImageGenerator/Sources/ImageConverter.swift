@@ -655,7 +655,8 @@ public enum ImageConverter {
       let imageHeight = shape[1]
       let imageWidth = shape[2]
       let channels = shape[3]
-      guard channels == 4 || channels == 3 || channels == 16 || channels == 48 else { return [] }
+      guard channels == 4 || channels == 3 || channels == 16 || channels == 32 || channels == 48
+      else { return [] }
       return tensor.withUnsafeBytes {
         guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return [] }
         var images = [UIImage]()
@@ -744,7 +745,53 @@ public enum ImageConverter {
               bytes[i * 4 + 3] = 255
             }
           case .flux2:
-            fatalError()
+            for i in 0..<imageHeight * imageWidth {
+              let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
+                fp16[i * 32], fp16[i * 32 + 1], fp16[i * 32 + 2], fp16[i * 32 + 3],
+                fp16[i * 32 + 4], fp16[i * 32 + 5], fp16[i * 32 + 6], fp16[i * 32 + 7],
+                fp16[i * 32 + 8], fp16[i * 32 + 9], fp16[i * 32 + 10], fp16[i * 32 + 11],
+                fp16[i * 32 + 12], fp16[i * 32 + 13], fp16[i * 32 + 14], fp16[i * 32 + 15]
+              )
+              let (v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v27, v28, v29, v30, v31) =
+                (
+                  fp16[i * 32 + 16], fp16[i * 32 + 17], fp16[i * 32 + 18], fp16[i * 32 + 19],
+                  fp16[i * 32 + 20], fp16[i * 32 + 21], fp16[i * 32 + 22], fp16[i * 32 + 23],
+                  fp16[i * 32 + 24], fp16[i * 32 + 25], fp16[i * 32 + 26], fp16[i * 32 + 27],
+                  fp16[i * 32 + 28], fp16[i * 32 + 29], fp16[i * 32 + 30], fp16[i * 32 + 31]
+                )
+              let r: FloatType =
+                (0.0058 * v0 + 0.0495 * v1 - 0.0099 * v2 + 0.2144 * v3 + 0.0166 * v4 + 0.0157 * v5
+                  - 0.0398 * v6 - 0.0052 * v7 - 0.3527 * v8 - 0.0301 * v9 - 0.0107 * v10 + 0.0746
+                  * v11 + 0.0156 * v12 - 0.0034 * v13 + 0.0032 * v14 - 0.0939 * v15 + 0.0018 * v16
+                  + 0.0284 * v17 - 0.0024 * v18 + 0.1207 * v19 + 0.0128 * v20 + 0.0137 * v21
+                  + 0.0095 * v22 + 0.0000 * v23 - 0.0465 * v24 + 0.0095 * v25 + 0.0290 * v26
+                  + 0.0220 * v27 - 0.0332 * v28 - 0.0085 * v29 - 0.0076 * v30 - 0.0111 * v31
+                  - 0.0329) * 127.5 + 127.5
+              let g: FloatType =
+                (0.0113 * v0 + 0.0443 * v1 + 0.0096 * v2 + 0.3009 * v3 - 0.0039 * v4 + 0.0103 * v5
+                  + 0.0902 * v6 + 0.0095 * v7 - 0.2712 * v8 - 0.0356 * v9 + 0.0078 * v10 + 0.0090
+                  * v11 + 0.0169 * v12 - 0.0040 * v13 + 0.0181 * v14 - 0.0008 * v15 + 0.0043 * v16
+                  + 0.0056 * v17 - 0.0022 * v18 - 0.0026 * v19 + 0.0101 * v20 - 0.0072 * v21
+                  + 0.0092 * v22 - 0.0077 * v23 - 0.0204 * v24 + 0.0012 * v25 - 0.0034 * v26
+                  + 0.0169 * v27 - 0.0457 * v28 + 0.0389 * v29 + 0.0003 * v30 - 0.0460 * v31
+                  - 0.0718)
+                * 127.5
+                + 127.5
+              let b: FloatType =
+                (0.0073 * v0 + 0.0836 * v1 + 0.0644 * v2 + 0.3652 * v3 - 0.0054 * v4 - 0.0160 * v5
+                  - 0.0235 * v6 + 0.0109 * v7 - 0.1666 * v8 - 0.0180 * v9 + 0.0013 * v10 - 0.0941
+                  * v11 + 0.0070 * v12 - 0.0114 * v13 + 0.0080 * v14 + 0.0186 * v15 + 0.0104 * v16
+                  - 0.0127 * v17 - 0.0030 * v18 + 0.0065 * v19 + 0.0142 * v20 - 0.0007 * v21
+                  - 0.0059 * v22 - 0.0049 * v23 - 0.0312 * v24 - 0.0066 * v25 + 0.0025 * v26
+                  - 0.0048 * v27 - 0.0468 * v28 + 0.0609 * v29 - 0.0043 * v30 - 0.0614 * v31
+                  - 0.0851)
+                * 127.5
+                + 127.5
+              bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+              bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+              bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+              bytes[i * 4 + 3] = 255
+            }
           case .hunyuanVideo:
             // Need to update the coefficients.
             for i in 0..<imageHeight * imageWidth {

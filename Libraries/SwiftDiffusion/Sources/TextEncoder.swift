@@ -2675,35 +2675,38 @@ extension TextEncoder {
     // Now handles C.
     let paddedTokenLength = max(tokenLength, 512)
     var newC = graph.variable(.GPU(0), .HWC(2, paddedTokenLength, 15360), of: FloatType.self)
-    newC[0..<1, (paddedTokenLength - tokenLengthUncond)..<paddedTokenLength, 0..<5120] =
+    newC[0..<1, max(0, (512 - tokenLengthUncond))..<max(tokenLengthUncond, 512), 0..<5120] =
       c[0][0..<1, 0..<tokenLengthUncond, 0..<5120]
-    newC[0..<1, (paddedTokenLength - tokenLengthUncond)..<paddedTokenLength, 5120..<10240] =
+    newC[0..<1, max(0, (512 - tokenLengthUncond))..<max(tokenLengthUncond, 512), 5120..<10240] =
       c[1][0..<1, 0..<tokenLengthUncond, 0..<5120]
-    newC[0..<1, (paddedTokenLength - tokenLengthUncond)..<paddedTokenLength, 10240..<15360] =
+    newC[0..<1, max(0, (512 - tokenLengthUncond))..<max(tokenLengthUncond, 512), 10240..<15360] =
       c[2][0..<1, 0..<tokenLengthUncond, 0..<5120]
     let padEmbed = c[3].reshaped(.HWC(1, 1, 5120))
-    if tokenLengthUncond < paddedTokenLength {
+    if tokenLengthUncond < 512 {
       // Copy pad token to the beginning.
-      for i in 0..<(paddedTokenLength - tokenLengthUncond) {
+      for i in 0..<(512 - tokenLengthUncond) {
         newC[0..<1, i..<(i + 1), 0..<5120] = padEmbed
         newC[0..<1, i..<(i + 1), 5120..<10240] = padEmbed
         newC[0..<1, i..<(i + 1), 10240..<15360] = padEmbed
       }
     }
-    newC[1..<2, (paddedTokenLength - tokenLengthCond)..<paddedTokenLength, 0..<5120] =
+    newC[1..<2, max(0, (512 - tokenLengthCond))..<max(tokenLengthCond, 512), 0..<5120] =
       c[0][1..<2, 0..<tokenLengthCond, 0..<5120]
-    newC[1..<2, (paddedTokenLength - tokenLengthCond)..<paddedTokenLength, 5120..<10240] =
+    newC[1..<2, max(0, (512 - tokenLengthCond))..<max(tokenLengthCond, 512), 5120..<10240] =
       c[1][1..<2, 0..<tokenLengthCond, 0..<5120]
-    newC[1..<2, (paddedTokenLength - tokenLengthCond)..<paddedTokenLength, 10240..<15360] =
+    newC[1..<2, max(0, (512 - tokenLengthCond))..<max(tokenLengthCond, 512), 10240..<15360] =
       c[2][1..<2, 0..<tokenLengthCond, 0..<5120]
-    if tokenLengthCond < paddedTokenLength {
+    if tokenLengthCond < 512 {
       // Copy pad token to the beginning.
-      for i in 0..<(paddedTokenLength - tokenLengthCond) {
+      for i in 0..<(512 - tokenLengthCond) {
         newC[0..<1, i..<(i + 1), 0..<5120] = padEmbed
         newC[0..<1, i..<(i + 1), 5120..<10240] = padEmbed
         newC[0..<1, i..<(i + 1), 10240..<15360] = padEmbed
       }
     }
+    // Make sure it is padded to 512 at least.
+    tokenLengthCond = max(512, tokenLengthCond)
+    tokenLengthUncond = max(512, tokenLengthUncond)
     return ([newC], [textModel])
   }
 

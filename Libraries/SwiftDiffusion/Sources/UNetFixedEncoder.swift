@@ -1729,7 +1729,50 @@ extension UNetFixedEncoder {
           + conditions, nil
       )
     case .flux2:
-      fatalError()
+      let c0 = textEncoding[0]
+      let textLength = c0.shape[1]
+      let h = startHeight / 2
+      let w = startWidth / 2
+      var timeEmbeds = graph.variable(.GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
+      var guidanceEmbeds = graph.variable(
+        .GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: 1, embeddingSize: 256,
+              maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<1, 0..<256] = timeEmbed.reshaped(.HWC(1, 1, 256))
+        let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : guidanceEmbed
+        let guidanceEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: guidanceScale * 1_000, batchSize: 1, embeddingSize: 256,
+              maxPeriod: 10_000)
+          ).toGPU(0))
+        guidanceEmbeds[i..<(i + 1), 0..<1, 0..<256] = guidanceEmbed.reshaped(.HWC(1, 1, 256))
+      }
+      precondition(timesteps.count > 0)
+      let unetFixed = Flux2Fixed(channels: 6_144).1
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: [c0, timeEmbeds, guidanceEmbeds])
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !loadedFromWeightsCache {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
+      }
+      let conditions = unetFixed(inputs: c0, [timeEmbeds, guidanceEmbeds])
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      let rotaryEmbedding = Tensor<FloatType>(
+        from: Flux2RotaryPositionEmbedding(
+          height: h, width: w, tokenLength: textLength, referenceSizes: [], channels: 128)
+      ).toGPU(0)
+      return ([graph.variable(rotaryEmbedding)] + conditions, nil)
     case .hiDreamI1:
       let h = startHeight / 2
       let w = startWidth / 2

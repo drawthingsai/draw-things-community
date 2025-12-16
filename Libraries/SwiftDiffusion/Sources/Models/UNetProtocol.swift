@@ -257,7 +257,19 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         }
       }
   case .flux2:
-    fatalError()
+    return conditions[0..<2]
+      + conditions[2..<conditions.count].map {
+        let shape = $0.shape
+        if shape.count == 2 {
+          return DynamicGraph.Tensor<Float>($0)[
+            index..<(index + 1), 0..<shape[1]
+          ].copied()
+        } else {
+          return DynamicGraph.Tensor<Float>($0)[
+            index..<(index + 1), 0..<shape[1], 0..<shape[2]
+          ].copied()
+        }
+      }
   case .pixart:
     var extractedConditions = [conditions[0]]
     let layers = (conditions.count - 3) / 8
@@ -1235,7 +1247,21 @@ extension UNetFromNNC {
           })
       }
     case .flux2:
-      fatalError()
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tileScaleFactor = 8
+      unet = ModelBuilderOrModel.modelBuilder(
+        ModelBuilder {
+          let textLength = $0[2].shape[1]
+          return Flux2(
+            batchSize: $0[0].shape[0], tokenLength: textLength, referenceSequenceLength: 0,
+            height: tiledHeight, width: tiledWidth, channels: 6_144, layers: (8, 48),
+            usesFlashAttention: usesFlashAttention ? .scale1 : .none
+          ).1
+        })
     case .hiDreamI1:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -1415,6 +1441,12 @@ extension UNetFromNNC {
       }
       if version == .wan21_14b {  // For 14B Wan 2.1, we will be more aggressive and also offload out projection.
         if name.contains("c_o-") || name.contains("x_o-") {
+          return true
+        }
+      } else if version == .flux2 {  // FLUX.2 is a 32B-parameter model, offload all MLP layers.
+        if name.contains("_up_proj-") || name.contains("_w1-") || name.contains("_w2-")
+          || name.contains("_w3-")
+        {
           return true
         }
       }
@@ -2111,7 +2143,27 @@ extension UNetFromNNC {
       // TODO: TeaCache insert here.
       return
     case .flux2:
-      fatalError()
+      guard isCfgEnabled else {
+        unet.compile(inputs: inputs)
+        // TODO: TeaCache insert here.
+        return
+      }
+      let count = inputs.count
+      let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().map {
+        let shape = $0.1.shape
+        switch $0.0 {
+        case 0:
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+        case count - 130:
+          return DynamicGraph.Tensor<Float>($0.1)[
+            0..<shape[0], 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]]
+        default:
+          return $0.1
+        }
+      }
+      unet.compile(inputs: inputs)
+      // TODO: TeaCache insert here.
       return
     }
     unet.compile(inputs: inputs)
@@ -2773,7 +2825,91 @@ extension UNetFromNNC {
         }
       }
     case .flux2:
-      fatalError()
+      guard isCfgEnabled else {
+        let et = unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+        return et
+      }
+      let shape = firstInput.shape
+      let etUncond: DynamicGraph.Tensor<FloatType>
+      let etCond: DynamicGraph.Tensor<FloatType>
+      let count = restInputs.count
+      if tokenLengthCond > tokenLengthUncond {
+        // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ]
+        .copied()
+        let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case count - 130:  // Offset for text condition.
+            return DynamicGraph.Tensor<Float>($0.1)[
+              0..<shape[0],
+              tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+              0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etCond = unet(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+        etCond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etCond, etCond)
+        }
+        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case count - 130:  // Offset for text condition.
+            return DynamicGraph.Tensor<Float>($0.1)[
+              0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etUncond = unet(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+      } else {
+        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case count - 130:  // Offset for text condition.
+            return DynamicGraph.Tensor<Float>($0.1)[
+              0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etUncond = unet(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+        etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etUncond, etUncond)
+        }
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ]
+        .copied()
+        let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case count - 130:  // Offset for text condition.
+            return DynamicGraph.Tensor<Float>($0.1)[
+              0..<shape[0],
+              tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+              0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etCond = unet(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+      }
+      return Functional.concat(axis: 0, etUncond, etCond)
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
