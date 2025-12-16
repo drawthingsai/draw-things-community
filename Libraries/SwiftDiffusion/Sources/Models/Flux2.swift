@@ -102,9 +102,12 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -
   let x = Input()
   let w1 = Dense(count: intermediateSize, noBias: true, name: "\(name)_gate_proj")
   let w3 = Dense(count: intermediateSize, noBias: true, name: "\(name)_up_proj")
-  var out = w3(x) .* w1(x).swish()
+  var out = w3(x)
+  out = (1 / Float(8)) * out
+  out = out .* w1(x).swish()
   let w2 = Dense(count: hiddenSize, noBias: true, name: "\(name)_down_proj")
-  out = w2(out)
+  out = w2(out).to(.Float32)
+  out = Float(8) * out
   return (w1, w2, w3, Model([x], [out]))
 }
 
@@ -206,7 +209,7 @@ private func JointTransformerBlock(
   if !contextBlockPreOnly {
     contextOut = context + (contextChunks[2] .* contextOut).to(of: context)
   }
-  xOut = x + (xChunks[2] .* xOut).to(of: context)
+  xOut = x + (xChunks[2] .* xOut).to(of: x)
   // Attentions are now. Now run MLP.
   let contextW1: Model?
   let contextW2: Model?
@@ -218,9 +221,8 @@ private func JointTransformerBlock(
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
     contextOut =
       contextOut
-      + (contextChunks[5]
-      .* contextFF(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3]))
-      .to(of: contextOut)
+      + (contextChunks[5].to(of: contextOut)
+        .* contextFF(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3]))
   } else {
     contextW1 = nil
     contextW2 = nil
@@ -230,7 +232,7 @@ private func JointTransformerBlock(
     hiddenSize: k * h, intermediateSize: k * h * 3, name: "x")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   xOut =
-    xOut + (xChunks[5] .* xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3])).to(of: xOut)
+    xOut + (xChunks[5].to(of: xOut) .* xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]))
   let mapper: ModelWeightMapper = { format in
     var mapping: [String: ModelWeightElement] = [:]
     switch format {

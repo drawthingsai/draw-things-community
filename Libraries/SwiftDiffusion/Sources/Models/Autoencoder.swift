@@ -446,7 +446,8 @@ private func NHWCDecoder(
   let postQuantConv2d: Model?
   if quantLayer {
     let postQuantConv = Convolution(
-      groups: 1, filters: 4, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
+      groups: 1, filters: inputChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
+      format: .OIHW)
     out = postQuantConv(x)
     postQuantConv2d = postQuantConv
   } else {

@@ -70,7 +70,20 @@ extension FirstStage {
         Tensor<FloatType>(
           latentsStd.map { FloatType($0 / scalingFactor) }, .GPU(0),
           .NHWC(1, 1, 1, latentsStd.count)))
-      z = std .* x + mean
+      if version == .flux2 {
+        // FLUX.2 is different, it needs to first reshape x and then apply the scaling.
+        let shape = x.shape
+        z =
+          (std
+          .* x.reshaped(
+            format: .NHWC, shape: [shape[0], shape[1] / 2, 2, shape[2] / 2, 2, shape[3]]
+          ).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
+            .NHWC(shape[0], shape[1] / 2, shape[2] / 2, 2 * 2 * shape[3])) + mean).reshaped(
+            format: .NHWC, shape: [shape[0], shape[1] / 2, shape[2] / 2, shape[3], 2, 2]
+          ).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped(format: .NHWC, shape: shape)
+      } else {
+        z = std .* x + mean
+      }
     } else if let shiftFactor = latentsScaling.shiftFactor {
       z = x / scalingFactor + shiftFactor
     } else {
@@ -845,7 +858,20 @@ extension FirstStage {
         Tensor<FloatType>(
           latentsStd.map { FloatType(scalingFactor / $0) }, .GPU(0),
           .NHWC(1, 1, 1, latentsStd.count)))
-      return invStd .* (x - mean)
+      if version == .flux2 {
+        // FLUX.2 is different, it needs to first reshape x and then apply the scaling.
+        let shape = x.shape
+        return
+          (invStd
+          .* (x.reshaped(
+            format: .NHWC, shape: [shape[0], shape[1] / 2, 2, shape[2] / 2, 2, shape[3]]
+          ).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
+            .NHWC(shape[0], shape[1] / 2, shape[2] / 2, 2 * 2 * shape[3])) - mean))
+          .reshaped(format: .NHWC, shape: [shape[0], shape[1] / 2, shape[2] / 2, shape[3], 2, 2])
+          .permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped(format: .NHWC, shape: shape)
+      } else {
+        return invStd .* (x - mean)
+      }
     } else if let shiftFactor = latentsScaling.shiftFactor {
       return (x - shiftFactor) * scalingFactor
     } else {
