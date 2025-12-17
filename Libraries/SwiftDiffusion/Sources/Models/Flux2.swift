@@ -416,13 +416,14 @@ public func Flux2(
   var context = contextIn.to(.Float32)
   let xChunks = (0..<6).map { _ in Input() }
   let contextChunks = (0..<6).map { _ in Input() }
+  let rotResized = rot.reshaped(.NHWC(1, h * w + tokenLength, 1, 128))
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
     let (mapper, block) = JointTransformerBlock(
       prefix: ("double_blocks.\(i)", "double_blocks.\(i)"), k: 128, h: channels / 128, b: batchSize,
       t: tokenLength, hw: h * w, contextBlockPreOnly: false,
       scaleFactor: i < layers.0 - 2 ? nil : 8, usesFlashAttention: usesFlashAttention)
-    let blockOut = block([context, out, rot] + contextChunks + xChunks)
+    let blockOut = block([context, out, rotResized] + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
     mappers.append(mapper)
@@ -434,7 +435,7 @@ public func Flux2(
       prefix: ("single_blocks.\(i)", "single_blocks.\(i)"), k: 128, h: channels / 128, b: batchSize,
       t: tokenLength, hw: h * w, referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
-    out = block([out, rot] + singleChunks)
+    out = block([out, rotResized] + singleChunks)
     mappers.append(mapper)
   }
   let scale = Input()
