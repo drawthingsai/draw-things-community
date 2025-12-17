@@ -17,41 +17,9 @@ public func Flux2RotaryPositionEmbedding(
   let dim2 = dim1
   let dim3 = dim2
   assert(channels % 16 == 0)
-  for i in 0..<tokenLength {
-    for j in 0..<heads {
-      for k in 0..<(dim0 / 2) {
-        let theta = 0 * 1.0 / pow(2_000, Double(k) * 2 / Double(dim0))
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        rotTensor[0, i, j, k * 2] = Float(costheta)
-        rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
-      }
-      for k in 0..<(dim1 / 2) {
-        let theta = 0 * 1.0 / pow(2_000, Double(k) * 2 / Double(dim1))
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
-        rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
-      }
-      for k in 0..<(dim2 / 2) {
-        let theta = 0 * 1.0 / pow(2_000, Double(k) * 2 / Double(dim2))
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
-        rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
-      }
-      for k in 0..<(dim3 / 2) {
-        let theta = Double(i) * 1.0 / pow(2_000, Double(k) * 2 / Double(dim3))
-        let sintheta = sin(theta)
-        let costheta = cos(theta)
-        rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2) + (dim2 / 2)) * 2] = Float(costheta)
-        rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2) + (dim2 / 2)) * 2 + 1] = Float(sintheta)
-      }
-    }
-  }
   for y in 0..<height {
     for x in 0..<width {
-      let i = y * width + x + tokenLength
+      let i = y * width + x
       for j in 0..<heads {
         for k in 0..<(dim0 / 2) {
           let theta = 0 * 1.0 / pow(2_000, Double(k) * 2 / Double(dim0))
@@ -84,6 +52,41 @@ public func Flux2RotaryPositionEmbedding(
       }
     }
   }
+  let tokenOffset = height * width
+  for i in 0..<tokenLength {
+    for j in 0..<heads {
+      for k in 0..<(dim0 / 2) {
+        let theta = 0 * 1.0 / pow(2_000, Double(k) * 2 / Double(dim0))
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotTensor[0, i + tokenOffset, j, k * 2] = Float(costheta)
+        rotTensor[0, i + tokenOffset, j, k * 2 + 1] = Float(sintheta)
+      }
+      for k in 0..<(dim1 / 2) {
+        let theta = 0 * 1.0 / pow(2_000, Double(k) * 2 / Double(dim1))
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotTensor[0, i + tokenOffset, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+        rotTensor[0, i + tokenOffset, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+      }
+      for k in 0..<(dim2 / 2) {
+        let theta = 0 * 1.0 / pow(2_000, Double(k) * 2 / Double(dim2))
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotTensor[0, i + tokenOffset, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+        rotTensor[0, i + tokenOffset, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+      }
+      for k in 0..<(dim3 / 2) {
+        let theta = Double(i) * 1.0 / pow(2_000, Double(k) * 2 / Double(dim3))
+        let sintheta = sin(theta)
+        let costheta = cos(theta)
+        rotTensor[0, i + tokenOffset, j, (k + (dim0 / 2) + (dim1 / 2) + (dim2 / 2)) * 2] = Float(
+          costheta)
+        rotTensor[0, i + tokenOffset, j, (k + (dim0 / 2) + (dim1 / 2) + (dim2 / 2)) * 2 + 1] =
+          Float(sintheta)
+      }
+    }
+  }
   return rotTensor
 }
 
@@ -96,24 +99,30 @@ private func MLPEmbedder(channels: Int, name: String) -> (Model, Model, Model) {
   return (fc0, fc2, Model([x], [out]))
 }
 
-private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -> (
-  Model, Model, Model, Model
-) {
+private func FeedForward(hiddenSize: Int, intermediateSize: Int, scaleFactor: Float?, name: String)
+  -> (
+    Model, Model, Model, Model
+  )
+{
   let x = Input()
   let w1 = Dense(count: intermediateSize, noBias: true, name: "\(name)_gate_proj")
   let w3 = Dense(count: intermediateSize, noBias: true, name: "\(name)_up_proj")
   var out = w3(x)
-  out = (1 / Float(8)) * out
+  if let scaleFactor = scaleFactor {
+    out = (1 / scaleFactor) * out
+  }
   out = out .* w1(x).swish()
   let w2 = Dense(count: hiddenSize, noBias: true, name: "\(name)_down_proj")
-  out = w2(out).to(.Float32)
-  out = Float(8) * out
+  out = w2(out)
+  if let scaleFactor = scaleFactor {
+    out = out.to(.Float32) * scaleFactor
+  }
   return (w1, w2, w3, Model([x], [out]))
 }
 
 private func JointTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  usesFlashAttention: FlashAttentionLevel
+  scaleFactor: Float?, usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -144,9 +153,9 @@ private func JointTransformerBlock(
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_q")
   xQ = normQ(xQ)
   let xV = xToValues(xOut).reshaped([b, hw, h, k])
-  var keys = Functional.concat(axis: 1, contextK, xK)
-  var values = Functional.concat(axis: 1, contextV, xV)
-  var queries = Functional.concat(axis: 1, contextQ, xQ)
+  var keys = Functional.concat(axis: 1, xK, contextK)
+  var values = Functional.concat(axis: 1, xV, contextV)
+  var queries = Functional.concat(axis: 1, xQ, contextQ)
   queries = Functional.cmul(left: queries, right: rot)
   keys = Functional.cmul(left: keys, right: rot)
   // Now run attention.
@@ -195,14 +204,16 @@ private func JointTransformerBlock(
   }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
-    contextOut = out.reshaped([b, t, h * k], strides: [(t + hw) * h * k, h * k, 1]).contiguous()
+    contextOut = out.reshaped(
+      [b, t, h * k], offset: [0, hw, 0], strides: [(t + hw) * h * k, h * k, 1]
+    ).contiguous()
     let unifyheads = Dense(count: k * h, noBias: true, name: "c_o")
     contextOut = unifyheads(contextOut)
     contextUnifyheads = unifyheads
   } else {
     contextUnifyheads = nil
   }
-  xOut = out.reshaped([b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1])
+  xOut = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
     .contiguous()
   let xUnifyheads = Dense(count: k * h, noBias: true, name: "x_o")
   xOut = xUnifyheads(xOut)
@@ -217,22 +228,35 @@ private func JointTransformerBlock(
   if !contextBlockPreOnly {
     let contextFF: Model
     (contextW1, contextW2, contextW3, contextFF) = FeedForward(
-      hiddenSize: k * h, intermediateSize: k * h * 3, name: "c")
+      hiddenSize: k * h, intermediateSize: k * h * 3, scaleFactor: scaleFactor, name: "c")
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-    contextOut =
-      contextOut
-      + (contextChunks[5].to(of: contextOut)
+    if let _ = scaleFactor {
+      contextOut =
+        contextOut
+        + (contextChunks[5].to(of: contextOut)
+          .* contextFF(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3]))
+    } else {
+      contextOut =
+        contextOut
+        + (contextChunks[5]
         .* contextFF(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3]))
+        .to(of: contextOut)
+    }
   } else {
     contextW1 = nil
     contextW2 = nil
     contextW3 = nil
   }
   let (xW1, xW2, xW3, xFF) = FeedForward(
-    hiddenSize: k * h, intermediateSize: k * h * 3, name: "x")
+    hiddenSize: k * h, intermediateSize: k * h * 3, scaleFactor: scaleFactor, name: "x")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  xOut =
-    xOut + (xChunks[5].to(of: xOut) .* xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]))
+  if let _ = scaleFactor {
+    xOut =
+      xOut + (xChunks[5].to(of: xOut) .* xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]))
+  } else {
+    xOut =
+      xOut + (xChunks[5] .* xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3])).to(of: xOut)
+  }
   let mapper: ModelWeightMapper = { format in
     var mapping: [String: ModelWeightElement] = [:]
     switch format {
@@ -340,12 +364,12 @@ private func SingleTransformerBlock(
   }
   var xIn: Model.IO = x
   if contextBlockPreOnly {
-    out = out.reshaped([b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1])
+    out = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
       .contiguous()
-    xIn = x.reshaped([b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1])
+    xIn = x.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
       .contiguous()
     xOut = xOut.reshaped(
-      [b, hw, h * k], offset: [0, t, 0], strides: [(t + hw) * h * k, h * k, 1]
+      [b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1]
     )
     .contiguous()
   }
@@ -396,14 +420,15 @@ public func Flux2(
   for i in 0..<layers.0 {
     let (mapper, block) = JointTransformerBlock(
       prefix: ("double_blocks.\(i)", "double_blocks.\(i)"), k: 128, h: channels / 128, b: batchSize,
-      t: tokenLength, hw: h * w, contextBlockPreOnly: false, usesFlashAttention: usesFlashAttention)
+      t: tokenLength, hw: h * w, contextBlockPreOnly: false,
+      scaleFactor: i < layers.0 - 2 ? nil : 8, usesFlashAttention: usesFlashAttention)
     let blockOut = block([context, out, rot] + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
     mappers.append(mapper)
   }
   let singleChunks = (0..<3).map { _ in Input() }
-  out = Functional.concat(axis: 1, context, out)
+  out = Functional.concat(axis: 1, out, context)
   for i in 0..<layers.1 {
     let (mapper, block) = SingleTransformerBlock(
       prefix: ("single_blocks.\(i)", "single_blocks.\(i)"), k: 128, h: channels / 128, b: batchSize,
