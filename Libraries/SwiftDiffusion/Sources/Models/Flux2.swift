@@ -456,7 +456,7 @@ public func Flux2(
   let h = height / 2
   let w = width / 2
   let xEmbedder = Convolution(
-    groups: 1, filters: channels, filterSize: [2, 2],
+    groups: 1, filters: channels, filterSize: [2, 2], noBias: true,
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   var out: Model.IO
   let referenceLatents: Input?
@@ -533,7 +533,7 @@ public func Flux2Fixed(channels: Int, numberOfReferenceImages: Int) -> (ModelWei
   var outs = [Model.IO]()
   if numberOfReferenceImages > 0 {
     let xEmbedder = Convolution(
-      groups: 1, filters: channels, filterSize: [2, 2],
+      groups: 1, filters: channels, filterSize: [2, 2], noBias: true,
       hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
     for _ in 0..<numberOfReferenceImages {
       let x = Input()
