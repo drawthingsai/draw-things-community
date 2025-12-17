@@ -146,7 +146,8 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, scaleFactor: Fl
   )
 {
   let x = Input()
-  let w1 = Dense(count: intermediateSize, noBias: true, name: "\(name)_gate_proj")
+  let w1 = Dense(
+    count: intermediateSize, noBias: true, flags: [.Float16], name: "\(name)_gate_proj")
   let w3 = Dense(count: intermediateSize, noBias: true, name: "\(name)_up_proj")
   var out = w3(x)
   if let scaleFactor = scaleFactor {
@@ -172,7 +173,7 @@ private func JointTransformerBlock(
   let contextNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var contextOut = contextChunks[1] .* contextNorm1(context).to(.Float16) + contextChunks[0]
   let contextToKeys = Dense(count: k * h, noBias: true, name: "c_k")
-  let contextToQueries = Dense(count: k * h, noBias: true, name: "c_q")
+  let contextToQueries = Dense(count: k * h, noBias: true, flags: [.Float16], name: "c_q")
   let contextToValues = Dense(count: k * h, noBias: true, name: "c_v")
   var contextK = contextToKeys(contextOut).reshaped([b, t, h, k])
   let normAddedK = RMSNorm(epsilon: 1e-6, axis: [3], name: "c_norm_k")
@@ -185,7 +186,7 @@ private func JointTransformerBlock(
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
   let xToKeys = Dense(count: k * h, noBias: true, name: "x_k")
-  let xToQueries = Dense(count: k * h, noBias: true, name: "x_q")
+  let xToQueries = Dense(count: k * h, noBias: true, flags: [.Float16], name: "x_q")
   let xToValues = Dense(count: k * h, noBias: true, name: "x_v")
   var xK = xToKeys(xOut).reshaped([b, hw, h, k])
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
@@ -345,7 +346,7 @@ private func SingleTransformerBlock(
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
   let xToKeys = Dense(count: k * h, noBias: true, name: "x_k")
-  let xToQueries = Dense(count: k * h, noBias: true, name: "x_q")
+  let xToQueries = Dense(count: k * h, noBias: true, flags: [.Float16], name: "x_q")
   let xToValues = Dense(count: k * h, noBias: true, name: "x_v")
   var xK = xToKeys(xOut).reshaped([b, t + hw, h, k])
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
@@ -419,7 +420,7 @@ private func SingleTransformerBlock(
     .contiguous()
   }
   let xUnifyheads = Dense(count: k * h, noBias: true, name: "x_o")
-  let xW1 = Dense(count: k * h * 3, noBias: true, name: "x_w1")
+  let xW1 = Dense(count: k * h * 3, noBias: true, flags: [.Float16], name: "x_w1")
   let xW3 = Dense(count: k * h * 3, noBias: true, name: "x_w3")
   let xW2 = Dense(count: k * h, noBias: true, name: "x_w2")
   out = xUnifyheads(out) + xW2(xW3(xOut) .* xW1(xOut).swish())

@@ -672,11 +672,22 @@ public struct ModelZoo: DownloadZoo {
 
   public static let builtinSpecifications: [Specification] = [
     Specification(
-      name: "FLUX.2 [dev]", file: "flux_2_dev_q6p.ckpt", prefix: "",
-      version: .flux2, defaultScale: 16,
-      textEncoder: "mistral_small_3.2_24b_instruct_2506_q8p.ckpt",
-      autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
-      guidanceEmbed: true, hiresFixScale: 24, note: "", copyright: "© 2025 Black Forest Labs"
+      name: "Z Image Turbo 1.0", file: "z_image_turbo_1.0_q8p.ckpt", prefix: "",
+      version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Z Image Turbo 1.0 (6-bit)", file: "z_image_turbo_1.0_q6p.ckpt", prefix: "",
+      version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
     ),
     Specification(
       name: "Qwen Image 1.0", file: "qwen_image_1.0_q8p.ckpt", prefix: "",
@@ -771,24 +782,6 @@ public struct ModelZoo: DownloadZoo {
       isBf16: true,
       note:
         "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
-      copyright: "© 2025 Alibaba"
-    ),
-    Specification(
-      name: "Z Image Turbo 1.0", file: "z_image_turbo_1.0_q8p.ckpt", prefix: "",
-      version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
-      autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
-      hiresFixScale: 24,
-      note:
-        "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
-      copyright: "© 2025 Alibaba"
-    ),
-    Specification(
-      name: "Z Image Turbo 1.0 (6-bit)", file: "z_image_turbo_1.0_q6p.ckpt", prefix: "",
-      version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
-      autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
-      hiresFixScale: 24,
-      note:
-        "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
       copyright: "© 2025 Alibaba"
     ),
     Specification(
