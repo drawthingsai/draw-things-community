@@ -52,7 +52,48 @@ public func Flux2RotaryPositionEmbedding(
       }
     }
   }
-  let tokenOffset = height * width
+  var index = width * height
+  for (n, referenceSize) in referenceSizes.enumerated() {
+    let height = referenceSize.height
+    let width = referenceSize.width
+    for y in 0..<height {
+      for x in 0..<width {
+        let i = y * width + x + index
+        for j in 0..<heads {
+          for k in 0..<(dim0 / 2) {
+            let theta = Double(10 + n * 10) * 1.0 / pow(2_000, Double(k) * 2 / Double(dim0))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, k * 2] = Float(costheta)
+            rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim1 / 2) {
+            let theta = Double(y) * 1.0 / pow(2_000, Double(k) * 2 / Double(dim1))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+            rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim2 / 2) {
+            let theta = Double(x) * 1.0 / pow(2_000, Double(k) * 2 / Double(dim2))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+            rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+          }
+          for k in 0..<(dim3 / 2) {
+            let theta = 0 * 1.0 / pow(2_000, Double(k) * 2 / Double(dim3))
+            let sintheta = sin(theta)
+            let costheta = cos(theta)
+            rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2) + (dim2 / 2)) * 2] = Float(costheta)
+            rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2) + (dim2 / 2)) * 2 + 1] = Float(sintheta)
+          }
+        }
+      }
+    }
+    index += height * width
+  }
+  let tokenOffset = index
   for i in 0..<tokenLength {
     for j in 0..<heads {
       for k in 0..<(dim0 / 2) {
@@ -364,12 +405,16 @@ private func SingleTransformerBlock(
   }
   var xIn: Model.IO = x
   if contextBlockPreOnly {
-    out = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
-      .contiguous()
-    xIn = x.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
-      .contiguous()
+    out = out.reshaped(
+      [b, hw - referenceSequenceLength, h * k], strides: [(t + hw) * h * k, h * k, 1]
+    )
+    .contiguous()
+    xIn = x.reshaped(
+      [b, hw - referenceSequenceLength, h * k], strides: [(t + hw) * h * k, h * k, 1]
+    )
+    .contiguous()
     xOut = xOut.reshaped(
-      [b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1]
+      [b, hw - referenceSequenceLength, h * k], strides: [(t + hw) * h * k, h * k, 1]
     )
     .contiguous()
   }
@@ -412,17 +457,27 @@ public func Flux2(
   let xEmbedder = Convolution(
     groups: 1, filters: channels, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
-  var out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+  var out: Model.IO
+  let referenceLatents: Input?
+  if referenceSequenceLength > 0 && (layers.0 > 0 || layers.1 > 0) {
+    let latents = Input()
+    let imgIn = xEmbedder(x).reshaped([batchSize, h * w, channels])
+    out = Functional.concat(axis: 1, imgIn, latents, flags: [.disableOpt]).to(.Float32)
+    referenceLatents = latents
+  } else {
+    out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+    referenceLatents = nil
+  }
   var context = contextIn.to(.Float32)
   let xChunks = (0..<6).map { _ in Input() }
   let contextChunks = (0..<6).map { _ in Input() }
-  let rotResized = rot.reshaped(.NHWC(1, h * w + tokenLength, 1, 128))
+  let rotResized = rot.reshaped(.NHWC(1, h * w + referenceSequenceLength + tokenLength, 1, 128))
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
     let (mapper, block) = JointTransformerBlock(
       prefix: ("double_blocks.\(i)", "double_blocks.\(i)"), k: 128, h: channels / 128, b: batchSize,
-      t: tokenLength, hw: h * w, contextBlockPreOnly: false,
-      scaleFactor: i < layers.0 - 2 ? nil : 8, usesFlashAttention: usesFlashAttention)
+      t: tokenLength, hw: h * w + referenceSequenceLength, contextBlockPreOnly: false,
+      scaleFactor: i > layers.0 - 3 ? 8 : nil, usesFlashAttention: usesFlashAttention)
     let blockOut = block([context, out, rotResized] + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
@@ -433,7 +488,8 @@ public func Flux2(
   for i in 0..<layers.1 {
     let (mapper, block) = SingleTransformerBlock(
       prefix: ("single_blocks.\(i)", "single_blocks.\(i)"), k: 128, h: channels / 128, b: batchSize,
-      t: tokenLength, hw: h * w, referenceSequenceLength: referenceSequenceLength,
+      t: tokenLength, hw: h * w + referenceSequenceLength,
+      referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
     out = block([out, rotResized] + singleChunks)
     mappers.append(mapper)
@@ -463,15 +519,28 @@ public func Flux2(
     }
     return mapping
   }
-  return (
-    mapper,
-    Model([x, rot, contextIn] + xChunks + contextChunks + singleChunks + [scale, shift], [out])
-  )
+  var inputs: [Input] = [x, rot] + (referenceLatents.map { [$0] } ?? []) + [contextIn]
+  inputs.append(contentsOf: xChunks + contextChunks + singleChunks)
+  inputs.append(contentsOf: [scale, shift])
+  return (mapper, Model(inputs, [out]))
 }
 
-public func Flux2Fixed(channels: Int) -> (ModelWeightMapper, Model) {
+public func Flux2Fixed(channels: Int, numberOfReferenceImages: Int) -> (ModelWeightMapper, Model) {
   let contextIn = Input()
   let t = Input()
+  var referenceImages = [Input]()
+  var outs = [Model.IO]()
+  if numberOfReferenceImages > 0 {
+    let xEmbedder = Convolution(
+      groups: 1, filters: channels, filterSize: [2, 2],
+      hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+    for _ in 0..<numberOfReferenceImages {
+      let x = Input()
+      let out = xEmbedder(x)
+      referenceImages.append(x)
+      outs.append(out)
+    }
+  }
   let contextEmbedder = Dense(count: channels, noBias: true, name: "context_embedder")
   let context = contextEmbedder(contextIn)
   let (tMlp0, tMlp2, tEmbedder) = MLPEmbedder(channels: channels, name: "t")
@@ -524,6 +593,8 @@ public func Flux2Fixed(channels: Int) -> (ModelWeightMapper, Model) {
   }
   return (
     mapper,
-    Model([contextIn, t, g], [context] + xChunks + contextChunks + singleChunks + finalChunks)
+    Model(
+      [contextIn] + referenceImages + [t, g],
+      outs + [context] + xChunks + contextChunks + singleChunks + finalChunks)
   )
 }

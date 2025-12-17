@@ -3102,16 +3102,17 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .wan22_5b, .zImage, .flux2:
+        .hiDreamI1, .wan22_5b, .zImage:
         return (nil, [])
-      case .flux1, .qwenImage:
+      case .flux1, .qwenImage, .flux2:
+        let inputChannels = version == .flux2 ? 32 : 16
         var referenceEncoded = [DynamicGraph.Tensor<FloatType>]()
         if let image = image {
           let encoded = firstStage.encode(image, encoder: nil, cancellation: { _ in }).0
           let shape = encoded.shape
           referenceEncoded.append(
             firstStage.scale(
-              encoded[0..<1, 0..<shape[1], 0..<shape[2], 0..<16].copied()))
+              encoded[0..<1, 0..<shape[1], 0..<shape[2], 0..<inputChannels].copied()))
         }
         for shuffle in shuffles {
           guard shuffle.1 > 0 else { continue }
@@ -3134,7 +3135,7 @@ extension LocalImageGenerator {
           let encodedShape = encoded.shape
           referenceEncoded.append(
             firstStage.scale(
-              encoded[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied()))
+              encoded[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<inputChannels].copied()))
         }
         return (nil, referenceEncoded)
       }

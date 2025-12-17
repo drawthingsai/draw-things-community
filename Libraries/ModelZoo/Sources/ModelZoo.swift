@@ -675,7 +675,7 @@ public struct ModelZoo: DownloadZoo {
       name: "FLUX.2 [dev]", file: "flux_2_dev_q6p.ckpt", prefix: "",
       version: .flux2, defaultScale: 16,
       textEncoder: "mistral_small_3.2_24b_instruct_2506_q8p.ckpt",
-      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
       guidanceEmbed: true, hiresFixScale: 24, note: "", copyright: "© 2025 Black Forest Labs"
     ),
     Specification(

@@ -1730,6 +1730,7 @@ extension UNetFixedEncoder {
       )
     case .flux2:
       let c0 = textEncoding[0]
+      let cBatchSize = c0.shape[0]
       let textLength = c0.shape[1]
       let h = startHeight / 2
       let w = startWidth / 2
@@ -1754,11 +1755,16 @@ extension UNetFixedEncoder {
         guidanceEmbeds[i..<(i + 1), 0..<1, 0..<256] = guidanceEmbed.reshaped(.HWC(1, 1, 256))
       }
       precondition(timesteps.count > 0)
-      let unetFixed = Flux2Fixed(channels: 6_144).1
+      let unetFixed = Flux2Fixed(channels: 6_144, numberOfReferenceImages: referenceImages.count).1
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: [c0, timeEmbeds, guidanceEmbeds])
+      unetFixed.compile(inputs: [c0] + referenceImages + [timeEmbeds, guidanceEmbeds])
+      var suffix = ""
+      // If we have reference image, we need to load x_embedder weights, differentiate that.
+      if referenceImages.count > 0 {
+        suffix += ":ref"
+      }
       let loadedFromWeightsCache = weightsCache.detach(
-        "\(filePath):[fixed]", to: unetFixed.parameters)
+        "\(filePath):[fixed]\(suffix)", to: unetFixed.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
@@ -1766,11 +1772,47 @@ extension UNetFixedEncoder {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
-      let conditions = unetFixed(inputs: c0, [timeEmbeds, guidanceEmbeds])
+      var conditions = unetFixed(inputs: c0, referenceImages + [timeEmbeds, guidanceEmbeds]).map {
+        $0.as(of: FloatType.self)
+      }
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      var referenceSizes: [(height: Int, width: Int)]
+      if referenceImages.count > 0 {
+        referenceSizes = conditions[0..<referenceImages.count].map {
+          let shape = $0.shape
+          return (height: shape[1], width: shape[2])
+        }
+        let refLatents = conditions[0..<referenceImages.count].map {
+          let shape = $0.shape
+          return $0.reshaped(.HWC(shape[0], shape[1] * shape[2], shape[3]))
+        }
+        let sequenceLength = refLatents.reduce(0) { $0 + $1.shape[1] }
+        let shape = refLatents[0].shape
+        var reference = graph.variable(
+          .GPU(0), .HWC(shape[0], sequenceLength, shape[2]), of: FloatType.self)
+        var index = 0
+        for refLatent in refLatents {
+          let shape = refLatent.shape
+          reference[0..<shape[0], index..<(index + shape[1]), 0..<shape[2]] = refLatent
+          index += shape[1]
+        }
+        if shape[0] < cBatchSize {
+          let oldReference = reference
+          reference = graph.variable(
+            .GPU(0), .HWC(cBatchSize, sequenceLength, shape[2]), of: FloatType.self)
+          for i in 0..<cBatchSize {
+            reference[i..<(i + 1), 0..<sequenceLength, 0..<shape[2]] =
+              oldReference[0..<1, 0..<sequenceLength, 0..<shape[2]]
+          }
+        }
+        conditions = [reference] + conditions[referenceImages.count...]
+      } else {
+        referenceSizes = []
+      }
       let rotaryEmbedding = Tensor<FloatType>(
         from: Flux2RotaryPositionEmbedding(
-          height: h, width: w, tokenLength: textLength, referenceSizes: [], channels: 128)
+          height: h, width: w, tokenLength: textLength, referenceSizes: referenceSizes,
+          channels: 128)
       ).toGPU(0)
       return ([graph.variable(rotaryEmbedding)] + conditions, nil)
     case .hiDreamI1:
