@@ -1755,7 +1755,36 @@ extension UNetFixedEncoder {
         guidanceEmbeds[i..<(i + 1), 0..<1, 0..<256] = guidanceEmbed.reshaped(.HWC(1, 1, 256))
       }
       precondition(timesteps.count > 0)
-      let unetFixed = Flux2Fixed(channels: 6_144, numberOfReferenceImages: referenceImages.count).1
+      let unetFixed: Model
+      let lora = Array(
+        (OrderedDictionary<String, LoRAConfiguration>(
+          lora.filter({ $0.version == version }).map {
+            ($0.file, $0)
+          }
+        ) {
+          LoRAConfiguration(
+            file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
+            modifier: $0.modifier, mode: $0.mode)
+        })
+        .values
+      ).filter { $0.weight != 0 }
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        && canRunLoRASeparately
+      if shouldRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        (_, unetFixed) = LoRAFlux2Fixed(
+          channels: 6_144, numberOfReferenceImages: referenceImages.count,
+          LoRAConfiguration: configuration)
+      } else {
+        (_, unetFixed) = Flux2Fixed(channels: 6_144, numberOfReferenceImages: referenceImages.count)
+      }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [c0] + referenceImages + [timeEmbeds, guidanceEmbeds])
       var suffix = ""
@@ -1768,14 +1797,50 @@ extension UNetFixedEncoder {
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
-        if !loadedFromWeightsCache {
+        if !lora.isEmpty {
+          if shouldRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<(8 + 48)).map {
+                return ($0, $0)
+              })
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, format, shape in
+                let result = loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                  store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
+                )
+                switch result {
+                case .continue(let updatedName, _, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail  // Don't need to load.
+                  }
+                case .fail, .final(_):
+                  return result
+                }
+              }
+            }
+          } else {
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+                name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
+              }
+            }
+          }
+        } else if !loadedFromWeightsCache {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
       var conditions = unetFixed(inputs: c0, referenceImages + [timeEmbeds, guidanceEmbeds]).map {
         $0.as(of: FloatType.self)
       }
-      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
       var referenceSizes: [(height: Int, width: Int)]
       if referenceImages.count > 0 {
         referenceSizes = conditions[0..<referenceImages.count].map {

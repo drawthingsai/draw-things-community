@@ -172,7 +172,10 @@ public enum LoRAImporter {
         usesFlashAttention: .scale1
       )
     case .flux2:
-      fatalError()
+      (unetMapper, unet) = Flux2(
+        batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
+        channels: 6144, layers: (8, 48), usesFlashAttention: .scale1)
+      (unetFixedMapper, unetFixed) = Flux2Fixed(channels: 6144, numberOfReferenceImages: 0)
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -354,7 +357,14 @@ public enum LoRAImporter {
         ]
         tEmb = nil
       case .flux2:
-        fatalError()
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = true
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 15360), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -532,7 +542,18 @@ public enum LoRAImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .flux2:
-        fatalError()
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: Flux2RotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 512, referenceSizes: [], channels: 128)))
+          ]
+          + Flux2FixedOutputShapes(
+            tokenLength: 512, channels: 6144
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .kandinsky21, .v1, .v2:
         fatalError()
       }
@@ -863,6 +884,9 @@ public enum LoRAImporter {
       let isZImage = stateDict.keys.contains {
         $0.contains("layers_29_feed_forward_w3") || $0.contains("layers.29.feed_forward.w3.")
       }
+      let isFlux2 = stateDict.keys.contains {
+        $0.contains("single_blocks.39.linear1.")
+      }
       let isSDOrSDXL = stateDict.keys.contains {
         $0.hasSuffix(
           "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -885,9 +909,11 @@ public enum LoRAImporter {
       // Only confident about these if it is SD or SDXL. In any other cases, prefer the force version.
       switch (
         isSDOrSDXL, isSD3Medium, isSD3Large, isPixArtSigmaXL, isFlux1, isHunyuan, isWan21_1_3B,
-        isWan22_5B, isWan21_14B, isHiDream, isQwenImage, isZImage
+        isWan22_5B, isWan21_14B, isHiDream, isQwenImage, isZImage, isFlux2
       ) {
-      case (true, false, false, false, false, false, false, false, false, false, false, false):
+      case (
+        true, false, false, false, false, false, false, false, false, false, false, false, false
+      ):
         if let tokey = stateDict.first(where: {
           $0.key.hasSuffix(
             "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -936,29 +962,55 @@ public enum LoRAImporter {
           }
           throw Error.modelVersionFailed
         }
-      case (false, true, false, false, false, false, false, false, false, false, false, false):
+      case (
+        false, true, false, false, false, false, false, false, false, false, false, false, false
+      ):
         return forceVersionOr(.sd3)
-      case (false, false, true, false, false, false, false, false, false, false, false, false):
+      case (
+        false, false, true, false, false, false, false, false, false, false, false, false, false
+      ):
         return forceVersionOr(.sd3Large)
-      case (false, false, false, true, false, false, false, false, false, false, false, false):
+      case (
+        false, false, false, true, false, false, false, false, false, false, false, false, false
+      ):
         return forceVersionOr(.pixart)
-      case (false, false, false, false, true, false, false, false, false, false, false, false):
+      case (
+        false, false, false, false, true, false, false, false, false, false, false, false, false
+      ):
         return forceVersionOr(.flux1)
-      case (false, false, false, false, false, true, false, false, false, false, false, false):
+      case (
+        false, false, false, false, false, true, false, false, false, false, false, false, false
+      ):
         return forceVersionOr(.hunyuanVideo)
-      case (false, false, false, false, false, false, true, false, false, false, false, false):
+      case (
+        false, false, false, false, false, false, true, false, false, false, false, false, false
+      ):
         return forceVersionOr(.wan21_1_3b)
-      case (false, false, false, false, false, false, false, true, false, false, false, false):
+      case (
+        false, false, false, false, false, false, false, true, false, false, false, false, false
+      ):
         return forceVersionOr(.wan22_5b)
-      case (false, false, false, false, false, false, false, false, true, false, false, false),
-        (false, false, false, false, false, false, true, true, true, false, false, false):
+      case (
+        false, false, false, false, false, false, false, false, true, false, false, false, false
+      ),
+        (false, false, false, false, false, false, true, true, true, false, false, false, false):
         return forceVersionOr(.wan21_14b)
-      case (false, false, false, false, false, false, false, false, false, true, false, false):
+      case (
+        false, false, false, false, false, false, false, false, false, true, false, false, false
+      ):
         return forceVersionOr(.hiDreamI1)
-      case (false, false, false, false, false, false, false, false, false, false, true, false):
+      case (
+        false, false, false, false, false, false, false, false, false, false, true, false, false
+      ):
         return forceVersionOr(.qwenImage)
-      case (false, false, false, false, false, false, false, false, false, false, false, true):
+      case (
+        false, false, false, false, false, false, false, false, false, false, false, true, false
+      ):
         return forceVersionOr(.zImage)
+      case (
+        false, false, false, false, false, false, false, false, false, false, false, false, true
+      ):
+        return forceVersionOr(.flux2)
       default:
         if let forceVersion = forceVersion {
           return forceVersion

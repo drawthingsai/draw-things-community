@@ -1254,24 +1254,51 @@ extension UNetFromNNC {
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tileScaleFactor = 8
-      unet = ModelBuilderOrModel.modelBuilder(
-        ModelBuilder {
-          let referenceSequenceLength: Int
-          let tokenLength: Int
-          if referenceImageCount > 0 {
-            referenceSequenceLength = $0[2].shape[1]
-            tokenLength = $0[3].shape[1]
-          } else {
-            referenceSequenceLength = 0
-            tokenLength = $0[2].shape[1]
-          }
-          return Flux2(
-            batchSize: $0[0].shape[0], tokenLength: tokenLength,
-            referenceSequenceLength: referenceSequenceLength,
-            height: tiledHeight, width: tiledWidth, channels: 6_144, layers: (8, 48),
-            usesFlashAttention: usesFlashAttention ? .scale1 : .none
-          ).1
-        })
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let referenceSequenceLength: Int
+            let tokenLength: Int
+            if referenceImageCount > 0 {
+              referenceSequenceLength = $0[2].shape[1]
+              tokenLength = $0[3].shape[1]
+            } else {
+              referenceSequenceLength = 0
+              tokenLength = $0[2].shape[1]
+            }
+            return LoRAFlux2(
+              batchSize: $0[0].shape[0], tokenLength: tokenLength,
+              referenceSequenceLength: referenceSequenceLength,
+              height: tiledHeight, width: tiledWidth, channels: 6_144, layers: (8, 48),
+              usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+              LoRAConfiguration: configuration
+            ).1
+          })
+      } else {
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let referenceSequenceLength: Int
+            let tokenLength: Int
+            if referenceImageCount > 0 {
+              referenceSequenceLength = $0[2].shape[1]
+              tokenLength = $0[3].shape[1]
+            } else {
+              referenceSequenceLength = 0
+              tokenLength = $0[2].shape[1]
+            }
+            return Flux2(
+              batchSize: $0[0].shape[0], tokenLength: tokenLength,
+              referenceSequenceLength: referenceSequenceLength,
+              height: tiledHeight, width: tiledWidth, channels: 6_144, layers: (8, 48),
+              usesFlashAttention: usesFlashAttention ? .scale1 : .none
+            ).1
+          })
+      }
     case .hiDreamI1:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth

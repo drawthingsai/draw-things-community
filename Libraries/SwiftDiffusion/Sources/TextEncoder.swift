@@ -2638,13 +2638,16 @@ extension TextEncoder {
       }
     }
     let tokensTensorGPU = tokens[0].toGPU(0)
+    let maxTokenLength = 512
     let rotaryTensorGPUUncond = graph.variable(
       Mistral3RotaryEmbedding(
-        sequenceLength: tokenLength, endAligned: max(0, 512 - tokenLengthUncond), of: FloatType.self
+        sequenceLength: tokenLength, endAligned: max(0, maxTokenLength - tokenLengthUncond),
+        of: FloatType.self
       ).toGPU(0))
     let rotaryTensorGPUCond = graph.variable(
       Mistral3RotaryEmbedding(
-        sequenceLength: tokenLength, endAligned: max(0, 512 - tokenLengthCond), of: FloatType.self
+        sequenceLength: tokenLength, endAligned: max(0, maxTokenLength - tokenLengthCond),
+        of: FloatType.self
       ).toGPU(0))
     let rotaryTensorGPU = Functional.concat(axis: 0, rotaryTensorGPUUncond, rotaryTensorGPUCond)
     let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
@@ -2673,7 +2676,6 @@ extension TextEncoder {
     c[2] = c[2].reshaped(.HWC(2, tokenLength, 5120))
     weightsCache.attach(filePaths[0], from: textModel.parameters)
     // Now handles C.
-    let maxTokenLength = 512
     let paddedTokenLength = max(tokenLength, maxTokenLength)
     var newC = graph.variable(.GPU(0), .HWC(2, paddedTokenLength, 15360), of: FloatType.self)
     newC[
