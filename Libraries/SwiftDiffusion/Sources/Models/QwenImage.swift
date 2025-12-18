@@ -3,7 +3,7 @@ import NNC
 
 public func QwenImageRotaryPositionEmbedding(
   height: Int, width: Int, tokenLength: Int, referenceSizes: [(height: Int, width: Int)],
-  channels: Int, heads: Int = 1
+  channels: Int, multiImage: Bool = false, heads: Int = 1
 )
   -> Tensor<Float>
 {
@@ -81,22 +81,25 @@ public func QwenImageRotaryPositionEmbedding(
   var index = width * height
   var h = 0
   var w = 0
-  for referenceSize in referenceSizes {
+  for (n, referenceSize) in referenceSizes.enumerated() {
     let height = referenceSize.height
     let width = referenceSize.width
     var hOffset = 0
     var wOffset = 0
-    if height + h > width + w {
-      wOffset = w
-    } else {
-      hOffset = h
+    if !multiImage {  // No native multi-image support, move image on the same plane.
+      if height + h > width + w {
+        wOffset = w
+      } else {
+        hOffset = h
+      }
     }
     for y in 0..<height {
       for x in 0..<width {
         let i = y * width + x + index
         for j in 0..<heads {
           for k in 0..<(dim0 / 2) {
-            let theta = 1 * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))  // Use time index at 1.
+            let theta =
+              Double(multiImage ? 1 + n : 1) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))  // Use time index at 1.
             let sintheta = sin(theta)
             let costheta = cos(theta)
             rotTensor[0, i, j, k * 2] = Float(costheta)

@@ -217,7 +217,7 @@ extension DPMPP2MSampler: Sampler {
         let (encodings, weightMapper) = fixedEncoder.encode(
           isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
           guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
-          distilledGuidanceLayers: distilledGuidanceLayers,
+          distilledGuidanceLayers: distilledGuidanceLayers, modifier: modifier,
           textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
           startWidth: startWidth,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
@@ -430,7 +430,7 @@ extension DPMPP2MSampler: Sampler {
               + fixedEncoder.encode(
                 isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
                 guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
-                distilledGuidanceLayers: refiner.distilledGuidanceLayers,
+                distilledGuidanceLayers: refiner.distilledGuidanceLayers, modifier: modifier,
                 textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,

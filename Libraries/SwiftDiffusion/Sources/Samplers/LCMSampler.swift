@@ -239,7 +239,7 @@ extension LCMSampler: Sampler {
         let (encodings, weightMapper) = fixedEncoder.encode(
           isCfgEnabled: false, textGuidanceScale: textGuidanceScale, guidanceEmbed: guidanceEmbed,
           isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
-          distilledGuidanceLayers: distilledGuidanceLayers,
+          distilledGuidanceLayers: distilledGuidanceLayers, modifier: modifier,
           textEncoding: c,
           timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
           batchSize: batchSize, startHeight: startHeight,
@@ -448,7 +448,7 @@ extension LCMSampler: Sampler {
               + fixedEncoder.encode(
                 isCfgEnabled: false, textGuidanceScale: textGuidanceScale,
                 guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
-                distilledGuidanceLayers: refiner.distilledGuidanceLayers,
+                distilledGuidanceLayers: refiner.distilledGuidanceLayers, modifier: modifier,
                 textEncoding: oldC, timesteps: timesteps[i..<endStep.integral].map { Float($0) },
                 batchSize: batchSize, startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,

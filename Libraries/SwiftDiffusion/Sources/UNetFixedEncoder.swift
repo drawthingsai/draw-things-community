@@ -200,7 +200,7 @@ extension UNetFixedEncoder {
   }
   public func encode(
     isCfgEnabled: Bool, textGuidanceScale: Float, guidanceEmbed: Float,
-    isGuidanceEmbedEnabled: Bool, distilledGuidanceLayers: Int,
+    isGuidanceEmbedEnabled: Bool, distilledGuidanceLayers: Int, modifier: SamplerModifier,
     textEncoding: [DynamicGraph.Tensor<FloatType>],
     timesteps: [Float], batchSize: Int, startHeight: Int, startWidth: Int, tokenLengthUncond: Int,
     tokenLengthCond: Int, lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration,
