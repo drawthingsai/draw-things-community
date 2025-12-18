@@ -324,7 +324,28 @@ private func JointTransformerBlock(
       mapping["\(prefix.0).img_mlp.0.weight"] = [xW1.weight.name, xW3.weight.name]
       mapping["\(prefix.0).img_mlp.2.weight"] = [xW2.weight.name]
     case .diffusers:
-      break
+      mapping["\(prefix.1).attn.add_q_proj.weight"] = [contextToQueries.weight.name]
+      mapping["\(prefix.1).attn.add_k_proj.weight"] = [contextToKeys.weight.name]
+      mapping["\(prefix.1).attn.add_v_proj.weight"] = [contextToValues.weight.name]
+      mapping["\(prefix.1).attn.norm_added_k.weight"] = [normAddedK.weight.name]
+      mapping["\(prefix.1).attn.norm_added_q.weight"] = [normAddedQ.weight.name]
+      mapping["\(prefix.1).attn.to_q.weight"] = [xToQueries.weight.name]
+      mapping["\(prefix.1).attn.to_k.weight"] = [xToKeys.weight.name]
+      mapping["\(prefix.1).attn.to_v.weight"] = [xToValues.weight.name]
+      mapping["\(prefix.1).attn.norm_k.weight"] = [normK.weight.name]
+      mapping["\(prefix.1).attn.norm_q.weight"] = [normQ.weight.name]
+      if let contextUnifyheads = contextUnifyheads {
+        mapping["\(prefix.1).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
+      }
+      mapping["\(prefix.1).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
+      if let contextW1 = contextW1, let contextW2 = contextW2, let contextW3 = contextW3 {
+        mapping["\(prefix.1).ff_context.linear_in.weight"] = [
+          contextW1.weight.name, contextW3.weight.name,
+        ]
+        mapping["\(prefix.1).ff_context.linear_out.weight"] = [contextW2.weight.name]
+      }
+      mapping["\(prefix.1).ff.linear_in.weight"] = [xW1.weight.name, xW3.weight.name]
+      mapping["\(prefix.1).ff.linear_out.weight"] = [xW2.weight.name]
     }
     return mapping
   }
@@ -438,7 +459,15 @@ private func SingleTransformerBlock(
       mapping["\(prefix.0).linear2.weight"] = ModelWeightElement(
         [xUnifyheads.weight.name, xW2.weight.name], format: .I, offsets: [0, k * h])
     case .diffusers:
-      break
+      mapping["\(prefix.1).attn.to_qkv_mlp_proj.weight"] = ModelWeightElement(
+        [
+          xToQueries.weight.name, xToKeys.weight.name, xToValues.weight.name, xW1.weight.name,
+          xW3.weight.name,
+        ], offsets: [0, k * h, k * h * 2, k * h * 3, k * h * 6])
+      mapping["\(prefix.1).attn.norm_k.weight"] = [normK.weight.name]
+      mapping["\(prefix.1).attn.norm_q.weight"] = [normQ.weight.name]
+      mapping["\(prefix.1).attn.to_out.weight"] = ModelWeightElement(
+        [xUnifyheads.weight.name, xW2.weight.name], format: .I, offsets: [0, k * h])
     }
     return mapping
   }
@@ -475,7 +504,8 @@ public func Flux2(
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
     let (mapper, block) = JointTransformerBlock(
-      prefix: ("double_blocks.\(i)", "double_blocks.\(i)"), k: 128, h: channels / 128, b: batchSize,
+      prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
+      b: batchSize,
       t: tokenLength, hw: h * w + referenceSequenceLength, contextBlockPreOnly: false,
       scaleFactor: i > layers.0 - 3 ? 8 : nil, usesFlashAttention: usesFlashAttention)
     let blockOut = block([context, out, rotResized] + contextChunks + xChunks)
@@ -487,7 +517,8 @@ public func Flux2(
   out = Functional.concat(axis: 1, out, context)
   for i in 0..<layers.1 {
     let (mapper, block) = SingleTransformerBlock(
-      prefix: ("single_blocks.\(i)", "single_blocks.\(i)"), k: 128, h: channels / 128, b: batchSize,
+      prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128, h: channels / 128,
+      b: batchSize,
       t: tokenLength, hw: h * w + referenceSequenceLength,
       referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention)
@@ -587,7 +618,21 @@ public func Flux2Fixed(channels: Int, numberOfReferenceImages: Int) -> (ModelWei
       ] = ModelWeightElement(singleAdaLNs.map { $0.weight.name })
       mapping["final_layer.adaLN_modulation.1.weight"] = [shift.weight.name, scale.weight.name]
     case .diffusers:
-      break
+      mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
+      mapping["time_guidance_embed.timestep_embedder.linear_1.weight"] = [tMlp0.weight.name]
+      mapping["time_guidance_embed.timestep_embedder.linear_2.weight"] = [tMlp2.weight.name]
+      mapping["time_guidance_embed.guidance_embedder.linear_1.weight"] = [gMlp0.weight.name]
+      mapping["time_guidance_embed.guidance_embedder.linear_2.weight"] = [gMlp2.weight.name]
+      mapping[
+        "double_stream_modulation_img.linear.weight"
+      ] = ModelWeightElement(xAdaLNs.map { $0.weight.name })
+      mapping[
+        "double_stream_modulation_txt.linear.weight"
+      ] = ModelWeightElement(contextAdaLNs.map { $0.weight.name })
+      mapping[
+        "single_stream_modulation.linear.weight"
+      ] = ModelWeightElement(singleAdaLNs.map { $0.weight.name })
+      mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
     }
     return mapping
   }
@@ -602,7 +647,7 @@ public func Flux2Fixed(channels: Int, numberOfReferenceImages: Int) -> (ModelWei
 public func Flux2FixedOutputShapes(tokenLength: Int, channels: Int) -> [TensorShape] {
   var outs = [TensorShape]()
   outs.append(TensorShape([1, tokenLength, channels]))
-  for i in 0..<(6 + 6 + 3 + 2) {
+  for _ in 0..<(6 + 6 + 3 + 2) {
     outs.append(TensorShape([1, 1, channels]))
   }
   return outs
@@ -824,7 +869,28 @@ private func LoRAJointTransformerBlock(
       mapping["\(prefix.0).img_mlp.0.weight"] = [xW1.weight.name, xW3.weight.name]
       mapping["\(prefix.0).img_mlp.2.weight"] = [xW2.weight.name]
     case .diffusers:
-      break
+      mapping["\(prefix.1).attn.add_q_proj.weight"] = [contextToQueries.weight.name]
+      mapping["\(prefix.1).attn.add_k_proj.weight"] = [contextToKeys.weight.name]
+      mapping["\(prefix.1).attn.add_v_proj.weight"] = [contextToValues.weight.name]
+      mapping["\(prefix.1).attn.norm_added_k.weight"] = [normAddedK.weight.name]
+      mapping["\(prefix.1).attn.norm_added_q.weight"] = [normAddedQ.weight.name]
+      mapping["\(prefix.1).attn.to_q.weight"] = [xToQueries.weight.name]
+      mapping["\(prefix.1).attn.to_k.weight"] = [xToKeys.weight.name]
+      mapping["\(prefix.1).attn.to_v.weight"] = [xToValues.weight.name]
+      mapping["\(prefix.1).attn.norm_k.weight"] = [normK.weight.name]
+      mapping["\(prefix.1).attn.norm_q.weight"] = [normQ.weight.name]
+      if let contextUnifyheads = contextUnifyheads {
+        mapping["\(prefix.1).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
+      }
+      mapping["\(prefix.1).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
+      if let contextW1 = contextW1, let contextW2 = contextW2, let contextW3 = contextW3 {
+        mapping["\(prefix.1).ff_context.linear_in.weight"] = [
+          contextW1.weight.name, contextW3.weight.name,
+        ]
+        mapping["\(prefix.1).ff_context.linear_out.weight"] = [contextW2.weight.name]
+      }
+      mapping["\(prefix.1).ff.linear_in.weight"] = [xW1.weight.name, xW3.weight.name]
+      mapping["\(prefix.1).ff.linear_out.weight"] = [xW2.weight.name]
     }
     return mapping
   }
@@ -948,7 +1014,15 @@ private func LoRASingleTransformerBlock(
       mapping["\(prefix.0).linear2.weight"] = ModelWeightElement(
         [xUnifyheads.weight.name, xW2.weight.name], format: .I, offsets: [0, k * h])
     case .diffusers:
-      break
+      mapping["\(prefix.1).attn.to_qkv_mlp_proj.weight"] = ModelWeightElement(
+        [
+          xToQueries.weight.name, xToKeys.weight.name, xToValues.weight.name, xW1.weight.name,
+          xW3.weight.name,
+        ], offsets: [0, k * h, k * h * 2, k * h * 3, k * h * 6])
+      mapping["\(prefix.1).attn.norm_k.weight"] = [normK.weight.name]
+      mapping["\(prefix.1).attn.norm_q.weight"] = [normQ.weight.name]
+      mapping["\(prefix.1).attn.to_out.weight"] = ModelWeightElement(
+        [xUnifyheads.weight.name, xW2.weight.name], format: .I, offsets: [0, k * h])
     }
     return mapping
   }
@@ -986,7 +1060,8 @@ public func LoRAFlux2(
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
     let (mapper, block) = LoRAJointTransformerBlock(
-      prefix: ("double_blocks.\(i)", "double_blocks.\(i)"), k: 128, h: channels / 128, b: batchSize,
+      prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
+      b: batchSize,
       t: tokenLength, hw: h * w + referenceSequenceLength, contextBlockPreOnly: false,
       scaleFactor: i > layers.0 - 3 ? 8 : nil, usesFlashAttention: usesFlashAttention,
       layerIndex: i, configuration: LoRAConfiguration)
@@ -999,7 +1074,8 @@ public func LoRAFlux2(
   out = Functional.concat(axis: 1, out, context)
   for i in 0..<layers.1 {
     let (mapper, block) = LoRASingleTransformerBlock(
-      prefix: ("single_blocks.\(i)", "single_blocks.\(i)"), k: 128, h: channels / 128, b: batchSize,
+      prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128, h: channels / 128,
+      b: batchSize,
       t: tokenLength, hw: h * w + referenceSequenceLength,
       referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention,
@@ -1118,7 +1194,21 @@ public func LoRAFlux2Fixed(
       ] = ModelWeightElement(singleAdaLNs.map { $0.weight.name })
       mapping["final_layer.adaLN_modulation.1.weight"] = [shift.weight.name, scale.weight.name]
     case .diffusers:
-      break
+      mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
+      mapping["time_guidance_embed.timestep_embedder.linear_1.weight"] = [tMlp0.weight.name]
+      mapping["time_guidance_embed.timestep_embedder.linear_2.weight"] = [tMlp2.weight.name]
+      mapping["time_guidance_embed.guidance_embedder.linear_1.weight"] = [gMlp0.weight.name]
+      mapping["time_guidance_embed.guidance_embedder.linear_2.weight"] = [gMlp2.weight.name]
+      mapping[
+        "double_stream_modulation_img.linear.weight"
+      ] = ModelWeightElement(xAdaLNs.map { $0.weight.name })
+      mapping[
+        "double_stream_modulation_txt.linear.weight"
+      ] = ModelWeightElement(contextAdaLNs.map { $0.weight.name })
+      mapping[
+        "single_stream_modulation.linear.weight"
+      ] = ModelWeightElement(singleAdaLNs.map { $0.weight.name })
+      mapping["norm_out.linear.weight"] = [scale.weight.name, shift.weight.name]
     }
     return mapping
   }
