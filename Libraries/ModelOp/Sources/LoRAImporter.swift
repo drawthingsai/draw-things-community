@@ -886,7 +886,9 @@ public enum LoRAImporter {
         $0.contains("layers_29_feed_forward_w3") || $0.contains("layers.29.feed_forward.w3.")
       }
       let isFlux2 = stateDict.keys.contains {
-        $0.contains("single_blocks.39.linear1.")
+        $0.contains("single_blocks.39.linear1.") || $0.contains("single_blocks_39_linear1")
+          || $0.contains("single_transformer_blocks.39.attn.to_qkv_mlp_proj.")
+          || $0.contains("single_transformer_blocks_39_attn_to_qkv_mlp_proj")
       }
       let isSDOrSDXL = stateDict.keys.contains {
         $0.hasSuffix(

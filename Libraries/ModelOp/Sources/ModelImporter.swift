@@ -139,7 +139,7 @@ public final class ModelImporter {
       }
     var isHunyuan = stateDict.keys.contains {
       $0.contains("double_blocks.19.img_attn_qkv.")
-        || $0.contains("single_transformer_blocks.39.")
+        || $0.contains("single_transformer_blocks.39.linear1.")
     }
     var isAuraFlow =
       (stateDict.keys.contains {
@@ -150,11 +150,15 @@ public final class ModelImporter {
         $0.contains("single_layers.31.attn.w1q.")
           || $0.contains("single_transformer_blocks.31.attn.to_q.")
       })
+    var isFlux2 = stateDict.keys.contains {
+      $0.contains("single_blocks.39.linear1.")
+        || $0.contains("single_transformer_blocks.39.attn.to_qkv_mlp_proj.")
+    }
     var isFlux1 =
-      !isHunyuan
+      !isHunyuan && !isFlux2
       && stateDict.keys.contains {
         $0.contains("double_blocks.18.img_attn.qkv.")
-          || $0.contains("single_transformer_blocks.37.")
+          || $0.contains("single_transformer_blocks.37.proj_mlp.")
       }
     var isWan21_14B = stateDict.keys.contains {
       $0.contains("blocks.39.cross_attn.v.") || $0.contains("blocks.39.attn2.to_v.")
@@ -246,6 +250,7 @@ public final class ModelImporter {
       isQwenImage = false
       isAuraFlow = false
       isZImage = false
+      isFlux2 = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -357,6 +362,14 @@ public final class ModelImporter {
       expectedTotalAccess = 1652
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("layers.29.attention.to_out.0.")
+      }
+    } else if isFlux2 {
+      modelVersion = .flux2
+      modifier = .kontext
+      inputDim = 32
+      expectedTotalAccess = 1061
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("single_transformer_blocks.39.attn.to_qkv_mlp_proj.")
       }
     } else {
       throw UnpickleError.tensorNotFound
@@ -863,7 +876,18 @@ public final class ModelImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .flux2:
-        fatalError()
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: Flux2RotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 512, referenceSizes: [], channels: 128)))
+          ]
+          + Flux2FixedOutputShapes(
+            tokenLength: 512, channels: 6144
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .kandinsky21, .v1, .v2:
         break
       }
@@ -1064,7 +1088,10 @@ public final class ModelImporter {
           usesFlashAttention: .scale1
         )
       case .flux2:
-        fatalError()
+        (unetMapper, unet) = Flux2(
+          batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
+          channels: 6144, layers: (8, 48), usesFlashAttention: .scale1)
+        (unetFixedMapper, unetFixed) = Flux2Fixed(channels: 6144, numberOfReferenceImages: 0)
       case .kandinsky21, .wurstchenStageB:
         fatalError()
       }
@@ -1179,7 +1206,12 @@ public final class ModelImporter {
         ]
         tEmb = nil
       case .flux2:
-        fatalError()
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 15360), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
       }
@@ -1638,7 +1670,9 @@ public final class ModelImporter {
             throw Error.tensorWritesFailed
           }
         case .flux2:
-          fatalError()
+          if $0.keys.count != 600 {
+            throw Error.tensorWritesFailed
+          }
         case .kandinsky21, .wurstchenStageB:
           fatalError()
         }
@@ -1891,7 +1925,9 @@ extension ModelImporter {
         $0.hasSuffix("_qwen_3_vl_4b_instruct_f16.ckpt")
       }
     case .flux2:
-      fatalError()
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_mistral_small_3.2_24b_instruct_2506_f16.ckpt")
+      }
     case .wurstchenStageC:
       textEncoder = nil
     case .kandinsky21, .wurstchenStageB:
@@ -2113,7 +2149,21 @@ extension ModelImporter {
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
       specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
     case .flux2:
-      fatalError()
+      if specification.textEncoder == nil {
+        specification.textEncoder = "mistral_small_3.2_24b_instruct_2506_q8p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "flux_2_vae_f16.ckpt"
+      }
+      specification.highPrecisionAutoencoder = true
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      if inspectionResult.hasGuidanceEmbed {
+        specification.guidanceEmbed = true
+      }
+      // For FLUX.2, the hires fix trigger scale is 2 of the finetune scale.
+      specification.hiresFixScale = finetuneScale * 2
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
