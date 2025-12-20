@@ -1325,9 +1325,11 @@ public struct LoRATrainer {
     return graph.withNoGrad {
       let filePath = ModelZoo.filePathForModelDownloaded(model)
       let unetFixed = QwenImageFixed(
+        FloatType.self,
         timesteps: batch.count, channels: 3072, layers: 60, isBF16: false,
+        activationQkScaling: [:],
         activationProjScaling: [:], activationFfnScaling: [:],
-        numberOfReferenceImages: 0
+        numberOfReferenceImages: 0, useAdditionalTCond: false
       ).1
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(batch.count, 256), of: FloatType.self)
@@ -1990,7 +1992,8 @@ public struct LoRATrainer {
         textLength: paddedTextEncodingLength, referenceSequenceLength: 0,
         channels: 3_072, layers: 60,
         usesFlashAttention: .scale1,  // Changed from .scaleMerged - .scale1 is for isBF16: false
-        isBF16: false, activationProjScaling: [:], activationFfnScaling: [:],
+        isBF16: false, activationQkScaling: [:], activationProjScaling: [:],
+        activationFfnScaling: [:],
         LoRAConfiguration: configuration
       ).1
     }
@@ -3032,7 +3035,7 @@ public struct LoRATrainer {
       case .depth, .canny:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 5), of: FloatType.self)
-      case .none, .kontext, .qwenimageEditPlus:
+      case .none, .kontext, .qwenimageEditPlus, .qwenimageLayered, .qwenimageEdit2511:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 4), of: FloatType.self)
       }
@@ -3596,7 +3599,7 @@ public struct LoRATrainer {
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
-                activationProjScaling: [:], activationFfnScaling: [:],
+                activationQkScaling: [:], activationProjScaling: [:], activationFfnScaling: [:],
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
@@ -3643,7 +3646,8 @@ public struct LoRATrainer {
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: .sdxlRefiner, modifier: .none, dualAttentionLayers: [],
-                activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: true,
+                activationQkScaling: [:], activationProjScaling: [:], activationFfnScaling: [:],
+                usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(
@@ -3681,6 +3685,7 @@ public struct LoRATrainer {
               case .chatglm3_6b:
                 let unetFixEncoder = UNetFixedEncoder<FloatType>(
                   filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
+                  activationQkScaling: [:],
                   activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
@@ -3706,6 +3711,7 @@ public struct LoRATrainer {
                 else { continue }
                 let unetFixEncoder = UNetFixedEncoder<FloatType>(
                   filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
+                  activationQkScaling: [:],
                   activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
@@ -3735,6 +3741,7 @@ public struct LoRATrainer {
               guard let pooled = sessionStore.read("pool_\(textEncodingPath)") else { continue }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: .sdxlRefiner, modifier: .none, dualAttentionLayers: [],
+                activationQkScaling: [:],
                 activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,

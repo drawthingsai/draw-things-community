@@ -551,7 +551,7 @@ extension ModelPreloader {
     case .double:
       cfgChannels = 2
       numberOfChannels = 8
-    case .none, .kontext, .qwenimageEditPlus:
+    case .none, .kontext, .qwenimageEditPlus, .qwenimageLayered, .qwenimageEdit2511:
       cfgChannels = 2
       numberOfChannels = 4
     }
@@ -581,6 +581,7 @@ extension ModelPreloader {
         if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner || modelVersion == .ssd1b {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: modelPath, version: modelVersion, modifier: .none, dualAttentionLayers: [],
+            activationQkScaling: [:],
             activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: useMFA,
             zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
             externalOnDemand: false,
@@ -628,7 +629,8 @@ extension ModelPreloader {
           injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>(
             injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
             injectedAttentionKVs: []), referenceImageCount: 0, tiledDiffusion: tiledDiffusion,
-          teaCache: teaCache, causalInference: (0, 0), isBF16: false, activationProjScaling: [:],
+          teaCache: teaCache, causalInference: (0, 0), isBF16: false,
+          activationQkScaling: [:], activationProjScaling: [:],
           activationFfnScaling: [:],
           weightsCache: weightsCache
         )

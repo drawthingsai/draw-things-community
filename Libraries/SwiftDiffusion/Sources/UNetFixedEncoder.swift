@@ -8,6 +8,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let version: ModelVersion
   public let modifier: SamplerModifier
   public let dualAttentionLayers: [Int]
+  public let activationQkScaling: [Int: Int]
   public let activationProjScaling: [Int: Int]
   public let activationFfnScaling: [Int: Int]
   public let usesFlashAttention: Bool
@@ -19,7 +20,8 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let weightsCache: WeightsCache
   public init(
     filePath: String, version: ModelVersion, modifier: SamplerModifier, dualAttentionLayers: [Int],
-    activationProjScaling: [Int: Int], activationFfnScaling: [Int: Int], usesFlashAttention: Bool,
+    activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
+    activationFfnScaling: [Int: Int], usesFlashAttention: Bool,
     zeroNegativePrompt: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
     externalOnDemand: Bool, deviceProperties: DeviceProperties, weightsCache: WeightsCache
   ) {
@@ -27,6 +29,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.version = version
     self.modifier = modifier
     self.dualAttentionLayers = dualAttentionLayers
+    self.activationQkScaling = activationQkScaling
     self.activationProjScaling = activationProjScaling
     self.activationFfnScaling = activationFfnScaling
     self.usesFlashAttention = usesFlashAttention
@@ -1278,25 +1281,6 @@ extension UNetFixedEncoder {
       let qwen25Length = c0.shape[1]
       let h = startHeight / 2
       let w = startWidth / 2
-      let isGuidanceEmbedSupported =
-        (try?
-          (graph.openStore(
-            filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-          ) {
-            return $0.read(like: "__dit__[t-guidance_embedder_0-0-1]") != nil
-          }).get()) ?? false
-      let guidanceEmbeds: DynamicGraph.Tensor<FloatType>?
-      if isGuidanceEmbedSupported {
-        let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : guidanceEmbed
-        guidanceEmbeds = graph.variable(
-          Tensor<FloatType>(
-            from: timeEmbedding(
-              timestep: guidanceScale * 1_000, batchSize: 1, embeddingSize: 256,
-              maxPeriod: 10_000)
-          ).toGPU(0))
-      } else {
-        guidanceEmbeds = nil
-      }
       var c = graph.variable(
         .GPU(0),
         .HWC(batchSize, (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond, 3584),
@@ -1344,6 +1328,7 @@ extension UNetFixedEncoder {
         timestepEmbeddingVectors = nil
       }
       let timeEmbeds: DynamicGraph.Tensor<FloatType>?
+      let additionT: DynamicGraph.Tensor<Int32>?
       if timestepEmbeddingVectors == nil {
         var embeds = graph.variable(
           .GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
@@ -1356,8 +1341,15 @@ extension UNetFixedEncoder {
           embeds[i..<(i + 1), 0..<256] = timeEmbed
         }
         timeEmbeds = embeds
+        if modifier == .qwenimageLayered {
+          additionT = graph.variable(
+            Tensor<Int32>([0], kind: .CPU, format: .NHWC, shape: [1]).toGPU(0))
+        } else {
+          additionT = nil
+        }
       } else {
         timeEmbeds = nil
+        additionT = nil
       }
       let unetFixed: Model
       let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
@@ -1373,25 +1365,30 @@ extension UNetFixedEncoder {
         configuration.keys = keys
         unetFixed =
           LoRAQwenImageFixed(
+            FloatType.self,
             timesteps: timesteps.count, channels: 3072,
             layers: timestepEmbeddingVectors == nil ? 60 : 0, isBF16: isBF16,
+            activationQkScaling: activationQkScaling,
             activationProjScaling: activationProjScaling,
             activationFfnScaling: activationFfnScaling,
-            numberOfReferenceImages: referenceImages.count, LoRAConfiguration: configuration
+            numberOfReferenceImages: referenceImages.count, useAdditionalTCond: additionT != nil,
+            LoRAConfiguration: configuration
           ).1
       } else {
         unetFixed =
           QwenImageFixed(
+            FloatType.self,
             timesteps: timesteps.count, channels: 3072,
             layers: timestepEmbeddingVectors == nil ? 60 : 0, isBF16: isBF16,
+            activationQkScaling: activationQkScaling,
             activationProjScaling: activationProjScaling,
             activationFfnScaling: activationFfnScaling,
-            numberOfReferenceImages: referenceImages.count
+            numberOfReferenceImages: referenceImages.count, useAdditionalTCond: additionT != nil
           ).1
       }
       var otherInputs: [DynamicGraph.AnyTensor] = timeEmbeds.map { [$0] } ?? []
-      if let guidanceEmbeds = guidanceEmbeds {
-        otherInputs.append(guidanceEmbeds)
+      if let additionT = additionT {
+        otherInputs.append(additionT)
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(

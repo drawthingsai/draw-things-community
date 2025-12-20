@@ -60,7 +60,8 @@ public protocol UNetProtocol {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
-    causalInference: (Int, pad: Int), isBF16: Bool, activationProjScaling: [Int: Int],
+    causalInference: (Int, pad: Int), isBF16: Bool, activationQkScaling: [Int: Int],
+    activationProjScaling: [Int: Int],
     activationFfnScaling: [Int: Int], weightsCache: WeightsCache
   ) -> Bool
 
@@ -434,7 +435,8 @@ extension UNetFromNNC {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache teaCacheConfiguration: TeaCacheConfiguration,
-    causalInference: (Int, pad: Int), isBF16: Bool, activationProjScaling: [Int: Int],
+    causalInference: (Int, pad: Int), isBF16: Bool, activationQkScaling: [Int: Int],
+    activationProjScaling: [Int: Int],
     activationFfnScaling: [Int: Int], weightsCache: WeightsCache
   ) -> Bool {
     guard unet == nil else { return true }
@@ -1184,7 +1186,8 @@ extension UNetFromNNC {
               textLength: textLength, referenceSequenceLength: referenceSequenceLength,
               channels: 3_072, layers: 60,
               usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
-              isBF16: isBF16, activationProjScaling: activationProjScaling,
+              isBF16: isBF16, activationQkScaling: activationQkScaling,
+              activationProjScaling: activationProjScaling,
               activationFfnScaling: activationFfnScaling,
               LoRAConfiguration: configuration
             ).1
@@ -1206,7 +1209,8 @@ extension UNetFromNNC {
               textLength: textLength, referenceSequenceLength: referenceSequenceLength,
               channels: 3_072, layers: 60,
               usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
-              isBF16: isBF16, activationProjScaling: activationProjScaling,
+              isBF16: isBF16, activationQkScaling: activationQkScaling,
+              activationProjScaling: activationProjScaling,
               activationFfnScaling: activationFfnScaling
             ).1
           })

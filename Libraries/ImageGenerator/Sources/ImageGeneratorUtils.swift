@@ -200,7 +200,9 @@ public struct ImageGeneratorUtils {
       guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       return ModelZoo.versionForModel($0)
     }
-    var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
+    var alternativeDecoderVersion: AlternativeDecoderVersion? =
+      (ModelZoo.modifierForModel(configuration.model ?? "") == .qwenimageLayered)
+      ? .transparent : nil
     for lora in configuration.loras {
       guard let file = lora.file else { continue }
       let loraVersion = LoRAZoo.versionForModel(file)

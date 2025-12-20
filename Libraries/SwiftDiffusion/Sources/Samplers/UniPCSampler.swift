@@ -13,6 +13,7 @@ where UNet.FloatType == FloatType {
   public let qkNorm: Bool
   public let dualAttentionLayers: [Int]
   public let distilledGuidanceLayers: Int
+  public let activationQkScaling: [Int: Int]
   public let activationProjScaling: [Int: Int]
   public let activationFfnScaling: [Int: Int]
   public let usesFlashAttention: Bool
@@ -39,7 +40,8 @@ where UNet.FloatType == FloatType {
   private let weightsCache: WeightsCache
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
-    dualAttentionLayers: [Int], distilledGuidanceLayers: Int, activationProjScaling: [Int: Int],
+    dualAttentionLayers: [Int], distilledGuidanceLayers: Int, activationQkScaling: [Int: Int],
+    activationProjScaling: [Int: Int],
     activationFfnScaling: [Int: Int],
     usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
@@ -58,6 +60,7 @@ where UNet.FloatType == FloatType {
     self.qkNorm = qkNorm
     self.dualAttentionLayers = dualAttentionLayers
     self.distilledGuidanceLayers = distilledGuidanceLayers
+    self.activationQkScaling = activationQkScaling
     self.activationProjScaling = activationProjScaling
     self.activationFfnScaling = activationFfnScaling
     self.usesFlashAttention = usesFlashAttention
@@ -258,7 +261,8 @@ extension UniPCSampler: Sampler {
       var conditions: [DynamicGraph.AnyTensor] = c
       let fixedEncoder = UNetFixedEncoder<FloatType>(
         filePath: filePath, version: version, modifier: modifier,
-        dualAttentionLayers: dualAttentionLayers, activationProjScaling: activationProjScaling,
+        dualAttentionLayers: dualAttentionLayers, activationQkScaling: activationQkScaling,
+        activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
@@ -384,7 +388,8 @@ extension UniPCSampler: Sampler {
           injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
           referenceImageCount: referenceImageCount,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-          isBF16: isBF16, activationProjScaling: activationProjScaling,
+          isBF16: isBF16, activationQkScaling: activationQkScaling,
+          activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling, weightsCache: weightsCache)
       }
       var noise: DynamicGraph.Tensor<FloatType>? = nil
@@ -479,6 +484,7 @@ extension UniPCSampler: Sampler {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: refiner.filePath, version: refiner.version,
             modifier: modifier, dualAttentionLayers: refiner.dualAttentionLayers,
+            activationQkScaling: refiner.activationQkScaling,
             activationProjScaling: refiner.activationProjScaling,
             activationFfnScaling: refiner.activationFfnScaling,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
@@ -552,7 +558,8 @@ extension UniPCSampler: Sampler {
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
             referenceImageCount: referenceImageCount,
             tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-            isBF16: refiner.isBF16, activationProjScaling: refiner.activationProjScaling,
+            isBF16: refiner.isBF16, activationQkScaling: refiner.activationQkScaling,
+            activationProjScaling: refiner.activationProjScaling,
             activationFfnScaling: refiner.activationFfnScaling,
             weightsCache: weightsCache)
           refinerKickIn = -1

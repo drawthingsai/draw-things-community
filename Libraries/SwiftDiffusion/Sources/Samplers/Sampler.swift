@@ -51,6 +51,8 @@ public enum SamplerModifier: String, Codable {
   case canny = "canny"
   case kontext = "kontext"
   case qwenimageEditPlus = "qwenimage_edit_plus"
+  case qwenimageLayered = "qwenimage_layered"
+  case qwenimageEdit2511 = "qwenimage_edit_2511"
 }
 
 public struct LoRAConfiguration: Equatable, Codable {
@@ -178,6 +180,7 @@ public struct Refiner: Equatable {
   public var upcastAttention: Bool
   public var builtinLora: Bool
   public var isBF16: Bool
+  public var activationQkScaling: [Int: Int]
   public var activationProjScaling: [Int: Int]
   public var activationFfnScaling: [Int: Int]
   // We probably need to copy all the rest in sampler over, but for now, we will just ignore.
@@ -185,7 +188,8 @@ public struct Refiner: Equatable {
     start: Float, filePath: String, externalOnDemand: Bool, version: ModelVersion,
     isQuantizedModel: Bool, isConsistencyModel: Bool, qkNorm: Bool, dualAttentionLayers: [Int],
     distilledGuidanceLayers: Int, upcastAttention: Bool, builtinLora: Bool, isBF16: Bool,
-    activationProjScaling: [Int: Int], activationFfnScaling: [Int: Int]
+    activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
+    activationFfnScaling: [Int: Int]
   ) {
     self.start = start
     self.filePath = filePath
@@ -199,6 +203,7 @@ public struct Refiner: Equatable {
     self.upcastAttention = upcastAttention
     self.builtinLora = builtinLora
     self.isBF16 = isBF16
+    self.activationQkScaling = activationQkScaling
     self.activationProjScaling = activationProjScaling
     self.activationFfnScaling = activationFfnScaling
   }
@@ -315,7 +320,7 @@ public func cfgChannelsAndInputChannels(
     case .double:
       cfgChannels = isCfgEnabled ? 2 : 1
       inChannels = channels * 2
-    case .none, .kontext, .qwenimageEditPlus:
+    case .none, .kontext, .qwenimageEditPlus, .qwenimageEdit2511, .qwenimageLayered:
       cfgChannels = isCfgEnabled ? 2 : 1
       inChannels = channels
     }
@@ -408,7 +413,7 @@ func updateCfgInputAndConditions<FloatType: TensorNumeric & BinaryFloatingPoint>
           maskedImage
       }
     }
-  case .none, .kontext, .qwenimageEditPlus:
+  case .none, .kontext, .qwenimageEditPlus, .qwenimageEdit2511, .qwenimageLayered:
     break
   }
 }

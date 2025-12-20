@@ -76,7 +76,8 @@ extension UNetWrapper {
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
-    causalInference: (Int, pad: Int), isBF16: Bool, activationProjScaling: [Int: Int],
+    causalInference: (Int, pad: Int), isBF16: Bool, activationQkScaling: [Int: Int],
+    activationProjScaling: [Int: Int],
     activationFfnScaling: [Int: Int], weightsCache: WeightsCache
   ) -> Bool {
     #if !os(Linux)
@@ -95,7 +96,8 @@ extension UNetWrapper {
         extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
         referenceImageCount: referenceImageCount,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-        isBF16: isBF16, activationProjScaling: activationProjScaling,
+        isBF16: isBF16, activationQkScaling: activationQkScaling,
+        activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling, weightsCache: weightsCache)
       {
         preferCoreML = true
@@ -115,7 +117,8 @@ extension UNetWrapper {
       extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
       referenceImageCount: referenceImageCount,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
-      isBF16: isBF16, activationProjScaling: activationProjScaling,
+      isBF16: isBF16, activationQkScaling: activationQkScaling,
+      activationProjScaling: activationProjScaling,
       activationFfnScaling: activationFfnScaling, weightsCache: weightsCache)
     return true
   }

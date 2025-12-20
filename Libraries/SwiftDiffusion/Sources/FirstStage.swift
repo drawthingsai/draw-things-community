@@ -442,7 +442,7 @@ extension FirstStage {
           }
         }
       }
-      outputChannels = 3
+      outputChannels = alternativeDecoderVersion == .transparent ? 4 : 3
       causalAttentionMask = nil
     case .wan22_5b:
       let startDepth = shape[0]
@@ -1467,7 +1467,16 @@ extension FirstStage {
     _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, decoder: Model,
     transparentDecoder: Model?
   ) -> DynamicGraph.Tensor<T> {
-    let pixel = decoder(inputs: z, causalAttentionMask.map { [$0] } ?? [])[0].as(of: T.self)
+    var pixel = decoder(inputs: z, causalAttentionMask.map { [$0] } ?? [])[0].as(of: T.self)
+    if alternativeDecoderVersion == .transparent, version == .qwenImage {
+      // If this is the case, we need to switch alpha channel with rgb channel.
+      let shape = pixel.shape
+      let rgb = pixel[0..<1, 0..<shape[1], 0..<shape[2], 0..<3].copied()
+      let alpha = pixel[0..<1, 0..<shape[1], 0..<shape[2], 3..<4].contiguous().clamped(0...1)
+      pixel[0..<1, 0..<shape[1], 0..<shape[2], 1..<shape[3]] = rgb
+      pixel[0..<1, 0..<shape[1], 0..<shape[2], 0..<1] = alpha
+      return pixel
+    }
     guard let transparentDecoder = transparentDecoder else { return pixel }
     let pixelShape = pixel.shape
     let rgb = pixel[0..<1, 0..<pixelShape[1], 0..<pixelShape[2], 0..<3].copied()

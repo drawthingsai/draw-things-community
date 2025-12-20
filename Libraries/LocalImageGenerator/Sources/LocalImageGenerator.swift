@@ -82,7 +82,8 @@ extension LocalImageGenerator {
   public static func sampler<FloatType: TensorNumeric & BinaryFloatingPoint>(
     from type: SamplerType, isCfgEnabled: Bool, filePath: String, modifier: SamplerModifier,
     version: ModelVersion, qkNorm: Bool, dualAttentionLayers: [Int],
-    distilledGuidanceLayers: Int, activationProjScaling: [Int: Int],
+    distilledGuidanceLayers: Int, activationQkScaling: [Int: Int],
+    activationProjScaling: [Int: Int],
     activationFfnScaling: [Int: Int],
     usesFlashAttention: Bool, objective: Denoiser.Objective,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool, injectT2IAdapters: Bool,
@@ -158,6 +159,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -178,6 +180,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -198,6 +201,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -218,6 +222,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -238,6 +243,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -258,6 +264,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -278,6 +285,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -297,6 +305,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -319,6 +328,7 @@ extension LocalImageGenerator {
       return DPMPP2MSampler<FloatType, UNetWrapper<FloatType>, Denoiser.KarrasDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -342,6 +352,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -365,6 +376,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -388,6 +400,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -409,6 +422,7 @@ extension LocalImageGenerator {
       return DPMPP2MSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -429,6 +443,7 @@ extension LocalImageGenerator {
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -448,6 +463,7 @@ extension LocalImageGenerator {
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -472,6 +488,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -495,6 +512,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -518,6 +536,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -539,6 +558,7 @@ extension LocalImageGenerator {
       return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -559,6 +579,7 @@ extension LocalImageGenerator {
       return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -579,6 +600,7 @@ extension LocalImageGenerator {
       return PLMSSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -599,6 +621,7 @@ extension LocalImageGenerator {
       return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.KarrasDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -618,6 +641,7 @@ extension LocalImageGenerator {
       return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -642,6 +666,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -665,6 +690,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -688,6 +714,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -709,6 +736,7 @@ extension LocalImageGenerator {
       return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -730,6 +758,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -753,6 +782,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -776,6 +806,7 @@ extension LocalImageGenerator {
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
@@ -797,6 +828,7 @@ extension LocalImageGenerator {
       return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -817,6 +849,7 @@ extension LocalImageGenerator {
       return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -834,6 +867,7 @@ extension LocalImageGenerator {
       return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -852,6 +886,7 @@ extension LocalImageGenerator {
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearManualDiscretization>(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -874,6 +909,7 @@ extension LocalImageGenerator {
       >(
         filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
@@ -3098,7 +3134,7 @@ extension LocalImageGenerator {
             encodedCanny[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied()), []
         )
       }
-    case .kontext, .qwenimageEditPlus:
+    case .kontext, .qwenimageEditPlus, .qwenimageLayered, .qwenimageEdit2511:
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
@@ -3113,6 +3149,10 @@ extension LocalImageGenerator {
           referenceEncoded.append(
             firstStage.scale(
               encoded[0..<1, 0..<shape[1], 0..<shape[2], 0..<inputChannels].copied()))
+        }
+        if modifier == .qwenimageLayered {
+          // layered only take the canvas as input.
+          return (nil, referenceEncoded)
         }
         for shuffle in shuffles {
           guard shuffle.1 > 0 else { continue }
@@ -3404,7 +3444,8 @@ extension LocalImageGenerator {
         width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
       ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
-    var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
+    var alternativeDecoderVersion: AlternativeDecoderVersion? =
+      (modifier == .qwenimageLayered) ? .transparent : nil
     let lora: [LoRAConfiguration] =
       (ModelZoo.builtinLoRAForModel(file)
         ? [
@@ -3483,15 +3524,17 @@ extension LocalImageGenerator {
         version: modelVersion, memorizedBy: [])
     let isQuantizedModel = ModelZoo.isQuantizedModel(file)
     let (
-      qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationProjScaling,
+      qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
+      activationProjScaling,
       activationFfnScaling
     ) =
       ModelZoo.MMDiTForModel(file).map {
         return (
           $0.qkNorm, $0.dualAttentionLayers, $0.distilledGuidanceLayers ?? 0,
+          $0.activationQkScaling ?? [:],
           $0.activationProjScaling ?? [:], $0.activationFfnScaling ?? [:]
         )
-      } ?? (false, [], 0, [:], [:])
+      } ?? (false, [], 0, [:], [:], [:])
     let is8BitModel = ModelZoo.is8BitModel(file)
     let canRunLoRASeparately = modelPreloader.canRunLoRASeparately
     let externalOnDemand = modelPreloader.externalOnDemand(
@@ -3559,6 +3602,7 @@ extension LocalImageGenerator {
         distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
         upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
         builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0),
+        activationQkScaling: mmdit?.activationQkScaling ?? [:],
         activationProjScaling: mmdit?.activationProjScaling ?? [:],
         activationFfnScaling: mmdit?.activationFfnScaling ?? [:])
     }
@@ -3599,6 +3643,7 @@ extension LocalImageGenerator {
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
       distilledGuidanceLayers: distilledGuidanceLayers,
+      activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
       activationFfnScaling: activationFfnScaling,
       usesFlashAttention: isMFAEnabled,
@@ -4260,6 +4305,7 @@ extension LocalImageGenerator {
         filePath: secondPassModelFilePath, modifier: modifier,
         version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
         distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
         objective: modelObjective,
@@ -4460,15 +4506,17 @@ extension LocalImageGenerator {
       file, LoRAs: configuration.loras.compactMap(\.file))
     let modelVersion = ModelZoo.versionForModel(file)
     let (
-      qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationProjScaling,
+      qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
+      activationProjScaling,
       activationFfnScaling
     ) =
       ModelZoo.MMDiTForModel(file).map {
         return (
           $0.qkNorm, $0.dualAttentionLayers, $0.distilledGuidanceLayers ?? 0,
+          $0.activationQkScaling ?? [:],
           $0.activationProjScaling ?? [:], $0.activationFfnScaling ?? [:]
         )
-      } ?? (false, [], 0, [:], [:])
+      } ?? (false, [], 0, [:], [:], [:])
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
@@ -4517,7 +4565,8 @@ extension LocalImageGenerator {
         width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
       ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
-    var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
+    var alternativeDecoderVersion: AlternativeDecoderVersion? =
+      (modifier == .qwenimageLayered) ? .transparent : nil
     let lora: [LoRAConfiguration] =
       (ModelZoo.builtinLoRAForModel(file)
         ? [
@@ -4637,6 +4686,7 @@ extension LocalImageGenerator {
         distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
         upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
         builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0),
+        activationQkScaling: mmdit?.activationQkScaling ?? [:],
         activationProjScaling: mmdit?.activationProjScaling ?? [:],
         activationFfnScaling: mmdit?.activationFfnScaling ?? [:])
     }
@@ -4687,6 +4737,7 @@ extension LocalImageGenerator {
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
       distilledGuidanceLayers: distilledGuidanceLayers,
+      activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
       activationFfnScaling: activationFfnScaling,
       usesFlashAttention: isMFAEnabled,
@@ -5142,6 +5193,7 @@ extension LocalImageGenerator {
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
@@ -5427,7 +5479,9 @@ extension LocalImageGenerator {
       guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       return version
     }
-    var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
+    var alternativeDecoderVersion: AlternativeDecoderVersion? =
+      (ModelZoo.modifierForModel(configuration.model ?? "") == .qwenimageLayered)
+      ? .transparent : nil
     for lora in configuration.loras {
       guard let file = lora.file else { continue }
       let loraVersion = LoRAZoo.versionForModel(file)
@@ -5490,7 +5544,9 @@ extension LocalImageGenerator {
       guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
       return version
     }
-    var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
+    var alternativeDecoderVersion: AlternativeDecoderVersion? =
+      (ModelZoo.modifierForModel(configuration.model ?? "") == .qwenimageLayered)
+      ? .transparent : nil
     for lora in configuration.loras {
       guard let file = lora.file else { continue }
       let loraVersion = LoRAZoo.versionForModel(file)
@@ -5812,15 +5868,17 @@ extension LocalImageGenerator {
       file, LoRAs: configuration.loras.compactMap(\.file))
     let modelVersion = ModelZoo.versionForModel(file)
     let (
-      qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationProjScaling,
+      qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
+      activationProjScaling,
       activationFfnScaling
     ) =
       ModelZoo.MMDiTForModel(file).map {
         return (
           $0.qkNorm, $0.dualAttentionLayers, $0.distilledGuidanceLayers ?? 0,
+          $0.activationQkScaling ?? [:],
           $0.activationProjScaling ?? [:], $0.activationFfnScaling ?? [:]
         )
-      } ?? (false, [], 0, [:], [:])
+      } ?? (false, [], 0, [:], [:], [:])
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
@@ -5869,7 +5927,8 @@ extension LocalImageGenerator {
         width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
       ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
-    var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
+    var alternativeDecoderVersion: AlternativeDecoderVersion? =
+      (modifier == .qwenimageLayered) ? .transparent : nil
     let lora: [LoRAConfiguration] =
       (ModelZoo.builtinLoRAForModel(file)
         ? [
@@ -6036,6 +6095,7 @@ extension LocalImageGenerator {
         distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
         upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
         builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0),
+        activationQkScaling: mmdit?.activationQkScaling ?? [:],
         activationProjScaling: mmdit?.activationProjScaling ?? [:],
         activationFfnScaling: mmdit?.activationFfnScaling ?? [:])
     }
@@ -6086,6 +6146,7 @@ extension LocalImageGenerator {
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
       distilledGuidanceLayers: distilledGuidanceLayers,
+      activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
       activationFfnScaling: activationFfnScaling,
       usesFlashAttention: isMFAEnabled,
@@ -6468,6 +6529,7 @@ extension LocalImageGenerator {
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
@@ -6641,15 +6703,17 @@ extension LocalImageGenerator {
       file, LoRAs: configuration.loras.compactMap(\.file))
     let modelVersion = ModelZoo.versionForModel(file)
     let (
-      qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationProjScaling,
+      qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
+      activationProjScaling,
       activationFfnScaling
     ) =
       ModelZoo.MMDiTForModel(file).map {
         return (
           $0.qkNorm, $0.dualAttentionLayers, $0.distilledGuidanceLayers ?? 0,
+          $0.activationQkScaling ?? [:],
           $0.activationProjScaling ?? [:], $0.activationFfnScaling ?? [:]
         )
-      } ?? (false, [], 0, [:], [:])
+      } ?? (false, [], 0, [:], [:], [:])
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
@@ -6698,7 +6762,8 @@ extension LocalImageGenerator {
         width: Int(configuration.diffusionTileWidth), height: Int(configuration.diffusionTileHeight)
       ), tileOverlap: Int(configuration.diffusionTileOverlap))
     var alternativeDecoderFilePath: String? = nil
-    var alternativeDecoderVersion: AlternativeDecoderVersion? = nil
+    var alternativeDecoderVersion: AlternativeDecoderVersion? =
+      (modifier == .qwenimageLayered) ? .transparent : nil
     let lora: [LoRAConfiguration] =
       (ModelZoo.builtinLoRAForModel(file)
         ? [
@@ -6865,6 +6930,7 @@ extension LocalImageGenerator {
         distilledGuidanceLayers: mmdit?.distilledGuidanceLayers ?? 0,
         upcastAttention: ModelZoo.isUpcastAttentionForModel($0),
         builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0),
+        activationQkScaling: mmdit?.activationQkScaling ?? [:],
         activationProjScaling: mmdit?.activationProjScaling ?? [:],
         activationFfnScaling: mmdit?.activationFfnScaling ?? [:])
     }
@@ -6915,6 +6981,7 @@ extension LocalImageGenerator {
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
       distilledGuidanceLayers: distilledGuidanceLayers,
+      activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
       activationFfnScaling: activationFfnScaling,
       usesFlashAttention: isMFAEnabled,
@@ -7423,6 +7490,7 @@ extension LocalImageGenerator {
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
+          activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
