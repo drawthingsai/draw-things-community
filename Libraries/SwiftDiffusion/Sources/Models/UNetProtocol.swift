@@ -1167,6 +1167,7 @@ extension UNetFromNNC {
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
+      let isQwenImageLayered = modifier == .qwenimageLayered
       if didRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
@@ -1186,7 +1187,8 @@ extension UNetFromNNC {
               textLength: textLength, referenceSequenceLength: referenceSequenceLength,
               channels: 3_072, layers: 60,
               usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
-              isBF16: isBF16, activationQkScaling: activationQkScaling,
+              isBF16: isBF16, isQwenImageLayered: isQwenImageLayered,
+              activationQkScaling: activationQkScaling,
               activationProjScaling: activationProjScaling,
               activationFfnScaling: activationFfnScaling,
               LoRAConfiguration: configuration
@@ -1209,7 +1211,8 @@ extension UNetFromNNC {
               textLength: textLength, referenceSequenceLength: referenceSequenceLength,
               channels: 3_072, layers: 60,
               usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
-              isBF16: isBF16, activationQkScaling: activationQkScaling,
+              isBF16: isBF16, isQwenImageLayered: isQwenImageLayered,
+              activationQkScaling: activationQkScaling,
               activationProjScaling: activationProjScaling,
               activationFfnScaling: activationFfnScaling
             ).1

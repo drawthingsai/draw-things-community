@@ -158,7 +158,7 @@ public enum LoRAImporter {
       (unetMapper, unet) = QwenImage(
         batchSize: 1, height: 64, width: 64, textLength: 128, referenceSequenceLength: 0,
         channels: 3_072, layers: 60, usesFlashAttention: .scale1, isBF16: false,
-        activationQkScaling: [:],
+        isQwenImageLayered: false, activationQkScaling: [:],
         activationProjScaling: [:], activationFfnScaling: [:])
       (unetFixedMapper, unetFixed) = QwenImageFixed(
         FloatType.self,

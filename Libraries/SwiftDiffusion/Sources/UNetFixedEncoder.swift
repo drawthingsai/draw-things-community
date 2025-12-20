@@ -1511,7 +1511,7 @@ extension UNetFixedEncoder {
           reference[0..<shape[0], index..<(index + shape[1]), 0..<shape[2]] = refLatent
           index += shape[1]
         }
-        if shape[0] < batchSize {
+        if modifier != .qwenimageLayered, shape[0] < batchSize {
           let oldReference = reference
           reference = graph.variable(
             .GPU(0), .HWC(batchSize, sequenceLength, shape[2]), of: FloatType.self)
@@ -1527,7 +1527,7 @@ extension UNetFixedEncoder {
       let rotaryEmbedding = Tensor<FloatType>(
         from: QwenImageRotaryPositionEmbedding(
           height: h, width: w, tokenLength: qwen25Length, referenceSizes: referenceSizes,
-          channels: 128)
+          channels: 128, numberOfLayers: modifier == .qwenimageLayered ? batchSize : 0)
       ).toGPU(0)
       return (
         [graph.variable(rotaryEmbedding)] + conditions, nil

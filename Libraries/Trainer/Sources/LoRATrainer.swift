@@ -1992,9 +1992,8 @@ public struct LoRATrainer {
         textLength: paddedTextEncodingLength, referenceSequenceLength: 0,
         channels: 3_072, layers: 60,
         usesFlashAttention: .scale1,  // Changed from .scaleMerged - .scale1 is for isBF16: false
-        isBF16: false, activationQkScaling: [:], activationProjScaling: [:],
-        activationFfnScaling: [:],
-        LoRAConfiguration: configuration
+        isBF16: false, isQwenImageLayered: false, activationQkScaling: [:],
+        activationProjScaling: [:], activationFfnScaling: [:], LoRAConfiguration: configuration
       ).1
     }
     dit.maxConcurrency = .limit(1)

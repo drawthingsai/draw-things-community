@@ -1454,7 +1454,7 @@ extension LocalImageGenerator {
         result.7 = result.7 - 64
         result.8 = result.8 - 64
         return result
-      } else if modifier == .qwenimageEditPlus {
+      } else if modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511 {
         let imagePromptTemplate =
           images >= 1
           ? ((1...images).map { "Picture \($0): <|vision_start|><|image_pad|><|vision_end|>" })
@@ -3860,7 +3860,8 @@ extension LocalImageGenerator {
       var firstPassImage: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modifier == .double
         || modifier == .depth || modifier == .canny || modifier == .kontext
-        || modifier == .qwenimageEditPlus || canInjectControls
+        || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511
+        || modifier == .qwenimageLayered || canInjectControls
         || canInjectT2IAdapters || !injectIPAdapterLengths.isEmpty
       {
         // TODO: This needs to be properly handled for Wurstchen (i.e. using EfficientNet to encode image).

@@ -693,6 +693,21 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2025 Alibaba"
     ),
     Specification(
+      name: "Qwen Image Layered 1.0 (BF16)", file: "qwen_image_layered_1.0_bf16_q8p.ckpt",
+      prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_layered_vae_f16.ckpt", modifier: .qwenimageLayered,
+      objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      isBf16: true,
+      note:
+        "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
       name: "Qwen Image Layered 1.0 (BF16, 6-bit)", file: "qwen_image_layered_1.0_bf16_q6p.ckpt",
       prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",

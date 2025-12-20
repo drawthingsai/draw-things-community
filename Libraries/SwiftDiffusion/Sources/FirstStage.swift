@@ -918,7 +918,7 @@ extension FirstStage {
   )
     -> (DynamicGraph.Tensor<FloatType>, Model)
   {
-    let shape = x.shape
+    var shape = x.shape
     let batchSize = shape[0]
     precondition(shape[1] % 16 == 0)
     precondition(shape[2] % 16 == 0)
@@ -1130,6 +1130,14 @@ extension FirstStage {
         }
       } else {
         sizeLimit = 1024
+      }
+      if alternativeDecoderVersion == .transparent {
+        // We need to pad x to 4 channels.
+        shape[3] = 4
+        var newX = graph.variable(.GPU(0), format: .NHWC, shape: shape, of: FloatType.self)
+        newX.full(1)
+        newX[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<x.shape[3]] = x
+        x = newX
       }
       if startWidth > sizeLimit || startHeight > sizeLimit {
         // We turn on tiled decoding forcefully.

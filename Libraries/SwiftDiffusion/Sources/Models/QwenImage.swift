@@ -3,14 +3,16 @@ import NNC
 
 public func QwenImageRotaryPositionEmbedding(
   height: Int, width: Int, tokenLength: Int, referenceSizes: [(height: Int, width: Int)],
-  channels: Int, multiImage: Bool = false, heads: Int = 1
+  channels: Int, multiImage: Bool = false, numberOfLayers: Int = 0, heads: Int = 1
 )
   -> Tensor<Float>
 {
   var rotTensor = Tensor<Float>(
     .CPU,
     .NHWC(
-      1, height * width + tokenLength + referenceSizes.reduce(0) { $0 + $1.height * $1.width },
+      1,
+      height * width * max(numberOfLayers, 1) + tokenLength
+        + referenceSizes.reduce(0) { $0 + $1.height * $1.width },
       heads, channels))
   let dim0 = channels / 8
   let dim1 = channels * 7 / 16
@@ -22,7 +24,8 @@ public func QwenImageRotaryPositionEmbedding(
     let width = referenceSize.width
     maxImgIdx = max(maxImgIdx, max(height / 2, width / 2))
   }
-  let imageLength = height * width + referenceSizes.reduce(0) { $0 + $1.height * $1.width }
+  let imageLength =
+    height * width * max(numberOfLayers, 1) + referenceSizes.reduce(0) { $0 + $1.height * $1.width }
   for i in 0..<tokenLength {
     for j in 0..<heads {
       for k in 0..<(dim0 / 2) {
@@ -79,6 +82,41 @@ public func QwenImageRotaryPositionEmbedding(
     }
   }
   var index = width * height
+  if numberOfLayers > 1 {
+    for l in 1..<numberOfLayers {
+      for y in 0..<height {
+        for x in 0..<width {
+          let i = y * width + x + index
+          for j in 0..<heads {
+            for k in 0..<(dim0 / 2) {
+              let theta = Double(l) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))
+              let sintheta = sin(theta)
+              let costheta = cos(theta)
+              rotTensor[0, i, j, k * 2] = Float(costheta)
+              rotTensor[0, i, j, k * 2 + 1] = Float(sintheta)
+            }
+            for k in 0..<(dim1 / 2) {
+              let theta =
+                Double(y - (height - height / 2)) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim1))
+              let sintheta = sin(theta)
+              let costheta = cos(theta)
+              rotTensor[0, i, j, (k + (dim0 / 2)) * 2] = Float(costheta)
+              rotTensor[0, i, j, (k + (dim0 / 2)) * 2 + 1] = Float(sintheta)
+            }
+            for k in 0..<(dim2 / 2) {
+              let theta =
+                Double(x - (width - width / 2)) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim2))
+              let sintheta = sin(theta)
+              let costheta = cos(theta)
+              rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2] = Float(costheta)
+              rotTensor[0, i, j, (k + (dim0 / 2) + (dim1 / 2)) * 2 + 1] = Float(sintheta)
+            }
+          }
+        }
+      }
+      index += width * height
+    }
+  }
   var h = 0
   var w = 0
   for (n, referenceSize) in referenceSizes.enumerated() {
@@ -98,8 +136,15 @@ public func QwenImageRotaryPositionEmbedding(
         let i = y * width + x + index
         for j in 0..<heads {
           for k in 0..<(dim0 / 2) {
-            let theta =
-              Double(multiImage ? 1 + n : 1) * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))  // Use time index at 1.
+            let offset: Double
+            if multiImage {
+              offset = Double(1 + n)
+            } else if numberOfLayers > 1 {
+              offset = -1
+            } else {
+              offset = 1
+            }
+            let theta = offset * 1.0 / pow(10_000, Double(k) * 2 / Double(dim0))  // Use time index at 1.
             let sintheta = sin(theta)
             let costheta = cos(theta)
             rotTensor[0, i, j, k * 2] = Float(costheta)
@@ -450,7 +495,7 @@ private func JointTransformerBlock(
 public func QwenImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, referenceSequenceLength: Int,
   channels: Int, layers: Int, usesFlashAttention: FlashAttentionLevel, isBF16: Bool,
-  activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
+  isQwenImageLayered: Bool, activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
   activationFfnScaling: [Int: Int]
 ) -> (
   ModelWeightMapper, Model
@@ -466,19 +511,23 @@ public func QwenImage(
   let h = height / 2
   let w = width / 2
   var out: Model.IO
+  let sequenceLength = h * w * (isQwenImageLayered ? batchSize : 1)
   if referenceSequenceLength > 0 {
     let latents = Input()
     out = Functional.concat(
-      axis: 1, imgIn(x).reshaped([batchSize, h * w, channels]), latents, flags: [.disableOpt]
+      axis: 1, imgIn(x).reshaped([(isQwenImageLayered ? 1 : batchSize), sequenceLength, channels]),
+      latents, flags: [.disableOpt]
     ).to(.Float32)
     referenceLatents = latents
   } else {
-    out = imgIn(x).reshaped(.HWC(batchSize, h * w, channels)).to(.Float32)
+    out = imgIn(x).reshaped(.HWC((isQwenImageLayered ? 1 : batchSize), sequenceLength, channels))
+      .to(.Float32)
     referenceLatents = nil
   }
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
-  let rotResized = rot.reshaped(.NHWC(1, h * w + referenceSequenceLength + textLength, 1, 128))
+  let rotResized = rot.reshaped(
+    .NHWC(1, sequenceLength + referenceSequenceLength + textLength, 1, 128))
   for i in 0..<layers {
     let contextBlockPreOnly = i == layers - 1
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
@@ -487,8 +536,10 @@ public func QwenImage(
     let projScaling = activationProjScaling[i] ?? 1
     let ffnScaling = activationFfnScaling[i] ?? 1
     let (mapper, block) = JointTransformerBlock(
-      prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: textLength,
-      hw: h * w + referenceSequenceLength, referenceSequenceLength: referenceSequenceLength,
+      prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
+      b: (isQwenImageLayered ? 1 : batchSize), t: textLength,
+      hw: sequenceLength + referenceSequenceLength,
+      referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (
         Float(8 * qkScaling),
@@ -1071,7 +1122,7 @@ private func LoRAJointTransformerBlock(
 public func LoRAQwenImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, referenceSequenceLength: Int,
   channels: Int, layers: Int, usesFlashAttention: FlashAttentionLevel, isBF16: Bool,
-  activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
+  isQwenImageLayered: Bool, activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
   activationFfnScaling: [Int: Int],
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
@@ -1088,19 +1139,23 @@ public func LoRAQwenImage(
   let h = height / 2
   let w = width / 2
   var out: Model.IO
+  let sequenceLength = h * w * (isQwenImageLayered ? batchSize : 1)
   if referenceSequenceLength > 0 {
     let latents = Input()
     out = Functional.concat(
-      axis: 1, imgIn(x).reshaped([batchSize, h * w, channels]), latents, flags: [.disableOpt]
+      axis: 1, imgIn(x).reshaped([(isQwenImageLayered ? 1 : batchSize), sequenceLength, channels]),
+      latents, flags: [.disableOpt]
     ).to(.Float32)
     referenceLatents = latents
   } else {
-    out = imgIn(x).reshaped(.HWC(batchSize, h * w, channels)).to(.Float32)
+    out = imgIn(x).reshaped(.HWC((isQwenImageLayered ? 1 : batchSize), sequenceLength, channels))
+      .to(.Float32)
     referenceLatents = nil
   }
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
-  let rotResized = rot.reshaped(.NHWC(1, h * w + referenceSequenceLength + textLength, 1, 128))
+  let rotResized = rot.reshaped(
+    .NHWC(1, sequenceLength + referenceSequenceLength + textLength, 1, 128))
   for i in 0..<layers {
     let contextBlockPreOnly = i == layers - 1
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
@@ -1109,8 +1164,10 @@ public func LoRAQwenImage(
     let projScaling = activationProjScaling[i] ?? 1
     let ffnScaling = activationFfnScaling[i] ?? 1
     let (mapper, block) = LoRAJointTransformerBlock(
-      prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128, b: batchSize, t: textLength,
-      hw: h * w + referenceSequenceLength, referenceSequenceLength: referenceSequenceLength,
+      prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
+      b: (isQwenImageLayered ? 1 : batchSize), t: textLength,
+      hw: sequenceLength + referenceSequenceLength,
+      referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (
         Float(8 * qkScaling),
