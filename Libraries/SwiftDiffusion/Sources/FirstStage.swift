@@ -387,7 +387,10 @@ extension FirstStage {
         ?? WanDecoderCausal3D(
           channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true,
-          wan22: false, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+          wan22: false,
+          outputChannels: alternativeDecoderVersion == .transparent ? 4 : 3,
+          highPrecisionFinalNorm: alternativeDecoderVersion == .transparent,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -429,7 +432,12 @@ extension FirstStage {
               tensor = tensor.reshaped(.NCHW(channels, 3, 3, 3))
               // In case depth = 1, it reduces to 2D convolution.
               guard channels < outChannels else {
-                return .final(tensor[0..<channels, 2..<3, 0..<3, 0..<3].contiguous())
+                if dataType == .Float16 {
+                  return .final(tensor[0..<channels, 2..<3, 0..<3, 0..<3].contiguous())
+                } else {
+                  return .final(
+                    Tensor<Float>(from: tensor[0..<channels, 2..<3, 0..<3, 0..<3].contiguous()))
+                }
               }
               // In case we needs more, allocate first.
               var outTensor = Tensor<FloatType>(
@@ -437,7 +445,11 @@ extension FirstStage {
               outTensor[0..<channels, 0..<1, 0..<3, 0..<3] = tensor[
                 0..<channels, 2..<3, 0..<3, 0..<3
               ].contiguous()
-              return .final(outTensor)
+              if dataType == .Float16 {
+                return .final(outTensor)
+              } else {
+                return .final(Tensor<Float>(from: outTensor))
+              }
             }
           }
         }
@@ -478,7 +490,8 @@ extension FirstStage {
         ?? WanDecoderCausal3D(
           channels: [256, 512, 1024, 1024], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true,
-          wan22: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+          wan22: true, outputChannels: 3, highPrecisionFinalNorm: false,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -1480,7 +1493,7 @@ extension FirstStage {
       // If this is the case, we need to switch alpha channel with rgb channel.
       let shape = pixel.shape
       let rgb = pixel[0..<1, 0..<shape[1], 0..<shape[2], 0..<3].copied()
-      let alpha = pixel[0..<1, 0..<shape[1], 0..<shape[2], 3..<4].contiguous().clamped(0...1)
+      let alpha = (pixel[0..<1, 0..<shape[1], 0..<shape[2], 3..<4].contiguous() + 1) * 0.5
       pixel[0..<1, 0..<shape[1], 0..<shape[2], 1..<shape[3]] = rgb
       pixel[0..<1, 0..<shape[1], 0..<shape[2], 0..<1] = alpha
       return pixel

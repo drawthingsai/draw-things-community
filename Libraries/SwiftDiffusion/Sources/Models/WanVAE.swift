@@ -193,7 +193,8 @@ private struct NHWCAttnBlockCausal3D {
 // 3. There is a separate upsample shortcut such that the higher resolution res blocks should only learn high-frequency information.
 private func NHWCWanDecoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
-  startDepth: Int, paddingFinalConvLayer: Bool, wan22: Bool
+  startDepth: Int, paddingFinalConvLayer: Bool, wan22: Bool, outputChannels: Int,
+  highPrecisionFinalNorm: Bool
 )
   -> (ModelWeightMapper, Model)
 {
@@ -212,7 +213,9 @@ private func NHWCWanDecoderCausal3D(
       hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_in")
     convOut = Convolution(
-      groups: 1, filters: wan22 ? 12 : (paddingFinalConvLayer ? 4 : 3), filterSize: [3, 3, 3],
+      groups: 1,
+      filters: wan22 ? 12 : (paddingFinalConvLayer ? (outputChannels + 3) / 4 * 4 : outputChannels),
+      filterSize: [3, 3, 3],
       hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_out")
   } else {
@@ -221,7 +224,9 @@ private func NHWCWanDecoderCausal3D(
       hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
       format: .OIHW, name: "conv_in")
     convOut = Convolution(
-      groups: 1, filters: wan22 ? 12 : (paddingFinalConvLayer ? 4 : 3), filterSize: [3, 3],
+      groups: 1,
+      filters: wan22 ? 12 : (paddingFinalConvLayer ? (outputChannels + 3) / 4 * 4 : outputChannels),
+      filterSize: [3, 3],
       hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
       format: .OIHW, name: "conv_out")
   }
@@ -472,7 +477,14 @@ private func NHWCWanDecoderCausal3D(
         k += 1
       }
     }
+    let beforeNorm = out
+    if highPrecisionFinalNorm {
+      out = out.to(.Float32)
+    }
     out = normOut(out.reshaped([depth, height, width, channels[0]]))
+    if highPrecisionFinalNorm {
+      out = out.to(of: beforeNorm)
+    }
     let pre = out.swish()
     if let convOutInputs = convOutInputs {
       out = convOut(
@@ -504,7 +516,8 @@ private func NHWCWanDecoderCausal3D(
     last = out
     outs.append(
       out.reshaped([
-        depth, height, width, wan22 ? 12 : (paddingFinalConvLayer ? 4 : 3),
+        depth, height, width,
+        wan22 ? 12 : (paddingFinalConvLayer ? (outputChannels + 3) / 4 * 4 : outputChannels),
       ]))
   }
   var out: Model.IO
@@ -1017,7 +1030,8 @@ private struct NCHWAttnBlockCausal3D {
 
 func NCHWWanDecoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
-  startDepth: Int, paddingFinalConvLayer: Bool, wan22: Bool
+  startDepth: Int, paddingFinalConvLayer: Bool, wan22: Bool, outputChannels: Int,
+  highPrecisionFinalNorm: Bool
 )
   -> (ModelWeightMapper, Model)
 {
@@ -1039,7 +1053,9 @@ func NCHWWanDecoderCausal3D(
       hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_in")
     convOut = Convolution(
-      groups: 1, filters: wan22 ? 12 : (paddingFinalConvLayer ? 4 : 3), filterSize: [3, 3, 3],
+      groups: 1,
+      filters: wan22 ? 12 : (paddingFinalConvLayer ? (outputChannels + 3) / 4 * 4 : outputChannels),
+      filterSize: [3, 3, 3],
       hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
       format: .OIHW, name: "conv_out")
   } else {
@@ -1048,7 +1064,9 @@ func NCHWWanDecoderCausal3D(
       hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
       format: .OIHW, name: "conv_in")
     convOut = Convolution(
-      groups: 1, filters: wan22 ? 12 : (paddingFinalConvLayer ? 4 : 3), filterSize: [3, 3],
+      groups: 1,
+      filters: wan22 ? 12 : (paddingFinalConvLayer ? (outputChannels + 3) / 4 * 4 : outputChannels),
+      filterSize: [3, 3],
       hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
       format: .OIHW, name: "conv_out")
   }
@@ -1293,7 +1311,14 @@ func NCHWWanDecoderCausal3D(
         k += 1
       }
     }
+    let beforeNorm = out
+    if highPrecisionFinalNorm {
+      out = out.to(.Float32)
+    }
     out = normOut(out.reshaped([channels[0], depth, height, width]))
+    if highPrecisionFinalNorm {
+      out = out.to(of: beforeNorm)
+    }
     let pre = out.swish()
     if let convOutInputs = convOutInputs {
       out = convOut(
@@ -1325,7 +1350,8 @@ func NCHWWanDecoderCausal3D(
     last = out
     outs.append(
       out.reshaped([
-        wan22 ? 12 : (paddingFinalConvLayer ? 4 : 3), depth, height, width,
+        wan22 ? 12 : (paddingFinalConvLayer ? (outputChannels + 3) / 4 * 4 : outputChannels), depth,
+        height, width,
       ]))
   }
   var out: Model.IO
@@ -1344,7 +1370,8 @@ func NCHWWanDecoderCausal3D(
   } else {
     out = out.permuted(1, 2, 3, 0).contiguous().reshaped(
       .NHWC(
-        (startDepth - 1) * 4 + 1, startHeight * 8, startWidth * 8, paddingFinalConvLayer ? 4 : 3))
+        (startDepth - 1) * 4 + 1, startHeight * 8, startWidth * 8,
+        paddingFinalConvLayer ? (outputChannels + 3) / 4 * 4 : outputChannels))
   }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -1661,17 +1688,20 @@ private func NCHWWanEncoderCausal3D(
 
 func WanDecoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
-  startDepth: Int, paddingFinalConvLayer: Bool, wan22: Bool, format: TensorFormat
+  startDepth: Int, paddingFinalConvLayer: Bool, wan22: Bool, outputChannels: Int,
+  highPrecisionFinalNorm: Bool, format: TensorFormat
 ) -> (ModelWeightMapper, Model) {
   switch format {
   case .NHWC:
     return NHWCWanDecoderCausal3D(
       channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
-      startDepth: startDepth, paddingFinalConvLayer: paddingFinalConvLayer, wan22: wan22)
+      startDepth: startDepth, paddingFinalConvLayer: paddingFinalConvLayer, wan22: wan22,
+      outputChannels: outputChannels, highPrecisionFinalNorm: highPrecisionFinalNorm)
   case .NCHW:
     return NCHWWanDecoderCausal3D(
       channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
-      startDepth: startDepth, paddingFinalConvLayer: paddingFinalConvLayer, wan22: wan22)
+      startDepth: startDepth, paddingFinalConvLayer: paddingFinalConvLayer, wan22: wan22,
+      outputChannels: outputChannels, highPrecisionFinalNorm: highPrecisionFinalNorm)
   case .CHWN:
     fatalError()
   }

@@ -196,10 +196,16 @@ private func FeedForward(
 {
   let x = Input()
   let linear1 = Dense(count: intermediateSize, flags: [.Float16], name: "\(name)_linear1")
-  var out = linear1(x).GELU(approximate: .tanh)
+  var out: Model.IO
   if isBF16 {
-    out = out.to(.BFloat16)
+    if scaleFactor > 1 {
+      out = (1.0 / scaleFactor) * x
+      out = (scaleFactor * linear1(out).to(.BFloat16)).GELU(approximate: .tanh)
+    } else {
+      out = linear1(x).GELU(approximate: .tanh).to(.BFloat16)
+    }
   } else {
+    out = linear1(x).GELU(approximate: .tanh)
     out = (1.0 / scaleFactor) * out
   }
   // The scale down is integrated into out proj bias.
@@ -543,8 +549,11 @@ public func QwenImage(
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (
         Float(8 * qkScaling),
-        i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling),
-        i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
+        isBF16
+          ? Float(projScaling)
+          : (i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling)),
+        isBF16
+          ? Float(ffnScaling) : (i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling))
       ), isBF16: isBF16)
     let blockOut = block([out, context, rotResized] + contextChunks + xChunks)
     if i == layers - 1 {
@@ -697,8 +706,12 @@ public func QwenImageFixed<T: TensorNumeric & BinaryFloatingPoint>(
         contextBlockPreOnly: i == layers - 1,
         scaleFactor: (
           Float(8 * qkScaling),
-          i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling),
-          i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
+          isBF16
+            ? Float(projScaling)
+            : (i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling)),
+          isBF16
+            ? Float(ffnScaling)
+            : (i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling))
         ), isBF16: isBF16)
       let blockOut = block(vec)
       mappers.append(mapper)
@@ -813,10 +826,16 @@ private func LoRAFeedForward(
   let linear1 = LoRADense(
     count: intermediateSize, configuration: configuration, flags: [.Float16], index: index,
     name: "\(name)_linear1")
-  var out = linear1(x).GELU(approximate: .tanh)
+  var out: Model.IO
   if isBF16 {
-    out = out.to(.BFloat16)
+    if scaleFactor > 1 {
+      out = (1.0 / scaleFactor) * x
+      out = (scaleFactor * linear1(out).to(.BFloat16)).GELU(approximate: .tanh)
+    } else {
+      out = linear1(x).GELU(approximate: .tanh).to(.BFloat16)
+    }
   } else {
+    out = linear1(x).GELU(approximate: .tanh)
     out = (1.0 / scaleFactor) * out
   }
   // The scale down is integrated into out proj bias.
@@ -1171,8 +1190,11 @@ public func LoRAQwenImage(
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (
         Float(8 * qkScaling),
-        i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling),
-        i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
+        isBF16
+          ? Float(projScaling)
+          : (i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling)),
+        isBF16
+          ? Float(ffnScaling) : (i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling))
       ), isBF16: isBF16, layerIndex: i, configuration: LoRAConfiguration)
     let blockOut = block([out, context, rotResized] + contextChunks + xChunks)
     if i == layers - 1 {
@@ -1329,8 +1351,12 @@ public func LoRAQwenImageFixed<T: TensorNumeric & BinaryFloatingPoint>(
         contextBlockPreOnly: i == layers - 1,
         scaleFactor: (
           Float(8 * qkScaling),
-          i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling),
-          i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling)
+          isBF16
+            ? Float(projScaling)
+            : (i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling)),
+          isBF16
+            ? Float(ffnScaling)
+            : (i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling))
         ), isBF16: isBF16, layerIndex: i, configuration: LoRAConfiguration)
       let blockOut = block(vec)
       mappers.append(mapper)

@@ -669,6 +669,12 @@ public struct ModelZoo: DownloadZoo {
       "252683bda4661be9c64d94e718c2a9c36a6217867464ca09d03db7013a45f20f",
     "z_image_turbo_1.0_q8p.ckpt":
       "fb2f636c4f310c092fd87b6c07aabb1f4549fd4d74b66b09a5d034c95da655e6",
+    "qwen_image_layered_1.0_bf16_q6p.ckpt":
+      "28c5a5a1417d955ef802f318e489fedefc2ed4c39d79032ea6cdc84b7eafc894",
+    "qwen_image_layered_1.0_bf16_q8p.ckpt":
+      "8dfac2958644d2a5c7fddeb5ffad55c6f04031028f5313e1881d21fb155a81d6",
+    "qwen_image_layered_vae_f16.ckpt":
+      "52913c47f68c3aaa371b6819608f1a0d411d9c269d3d38552d306f6957fe482b",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -701,7 +707,8 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       mmdit: .init(
         qkNorm: true, dualAttentionLayers: [],
-        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 4) })),
       isBf16: true,
       note:
         "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
@@ -716,7 +723,8 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       mmdit: .init(
         qkNorm: true, dualAttentionLayers: [],
-        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 4) })),
       isBf16: true,
       note:
         "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
@@ -808,10 +816,6 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "qwen_image_vae_f16.ckpt", modifier: .qwenimageEditPlus,
       clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
-      mmdit: .init(
-        qkNorm: true, dualAttentionLayers: [],
-        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
-        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       isBf16: true,
       note:
         "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
@@ -2282,7 +2286,7 @@ extension ModelZoo {
   ) -> Bool {
     guard
       version == .flux1 || version == .sd3 || version == .sd3Large || version == .hiDreamI1
-        || version == .qwenImage
+        || version == .qwenImage || version == .zImage || version == .flux2
     else { return false }
     if isConsistencyModel {
       return false
