@@ -295,7 +295,8 @@ extension DDIMSampler: Sampler {
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             conditions: newC,
             referenceImageCount: referenceImageCount,
-            version: version, isCfgEnabled: isCfgEnabled), tokenLengthUncond: tokenLengthUncond,
+            version: version, modifier: modifier, isCfgEnabled: isCfgEnabled),
+          tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
           extraProjection: extraProjection,
           injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
@@ -465,7 +466,7 @@ extension DDIMSampler: Sampler {
               graph: graph, index: 0, batchSize: cfgChannels * batchSize,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
               conditions: newC, referenceImageCount: referenceImageCount,
-              version: currentModelVersion, isCfgEnabled: isCfgEnabled),
+              version: currentModelVersion, modifier: modifier, isCfgEnabled: isCfgEnabled),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
@@ -493,7 +494,7 @@ extension DDIMSampler: Sampler {
           graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           conditions: conditions, referenceImageCount: referenceImageCount,
-          version: currentModelVersion, isCfgEnabled: isCfgEnabled)
+          version: currentModelVersion, modifier: modifier, isCfgEnabled: isCfgEnabled)
         var et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
           let condAugFrames = condAugFrames

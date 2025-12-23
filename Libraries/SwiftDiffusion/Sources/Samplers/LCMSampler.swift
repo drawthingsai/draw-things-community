@@ -318,7 +318,8 @@ extension LCMSampler: Sampler {
             of: FloatType.self,
             graph: graph, index: 0, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, conditions: newC,
-            referenceImageCount: referenceImageCount, version: version, isCfgEnabled: false),
+            referenceImageCount: referenceImageCount, version: version, modifier: modifier,
+            isCfgEnabled: false),
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: false, extraProjection: extraProjection,
           injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
@@ -506,7 +507,7 @@ extension LCMSampler: Sampler {
               graph: graph, index: 0, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, conditions: newC,
               referenceImageCount: referenceImageCount,
-              version: currentModelVersion, isCfgEnabled: false),
+              version: currentModelVersion, modifier: modifier, isCfgEnabled: false),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: false, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
@@ -534,7 +535,7 @@ extension LCMSampler: Sampler {
           graph: graph, index: i - indexOffset, batchSize: batchSize,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           conditions: conditions, referenceImageCount: referenceImageCount,
-          version: currentModelVersion, isCfgEnabled: false)
+          version: currentModelVersion, modifier: modifier, isCfgEnabled: false)
         xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
         let injectedIPAdapters = ControlModel<FloatType>
           .injectedIPAdapters(

@@ -2528,7 +2528,7 @@ extension ControlModel {
       of: FloatType.self,
       graph: graph, index: index, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
       tokenLengthCond: tokenLengthCond, conditions: c, referenceImageCount: 0, version: version,
-      isCfgEnabled: isCfgEnabled)
+      modifier: .none, isCfgEnabled: isCfgEnabled)
     if tiledDiffusionIsEnabled {
       let shape = hint[0].shape
       c = sliceInputs(

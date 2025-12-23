@@ -296,7 +296,7 @@ extension EulerASampler: Sampler {
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             conditions: newC,
             referenceImageCount: referenceImageCount,
-            version: version, isCfgEnabled: isCfgEnabled),
+            version: version, modifier: modifier, isCfgEnabled: isCfgEnabled),
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
           injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
@@ -481,7 +481,7 @@ extension EulerASampler: Sampler {
               graph: graph, index: 0, batchSize: cfgChannels * batchSize,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
               conditions: newC, referenceImageCount: referenceImageCount,
-              version: currentModelVersion, isCfgEnabled: isCfgEnabled),
+              version: currentModelVersion, modifier: modifier, isCfgEnabled: isCfgEnabled),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
@@ -509,7 +509,7 @@ extension EulerASampler: Sampler {
           graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           conditions: conditions, referenceImageCount: referenceImageCount,
-          version: currentModelVersion, isCfgEnabled: isCfgEnabled)
+          version: currentModelVersion, modifier: modifier, isCfgEnabled: isCfgEnabled)
         let et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
           let condAugFrames = condAugFrames

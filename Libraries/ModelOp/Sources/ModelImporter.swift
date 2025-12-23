@@ -1066,7 +1066,7 @@ public final class ModelImporter {
         (unetMapper, unet) = QwenImage(
           batchSize: 1, height: 64, width: 64, textLength: 128, referenceSequenceLength: 0,
           channels: 3_072, layers: 60, usesFlashAttention: .scale1, isBF16: true,
-          isQwenImageLayered: false, activationQkScaling: [:],
+          isQwenImageLayered: false, zeroTimestepForReference: false, activationQkScaling: [:],
           activationProjScaling: [:], activationFfnScaling: [:])
         (unetFixedMapper, unetFixed) = QwenImageFixed(
           FloatType.self,

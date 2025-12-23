@@ -1306,6 +1306,10 @@ extension UNetFixedEncoder {
         })
         .values
       ).filter { $0.weight != 0 }
+      var timesteps = timesteps
+      if modifier == .qwenimageEdit2511 {
+        timesteps.append(0)  // zero_cond_t
+      }
       let cacheUri = deviceProperties.cacheUri.appendingPathComponent("qwen_image")
       try? FileManager.default.createDirectory(at: cacheUri, withIntermediateDirectories: true)
       let timestepEmbeddingCacheFilePath =
@@ -1520,14 +1524,36 @@ extension UNetFixedEncoder {
               oldReference[0..<1, 0..<sequenceLength, 0..<shape[2]]
           }
         }
-        conditions = [reference] + conditions[referenceImages.count...]
+        if modifier == .qwenimageEdit2511 {
+          // Need to go through the last 718 modulations, extract zero modulations, append them back.
+          let adaLnMods = Array(conditions[(conditions.count - 718)...])
+          var zeroMods = [DynamicGraph.Tensor<Float>]()
+          for i in 0..<60 {
+            let contextBlockPreOnly = i == 59
+            let xMods = Array(
+              adaLnMods[
+                (i * 12 + (contextBlockPreOnly ? 2 : 6))..<(i * 12 + (contextBlockPreOnly ? 8 : 12))
+              ])
+            for xMod in xMods[0..<(contextBlockPreOnly ? 2 : 6)] {
+              let shape = xMod.shape
+              zeroMods.append(
+                DynamicGraph.Tensor<Float>(xMod)[
+                  (shape[0] - 1)..<(shape[0]), 0..<shape[1], 0..<shape[2]
+                ].copied())
+            }
+          }
+          conditions = [reference] + zeroMods + conditions[referenceImages.count...]
+        } else {
+          conditions = [reference] + conditions[referenceImages.count...]
+        }
       } else {
         referenceSizes = []
       }
       let rotaryEmbedding = Tensor<FloatType>(
         from: QwenImageRotaryPositionEmbedding(
           height: h, width: w, tokenLength: qwen25Length, referenceSizes: referenceSizes,
-          channels: 128, numberOfLayers: modifier == .qwenimageLayered ? batchSize : 0)
+          channels: 128, multiImage: modifier == .qwenimageEdit2511,
+          numberOfLayers: modifier == .qwenimageLayered ? batchSize : 0)
       ).toGPU(0)
       return (
         [graph.variable(rotaryEmbedding)] + conditions, nil

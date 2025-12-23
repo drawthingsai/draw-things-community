@@ -3813,7 +3813,7 @@ extension LocalImageGenerator {
         downscaleImageAndToGPU(graph.variable($0), scaleFactor: imageScaleFactor)
       }
       let textImages: [DynamicGraph.Tensor<FloatType>]
-      if modifier == .kontext || modifier == .qwenimageEditPlus {
+      if modifier == .kontext || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511 {
         textImages = (image.map { [$0] } ?? []) + shuffles.map { graph.variable($0.0) }
       } else {
         textImages = image.map { [$0] } ?? []
@@ -4904,7 +4904,7 @@ extension LocalImageGenerator {
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textImages: [DynamicGraph.Tensor<FloatType>]
-      if modifier == .kontext || modifier == .qwenimageEditPlus {
+      if modifier == .kontext || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511 {
         textImages = [image] + shuffles.map { graph.variable($0.0) }
       } else {
         textImages = [image]
@@ -6248,7 +6248,7 @@ extension LocalImageGenerator {
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textImages: [DynamicGraph.Tensor<FloatType>]
-      if modifier == .kontext || modifier == .qwenimageEditPlus {
+      if modifier == .kontext || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511 {
         textImages = [image] + shuffles.map { graph.variable($0.0) }
       } else {
         textImages = [image]
@@ -7082,7 +7082,7 @@ extension LocalImageGenerator {
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textImages: [DynamicGraph.Tensor<FloatType>]
-      if modifier == .kontext || modifier == .qwenimageEditPlus {
+      if modifier == .kontext || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511 {
         textImages = [image] + shuffles.map { graph.variable($0.0) }
       } else {
         textImages = [image]

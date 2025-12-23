@@ -672,7 +672,7 @@ public struct ModelZoo: DownloadZoo {
     "qwen_image_layered_1.0_bf16_q6p.ckpt":
       "28c5a5a1417d955ef802f318e489fedefc2ed4c39d79032ea6cdc84b7eafc894",
     "qwen_image_layered_1.0_bf16_q8p.ckpt":
-      "8dfac2958644d2a5c7fddeb5ffad55c6f04031028f5313e1881d21fb155a81d6",
+      "de2571a4cbb59360408a2eec5ec6fee0d19998a0355bb94f362cd1bb43428c1b",
     "qwen_image_layered_vae_f16.ckpt":
       "52913c47f68c3aaa371b6819608f1a0d411d9c269d3d38552d306f6957fe482b",
   ]
@@ -696,38 +696,6 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       note:
         "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
-      copyright: "© 2025 Alibaba"
-    ),
-    Specification(
-      name: "Qwen Image Layered 1.0 (BF16)", file: "qwen_image_layered_1.0_bf16_q8p.ckpt",
-      prefix: "",
-      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
-      autoencoder: "qwen_image_layered_vae_f16.ckpt", modifier: .qwenimageLayered,
-      objective: .u(conditionScale: 1000),
-      hiresFixScale: 24,
-      mmdit: .init(
-        qkNorm: true, dualAttentionLayers: [],
-        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
-        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 4) })),
-      isBf16: true,
-      note:
-        "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
-      copyright: "© 2025 Alibaba"
-    ),
-    Specification(
-      name: "Qwen Image Layered 1.0 (BF16, 6-bit)", file: "qwen_image_layered_1.0_bf16_q6p.ckpt",
-      prefix: "",
-      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
-      autoencoder: "qwen_image_layered_vae_f16.ckpt", modifier: .qwenimageLayered,
-      objective: .u(conditionScale: 1000),
-      hiresFixScale: 24,
-      mmdit: .init(
-        qkNorm: true, dualAttentionLayers: [],
-        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
-        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 4) })),
-      isBf16: true,
-      note:
-        "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
       copyright: "© 2025 Alibaba"
     ),
     Specification(
@@ -764,6 +732,49 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24, isBf16: true,
       note:
         "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Qwen Image Edit 2511 (BF16, 6-bit)", file: "qwen_image_edit_2511_bf16_q6p.ckpt",
+      prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", modifier: .qwenimageEdit2511,
+      clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24, isBf16: true,
+      note:
+        "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Qwen Image Layered 1.0 (BF16)", file: "qwen_image_layered_1.0_bf16_q8p.ckpt",
+      prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_layered_vae_f16.ckpt", modifier: .qwenimageLayered,
+      objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 4) })),
+      isBf16: true,
+      note:
+        "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Qwen Image Layered 1.0 (BF16, 6-bit)", file: "qwen_image_layered_1.0_bf16_q6p.ckpt",
+      prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_layered_vae_f16.ckpt", modifier: .qwenimageLayered,
+      objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 4) })),
+      isBf16: true,
+      note:
+        "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
       copyright: "© 2025 Alibaba"
     ),
     Specification(

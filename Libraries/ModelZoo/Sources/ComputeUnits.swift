@@ -137,7 +137,7 @@ public enum ComputeUnits {
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
       if samplerModifier == .kontext || samplerModifier == .qwenimageEditPlus
-        || modelVersion == .flux2
+        || modelVersion == .flux2 || samplerModifier == .qwenimageEdit2511
       {  // For Kontext, if the reference image is provided, we effectively double the cost at least.
         root = root * Double(1 + (hasImage ? 1 : 0) + shuffleCount)
       }

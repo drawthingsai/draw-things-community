@@ -133,8 +133,7 @@ extension UNetProtocol {
 public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint>(
   of: FloatType.Type = FloatType.self, graph: DynamicGraph, index: Int, batchSize: Int,
   tokenLengthUncond: Int, tokenLengthCond: Int, conditions: [DynamicGraph.AnyTensor],
-  referenceImageCount: Int,
-  version: ModelVersion, isCfgEnabled: Bool
+  referenceImageCount: Int, version: ModelVersion, modifier: SamplerModifier, isCfgEnabled: Bool
 )
   -> [DynamicGraph.AnyTensor]
 {
@@ -1168,19 +1167,18 @@ extension UNetFromNNC {
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       let isQwenImageLayered = modifier == .qwenimageLayered
+      let zeroTimestepForReference = referenceImageCount > 0 && modifier == .qwenimageEdit2511
       if didRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
           ModelBuilder {
             let referenceSequenceLength: Int
-            let textLength: Int
+            let textLength = $0[$0.count - 719].shape[1]
             if referenceImageCount > 0 {
               referenceSequenceLength = $0[2].shape[1]
-              textLength = $0[3].shape[1]
             } else {
               referenceSequenceLength = 0
-              textLength = $0[2].shape[1]
             }
             return LoRAQwenImage(
               batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
@@ -1188,6 +1186,7 @@ extension UNetFromNNC {
               channels: 3_072, layers: 60,
               usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
               isBF16: isBF16, isQwenImageLayered: isQwenImageLayered,
+              zeroTimestepForReference: zeroTimestepForReference,
               activationQkScaling: activationQkScaling,
               activationProjScaling: activationProjScaling,
               activationFfnScaling: activationFfnScaling,
@@ -1212,6 +1211,7 @@ extension UNetFromNNC {
               channels: 3_072, layers: 60,
               usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
               isBF16: isBF16, isQwenImageLayered: isQwenImageLayered,
+              zeroTimestepForReference: zeroTimestepForReference,
               activationQkScaling: activationQkScaling,
               activationProjScaling: activationProjScaling,
               activationFfnScaling: activationFfnScaling

@@ -1822,7 +1822,9 @@ extension TextEncoder {
           let shape = input.shape
           var height = shape[1]
           var width = shape[2]
-          if modifier == .qwenimageEditPlus, height > 0 && width > 0 {
+          if modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511,
+            height > 0 && width > 0
+          {
             // Qwen Image Edit Plus pipeline modifies image to area of 384x384.
             let ratio = Double(width) / Double(height)
             let widthD = (384 * 384 * ratio).squareRoot()
