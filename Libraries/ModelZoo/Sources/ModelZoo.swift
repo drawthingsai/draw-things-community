@@ -735,6 +735,17 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2025 Alibaba"
     ),
     Specification(
+      name: "Qwen Image Edit 2511 (BF16)", file: "qwen_image_edit_2511_bf16_q8p.ckpt",
+      prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", modifier: .qwenimageEdit2511,
+      clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24, isBf16: true,
+      note:
+        "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is an enhanced image editing model that significantly improves character consistency, mitigates image drift, and strengthens multi-person fusion capabilities compared to its predecessor (2509). It integrates popular LoRA features natively, enabling advanced lighting control and viewpoint generation without extra tuning, alongside specialized industrial design and geometric reasoning capabilities. It is Apache 2.0-licensed. The model is trained at multiple resolutions, with 40 inference steps recommended for optimal results. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
       name: "Qwen Image Edit 2511 (BF16, 6-bit)", file: "qwen_image_edit_2511_bf16_q6p.ckpt",
       prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
@@ -742,7 +753,7 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24, isBf16: true,
       note:
-        "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+        "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is an enhanced image editing model that significantly improves character consistency, mitigates image drift, and strengthens multi-person fusion capabilities compared to its predecessor (2509). It integrates popular LoRA features natively, enabling advanced lighting control and viewpoint generation without extra tuning, alongside specialized industrial design and geometric reasoning capabilities. It is Apache 2.0-licensed. The model is trained at multiple resolutions, with 40 inference steps recommended for optimal results. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
       copyright: "© 2025 Alibaba"
     ),
     Specification(
@@ -758,7 +769,7 @@ public struct ModelZoo: DownloadZoo {
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 4) })),
       isBf16: true,
       note:
-        "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+        "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a specialized model capable of decomposing an image into multiple transparent RGBA layers to unlock inherent editability. By physically isolating semantic components, it enables high-fidelity operations such as resizing, repositioning, and recoloring without affecting the rest of the image. It is Apache 2.0-licensed and commercially friendly. The model supports flexible and recursive decomposition, allowing users to define specific layer counts (Batch Size), with a recommended resolution of 640px and 50 inference steps. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
       copyright: "© 2025 Alibaba"
     ),
     Specification(
@@ -774,7 +785,7 @@ public struct ModelZoo: DownloadZoo {
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 4) })),
       isBf16: true,
       note:
-        "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+        "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a specialized model capable of decomposing an image into multiple transparent RGBA layers to unlock inherent editability. By physically isolating semantic components, it enables high-fidelity operations such as resizing, repositioning, and recoloring without affecting the rest of the image. It is Apache 2.0-licensed and commercially friendly. The model supports flexible and recursive decomposition, allowing users to define specific layer counts (Batch Size), with a recommended resolution of 640px and 50 inference steps. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
       copyright: "© 2025 Alibaba"
     ),
     Specification(

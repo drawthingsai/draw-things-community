@@ -1197,13 +1197,11 @@ extension UNetFromNNC {
         unet = ModelBuilderOrModel.modelBuilder(
           ModelBuilder {
             let referenceSequenceLength: Int
-            let textLength: Int
+            let textLength = $0[$0.count - 719].shape[1]
             if referenceImageCount > 0 {
               referenceSequenceLength = $0[2].shape[1]
-              textLength = $0[3].shape[1]
             } else {
               referenceSequenceLength = 0
-              textLength = $0[2].shape[1]
             }
             return QwenImage(
               batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
