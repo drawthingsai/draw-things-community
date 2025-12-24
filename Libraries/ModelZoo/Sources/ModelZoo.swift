@@ -742,7 +742,7 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24, isBf16: true,
       note:
-        "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is an enhanced image editing model that significantly improves character consistency, mitigates image drift, and strengthens multi-person fusion capabilities compared to its predecessor (2509). It integrates popular LoRA features natively, enabling advanced lighting control and viewpoint generation without extra tuning, alongside specialized industrial design and geometric reasoning capabilities. It is Apache 2.0-licensed. The model is trained at multiple resolutions, with 40 inference steps recommended for optimal results. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+        "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is an enhanced image editing model that significantly improves character consistency, mitigates image drift, and strengthens multi-person fusion capabilities compared to its predecessor (2509). It integrates popular LoRA features natively, enabling advanced lighting control and viewpoint generation without extra tuning, alongside specialized industrial design and geometric reasoning capabilities. It is Apache 2.0-licensed, with 40 inference steps recommended for optimal results. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
       copyright: "© 2025 Alibaba"
     ),
     Specification(
@@ -753,7 +753,7 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24, isBf16: true,
       note:
-        "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is an enhanced image editing model that significantly improves character consistency, mitigates image drift, and strengthens multi-person fusion capabilities compared to its predecessor (2509). It integrates popular LoRA features natively, enabling advanced lighting control and viewpoint generation without extra tuning, alongside specialized industrial design and geometric reasoning capabilities. It is Apache 2.0-licensed. The model is trained at multiple resolutions, with 40 inference steps recommended for optimal results. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+        "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is an enhanced image editing model that significantly improves character consistency, mitigates image drift, and strengthens multi-person fusion capabilities compared to its predecessor (2509). It integrates popular LoRA features natively, enabling advanced lighting control and viewpoint generation without extra tuning, alongside specialized industrial design and geometric reasoning capabilities. It is Apache 2.0-licensed, with 40 inference steps recommended for optimal results. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
       copyright: "© 2025 Alibaba"
     ),
     Specification(
