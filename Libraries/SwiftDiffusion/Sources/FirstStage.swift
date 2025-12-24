@@ -1169,6 +1169,7 @@ extension FirstStage {
         ?? WanEncoderCausal3D(
           channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, wan22: false,
+          inputChannels: alternativeDecoderVersion == .transparent ? 4 : 3,
           format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingEncoder == nil {
@@ -1261,7 +1262,7 @@ extension FirstStage {
         ?? WanEncoderCausal3D(
           channels: [160, 320, 640, 640], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, wan22: true,
-          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+          inputChannels: 12, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)

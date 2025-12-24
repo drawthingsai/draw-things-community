@@ -550,7 +550,8 @@ private func NHWCWanDecoderCausal3D(
 }
 
 private func NHWCWanEncoderCausal3D(
-  channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int, startDepth: Int, wan22: Bool
+  channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int, startDepth: Int, wan22: Bool,
+  inputChannels: Int
 )
   -> (ModelWeightMapper, Model)
 {
@@ -618,13 +619,10 @@ private func NHWCWanEncoderCausal3D(
   let endDepth = depth
   var outs = [Model.IO]()
   let input: Model.IO
-  let inputChannels: Int
   if wan22 {
-    inputChannels = 12
     input = x.reshaped([endDepth, endHeight, 2, endWidth, 2, 3]).permuted(0, 1, 3, 5, 2, 4)
       .contiguous().reshaped(.NHWC(endDepth, endHeight, endWidth, 3 * 2 * 2))
   } else {
-    inputChannels = 3
     input = x
   }
   for d in stride(from: 0, to: max(startDepth - 1, 1), by: 2) {
@@ -1391,7 +1389,8 @@ func NCHWWanDecoderCausal3D(
 }
 
 private func NCHWWanEncoderCausal3D(
-  channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int, startDepth: Int, wan22: Bool
+  channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int, startDepth: Int, wan22: Bool,
+  inputChannels: Int
 )
   -> (ModelWeightMapper, Model)
 {
@@ -1459,14 +1458,12 @@ private func NCHWWanEncoderCausal3D(
   let endDepth = depth
   var outs = [Model.IO]()
   let input: Model.IO
-  let inputChannels: Int
   if wan22 {
-    inputChannels = 12
     input = x.reshaped([endDepth, endHeight, 2, endWidth, 2, 3]).permuted(5, 2, 4, 0, 1, 3)
       .contiguous().reshaped(.NCHW(3 * 2 * 2, endDepth, endHeight, endWidth))
   } else {
-    inputChannels = 3
-    input = x.permuted(3, 0, 1, 2).contiguous().reshaped(.NCHW(3, endDepth, endHeight, endWidth))
+    input = x.permuted(3, 0, 1, 2).contiguous().reshaped(
+      .NCHW(inputChannels, endDepth, endHeight, endWidth))
   }
   for d in stride(from: 0, to: max(startDepth - 1, 1), by: 2) {
     previousChannel = channels[0]
@@ -1709,17 +1706,17 @@ func WanDecoderCausal3D(
 
 func WanEncoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int, startDepth: Int,
-  wan22: Bool, format: TensorFormat
+  wan22: Bool, inputChannels: Int, format: TensorFormat
 ) -> (ModelWeightMapper, Model) {
   switch format {
   case .NHWC:
     return NHWCWanEncoderCausal3D(
       channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
-      startDepth: startDepth, wan22: wan22)
+      startDepth: startDepth, wan22: wan22, inputChannels: inputChannels)
   case .NCHW:
     return NCHWWanEncoderCausal3D(
       channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
-      startDepth: startDepth, wan22: wan22)
+      startDepth: startDepth, wan22: wan22, inputChannels: inputChannels)
   case .CHWN:
     fatalError()
   }
