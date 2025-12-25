@@ -153,7 +153,7 @@ private func ZImageTransformerBlock(
     epsilon: 1e-5, axis: [2], name: name.isEmpty ? "attention_norm1" : "\(name)_attention_norm_1")
   var out = attentionNorm1(x)
   if modulation {
-    out = chunks[0] .* out
+    out = out .* chunks[0]
   }
   out = out.to(.Float16)
   var keys = tokeys(out).reshaped([b, t.keyValue, h, k])
@@ -321,7 +321,7 @@ private func ZImageTransformerBlock(
     epsilon: 1e-5, axis: [2], name: name.isEmpty ? "attention_norm2" : "\(name)_attention_norm2")
   out = attentionNorm2(out)
   if modulation {
-    out = chunks[1] .* out
+    out = out .* chunks[1]
   }
   out = xIn + out
   let (w1, w2, w3, ffn) = FeedForward(
@@ -334,12 +334,12 @@ private func ZImageTransformerBlock(
   let residual = out
   out = feedForwardNorm1(out)
   if modulation {
-    out = chunks[2] .* out
+    out = out .* chunks[2]
   }
   out = out.to(.Float16)
   out = feedForwardNorm2(ffn(out))  // Already converted to Float32.
   if modulation {
-    out = chunks[3] .* out
+    out = out .* chunks[3]
   }
   out = residual + out
   let mapper: ModelWeightMapper = { format in
@@ -437,7 +437,7 @@ public func ZImage(
   let scale = Input()
   adaLNChunks.append(scale)
   let projOut = Dense(count: 2 * 2 * 16, name: "linear_final")
-  out = scale .* normFinal(out).to(.Float16)
+  out = normFinal(out).to(.Float16) .* scale
   out = (-projOut(out)).reshaped([batchSize, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5)
     .contiguous()
     .reshaped([
@@ -711,7 +711,7 @@ private func LoRAZImageTransformerBlock(
     epsilon: 1e-5, axis: [2], name: name.isEmpty ? "attention_norm1" : "\(name)_attention_norm_1")
   var out = attentionNorm1(x)
   if modulation {
-    out = chunks[0] .* out
+    out = out .* chunks[0]
   }
   out = out.to(.Float16)
   var keys = tokeys(out).reshaped([b, t.keyValue, h, k])
@@ -881,7 +881,7 @@ private func LoRAZImageTransformerBlock(
     epsilon: 1e-5, axis: [2], name: name.isEmpty ? "attention_norm2" : "\(name)_attention_norm2")
   out = attentionNorm2(out)
   if modulation {
-    out = chunks[1] .* out
+    out = out .* chunks[1]
   }
   out = xIn + out
   let (w1, w2, w3, ffn) = LoRAFeedForward(
@@ -895,12 +895,12 @@ private func LoRAZImageTransformerBlock(
   let residual = out
   out = feedForwardNorm1(out)
   if modulation {
-    out = chunks[2] .* out
+    out = out .* chunks[2]
   }
   out = out.to(.Float16)
   out = feedForwardNorm2(ffn(out))  // Already converted to Float32.
   if modulation {
-    out = chunks[3] .* out
+    out = out .* chunks[3]
   }
   out = residual + out
   let mapper: ModelWeightMapper = { format in
@@ -1001,7 +1001,7 @@ public func LoRAZImage(
   adaLNChunks.append(scale)
   let projOut = LoRADense(
     count: 2 * 2 * 16, configuration: LoRAConfiguration, index: 0, name: "linear_final")
-  out = scale .* normFinal(out).to(.Float16)
+  out = normFinal(out).to(.Float16) .* scale
   out = (-projOut(out)).reshaped([batchSize, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5)
     .contiguous()
     .reshaped([
