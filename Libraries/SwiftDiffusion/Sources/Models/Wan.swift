@@ -78,7 +78,7 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   }
   let chunks = zip(c, modulations).map { $0 + $1 }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = ((1 + chunks[1]) .* xNorm1(x) + chunks[0]).to(.Float16)
+  var xOut = (xNorm1(x) .* (chunks[1] + 1) + chunks[0]).to(.Float16)
   let xToKeys = Dense(count: k * h, name: "\(weightsPrefix)x_k")
   let xToQueries = Dense(count: k * h, flags: [.Float16], name: "\(weightsPrefix)x_q")
   let xToValues = Dense(count: k * h, name: "\(weightsPrefix)x_v")
@@ -149,7 +149,7 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   }
   let xUnifyheads = Dense(count: k * h, name: "\(weightsPrefix)x_o")
   out = xUnifyheads(out)
-  out = x + chunks[2] .* out.to(of: x)
+  out = x + out.to(of: x) .* chunks[2]
   let xNorm3 = LayerNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_norm_3")
   xOut = xNorm3(out).to(.Float16)
   let xToContextQueries = Dense(count: k * h, name: "\(weightsPrefix)x_c_q")
@@ -208,7 +208,7 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let (xLinear1, xOutProjection, xFF) = FeedForward(
     hiddenSize: k * h, intermediateSize: intermediateSize, upcast: false, name: "\(weightsPrefix)x")
   out =
-    out + xFF(((1 + chunks[4]) .* xNorm2(out) + chunks[3]).to(.Float16)).to(of: out) .* chunks[5]
+    out + xFF((xNorm2(out) .* (chunks[4] + 1) + chunks[3]).to(.Float16)).to(of: out) .* chunks[5]
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     switch format {
@@ -397,7 +397,7 @@ public func Wan(
   let scale = Input()
   let shift = Input()
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  out = (scale .* normFinal(out) + shift).to(.Float16)
+  out = (normFinal(out) .* scale + shift).to(.Float16)
   let projOut = Dense(count: 2 * 2 * outputChannels, name: "linear")
   out = projOut(out).reshaped([time, h, w, 2, 2, outputChannels]).permuted(0, 1, 3, 2, 4, 5)
     .contiguous()
@@ -712,7 +712,7 @@ private func LoRAWanAttentionBlock(
   }
   let chunks = zip(c, modulations).map { $0 + $1 }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = ((1 + chunks[1]) .* xNorm1(x) + chunks[0]).to(.Float16)
+  var xOut = (xNorm1(x) .* (chunks[1] + 1) + chunks[0]).to(.Float16)
   let xToKeys = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)x_k")
   let xToQueries = LoRADense(
@@ -788,7 +788,7 @@ private func LoRAWanAttentionBlock(
   let xUnifyheads = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "\(weightsPrefix)x_o")
   out = xUnifyheads(out)
-  out = x + chunks[2] .* out.to(of: x)
+  out = x + out.to(of: x) .* chunks[2]
   let xNorm3 = LayerNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_norm_3")
   xOut = xNorm3(out).to(.Float16)
   let xToContextQueries = LoRADense(
@@ -850,7 +850,7 @@ private func LoRAWanAttentionBlock(
     hiddenSize: k * h, intermediateSize: intermediateSize, upcast: false,
     configuration: configuration, index: layerIndex, name: "\(weightsPrefix)x")
   out =
-    out + xFF(((1 + chunks[4]) .* xNorm2(out) + chunks[3]).to(.Float16)).to(of: out) .* chunks[5]
+    out + xFF((xNorm2(out) .* (chunks[4] + 1) + chunks[3]).to(.Float16)).to(of: out) .* chunks[5]
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     switch format {
@@ -1044,7 +1044,7 @@ func LoRAWan(
   let scale = Input()
   let shift = Input()
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  out = (scale .* normFinal(out) + shift).to(.Float16)
+  out = (normFinal(out) .* scale + shift).to(.Float16)
   let projOut = LoRADense(
     count: 2 * 2 * outputChannels, configuration: LoRAConfiguration, index: 0, name: "linear")
   out = projOut(out).reshaped([time, h, w, 2, 2, outputChannels]).permuted(0, 1, 3, 2, 4, 5)
