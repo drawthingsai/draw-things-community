@@ -155,7 +155,7 @@ private func JointTransformerBlock(
   }
   let xChunks = (0..<6).map { _ in Input() }
   let contextNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var contextOut = contextChunks[1] .* contextNorm1(context).to(.Float16) + contextChunks[0]
+  var contextOut = contextNorm1(context).to(.Float16) .* contextChunks[1] + contextChunks[0]
   let contextToKeys = Dense(count: k * h, name: "c_k")
   let contextToQueries = Dense(count: k * h, flags: [.Float16], name: "c_q")
   let contextToValues = Dense(count: k * h, name: "c_v")
@@ -167,7 +167,7 @@ private func JointTransformerBlock(
   contextQ = normAddedQ(contextQ).reshaped([b, t.1, h, k])
   let contextV = contextToValues(contextOut).reshaped([b, t.1, h, k])
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
+  var xOut = xNorm1(x).to(.Float16) .* xChunks[1] + xChunks[0]
   let xToKeys = Dense(count: k * h, name: "x_k")
   let xToQueries = Dense(count: k * h, flags: [.Float16], name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
@@ -236,9 +236,9 @@ private func JointTransformerBlock(
   if !contextBlockPreOnly {
     contextOut =
       context.reshaped([b, t.0, h * k], strides: [t.1 * h * k, h * k, 1]).contiguous()
-      + (contextChunks[2] .* contextOut).to(of: context)
+      + (contextOut .* contextChunks[2]).to(of: context)
   }
-  xOut = x + (xChunks[2] .* xOut).to(of: x)
+  xOut = x + (xOut .* xChunks[2]).to(of: x)
   // Attentions are now. Now run MLP.
   let contextW1: Model?
   let contextW2: Model?
@@ -250,9 +250,9 @@ private func JointTransformerBlock(
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
     contextOut =
       contextOut
-      + contextChunks[5].to(of: contextOut)
-      .* contextFF(
+      + contextFF(
         contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])
+      .* contextChunks[5].to(of: contextOut)
   } else {
     contextW1 = nil
     contextW2 = nil
@@ -267,7 +267,7 @@ private func JointTransformerBlock(
   let xIn = xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]
   xOut =
     xOut
-    + xChunks[5].to(of: xOut) .* (xSharedFF(xIn) + xMoEFF(xIn).reshaped([b, hw, h * k]))
+    + (xSharedFF(xIn) + xMoEFF(xIn).reshaped([b, hw, h * k])) .* xChunks[5].to(of: xOut)
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).attn1.to_q_t.weight"] = [contextToQueries.weight.name]
@@ -343,7 +343,7 @@ private func SingleTransformerBlock(
   let rot = Input()
   let xChunks = (0..<6).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
+  var xOut = xNorm1(x).to(.Float16) .* xChunks[1] + xChunks[0]
   let xToKeys = Dense(count: k * h, name: "x_k")
   let xToQueries = Dense(count: k * h, flags: [.Float16], name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
@@ -394,7 +394,7 @@ private func SingleTransformerBlock(
   let xIn = x.reshaped([b, xLength, h * k], strides: [(t.1 + hw) * h * k, h * k, 1]).contiguous()
   let xUnifyheads = Dense(count: k * h, name: "x_o")
   xOut = xUnifyheads(xOut)
-  xOut = xIn + (xChunks[2] .* xOut).to(of: xIn)
+  xOut = xIn + (xOut .* xChunks[2]).to(of: xIn)
   // Attentions are now. Now run MLP.
   let (xSharedW1, xSharedW2, xSharedW3, xSharedFF) = FeedForward(
     hiddenSize: k * h, intermediateSize: 3_584, upcast: upcast, name: "x_shared")
@@ -406,7 +406,7 @@ private func SingleTransformerBlock(
   let xFFIn = xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]
   xOut =
     xOut
-    + xChunks[5].to(of: xOut) .* (xSharedFF(xFFIn) + xMoEFF(xFFIn).reshaped([b, xLength, h * k]))
+    + (xSharedFF(xFFIn) + xMoEFF(xFFIn).reshaped([b, xLength, h * k])) .* xChunks[5].to(of: xOut)
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).attn1.to_q.weight"] = [xToQueries.weight.name]
@@ -532,7 +532,7 @@ public func HiDream(
   let scale = Input()
   adaLNChunks.append(contentsOf: [shift, scale])
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  out = scale .* normFinal(out).to(.Float16) + shift
+  out = normFinal(out).to(.Float16) .* scale + shift
   let projOut = Dense(count: 2 * 2 * 16, name: "linear")
   out = (-projOut(out)).reshaped([batchSize, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5)
     .contiguous()
@@ -832,7 +832,7 @@ private func LoRAJointTransformerBlock(
   }
   let xChunks = (0..<6).map { _ in Input() }
   let contextNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var contextOut = contextChunks[1] .* contextNorm1(context).to(.Float16) + contextChunks[0]
+  var contextOut = contextNorm1(context).to(.Float16) .* contextChunks[1] + contextChunks[0]
   let contextToKeys = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "c_k")
   let contextToQueries = LoRADense(
@@ -847,7 +847,7 @@ private func LoRAJointTransformerBlock(
   contextQ = normAddedQ(contextQ).reshaped([b, t.1, h, k])
   let contextV = contextToValues(contextOut).reshaped([b, t.1, h, k])
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
+  var xOut = xNorm1(x).to(.Float16) .* xChunks[1] + xChunks[0]
   let xToKeys = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_k")
   let xToQueries = LoRADense(
@@ -921,9 +921,9 @@ private func LoRAJointTransformerBlock(
   if !contextBlockPreOnly {
     contextOut =
       context.reshaped([b, t.0, h * k], strides: [t.1 * h * k, h * k, 1]).contiguous()
-      + (contextChunks[2] .* contextOut).to(of: context)
+      + (contextOut .* contextChunks[2]).to(of: context)
   }
-  xOut = x + (xChunks[2] .* xOut).to(of: x)
+  xOut = x + (xOut .* xChunks[2]).to(of: x)
   // Attentions are now. Now run MLP.
   let contextW1: Model?
   let contextW2: Model?
@@ -936,9 +936,9 @@ private func LoRAJointTransformerBlock(
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
     contextOut =
       contextOut
-      + contextChunks[5].to(of: contextOut)
-      .* contextFF(
+      + contextFF(
         contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])
+      .* contextChunks[5].to(of: contextOut)
   } else {
     contextW1 = nil
     contextW2 = nil
@@ -954,7 +954,7 @@ private func LoRAJointTransformerBlock(
   let xIn = xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]
   xOut =
     xOut
-    + xChunks[5].to(of: xOut) .* (xSharedFF(xIn) + xMoEFF(xIn).reshaped([b, hw, h * k]))
+    + (xSharedFF(xIn) + xMoEFF(xIn).reshaped([b, hw, h * k])) .* xChunks[5].to(of: xOut)
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).attn1.to_q_t.weight"] = [contextToQueries.weight.name]
@@ -1030,7 +1030,7 @@ private func LoRASingleTransformerBlock(
   let rot = Input()
   let xChunks = (0..<6).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var xOut = xChunks[1] .* xNorm1(x).to(.Float16) + xChunks[0]
+  var xOut = xNorm1(x).to(.Float16) .* xChunks[1] + xChunks[0]
   let xToKeys = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_k")
   let xToQueries = LoRADense(
@@ -1085,7 +1085,7 @@ private func LoRASingleTransformerBlock(
   let xUnifyheads = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_o")
   xOut = xUnifyheads(xOut)
-  xOut = xIn + (xChunks[2] .* xOut).to(of: xIn)
+  xOut = xIn + (xOut .* xChunks[2]).to(of: xIn)
   // Attentions are now. Now run MLP.
   let (xSharedW1, xSharedW2, xSharedW3, xSharedFF) = LoRAFeedForward(
     hiddenSize: k * h, intermediateSize: 3_584, upcast: upcast, configuration: configuration,
@@ -1097,7 +1097,7 @@ private func LoRASingleTransformerBlock(
   let xFFIn = xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]
   xOut =
     xOut
-    + xChunks[5].to(of: xOut) .* (xSharedFF(xFFIn) + xMoEFF(xFFIn).reshaped([b, xLength, h * k]))
+    + (xSharedFF(xFFIn) + xMoEFF(xFFIn).reshaped([b, xLength, h * k])) .* xChunks[5].to(of: xOut)
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).attn1.to_q.weight"] = [xToQueries.weight.name]
@@ -1226,7 +1226,7 @@ public func LoRAHiDream(
   let scale = Input()
   adaLNChunks.append(contentsOf: [shift, scale])
   let normFinal = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  out = scale .* normFinal(out).to(.Float16) + shift
+  out = normFinal(out).to(.Float16) .* scale + shift
   let projOut = LoRADense(
     count: 2 * 2 * 16, configuration: LoRAConfiguration, index: 0, name: "linear")
   out = (-projOut(out)).reshaped([batchSize, h, w, 2, 2, 16]).permuted(0, 1, 3, 2, 4, 5)
