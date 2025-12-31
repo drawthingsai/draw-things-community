@@ -683,6 +683,10 @@ public struct ModelZoo: DownloadZoo {
       "05af17e79ab30b17cbfe3645acc3c627fcf5d05b2622f8f854b9f19c02f12e44",
     "qwen_image_edit_2511_q8p.ckpt":
       "efe1adbb4e6c24a2e6ca69ec0200c80a0490002b0e9dcb9faf1b7ca8e8b7e391",
+    "qwen_image_2512_bf16_q6p.ckpt":
+      "885933321537a509e1a200d5ccddecbeaa4d0b2ef72886452dabf2425ddb026a",
+    "qwen_image_2512_bf16_q8p.ckpt":
+      "adeadfb2217c1087a4d91b8dde8557f922ceb41ebb774f69c920a87036b99e96",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -704,6 +708,34 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       note:
         "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Qwen Image 2512 (BF16)", file: "qwen_image_2512_bf16_q8p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      isBf16: true,
+      note:
+        "[Qwen Image 2512](https://huggingface.co/Qwen/Qwen-Image-2512) is the december update of Qwen Image model with improvements on enhanced human realism, finer natural detail and improved text rendering. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Qwen Image 2512 (BF16, 6-bit)", file: "qwen_image_2512_bf16_q6p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      isBf16: true,
+      note:
+        "[Qwen Image 2512](https://huggingface.co/Qwen/Qwen-Image-2512) is the december update of Qwen Image model with improvements on enhanced human realism, finer natural detail and improved text rendering. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
       copyright: "© 2025 Alibaba"
     ),
     Specification(

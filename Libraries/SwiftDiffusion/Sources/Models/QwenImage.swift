@@ -225,6 +225,7 @@ private func JointTransformerBlock(
   isBF16: Bool, zeroTimestepForReference: Bool
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
+  let ref: Input? = zeroTimestepForReference && referenceSequenceLength > 0 ? Input() : nil
   let x = Input()
   let rot = Input()
   let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in
@@ -265,30 +266,27 @@ private func JointTransformerBlock(
   ])
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xNorm1(x)
-  if zeroTimestepForReference, referenceSequenceLength > 0 {
-    var justXOut = xOut.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    var justRefOut = xOut.reshaped(
-      [b, referenceSequenceLength, h * k], offset: [0, hw - referenceSequenceLength, 0],
-      strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    justXOut = justXOut .* xChunks[1] + xChunks[0]
-    justRefOut = justRefOut .* refChunks[1] + refChunks[0]
-    xOut = Functional.concat(axis: 1, justXOut, justRefOut)
+  var refOut = ref.map { xNorm1($0) }
+  if let refIn = refOut {
+    xOut = xOut .* xChunks[1] + xChunks[0]
+    refOut = refIn .* refChunks[1] + refChunks[0]
   } else {
     xOut = xOut .* xChunks[1] + xChunks[0]
   }
   let xToKeys = Dense(count: k * h, name: "x_k")
   let xToQueries = Dense(count: k * h, flags: [.Float16], name: "x_q")
   let xToValues = Dense(count: k * h, name: "x_v")
+  let concatXOut: Model.IO
+  if let refOut = refOut {
+    concatXOut = Functional.concat(axis: 1, xOut, refOut)
+  } else {
+    concatXOut = xOut
+  }
   let downcastXOut: Model.IO
   if isBF16 {
-    downcastXOut = ((1.0 / scaleFactor.0) * xOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
+    downcastXOut = ((1.0 / scaleFactor.0) * concatXOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
   } else {
-    downcastXOut = xOut.to(.Float16)  // scale down factor merged into xChunks.
+    downcastXOut = concatXOut.to(.Float16)  // scale down factor merged into xChunks.
   }
   var xK = xToKeys(downcastXOut).reshaped([b, hw, h, k])
   let normK = RMSNorm(
@@ -302,7 +300,7 @@ private func JointTransformerBlock(
     axis: [3],
     name: "x_norm_q")
   xQ = normQ(xQ)
-  let xV = xToValues(isBF16 ? xOut.to(.BFloat16) : downcastXOut).reshaped([b, hw, h, k])
+  let xV = xToValues(isBF16 ? concatXOut.to(.BFloat16) : downcastXOut).reshaped([b, hw, h, k])
   var keys = Functional.concat(axis: 1, xK, contextK)
   var values = Functional.concat(axis: 1, xV, contextV)
   var queries = Functional.concat(axis: 1, xQ, contextQ)
@@ -370,8 +368,12 @@ private func JointTransformerBlock(
   }
   let xIn: Model.IO
   if contextBlockPreOnly, referenceSequenceLength > 0 {
-    xIn = x.reshaped([b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1])
-      .contiguous()
+    if let _ = refOut {
+      xIn = x  // There is only x, no concatenation.
+    } else {
+      xIn = x.reshaped([b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1])
+        .contiguous()
+    }
     xOut = out.reshaped(
       [b, hw - referenceSequenceLength, h * k], strides: [(t + hw) * h * k, h * k, 1]
     )
@@ -386,28 +388,18 @@ private func JointTransformerBlock(
   if !contextBlockPreOnly {
     contextOut = context + contextChunks[2] .* contextOut
   }
-  if !contextBlockPreOnly, zeroTimestepForReference, referenceSequenceLength > 0 {
-    let justXIn = xIn.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    let justRefIn = xIn.reshaped(
+  if !contextBlockPreOnly, let ref = ref {
+    let refIn = xOut.reshaped(
       [b, referenceSequenceLength, h * k], offset: [0, hw - referenceSequenceLength, 0],
       strides: [hw * h * k, h * k, 1]
     )
     .contiguous()
-    var justXOut = xOut.reshaped(
+    xOut = xOut.reshaped(
       [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
     )
     .contiguous()
-    var justRefOut = xOut.reshaped(
-      [b, referenceSequenceLength, h * k], offset: [0, hw - referenceSequenceLength, 0],
-      strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    justXOut = justXIn + justXOut .* xChunks[2]
-    justRefOut = justRefIn + justRefOut .* refChunks[2]
-    xOut = Functional.concat(axis: 1, justXOut, justRefOut)
+    xOut = xIn + xOut .* xChunks[2]
+    refOut = ref + refIn .* refChunks[2]
   } else {
     xOut = xIn + xOut .* xChunks[2]
   }
@@ -437,33 +429,17 @@ private func JointTransformerBlock(
     name: "x")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xFFIn = xNorm2(xOut)
-  if !contextBlockPreOnly, zeroTimestepForReference, referenceSequenceLength > 0 {
-    var justXFFIn = xFFIn.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    var justRefFFIn = xFFIn.reshaped(
-      [b, referenceSequenceLength, h * k], offset: [0, hw - referenceSequenceLength, 0],
-      strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    justXFFIn = justXFFIn .* xChunks[4] + xChunks[3]
-    justRefFFIn = justRefFFIn .* refChunks[4] + refChunks[3]
-    xFFIn = Functional.concat(axis: 1, justXFFIn, justRefFFIn)
+  let xFFOut: Model.IO
+  if !contextBlockPreOnly, let refOut = refOut {
+    var refFFIn = xNorm2(refOut)
+    xFFIn = xFFIn .* xChunks[4] + xChunks[3]
+    refFFIn = refFFIn .* refChunks[4] + refChunks[3]
+    xFFOut = xFF(Functional.concat(axis: 1, xFFIn, refFFIn).to(.Float16)).to(of: xOut)
   } else {
     xFFIn = xFFIn .* xChunks[4] + xChunks[3]
+    xFFOut = xFF(xFFIn.to(.Float16)).to(of: xOut)
   }
-  let xFFOut = xFF(xFFIn.to(.Float16)).to(of: xOut)
-  if !contextBlockPreOnly, zeroTimestepForReference, referenceSequenceLength > 0 {
-    var justXOut = xOut.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    var justRefOut = xOut.reshaped(
-      [b, referenceSequenceLength, h * k], offset: [0, hw - referenceSequenceLength, 0],
-      strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
+  if !contextBlockPreOnly, let refIn = refOut {
     let justXFFOut = xFFOut.reshaped(
       [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
     )
@@ -473,9 +449,8 @@ private func JointTransformerBlock(
       strides: [hw * h * k, h * k, 1]
     )
     .contiguous()
-    justXOut = justXOut + justXFFOut .* xChunks[5]
-    justRefOut = justRefOut + justRefFFOut .* refChunks[5]
-    xOut = Functional.concat(axis: 1, justXOut, justRefOut)
+    xOut = xOut + justXFFOut .* xChunks[5]
+    refOut = refIn + justRefFFOut .* refChunks[5]
   } else {
     xOut = xOut + xFFOut .* xChunks[5]
   }
@@ -573,12 +548,14 @@ private func JointTransformerBlock(
     }
     return mapping
   }
+  var inputs: [Input] = [x, context] + (ref.map { [$0] } ?? []) + [rot]
+  inputs.append(contentsOf: contextChunks + xChunks + refChunks)
   if !contextBlockPreOnly {
     return (
-      mapper, Model([x, context, rot] + contextChunks + xChunks + refChunks, [xOut, contextOut])
+      mapper, Model(inputs, [xOut, contextOut] + (refOut.map { [$0] } ?? []))
     )
   } else {
-    return (mapper, Model([x, context, rot] + contextChunks + xChunks + refChunks, [xOut]))
+    return (mapper, Model(inputs, [xOut]))
   }
 }
 
@@ -606,10 +583,16 @@ public func QwenImage(
   let sequenceLength = h * w * (isQwenImageLayered ? batchSize : 1)
   if referenceSequenceLength > 0 {
     let latents = Input()
-    out = Functional.concat(
-      axis: 1, imgIn(x).reshaped([(isQwenImageLayered ? 1 : batchSize), sequenceLength, channels]),
-      latents, flags: [.disableOpt]
-    ).to(.Float32)
+    if zeroTimestepForReference {
+      out = imgIn(x).reshaped([(isQwenImageLayered ? 1 : batchSize), sequenceLength, channels]).to(
+        .Float32)
+    } else {
+      out = Functional.concat(
+        axis: 1,
+        imgIn(x).reshaped([(isQwenImageLayered ? 1 : batchSize), sequenceLength, channels]),
+        latents, flags: [.disableOpt]
+      ).to(.Float32)
+    }
     referenceLatents = latents
   } else {
     out = imgIn(x).reshaped(.HWC((isQwenImageLayered ? 1 : batchSize), sequenceLength, channels))
@@ -618,6 +601,7 @@ public func QwenImage(
   }
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
+  var ref = referenceLatents.map { $0.to(.Float32) }
   let rotResized = rot.reshaped(
     .NHWC(1, sequenceLength + referenceSequenceLength + textLength, 1, 128))
   for i in 0..<layers {
@@ -644,12 +628,17 @@ public func QwenImage(
         isBF16
           ? Float(ffnScaling) : (i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling))
       ), isBF16: isBF16, zeroTimestepForReference: zeroTimestepForReference)
-    let blockOut = block([out, context, rotResized] + contextChunks + xChunks + refChunks)
+    var inputs: [Model.IO] = [out, context] + (ref.map { [$0] } ?? []) + [rotResized]
+    inputs.append(contentsOf: contextChunks + xChunks + refChunks)
+    let blockOut = block(inputs)
     if i == layers - 1 {
       out = blockOut
     } else {
       out = blockOut[0]
       context = blockOut[1]
+      if let _ = ref {
+        ref = blockOut[2]
+      }
     }
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     zeroAdaLNChunks.append(contentsOf: refChunks)
@@ -950,6 +939,7 @@ private func LoRAJointTransformerBlock(
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
+  let ref: Input? = zeroTimestepForReference && referenceSequenceLength > 0 ? Input() : nil
   let x = Input()
   let rot = Input()
   let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in
@@ -993,19 +983,10 @@ private func LoRAJointTransformerBlock(
   ])
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xNorm1(x)
-  if zeroTimestepForReference, referenceSequenceLength > 0 {
-    var justXOut = xOut.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    var justRefOut = xOut.reshaped(
-      [b, referenceSequenceLength, h * k], offset: [0, hw - referenceSequenceLength, 0],
-      strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    justXOut = justXOut .* xChunks[1] + xChunks[0]
-    justRefOut = justRefOut .* refChunks[1] + refChunks[0]
-    xOut = Functional.concat(axis: 1, justXOut, justRefOut)
+  var refOut = ref.map { xNorm1($0) }
+  if let refIn = refOut {
+    xOut = xOut .* xChunks[1] + xChunks[0]
+    refOut = refIn .* refChunks[1] + refChunks[0]
   } else {
     xOut = xOut .* xChunks[1] + xChunks[0]
   }
@@ -1015,11 +996,17 @@ private func LoRAJointTransformerBlock(
     count: k * h, configuration: configuration, flags: [.Float16], index: layerIndex, name: "x_q")
   let xToValues = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_v")
+  let concatXOut: Model.IO
+  if let refOut = refOut {
+    concatXOut = Functional.concat(axis: 1, xOut, refOut)
+  } else {
+    concatXOut = xOut
+  }
   let downcastXOut: Model.IO
   if isBF16 {
-    downcastXOut = ((1.0 / scaleFactor.0) * xOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
+    downcastXOut = ((1.0 / scaleFactor.0) * concatXOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
   } else {
-    downcastXOut = xOut.to(.Float16)  // scale down factor merged into xChunks.
+    downcastXOut = concatXOut.to(.Float16)  // scale down factor merged into xChunks.
   }
   var xK = xToKeys(downcastXOut).reshaped([b, hw, h, k])
   let normK = RMSNorm(
@@ -1033,7 +1020,7 @@ private func LoRAJointTransformerBlock(
     axis: [3],
     name: "x_norm_q")
   xQ = normQ(xQ)
-  let xV = xToValues(isBF16 ? xOut.to(.BFloat16) : downcastXOut).reshaped([b, hw, h, k])
+  let xV = xToValues(isBF16 ? concatXOut.to(.BFloat16) : downcastXOut).reshaped([b, hw, h, k])
   var keys = Functional.concat(axis: 1, xK, contextK)
   var values = Functional.concat(axis: 1, xV, contextV)
   var queries = Functional.concat(axis: 1, xQ, contextQ)
@@ -1102,8 +1089,12 @@ private func LoRAJointTransformerBlock(
   }
   let xIn: Model.IO
   if contextBlockPreOnly, referenceSequenceLength > 0 {
-    xIn = x.reshaped([b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1])
-      .contiguous()
+    if let _ = refOut {
+      xIn = x  // There is only x, no concatenation.
+    } else {
+      xIn = x.reshaped([b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1])
+        .contiguous()
+    }
     xOut = out.reshaped(
       [b, hw - referenceSequenceLength, h * k], strides: [(t + hw) * h * k, h * k, 1]
     )
@@ -1119,28 +1110,18 @@ private func LoRAJointTransformerBlock(
   if !contextBlockPreOnly {
     contextOut = context + contextChunks[2] .* contextOut
   }
-  if !contextBlockPreOnly, zeroTimestepForReference, referenceSequenceLength > 0 {
-    let justXIn = xIn.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    let justRefIn = xIn.reshaped(
+  if !contextBlockPreOnly, let ref = ref {
+    let refIn = xOut.reshaped(
       [b, referenceSequenceLength, h * k], offset: [0, hw - referenceSequenceLength, 0],
       strides: [hw * h * k, h * k, 1]
     )
     .contiguous()
-    var justXOut = xOut.reshaped(
+    xOut = xOut.reshaped(
       [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
     )
     .contiguous()
-    var justRefOut = xOut.reshaped(
-      [b, referenceSequenceLength, h * k], offset: [0, hw - referenceSequenceLength, 0],
-      strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    justXOut = justXIn + justXOut .* xChunks[2]
-    justRefOut = justRefIn + justRefOut .* refChunks[2]
-    xOut = Functional.concat(axis: 1, justXOut, justRefOut)
+    xOut = xIn + xOut .* xChunks[2]
+    refOut = ref + refIn .* refChunks[2]
   } else {
     xOut = xIn + xOut .* xChunks[2]
   }
@@ -1170,33 +1151,17 @@ private func LoRAJointTransformerBlock(
     isBF16: isBF16, configuration: configuration, index: layerIndex, name: "x")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xFFIn = xNorm2(xOut)
-  if !contextBlockPreOnly, zeroTimestepForReference, referenceSequenceLength > 0 {
-    var justXFFIn = xFFIn.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    var justRefFFIn = xFFIn.reshaped(
-      [b, referenceSequenceLength, h * k], offset: [0, hw - referenceSequenceLength, 0],
-      strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    justXFFIn = justXFFIn .* xChunks[4] + xChunks[3]
-    justRefFFIn = justRefFFIn .* refChunks[4] + refChunks[3]
-    xFFIn = Functional.concat(axis: 1, justXFFIn, justRefFFIn)
+  let xFFOut: Model.IO
+  if !contextBlockPreOnly, let refOut = refOut {
+    var refFFIn = xNorm2(refOut)
+    xFFIn = xFFIn .* xChunks[4] + xChunks[3]
+    refFFIn = refFFIn .* refChunks[4] + refChunks[3]
+    xFFOut = xFF(Functional.concat(axis: 1, xFFIn, refFFIn).to(.Float16)).to(of: xOut)
   } else {
     xFFIn = xFFIn .* xChunks[4] + xChunks[3]
+    xFFOut = xFF(xFFIn.to(.Float16)).to(of: xOut)
   }
-  let xFFOut = xFF(xFFIn.to(.Float16)).to(of: xOut)
-  if !contextBlockPreOnly, zeroTimestepForReference, referenceSequenceLength > 0 {
-    var justXOut = xOut.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
-    var justRefOut = xOut.reshaped(
-      [b, referenceSequenceLength, h * k], offset: [0, hw - referenceSequenceLength, 0],
-      strides: [hw * h * k, h * k, 1]
-    )
-    .contiguous()
+  if !contextBlockPreOnly, let refIn = refOut {
     let justXFFOut = xFFOut.reshaped(
       [b, hw - referenceSequenceLength, h * k], strides: [hw * h * k, h * k, 1]
     )
@@ -1206,9 +1171,8 @@ private func LoRAJointTransformerBlock(
       strides: [hw * h * k, h * k, 1]
     )
     .contiguous()
-    justXOut = justXOut + justXFFOut .* xChunks[5]
-    justRefOut = justRefOut + justRefFFOut .* refChunks[5]
-    xOut = Functional.concat(axis: 1, justXOut, justRefOut)
+    xOut = xOut + justXFFOut .* xChunks[5]
+    refOut = refIn + justRefFFOut .* refChunks[5]
   } else {
     xOut = xOut + xFFOut .* xChunks[5]
   }
@@ -1306,12 +1270,14 @@ private func LoRAJointTransformerBlock(
     }
     return mapping
   }
+  var inputs: [Input] = [x, context] + (ref.map { [$0] } ?? []) + [rot]
+  inputs.append(contentsOf: contextChunks + xChunks + refChunks)
   if !contextBlockPreOnly {
     return (
-      mapper, Model([x, context, rot] + contextChunks + xChunks + refChunks, [xOut, contextOut])
+      mapper, Model(inputs, [xOut, contextOut] + (refOut.map { [$0] } ?? []))
     )
   } else {
-    return (mapper, Model([x, context, rot] + contextChunks + xChunks + refChunks, [xOut]))
+    return (mapper, Model(inputs, [xOut]))
   }
 }
 
@@ -1340,10 +1306,16 @@ public func LoRAQwenImage(
   let sequenceLength = h * w * (isQwenImageLayered ? batchSize : 1)
   if referenceSequenceLength > 0 {
     let latents = Input()
-    out = Functional.concat(
-      axis: 1, imgIn(x).reshaped([(isQwenImageLayered ? 1 : batchSize), sequenceLength, channels]),
-      latents, flags: [.disableOpt]
-    ).to(.Float32)
+    if zeroTimestepForReference {
+      out = imgIn(x).reshaped([(isQwenImageLayered ? 1 : batchSize), sequenceLength, channels]).to(
+        .Float32)
+    } else {
+      out = Functional.concat(
+        axis: 1,
+        imgIn(x).reshaped([(isQwenImageLayered ? 1 : batchSize), sequenceLength, channels]),
+        latents, flags: [.disableOpt]
+      ).to(.Float32)
+    }
     referenceLatents = latents
   } else {
     out = imgIn(x).reshaped(.HWC((isQwenImageLayered ? 1 : batchSize), sequenceLength, channels))
@@ -1352,6 +1324,7 @@ public func LoRAQwenImage(
   }
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
+  var ref = referenceLatents.map { $0.to(.Float32) }
   let rotResized = rot.reshaped(
     .NHWC(1, sequenceLength + referenceSequenceLength + textLength, 1, 128))
   for i in 0..<layers {
@@ -1379,12 +1352,17 @@ public func LoRAQwenImage(
           ? Float(ffnScaling) : (i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling))
       ), isBF16: isBF16, zeroTimestepForReference: zeroTimestepForReference, layerIndex: i,
       configuration: LoRAConfiguration)
-    let blockOut = block([out, context, rotResized] + contextChunks + xChunks + refChunks)
+    var inputs: [Model.IO] = [out, context] + (ref.map { [$0] } ?? []) + [rotResized]
+    inputs.append(contentsOf: contextChunks + xChunks + refChunks)
+    let blockOut = block(inputs)
     if i == layers - 1 {
       out = blockOut
     } else {
       out = blockOut[0]
       context = blockOut[1]
+      if let _ = ref {
+        ref = blockOut[2]
+      }
     }
     adaLNChunks.append(contentsOf: contextChunks + xChunks)
     zeroAdaLNChunks.append(contentsOf: refChunks)
