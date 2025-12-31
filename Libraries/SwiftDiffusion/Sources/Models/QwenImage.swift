@@ -601,7 +601,7 @@ public func QwenImage(
   }
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
-  var ref = referenceLatents.map { $0.to(.Float32) }
+  var ref = zeroTimestepForReference ? referenceLatents.map { $0.to(.Float32) } : nil
   let rotResized = rot.reshaped(
     .NHWC(1, sequenceLength + referenceSequenceLength + textLength, 1, 128))
   for i in 0..<layers {
@@ -1324,7 +1324,7 @@ public func LoRAQwenImage(
   }
   var mappers = [ModelWeightMapper]()
   var context = contextIn.to(.Float32)
-  var ref = referenceLatents.map { $0.to(.Float32) }
+  var ref = zeroTimestepForReference ? referenceLatents.map { $0.to(.Float32) } : nil
   let rotResized = rot.reshaped(
     .NHWC(1, sequenceLength + referenceSequenceLength + textLength, 1, 128))
   for i in 0..<layers {
