@@ -77,7 +77,7 @@ extension UNetWrapper {
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
     causalInference: (Int, pad: Int), isBF16: Bool, activationQkScaling: [Int: Int],
-    activationProjScaling: [Int: Int],
+    activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int], weightsCache: WeightsCache
   ) -> Bool {
     #if !os(Linux)
@@ -98,6 +98,7 @@ extension UNetWrapper {
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         isBF16: isBF16, activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling, weightsCache: weightsCache)
       {
         preferCoreML = true
@@ -119,6 +120,7 @@ extension UNetWrapper {
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
       isBF16: isBF16, activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
+      activationFfnProjUpScaling: activationFfnProjUpScaling,
       activationFfnScaling: activationFfnScaling, weightsCache: weightsCache)
     return true
   }

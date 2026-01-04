@@ -1328,7 +1328,7 @@ public struct LoRATrainer {
         FloatType.self,
         timesteps: batch.count, channels: 3072, layers: 60, isBF16: false,
         activationQkScaling: [:],
-        activationProjScaling: [:], activationFfnScaling: [:],
+        activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:],
         numberOfReferenceImages: 0, useAdditionalTCond: false
       ).1
       var timeEmbeds = graph.variable(
@@ -1994,7 +1994,8 @@ public struct LoRATrainer {
         usesFlashAttention: .scale1,  // Changed from .scaleMerged - .scale1 is for isBF16: false
         isBF16: false, isQwenImageLayered: false, zeroTimestepForReference: false,
         activationQkScaling: [:],
-        activationProjScaling: [:], activationFfnScaling: [:], LoRAConfiguration: configuration
+        activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:],
+        LoRAConfiguration: configuration
       ).1
     }
     dit.maxConcurrency = .limit(1)
@@ -3599,7 +3600,8 @@ public struct LoRATrainer {
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
-                activationQkScaling: [:], activationProjScaling: [:], activationFfnScaling: [:],
+                activationQkScaling: [:], activationProjScaling: [:],
+                activationFfnProjUpScaling: [:], activationFfnScaling: [:],
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
@@ -3646,7 +3648,8 @@ public struct LoRATrainer {
               }
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: .sdxlRefiner, modifier: .none, dualAttentionLayers: [],
-                activationQkScaling: [:], activationProjScaling: [:], activationFfnScaling: [:],
+                activationQkScaling: [:], activationProjScaling: [:],
+                activationFfnProjUpScaling: [:], activationFfnScaling: [:],
                 usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
@@ -3686,7 +3689,8 @@ public struct LoRATrainer {
                 let unetFixEncoder = UNetFixedEncoder<FloatType>(
                   filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
                   activationQkScaling: [:],
-                  activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: true,
+                  activationProjScaling: [:], activationFfnProjUpScaling: [:],
+                  activationFfnScaling: [:], usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
                   deviceProperties: DeviceProperties(
@@ -3712,7 +3716,8 @@ public struct LoRATrainer {
                 let unetFixEncoder = UNetFixedEncoder<FloatType>(
                   filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
                   activationQkScaling: [:],
-                  activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: true,
+                  activationProjScaling: [:], activationFfnProjUpScaling: [:],
+                  activationFfnScaling: [:], usesFlashAttention: true,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
                   deviceProperties: DeviceProperties(
@@ -3742,7 +3747,8 @@ public struct LoRATrainer {
               let unetFixEncoder = UNetFixedEncoder<FloatType>(
                 filePath: "", version: .sdxlRefiner, modifier: .none, dualAttentionLayers: [],
                 activationQkScaling: [:],
-                activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: true,
+                activationProjScaling: [:], activationFfnProjUpScaling: [:],
+                activationFfnScaling: [:], usesFlashAttention: true,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(

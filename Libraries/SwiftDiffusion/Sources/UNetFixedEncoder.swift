@@ -10,6 +10,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let dualAttentionLayers: [Int]
   public let activationQkScaling: [Int: Int]
   public let activationProjScaling: [Int: Int]
+  public let activationFfnProjUpScaling: [Int: Int]
   public let activationFfnScaling: [Int: Int]
   public let usesFlashAttention: Bool
   public let zeroNegativePrompt: Bool
@@ -21,6 +22,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public init(
     filePath: String, version: ModelVersion, modifier: SamplerModifier, dualAttentionLayers: [Int],
     activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
+    activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int], usesFlashAttention: Bool,
     zeroNegativePrompt: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
     externalOnDemand: Bool, deviceProperties: DeviceProperties, weightsCache: WeightsCache
@@ -31,6 +33,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.dualAttentionLayers = dualAttentionLayers
     self.activationQkScaling = activationQkScaling
     self.activationProjScaling = activationProjScaling
+    self.activationFfnProjUpScaling = activationFfnProjUpScaling
     self.activationFfnScaling = activationFfnScaling
     self.usesFlashAttention = usesFlashAttention
     self.zeroNegativePrompt = zeroNegativePrompt
@@ -1320,7 +1323,7 @@ extension UNetFixedEncoder {
       jsonEncoder.outputFormatting = [.sortedKeys]
       let timestepEmbeddingKey =
         ((try? jsonEncoder.encode(TimestepEmbeddingKey(loras: lora, timesteps: timesteps))).flatMap
-        { String(data: $0, encoding: .utf8).map { "cached_\($0)" } })
+        { String(data: $0, encoding: .utf8).map { "cached_v2_\($0)" } })
       let timestepEmbeddingVectors: Tensor<Float>?
       if let timestepEmbeddingKey = timestepEmbeddingKey {
         timestepEmbeddingVectors = try? graph.openStore(
@@ -1374,6 +1377,7 @@ extension UNetFixedEncoder {
             layers: timestepEmbeddingVectors == nil ? 60 : 0, isBF16: isBF16,
             activationQkScaling: activationQkScaling,
             activationProjScaling: activationProjScaling,
+            activationFfnProjUpScaling: activationFfnProjUpScaling,
             activationFfnScaling: activationFfnScaling,
             numberOfReferenceImages: referenceImages.count, useAdditionalTCond: additionT != nil,
             LoRAConfiguration: configuration
@@ -1386,6 +1390,7 @@ extension UNetFixedEncoder {
             layers: timestepEmbeddingVectors == nil ? 60 : 0, isBF16: isBF16,
             activationQkScaling: activationQkScaling,
             activationProjScaling: activationProjScaling,
+            activationFfnProjUpScaling: activationFfnProjUpScaling,
             activationFfnScaling: activationFfnScaling,
             numberOfReferenceImages: referenceImages.count, useAdditionalTCond: additionT != nil
           ).1

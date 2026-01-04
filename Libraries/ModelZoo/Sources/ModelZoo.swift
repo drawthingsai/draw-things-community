@@ -71,17 +71,19 @@ public struct ModelZoo: DownloadZoo {
       public var distilledGuidanceLayers: Int?
       public var activationQkScaling: [Int: Int]?
       public var activationProjScaling: [Int: Int]?
+      public var activationFfnProjUpScaling: [Int: Int]?
       public var activationFfnScaling: [Int: Int]?
       public init(
         qkNorm: Bool, dualAttentionLayers: [Int], distilledGuidanceLayers: Int? = nil,
         activationQkScaling: [Int: Int]? = nil, activationProjScaling: [Int: Int]? = nil,
-        activationFfnScaling: [Int: Int]? = nil
+        activationFfnProjUpScaling: [Int: Int]? = nil, activationFfnScaling: [Int: Int]? = nil
       ) {
         self.qkNorm = qkNorm
         self.dualAttentionLayers = dualAttentionLayers
         self.distilledGuidanceLayers = distilledGuidanceLayers
         self.activationQkScaling = activationQkScaling
         self.activationProjScaling = activationProjScaling
+        self.activationFfnProjUpScaling = activationFfnProjUpScaling
         self.activationFfnScaling = activationFfnScaling
       }
     }
@@ -687,6 +689,10 @@ public struct ModelZoo: DownloadZoo {
       "885933321537a509e1a200d5ccddecbeaa4d0b2ef72886452dabf2425ddb026a",
     "qwen_image_2512_bf16_q8p.ckpt":
       "adeadfb2217c1087a4d91b8dde8557f922ceb41ebb774f69c920a87036b99e96",
+    "qwen_image_2512_q6p.ckpt":
+      "b6478e7e8193154778661f3cdb77d791725349ad8f1bded212109833dc7c569d",
+    "qwen_image_2512_q8p.ckpt":
+      "17f2bab8c39a96cca1b4dc99b8b37dfe7fda779c3e95a6cae24272d1e08ab7e5",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -711,13 +717,43 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2025 Alibaba"
     ),
     Specification(
+      name: "Qwen Image 2512", file: "qwen_image_2512_q8p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnProjUpScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      note:
+        "[Qwen Image 2512](https://huggingface.co/Qwen/Qwen-Image-2512) is the december update of Qwen Image model with improvements on enhanced human realism, finer natural detail and improved text rendering. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Qwen Image 2512 (6-bit)", file: "qwen_image_2512_q6p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnProjUpScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      note:
+        "[Qwen Image 2512](https://huggingface.co/Qwen/Qwen-Image-2512) is the december update of Qwen Image model with improvements on enhanced human realism, finer natural detail and improved text rendering. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
       name: "Qwen Image 2512 (BF16)", file: "qwen_image_2512_bf16_q8p.ckpt", prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       mmdit: .init(
         qkNorm: true, dualAttentionLayers: [],
-        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       isBf16: true,
       note:
@@ -731,7 +767,7 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       mmdit: .init(
         qkNorm: true, dualAttentionLayers: [],
-        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       isBf16: true,
       note:

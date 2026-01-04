@@ -83,7 +83,7 @@ extension LocalImageGenerator {
     from type: SamplerType, isCfgEnabled: Bool, filePath: String, modifier: SamplerModifier,
     version: ModelVersion, qkNorm: Bool, dualAttentionLayers: [Int],
     distilledGuidanceLayers: Int, activationQkScaling: [Int: Int],
-    activationProjScaling: [Int: Int],
+    activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int],
     usesFlashAttention: Bool, objective: Denoiser.Objective,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool, injectT2IAdapters: Bool,
@@ -161,6 +161,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -182,6 +183,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -203,6 +205,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -224,6 +227,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -245,6 +249,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -266,6 +271,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -287,6 +293,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -307,6 +314,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -330,6 +338,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -354,6 +363,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -378,6 +388,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -402,6 +413,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -424,6 +436,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -445,6 +458,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -465,6 +479,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -490,6 +505,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -514,6 +530,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -538,6 +555,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -560,6 +578,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -581,6 +600,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -602,6 +622,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -623,6 +644,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -643,6 +665,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -668,6 +691,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -692,6 +716,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -716,6 +741,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -738,6 +764,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -760,6 +787,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -784,6 +812,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -808,6 +837,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling,
           usesFlashAttention: usesFlashAttention,
           upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -830,6 +860,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -851,6 +882,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -869,6 +901,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -888,6 +921,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -911,6 +945,7 @@ extension LocalImageGenerator {
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
@@ -3525,16 +3560,17 @@ extension LocalImageGenerator {
     let isQuantizedModel = ModelZoo.isQuantizedModel(file)
     let (
       qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
-      activationProjScaling,
+      activationProjScaling, activationFfnProjUpScaling,
       activationFfnScaling
     ) =
       ModelZoo.MMDiTForModel(file).map {
         return (
           $0.qkNorm, $0.dualAttentionLayers, $0.distilledGuidanceLayers ?? 0,
           $0.activationQkScaling ?? [:],
-          $0.activationProjScaling ?? [:], $0.activationFfnScaling ?? [:]
+          $0.activationProjScaling ?? [:], $0.activationFfnProjUpScaling ?? [:],
+          $0.activationFfnScaling ?? [:]
         )
-      } ?? (false, [], 0, [:], [:], [:])
+      } ?? (false, [], 0, [:], [:], [:], [:])
     let is8BitModel = ModelZoo.is8BitModel(file)
     let canRunLoRASeparately = modelPreloader.canRunLoRASeparately
     let externalOnDemand = modelPreloader.externalOnDemand(
@@ -3604,6 +3640,7 @@ extension LocalImageGenerator {
         builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0),
         activationQkScaling: mmdit?.activationQkScaling ?? [:],
         activationProjScaling: mmdit?.activationProjScaling ?? [:],
+        activationFfnProjUpScaling: mmdit?.activationFfnProjUpScaling ?? [:],
         activationFfnScaling: mmdit?.activationFfnScaling ?? [:])
     }
     let hiresFixStrength = configuration.hiresFixStrength
@@ -3645,6 +3682,7 @@ extension LocalImageGenerator {
       distilledGuidanceLayers: distilledGuidanceLayers,
       activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
+      activationFfnProjUpScaling: activationFfnProjUpScaling,
       activationFfnScaling: activationFfnScaling,
       usesFlashAttention: isMFAEnabled,
       objective: modelObjective,
@@ -4308,6 +4346,7 @@ extension LocalImageGenerator {
         distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
         objective: modelObjective,
         upcastAttention: modelUpcastAttention,
@@ -4508,16 +4547,17 @@ extension LocalImageGenerator {
     let modelVersion = ModelZoo.versionForModel(file)
     let (
       qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
-      activationProjScaling,
+      activationProjScaling, activationFfnProjUpScaling,
       activationFfnScaling
     ) =
       ModelZoo.MMDiTForModel(file).map {
         return (
           $0.qkNorm, $0.dualAttentionLayers, $0.distilledGuidanceLayers ?? 0,
           $0.activationQkScaling ?? [:],
-          $0.activationProjScaling ?? [:], $0.activationFfnScaling ?? [:]
+          $0.activationProjScaling ?? [:], $0.activationFfnProjUpScaling ?? [:],
+          $0.activationFfnScaling ?? [:]
         )
-      } ?? (false, [], 0, [:], [:], [:])
+      } ?? (false, [], 0, [:], [:], [:], [:])
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
@@ -4689,6 +4729,7 @@ extension LocalImageGenerator {
         builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0),
         activationQkScaling: mmdit?.activationQkScaling ?? [:],
         activationProjScaling: mmdit?.activationProjScaling ?? [:],
+        activationFfnProjUpScaling: mmdit?.activationFfnProjUpScaling ?? [:],
         activationFfnScaling: mmdit?.activationFfnScaling ?? [:])
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
@@ -4740,6 +4781,7 @@ extension LocalImageGenerator {
       distilledGuidanceLayers: distilledGuidanceLayers,
       activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
+      activationFfnProjUpScaling: activationFfnProjUpScaling,
       activationFfnScaling: activationFfnScaling,
       usesFlashAttention: isMFAEnabled,
       objective: modelObjective,
@@ -5196,6 +5238,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
           upcastAttention: modelUpcastAttention,
@@ -5870,16 +5913,17 @@ extension LocalImageGenerator {
     let modelVersion = ModelZoo.versionForModel(file)
     let (
       qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
-      activationProjScaling,
+      activationProjScaling, activationFfnProjUpScaling,
       activationFfnScaling
     ) =
       ModelZoo.MMDiTForModel(file).map {
         return (
           $0.qkNorm, $0.dualAttentionLayers, $0.distilledGuidanceLayers ?? 0,
           $0.activationQkScaling ?? [:],
-          $0.activationProjScaling ?? [:], $0.activationFfnScaling ?? [:]
+          $0.activationProjScaling ?? [:], $0.activationFfnProjUpScaling ?? [:],
+          $0.activationFfnScaling ?? [:]
         )
-      } ?? (false, [], 0, [:], [:], [:])
+      } ?? (false, [], 0, [:], [:], [:], [:])
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
@@ -6098,6 +6142,7 @@ extension LocalImageGenerator {
         builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0),
         activationQkScaling: mmdit?.activationQkScaling ?? [:],
         activationProjScaling: mmdit?.activationProjScaling ?? [:],
+        activationFfnProjUpScaling: mmdit?.activationFfnProjUpScaling ?? [:],
         activationFfnScaling: mmdit?.activationFfnScaling ?? [:])
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
@@ -6149,6 +6194,7 @@ extension LocalImageGenerator {
       distilledGuidanceLayers: distilledGuidanceLayers,
       activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
+      activationFfnProjUpScaling: activationFfnProjUpScaling,
       activationFfnScaling: activationFfnScaling,
       usesFlashAttention: isMFAEnabled,
       objective: modelObjective,
@@ -6532,6 +6578,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
           upcastAttention: modelUpcastAttention,
@@ -6705,16 +6752,17 @@ extension LocalImageGenerator {
     let modelVersion = ModelZoo.versionForModel(file)
     let (
       qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
-      activationProjScaling,
+      activationProjScaling, activationFfnProjUpScaling,
       activationFfnScaling
     ) =
       ModelZoo.MMDiTForModel(file).map {
         return (
           $0.qkNorm, $0.dualAttentionLayers, $0.distilledGuidanceLayers ?? 0,
           $0.activationQkScaling ?? [:],
-          $0.activationProjScaling ?? [:], $0.activationFfnScaling ?? [:]
+          $0.activationProjScaling ?? [:], $0.activationFfnProjUpScaling ?? [:],
+          $0.activationFfnScaling ?? [:]
         )
-      } ?? (false, [], 0, [:], [:], [:])
+      } ?? (false, [], 0, [:], [:], [:], [:])
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
@@ -6933,6 +6981,7 @@ extension LocalImageGenerator {
         builtinLora: ModelZoo.builtinLoRAForModel($0), isBF16: ModelZoo.isBF16ForModel($0),
         activationQkScaling: mmdit?.activationQkScaling ?? [:],
         activationProjScaling: mmdit?.activationProjScaling ?? [:],
+        activationFfnProjUpScaling: mmdit?.activationFfnProjUpScaling ?? [:],
         activationFfnScaling: mmdit?.activationFfnScaling ?? [:])
     }
     let controlExternalOnDemand = modelPreloader.externalOnDemand(
@@ -6984,6 +7033,7 @@ extension LocalImageGenerator {
       distilledGuidanceLayers: distilledGuidanceLayers,
       activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
+      activationFfnProjUpScaling: activationFfnProjUpScaling,
       activationFfnScaling: activationFfnScaling,
       usesFlashAttention: isMFAEnabled,
       objective: modelObjective,
@@ -7493,6 +7543,7 @@ extension LocalImageGenerator {
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
           objective: modelObjective,
           upcastAttention: modelUpcastAttention,

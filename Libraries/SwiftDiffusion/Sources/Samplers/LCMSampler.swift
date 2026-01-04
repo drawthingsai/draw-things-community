@@ -15,6 +15,7 @@ where UNet.FloatType == FloatType {
   public let distilledGuidanceLayers: Int
   public let activationQkScaling: [Int: Int]
   public let activationProjScaling: [Int: Int]
+  public let activationFfnProjUpScaling: [Int: Int]
   public let activationFfnScaling: [Int: Int]
   public let usesFlashAttention: Bool
   public let upcastAttention: Bool
@@ -39,7 +40,7 @@ where UNet.FloatType == FloatType {
   public init(
     filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
     dualAttentionLayers: [Int], distilledGuidanceLayers: Int, activationQkScaling: [Int: Int],
-    activationProjScaling: [Int: Int],
+    activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int],
     usesFlashAttention: Bool,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
@@ -59,6 +60,7 @@ where UNet.FloatType == FloatType {
     self.distilledGuidanceLayers = distilledGuidanceLayers
     self.activationQkScaling = activationQkScaling
     self.activationProjScaling = activationProjScaling
+    self.activationFfnProjUpScaling = activationFfnProjUpScaling
     self.activationFfnScaling = activationFfnScaling
     self.usesFlashAttention = usesFlashAttention
     self.upcastAttention = upcastAttention
@@ -201,6 +203,7 @@ extension LCMSampler: Sampler {
         filePath: filePath, version: version, modifier: modifier,
         dualAttentionLayers: dualAttentionLayers, activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
         usesFlashAttention: usesFlashAttention,
         zeroNegativePrompt: zeroNegativePrompt, isQuantizedModel: isQuantizedModel,
@@ -327,6 +330,7 @@ extension LCMSampler: Sampler {
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           isBF16: isBF16, activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
+          activationFfnProjUpScaling: activationFfnProjUpScaling,
           activationFfnScaling: activationFfnScaling, weightsCache: weightsCache)
       }
       var noise: DynamicGraph.Tensor<FloatType>? = nil
@@ -436,6 +440,7 @@ extension LCMSampler: Sampler {
             modifier: modifier, dualAttentionLayers: refiner.dualAttentionLayers,
             activationQkScaling: refiner.activationQkScaling,
             activationProjScaling: refiner.activationProjScaling,
+            activationFfnProjUpScaling: refiner.activationFfnProjUpScaling,
             activationFfnScaling: refiner.activationFfnScaling,
             usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
             isQuantizedModel: refiner.isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
@@ -515,6 +520,7 @@ extension LCMSampler: Sampler {
             tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
             isBF16: refiner.isBF16, activationQkScaling: refiner.activationQkScaling,
             activationProjScaling: refiner.activationProjScaling,
+            activationFfnProjUpScaling: refiner.activationFfnProjUpScaling,
             activationFfnScaling: refiner.activationFfnScaling,
             weightsCache: weightsCache)
           refinerKickIn = -1

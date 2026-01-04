@@ -182,6 +182,7 @@ public struct Refiner: Equatable {
   public var isBF16: Bool
   public var activationQkScaling: [Int: Int]
   public var activationProjScaling: [Int: Int]
+  public var activationFfnProjUpScaling: [Int: Int]
   public var activationFfnScaling: [Int: Int]
   // We probably need to copy all the rest in sampler over, but for now, we will just ignore.
   public init(
@@ -189,6 +190,7 @@ public struct Refiner: Equatable {
     isQuantizedModel: Bool, isConsistencyModel: Bool, qkNorm: Bool, dualAttentionLayers: [Int],
     distilledGuidanceLayers: Int, upcastAttention: Bool, builtinLora: Bool, isBF16: Bool,
     activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
+    activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int]
   ) {
     self.start = start
@@ -205,6 +207,7 @@ public struct Refiner: Equatable {
     self.isBF16 = isBF16
     self.activationQkScaling = activationQkScaling
     self.activationProjScaling = activationProjScaling
+    self.activationFfnProjUpScaling = activationFfnProjUpScaling
     self.activationFfnScaling = activationFfnScaling
   }
 }

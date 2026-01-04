@@ -721,7 +721,7 @@ public final class ModelImporter {
         let fixedEncoder = UNetFixedEncoder<FloatType>(
           filePath: "", version: modelVersion, modifier: .none,
           dualAttentionLayers: dualAttentionLayers, activationQkScaling: [:],
-          activationProjScaling: [:],
+          activationProjScaling: [:], activationFfnProjUpScaling: [:],
           activationFfnScaling: [:],
           usesFlashAttention: false, zeroNegativePrompt: false,
           isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false,
@@ -1067,11 +1067,11 @@ public final class ModelImporter {
           batchSize: 1, height: 64, width: 64, textLength: 128, referenceSequenceLength: 0,
           channels: 3_072, layers: 60, usesFlashAttention: .scale1, isBF16: true,
           isQwenImageLayered: false, zeroTimestepForReference: false, activationQkScaling: [:],
-          activationProjScaling: [:], activationFfnScaling: [:])
+          activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:])
         (unetFixedMapper, unetFixed) = QwenImageFixed(
           FloatType.self,
           timesteps: 1, channels: 3_072, layers: 60, isBF16: true, activationQkScaling: [:],
-          activationProjScaling: [:],
+          activationProjScaling: [:], activationFfnProjUpScaling: [:],
           activationFfnScaling: [:], numberOfReferenceImages: 0, useAdditionalTCond: false)
       case .auraflow:
         (unetMapper, unet) = AuraFlow(

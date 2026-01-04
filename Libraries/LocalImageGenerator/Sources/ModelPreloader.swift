@@ -582,7 +582,8 @@ extension ModelPreloader {
           let fixedEncoder = UNetFixedEncoder<FloatType>(
             filePath: modelPath, version: modelVersion, modifier: .none, dualAttentionLayers: [],
             activationQkScaling: [:],
-            activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: useMFA,
+            activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:],
+            usesFlashAttention: useMFA,
             zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
             externalOnDemand: false,
             deviceProperties: DeviceCapability.deviceProperties,
@@ -631,7 +632,7 @@ extension ModelPreloader {
             injectedAttentionKVs: []), referenceImageCount: 0, tiledDiffusion: tiledDiffusion,
           teaCache: teaCache, causalInference: (0, 0), isBF16: false,
           activationQkScaling: [:], activationProjScaling: [:],
-          activationFfnScaling: [:],
+          activationFfnProjUpScaling: [:], activationFfnScaling: [:],
           weightsCache: weightsCache
         )
         unetFilePath = modelPath

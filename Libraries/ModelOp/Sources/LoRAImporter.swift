@@ -159,11 +159,11 @@ public enum LoRAImporter {
         batchSize: 1, height: 64, width: 64, textLength: 128, referenceSequenceLength: 0,
         channels: 3_072, layers: 60, usesFlashAttention: .scale1, isBF16: false,
         isQwenImageLayered: false, zeroTimestepForReference: false, activationQkScaling: [:],
-        activationProjScaling: [:], activationFfnScaling: [:])
+        activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:])
       (unetFixedMapper, unetFixed) = QwenImageFixed(
         FloatType.self,
         timesteps: 1, channels: 3_072, layers: 60, isBF16: false, activationQkScaling: [:],
-        activationProjScaling: [:],
+        activationProjScaling: [:], activationFfnProjUpScaling: [:],
         activationFfnScaling: [:], numberOfReferenceImages: 0, useAdditionalTCond: false)
     case .zImage:
       (unet, unetMapper) = ZImage(
@@ -394,7 +394,8 @@ public enum LoRAImporter {
       let fixedEncoder = UNetFixedEncoder<FloatType>(
         filePath: "", version: version, modifier: .none, dualAttentionLayers: dualAttentionLayers,
         activationQkScaling: [:],
-        activationProjScaling: [:], activationFfnScaling: [:], usesFlashAttention: false,
+        activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:],
+        usesFlashAttention: false,
         zeroNegativePrompt: false,
         isQuantizedModel: false,
         canRunLoRASeparately: false, externalOnDemand: false,

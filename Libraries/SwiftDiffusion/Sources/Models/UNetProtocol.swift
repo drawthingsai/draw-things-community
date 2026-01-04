@@ -61,7 +61,7 @@ public protocol UNetProtocol {
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
     causalInference: (Int, pad: Int), isBF16: Bool, activationQkScaling: [Int: Int],
-    activationProjScaling: [Int: Int],
+    activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int], weightsCache: WeightsCache
   ) -> Bool
 
@@ -435,7 +435,7 @@ extension UNetFromNNC {
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache teaCacheConfiguration: TeaCacheConfiguration,
     causalInference: (Int, pad: Int), isBF16: Bool, activationQkScaling: [Int: Int],
-    activationProjScaling: [Int: Int],
+    activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int], weightsCache: WeightsCache
   ) -> Bool {
     guard unet == nil else { return true }
@@ -1189,6 +1189,7 @@ extension UNetFromNNC {
               zeroTimestepForReference: zeroTimestepForReference,
               activationQkScaling: activationQkScaling,
               activationProjScaling: activationProjScaling,
+              activationFfnProjUpScaling: activationFfnProjUpScaling,
               activationFfnScaling: activationFfnScaling,
               LoRAConfiguration: configuration
             ).1
@@ -1212,6 +1213,7 @@ extension UNetFromNNC {
               zeroTimestepForReference: zeroTimestepForReference,
               activationQkScaling: activationQkScaling,
               activationProjScaling: activationProjScaling,
+              activationFfnProjUpScaling: activationFfnProjUpScaling,
               activationFfnScaling: activationFfnScaling
             ).1
           })

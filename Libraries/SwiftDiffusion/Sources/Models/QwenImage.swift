@@ -188,7 +188,8 @@ private func MLPEmbedder(channels: Int, name: String) -> (Model, Model, Model) {
 }
 
 private func FeedForward(
-  hiddenSize: Int, intermediateSize: Int, scaleFactor: Float, isBF16: Bool, name: String
+  hiddenSize: Int, intermediateSize: Int, scaleFactor: (projUp: Int, projDown: Int), isBF16: Bool,
+  name: String
 )
   -> (
     Model, Model, Model
@@ -198,30 +199,31 @@ private func FeedForward(
   let linear1 = Dense(count: intermediateSize, flags: [.Float16], name: "\(name)_linear1")
   var out: Model.IO
   if isBF16 {
-    if scaleFactor > 1 {
-      out = (1.0 / scaleFactor) * x
-      out = (scaleFactor * linear1(out).to(.BFloat16)).GELU(approximate: .tanh)
+    let projUpScaling = max(scaleFactor.projUp, scaleFactor.projDown)
+    if projUpScaling > 1 {
+      out = (Float(projUpScaling) * linear1(x).to(.BFloat16)).GELU(approximate: .tanh)
     } else {
       out = linear1(x).GELU(approximate: .tanh).to(.BFloat16)
     }
   } else {
-    out = linear1(x).GELU(approximate: .tanh)
-    out = (1.0 / scaleFactor) * out
+    if scaleFactor.projUp > 1 {
+      out = (Float(scaleFactor.projUp) * linear1(x).to(.Float32)).GELU(approximate: .tanh)
+      out = ((1.0 / Float(scaleFactor.projDown)) * out).to(of: x)
+    } else {
+      out = linear1(x).GELU(approximate: .tanh)
+      out = (1.0 / Float(scaleFactor.projDown)) * out
+    }
   }
   // The scale down is integrated into out proj bias.
   let outProjection = Dense(count: hiddenSize, flags: [.Float32], name: "\(name)_out_proj")
-  if isBF16 {
-    out = outProjection(out).to(.Float32)
-  } else {
-    out = scaleFactor * outProjection(out).to(.Float32)
-  }
+  out = outProjection(out).to(.Float32)
   return (linear1, outProjection, Model([x], [out]))
 }
 
 private func JointTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, referenceSequenceLength: Int,
   contextBlockPreOnly: Bool, usesFlashAttention: FlashAttentionLevel,
-  scaleFactor: (Float, Float, Float),
+  scaleFactor: (Int, Int, (projUp: Int, projDown: Int)),
   isBF16: Bool, zeroTimestepForReference: Bool
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
@@ -245,19 +247,21 @@ private func JointTransformerBlock(
   let contextToValues = Dense(count: k * h, name: "c_v")
   let downcastContextOut: Model.IO
   if isBF16 {
-    downcastContextOut = ((1.0 / scaleFactor.0) * contextOut).to(.Float16)  // scale down factor not merged. values path doesn't use the scale factor.
+    downcastContextOut = ((1.0 / Float(scaleFactor.0)) * contextOut).to(.Float16)  // scale down factor not merged. values path doesn't use the scale factor.
   } else {
     downcastContextOut = contextOut.to(.Float16)  // scale down factor merged into contextChunks.
   }
   var contextK = contextToKeys(downcastContextOut).reshaped([b, t, h, k])
   let normAddedK = RMSNorm(
-    epsilon: 1e-6 / (scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
+    epsilon: 1e-6
+      / Float(scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
     axis: [3],
     name: "c_norm_k")
   contextK = normAddedK(contextK)
   var contextQ = contextToQueries(downcastContextOut).reshaped([b, t, h, k])
   let normAddedQ = RMSNorm(
-    epsilon: 1e-6 / (scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
+    epsilon: 1e-6
+      / Float(scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
     axis: [3],
     name: "c_norm_q")
   contextQ = normAddedQ(contextQ)
@@ -284,19 +288,21 @@ private func JointTransformerBlock(
   }
   let downcastXOut: Model.IO
   if isBF16 {
-    downcastXOut = ((1.0 / scaleFactor.0) * concatXOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
+    downcastXOut = ((1.0 / Float(scaleFactor.0)) * concatXOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
   } else {
     downcastXOut = concatXOut.to(.Float16)  // scale down factor merged into xChunks.
   }
   var xK = xToKeys(downcastXOut).reshaped([b, hw, h, k])
   let normK = RMSNorm(
-    epsilon: 1e-6 / (scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
+    epsilon: 1e-6
+      / Float(scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
     axis: [3],
     name: "x_norm_k")
   xK = normK(xK)
   var xQ = xToQueries(downcastXOut).reshaped([b, hw, h, k])
   let normQ = RMSNorm(
-    epsilon: 1e-6 / (scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
+    epsilon: 1e-6
+      / Float(scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
     axis: [3],
     name: "x_norm_q")
   xQ = normQ(xQ)
@@ -360,7 +366,7 @@ private func JointTransformerBlock(
       [b, t, h * k], offset: [0, hw, 0], strides: [(t + hw) * h * k, h * k, 1]
     ).contiguous()
     let unifyheads = Dense(count: k * h, name: "c_o")
-    contextOut = unifyheads(isBF16 ? contextOut : (1.0 / scaleFactor.1) * contextOut).to(
+    contextOut = unifyheads(isBF16 ? contextOut : (1.0 / Float(scaleFactor.1)) * contextOut).to(
       of: context)  // scale up factor merged into contextChunks.
     contextUnifyheads = unifyheads
   } else {
@@ -384,7 +390,7 @@ private func JointTransformerBlock(
       .contiguous()
   }
   let xUnifyheads = Dense(count: k * h, name: "x_o")
-  xOut = xUnifyheads(isBF16 ? xOut : (1.0 / scaleFactor.1) * xOut).to(of: x)  // scale up factor merged into xChunks.
+  xOut = xUnifyheads(isBF16 ? xOut : (1.0 / Float(scaleFactor.1)) * xOut).to(of: x)  // scale up factor merged into xChunks.
   if !contextBlockPreOnly {
     contextOut = context + contextChunks[2] .* contextOut
   }
@@ -458,10 +464,10 @@ private func JointTransformerBlock(
     var mapping = ModelWeightMapping()
     mapping["\(prefix).attn.add_q_proj.weight"] = [contextToQueries.weight.name]
     mapping["\(prefix).attn.add_q_proj.bias"] = ModelWeightElement(
-      [contextToQueries.bias.name], scale: 1.0 / scaleFactor.0)
+      [contextToQueries.bias.name], scale: 1.0 / Float(scaleFactor.0))
     mapping["\(prefix).attn.add_k_proj.weight"] = [contextToKeys.weight.name]
     mapping["\(prefix).attn.add_k_proj.bias"] = ModelWeightElement(
-      [contextToKeys.bias.name], scale: 1.0 / scaleFactor.0)
+      [contextToKeys.bias.name], scale: 1.0 / Float(scaleFactor.0))
     if isBF16 {
       mapping["\(prefix).attn.add_v_proj.weight"] = ModelWeightElement(
         [contextToValues.weight.name], isBF16: true)
@@ -470,16 +476,16 @@ private func JointTransformerBlock(
     } else {
       mapping["\(prefix).attn.add_v_proj.weight"] = [contextToValues.weight.name]
       mapping["\(prefix).attn.add_v_proj.bias"] = ModelWeightElement(
-        [contextToValues.bias.name], scale: 1.0 / scaleFactor.0)
+        [contextToValues.bias.name], scale: 1.0 / Float(scaleFactor.0))
     }
     mapping["\(prefix).attn.norm_added_k.weight"] = [normAddedK.weight.name]
     mapping["\(prefix).attn.norm_added_q.weight"] = [normAddedQ.weight.name]
     mapping["\(prefix).attn.to_q.weight"] = [xToQueries.weight.name]
     mapping["\(prefix).attn.to_q.bias"] = ModelWeightElement(
-      [xToQueries.bias.name], scale: 1.0 / scaleFactor.0)
+      [xToQueries.bias.name], scale: 1.0 / Float(scaleFactor.0))
     mapping["\(prefix).attn.to_k.weight"] = [xToKeys.weight.name]
     mapping["\(prefix).attn.to_k.bias"] = ModelWeightElement(
-      [xToKeys.bias.name], scale: 1.0 / scaleFactor.0)
+      [xToKeys.bias.name], scale: 1.0 / Float(scaleFactor.0))
     if isBF16 {
       mapping["\(prefix).attn.to_v.weight"] = ModelWeightElement(
         [xToValues.weight.name], isBF16: true)
@@ -487,7 +493,7 @@ private func JointTransformerBlock(
     } else {
       mapping["\(prefix).attn.to_v.weight"] = [xToValues.weight.name]
       mapping["\(prefix).attn.to_v.bias"] = ModelWeightElement(
-        [xToValues.bias.name], scale: 1.0 / scaleFactor.0)
+        [xToValues.bias.name], scale: 1.0 / Float(scaleFactor.0))
     }
     mapping["\(prefix).attn.norm_k.weight"] = [normK.weight.name]
     mapping["\(prefix).attn.norm_q.weight"] = [normQ.weight.name]
@@ -500,7 +506,7 @@ private func JointTransformerBlock(
       } else {
         mapping["\(prefix).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
         mapping["\(prefix).attn.to_add_out.bias"] = ModelWeightElement(
-          [contextUnifyheads.bias.name], scale: 1.0 / (scaleFactor.0 * scaleFactor.1))
+          [contextUnifyheads.bias.name], scale: 1.0 / Float(scaleFactor.0 * scaleFactor.1))
       }
     }
     if isBF16 {
@@ -511,13 +517,14 @@ private func JointTransformerBlock(
     } else {
       mapping["\(prefix).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
       mapping["\(prefix).attn.to_out.0.bias"] = ModelWeightElement(
-        [xUnifyheads.bias.name], scale: 1.0 / (scaleFactor.0 * scaleFactor.1))
+        [xUnifyheads.bias.name], scale: 1.0 / Float(scaleFactor.0 * scaleFactor.1))
     }
     if let contextLinear1 = contextLinear1,
       let contextOutProjection = contextOutProjection
     {
       mapping["\(prefix).txt_mlp.net.0.proj.weight"] = [contextLinear1.weight.name]
-      mapping["\(prefix).txt_mlp.net.0.proj.bias"] = [contextLinear1.bias.name]
+      mapping["\(prefix).txt_mlp.net.0.proj.bias"] = ModelWeightElement(
+        [contextLinear1.bias.name], scale: 1.0 / Float(scaleFactor.2.projUp))
       if isBF16 {
         mapping[
           "\(prefix).txt_mlp.net.2.weight"
@@ -531,11 +538,13 @@ private func JointTransformerBlock(
         ] = [contextOutProjection.weight.name]
         mapping[
           "\(prefix).txt_mlp.net.2.bias"
-        ] = ModelWeightElement([contextOutProjection.bias.name], scale: 1.0 / scaleFactor.2)
+        ] = ModelWeightElement(
+          [contextOutProjection.bias.name], scale: 1.0 / Float(scaleFactor.2.projDown))
       }
     }
     mapping["\(prefix).img_mlp.net.0.proj.weight"] = [xLinear1.weight.name]
-    mapping["\(prefix).img_mlp.net.0.proj.bias"] = [xLinear1.bias.name]
+    mapping["\(prefix).img_mlp.net.0.proj.bias"] = ModelWeightElement(
+      [xLinear1.bias.name], scale: 1.0 / Float(scaleFactor.2.projUp))
     if isBF16 {
       mapping["\(prefix).img_mlp.net.2.weight"] = ModelWeightElement(
         [xOutProjection.weight.name], isBF16: true)
@@ -544,7 +553,7 @@ private func JointTransformerBlock(
     } else {
       mapping["\(prefix).img_mlp.net.2.weight"] = [xOutProjection.weight.name]
       mapping["\(prefix).img_mlp.net.2.bias"] = ModelWeightElement(
-        [xOutProjection.bias.name], scale: 1.0 / scaleFactor.2)
+        [xOutProjection.bias.name], scale: 1.0 / Float(scaleFactor.2.projDown))
     }
     return mapping
   }
@@ -563,7 +572,7 @@ public func QwenImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, referenceSequenceLength: Int,
   channels: Int, layers: Int, usesFlashAttention: FlashAttentionLevel, isBF16: Bool,
   isQwenImageLayered: Bool, zeroTimestepForReference: Bool, activationQkScaling: [Int: Int],
-  activationProjScaling: [Int: Int],
+  activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
   activationFfnScaling: [Int: Int]
 ) -> (
   ModelWeightMapper, Model
@@ -613,6 +622,7 @@ public func QwenImage(
       ? (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() } : []
     let qkScaling = activationQkScaling[i] ?? 1
     let projScaling = activationProjScaling[i] ?? 1
+    let ffnProjUpScaling = activationFfnProjUpScaling[i] ?? 1
     let ffnScaling = activationFfnScaling[i] ?? 1
     let (mapper, block) = JointTransformerBlock(
       prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
@@ -621,12 +631,15 @@ public func QwenImage(
       referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (
-        Float(8 * qkScaling),
+        8 * qkScaling,
         isBF16
-          ? Float(projScaling)
-          : (i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling)),
-        isBF16
-          ? Float(ffnScaling) : (i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling))
+          ? projScaling
+          : (i >= layers - 16 ? 16 * projScaling : 2 * projScaling),
+        (
+          projUp: ffnProjUpScaling,
+          projDown: isBF16
+            ? ffnScaling : (i >= layers - 1 ? 256 * ffnScaling : 16 * ffnScaling)
+        )
       ), isBF16: isBF16, zeroTimestepForReference: zeroTimestepForReference)
     var inputs: [Model.IO] = [out, context] + (ref.map { [$0] } ?? []) + [rotResized]
     inputs.append(contentsOf: contextChunks + xChunks + refChunks)
@@ -674,7 +687,8 @@ public func QwenImage(
 }
 
 private func JointTransformerBlockFixed(
-  prefix: String, k: Int, h: Int, contextBlockPreOnly: Bool, scaleFactor: (Float, Float, Float),
+  prefix: String, k: Int, h: Int, contextBlockPreOnly: Bool,
+  scaleFactor: (Int, Int, (projUp: Int, projDown: Int)),
   isBF16: Bool
 ) -> (ModelWeightMapper, Model) {
   let c = Input()
@@ -689,26 +703,46 @@ private func JointTransformerBlockFixed(
     contextChunks[1] = 1 + contextChunks[1]
     xChunks = xChunks.map { $0.to(.Float32) }
     xChunks[1] = 1 + xChunks[1]
-    if !contextBlockPreOnly {
-      contextChunks[4] = 1 + contextChunks[4]
+    let projUpScaling = max(scaleFactor.2.projUp, scaleFactor.2.projDown)
+    if projUpScaling > 1 {
+      if !contextBlockPreOnly {
+        contextChunks[3] = (1 / Float(projUpScaling)) * contextChunks[3]
+        contextChunks[4] = (1 / Float(projUpScaling)) * (1 + contextChunks[4])
+      }
+      xChunks[3] = (1 / Float(projUpScaling)) * xChunks[3]
+      xChunks[4] = (1 / Float(projUpScaling)) * (1 + xChunks[4])
+    } else {
+      if !contextBlockPreOnly {
+        contextChunks[4] = 1 + contextChunks[4]
+      }
+      xChunks[4] = 1 + xChunks[4]
     }
-    xChunks[4] = 1 + xChunks[4]
   } else {
     // Merge scale factor into the adaLN.
-    contextChunks[0] = (1.0 / scaleFactor.0) * contextChunks[0].to(.Float32)
-    contextChunks[1] = (1.0 / scaleFactor.0) * (1 + contextChunks[1].to(.Float32))
-    xChunks[0] = (1.0 / scaleFactor.0) * xChunks[0].to(.Float32)
-    xChunks[1] = (1.0 / scaleFactor.0) * (1 + xChunks[1].to(.Float32))
-    xChunks[2] = (scaleFactor.0 * scaleFactor.1) * xChunks[2].to(.Float32)
+    contextChunks[0] = (1.0 / Float(scaleFactor.0)) * contextChunks[0].to(.Float32)
+    contextChunks[1] = (1.0 / Float(scaleFactor.0)) * (1 + contextChunks[1].to(.Float32))
+    xChunks[0] = (1.0 / Float(scaleFactor.0)) * xChunks[0].to(.Float32)
+    xChunks[1] = (1.0 / Float(scaleFactor.0)) * (1 + xChunks[1].to(.Float32))
+    xChunks[2] = Float(scaleFactor.0 * scaleFactor.1) * xChunks[2].to(.Float32)
     if !contextBlockPreOnly {
-      contextChunks[2] = (scaleFactor.0 * scaleFactor.1) * contextChunks[2].to(.Float32)
-      contextChunks[3] = contextChunks[3].to(.Float32)
-      contextChunks[4] = 1 + contextChunks[4].to(.Float32)
-      contextChunks[5] = contextChunks[5].to(.Float32)
+      contextChunks[2] = Float(scaleFactor.0 * scaleFactor.1) * contextChunks[2].to(.Float32)
+      if scaleFactor.2.projUp > 1 {
+        contextChunks[3] = (1.0 / Float(scaleFactor.2.projUp)) * contextChunks[3].to(.Float32)
+        contextChunks[4] = (1.0 / Float(scaleFactor.2.projUp)) * (1 + contextChunks[4].to(.Float32))
+      } else {
+        contextChunks[3] = contextChunks[3].to(.Float32)
+        contextChunks[4] = 1 + contextChunks[4].to(.Float32)
+      }
+      contextChunks[5] = Float(scaleFactor.2.projDown) * contextChunks[5].to(.Float32)
     }
-    xChunks[3] = xChunks[3].to(.Float32)
-    xChunks[4] = 1 + xChunks[4].to(.Float32)
-    xChunks[5] = xChunks[5].to(.Float32)
+    if scaleFactor.2.projUp > 1 {
+      xChunks[3] = (1.0 / Float(scaleFactor.2.projUp)) * xChunks[3].to(.Float32)
+      xChunks[4] = (1.0 / Float(scaleFactor.2.projUp)) * (1 + xChunks[4].to(.Float32))
+    } else {
+      xChunks[3] = xChunks[3].to(.Float32)
+      xChunks[4] = 1 + xChunks[4].to(.Float32)
+    }
+    xChunks[5] = Float(scaleFactor.2.projDown) * xChunks[5].to(.Float32)
   }
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -730,7 +764,8 @@ private func JointTransformerBlockFixed(
 public func QwenImageFixed<T: TensorNumeric & BinaryFloatingPoint>(
   _ dataType: T.Type,
   timesteps: Int, channels: Int, layers: Int, isBF16: Bool, activationQkScaling: [Int: Int],
-  activationProjScaling: [Int: Int], activationFfnScaling: [Int: Int], numberOfReferenceImages: Int,
+  activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
+  activationFfnScaling: [Int: Int], numberOfReferenceImages: Int,
   useAdditionalTCond: Bool
 ) -> (
   ModelWeightMapper, Model
@@ -781,18 +816,22 @@ public func QwenImageFixed<T: TensorNumeric & BinaryFloatingPoint>(
     for i in 0..<layers {
       let qkScaling = activationQkScaling[i] ?? 1
       let projScaling = activationProjScaling[i] ?? 1
+      let ffnProjUpScaling = activationFfnProjUpScaling[i] ?? 1
       let ffnScaling = activationFfnScaling[i] ?? 1
       let (mapper, block) = JointTransformerBlockFixed(
         prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
         contextBlockPreOnly: i == layers - 1,
         scaleFactor: (
-          Float(8 * qkScaling),
+          8 * qkScaling,
           isBF16
-            ? Float(projScaling)
-            : (i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling)),
-          isBF16
-            ? Float(ffnScaling)
-            : (i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling))
+            ? projScaling
+            : (i >= layers - 16 ? 16 * projScaling : 2 * projScaling),
+          (
+            projUp: ffnProjUpScaling,
+            projDown: isBF16
+              ? ffnScaling
+              : (i >= layers - 1 ? 256 * ffnScaling : 16 * ffnScaling)
+          )
         ), isBF16: isBF16)
       let blockOut = block(vec)
       mappers.append(mapper)
@@ -896,7 +935,7 @@ private func LoRAMLPEmbedder(
 }
 
 private func LoRAFeedForward(
-  hiddenSize: Int, intermediateSize: Int, scaleFactor: Float, isBF16: Bool,
+  hiddenSize: Int, intermediateSize: Int, scaleFactor: (projUp: Int, projDown: Int), isBF16: Bool,
   configuration: LoRANetworkConfiguration, index: Int, name: String
 )
   -> (
@@ -909,32 +948,33 @@ private func LoRAFeedForward(
     name: "\(name)_linear1")
   var out: Model.IO
   if isBF16 {
-    if scaleFactor > 1 {
-      out = (1.0 / scaleFactor) * x
-      out = (scaleFactor * linear1(out).to(.BFloat16)).GELU(approximate: .tanh)
+    let projUpScaling = max(scaleFactor.projUp, scaleFactor.projDown)
+    if projUpScaling > 1 {
+      out = (Float(projUpScaling) * linear1(x).to(.BFloat16)).GELU(approximate: .tanh)
     } else {
       out = linear1(x).GELU(approximate: .tanh).to(.BFloat16)
     }
   } else {
-    out = linear1(x).GELU(approximate: .tanh)
-    out = (1.0 / scaleFactor) * out
+    if scaleFactor.projUp > 1 {
+      out = (Float(scaleFactor.projUp) * linear1(x).to(.Float32)).GELU(approximate: .tanh)
+      out = ((1.0 / Float(scaleFactor.projDown)) * out).to(of: x)
+    } else {
+      out = linear1(x).GELU(approximate: .tanh)
+      out = (1.0 / Float(scaleFactor.projDown)) * out
+    }
   }
   // The scale down is integrated into out proj bias.
   let outProjection = LoRADense(
     count: hiddenSize, configuration: configuration, flags: [.Float32], index: index,
     name: "\(name)_out_proj")
-  if isBF16 {
-    out = outProjection(out).to(.Float32)
-  } else {
-    out = scaleFactor * outProjection(out).to(.Float32)
-  }
+  out = outProjection(out).to(.Float32)
   return (linear1, outProjection, Model([x], [out]))
 }
 
 private func LoRAJointTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, referenceSequenceLength: Int,
   contextBlockPreOnly: Bool, usesFlashAttention: FlashAttentionLevel,
-  scaleFactor: (Float, Float, Float),
+  scaleFactor: (Int, Int, (projUp: Int, projDown: Int)),
   isBF16: Bool, zeroTimestepForReference: Bool, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
@@ -962,19 +1002,21 @@ private func LoRAJointTransformerBlock(
     count: k * h, configuration: configuration, index: layerIndex, name: "c_v")
   let downcastContextOut: Model.IO
   if isBF16 {
-    downcastContextOut = ((1.0 / scaleFactor.0) * contextOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
+    downcastContextOut = ((1.0 / Float(scaleFactor.0)) * contextOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
   } else {
     downcastContextOut = contextOut.to(.Float16)  // scale down factor merged into contextChunks.
   }
   var contextK = contextToKeys(downcastContextOut).reshaped([b, t, h, k])
   let normAddedK = RMSNorm(
-    epsilon: 1e-6 / (scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
+    epsilon: 1e-6
+      / Float(scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
     axis: [3],
     name: "c_norm_k")
   contextK = normAddedK(contextK)
   var contextQ = contextToQueries(downcastContextOut).reshaped([b, t, h, k])
   let normAddedQ = RMSNorm(
-    epsilon: 1e-6 / (scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
+    epsilon: 1e-6
+      / Float(scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
     axis: [3],
     name: "c_norm_q")
   contextQ = normAddedQ(contextQ)
@@ -1004,19 +1046,21 @@ private func LoRAJointTransformerBlock(
   }
   let downcastXOut: Model.IO
   if isBF16 {
-    downcastXOut = ((1.0 / scaleFactor.0) * concatXOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
+    downcastXOut = ((1.0 / Float(scaleFactor.0)) * concatXOut).to(.Float16)  // scale down factor not merged. Values path doesn't use the scale factor.
   } else {
     downcastXOut = concatXOut.to(.Float16)  // scale down factor merged into xChunks.
   }
   var xK = xToKeys(downcastXOut).reshaped([b, hw, h, k])
   let normK = RMSNorm(
-    epsilon: 1e-6 / (scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
+    epsilon: 1e-6
+      / Float(scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
     axis: [3],
     name: "x_norm_k")
   xK = normK(xK)
   var xQ = xToQueries(downcastXOut).reshaped([b, hw, h, k])
   let normQ = RMSNorm(
-    epsilon: 1e-6 / (scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
+    epsilon: 1e-6
+      / Float(scaleFactor.0 * scaleFactor.0 /* This is to remove the scale down factor */),
     axis: [3],
     name: "x_norm_q")
   xQ = normQ(xQ)
@@ -1081,7 +1125,7 @@ private func LoRAJointTransformerBlock(
     ).contiguous()
     let unifyheads = LoRADense(
       count: k * h, configuration: configuration, index: layerIndex, name: "c_o")
-    contextOut = unifyheads(isBF16 ? contextOut : (1.0 / scaleFactor.1) * contextOut).to(
+    contextOut = unifyheads(isBF16 ? contextOut : (1.0 / Float(scaleFactor.1)) * contextOut).to(
       of: context)  // scale up factor merged into contextChunks.
     contextUnifyheads = unifyheads
   } else {
@@ -1106,7 +1150,7 @@ private func LoRAJointTransformerBlock(
   }
   let xUnifyheads = LoRADense(
     count: k * h, configuration: configuration, index: layerIndex, name: "x_o")
-  xOut = xUnifyheads(isBF16 ? xOut : (1.0 / scaleFactor.1) * xOut).to(of: x)  // scale up factor merged into xChunks.
+  xOut = xUnifyheads(isBF16 ? xOut : (1.0 / Float(scaleFactor.1)) * xOut).to(of: x)  // scale up factor merged into xChunks.
   if !contextBlockPreOnly {
     contextOut = context + contextChunks[2] .* contextOut
   }
@@ -1180,10 +1224,10 @@ private func LoRAJointTransformerBlock(
     var mapping = ModelWeightMapping()
     mapping["\(prefix).attn.add_q_proj.weight"] = [contextToQueries.weight.name]
     mapping["\(prefix).attn.add_q_proj.bias"] = ModelWeightElement(
-      [contextToQueries.bias.name], scale: 1.0 / scaleFactor.0)
+      [contextToQueries.bias.name], scale: 1.0 / Float(scaleFactor.0))
     mapping["\(prefix).attn.add_k_proj.weight"] = [contextToKeys.weight.name]
     mapping["\(prefix).attn.add_k_proj.bias"] = ModelWeightElement(
-      [contextToKeys.bias.name], scale: 1.0 / scaleFactor.0)
+      [contextToKeys.bias.name], scale: 1.0 / Float(scaleFactor.0))
     if isBF16 {
       mapping["\(prefix).attn.add_v_proj.weight"] = ModelWeightElement(
         [contextToValues.weight.name], isBF16: true)
@@ -1192,16 +1236,16 @@ private func LoRAJointTransformerBlock(
     } else {
       mapping["\(prefix).attn.add_v_proj.weight"] = [contextToValues.weight.name]
       mapping["\(prefix).attn.add_v_proj.bias"] = ModelWeightElement(
-        [contextToValues.bias.name], scale: 1.0 / scaleFactor.0)
+        [contextToValues.bias.name], scale: 1.0 / Float(scaleFactor.0))
     }
     mapping["\(prefix).attn.norm_added_k.weight"] = [normAddedK.weight.name]
     mapping["\(prefix).attn.norm_added_q.weight"] = [normAddedQ.weight.name]
     mapping["\(prefix).attn.to_q.weight"] = [xToQueries.weight.name]
     mapping["\(prefix).attn.to_q.bias"] = ModelWeightElement(
-      [xToQueries.bias.name], scale: 1.0 / scaleFactor.0)
+      [xToQueries.bias.name], scale: 1.0 / Float(scaleFactor.0))
     mapping["\(prefix).attn.to_k.weight"] = [xToKeys.weight.name]
     mapping["\(prefix).attn.to_k.bias"] = ModelWeightElement(
-      [xToKeys.bias.name], scale: 1.0 / scaleFactor.0)
+      [xToKeys.bias.name], scale: 1.0 / Float(scaleFactor.0))
     if isBF16 {
       mapping["\(prefix).attn.to_v.weight"] = ModelWeightElement(
         [xToValues.weight.name], isBF16: true)
@@ -1209,7 +1253,7 @@ private func LoRAJointTransformerBlock(
     } else {
       mapping["\(prefix).attn.to_v.weight"] = [xToValues.weight.name]
       mapping["\(prefix).attn.to_v.bias"] = ModelWeightElement(
-        [xToValues.bias.name], scale: 1.0 / scaleFactor.0)
+        [xToValues.bias.name], scale: 1.0 / Float(scaleFactor.0))
     }
     mapping["\(prefix).attn.norm_k.weight"] = [normK.weight.name]
     mapping["\(prefix).attn.norm_q.weight"] = [normQ.weight.name]
@@ -1222,7 +1266,7 @@ private func LoRAJointTransformerBlock(
       } else {
         mapping["\(prefix).attn.to_add_out.weight"] = [contextUnifyheads.weight.name]
         mapping["\(prefix).attn.to_add_out.bias"] = ModelWeightElement(
-          [contextUnifyheads.bias.name], scale: 1.0 / (scaleFactor.0 * scaleFactor.1))
+          [contextUnifyheads.bias.name], scale: 1.0 / Float(scaleFactor.0 * scaleFactor.1))
       }
     }
     if isBF16 {
@@ -1233,13 +1277,14 @@ private func LoRAJointTransformerBlock(
     } else {
       mapping["\(prefix).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
       mapping["\(prefix).attn.to_out.0.bias"] = ModelWeightElement(
-        [xUnifyheads.bias.name], scale: 1.0 / (scaleFactor.0 * scaleFactor.1))
+        [xUnifyheads.bias.name], scale: 1.0 / Float(scaleFactor.0 * scaleFactor.1))
     }
     if let contextLinear1 = contextLinear1,
       let contextOutProjection = contextOutProjection
     {
       mapping["\(prefix).txt_mlp.net.0.proj.weight"] = [contextLinear1.weight.name]
-      mapping["\(prefix).txt_mlp.net.0.proj.bias"] = [contextLinear1.bias.name]
+      mapping["\(prefix).txt_mlp.net.0.proj.bias"] = ModelWeightElement(
+        [contextLinear1.bias.name], scale: 1.0 / Float(scaleFactor.2.projUp))
       if isBF16 {
         mapping[
           "\(prefix).txt_mlp.net.2.weight"
@@ -1253,11 +1298,13 @@ private func LoRAJointTransformerBlock(
         ] = [contextOutProjection.weight.name]
         mapping[
           "\(prefix).txt_mlp.net.2.bias"
-        ] = ModelWeightElement([contextOutProjection.bias.name], scale: 1.0 / scaleFactor.2)
+        ] = ModelWeightElement(
+          [contextOutProjection.bias.name], scale: 1.0 / Float(scaleFactor.2.projDown))
       }
     }
     mapping["\(prefix).img_mlp.net.0.proj.weight"] = [xLinear1.weight.name]
-    mapping["\(prefix).img_mlp.net.0.proj.bias"] = [xLinear1.bias.name]
+    mapping["\(prefix).img_mlp.net.0.proj.bias"] = ModelWeightElement(
+      [xLinear1.bias.name], scale: 1.0 / Float(scaleFactor.2.projUp))
     if isBF16 {
       mapping["\(prefix).img_mlp.net.2.weight"] = ModelWeightElement(
         [xOutProjection.weight.name], isBF16: true)
@@ -1266,7 +1313,7 @@ private func LoRAJointTransformerBlock(
     } else {
       mapping["\(prefix).img_mlp.net.2.weight"] = [xOutProjection.weight.name]
       mapping["\(prefix).img_mlp.net.2.bias"] = ModelWeightElement(
-        [xOutProjection.bias.name], scale: 1.0 / scaleFactor.2)
+        [xOutProjection.bias.name], scale: 1.0 / Float(scaleFactor.2.projDown))
     }
     return mapping
   }
@@ -1285,7 +1332,7 @@ public func LoRAQwenImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, referenceSequenceLength: Int,
   channels: Int, layers: Int, usesFlashAttention: FlashAttentionLevel, isBF16: Bool,
   isQwenImageLayered: Bool, zeroTimestepForReference: Bool, activationQkScaling: [Int: Int],
-  activationProjScaling: [Int: Int],
+  activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
   activationFfnScaling: [Int: Int],
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
@@ -1336,6 +1383,7 @@ public func LoRAQwenImage(
       ? (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() } : []
     let qkScaling = activationQkScaling[i] ?? 1
     let projScaling = activationProjScaling[i] ?? 1
+    let ffnProjUpScaling = activationFfnProjUpScaling[i] ?? 1
     let ffnScaling = activationFfnScaling[i] ?? 1
     let (mapper, block) = LoRAJointTransformerBlock(
       prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
@@ -1344,12 +1392,15 @@ public func LoRAQwenImage(
       referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention,
       scaleFactor: (
-        Float(8 * qkScaling),
+        8 * qkScaling,
         isBF16
-          ? Float(projScaling)
-          : (i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling)),
-        isBF16
-          ? Float(ffnScaling) : (i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling))
+          ? projScaling
+          : (i >= layers - 16 ? 16 * projScaling : 2 * projScaling),
+        (
+          projUp: ffnProjUpScaling,
+          projDown: isBF16
+            ? ffnScaling : (i >= layers - 1 ? 256 * ffnScaling : 16 * ffnScaling)
+        )
       ), isBF16: isBF16, zeroTimestepForReference: zeroTimestepForReference, layerIndex: i,
       configuration: LoRAConfiguration)
     var inputs: [Model.IO] = [out, context] + (ref.map { [$0] } ?? []) + [rotResized]
@@ -1399,7 +1450,8 @@ public func LoRAQwenImage(
 }
 
 private func LoRAJointTransformerBlockFixed(
-  prefix: String, k: Int, h: Int, contextBlockPreOnly: Bool, scaleFactor: (Float, Float, Float),
+  prefix: String, k: Int, h: Int, contextBlockPreOnly: Bool,
+  scaleFactor: (Int, Int, (projUp: Int, projDown: Int)),
   isBF16: Bool, layerIndex: Int, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let c = Input()
@@ -1417,26 +1469,46 @@ private func LoRAJointTransformerBlockFixed(
     xChunks = xChunks.map { $0.to(.Float32) }
     contextChunks[1] = 1 + contextChunks[1]
     xChunks[1] = 1 + xChunks[1]
-    if !contextBlockPreOnly {
-      contextChunks[4] = 1 + contextChunks[4]
+    let projUpScaling = max(scaleFactor.2.projUp, scaleFactor.2.projDown)
+    if projUpScaling > 1 {
+      if !contextBlockPreOnly {
+        contextChunks[3] = (1 / Float(projUpScaling)) * contextChunks[3]
+        contextChunks[4] = (1 / Float(projUpScaling)) * (1 + contextChunks[4])
+      }
+      xChunks[3] = (1 / Float(projUpScaling)) * xChunks[3]
+      xChunks[4] = (1 / Float(projUpScaling)) * (1 + xChunks[4])
+    } else {
+      if !contextBlockPreOnly {
+        contextChunks[4] = 1 + contextChunks[4]
+      }
+      xChunks[4] = 1 + xChunks[4]
     }
-    xChunks[4] = 1 + xChunks[4]
   } else {
     // Merge scale factor into the adaLN.
-    contextChunks[0] = (1.0 / scaleFactor.0) * contextChunks[0].to(.Float32)
-    contextChunks[1] = (1.0 / scaleFactor.0) * (1 + contextChunks[1].to(.Float32))
-    xChunks[0] = (1.0 / scaleFactor.0) * xChunks[0].to(.Float32)
-    xChunks[1] = (1.0 / scaleFactor.0) * (1 + xChunks[1].to(.Float32))
-    xChunks[2] = (8 * scaleFactor.1) * xChunks[2].to(.Float32)
+    contextChunks[0] = (1.0 / Float(scaleFactor.0)) * contextChunks[0].to(.Float32)
+    contextChunks[1] = (1.0 / Float(scaleFactor.0)) * (1 + contextChunks[1].to(.Float32))
+    xChunks[0] = (1.0 / Float(scaleFactor.0)) * xChunks[0].to(.Float32)
+    xChunks[1] = (1.0 / Float(scaleFactor.0)) * (1 + xChunks[1].to(.Float32))
+    xChunks[2] = Float(scaleFactor.0 * scaleFactor.1) * xChunks[2].to(.Float32)
     if !contextBlockPreOnly {
-      contextChunks[2] = (scaleFactor.0 * scaleFactor.1) * contextChunks[2].to(.Float32)
-      contextChunks[3] = contextChunks[3].to(.Float32)
-      contextChunks[4] = 1 + contextChunks[4].to(.Float32)
-      contextChunks[5] = contextChunks[5].to(.Float32)
+      contextChunks[2] = Float(scaleFactor.0 * scaleFactor.1) * contextChunks[2].to(.Float32)
+      if scaleFactor.2.projUp > 1 {
+        contextChunks[3] = (1.0 / Float(scaleFactor.2.projUp)) * contextChunks[3].to(.Float32)
+        contextChunks[4] = (1.0 / Float(scaleFactor.2.projUp)) * (1 + contextChunks[4].to(.Float32))
+      } else {
+        contextChunks[3] = contextChunks[3].to(.Float32)
+        contextChunks[4] = 1 + contextChunks[4].to(.Float32)
+      }
+      contextChunks[5] = Float(scaleFactor.2.projDown) * contextChunks[5].to(.Float32)
     }
-    xChunks[3] = xChunks[3].to(.Float32)
-    xChunks[4] = 1 + xChunks[4].to(.Float32)
-    xChunks[5] = xChunks[5].to(.Float32)
+    if scaleFactor.2.projUp > 1 {
+      xChunks[3] = (1.0 / Float(scaleFactor.2.projUp)) * xChunks[3].to(.Float32)
+      xChunks[4] = (1.0 / Float(scaleFactor.2.projUp)) * (1 + xChunks[4].to(.Float32))
+    } else {
+      xChunks[3] = xChunks[3].to(.Float32)
+      xChunks[4] = 1 + xChunks[4].to(.Float32)
+    }
+    xChunks[5] = Float(scaleFactor.2.projDown) * xChunks[5].to(.Float32)
   }
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -1458,7 +1530,8 @@ private func LoRAJointTransformerBlockFixed(
 public func LoRAQwenImageFixed<T: TensorNumeric & BinaryFloatingPoint>(
   _ dataType: T.Type,
   timesteps: Int, channels: Int, layers: Int, isBF16: Bool, activationQkScaling: [Int: Int],
-  activationProjScaling: [Int: Int], activationFfnScaling: [Int: Int], numberOfReferenceImages: Int,
+  activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
+  activationFfnScaling: [Int: Int], numberOfReferenceImages: Int,
   useAdditionalTCond: Bool, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let txt = Input()
@@ -1509,18 +1582,22 @@ public func LoRAQwenImageFixed<T: TensorNumeric & BinaryFloatingPoint>(
     for i in 0..<layers {
       let qkScaling = activationQkScaling[i] ?? 1
       let projScaling = activationProjScaling[i] ?? 1
+      let ffnProjUpScaling = activationFfnProjUpScaling[i] ?? 1
       let ffnScaling = activationFfnScaling[i] ?? 1
       let (mapper, block) = LoRAJointTransformerBlockFixed(
         prefix: "transformer_blocks.\(i)", k: 128, h: channels / 128,
         contextBlockPreOnly: i == layers - 1,
         scaleFactor: (
-          Float(8 * qkScaling),
+          8 * qkScaling,
           isBF16
-            ? Float(projScaling)
-            : (i >= layers - 16 ? Float(16 * projScaling) : Float(2 * projScaling)),
-          isBF16
-            ? Float(ffnScaling)
-            : (i >= layers - 1 ? Float(256 * ffnScaling) : Float(16 * ffnScaling))
+            ? projScaling
+            : (i >= layers - 16 ? 16 * projScaling : 2 * projScaling),
+          (
+            projUp: ffnProjUpScaling,
+            projDown: isBF16
+              ? ffnScaling
+              : (i >= layers - 1 ? 256 * ffnScaling : 16 * ffnScaling)
+          )
         ), isBF16: isBF16, layerIndex: i, configuration: LoRAConfiguration)
       let blockOut = block(vec)
       mappers.append(mapper)
