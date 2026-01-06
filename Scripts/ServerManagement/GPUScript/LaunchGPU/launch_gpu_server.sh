@@ -316,9 +316,16 @@ check_gpu_idle() {
     while IFS= read -r usage; do
         if [ -n "$usage" ]; then
             gpu_count=$((gpu_count + 1))
-            usage_list="$usage_list$usage% "
-            if [ "$usage" -gt 0 ]; then
+            # Handle [N/A] or non-numeric values from nvidia-smi (indicates GPU error state)
+            if [[ "$usage" == *"N/A"* ]] || ! [[ "$usage" =~ ^[0-9]+$ ]]; then
+                echo "Warning: GPU returned invalid usage value: $usage (may need reset)"
+                usage_list="${usage_list}ERR "
                 all_idle=false
+            else
+                usage_list="$usage_list$usage% "
+                if [ "$usage" -gt 0 ]; then
+                    all_idle=false
+                fi
             fi
         fi
     done <<< "$gpu_usage"

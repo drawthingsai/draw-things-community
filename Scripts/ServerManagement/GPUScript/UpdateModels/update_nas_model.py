@@ -3,12 +3,12 @@
 NAS Model Update Script
 
 Usage:
-  Local:  python update_nas_model.py -p /path/to/models -u /path/to/utils -m MODE --account-id ID --access-key KEY --secret-key SECRET
-  Remote: python update_nas_model.py root@hostname -p /path/to/models -u /path/to/utils -m MODE --account-id ID --access-key KEY --secret-key SECRET
+  Local:  python update_nas_model.py -p /path/to/models -u /path/to/utils/UpdateModels -m MODE --account-id ID --access-key KEY --secret-key SECRET
+  Remote: python update_nas_model.py root@hostname -p /path/to/models -u /path/to/utils/ -r /path/to/draw-things UpdateModels -m MODE --account-id ID --access-key KEY --secret-key SECRET
 
 Required parameters:
   -p, --path          Path to models directory (e.g., /zfs/data/official-models-ckpt-tensordata/)
-  -u, --utils         Path to utils directory (e.g., /root/utils/)
+  -u, --utils         Path to utils directory (e.g., /root/utils/UpdateModels)
   -r, --repo-path     Path to draw-things repository (default: {utils}/draw-things)
   -m, --mode          Operation mode: sync, format, checksum, or all (default: all)
   --account-id        Cloudflare R2 account ID (required for sync mode)

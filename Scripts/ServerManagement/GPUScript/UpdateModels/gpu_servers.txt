@@ -15,8 +15,7 @@
 
 root@dt-thpc-001|192.168.88.14:8000
 root@dt-thpc-002|192.168.88.14:8000
-root@dfw-026-001
 root@dfw-032-002
-root@dfw-039-004
 root@dfw-043-003
 root@dfw-141-005
+root@dfw-047-006
