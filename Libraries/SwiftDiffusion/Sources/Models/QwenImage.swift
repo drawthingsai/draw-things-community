@@ -196,7 +196,7 @@ private func FeedForward(
   )
 {
   let x = Input()
-  let linear1 = Dense(count: intermediateSize, flags: [.Float16], name: "\(name)_linear1")
+  let linear1 = Dense(count: intermediateSize, name: "\(name)_linear1")
   var out: Model.IO
   if isBF16 {
     let projUpScaling = max(scaleFactor.projUp, scaleFactor.projDown)
@@ -944,7 +944,7 @@ private func LoRAFeedForward(
 {
   let x = Input()
   let linear1 = LoRADense(
-    count: intermediateSize, configuration: configuration, flags: [.Float16], index: index,
+    count: intermediateSize, configuration: configuration, index: index,
     name: "\(name)_linear1")
   var out: Model.IO
   if isBF16 {
