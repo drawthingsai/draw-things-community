@@ -1,9 +1,16 @@
 import Diffusion
 import NNC
 
-#if canImport(NNCCoreMLConversion) && canImport(CoreML)
-  import NNCCoreMLConversion
+#if canImport(CoreGraphics)
+  import CoreGraphics
+#endif
+
+#if canImport(CoreML)
   import CoreML
+#endif
+
+#if canImport(NNCCoreMLConversion)
+  import NNCCoreMLConversion
 #endif
 
 extension ControlModel {

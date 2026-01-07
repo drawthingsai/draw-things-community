@@ -1,7 +1,12 @@
-import C_ccv
 import Collections
 import NNC
 import WeightsCache
+
+#if canImport(C_ccv)
+  import C_ccv
+#elseif canImport(C_swiftpm_ccv)
+  import C_swiftpm_ccv
+#endif
 
 public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let filePaths: [String]

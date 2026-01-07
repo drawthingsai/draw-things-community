@@ -1,7 +1,12 @@
-import C_ccv
 import CoreGraphics
 import NNC
 import Vision
+
+#if canImport(C_ccv)
+  import C_ccv
+#elseif canImport(C_swiftpm_ccv)
+  import C_swiftpm_ccv
+#endif
 
 public struct FaceRestorer<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let filePath: String

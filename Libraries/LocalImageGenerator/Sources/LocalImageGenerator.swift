@@ -1,4 +1,3 @@
-import C_ccv
 import DataModels
 import Dflat
 import Diffusion
@@ -11,6 +10,12 @@ import NNC
 import Tokenizer
 import Upscaler
 import WeightsCache
+
+#if canImport(C_ccv)
+  import C_ccv
+#elseif canImport(C_swiftpm_ccv)
+  import C_swiftpm_ccv
+#endif
 
 #if !os(Linux)
   import DiffusionCoreML

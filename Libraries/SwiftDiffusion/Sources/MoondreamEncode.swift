@@ -1,5 +1,10 @@
-import C_ccv
 import NNC
+
+#if canImport(C_ccv)
+  import C_ccv
+#elseif canImport(C_swiftpm_ccv)
+  import C_swiftpm_ccv
+#endif
 
 public struct MoondreamEncode<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public enum Version {

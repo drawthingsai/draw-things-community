@@ -1,8 +1,13 @@
-import C_ccv
 import Fickling
 import Foundation
 import NNC
 import ZIPFoundation
+
+#if canImport(C_ccv)
+  import C_ccv
+#elseif canImport(C_swiftpm_ccv)
+  import C_swiftpm_ccv
+#endif
 
 extension Archive: TensorArchive {
   public func with<T>(_ tensorDescriptor: TensorDescriptor, block: (AnyTensor) throws -> T) throws
