@@ -130,7 +130,7 @@ new_git_repository(
     name = "SwiftNumerics",
     build_file = "swift-numerics.BUILD",
     remote = "https://github.com/apple/swift-numerics.git",
-    commit = "4a2cbc186b1f8cbbc1ace12cef43d65784b2559e",
+    commit = "1e5cbc4e2142677d6695036a748344c8edb83e5c",
     shallow_since = "1605460976 -0500",
 )
 
