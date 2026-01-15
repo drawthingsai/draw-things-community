@@ -65,6 +65,7 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public struct Specification: Codable {
+    public var huggingFaceLink: String?
     public struct MMDiT: Codable {
       public var qkNorm: Bool
       public var dualAttentionLayers: [Int]
@@ -325,7 +326,7 @@ public struct ModelZoo: DownloadZoo {
       builtinLora: Bool? = nil, teaCacheCoefficients: [Float]? = nil,
       framesPerSecond: Double? = nil, isBf16: Bool? = nil,
       remoteApiModelConfig: RemoteApiModelConfig? = nil, note: String? = nil,
-      copyright: String? = nil
+      copyright: String? = nil, huggingFaceLink: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -364,6 +365,7 @@ public struct ModelZoo: DownloadZoo {
       self.isBf16 = isBf16
       self.note = note
       self.copyright = copyright
+      self.huggingFaceLink = huggingFaceLink
     }
     fileprivate var predictV: Bool? = nil
   }
@@ -705,7 +707,7 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       note:
         "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Tongyi-MAI/Z-Image-Turbo"
     ),
     Specification(
       name: "Z Image Turbo 1.0 (6-bit)", file: "z_image_turbo_1.0_q6p.ckpt", prefix: "",
@@ -729,7 +731,7 @@ public struct ModelZoo: DownloadZoo {
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
         "[Qwen Image 2512](https://huggingface.co/Qwen/Qwen-Image-2512) is the december update of Qwen Image model with improvements on enhanced human realism, finer natural detail and improved text rendering. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Qwen/Qwen-Image-2512"
     ),
     Specification(
       name: "Qwen Image 2512 (6-bit)", file: "qwen_image_2512_q6p.ckpt", prefix: "",
@@ -781,7 +783,7 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       note:
         "[Qwen Image](https://huggingface.co/Qwen/Qwen-Image) is a state-of-the-art open-source image generation model known for its exceptional text layout and prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Qwen/Qwen-Image"
     ),
     Specification(
       name: "Qwen Image 1.0 (6-bit)", file: "qwen_image_1.0_q6p.ckpt", prefix: "",
@@ -823,7 +825,7 @@ public struct ModelZoo: DownloadZoo {
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
         "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is an enhanced image editing model that significantly improves character consistency, mitigates image drift, and strengthens multi-person fusion capabilities compared to its predecessor (2509). It integrates popular LoRA features natively, enabling advanced lighting control and viewpoint generation without extra tuning, alongside specialized industrial design and geometric reasoning capabilities. It is Apache 2.0-licensed, with 40 inference steps recommended for optimal results.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Qwen/Qwen-Image-Edit-2511"
     ),
     Specification(
       name: "Qwen Image Edit 2511 (6-bit)", file: "qwen_image_edit_2511_q6p.ckpt",
@@ -876,7 +878,7 @@ public struct ModelZoo: DownloadZoo {
       isBf16: true,
       note:
         "[Qwen Image Layered](https://huggingface.co/Qwen/Qwen-Image-Layered) is a specialized model capable of decomposing an image into multiple transparent RGBA layers to unlock inherent editability. By physically isolating semantic components, it enables high-fidelity operations such as resizing, repositioning, and recoloring without affecting the rest of the image. It is Apache 2.0-licensed and commercially friendly. The model supports flexible and recursive decomposition, allowing users to define specific layer counts (Batch Size), with a recommended resolution of 640px and 50 inference steps. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Qwen/Qwen-Image-Layered"
     ),
     Specification(
       name: "Qwen Image Layered 1.0 (BF16, 6-bit)", file: "qwen_image_layered_1.0_bf16_q6p.ckpt",
@@ -906,7 +908,7 @@ public struct ModelZoo: DownloadZoo {
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
         "[Qwen Image Edit 2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. This is an update in Sep, 2025.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Qwen/Qwen-Image-Edit-2509"
     ),
     Specification(
       name: "Qwen Image Edit 2509 (6-bit)", file: "qwen_image_edit_2509_q6p.ckpt", prefix: "",
@@ -960,7 +962,7 @@ public struct ModelZoo: DownloadZoo {
         activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
       note:
         "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image-Edit) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Qwen/Qwen-Image-Edit"
     ),
     Specification(
       name: "Qwen Image Edit 1.0 (6-bit)", file: "qwen_image_edit_1.0_q6p.ckpt", prefix: "",
@@ -984,7 +986,8 @@ public struct ModelZoo: DownloadZoo {
       isConsistencyModel: true, objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128,
       hiresFixScale: 24,
       note:
-        "[HiDream-I1 [fast]](https://huggingface.co/HiDream-ai/HiDream-I1-Fast) is a state-of-the-art open-source image generation model known for its strong prompt adherence across diverse styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 10–20 sampling steps recommended. Text guidance is not effective for this model."
+        "[HiDream-I1 [fast]](https://huggingface.co/HiDream-ai/HiDream-I1-Fast) is a state-of-the-art open-source image generation model known for its strong prompt adherence across diverse styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 10–20 sampling steps recommended. Text guidance is not effective for this model.",
+      huggingFaceLink: "HiDream-ai/HiDream-I1-Fast"
     ),
     Specification(
       name: "HiDream I1 [fast] (5-bit)", file: "hidream_i1_fast_q5p.ckpt", prefix: "",
@@ -1006,7 +1009,8 @@ public struct ModelZoo: DownloadZoo {
       objective: .u(conditionScale: 1000), guidanceEmbed: true, paddedTextEncodingLength: 128,
       hiresFixScale: 24,
       note:
-        "[HiDream-I1 [dev]](https://huggingface.co/HiDream-ai/HiDream-I1-Dev) is a state-of-the-art open-source image generation model known for its strong prompt adherence across diverse styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 20–30 sampling steps recommended. Text guidance is not effective for this model."
+        "[HiDream-I1 [dev]](https://huggingface.co/HiDream-ai/HiDream-I1-Dev) is a state-of-the-art open-source image generation model known for its strong prompt adherence across diverse styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 20–30 sampling steps recommended. Text guidance is not effective for this model.",
+      huggingFaceLink: "HiDream-ai/HiDream-I1-Dev"
     ),
     Specification(
       name: "HiDream I1 [dev] (5-bit)", file: "hidream_i1_dev_q5p.ckpt", prefix: "",
@@ -1027,7 +1031,8 @@ public struct ModelZoo: DownloadZoo {
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
       objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24,
       note:
-        "[HiDream-I1 [full]](https://huggingface.co/HiDream-ai/HiDream-I1-Full) is a state-of-the-art open-source image generation model known for its exceptional prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended."
+        "[HiDream-I1 [full]](https://huggingface.co/HiDream-ai/HiDream-I1-Full) is a state-of-the-art open-source image generation model known for its exceptional prompt adherence across a wide range of styles, including photorealistic, cartoon, and artistic. It is MIT-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      huggingFaceLink: "HiDream-ai/HiDream-I1-Full"
     ),
     Specification(
       name: "HiDream I1 [full] (5-bit)", file: "hidream_i1_full_q5p.ckpt", prefix: "",
@@ -1048,7 +1053,8 @@ public struct ModelZoo: DownloadZoo {
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
       objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24,
       note:
-        "[HiDream-E1-1](https://huggingface.co/HiDream-ai/HiDream-E1-1) is an image editing model built on HiDream-I1. It is MIT-licensed and commercially friendly. Trained with dynamic resolutions (around 1MP) using a Flow Matching objective, the model performs best with trailing samplers and 30–50 sampling steps."
+        "[HiDream-E1-1](https://huggingface.co/HiDream-ai/HiDream-E1-1) is an image editing model built on HiDream-I1. It is MIT-licensed and commercially friendly. Trained with dynamic resolutions (around 1MP) using a Flow Matching objective, the model performs best with trailing samplers and 30–50 sampling steps.",
+      huggingFaceLink: "HiDream-ai/HiDream-E1-1"
     ),
     Specification(
       name: "HiDream E1-1 (5-bit)", file: "hidream_e1_1_q5p.ckpt", prefix: "",
@@ -1070,7 +1076,8 @@ public struct ModelZoo: DownloadZoo {
       t5Encoder: "t5_xxl_encoder_q6p.ckpt", highPrecisionAutoencoder: true,
       objective: .u(conditionScale: 1000), paddedTextEncodingLength: 128, hiresFixScale: 24,
       note:
-        "[HiDream-E1 [full]](https://huggingface.co/HiDream-ai/HiDream-E1-Full) is an image editing model built on HiDream-I1. It is MIT-licensed and commercially friendly. Trained at 768×768 resolution using a Flow Matching objective, the model performs best with trailing samplers and 30–50 sampling steps. For optimal results, ensure the width is set to 768 and use the following prompt format: Editing Instruction: {}. Target Image Description: {}."
+        "[HiDream-E1 [full]](https://huggingface.co/HiDream-ai/HiDream-E1-Full) is an image editing model built on HiDream-I1. It is MIT-licensed and commercially friendly. Trained at 768×768 resolution using a Flow Matching objective, the model performs best with trailing samplers and 30–50 sampling steps. For optimal results, ensure the width is set to 768 and use the following prompt format: Editing Instruction: {}. Target Image Description: {}.",
+      huggingFaceLink: "HiDream-ai/HiDream-E1-Full"
     ),
     Specification(
       name: "HiDream E1 [full] (5-bit)", file: "hidream_e1_full_q5p.ckpt", prefix: "",
@@ -1093,7 +1100,7 @@ public struct ModelZoo: DownloadZoo {
       ], framesPerSecond: 16,
       note:
         "[Wan2.2 T2V A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Wan-AI/Wan2.2-T2V-A14B"
     ),
     Specification(
       name: "Wan 2.2 High Noise Expert T2V A14B (6-bit, SVDQuant)",
@@ -1141,7 +1148,7 @@ public struct ModelZoo: DownloadZoo {
       ], framesPerSecond: 16,
       note:
         "[Wan2.2 I2V A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Wan-AI/Wan2.2-I2V-A14B"
     ),
     Specification(
       name: "Wan 2.2 High Noise Expert I2V A14B (6-bit, SVDQuant)",
@@ -1189,7 +1196,7 @@ public struct ModelZoo: DownloadZoo {
       teaCacheCoefficients: nil, framesPerSecond: 24,
       note:
         "[Wan2.2 TI2V 5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) is a state-of-the-art text-image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The model supports up to 121 frames, with a recommended shift value of 5.0.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Wan-AI/Wan2.2-TI2V-5B"
     ),
     Specification(
       name: "Wan 2.2 TI2V 5B (8-bit)", file: "wan_v2.2_5b_ti2v_q8p.ckpt",
@@ -1210,7 +1217,7 @@ public struct ModelZoo: DownloadZoo {
       ], framesPerSecond: 16,
       note:
         "[Wan2.1 T2V 1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 6.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Wan-AI/Wan2.1-T2V-1.3B"
     ),
     Specification(
       name: "Wan 2.1 T2V 1.3B (8-bit)", file: "wan_v2.1_1.3b_480p_q8p.ckpt", prefix: "",
@@ -1232,7 +1239,7 @@ public struct ModelZoo: DownloadZoo {
       ], framesPerSecond: 16,
       note:
         "[Wan2.1 T2V 14B](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) is a state-of-the-art text-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length. The recommended resolutions are 1280×720. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0. For best results, set Text Guidance above 5.0. Wan2.1 is trained with a Flow Matching objective, and trailing samplers will produce the best outputs.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Wan-AI/Wan2.1-T2V-14B"
     ),
     Specification(
       name: "Wan 2.1 T2V 14B (6-bit, SVDQuant)", file: "wan_v2.1_14b_720p_q6p_svd.ckpt", prefix: "",
@@ -1267,7 +1274,7 @@ public struct ModelZoo: DownloadZoo {
       ], framesPerSecond: 16,
       note:
         "[Wan2.1 I2V 14B 480P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 832×480. The model supports up to 81 frames, with a recommended shift value of 5.0.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Wan-AI/Wan2.1-I2V-14B-480P"
     ),
     Specification(
       name: "Wan 2.1 I2V 14B 480p (6-bit, SVDQuant)", file: "wan_v2.1_14b_i2v_480p_q6p_svd.ckpt",
@@ -1293,7 +1300,7 @@ public struct ModelZoo: DownloadZoo {
       ], framesPerSecond: 16,
       note:
         "[Wan2.1 I2V 14B 720P](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) is a state-of-the-art image-to-video model developed by Alibaba. It can generate video clips of up to 4 seconds in length from a given start frame. The recommended resolutions are 1280×720. The model supports up to 81 frames, with a recommended shift value of 5.0.",
-      copyright: "© 2025 Alibaba"
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Wan-AI/Wan2.1-I2V-14B-720P"
     ),
     Specification(
       name: "Wan 2.1 I2V 14B 720p (6-bit, SVDQuant)", file: "wan_v2.1_14b_i2v_720p_q6p_svd.ckpt",
@@ -1314,7 +1321,8 @@ public struct ModelZoo: DownloadZoo {
       version: .flux1, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", clipEncoder: "clip_vit_l14_f16.ckpt",
       highPrecisionAutoencoder: true, isConsistencyModel: true, objective: .u(conditionScale: 1000),
-      paddedTextEncodingLength: 256, hiresFixScale: 24),
+      paddedTextEncodingLength: 256, hiresFixScale: 24,
+      huggingFaceLink: "black-forest-labs/FLUX.1-schnell"),
     Specification(
       name: "FLUX.1 [schnell] (5-bit)", file: "flux_1_schnell_q5p.ckpt", prefix: "",
       version: .flux1, defaultScale: 16, textEncoder: "t5_xxl_encoder_q6p.ckpt",
@@ -1639,6 +1647,10 @@ public struct ModelZoo: DownloadZoo {
 
   public static func specificationForHumanReadableModel(_ name: String) -> Specification? {
     return availableSpecifications.first { $0.name == name }
+  }
+
+  public static func specificationForHuggingFaceRepo(_ repo: String) -> Specification? {
+    return builtinSpecifications.first { $0.huggingFaceLink == repo }
   }
 
   // We prefer these if it is a hit.
