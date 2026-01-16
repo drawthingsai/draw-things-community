@@ -1,7 +1,7 @@
 import Foundation
 import NNC
 
-public func Qwen3VLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+public func Qwen3RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   sequenceLength: Int, of dataType: FloatType.Type = FloatType.self
 ) -> Tensor<FloatType> {
   var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, 128))
@@ -118,7 +118,7 @@ private func TextEmbedding<T: TensorNumeric & BinaryFloatingPoint>(
   return Model([tokens], [embedding])
 }
 
-public func Qwen3VL<T: TensorNumeric & BinaryFloatingPoint>(
+public func Qwen3<T: TensorNumeric & BinaryFloatingPoint>(
   _ dataType: T.Type, vocabularySize: Int, maxLength: Int, width: Int, tokenLength: Int,
   layers: Int, MLP: Int, heads: Int, outputHiddenStates: Int?, batchSize: Int,
   usesFlashAttention: Bool

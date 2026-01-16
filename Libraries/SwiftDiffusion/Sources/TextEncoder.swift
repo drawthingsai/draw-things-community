@@ -2187,7 +2187,7 @@ extension TextEncoder {
       externalOnDemand || deviceProperties.memoryCapacity != .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let tokenLength = tokens[0].shape[0] / 2
-    let textModel = Qwen3VL(
+    let textModel = Qwen3(
       FloatType.self, vocabularySize: 151_936,
       maxLength: tokenLength, width: 2_560,
       tokenLength: tokenLength, layers: 36, MLP: 9_728, heads: 32, outputHiddenStates: 34,
@@ -2203,7 +2203,7 @@ extension TextEncoder {
     }
     let tokensTensorGPU = tokens[0].toGPU(0)
     let rotaryTensorGPU = graph.variable(
-      Qwen3VLRotaryEmbedding(
+      Qwen3RotaryEmbedding(
         sequenceLength: tokenLength, of: FloatType.self
       ).toGPU(0))
     let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
