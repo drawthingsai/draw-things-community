@@ -2787,6 +2787,8 @@ extension TextEncoder {
         injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
         modifier: modifier, textModels: existingTextModels)
+    case .flux2_9b, .flux2_4b:
+      fatalError()
     case .kandinsky21:
       return encodeKandinsky(tokens: tokens, positions: positions)
     case .sdxlBase, .sdxlRefiner, .ssd1b:
@@ -2899,7 +2901,7 @@ extension TextEncoder {
           ).0
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -2936,7 +2938,8 @@ extension TextEncoder {
                   }
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-                  .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+                  .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2,
+                  .flux2_9b, .flux2_4b:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -2975,7 +2978,8 @@ extension TextEncoder {
                 }
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-                .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+                .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2,
+                .flux2_9b, .flux2_4b:
                 fatalError()
               }
               return .continue(name)

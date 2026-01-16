@@ -49,6 +49,10 @@ public enum ComputeUnits {
       return 1.176470588
     case .flux2:
       return 2.588235294 * 2
+    case .flux2_9b:
+      return 2.588235294
+    case .flux2_4b:
+      return 1.176470588 * 0.8
     }
   }
 
@@ -133,11 +137,12 @@ public enum ComputeUnits {
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
-    case .flux1, .qwenImage, .zImage, .flux2:
+    case .flux1, .qwenImage, .zImage, .flux2, .flux2_9b, .flux2_4b:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
       if samplerModifier == .kontext || samplerModifier == .qwenimageEditPlus
-        || modelVersion == .flux2 || samplerModifier == .qwenimageEdit2511
+        || modelVersion == .flux2 || modelVersion == .flux2_9b || modelVersion == .flux2_4b
+        || samplerModifier == .qwenimageEdit2511
       {  // For Kontext, if the reference image is provided, we effectively double the cost at least.
         root = root * Double(1 + (hasImage ? 1 : 0) + shuffleCount)
       }

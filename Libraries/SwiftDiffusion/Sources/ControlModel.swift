@@ -382,7 +382,7 @@ extension ControlModel {
     switch version {
     case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .kandinsky21, .sd3, .pixart, .auraflow,
       .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .zImage,
-      .flux2:
+      .flux2, .flux2_9b, .flux2_4b:
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
@@ -588,7 +588,7 @@ extension ControlModel {
           }
         case .auraflow, .hiDreamI1, .hunyuanVideo, .kandinsky21, .pixart, .sd3, .sd3Large,
           .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC,
-          .qwenImage, .wan22_5b, .zImage, .flux2:
+          .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
           break
         }
       }
@@ -906,7 +906,7 @@ extension ControlModel {
             grid: 16, queries: 16, layers: 4, batchSize: 1)
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-          .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+          .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
           fatalError()
         }
       }
@@ -937,7 +937,7 @@ extension ControlModel {
           return imagePromptEmbed
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-          .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+          .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
           fatalError()
         }
       }
@@ -956,7 +956,7 @@ extension ControlModel {
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1007,7 +1007,7 @@ extension ControlModel {
               weight = input.weight * Float($0.element.shape[usesFlashAttention ? 2 : 1]) / 20
             case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21,
               .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
-              .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+              .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
               fatalError()
             }
           }
@@ -1042,7 +1042,7 @@ extension ControlModel {
         projModel = MLPProjModel(width: 1280, outputDim: 2048)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
       projModel.compile(inputs: imageEmbeds[0])
@@ -1071,7 +1071,7 @@ extension ControlModel {
           return imagePromptEmbed
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-          .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+          .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
           fatalError()
         }
       }
@@ -1090,7 +1090,7 @@ extension ControlModel {
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1142,7 +1142,7 @@ extension ControlModel {
               weight = input.weight * Float($0.element.shape[usesFlashAttention ? 2 : 1]) / 20
             case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21,
               .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
-              .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+              .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
               fatalError()
             }
           }
@@ -1262,7 +1262,7 @@ extension ControlModel {
           return imagePromptEmbed
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-          .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+          .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
           fatalError()
         }
       }
@@ -1281,7 +1281,7 @@ extension ControlModel {
           usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1336,7 +1336,7 @@ extension ControlModel {
               weight = input.weight * Float($0.element.shape[usesFlashAttention ? 2 : 1]) / 20
             case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21,
               .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
-              .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+              .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
               fatalError()
             }
           }
@@ -1438,7 +1438,7 @@ extension ControlModel {
           return imagePromptEmbed
         case .v1, .sdxlBase, .v2, .sd3, .sd3Large, .pixart, .auraflow, .sdxlRefiner, .kandinsky21,
           .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
-          .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+          .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
           fatalError()
         }
       }
@@ -1453,7 +1453,7 @@ extension ControlModel {
           usesFlashAttention: usesFlashAttention ? .scale1 : .none)
       case .v1, .v2, .sdxlBase, .sd3, .sd3Large, .pixart, .auraflow, .sdxlRefiner, .kandinsky21,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
       pulidFixed.maxConcurrency = .limit(4)
@@ -1751,7 +1751,7 @@ extension ControlModel {
       emptyControls = []
     case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .sdxlRefiner, .ssd1b,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
-      .flux2:
+      .flux2, .flux2_9b, .flux2_4b:
       fatalError()
     }
     for emptyControl in emptyControls {
@@ -1898,7 +1898,7 @@ extension ControlModel {
       }
     case .v2, .sd3, .sd3Large, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2:
+      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       fatalError()
     }
     for emptyAdapter in emptyAdapters {
@@ -2290,7 +2290,7 @@ extension ControlModel {
         mainUNetFixed: mainUNetFixed)
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
       .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2:
+      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       fatalError()
     }
   }
@@ -2442,7 +2442,7 @@ extension ControlModel {
           channels == 16 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<16].copied()
       case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v,
         .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-        .qwenImage, .wan22_5b, .zImage, .flux2:
+        .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
     } else {
@@ -2524,7 +2524,7 @@ extension ControlModel {
         return []
       case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v,
         .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .hiDreamI1, .qwenImage, .wan22_5b,
-        .zImage, .flux2:
+        .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
     }
@@ -2666,7 +2666,7 @@ extension ControlModel {
       }
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       break
     }
     return result

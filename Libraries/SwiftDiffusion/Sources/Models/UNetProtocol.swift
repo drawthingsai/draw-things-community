@@ -105,7 +105,7 @@ extension UNetProtocol {
             maxPeriod: 10_000)
         ).toGPU(0))
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
@@ -256,7 +256,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
           ].copied()
         }
       }
-  case .flux2:
+  case .flux2, .flux2_9b, .flux2_4b:
     let endIndex = referenceImageCount > 0 ? 3 : 2
     return conditions[0..<endIndex]
       + conditions[endIndex..<conditions.count].map {
@@ -406,7 +406,8 @@ public func externalOnDemandPartially(
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .wan21_1_3b, .wan22_5b:
       return false
-    case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .wan21_14b, .qwenImage, .zImage, .flux2:
+    case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .wan21_14b, .qwenImage, .zImage, .flux2,
+      .flux2_9b, .flux2_4b:
       return true
     }
   }
@@ -1254,7 +1255,7 @@ extension UNetFromNNC {
             ).0
           })
       }
-    case .flux2:
+    case .flux2, .flux2_9b, .flux2_4b:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
       tiledHeight =
@@ -1399,7 +1400,7 @@ extension UNetFromNNC {
         c.append(contentsOf: injectedIPAdapters)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-        .zImage, .flux2:
+        .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
     }
@@ -1457,7 +1458,7 @@ extension UNetFromNNC {
     case .wurstchenStageC:
       modelKey = "stage_c"
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -1561,7 +1562,7 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<(4 + 32)).map {
                   return ($0, $0)
                 })
-            case .flux2:
+            case .flux2, .flux2_9b, .flux2_4b:
               return [Int: Int](
                 uniqueKeysWithValues: (0..<(8 + 48)).map {
                   return ($0, $0)
@@ -1980,7 +1981,7 @@ extension UNetFromNNC {
             tokenEncoding
           return finalEncoding
         }
-      case .flux2:
+      case .flux2, .flux2_9b, .flux2_4b:
         if $0.0 == 0 {
           let shape = $0.1.shape
           let referenceSequenceLength: Int
@@ -2238,7 +2239,7 @@ extension UNetFromNNC {
       unet.compile(inputs: inputs)
       // TODO: TeaCache insert here.
       return
-    case .flux2:
+    case .flux2, .flux2_9b, .flux2_4b:
       guard isCfgEnabled else {
         unet.compile(inputs: inputs)
         // TODO: TeaCache insert here.
@@ -2920,7 +2921,7 @@ extension UNetFromNNC {
           return et
         }
       }
-    case .flux2:
+    case .flux2, .flux2_9b, .flux2_4b:
       guard isCfgEnabled else {
         let et = unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
         return et
@@ -3237,7 +3238,7 @@ extension UNetFromNNC {
         c = newC
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-        .zImage, .flux2:
+        .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
     }
@@ -3270,7 +3271,7 @@ extension UNetFromNNC {
       return x
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2:
+      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       return x
     }
   }

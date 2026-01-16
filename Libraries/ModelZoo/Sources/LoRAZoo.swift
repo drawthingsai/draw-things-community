@@ -423,6 +423,10 @@ public struct LoRAZoo: DownloadZoo {
       return " (Z Image)"
     case .flux2:
       return " (FLUX.2)"
+    case .flux2_9b:
+      return " (FLUX.2 9B)"
+    case .flux2_4b:
+      return " (FLUX.2 4B)"
     }
   }
 

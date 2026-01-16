@@ -438,7 +438,7 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .zImage:
         throw Error.noTextEncoder
-      case .flux2:
+      case .flux2, .flux2_9b, .flux2_4b:
         throw Error.noTextEncoder
       case .kandinsky21:
         fatalError()
@@ -511,7 +511,7 @@ public final class ModelImporter {
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
-            .wan22_5b, .zImage, .flux2:
+            .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -551,7 +551,7 @@ public final class ModelImporter {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+              .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
               fatalError()
             }
           }
@@ -697,6 +697,12 @@ public final class ModelImporter {
     case .flux2:
       conditionalLength = 15360
       batchSize = 1
+    case .flux2_9b:
+      conditionalLength = 12288
+      batchSize = 1
+    case .flux2_4b:
+      conditionalLength = 7680
+      batchSize = 1
     case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
@@ -747,7 +753,7 @@ public final class ModelImporter {
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
           .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
-          .flux2:
+          .flux2, .flux2_9b, .flux2_4b:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -876,7 +882,7 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .flux2:
+      case .flux2, .flux2_9b, .flux2_4b:
         cArr =
           [
             graph.variable(
@@ -1090,7 +1096,7 @@ public final class ModelImporter {
           batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 32,
           usesFlashAttention: .scale1
         )
-      case .flux2:
+      case .flux2, .flux2_9b, .flux2_4b:
         (unetMapper, unet) = Flux2(
           batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
           channels: 6144, layers: (8, 48), usesFlashAttention: .scale1)
@@ -1208,7 +1214,7 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .flux2:
+      case .flux2, .flux2_9b, .flux2_4b:
         crossattn = [
           graph.variable(.CPU, .HWC(1, 512, 15360), of: FloatType.self),
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
@@ -1406,7 +1412,7 @@ public final class ModelImporter {
             modelPrefix = "stage_c"
             modelPrefixFixed = "stage_c_fixed"
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
-            .wan22_5b, .qwenImage, .auraflow, .zImage, .flux2:
+            .wan22_5b, .qwenImage, .auraflow, .zImage, .flux2, .flux2_9b, .flux2_4b:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1676,6 +1682,8 @@ public final class ModelImporter {
           if $0.keys.count != 600 {
             throw Error.tensorWritesFailed
           }
+        case .flux2_9b, .flux2_4b:
+          fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()
         }
@@ -1931,6 +1939,14 @@ extension ModelImporter {
       textEncoder = fileNames.first {
         $0.hasSuffix("_mistral_small_3.2_24b_instruct_2506_f16.ckpt")
       }
+    case .flux2_9b:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_qwen_3_8b_f16.ckpt")
+      }
+    case .flux2_4b:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_qwen_3_4b_f16.ckpt")
+      }
     case .wurstchenStageC:
       textEncoder = nil
     case .kandinsky21, .wurstchenStageB:
@@ -2154,6 +2170,38 @@ extension ModelImporter {
     case .flux2:
       if specification.textEncoder == nil {
         specification.textEncoder = "mistral_small_3.2_24b_instruct_2506_q8p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "flux_2_vae_f16.ckpt"
+      }
+      specification.highPrecisionAutoencoder = true
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      if inspectionResult.hasGuidanceEmbed {
+        specification.guidanceEmbed = true
+      }
+      // For FLUX.2, the hires fix trigger scale is 2 of the finetune scale.
+      specification.hiresFixScale = finetuneScale * 2
+    case .flux2_9b:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "qwen_3_8b_q8p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "flux_2_vae_f16.ckpt"
+      }
+      specification.highPrecisionAutoencoder = true
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      if inspectionResult.hasGuidanceEmbed {
+        specification.guidanceEmbed = true
+      }
+      // For FLUX.2, the hires fix trigger scale is 2 of the finetune scale.
+      specification.hiresFixScale = finetuneScale * 2
+    case .flux2_4b:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "qwen_3_4b_q8p.ckpt"
       }
       if specification.autoencoder == nil {
         specification.autoencoder = "flux_2_vae_f16.ckpt"

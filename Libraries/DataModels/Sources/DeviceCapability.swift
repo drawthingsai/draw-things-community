@@ -623,7 +623,7 @@ public struct DeviceCapability {
       else {
         return false
       }
-    case .flux2:
+    case .flux2, .flux2_9b, .flux2_4b:
       guard
         (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force
       else {

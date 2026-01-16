@@ -70,7 +70,7 @@ extension FirstStage {
         Tensor<FloatType>(
           latentsStd.map { FloatType($0 / scalingFactor) }, .GPU(0),
           .NHWC(1, 1, 1, latentsStd.count)))
-      if version == .flux2 {
+      if version == .flux2 || version == .flux2_9b || version == .flux2_4b {
         // FLUX.2 is different, it needs to first reshape x and then apply the scaling.
         let shape = x.shape
         z =
@@ -104,7 +104,7 @@ extension FirstStage {
     let scaleFactor: Int
     switch version {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .flux2:
+      .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .flux2, .flux2_9b, .flux2_4b:
       scaleFactor = 8
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage:
@@ -243,7 +243,7 @@ extension FirstStage {
         outputChannels = 3
       }
       causalAttentionMask = nil
-    case .flux2:
+    case .flux2, .flux2_9b, .flux2_4b:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       decoder =
@@ -871,7 +871,7 @@ extension FirstStage {
         Tensor<FloatType>(
           latentsStd.map { FloatType(scalingFactor / $0) }, .GPU(0),
           .NHWC(1, 1, 1, latentsStd.count)))
-      if version == .flux2 {
+      if version == .flux2 || version == .flux2_9b || version == .flux2_4b {
         // FLUX.2 is different, it needs to first reshape x and then apply the scaling.
         let shape = x.shape
         return
@@ -954,7 +954,7 @@ extension FirstStage {
     let scaleFactorZ: Int
     switch version {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
-      .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .flux2:
+      .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .flux2, .flux2_9b, .flux2_4b:
       scaleFactor = 8
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage:
@@ -1042,7 +1042,7 @@ extension FirstStage {
       }
       outputChannels = 32
       causalAttentionMask = nil
-    case .flux2:
+    case .flux2, .flux2_9b, .flux2_4b:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight
       encoder =

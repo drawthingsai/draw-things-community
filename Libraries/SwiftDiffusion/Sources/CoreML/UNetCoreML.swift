@@ -350,7 +350,7 @@ extension UNetFromCoreML {
         reduceMemory = CoreMLModelManager.reduceMemoryFor2x.load(ordering: .acquiring)
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
         fatalError()
       }
       let channels = xT.shape[3]
