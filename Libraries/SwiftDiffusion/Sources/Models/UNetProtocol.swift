@@ -1500,10 +1500,11 @@ extension UNetFromNNC {
         if name.contains("c_o-") || name.contains("x_o-") {
           return true
         }
-      } else if version == .flux2 {  // FLUX.2 is a 32B-parameter model, offload all MLP layers.
-        if name.contains("_up_proj-") || name.contains("_w1-") || name.contains("_w2-")
-          || name.contains("_w3-")
-        {
+      } else if version == .flux2 || version == .flux2_4b || version == .flux2_9b {  // FLUX.2 is a 32B-parameter model, offload all MLP layers.
+        if name.contains("_up_proj-") || name.contains("_w3-") {
+          return true
+        }
+        if version == .flux2 && (name.contains("_w1-") || name.contains("_w2-")) {
           return true
         }
       }
