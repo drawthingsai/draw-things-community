@@ -2190,8 +2190,10 @@ extension TextEncoder {
     let textModel = Qwen3(
       FloatType.self, vocabularySize: 151_936,
       maxLength: tokenLength, width: 2_560,
-      tokenLength: tokenLength, layers: 36, MLP: 9_728, heads: 32, outputHiddenStates: [34],
-      batchSize: 2, usesFlashAttention: usesFlashAttention)
+      tokenLength: tokenLength,
+      layers: 35 /* Should be 36, but only 27 is enough for this purpose */, MLP: 9_728, heads: 32,
+      outputHiddenStates: [34],
+      noFinalNormalizedOutput: true, batchSize: 2, usesFlashAttention: usesFlashAttention)
     var causalAttentionMask = Tensor<FloatType>(
       Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
       .NHWC(1, 1, tokenLength, tokenLength)
@@ -2633,7 +2635,7 @@ extension TextEncoder {
       FloatType.self, vocabularySize: 131_072, maxLength: tokenLength, width: 5_120,
       tokenLength: tokenLength,
       layers: 30 /* Should be 40, but only 30 is enough for this purpose */, MLP: 32_768,
-      heads: 32, outputHiddenStates: [9, 19, 29], batchSize: 2,
+      heads: 32, outputHiddenStates: [9, 19, 29], noFinalNormalizedOutput: true, batchSize: 2,
       usesFlashAttention: usesFlashAttention)
     var causalAttentionMask = Tensor<FloatType>(
       Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
@@ -2677,7 +2679,6 @@ extension TextEncoder {
     var c = textModel(
       inputs: tokensTensorGPU, [rotaryTensorGPU, causalAttentionMaskGPU, padTokenGPU]
     ).map { $0.as(of: FloatType.self) }
-    c.remove(at: 3)  // The final output is not needed.
     c[0] = c[0].reshaped(.HWC(2, tokenLength, 5120))
     c[1] = c[1].reshaped(.HWC(2, tokenLength, 5120))
     c[2] = c[2].reshaped(.HWC(2, tokenLength, 5120))
@@ -2746,20 +2747,51 @@ extension TextEncoder {
       externalOnDemand || deviceProperties.memoryCapacity != .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let tokenLength = tokens[0].shape[0] / 2
+    let channels: Int
+    let MLP: Int
+    if version == .flux2_9b {
+      channels = 4_096
+      MLP = 12_288
+    } else {
+      channels = 2_560
+      MLP = 9_728
+    }
+    var tokenLength0: Int? = nil
+    var tokenLength1: Int? = nil
+    for i in (0..<tokenLength).reversed() {
+      if tokenLength0 == nil && tokens[0][i] != 151643 {
+        tokenLength0 = i + 1
+      }
+      if tokenLength1 == nil && tokens[0][i + tokenLength] != 151643 {
+        tokenLength1 = i + 1
+      }
+      if tokenLength0 != nil && tokenLength1 != nil {
+        break
+      }
+    }
     let textModel = Qwen3(
       FloatType.self, vocabularySize: 151_936,
-      maxLength: tokenLength, width: 2_560,
+      maxLength: tokenLength, width: channels,
       tokenLength: tokenLength,
-      layers: 27 /* Should be 36, but only 27 is enough for this purpose */, MLP: 9_728, heads: 32,
-      outputHiddenStates: [8, 17, 26],
+      layers: 27 /* Should be 36, but only 27 is enough for this purpose */, MLP: MLP, heads: 32,
+      outputHiddenStates: [8, 17, 26], noFinalNormalizedOutput: true,
       batchSize: 2, usesFlashAttention: usesFlashAttention)
     var causalAttentionMask = Tensor<FloatType>(
-      Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
-      .NHWC(1, 1, tokenLength, tokenLength)
+      Array(repeating: 0, count: tokenLength * tokenLength * 2), .CPU,
+      .NHWC(2, 1, tokenLength, tokenLength)
     )
-    for i in 0..<(tokenLength - 1) {
-      for j in (i + 1)..<tokenLength {
-        causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+    for i in 0..<tokenLength {
+      let tokenStart0 = min(tokenLength0 ?? tokenLength, i + 1)
+      if tokenStart0 < tokenLength {
+        for j in tokenStart0..<tokenLength {
+          causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+        }
+      }
+      let tokenStart1 = min(tokenLength1 ?? tokenLength, i + 1)
+      if tokenStart1 < tokenLength {
+        for j in tokenStart1..<tokenLength {
+          causalAttentionMask[1, 0, i, j] = -FloatType.greatestFiniteMagnitude
+        }
       }
     }
     let tokensTensorGPU = tokens[0].toGPU(0)
@@ -2785,16 +2817,20 @@ extension TextEncoder {
     ).map {
       $0.as(
         of: FloatType.self
-      ).reshaped(.HWC(2, tokenLength, 2560))
+      ).reshaped(.HWC(2, tokenLength, channels))
     }
     weightsCache.attach(filePaths[0], from: textModel.parameters)
-    var newC = graph.variable(.GPU(0), .HWC(2, tokenLength, 2560 * 3), of: FloatType.self)
-    newC[0..<1, 0..<tokenLength, 0..<2560] = c[0][0..<1, 0..<tokenLength, 0..<2560]
-    newC[0..<1, 0..<tokenLength, 2560..<5120] = c[1][0..<1, 0..<tokenLength, 0..<2560]
-    newC[0..<1, 0..<tokenLength, 5120..<7680] = c[2][0..<1, 0..<tokenLength, 0..<2560]
-    newC[1..<2, 0..<tokenLength, 0..<2560] = c[0][1..<2, 0..<tokenLength, 0..<2560]
-    newC[1..<2, 0..<tokenLength, 2560..<5120] = c[1][1..<2, 0..<tokenLength, 0..<2560]
-    newC[1..<2, 0..<tokenLength, 5120..<7680] = c[2][1..<2, 0..<tokenLength, 0..<2560]
+    var newC = graph.variable(.GPU(0), .HWC(2, tokenLength, channels * 3), of: FloatType.self)
+    newC[0..<1, 0..<tokenLength, 0..<channels] = c[0][0..<1, 0..<tokenLength, 0..<channels]
+    newC[0..<1, 0..<tokenLength, channels..<(channels * 2)] =
+      c[1][0..<1, 0..<tokenLength, 0..<channels]
+    newC[0..<1, 0..<tokenLength, (channels * 2)..<(channels * 3)] =
+      c[2][0..<1, 0..<tokenLength, 0..<channels]
+    newC[1..<2, 0..<tokenLength, 0..<channels] = c[0][1..<2, 0..<tokenLength, 0..<channels]
+    newC[1..<2, 0..<tokenLength, channels..<(channels * 2)] =
+      c[1][1..<2, 0..<tokenLength, 0..<channels]
+    newC[1..<2, 0..<tokenLength, (channels * 2)..<(channels * 3)] =
+      c[2][1..<2, 0..<tokenLength, 0..<channels]
     return ([newC], [textModel])
   }
 

@@ -701,6 +701,7 @@ public struct ModelZoo: DownloadZoo {
       "17f2bab8c39a96cca1b4dc99b8b37dfe7fda779c3e95a6cae24272d1e08ab7e5",
     "qwen_3_4b_q8p.ckpt": "a24e3f832917aafe7f6186e6dfb96ab19a4a0729cdf60a875b5da20024333350",
     "flux_2_klein_4b_q8p.ckpt": "430ba0f94ee0851a7f95c1383527f931afa6219898a51c5aa8e37979e9e4c86a",
+    "flux_2_klein_4b_q6p.ckpt": "ba42005a6d4e6c48430787db98ae8913aced4654682b59d0d0f1d9ccf820fe30",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -786,7 +787,16 @@ public struct ModelZoo: DownloadZoo {
       name: "FLUX.2 [klein] 4B", file: "flux_2_klein_4b_q8p.ckpt", prefix: "",
       version: .flux2_4b, defaultScale: 16, textEncoder: "qwen_3_4b_q8p.ckpt",
       autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
-      hiresFixScale: 24,
+      paddedTextEncodingLength: 512, hiresFixScale: 24,
+      note:
+        "[FLUX.2 [klein] 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) is a 4 billion parameter rectified flow transformer capable of generating, editing and combining images based on text instructions.",
+      copyright: "© 2026 Black Forest Labs", huggingFaceLink: "black-forest-labs/FLUX.2-klein-4B"
+    ),
+    Specification(
+      name: "FLUX.2 [klein] 4B (6-bit)", file: "flux_2_klein_4b_q6p.ckpt", prefix: "",
+      version: .flux2_4b, defaultScale: 16, textEncoder: "qwen_3_4b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
+      paddedTextEncodingLength: 512, hiresFixScale: 24,
       note:
         "[FLUX.2 [klein] 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) is a 4 billion parameter rectified flow transformer capable of generating, editing and combining images based on text instructions.",
       copyright: "© 2026 Black Forest Labs", huggingFaceLink: "black-forest-labs/FLUX.2-klein-4B"

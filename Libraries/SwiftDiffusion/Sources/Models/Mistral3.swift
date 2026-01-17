@@ -118,8 +118,8 @@ private func TextEmbedding<T: TensorNumeric>(
 
 public func Mistral3<T: TensorNumeric & BinaryFloatingPoint>(
   _ dataType: T.Type, vocabularySize: Int, maxLength: Int, width: Int, tokenLength: Int,
-  layers: Int, MLP: Int, heads: Int, outputHiddenStates: [Int], batchSize: Int,
-  usesFlashAttention: Bool
+  layers: Int, MLP: Int, heads: Int, outputHiddenStates: [Int], noFinalNormalizedOutput: Bool,
+  batchSize: Int, usesFlashAttention: Bool
 ) -> Model {
   let tokens = Input()
   let rot = Input()
@@ -142,7 +142,9 @@ public func Mistral3<T: TensorNumeric & BinaryFloatingPoint>(
     }
   }
   let norm = RMSNorm(epsilon: 1e-5, axis: [1], name: "norm")
-  out = norm(out).to(T.dataType)
+  if !noFinalNormalizedOutput {
+    hiddenStates.append(norm(out).to(T.dataType))
+  }
   return Model(
-    [tokens, rot, causalAttentionMask, additionalTokens], hiddenStates + [out, additionalEmbeds])
+    [tokens, rot, causalAttentionMask, additionalTokens], hiddenStates + [additionalEmbeds])
 }
