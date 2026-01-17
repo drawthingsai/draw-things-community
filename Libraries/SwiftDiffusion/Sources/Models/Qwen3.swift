@@ -85,7 +85,8 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String = 
   return (w1, w2, w3, Model([x], [out], name: name))
 }
 
-private func TransformerBlock(
+private func TransformerBlock<T: TensorNumeric & BinaryFloatingPoint>(
+  _ dataType: T.Type,
   prefix: String, width: Int, k: Int, h: Int, hk: Int, b: Int, t: Int, MLP: Int,
   usesFlashAttention: Bool
 )
@@ -95,16 +96,16 @@ private func TransformerBlock(
   let rot = Input()
   let causalAttentionMask = Input()
   let norm1 = RMSNorm(epsilon: 1e-6, axis: [1], name: "input_layernorm")
-  var out = norm1(x)
+  var out = norm1(x).to(T.dataType)
   let attention = SelfAttention(
     prefix: prefix, width: width, k: k, h: h, hk: hk, b: b, t: t,
     usesFlashAttention: usesFlashAttention)
-  out = attention(out, rot, causalAttentionMask) + x
+  out = attention(out, rot, causalAttentionMask).to(of: x) + x
   let residual = out
   let norm2 = RMSNorm(epsilon: 1e-6, axis: [1], name: "post_attention_layernorm")
-  out = norm2(out)
+  out = norm2(out).to(T.dataType)
   let (_, _, _, ffn) = FeedForward(hiddenSize: width, intermediateSize: MLP, name: "mlp")
-  out = residual + ffn(out)
+  out = residual + ffn(out).to(of: residual)
   return Model([x, rot, causalAttentionMask], [out])
 }
 
@@ -129,18 +130,19 @@ public func Qwen3<T: TensorNumeric & BinaryFloatingPoint>(
   let embedding = TextEmbedding(
     T.self, batchSize: batchSize, vocabularySize: vocabularySize, maxLength: maxLength,
     embeddingSize: width)
-  var out = embedding(tokens)
+  var out = embedding(tokens).to(.Float32)
   var hiddenStates = [Model.IO]()
   for i in 0..<layers {
     let layer = TransformerBlock(
+      dataType,
       prefix: "layers.\(i)", width: width, k: 128, h: heads, hk: 8, b: batchSize,
       t: tokenLength, MLP: MLP, usesFlashAttention: usesFlashAttention)
     out = layer(out, rot, causalAttentionMask)
     if outputHiddenStates.contains(i) {
-      hiddenStates.append(out)
+      hiddenStates.append(out.to(T.dataType))
     }
   }
   let norm = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm")
-  out = norm(out)
+  out = norm(out).to(T.dataType)
   return Model([tokens, rot, causalAttentionMask], hiddenStates + [out])
 }
