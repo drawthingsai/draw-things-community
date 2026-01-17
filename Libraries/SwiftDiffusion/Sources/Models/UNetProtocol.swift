@@ -1265,6 +1265,18 @@ extension UNetFromNNC {
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
+      let channels: Int
+      let layers: (Int, Int)
+      if version == .flux2_9b {
+        channels = 4_096
+        layers = (8, 24)
+      } else if version == .flux2_4b {
+        channels = 3_072
+        layers = (5, 20)
+      } else {
+        channels = 6_144
+        layers = (8, 48)
+      }
       if didRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
@@ -1282,7 +1294,7 @@ extension UNetFromNNC {
             return LoRAFlux2(
               batchSize: $0[0].shape[0], tokenLength: tokenLength,
               referenceSequenceLength: referenceSequenceLength,
-              height: tiledHeight, width: tiledWidth, channels: 6_144, layers: (8, 48),
+              height: tiledHeight, width: tiledWidth, channels: channels, layers: layers,
               usesFlashAttention: usesFlashAttention ? .scale1 : .none,
               LoRAConfiguration: configuration
             ).1
@@ -1302,7 +1314,7 @@ extension UNetFromNNC {
             return Flux2(
               batchSize: $0[0].shape[0], tokenLength: tokenLength,
               referenceSequenceLength: referenceSequenceLength,
-              height: tiledHeight, width: tiledWidth, channels: 6_144, layers: (8, 48),
+              height: tiledHeight, width: tiledWidth, channels: channels, layers: layers,
               usesFlashAttention: usesFlashAttention ? .scale1 : .none
             ).1
           })

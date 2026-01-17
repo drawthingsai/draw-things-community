@@ -1763,8 +1763,20 @@ extension UNetFixedEncoder {
       let h = startHeight / 2
       let w = startWidth / 2
       var timeEmbeds = graph.variable(.GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
-      var guidanceEmbeds = graph.variable(
-        .GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
+      let isGuidanceEmbedSupported =
+        (try?
+          (graph.openStore(
+            filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+          ) {
+            return $0.read(like: "__dit__[t-guidance_embedder_0-0-0]") != nil
+          }).get()) ?? false
+      var guidanceEmbeds: DynamicGraph.Tensor<FloatType>?
+      if isGuidanceEmbedSupported {
+        guidanceEmbeds = graph.variable(
+          .GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
+      } else {
+        guidanceEmbeds = nil
+      }
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(
           Tensor<FloatType>(
@@ -1773,14 +1785,24 @@ extension UNetFixedEncoder {
               maxPeriod: 10_000)
           ).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<1, 0..<256] = timeEmbed.reshaped(.HWC(1, 1, 256))
-        let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : guidanceEmbed
-        let guidanceEmbed = graph.variable(
-          Tensor<FloatType>(
-            from: timeEmbedding(
-              timestep: guidanceScale * 1_000, batchSize: 1, embeddingSize: 256,
-              maxPeriod: 10_000)
-          ).toGPU(0))
-        guidanceEmbeds[i..<(i + 1), 0..<1, 0..<256] = guidanceEmbed.reshaped(.HWC(1, 1, 256))
+        if var guidanceEmbeds = guidanceEmbeds {  // There is no value semantics for DynamicGraph.Tensor.
+          let guidanceScale = isGuidanceEmbedEnabled ? textGuidanceScale : guidanceEmbed
+          let guidanceEmbed = graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: guidanceScale * 1_000, batchSize: 1, embeddingSize: 256,
+                maxPeriod: 10_000)
+            ).toGPU(0))
+          guidanceEmbeds[i..<(i + 1), 0..<1, 0..<256] = guidanceEmbed.reshaped(.HWC(1, 1, 256))
+        }
+      }
+      let channels: Int
+      if version == .flux2_9b {
+        channels = 4_096
+      } else if version == .flux2_4b {
+        channels = 3_072
+      } else {
+        channels = 6_144
       }
       precondition(timesteps.count > 0)
       let unetFixed: Model
@@ -1808,13 +1830,19 @@ extension UNetFixedEncoder {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         (_, unetFixed) = LoRAFlux2Fixed(
-          channels: 6_144, numberOfReferenceImages: referenceImages.count,
-          LoRAConfiguration: configuration)
+          channels: channels, numberOfReferenceImages: referenceImages.count,
+          guidanceEmbed: isGuidanceEmbedSupported, LoRAConfiguration: configuration)
       } else {
-        (_, unetFixed) = Flux2Fixed(channels: 6_144, numberOfReferenceImages: referenceImages.count)
+        (_, unetFixed) = Flux2Fixed(
+          channels: channels, numberOfReferenceImages: referenceImages.count,
+          guidanceEmbed: isGuidanceEmbedSupported)
       }
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: [c0] + referenceImages + [timeEmbeds, guidanceEmbeds])
+      var inputs: [DynamicGraph.Tensor<FloatType>] = [c0] + referenceImages + [timeEmbeds]
+      if let guidanceEmbeds = guidanceEmbeds {
+        inputs.append(guidanceEmbeds)
+      }
+      unetFixed.compile(inputs: inputs)
       var suffix = ""
       // If we have reference image, we need to load x_embedder weights, differentiate that.
       if referenceImages.count > 0 {
@@ -1865,7 +1893,9 @@ extension UNetFixedEncoder {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
-      var conditions = unetFixed(inputs: c0, referenceImages + [timeEmbeds, guidanceEmbeds]).map {
+      var conditions = unetFixed(
+        inputs: c0, referenceImages + [timeEmbeds] + (guidanceEmbeds.map { [$0] } ?? [])
+      ).map {
         $0.as(of: FloatType.self)
       }
       weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)

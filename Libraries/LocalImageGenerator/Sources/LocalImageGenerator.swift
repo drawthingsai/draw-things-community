@@ -1550,7 +1550,17 @@ extension LocalImageGenerator {
         potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
       return result
     case .flux2_9b, .flux2_4b:
-      fatalError()
+      let promptWithTemplate =
+        "<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n<think>\n\n<\think>\n\n"
+      let negativePromptWithTemplate =
+        "<|im_start|>user\n\(negativeText)<|im_end|>\n<|im_start|>assistant\n<think>\n\n<\think>\n\n"
+      let result = tokenize(
+        graph: graph, tokenizer: tokenizerQwen3, text: promptWithTemplate,
+        negativeText: negativePromptWithTemplate,
+        paddingToken: nil, addSpecialTokens: false,
+        conditionalLength: modelVersion == .flux2_4b ? 7680 : 12288, modifier: .qwen3,
+        potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
+      return result
     case .hiDreamI1:
       var tokenizerV1 = tokenizerV1
       tokenizerV1.textualInversions = []

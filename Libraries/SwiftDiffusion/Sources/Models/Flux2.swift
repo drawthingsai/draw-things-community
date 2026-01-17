@@ -556,7 +556,9 @@ public func Flux2(
   return (mapper, Model(inputs, [out]))
 }
 
-public func Flux2Fixed(channels: Int, numberOfReferenceImages: Int) -> (ModelWeightMapper, Model) {
+public func Flux2Fixed(channels: Int, numberOfReferenceImages: Int, guidanceEmbed: Bool) -> (
+  ModelWeightMapper, Model
+) {
   let contextIn = Input()
   let t = Input()
   var referenceImages = [Input]()
@@ -575,10 +577,22 @@ public func Flux2Fixed(channels: Int, numberOfReferenceImages: Int) -> (ModelWei
   let contextEmbedder = Dense(count: channels, noBias: true, name: "context_embedder")
   let context = contextEmbedder(contextIn)
   let (tMlp0, tMlp2, tEmbedder) = MLPEmbedder(channels: channels, name: "t")
-  let (gMlp0, gMlp2, gEmbedder) = MLPEmbedder(channels: channels, name: "guidance")
-  let g = Input()
   var vec = tEmbedder(t)
-  vec = vec + gEmbedder(g)
+  let g: Input?
+  let gMlp0: Model?
+  let gMlp2: Model?
+  if guidanceEmbed {
+    let (mlp0, mlp2, gEmbedder) = MLPEmbedder(channels: channels, name: "guidance")
+    let input = Input()
+    vec = vec + gEmbedder(input)
+    g = input
+    gMlp0 = mlp0
+    gMlp2 = mlp2
+  } else {
+    g = nil
+    gMlp0 = nil
+    gMlp2 = nil
+  }
   vec = vec.swish()
   let xAdaLNs = (0..<6).map { Dense(count: channels, noBias: true, name: "x_ada_ln_\($0)") }
   let contextAdaLNs = (0..<6).map {
@@ -605,8 +619,10 @@ public func Flux2Fixed(channels: Int, numberOfReferenceImages: Int) -> (ModelWei
       mapping["txt_in.weight"] = [contextEmbedder.weight.name]
       mapping["time_in.in_layer.weight"] = [tMlp0.weight.name]
       mapping["time_in.out_layer.weight"] = [tMlp2.weight.name]
-      mapping["guidance_in.in_layer.weight"] = [gMlp0.weight.name]
-      mapping["guidance_in.out_layer.weight"] = [gMlp2.weight.name]
+      if let gMlp0 = gMlp0, let gMlp2 = gMlp2 {
+        mapping["guidance_in.in_layer.weight"] = [gMlp0.weight.name]
+        mapping["guidance_in.out_layer.weight"] = [gMlp2.weight.name]
+      }
       mapping[
         "double_stream_modulation_img.lin.weight"
       ] = ModelWeightElement(xAdaLNs.map { $0.weight.name })
@@ -621,8 +637,10 @@ public func Flux2Fixed(channels: Int, numberOfReferenceImages: Int) -> (ModelWei
       mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
       mapping["time_guidance_embed.timestep_embedder.linear_1.weight"] = [tMlp0.weight.name]
       mapping["time_guidance_embed.timestep_embedder.linear_2.weight"] = [tMlp2.weight.name]
-      mapping["time_guidance_embed.guidance_embedder.linear_1.weight"] = [gMlp0.weight.name]
-      mapping["time_guidance_embed.guidance_embedder.linear_2.weight"] = [gMlp2.weight.name]
+      if let gMlp0 = gMlp0, let gMlp2 = gMlp2 {
+        mapping["time_guidance_embed.guidance_embedder.linear_1.weight"] = [gMlp0.weight.name]
+        mapping["time_guidance_embed.guidance_embedder.linear_2.weight"] = [gMlp2.weight.name]
+      }
       mapping[
         "double_stream_modulation_img.linear.weight"
       ] = ModelWeightElement(xAdaLNs.map { $0.weight.name })
@@ -639,7 +657,7 @@ public func Flux2Fixed(channels: Int, numberOfReferenceImages: Int) -> (ModelWei
   return (
     mapper,
     Model(
-      [contextIn] + referenceImages + [t, g],
+      [contextIn] + referenceImages + [t] + (g.map { [$0] } ?? []),
       outs + [context] + xChunks + contextChunks + singleChunks + finalChunks)
   )
 }
@@ -1116,7 +1134,8 @@ public func LoRAFlux2(
 }
 
 public func LoRAFlux2Fixed(
-  channels: Int, numberOfReferenceImages: Int, LoRAConfiguration: LoRANetworkConfiguration
+  channels: Int, numberOfReferenceImages: Int, guidanceEmbed: Bool,
+  LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let contextIn = Input()
   let t = Input()
@@ -1140,11 +1159,23 @@ public func LoRAFlux2Fixed(
   let context = contextEmbedder(contextIn)
   let (tMlp0, tMlp2, tEmbedder) = LoRAMLPEmbedder(
     channels: channels, configuration: LoRAConfiguration, index: 0, name: "t")
-  let (gMlp0, gMlp2, gEmbedder) = LoRAMLPEmbedder(
-    channels: channels, configuration: LoRAConfiguration, index: 0, name: "guidance")
-  let g = Input()
   var vec = tEmbedder(t)
-  vec = vec + gEmbedder(g)
+  let g: Input?
+  let gMlp0: Model?
+  let gMlp2: Model?
+  if guidanceEmbed {
+    let (mlp0, mlp2, gEmbedder) = LoRAMLPEmbedder(
+      channels: channels, configuration: LoRAConfiguration, index: 0, name: "guidance")
+    let input = Input()
+    vec = vec + gEmbedder(input)
+    g = input
+    gMlp0 = mlp0
+    gMlp2 = mlp2
+  } else {
+    g = nil
+    gMlp0 = nil
+    gMlp2 = nil
+  }
   vec = vec.swish()
   let xAdaLNs = (0..<6).map {
     LoRADense(
@@ -1181,8 +1212,10 @@ public func LoRAFlux2Fixed(
       mapping["txt_in.weight"] = [contextEmbedder.weight.name]
       mapping["time_in.in_layer.weight"] = [tMlp0.weight.name]
       mapping["time_in.out_layer.weight"] = [tMlp2.weight.name]
-      mapping["guidance_in.in_layer.weight"] = [gMlp0.weight.name]
-      mapping["guidance_in.out_layer.weight"] = [gMlp2.weight.name]
+      if let gMlp0 = gMlp0, let gMlp2 = gMlp2 {
+        mapping["guidance_in.in_layer.weight"] = [gMlp0.weight.name]
+        mapping["guidance_in.out_layer.weight"] = [gMlp2.weight.name]
+      }
       mapping[
         "double_stream_modulation_img.lin.weight"
       ] = ModelWeightElement(xAdaLNs.map { $0.weight.name })
@@ -1197,8 +1230,10 @@ public func LoRAFlux2Fixed(
       mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
       mapping["time_guidance_embed.timestep_embedder.linear_1.weight"] = [tMlp0.weight.name]
       mapping["time_guidance_embed.timestep_embedder.linear_2.weight"] = [tMlp2.weight.name]
-      mapping["time_guidance_embed.guidance_embedder.linear_1.weight"] = [gMlp0.weight.name]
-      mapping["time_guidance_embed.guidance_embedder.linear_2.weight"] = [gMlp2.weight.name]
+      if let gMlp0 = gMlp0, let gMlp2 = gMlp2 {
+        mapping["time_guidance_embed.guidance_embedder.linear_1.weight"] = [gMlp0.weight.name]
+        mapping["time_guidance_embed.guidance_embedder.linear_2.weight"] = [gMlp2.weight.name]
+      }
       mapping[
         "double_stream_modulation_img.linear.weight"
       ] = ModelWeightElement(xAdaLNs.map { $0.weight.name })
@@ -1215,7 +1250,7 @@ public func LoRAFlux2Fixed(
   return (
     mapper,
     Model(
-      [contextIn] + referenceImages + [t, g],
+      [contextIn] + referenceImages + [t] + (g.map { [$0] } ?? []),
       outs + [context] + xChunks + contextChunks + singleChunks + finalChunks)
   )
 }

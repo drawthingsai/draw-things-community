@@ -1100,7 +1100,8 @@ public final class ModelImporter {
         (unetMapper, unet) = Flux2(
           batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
           channels: 6144, layers: (8, 48), usesFlashAttention: .scale1)
-        (unetFixedMapper, unetFixed) = Flux2Fixed(channels: 6144, numberOfReferenceImages: 0)
+        (unetFixedMapper, unetFixed) = Flux2Fixed(
+          channels: 6144, numberOfReferenceImages: 0, guidanceEmbed: true)
       case .kandinsky21, .wurstchenStageB:
         fatalError()
       }

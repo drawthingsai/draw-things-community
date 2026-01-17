@@ -2190,7 +2190,7 @@ extension TextEncoder {
     let textModel = Qwen3(
       FloatType.self, vocabularySize: 151_936,
       maxLength: tokenLength, width: 2_560,
-      tokenLength: tokenLength, layers: 36, MLP: 9_728, heads: 32, outputHiddenStates: 34,
+      tokenLength: tokenLength, layers: 36, MLP: 9_728, heads: 32, outputHiddenStates: [34],
       batchSize: 2, usesFlashAttention: usesFlashAttention)
     var causalAttentionMask = Tensor<FloatType>(
       Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
@@ -2615,7 +2615,7 @@ extension TextEncoder {
     return ([pooled, c2] + c3, [])
   }
 
-  private func encodeFlux2(
+  private func encodeFlux2Mistral(
     images: [DynamicGraph.Tensor<FloatType>],
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
@@ -2732,6 +2732,72 @@ extension TextEncoder {
     return ([newC], [textModel])
   }
 
+  private func encodeFlux2Qwen3(
+    images: [DynamicGraph.Tensor<FloatType>],
+    tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
+    mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
+    tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
+    modifier: SamplerModifier, textModels existingTextModels: [Model?]
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let graph = tokens[0].graph
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || deviceProperties.memoryCapacity != .high
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    let tokenLength = tokens[0].shape[0] / 2
+    let textModel = Qwen3(
+      FloatType.self, vocabularySize: 151_936,
+      maxLength: tokenLength, width: 2_560,
+      tokenLength: tokenLength,
+      layers: 27 /* Should be 36, but only 27 is enough for this purpose */, MLP: 9_728, heads: 32,
+      outputHiddenStates: [8, 17, 26],
+      batchSize: 2, usesFlashAttention: usesFlashAttention)
+    var causalAttentionMask = Tensor<FloatType>(
+      Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
+      .NHWC(1, 1, tokenLength, tokenLength)
+    )
+    for i in 0..<(tokenLength - 1) {
+      for j in (i + 1)..<tokenLength {
+        causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    let tokensTensorGPU = tokens[0].toGPU(0)
+    let rotaryTensorGPU = graph.variable(
+      Qwen3RotaryEmbedding(
+        sequenceLength: tokenLength, of: FloatType.self
+      ).toGPU(0))
+    let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
+    textModel.compile(
+      inputs: [tokensTensorGPU, rotaryTensorGPU, causalAttentionMaskGPU])
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        store.read(
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+      }
+    }
+    let c = textModel(
+      inputs: tokensTensorGPU, [rotaryTensorGPU, causalAttentionMaskGPU]
+    ).map {
+      $0.as(
+        of: FloatType.self
+      ).reshaped(.HWC(2, tokenLength, 2560))
+    }
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
+    var newC = graph.variable(.GPU(0), .HWC(2, tokenLength, 2560 * 3), of: FloatType.self)
+    newC[0..<1, 0..<tokenLength, 0..<2560] = c[0][0..<1, 0..<tokenLength, 0..<2560]
+    newC[0..<1, 0..<tokenLength, 2560..<5120] = c[1][0..<1, 0..<tokenLength, 0..<2560]
+    newC[0..<1, 0..<tokenLength, 5120..<7680] = c[2][0..<1, 0..<tokenLength, 0..<2560]
+    newC[1..<2, 0..<tokenLength, 0..<2560] = c[0][1..<2, 0..<tokenLength, 0..<2560]
+    newC[1..<2, 0..<tokenLength, 2560..<5120] = c[1][1..<2, 0..<tokenLength, 0..<2560]
+    newC[1..<2, 0..<tokenLength, 5120..<7680] = c[2][1..<2, 0..<tokenLength, 0..<2560]
+    return ([newC], [textModel])
+  }
+
   public func encode(
     tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
@@ -2782,13 +2848,17 @@ extension TextEncoder {
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
         modifier: modifier, textModels: existingTextModels)
     case .flux2:
-      return encodeFlux2(
+      return encodeFlux2Mistral(
         images: images, tokens: tokens, positions: positions, mask: mask,
         injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
         modifier: modifier, textModels: existingTextModels)
     case .flux2_9b, .flux2_4b:
-      fatalError()
+      return encodeFlux2Qwen3(
+        images: images, tokens: tokens, positions: positions, mask: mask,
+        injectedEmbeddings: injectedEmbeddings,
+        tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
+        modifier: modifier, textModels: existingTextModels)
     case .kandinsky21:
       return encodeKandinsky(tokens: tokens, positions: positions)
     case .sdxlBase, .sdxlRefiner, .ssd1b:
