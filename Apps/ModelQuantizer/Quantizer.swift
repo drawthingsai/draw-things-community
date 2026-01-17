@@ -243,7 +243,7 @@ struct Quantizer: ParsableCommand {
                 $0.write(key, tensor: fp16, codec: .ezm7)
               }
             }
-          case .flux2:
+          case .flux2, .flux2_9b, .flux2_4b:
             if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {
               $0.write(key, tensor: fp16)
             } else {

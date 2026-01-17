@@ -821,15 +821,6 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2026 Black Forest Labs"
     ),
     Specification(
-      name: "FLUX.2 [klein] 4B (6-bit)", file: "flux_2_klein_4b_q6p.ckpt", prefix: "",
-      version: .flux2_4b, defaultScale: 16, textEncoder: "qwen_3_4b_q8p.ckpt",
-      autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
-      paddedTextEncodingLength: 512, hiresFixScale: 24,
-      note:
-        "[FLUX.2 [klein] 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) is a 4 billion parameter rectified flow transformer capable of generating, editing and combining images based on text instructions.",
-      copyright: "© 2026 Black Forest Labs", huggingFaceLink: "black-forest-labs/FLUX.2-klein-4B"
-    ),
-    Specification(
       name: "Qwen Image 1.0", file: "qwen_image_1.0_q8p.ckpt", prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
