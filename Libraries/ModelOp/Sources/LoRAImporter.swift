@@ -173,12 +173,24 @@ public enum LoRAImporter {
         batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 32,
         usesFlashAttention: .scale1
       )
-    case .flux2, .flux2_9b, .flux2_4b:
+    case .flux2:
       (unetMapper, unet) = Flux2(
         batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
         channels: 6144, layers: (8, 48), usesFlashAttention: .scale1)
       (unetFixedMapper, unetFixed) = Flux2Fixed(
         channels: 6144, numberOfReferenceImages: 0, guidanceEmbed: true)
+    case .flux2_9b:
+      (unetMapper, unet) = Flux2(
+        batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
+        channels: 4096, layers: (8, 24), usesFlashAttention: .scale1)
+      (unetFixedMapper, unetFixed) = Flux2Fixed(
+        channels: 4096, numberOfReferenceImages: 0, guidanceEmbed: true)
+    case .flux2_4b:
+      (unetMapper, unet) = Flux2(
+        batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
+        channels: 3072, layers: (5, 20), usesFlashAttention: .scale1)
+      (unetFixedMapper, unetFixed) = Flux2Fixed(
+        channels: 3072, numberOfReferenceImages: 0, guidanceEmbed: true)
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -240,9 +252,15 @@ public enum LoRAImporter {
       case .zImage:
         inputDim = 16
         conditionalLength = 2560
-      case .flux2, .flux2_9b, .flux2_4b:
+      case .flux2:
         inputDim = 32
         conditionalLength = 15360
+      case .flux2_9b:
+        inputDim = 32
+        conditionalLength = 12288
+      case .flux2_4b:
+        inputDim = 32
+        conditionalLength = 7680
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
@@ -359,11 +377,29 @@ public enum LoRAImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .flux2, .flux2_9b, .flux2_4b:
+      case .flux2:
         isCfgEnabled = false
         isGuidanceEmbedEnabled = true
         crossattn = [
           graph.variable(.CPU, .HWC(1, 512, 15360), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .flux2_9b:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = true
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 12288), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .flux2_4b:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = true
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 7680), of: FloatType.self),
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
@@ -548,7 +584,7 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .flux2, .flux2_9b, .flux2_4b:
+      case .flux2:
         cArr =
           [
             graph.variable(
@@ -558,6 +594,32 @@ public enum LoRAImporter {
           ]
           + Flux2FixedOutputShapes(
             tokenLength: 512, channels: 6144
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
+      case .flux2_9b:
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: Flux2RotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 512, referenceSizes: [], channels: 128)))
+          ]
+          + Flux2FixedOutputShapes(
+            tokenLength: 512, channels: 4096
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
+      case .flux2_4b:
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: Flux2RotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 512, referenceSizes: [], channels: 128)))
+          ]
+          + Flux2FixedOutputShapes(
+            tokenLength: 512, channels: 3072
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }

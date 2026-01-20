@@ -154,6 +154,18 @@ public final class ModelImporter {
       $0.contains("single_blocks.39.linear1.")
         || $0.contains("single_transformer_blocks.39.attn.to_qkv_mlp_proj.")
     }
+    var isFlux2_9B =
+      !isFlux2
+      && stateDict.keys.contains {
+        $0.contains("single_blocks.23.linear1.")
+          || $0.contains("single_transformer_blocks.23.attn.to_qkv_mlp_proj.")
+      }
+    var isFlux2_4B =
+      !isFlux2 && !isFlux2_9B
+      && stateDict.keys.contains {
+        $0.contains("single_blocks.19.linear1.")
+          || $0.contains("single_transformer_blocks.19.attn.to_qkv_mlp_proj.")
+      }
     var isFlux1 =
       !isHunyuan && !isFlux2
       && stateDict.keys.contains {
@@ -251,6 +263,8 @@ public final class ModelImporter {
       isAuraFlow = false
       isZImage = false
       isFlux2 = false
+      isFlux2_9B = false
+      isFlux2_4B = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -370,6 +384,22 @@ public final class ModelImporter {
       expectedTotalAccess = 1061
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("single_transformer_blocks.39.attn.to_qkv_mlp_proj.")
+      }
+    } else if isFlux2_9B {
+      modelVersion = .flux2_9b
+      modifier = .kontext
+      inputDim = 32
+      expectedTotalAccess = 697
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("single_transformer_blocks.23.attn.to_qkv_mlp_proj.")
+      }
+    } else if isFlux2_4B {
+      modelVersion = .flux2_4b
+      modifier = .kontext
+      inputDim = 32
+      expectedTotalAccess = 523
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("single_transformer_blocks.19.attn.to_qkv_mlp_proj.")
       }
     } else {
       throw UnpickleError.tensorNotFound
@@ -1096,12 +1126,24 @@ public final class ModelImporter {
           batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 32,
           usesFlashAttention: .scale1
         )
-      case .flux2, .flux2_9b, .flux2_4b:
+      case .flux2:
         (unetMapper, unet) = Flux2(
           batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
           channels: 6144, layers: (8, 48), usesFlashAttention: .scale1)
         (unetFixedMapper, unetFixed) = Flux2Fixed(
           channels: 6144, numberOfReferenceImages: 0, guidanceEmbed: true)
+      case .flux2_9b:
+        (unetMapper, unet) = Flux2(
+          batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
+          channels: 4096, layers: (8, 24), usesFlashAttention: .scale1)
+        (unetFixedMapper, unetFixed) = Flux2Fixed(
+          channels: 4096, numberOfReferenceImages: 0, guidanceEmbed: true)
+      case .flux2_4b:
+        (unetMapper, unet) = Flux2(
+          batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
+          channels: 3072, layers: (5, 20), usesFlashAttention: .scale1)
+        (unetFixedMapper, unetFixed) = Flux2Fixed(
+          channels: 3072, numberOfReferenceImages: 0, guidanceEmbed: true)
       case .kandinsky21, .wurstchenStageB:
         fatalError()
       }
@@ -1215,9 +1257,23 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .flux2, .flux2_9b, .flux2_4b:
+      case .flux2:
         crossattn = [
           graph.variable(.CPU, .HWC(1, 512, 15360), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .flux2_9b:
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 12288), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .flux2_4b:
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 7680), of: FloatType.self),
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
@@ -1683,8 +1739,14 @@ public final class ModelImporter {
           if $0.keys.count != 600 {
             throw Error.tensorWritesFailed
           }
-        case .flux2_9b, .flux2_4b:
-          fatalError()
+        case .flux2_9b:
+          if $0.keys.count != 382 && $0.keys.count != 384 {
+            throw Error.tensorWritesFailed
+          }
+        case .flux2_4b:
+          if $0.keys.count != 292 && $0.keys.count != 294 {
+            throw Error.tensorWritesFailed
+          }
         case .kandinsky21, .wurstchenStageB:
           fatalError()
         }
@@ -2192,6 +2254,7 @@ extension ModelImporter {
         specification.autoencoder = "flux_2_vae_f16.ckpt"
       }
       specification.highPrecisionAutoencoder = true
+      specification.paddedTextEncodingLength = 512
       specification.objective = .u(conditionScale: 1000)
       specification.noiseDiscretization = .rf(
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
@@ -2208,6 +2271,7 @@ extension ModelImporter {
         specification.autoencoder = "flux_2_vae_f16.ckpt"
       }
       specification.highPrecisionAutoencoder = true
+      specification.paddedTextEncodingLength = 512
       specification.objective = .u(conditionScale: 1000)
       specification.noiseDiscretization = .rf(
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
