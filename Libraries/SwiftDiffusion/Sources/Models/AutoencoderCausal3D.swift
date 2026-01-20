@@ -18,7 +18,7 @@ private func NHWCResnetBlockCausal3D(
     format: .OIHW, name: "resnet_conv1")
   out = conv1(
     out.padded(
-      .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+      .replicate, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
     ).reshaped([1, depth + 2, height + 2, width + 2, inChannels])
   ).reshaped([depth, height, width, outChannels])
   let norm2 = GroupNorm(
@@ -31,7 +31,7 @@ private func NHWCResnetBlockCausal3D(
     format: .OIHW, name: "resnet_conv2")
   out = conv2(
     out.padded(
-      .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+      .replicate, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
     ).reshaped([1, depth + 2, height + 2, width + 2, outChannels])
   ).reshaped([depth, height, width, outChannels])
   let ninShortcut: Model?
@@ -142,7 +142,7 @@ private func NHWCEncoderCausal3D(
   }
   var out = convIn(
     x.padded(
-      .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+      .replicate, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
     ).reshaped([1, depth + 2, height + 2, width + 2, 3])
   ).reshaped([depth, height, width, previousChannel])
   var mappers = [ModelWeightMapper]()
@@ -178,7 +178,7 @@ private func NHWCEncoderCausal3D(
           stride: [strideZ, 2, 2], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW, name: "downsample")
       out = conv2d(
-        out.padded(.replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+        out.padded(.replicate, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
           1, oldDepth + 2, oldHeight + 2, oldWidth + 2, channel,
         ])
       ).reshaped([depth, height, width, channel])
@@ -218,7 +218,7 @@ private func NHWCEncoderCausal3D(
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_out")
   out = convOut(
-    out.padded(.replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+    out.padded(.replicate, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
       1, depth + 2, height + 2, width + 2, previousChannel,
     ])
   ).reshaped([depth, height, width, 32])
@@ -264,7 +264,7 @@ private func NHWCDecoderCausal3D(
     format: .OIHW, name: "conv_in")
   out = convIn(
     out.padded(
-      .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+      .replicate, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
     ).reshaped([1, startDepth + 2, startHeight + 2, startWidth + 2, 16])
   ).reshaped([startDepth, startHeight, startWidth, previousChannel])
   let (midBlockMapper1, midBlock1) = NHWCResnetBlockCausal3D(
@@ -321,7 +321,7 @@ private func NHWCDecoderCausal3D(
         format: .OIHW, name: "upsample")
       out = conv2d(
         out.padded(
-          .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+          .replicate, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
         ).reshaped([1, depth + 2, height + 2, width + 2, channel])
       ).reshaped([depth, height, width, channel])
       let upLayer = channels.count - 1 - i
@@ -343,7 +343,7 @@ private func NHWCDecoderCausal3D(
     format: .OIHW, name: "conv_out")
   out = convOut(
     out.padded(
-      .replication, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
+      .replicate, begin: [2, 1, 1, 0], end: [0, 1, 1, 0]
     ).reshaped([1, depth + 2, height + 2, width + 2, channels[0]])
   ).reshaped([
     depth, height, width, paddingFinalConvLayer ? 4 : 3,
@@ -387,7 +387,7 @@ private func NCHWResnetBlockCausal3D(
     format: .OIHW, name: "resnet_conv1")
   out = conv1(
     out.padded(
-      .replication, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
+      .replicate, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
     ).reshaped([1, inChannels, depth + 2, height + 2, width + 2])
   ).reshaped([outChannels, depth, height, width])
   let norm2 = GroupNorm(
@@ -400,7 +400,7 @@ private func NCHWResnetBlockCausal3D(
     format: .OIHW, name: "resnet_conv2")
   out = conv2(
     out.padded(
-      .replication, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
+      .replicate, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
     ).reshaped([1, outChannels, depth + 2, height + 2, width + 2])
   ).reshaped([outChannels, depth, height, width])
   let ninShortcut: Model?
@@ -517,7 +517,7 @@ private func NCHWEncoderCausal3D(
   }
   var out = convIn(
     x.permuted(3, 0, 1, 2).contiguous().reshaped(.NCHW(3, depth, height, width)).padded(
-      .replication, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
+      .replicate, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
     ).reshaped([1, 3, depth + 2, height + 2, width + 2])
   ).reshaped([previousChannel, depth, height, width])
   var mappers = [ModelWeightMapper]()
@@ -553,7 +553,7 @@ private func NCHWEncoderCausal3D(
           stride: [strideZ, 2, 2], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW, name: "downsample")
       out = conv2d(
-        out.padded(.replication, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]).reshaped([
+        out.padded(.replicate, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]).reshaped([
           1, channel, oldDepth + 2, oldHeight + 2, oldWidth + 2,
         ])
       ).reshaped([channel, depth, height, width])
@@ -593,7 +593,7 @@ private func NCHWEncoderCausal3D(
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW, name: "conv_out")
   out = convOut(
-    out.padded(.replication, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]).reshaped([
+    out.padded(.replicate, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]).reshaped([
       1, previousChannel, depth + 2, height + 2, width + 2,
     ])
   ).reshaped([1, 32, depth, height, width])
@@ -645,7 +645,7 @@ private func NCHWDecoderCausal3D(
     format: .OIHW, name: "conv_in")
   out = convIn(
     out.padded(
-      .replication, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
+      .replicate, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
     ).reshaped([1, 16, startDepth + 2, startHeight + 2, startWidth + 2])
   ).reshaped([previousChannel, startDepth, startHeight, startWidth])
   let (midBlockMapper1, midBlock1) = NCHWResnetBlockCausal3D(
@@ -702,7 +702,7 @@ private func NCHWDecoderCausal3D(
         format: .OIHW, name: "upsample")
       out = conv2d(
         out.padded(
-          .replication, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
+          .replicate, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
         ).reshaped([1, channel, depth + 2, height + 2, width + 2])
       ).reshaped([channel, depth, height, width])
       let upLayer = channels.count - 1 - i
@@ -724,7 +724,7 @@ private func NCHWDecoderCausal3D(
     format: .OIHW, name: "conv_out")
   out = convOut(
     out.padded(
-      .replication, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
+      .replicate, begin: [0, 2, 1, 1], end: [0, 0, 1, 1]
     ).reshaped([1, channels[0], depth + 2, height + 2, width + 2])
   ).permuted(0, 2, 3, 4, 1).contiguous().reshaped(
     .NHWC(depth, height, width, paddingFinalConvLayer ? 4 : 3)

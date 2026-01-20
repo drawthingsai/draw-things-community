@@ -888,7 +888,7 @@ private func StageAResBlock(prefix: String, channels: Int) -> (Model, ModelWeigh
   let depthwise = Convolution(
     groups: channels, filters: channels, filterSize: [3, 3],
     hint: Hint(stride: [1, 1]), format: .OIHW)
-  out = x + depthwise(out.padded(.replication, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]))
+  out = x + depthwise(out.padded(.replicate, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]))
     .* gammas.reshaped([1, 1, 1, 1], offset: [0, 0, 0, 2], strides: [6, 6, 6, 1])
   let norm2 = LayerNorm(epsilon: 1e-6, axis: [3], elementwiseAffine: false)
   let xTemp =
