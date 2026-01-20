@@ -37,7 +37,6 @@ Libraries/Utils
 Scripts/
 Tools/
 Vendors/ZIPFoundation
-Vendors/SwiftNIOTransportServices
 WORKSPACE.linux
 WORKSPACE.darwin
 SYNCLIST

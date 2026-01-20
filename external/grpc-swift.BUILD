@@ -45,8 +45,8 @@ swift_library(
         "@SwiftNIOExtras//:NIOExtras",
         "@SwiftNIOHTTP2//:NIOHTTP2",
         "@SwiftNIOSSL//:NIOSSL",
+        "@SwiftNIOTransportService//:NIOTransportServices",
         "@SwiftProtobuf",
-        "@__main__//Vendors/SwiftNIOTransportServices:NIOTransportServices",
     ],
 )
 
