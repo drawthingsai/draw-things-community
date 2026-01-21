@@ -105,7 +105,7 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalIm
       "[SUFFIX]": 16, "[SYSTEM_PROMPT]": 17, "[/SYSTEM_PROMPT]": 18, "[TOOL_CONTENT]": 19,
     ], unknownToken: "<unk>", startToken: "<s>", endToken: "</s>")
   let tokenizerGemma3 = SentencePieceTokenizer(
-    data: BinaryResources.gemma3_spiece_model, startToken: nil, endToken: 1, tokenShift: 0)
+    data: BinaryResources.gemma3_spiece_model, startToken: 2, endToken: 1, tokenShift: 0)
   return (
     tempDir,
     LocalImageGenerator(
