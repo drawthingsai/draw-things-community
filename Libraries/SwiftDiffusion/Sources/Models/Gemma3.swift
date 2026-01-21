@@ -1,4 +1,31 @@
+import Foundation
 import NNC
+
+func Gemma3RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  sequenceLength: Int, of dataType: FloatType.Type = FloatType.self
+) -> (Tensor<FloatType>, Tensor<FloatType>) {
+  var rotaryLocal = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, 256))
+  for i in 0..<sequenceLength {
+    for k in 0..<128 {
+      let theta = Double(i) / pow(10_000, Double(k) * 2 / 256)
+      let sintheta = sin(theta)
+      let costheta = cos(theta)
+      rotaryLocal[0, i, 0, k * 2] = FloatType(costheta)
+      rotaryLocal[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+    }
+  }
+  var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, 256))
+  for i in 0..<sequenceLength {
+    for k in 0..<128 {
+      let theta = Double(i) * 0.125 / pow(1_000_000, Double(k) * 2 / 256)
+      let sintheta = sin(theta)
+      let costheta = cos(theta)
+      rotary[0, i, 0, k * 2] = FloatType(costheta)
+      rotary[0, i, 0, k * 2 + 1] = FloatType(sintheta)
+    }
+  }
+  return (rotaryLocal, rotary)
+}
 
 private func SelfAttention(
   prefix: String, width: Int, k: Int, h: Int, hk: Int, b: Int, t: Int, usesFlashAttention: Bool
@@ -53,7 +80,7 @@ private func SelfAttention(
   }
   let unifyheads = Dense(count: width, noBias: true, name: "out_proj")
   out = unifyheads(out)
-  return Model([x, rot], [out])
+  return Model([x, rot, causalAttentionMask], [out])
 }
 
 private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String = "") -> (
@@ -107,19 +134,20 @@ func Gemma3<T: TensorNumeric>(
   let tokens = Input()
   let rotLocal = Input()
   let rot = Input()
+  let causalAttentionMask = Input()
   let embedding = TextEmbedding(
     BFloat16.self, batchSize: batchSize, vocabularySize: vocabularySize, maxLength: maxLength,
     embeddingSize: width)
   var out = 62 * embedding(tokens).to(.Float32)
   var hiddenStates = [Model.IO]()
   for i in 0..<layers {
-    hiddenStates.append(out)
+    hiddenStates.append(out.to(.BFloat16))
     let layer = TransformerBlock(
       prefix: "layers.\(i)", width: width, k: 256, h: heads, hk: 8, b: batchSize,
       t: tokenLength, MLP: MLP, usesFlashAttention: usesFlashAttention)
-    out = layer(out, (i + 1) % 6 == 0 ? rot : rotLocal)
+    out = layer(out, (i + 1) % 6 == 0 ? rot : rotLocal, causalAttentionMask)
   }
   let norm = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm")
-  hiddenStates.append(norm(out))
+  hiddenStates.append(norm(out).to(.BFloat16))
   return Model([tokens, rotLocal, rot], hiddenStates)
 }

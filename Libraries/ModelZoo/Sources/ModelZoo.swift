@@ -2157,7 +2157,7 @@ public struct ModelZoo: DownloadZoo {
         ], 1, nil
       )
     case .ltx2:
-      fatalError()
+      return ([], [], 1, nil)
     }
   }
 

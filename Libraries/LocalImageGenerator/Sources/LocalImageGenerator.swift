@@ -1566,7 +1566,14 @@ extension LocalImageGenerator {
         paddingLength: paddedTextEncodingLength)
       return result
     case .ltx2:
-      fatalError()
+      let result = tokenize(
+        graph: graph, tokenizer: tokenizerQwen3, text: text,
+        negativeText: negativeText,
+        paddingToken: nil, addSpecialTokens: false,
+        conditionalLength: 3840, modifier: .gemma3,
+        potentials: potentials, startLength: 0, endLength: 0, maxLength: 0,
+        paddingLength: 0)
+      return result
     case .hiDreamI1:
       var tokenizerV1 = tokenizerV1
       tokenizerV1.textualInversions = []
