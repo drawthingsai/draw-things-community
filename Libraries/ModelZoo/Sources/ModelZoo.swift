@@ -710,6 +710,14 @@ public struct ModelZoo: DownloadZoo {
 
   public static let builtinSpecifications: [Specification] = [
     Specification(
+      name: "LTX-2 19B [distilled]", file: "ltx_2_19b_distilled_q8p.ckpt", prefix: "",
+      version: .ltx2, defaultScale: 16, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
+      autoencoder: "ltx_2_audio_video_vae_f16.ckpt", modifier: .inpainting,
+      objective: .u(conditionScale: 1000), hiresFixScale: 24,
+      note: "",
+      copyright: "© 2026 Lightricks"
+    ),
+    Specification(
       name: "Z Image Turbo 1.0", file: "z_image_turbo_1.0_q8p.ckpt", prefix: "",
       version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
