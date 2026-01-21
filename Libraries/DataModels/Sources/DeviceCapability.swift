@@ -629,6 +629,12 @@ public struct DeviceCapability {
       else {
         return false
       }
+    case .ltx2:
+      guard
+        (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force
+      else {
+        return false
+      }
     }
     return true
   }

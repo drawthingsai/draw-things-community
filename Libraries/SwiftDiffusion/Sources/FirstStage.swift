@@ -113,6 +113,9 @@ extension FirstStage {
     case .wan22_5b:
       scaleFactor = 16
       scaleFactorZ = 4
+    case .ltx2:
+      scaleFactor = 32
+      scaleFactorZ = 8
     case .wurstchenStageB, .wurstchenStageC:
       scaleFactor = 4
       scaleFactorZ = 1
@@ -548,6 +551,8 @@ extension FirstStage {
       }
       outputChannels = 3
       causalAttentionMask = nil
+    case .ltx2:
+      fatalError()
     case .kandinsky21:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
@@ -963,6 +968,9 @@ extension FirstStage {
     case .wan22_5b:
       scaleFactor = 16
       scaleFactorZ = 4
+    case .ltx2:
+      scaleFactor = 32
+      scaleFactorZ = 8
     case .wurstchenStageC:
       scaleFactor = 32
       scaleFactorZ = 1
@@ -1319,6 +1327,8 @@ extension FirstStage {
       }
       outputChannels = 96
       causalAttentionMask = nil
+    case .ltx2:
+      fatalError()
     case .kandinsky21:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight

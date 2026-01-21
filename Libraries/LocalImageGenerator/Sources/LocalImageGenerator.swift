@@ -145,7 +145,7 @@ extension LocalImageGenerator {
       ]
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB,
       .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-      .zImage, .flux2, .flux2_9b, .flux2_4b:
+      .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1562,6 +1562,8 @@ extension LocalImageGenerator {
         potentials: potentials, startLength: 0, endLength: 0, maxLength: paddedTextEncodingLength,
         paddingLength: paddedTextEncodingLength)
       return result
+    case .ltx2:
+      fatalError()
     case .hiDreamI1:
       var tokenizerV1 = tokenizerV1
       tokenizerV1.textualInversions = []
@@ -3059,6 +3061,8 @@ extension LocalImageGenerator {
         fatalError()
       case .flux2, .flux2_9b, .flux2_4b:
         fatalError()
+      case .ltx2:
+        fatalError()
       case .auraflow, .flux1, .kandinsky21, .pixart, .hunyuanVideo:
         break
       }
@@ -3158,6 +3162,8 @@ extension LocalImageGenerator {
         fatalError()
       case .wan21_1_3b, .wan21_14b, .wan22_5b:
         fatalError()
+      case .ltx2:
+        fatalError()
       case .qwenImage:
         fatalError()
       case .hunyuanVideo:
@@ -3167,7 +3173,7 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
         return (nil, [])
       case .flux1:
         guard
@@ -3191,7 +3197,7 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .wan22_5b, .zImage:
+        .hiDreamI1, .wan22_5b, .zImage, .ltx2:
         return (nil, [])
       case .flux1, .qwenImage, .flux2, .flux2_9b, .flux2_4b:
         let inputChannels =
@@ -3246,7 +3252,7 @@ extension LocalImageGenerator {
       return false
     case .svdI2v:
       return true
-    case .wan21_14b, .wan21_1_3b, .hunyuanVideo:
+    case .wan21_14b, .wan21_1_3b, .hunyuanVideo, .ltx2:
       return modifier == .inpainting
     }
   }
@@ -3260,6 +3266,8 @@ extension LocalImageGenerator {
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1, .hiDreamI1,
       .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       return (1, image, nil)
+    case .ltx2:
+      fatalError()
     case .wan21_14b, .wan21_1_3b:
       let shape = image.shape
       let batchSize = batchSize.0 - batchSize.1
@@ -3340,7 +3348,7 @@ extension LocalImageGenerator {
       )
     case .hunyuanVideo, .auraflow, .flux1, .hiDreamI1, .qwenImage, .kandinsky21, .pixart, .sd3,
       .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
-      .wurstchenStageC, .zImage, .flux2, .flux2_9b, .flux2_4b:
+      .wurstchenStageC, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
       return (batchSize, 0)
     }
   }
@@ -3412,6 +3420,8 @@ extension LocalImageGenerator {
         imageShuffledMask
       return result
     case .flux2, .flux2_9b, .flux2_4b:
+      fatalError()
+    case .ltx2:
       fatalError()
     }
   }
@@ -3753,6 +3763,16 @@ extension LocalImageGenerator {
           (hiresFixEnabled
             ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
           * 8
+      case .ltx2:
+        firstPassChannels = 128
+        firstPassScaleFactor = 32
+        firstPassStartWidth =
+          (hiresFixEnabled ? Int(configuration.hiresFixStartWidth) : Int(configuration.startWidth))
+          * 2
+        firstPassStartHeight =
+          (hiresFixEnabled
+            ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
+          * 2
       case .wan22_5b:
         firstPassChannels = 48
         firstPassScaleFactor = 16
@@ -3954,6 +3974,11 @@ extension LocalImageGenerator {
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
+          canInjectControls: canInjectControls, shuffleCount: shuffles.count,
+          hasCustom: custom != nil)
+      case .ltx2:
+        batchSize = injectReferenceFrames(
+          batchSize: ((Int(configuration.numFrames) - 1) / 8) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
@@ -4406,6 +4431,8 @@ extension LocalImageGenerator {
           channels = 32
         case .wan22_5b:
           channels = 48
+        case .ltx2:
+          channels = 128
         case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
           .wurstchenStageB:
           channels = 4
@@ -4854,6 +4881,11 @@ extension LocalImageGenerator {
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
+      case .ltx2:
+        channels = 128
+        startScaleFactor = 32
+        startWidth = image.shape[2] / 32 / imageScaleFactor
+        startHeight = image.shape[1] / 32 / imageScaleFactor
       case .wan22_5b:
         channels = 48
         startScaleFactor = 16
@@ -5045,6 +5077,11 @@ extension LocalImageGenerator {
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
+          canInjectControls: canInjectControls, shuffleCount: shuffles.count,
+          hasCustom: custom != nil)
+      case .ltx2:
+        batchSize = injectReferenceFrames(
+          batchSize: ((Int(configuration.numFrames) - 1) / 8) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
@@ -6122,6 +6159,11 @@ extension LocalImageGenerator {
         startScaleFactor = 16
         startWidth = image.shape[2] / 16 / imageScaleFactor
         startHeight = image.shape[1] / 16 / imageScaleFactor
+      case .ltx2:
+        channels = 128
+        startScaleFactor = 32
+        startWidth = image.shape[2] / 32 / imageScaleFactor
+        startHeight = image.shape[1] / 32 / imageScaleFactor
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
         channels = 4
@@ -6385,6 +6427,11 @@ extension LocalImageGenerator {
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
+          canInjectControls: canInjectControls, shuffleCount: shuffles.count,
+          hasCustom: custom != nil)
+      case .ltx2:
+        batchSize = injectReferenceFrames(
+          batchSize: ((Int(configuration.numFrames) - 1) / 8) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
@@ -6961,6 +7008,11 @@ extension LocalImageGenerator {
         startScaleFactor = 16
         startWidth = image.shape[2] / 16 / imageScaleFactor
         startHeight = image.shape[1] / 16 / imageScaleFactor
+      case .ltx2:
+        channels = 128
+        startScaleFactor = 32
+        startWidth = image.shape[2] / 32 / imageScaleFactor
+        startHeight = image.shape[1] / 32 / imageScaleFactor
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
         channels = 4
@@ -7223,6 +7275,11 @@ extension LocalImageGenerator {
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
+          canInjectControls: canInjectControls, shuffleCount: shuffles.count,
+          hasCustom: custom != nil)
+      case .ltx2:
+        batchSize = injectReferenceFrames(
+          batchSize: ((Int(configuration.numFrames) - 1) / 8) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,

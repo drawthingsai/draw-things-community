@@ -26,6 +26,7 @@ public enum ModelVersion: String, Codable {
   case flux2 = "flux2"
   case flux2_9b = "flux2_9b"
   case flux2_4b = "flux2_4b"
+  case ltx2 = "ltx2"
 }
 
 public enum TextEncoderVersion: String, Codable {
@@ -438,7 +439,7 @@ func isBatchEnabled(_ version: ModelVersion) -> Bool {
     .sdxlRefiner, .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .qwenImage, .zImage, .flux2,
     .flux2_9b, .flux2_4b:
     return true
-  case .hunyuanVideo, .svdI2v, .wan21_14b, .wan21_1_3b, .wan22_5b:
+  case .hunyuanVideo, .svdI2v, .wan21_14b, .wan21_1_3b, .wan22_5b, .ltx2:
     return false
   }
 }

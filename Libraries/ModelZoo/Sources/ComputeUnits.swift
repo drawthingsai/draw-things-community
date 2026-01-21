@@ -53,6 +53,8 @@ public enum ComputeUnits {
       return 2.588235294
     case .flux2_4b:
       return 1.176470588 * 0.8
+    case .ltx2:
+      return 1.176470588 * 0.8
     }
   }
 
@@ -158,7 +160,7 @@ public enum ComputeUnits {
     case .hunyuanVideo:
       batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
-    case .wan21_1_3b, .wan21_14b, .wan22_5b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2:
       batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
       if configuration.causalInferenceEnabled && configuration.causalInference > 0

@@ -427,6 +427,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (FLUX.2 9B)"
     case .flux2_4b:
       return " (FLUX.2 4B)"
+    case .ltx2:
+      return " (LTX-2)"
     }
   }
 
