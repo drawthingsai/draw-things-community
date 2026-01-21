@@ -16,6 +16,9 @@ public enum BinaryResources {
     bytesNoCopy: C_Resources.chatglm3_spiece_model()!,
     count: C_Resources.chatglm3_spiece_model_size,
     deallocator: .none)
+  public static let gemma3_spiece_model = Data(
+    bytesNoCopy: C_Resources.gemma3_spiece_model()!, count: C_Resources.gemma3_spiece_model_size,
+    deallocator: .none)
   public static let pile_t5_spiece_model = Data(
     bytesNoCopy: C_Resources.pile_t5_spiece_model()!, count: C_Resources.pile_t5_spiece_model_size,
     deallocator: .none)

@@ -19,3 +19,4 @@
 #include "Libraries/BinaryResources/merges_qwen3_generated.h"
 #include "Libraries/BinaryResources/vocab_mistral3_generated.h"
 #include "Libraries/BinaryResources/merges_mistral3_generated.h"
+#include "Libraries/BinaryResources/gemma3.spiece_generated.h"

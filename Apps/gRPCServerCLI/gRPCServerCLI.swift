@@ -104,6 +104,8 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalIm
       "[IMG]": 10, "<pad>": 11, "[IMG_BREAK]": 12, "[IMG_END]": 13, "[PREFIX]": 14, "[MIDDLE]": 15,
       "[SUFFIX]": 16, "[SYSTEM_PROMPT]": 17, "[/SYSTEM_PROMPT]": 18, "[TOOL_CONTENT]": 19,
     ], unknownToken: "<unk>", startToken: "<s>", endToken: "</s>")
+  let tokenizerGemma3 = SentencePieceTokenizer(
+    data: BinaryResources.gemma3_spiece_model, startToken: nil, endToken: 1, tokenShift: 0)
   return (
     tempDir,
     LocalImageGenerator(
@@ -112,7 +114,8 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalIm
       tokenizerT5: tokenizerT5, tokenizerPileT5: tokenizerPileT5,
       tokenizerChatGLM3: tokenizerChatGLM3, tokenizerLlama3: tokenizerLlama3,
       tokenizerUMT5: tokenizerUMT5, tokenizerQwen25: tokenizerQwen25,
-      tokenizerQwen3: tokenizerQwen3, tokenizerMistral3: tokenizerMistral3
+      tokenizerQwen3: tokenizerQwen3, tokenizerMistral3: tokenizerMistral3,
+      tokenizerGemma3: tokenizerGemma3
     )
   )
 }
