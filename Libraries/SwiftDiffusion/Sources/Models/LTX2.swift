@@ -199,7 +199,7 @@ private func LTX2TransformerBlock(
   let rotCX = Input()
   let timesteps = (0..<6).map { _ in Input() }
   let attn1Modulations = (0..<6).map {
-    Parameter<Float>(.GPU(2), .HWC(1, 1, k * h), name: "attn1_ada_ln_\($0)")
+    Parameter<Float>(.GPU(0), .HWC(1, 1, k * h), name: "attn1_ada_ln_\($0)")
   }
   let norm = RMSNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var out =
@@ -213,7 +213,7 @@ private func LTX2TransformerBlock(
   out = out + attn2(normOut, rot, cv, rotC).to(of: out)
   let audioTimesteps = (0..<6).map { _ in Input() }
   let audioAttn1Modulations = (0..<6).map {
-    Parameter<Float>(.GPU(2), .HWC(1, 1, k / 2 * h), name: "audio_attn1_ada_ln_\($0)")
+    Parameter<Float>(.GPU(0), .HWC(1, 1, k / 2 * h), name: "audio_attn1_ada_ln_\($0)")
   }
   let (audioAttn1Mapper, audioAttn1) = LTX2SelfAttention(
     prefix: "\(prefix).audio_attn1", k: k / 2, h: h, b: b, t: a, name: "a")
@@ -236,13 +236,13 @@ private func LTX2TransformerBlock(
   let audioToVideoAttnModulations = (0..<5).map {
     if $0 < 2 {
       return Parameter<Float>(
-        .GPU(2), .HWC(1, 1, k * h), name: "audio_to_video_attn_ada_ln_\($0)")
+        .GPU(0), .HWC(1, 1, k * h), name: "audio_to_video_attn_ada_ln_\($0)")
     } else if $0 < 4 {
       return Parameter<Float>(
-        .GPU(2), .HWC(1, 1, k / 2 * h), name: "audio_to_video_attn_ada_ln_\($0)")
+        .GPU(0), .HWC(1, 1, k / 2 * h), name: "audio_to_video_attn_ada_ln_\($0)")
     } else {
       return Parameter<Float>(
-        .GPU(2), .HWC(1, 1, k * h), name: "audio_to_video_attn_ada_ln_\($0)")
+        .GPU(0), .HWC(1, 1, k * h), name: "audio_to_video_attn_ada_ln_\($0)")
     }
   }
   let vxScaled =
@@ -262,10 +262,10 @@ private func LTX2TransformerBlock(
   let videoToAudioAttnModulations = (0..<5).map {
     if $0 < 2 {
       return Parameter<Float>(
-        .GPU(2), .HWC(1, 1, k * h), name: "video_to_audio_attn_ada_ln_\($0)")
+        .GPU(0), .HWC(1, 1, k * h), name: "video_to_audio_attn_ada_ln_\($0)")
     } else {
       return Parameter<Float>(
-        .GPU(2), .HWC(1, 1, k / 2 * h), name: "video_to_audio_attn_ada_ln_\($0)")
+        .GPU(0), .HWC(1, 1, k / 2 * h), name: "video_to_audio_attn_ada_ln_\($0)")
     }
   }
   let audioVxScaled =
@@ -426,7 +426,7 @@ func LTX2(b: Int, h: Int, w: Int) -> (ModelWeightMapper, Model) {
     aOut = blockOut[1]
   }
   let scaleShiftModulations = (0..<2).map {
-    Parameter<Float>(.GPU(2), .HWC(1, 1, 4096), name: "norm_out_ada_ln_\($0)")
+    Parameter<Float>(.GPU(0), .HWC(1, 1, 4096), name: "norm_out_ada_ln_\($0)")
   }
   let normOut = RMSNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   if let txEmb = txEmb {
@@ -436,7 +436,7 @@ func LTX2(b: Int, h: Int, w: Int) -> (ModelWeightMapper, Model) {
   let projOut = Dense(count: 128, name: "proj_out")
   out = projOut(out.to(.Float16))
   let audioScaleShiftModulations = (0..<2).map {
-    Parameter<Float>(.GPU(2), .HWC(1, 1, 2048), name: "audio_norm_out_ada_ln_\($0)")
+    Parameter<Float>(.GPU(0), .HWC(1, 1, 2048), name: "audio_norm_out_ada_ln_\($0)")
   }
   if let taEmb = taEmb {
     aOut = normOut(aOut) .* (1 + (audioScaleShiftModulations[1] + taEmb))
@@ -486,5 +486,5 @@ func LTX2(b: Int, h: Int, w: Int) -> (ModelWeightMapper, Model) {
     mapping["audio_proj_out.bias"] = [audioProjOut.bias.name]
     return mapping
   }
-  return (mapper, Model([x, txt, a, aTxt, t, rot, rotC, rotA, rotAC, rotCX], [out, aOut]))
+  return (mapper, Model([x, a, txt, aTxt, t, rot, rotC, rotA, rotAC, rotCX], [out, aOut]))
 }
