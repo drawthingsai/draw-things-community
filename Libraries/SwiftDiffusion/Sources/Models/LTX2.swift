@@ -1,4 +1,103 @@
+import Foundation
 import NNC
+
+public func LTX2RotaryPositionEmbedding1D(
+  tokenLength: Int, maxLength: Int, channels: Int, headDimension: Int
+)
+  -> Tensor<Float>
+{
+  var rotTensor = Tensor<Float>(.CPU, .HWC(1, tokenLength, channels))
+  for i in 0..<tokenLength {
+    let fractionalPosition = Double(i) / Double(maxLength) * 2 - 1
+    for j in 0..<(channels / 2) {
+      let theta: Double = pow(10_000, Double(j) / Double(channels / 2 - 1)) * .pi * 0.5
+      let freq = theta * fractionalPosition
+      let cosFreq = cos(freq)
+      let sinFreq = sin(freq)
+      rotTensor[0, i, j * 2] = Float(cosFreq)
+      rotTensor[0, i, j * 2 + 1] = Float(sinFreq)
+    }
+  }
+  return rotTensor.reshaped(.NHWC(1, tokenLength, channels / headDimension, headDimension))
+}
+
+public func LTX2VideoAudioRotaryPositionEmbedding(
+  time: Int, height: Int, width: Int, audioTime: Int, channels: (Int, Int), numberOfHeads: Int
+) -> (Tensor<Float>, Tensor<Float>, Tensor<Float>) {
+  let tokenLength = time * height * width
+  let audioLength = (time - 1) * 8 + 1
+  var rotVideoTensor = Tensor<Float>(.CPU, .HWC(1, tokenLength, channels.0))
+  let dim0 = channels.0 / 3 / 2
+  let thetas0: [Double] = (0..<dim0).map { pow(10_000, Double($0) / Double(dim0 - 1)) * .pi * 0.5 }
+  let pad = channels.0 / 2 - dim0 * 3
+  rotVideoTensor.withUnsafeMutableBytes {
+    guard let fp32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
+    DispatchQueue.concurrentPerform(iterations: time) { i in
+      let fractionFrame: Double = Double(max(0, i * 8 - 7) + i * 8 + 1) / 500 - 1
+      for y in 0..<height {
+        let fractionY: Double = (Double(y) + 0.5) / 32 - 1
+        for x in 0..<width {
+          let fractionX: Double = (Double(x) + 0.5) / 32 - 1
+          let idx = i * height * width + y * width + x
+          let fp = fp32 + idx * channels.0
+          for j in 0..<pad {
+            fp[j * 2] = 1
+            fp[j * 2 + 1] = 0
+          }
+          for j in 0..<dim0 {
+            let thetaFractionFrame = thetas0[j] * fractionFrame
+            fp[j * 6 + pad * 2] = Float(cos(thetaFractionFrame))
+            fp[j * 6 + pad * 2 + 1] = Float(sin(thetaFractionFrame))
+            let thetaFractionY = thetas0[j] * fractionY
+            fp[j * 6 + pad * 2 + 2] = Float(cos(thetaFractionY))
+            fp[j * 6 + pad * 2 + 3] = Float(sin(thetaFractionY))
+            let thetaFractionX = thetas0[j] * fractionX
+            fp[j * 6 + pad * 2 + 4] = Float(cos(thetaFractionX))
+            fp[j * 6 + pad * 2 + 5] = Float(sin(thetaFractionX))
+          }
+        }
+      }
+    }
+  }
+  var rotAudioTensor = Tensor<Float>(.CPU, .HWC(1, audioLength, channels.1))
+  let dim1 = channels.1 / 2
+  let thetas1: [Double] = (0..<dim1).map { pow(10_000, Double($0) / Double(dim0 - 1)) * .pi * 0.5 }
+  rotAudioTensor.withUnsafeMutableBytes {
+    guard let fp32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
+    DispatchQueue.concurrentPerform(iterations: audioLength) { i in
+      let fractionPosition: Double = Double(max(i * 4 - 3, 0) + i * 4 + 1) / 200 / 10 - 1
+      let fp = fp32 + i * channels.1
+      for j in 0..<dim1 {
+        let theta = thetas1[j] * fractionPosition
+        fp[j * 2] = Float(cos(theta))
+        fp[j * 2 + 1] = Float(sin(theta))
+      }
+    }
+  }
+  var rotVideoToAudioTensor = Tensor<Float>(.CPU, .HWC(1, tokenLength, channels.1))
+  rotVideoToAudioTensor.withUnsafeMutableBytes {
+    guard let fp32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
+    DispatchQueue.concurrentPerform(iterations: time) { i in
+      let fractionFrame: Double = Double(max(0, i * 8 - 7) + i * 8 + 1) / 500 - 1
+      for y in 0..<height {
+        for x in 0..<width {
+          let idx = i * height * width + y * width + x
+          let fp = fp32 + idx * channels.1
+          for j in 0..<dim1 {
+            let theta = thetas1[j] * fractionFrame
+            fp[j * 2] = Float(cos(theta))
+            fp[j * 2 + 1] = Float(sin(theta))
+          }
+        }
+      }
+    }
+  }
+  return (
+    rotVideoTensor.reshaped(.NHWC(1, tokenLength, numberOfHeads, channels.0 / numberOfHeads)),
+    rotAudioTensor.reshaped(.NHWC(1, audioLength, numberOfHeads, channels.1 / numberOfHeads)),
+    rotVideoToAudioTensor.reshaped(.NHWC(1, tokenLength, numberOfHeads, channels.1 / numberOfHeads))
+  )
+}
 
 private func BasicTransformerBlock1D(prefix: String, k: Int, h: Int, b: Int, t: Int) -> (
   ModelWeightMapper, Model
@@ -56,7 +155,7 @@ func Embedding1DConnector(prefix: String, layers: Int, tokenLength: Int) -> (
   let x = Input()
   let rot = Input()
   var mappers = [ModelWeightMapper]()
-  var out: Model.IO = x
+  var out: Model.IO = x.to(.Float32)
   for i in 0..<layers {
     let (mapper, block) = BasicTransformerBlock1D(
       prefix: "\(prefix).transformer_1d_blocks.\(i)", k: 128, h: 30, b: 1, t: tokenLength)
@@ -133,24 +232,55 @@ private func LTX2SelfAttention(prefix: String, k: Int, h: Int, b: Int, t: Int, n
 }
 
 private func LTX2CrossAttention(
-  prefix: String, k: (Int, Int, Int), h: Int, b: Int, t: (Int, Int), name: String
+  prefix: String, k: (Int, Int, Int), h: Int, b: Int, t: (Int, Int), positionEmbedding: Bool,
+  KV: Bool, name: String
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
-  let context = Input()
-  let rot = Input()
-  let rotK = Input()
-  let toKeys = Dense(count: k.1 * h, name: "\(name)_k")
+  var context = [Input()]
+  let rot: Input?
+  let rotK: Input?
+  if positionEmbedding {
+    rot = Input()
+    rotK = Input()
+  } else {
+    rot = nil
+    rotK = nil
+  }
+  let toKeys: Model?
+  let toValues: Model?
+  let normK: Model?
+  var keys: Model.IO
+  let values: Model.IO
+  if KV {
+    keys = context[0]
+    context.append(Input())
+    values = context[1]
+    toKeys = nil
+    toValues = nil
+    normK = nil
+  } else {
+    let toKeysLocal = Dense(count: k.1 * h, name: "\(name)_k")
+    let toValuesLocal = Dense(count: k.1 * h, name: "\(name)_v")
+    keys = toKeysLocal(context[0])
+    let normKLocal = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(name)_norm_k")
+    keys = normKLocal(keys).reshaped([b, t.1, h, k.1])
+    keys = (1 / Float(k.1).squareRoot().squareRoot()) * keys
+    values = toValuesLocal(context[0]).reshaped([b, t.1, h, k.1])
+    toKeys = toKeysLocal
+    toValues = toValuesLocal
+    normK = normKLocal
+  }
   let toQueries = Dense(count: k.1 * h, name: "\(name)_q")
-  let toValues = Dense(count: k.1 * h, name: "\(name)_v")
-  var keys = toKeys(context)
-  let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(name)_norm_k")
-  keys = normK(keys).reshaped([b, t.1, h, k.1])
   var queries = toQueries(x)
   let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(name)_norm_q")
   queries = normQ(queries).reshaped([b, t.0, h, k.1])
-  let values = toValues(context).reshaped([b, t.1, h, k.1])
-  queries = (1 / Float(k.1).squareRoot().squareRoot()) * Functional.cmul(left: queries, right: rot)
-  keys = (1 / Float(k.1).squareRoot().squareRoot()) * Functional.cmul(left: keys, right: rotK)
+  if let rot = rot {
+    queries = Functional.cmul(left: queries, right: rot)
+  }
+  if let rotK = rotK {
+    keys = Functional.cmul(left: keys, right: rotK)
+  }
+  queries = (1 / Float(k.1).squareRoot().squareRoot()) * queries
   // Now run attention.
   let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
   var out = scaledDotProductAttention(queries, keys, values).reshaped([b, t.0, k.1 * h])
@@ -160,17 +290,25 @@ private func LTX2CrossAttention(
     var mapping = ModelWeightMapping()
     mapping["\(prefix).to_q.weight"] = [toQueries.weight.name]
     mapping["\(prefix).to_q.bias"] = [toQueries.bias.name]
-    mapping["\(prefix).to_k.weight"] = [toKeys.weight.name]
-    mapping["\(prefix).to_k.bias"] = [toKeys.bias.name]
-    mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
-    mapping["\(prefix).to_v.bias"] = [toValues.bias.name]
+    if let toKeys = toKeys {
+      mapping["\(prefix).to_k.weight"] = [toKeys.weight.name]
+      mapping["\(prefix).to_k.bias"] = [toKeys.bias.name]
+    }
+    if let toValues = toValues {
+      mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
+      mapping["\(prefix).to_v.bias"] = [toValues.bias.name]
+    }
     mapping["\(prefix).to_out.0.weight"] = [unifyheads.weight.name]
     mapping["\(prefix).to_out.0.bias"] = [unifyheads.bias.name]
-    mapping["\(prefix).k_norm.weight"] = [normK.weight.name]
+    if let normK = normK {
+      mapping["\(prefix).k_norm.weight"] = [normK.weight.name]
+    }
     mapping["\(prefix).q_norm.weight"] = [normQ.weight.name]
     return mapping
   }
-  return (mapper, Model([x, rot, context, rotK], [out]))
+  return (
+    mapper, Model([x] + (rot.map { [$0] } ?? []) + context + (rotK.map { [$0] } ?? []), [out])
+  )
 }
 
 private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -> (
@@ -186,132 +324,82 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -
 }
 
 private func LTX2TransformerBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, a: Int, intermediateSize: Int
+  prefix: String, k: Int, h: Int, b: Int, t: Int, hw: Int, a: Int
 ) -> (ModelWeightMapper, Model) {
   let vx = Input()
   let ax = Input()
-  let cv = Input()
-  let ca = Input()
+  let cvK = Input()
+  let cvV = Input()
+  let caK = Input()
+  let caV = Input()
   let rot = Input()
-  let rotC = Input()
   let rotA = Input()
-  let rotAC = Input()
   let rotCX = Input()
-  let timesteps = (0..<6).map { _ in Input() }
-  let attn1Modulations = (0..<6).map {
-    Parameter<Float>(.GPU(0), .HWC(1, 1, k * h), name: "attn1_ada_ln_\($0)")
-  }
+  let modulations = (0..<22).map { _ in Input() }
   let norm = RMSNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var out =
-    norm(vx) .* (1 + (attn1Modulations[1] + timesteps[1])) + (attn1Modulations[0] + timesteps[0])
+    norm(vx) .* modulations[0] + modulations[1]
   let (attn1Mapper, attn1) = LTX2SelfAttention(
     prefix: "\(prefix).attn1", k: k, h: h, b: b, t: hw, name: "x")
-  out = vx + attn1(out.to(.Float16), rot).to(of: vx) .* (attn1Modulations[2] + timesteps[2])
+  out = vx + attn1(out.to(.Float16), rot).to(of: vx) .* modulations[2]
   let (attn2Mapper, attn2) = LTX2CrossAttention(
-    prefix: "\(prefix).attn2", k: (k, k, k), h: h, b: b, t: (hw, t), name: "cv")
+    prefix: "\(prefix).attn2", k: (k, k, k), h: h, b: b, t: (hw, t), positionEmbedding: false,
+    KV: true, name: "cv")
   let normOut = norm(out).to(.Float16)
-  out = out + attn2(normOut, rot, cv, rotC).to(of: out)
-  let audioTimesteps = (0..<6).map { _ in Input() }
-  let audioAttn1Modulations = (0..<6).map {
-    Parameter<Float>(.GPU(0), .HWC(1, 1, k / 2 * h), name: "audio_attn1_ada_ln_\($0)")
-  }
+  out = out + attn2(normOut, cvK, cvV).to(of: out)
   let (audioAttn1Mapper, audioAttn1) = LTX2SelfAttention(
     prefix: "\(prefix).audio_attn1", k: k / 2, h: h, b: b, t: a, name: "a")
   var aOut =
-    norm(ax) .* (1 + (audioAttn1Modulations[1] + audioTimesteps[1]))
-    + (audioAttn1Modulations[0] + audioTimesteps[0])
+    norm(ax) .* modulations[3] + modulations[4]
   aOut = ax + audioAttn1(aOut.to(.Float16), rotA).to(of: ax)
-    .* (audioAttn1Modulations[2] + audioTimesteps[2])
+    .* modulations[5]
   let (audioAttn2Mapper, audioAttn2) = LTX2CrossAttention(
-    prefix: "\(prefix).audio_attn2", k: (k / 2, k / 2, k / 2), h: h, b: b, t: (a, t), name: "ca")
+    prefix: "\(prefix).audio_attn2", k: (k / 2, k / 2, k / 2), h: h, b: b, t: (a, t),
+    positionEmbedding: false, KV: true, name: "ca")
   let normAOut = norm(aOut).to(.Float16)
-  aOut = aOut + audioAttn2(normAOut, rotA, ca, rotAC).to(of: aOut)
+  aOut = aOut + audioAttn2(normAOut, caK, caV).to(of: aOut)
   let vxNorm3 = norm(out)
   let axNorm3 = norm(aOut)
   let (audioToVideoAttnMapper, audioToVideoAttn) = LTX2CrossAttention(
     prefix: "\(prefix).audio_to_video_attn", k: (k, k / 2, k / 2), h: h, b: b, t: (hw, a),
-    name: "ax")
-  let caScaleShiftTimesteps = (0..<4).map { _ in Input() }
-  let caGateTimesteps = Input()
-  let audioToVideoAttnModulations = (0..<5).map {
-    if $0 < 2 {
-      return Parameter<Float>(
-        .GPU(0), .HWC(1, 1, k * h), name: "audio_to_video_attn_ada_ln_\($0)")
-    } else if $0 < 4 {
-      return Parameter<Float>(
-        .GPU(0), .HWC(1, 1, k / 2 * h), name: "audio_to_video_attn_ada_ln_\($0)")
-    } else {
-      return Parameter<Float>(
-        .GPU(0), .HWC(1, 1, k * h), name: "audio_to_video_attn_ada_ln_\($0)")
-    }
-  }
+    positionEmbedding: true, KV: false, name: "ax")
   let vxScaled =
-    vxNorm3 .* (1 + (audioToVideoAttnModulations[1] + caScaleShiftTimesteps[1]))
-    + (audioToVideoAttnModulations[0] + caScaleShiftTimesteps[0])
+    vxNorm3 .* modulations[6] + modulations[7]
   let axScaled =
-    axNorm3 .* (1 + (audioToVideoAttnModulations[3] + caScaleShiftTimesteps[3]))
-    + (audioToVideoAttnModulations[2] + caScaleShiftTimesteps[2])
+    axNorm3 .* modulations[8] + modulations[9]
   out =
     out + audioToVideoAttn(vxScaled.to(.Float16), rotCX, axScaled.to(.Float16), rotA).to(of: out)
-    .* (audioToVideoAttnModulations[4] + caGateTimesteps)
+    .* modulations[10]
   let (videoToAudioAttnMapper, videoToAudioAttn) = LTX2CrossAttention(
     prefix: "\(prefix).video_to_audio_attn", k: (k / 2, k / 2, k), h: h, b: b, t: (a, hw),
-    name: "xa")
-  let audioCaScaleShiftTimesteps = (0..<4).map { _ in Input() }
-  let audioCaGateTimesteps = Input()
-  let videoToAudioAttnModulations = (0..<5).map {
-    if $0 < 2 {
-      return Parameter<Float>(
-        .GPU(0), .HWC(1, 1, k * h), name: "video_to_audio_attn_ada_ln_\($0)")
-    } else {
-      return Parameter<Float>(
-        .GPU(0), .HWC(1, 1, k / 2 * h), name: "video_to_audio_attn_ada_ln_\($0)")
-    }
-  }
+    positionEmbedding: true, KV: false, name: "xa")
   let audioVxScaled =
-    vxNorm3 .* (1 + (videoToAudioAttnModulations[1] + audioCaScaleShiftTimesteps[1]))
-    + (videoToAudioAttnModulations[0] + audioCaScaleShiftTimesteps[0])
+    vxNorm3 .* modulations[11] + modulations[12]
   let audioAxScaled =
-    axNorm3 .* (1 + (videoToAudioAttnModulations[3] + audioCaScaleShiftTimesteps[3]))
-    + (videoToAudioAttnModulations[2] + audioCaScaleShiftTimesteps[2])
+    axNorm3 .* modulations[13] + modulations[14]
   aOut =
     aOut
     + videoToAudioAttn(audioAxScaled.to(.Float16), rotA, audioVxScaled.to(.Float16), rotCX).to(
       of: aOut)
-    .* (videoToAudioAttnModulations[4] + audioCaGateTimesteps)
+    .* modulations[15]
   // Now attention done, do MLP.
   let (xLinear1, xOutProjection, xFF) = FeedForward(
     hiddenSize: 4096, intermediateSize: 4096 * 4, name: "x")
   let lastVxScaled =
-    norm(out) .* (1 + (attn1Modulations[4] + timesteps[4])) + (attn1Modulations[3] + timesteps[3])
-  out = out + xFF(lastVxScaled.to(.Float16)).to(of: out) .* (attn1Modulations[5] + timesteps[5])
+    norm(out) .* modulations[16] + modulations[17]
+  out = out + xFF(lastVxScaled.to(.Float16)).to(of: out) .* modulations[18]
   let lastAxScaled =
-    norm(aOut) .* (1 + (audioAttn1Modulations[4] + audioTimesteps[4]))
-    + (audioAttn1Modulations[3] + audioTimesteps[3])
+    norm(aOut) .* modulations[19] + modulations[20]
   let (audioLinear1, audioOutProjection, audioFF) = FeedForward(
     hiddenSize: 2048, intermediateSize: 2048 * 4, name: "a")
   aOut = aOut + audioFF(lastAxScaled.to(.Float16)).to(of: aOut)
-    .* (audioAttn1Modulations[5] + audioTimesteps[5])
+    .* modulations[21]
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).scale_shift_table"] = ModelWeightElement(
-      (0..<6).map { attn1Modulations[$0].weight.name })
     mapping.merge(attn1Mapper(format)) { v, _ in v }
     mapping.merge(attn2Mapper(format)) { v, _ in v }
-    mapping["\(prefix).audio_scale_shift_table"] = ModelWeightElement(
-      (0..<6).map { audioAttn1Modulations[$0].weight.name })
     mapping.merge(audioAttn1Mapper(format)) { v, _ in v }
     mapping.merge(audioAttn2Mapper(format)) { v, _ in v }
-    mapping["\(prefix).scale_shift_table_a2v_ca_audio"] = [
-      audioToVideoAttnModulations[3].weight.name, audioToVideoAttnModulations[2].weight.name,
-      videoToAudioAttnModulations[3].weight.name, videoToAudioAttnModulations[2].weight.name,
-      videoToAudioAttnModulations[4].weight.name,
-    ]
-    mapping["\(prefix).scale_shift_table_a2v_ca_video"] = [
-      audioToVideoAttnModulations[1].weight.name, audioToVideoAttnModulations[0].weight.name,
-      videoToAudioAttnModulations[1].weight.name, videoToAudioAttnModulations[0].weight.name,
-      audioToVideoAttnModulations[4].weight.name,
-    ]
     mapping.merge(audioToVideoAttnMapper(format)) { v, _ in v }
     mapping.merge(videoToAudioAttnMapper(format)) { v, _ in v }
     mapping["\(prefix).ff.net.0.proj.weight"] = [xLinear1.weight.name]
@@ -324,21 +412,20 @@ private func LTX2TransformerBlock(
     mapping["\(prefix).audio_ff.net.2.bias"] = [audioOutProjection.bias.name]
     return mapping
   }
-  var inputs: [Input] = [vx, rot, cv, rotC, ax, rotA, ca, rotAC, rotCX]
-  inputs.append(contentsOf: timesteps + audioTimesteps)
-  inputs.append(contentsOf: caScaleShiftTimesteps + [caGateTimesteps])
-  inputs.append(contentsOf: audioCaScaleShiftTimesteps + [audioCaGateTimesteps])
+  var inputs: [Input] = [vx, rot, cvK, cvV, ax, rotA, caK, caV, rotCX]
+  inputs.append(contentsOf: modulations)
   return (mapper, Model(inputs, [out, aOut]))
 }
 
 private func LTX2AdaLNSingle(
-  prefix: String, channels: Int, count: Int, outputEmbedding: Bool, name: String, t: Input
+  prefix: String, timesteps: Int, channels: Int, count: Int, outputEmbedding: Bool, name: String,
+  t: Input
 ) -> (
   ModelWeightMapper, Model.IO?, [Model.IO]
 ) {
   let (tMlp0, tMlp2, tEmbedder) = MLPEmbedder(channels: channels, name: name)
   let adaLNSingles = (0..<count).map { Dense(count: channels, name: "\(name)_adaln_single_\($0)") }
-  var tOut = tEmbedder(t).reshaped([1, 1, channels])
+  var tOut = tEmbedder(t).reshaped([timesteps, 1, channels])
   let tEmb: Model.IO?
   if outputEmbedding {
     tEmb = tOut.to(.Float32)
@@ -372,89 +459,253 @@ private func LTX2AdaLNSingle(
   return (mapper, tEmb, chunks)
 }
 
-func LTX2(b: Int, h: Int, w: Int) -> (ModelWeightMapper, Model) {
+func LTX2(time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int) -> (
+  ModelWeightMapper, Model
+) {
   let x = Input()
   let rot = Input()
-  let rotC = Input()
   let rotA = Input()
-  let rotAC = Input()
   let rotCX = Input()
   let xEmbedder = Dense(count: 4096, name: "x_embedder")
-  let (contextMlp0, contextMlp2, contextEmbedder) = GELUMLPEmbedder(channels: 4096, name: "context")
   var out = xEmbedder(x).to(.Float32)
-  let txt = Input()
-  let txtOut = contextEmbedder(txt)
   let a = Input()
   let aEmbedder = Dense(count: 2048, name: "a_embedder")
-  let (aContextMlp0, aContextMlp2, aContextEmbedder) = GELUMLPEmbedder(
-    channels: 2048, name: "a_context")
   var aOut = aEmbedder(a).to(.Float32)
-  let aTxt = Input()
-  let aTxtOut = aContextEmbedder(aTxt)
-  let t = Input()
-  let (txMapper, txEmb, txEmbChunks) = LTX2AdaLNSingle(
-    prefix: "adaln_single", channels: 4096, count: 6, outputEmbedding: true, name: "tx", t: t)
-  let (taMapper, taEmb, taEmbChunks) = LTX2AdaLNSingle(
-    prefix: "audio_adaln_single", channels: 2048, count: 6, outputEmbedding: true, name: "ta", t: t)
-  let (caMapper, _, tcxEmbChunks) = LTX2AdaLNSingle(
-    prefix: "av_ca_video_scale_shift_adaln_single", channels: 4096, count: 4,
-    outputEmbedding: false, name: "tcx", t: t)
-  let (audioCaMapper, _, tcaEmbChunks) = LTX2AdaLNSingle(
-    prefix: "av_ca_audio_scale_shift_adaln_single", channels: 2048, count: 4,
-    outputEmbedding: false, name: "tca", t: t)
-  let (gateMapper, _, a2vEmbChunks) = LTX2AdaLNSingle(
-    prefix: "av_ca_a2v_gate_adaln_single", channels: 4096, count: 1, outputEmbedding: false,
-    name: "a2v", t: t)
-  let (audioGateMapper, _, v2aEmbChunks) = LTX2AdaLNSingle(
-    prefix: "av_ca_v2a_gate_adaln_single", channels: 2048, count: 1, outputEmbedding: false,
-    name: "v2a", t: t)
   var mappers = [ModelWeightMapper]()
+  let hw = h * w * time
+  var modulationsAndKVs = [Input]()
   for i in 0..<48 {
     let (mapper, block) = LTX2TransformerBlock(
-      prefix: "transformer_blocks.\(i)", k: 128, h: 32, b: 1, t: 1024, hw: 6144, a: 121,
-      intermediateSize: 0)
-    let blockOut = block(
-      out, rot, txtOut, rotC, aOut, rotA, aTxtOut, rotAC, rotCX,
-      txEmbChunks[0], txEmbChunks[1], txEmbChunks[2], txEmbChunks[3], txEmbChunks[4],
-      txEmbChunks[5],
-      taEmbChunks[0], taEmbChunks[1], taEmbChunks[2], taEmbChunks[3], taEmbChunks[4],
-      taEmbChunks[5],
-      tcxEmbChunks[1], tcxEmbChunks[0], tcaEmbChunks[1], tcaEmbChunks[0], a2vEmbChunks[0],
-      tcxEmbChunks[3], tcxEmbChunks[2], tcaEmbChunks[3], tcaEmbChunks[2], v2aEmbChunks[0])
+      prefix: "transformer_blocks.\(i)", k: 128, h: 32, b: 1, t: textLength, hw: hw, a: audioFrames)
+    let cvK = Input()
+    let cvV = Input()
+    let caK = Input()
+    let caV = Input()
+    let modulations = (0..<22).map { _ in Input() }
+    let blockOut = block([out, rot, cvK, cvV, aOut, rotA, caK, caV, rotCX] + modulations)
     mappers.append(mapper)
     out = blockOut[0]
     aOut = blockOut[1]
+    modulationsAndKVs.append(contentsOf: [cvK, cvV, caK, caV])
+    modulationsAndKVs.append(contentsOf: modulations)
   }
-  let scaleShiftModulations = (0..<2).map {
-    Parameter<Float>(.GPU(0), .HWC(1, 1, 4096), name: "norm_out_ada_ln_\($0)")
-  }
+  let scaleShiftModulations = [Input(), Input()]
   let normOut = RMSNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  if let txEmb = txEmb {
-    out = normOut(out) .* (1 + (scaleShiftModulations[1] + txEmb))
-      + (scaleShiftModulations[0] + txEmb)
-  }
+  out = normOut(out) .* scaleShiftModulations[0] + scaleShiftModulations[1]
+  modulationsAndKVs.append(contentsOf: scaleShiftModulations)
   let projOut = Dense(count: 128, name: "proj_out")
   out = projOut(out.to(.Float16))
-  let audioScaleShiftModulations = (0..<2).map {
-    Parameter<Float>(.GPU(0), .HWC(1, 1, 2048), name: "audio_norm_out_ada_ln_\($0)")
-  }
-  if let taEmb = taEmb {
-    aOut = normOut(aOut) .* (1 + (audioScaleShiftModulations[1] + taEmb))
-      + (audioScaleShiftModulations[0] + taEmb)
-  }
+  let audioScaleShiftModulations = [Input(), Input()]
+  aOut = normOut(aOut) .* audioScaleShiftModulations[0] + audioScaleShiftModulations[1]
+  modulationsAndKVs.append(contentsOf: audioScaleShiftModulations)
   let audioProjOut = Dense(count: 128, name: "audio_proj_out")
   aOut = audioProjOut(aOut.to(.Float16))
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     mapping["patchify_proj.weight"] = [xEmbedder.weight.name]
     mapping["patchify_proj.bias"] = [xEmbedder.bias.name]
+    mapping["audio_patchify_proj.weight"] = [aEmbedder.weight.name]
+    mapping["audio_patchify_proj.bias"] = [aEmbedder.bias.name]
+    mapping["proj_out.weight"] = [projOut.weight.name]
+    mapping["proj_out.bias"] = [projOut.bias.name]
+    mapping["audio_proj_out.weight"] = [audioProjOut.weight.name]
+    mapping["audio_proj_out.bias"] = [audioProjOut.bias.name]
+    return mapping
+  }
+  return (mapper, Model([x, a, rot, rotA, rotCX] + modulationsAndKVs, [out, aOut]))
+}
+
+private func LTX2CrossAttentionFixed(
+  prefix: String, k: (Int, Int, Int), h: Int, b: Int, t: Int, positionEmbedding: Bool,
+  name: String
+) -> (ModelWeightMapper, Model) {
+  let context = Input()
+  let toKeys = Dense(count: k.1 * h, name: "\(name)_k")
+  let toValues = Dense(count: k.1 * h, name: "\(name)_v")
+  var keys = toKeys(context)
+  let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(name)_norm_k")
+  keys = normK(keys).reshaped([b, t, h, k.1])
+  let values = toValues(context).reshaped([b, t, h, k.1])
+  keys = (1 / Float(k.1).squareRoot().squareRoot()) * keys
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).to_k.weight"] = [toKeys.weight.name]
+    mapping["\(prefix).to_k.bias"] = [toKeys.bias.name]
+    mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
+    mapping["\(prefix).to_v.bias"] = [toValues.bias.name]
+    mapping["\(prefix).k_norm.weight"] = [normK.weight.name]
+    return mapping
+  }
+  return (mapper, Model([context], [keys, values]))
+}
+
+private func LTX2TransformerBlockFixed(
+  prefix: String, k: Int, h: Int, b: Int, t: Int
+) -> (ModelWeightMapper, Model) {
+  let cv = Input()
+  let ca = Input()
+  let (attn2Mapper, attn2) = LTX2CrossAttentionFixed(
+    prefix: "\(prefix).attn2", k: (k, k, k), h: h, b: b, t: t, positionEmbedding: false,
+    name: "cv")
+  var outs = [Model.IO]()
+  outs.append(attn2(cv))
+  let (audioAttn2Mapper, audioAttn2) = LTX2CrossAttentionFixed(
+    prefix: "\(prefix).audio_attn2", k: (k / 2, k / 2, k / 2), h: h, b: b, t: t,
+    positionEmbedding: false, name: "ca")
+  outs.append(audioAttn2(ca))
+  let timesteps = (0..<6).map { _ in Input() }
+  let attn1Modulations = (0..<6).map {
+    Parameter<Float>(.GPU(0), .HWC(1, 1, k * h), name: "attn1_ada_ln_\($0)")
+  }
+  outs.append(attn1Modulations[1] + timesteps[1])
+  outs.append(attn1Modulations[0] + timesteps[0])
+  outs.append(attn1Modulations[2] + timesteps[2])
+  let audioTimesteps = (0..<6).map { _ in Input() }
+  let audioAttn1Modulations = (0..<6).map {
+    Parameter<Float>(.GPU(0), .HWC(1, 1, k / 2 * h), name: "audio_attn1_ada_ln_\($0)")
+  }
+  outs.append(audioAttn1Modulations[1] + audioTimesteps[1])
+  outs.append(audioAttn1Modulations[0] + audioTimesteps[0])
+  outs.append(audioAttn1Modulations[2] + audioTimesteps[2])
+  let caScaleShiftTimesteps = (0..<4).map { _ in Input() }
+  let caGateTimesteps = Input()
+  let audioToVideoAttnModulations = (0..<5).map {
+    if $0 < 2 {
+      return Parameter<Float>(
+        .GPU(0), .HWC(1, 1, k * h), name: "audio_to_video_attn_ada_ln_\($0)")
+    } else if $0 < 4 {
+      return Parameter<Float>(
+        .GPU(0), .HWC(1, 1, k / 2 * h), name: "audio_to_video_attn_ada_ln_\($0)")
+    } else {
+      return Parameter<Float>(
+        .GPU(0), .HWC(1, 1, k * h), name: "audio_to_video_attn_ada_ln_\($0)")
+    }
+  }
+  outs.append(audioToVideoAttnModulations[1] + caScaleShiftTimesteps[1])
+  outs.append(audioToVideoAttnModulations[0] + caScaleShiftTimesteps[0])
+  outs.append(audioToVideoAttnModulations[3] + caScaleShiftTimesteps[3])
+  outs.append(audioToVideoAttnModulations[2] + caScaleShiftTimesteps[2])
+  outs.append(audioToVideoAttnModulations[4] + caGateTimesteps)
+  let audioCaScaleShiftTimesteps = (0..<4).map { _ in Input() }
+  let audioCaGateTimesteps = Input()
+  let videoToAudioAttnModulations = (0..<5).map {
+    if $0 < 2 {
+      return Parameter<Float>(
+        .GPU(0), .HWC(1, 1, k * h), name: "video_to_audio_attn_ada_ln_\($0)")
+    } else {
+      return Parameter<Float>(
+        .GPU(0), .HWC(1, 1, k / 2 * h), name: "video_to_audio_attn_ada_ln_\($0)")
+    }
+  }
+  outs.append(videoToAudioAttnModulations[1] + audioCaScaleShiftTimesteps[1])
+  outs.append(videoToAudioAttnModulations[0] + audioCaScaleShiftTimesteps[0])
+  outs.append(videoToAudioAttnModulations[3] + audioCaScaleShiftTimesteps[3])
+  outs.append(videoToAudioAttnModulations[2] + audioCaScaleShiftTimesteps[2])
+  outs.append(videoToAudioAttnModulations[4] + audioCaGateTimesteps)
+  outs.append(attn1Modulations[4] + timesteps[4])
+  outs.append(attn1Modulations[3] + timesteps[3])
+  outs.append(attn1Modulations[5] + timesteps[5])
+  outs.append(audioAttn1Modulations[4] + audioTimesteps[4])
+  outs.append(audioAttn1Modulations[3] + audioTimesteps[3])
+  outs.append(audioAttn1Modulations[5] + audioTimesteps[5])
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).scale_shift_table"] = ModelWeightElement(
+      (0..<6).map { attn1Modulations[$0].weight.name })
+    mapping.merge(attn2Mapper(format)) { v, _ in v }
+    mapping["\(prefix).audio_scale_shift_table"] = ModelWeightElement(
+      (0..<6).map { audioAttn1Modulations[$0].weight.name })
+    mapping.merge(audioAttn2Mapper(format)) { v, _ in v }
+    mapping["\(prefix).scale_shift_table_a2v_ca_audio"] = [
+      audioToVideoAttnModulations[3].weight.name, audioToVideoAttnModulations[2].weight.name,
+      videoToAudioAttnModulations[3].weight.name, videoToAudioAttnModulations[2].weight.name,
+      videoToAudioAttnModulations[4].weight.name,
+    ]
+    mapping["\(prefix).scale_shift_table_a2v_ca_video"] = [
+      audioToVideoAttnModulations[1].weight.name, audioToVideoAttnModulations[0].weight.name,
+      videoToAudioAttnModulations[1].weight.name, videoToAudioAttnModulations[0].weight.name,
+      audioToVideoAttnModulations[4].weight.name,
+    ]
+    return mapping
+  }
+  var inputs: [Input] = [cv, ca]
+  inputs.append(contentsOf: timesteps + audioTimesteps)
+  inputs.append(contentsOf: caScaleShiftTimesteps + [caGateTimesteps])
+  inputs.append(contentsOf: audioCaScaleShiftTimesteps + [audioCaGateTimesteps])
+  return (mapper, Model(inputs, outs))
+}
+
+func LTX2Fixed(time: Int, textLength: Int, audioFrames: Int, timesteps: Int) -> (
+  ModelWeightMapper, Model
+) {
+  let txt = Input()
+  let aTxt = Input()
+  let (contextMlp0, contextMlp2, contextEmbedder) = GELUMLPEmbedder(channels: 4096, name: "context")
+  let txtOut = contextEmbedder(txt)
+  let (aContextMlp0, aContextMlp2, aContextEmbedder) = GELUMLPEmbedder(
+    channels: 2048, name: "a_context")
+  let aTxtOut = aContextEmbedder(aTxt)
+  let t = Input()
+  let (txMapper, txEmb, txEmbChunks) = LTX2AdaLNSingle(
+    prefix: "adaln_single", timesteps: timesteps, channels: 4096, count: 6, outputEmbedding: true,
+    name: "tx", t: t)
+  let (taMapper, taEmb, taEmbChunks) = LTX2AdaLNSingle(
+    prefix: "audio_adaln_single", timesteps: timesteps, channels: 2048, count: 6,
+    outputEmbedding: true, name: "ta", t: t)
+  let (caMapper, _, tcxEmbChunks) = LTX2AdaLNSingle(
+    prefix: "av_ca_video_scale_shift_adaln_single", timesteps: timesteps, channels: 4096, count: 4,
+    outputEmbedding: false, name: "tcx", t: t)
+  let (audioCaMapper, _, tcaEmbChunks) = LTX2AdaLNSingle(
+    prefix: "av_ca_audio_scale_shift_adaln_single", timesteps: timesteps, channels: 2048, count: 4,
+    outputEmbedding: false, name: "tca", t: t)
+  let (gateMapper, _, a2vEmbChunks) = LTX2AdaLNSingle(
+    prefix: "av_ca_a2v_gate_adaln_single", timesteps: timesteps, channels: 4096, count: 1,
+    outputEmbedding: false, name: "a2v", t: t)
+  let (audioGateMapper, _, v2aEmbChunks) = LTX2AdaLNSingle(
+    prefix: "av_ca_v2a_gate_adaln_single", timesteps: timesteps, channels: 2048, count: 1,
+    outputEmbedding: false, name: "v2a", t: t)
+  var mappers = [ModelWeightMapper]()
+  var outs = [Model.IO]()
+  let timesteps_1 = txEmbChunks[1] + 1
+  let audioTimesteps_1 = taEmbChunks[1] + 1
+  let timesteps_4 = txEmbChunks[4] + 1
+  let audioTimesteps_4 = taEmbChunks[4] + 1
+  let caScaleShiftTimesteps_1 = tcxEmbChunks[0] + 1
+  let caScaleShiftTimesteps_3 = tcaEmbChunks[0] + 1
+  let audioCaScaleShiftTimesteps_1 = tcxEmbChunks[2] + 1
+  let audioCaScaleShiftTimesteps_3 = tcaEmbChunks[2] + 1
+  for i in 0..<48 {
+    let (mapper, block) = LTX2TransformerBlockFixed(
+      prefix: "transformer_blocks.\(i)", k: 128, h: 32, b: 1, t: textLength)
+    let blockOut = block(
+      txtOut, aTxtOut, txEmbChunks[0], timesteps_1, txEmbChunks[2], txEmbChunks[3],
+      timesteps_4, txEmbChunks[5], taEmbChunks[0], audioTimesteps_1, taEmbChunks[2],
+      taEmbChunks[3], audioTimesteps_4, taEmbChunks[5], tcxEmbChunks[1], caScaleShiftTimesteps_1,
+      tcaEmbChunks[1], caScaleShiftTimesteps_3, a2vEmbChunks[0], tcxEmbChunks[3],
+      audioCaScaleShiftTimesteps_1, tcaEmbChunks[3], audioCaScaleShiftTimesteps_3, v2aEmbChunks[0])
+    mappers.append(mapper)
+    outs.append(blockOut)
+  }
+  let scaleShiftModulations = (0..<2).map {
+    Parameter<Float>(.GPU(0), .HWC(1, 1, 4096), name: "norm_out_ada_ln_\($0)")
+  }
+  if let txEmb = txEmb {
+    outs.append(1 + scaleShiftModulations[1] + txEmb)
+    outs.append(scaleShiftModulations[0] + txEmb)
+  }
+  let audioScaleShiftModulations = (0..<2).map {
+    Parameter<Float>(.GPU(0), .HWC(1, 1, 2048), name: "audio_norm_out_ada_ln_\($0)")
+  }
+  if let taEmb = taEmb {
+    outs.append(1 + audioScaleShiftModulations[1] + taEmb)
+    outs.append(audioScaleShiftModulations[0] + taEmb)
+  }
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
     mapping["caption_projection.linear_1.weight"] = [contextMlp0.weight.name]
     mapping["caption_projection.linear_1.bias"] = [contextMlp0.bias.name]
     mapping["caption_projection.linear_2.weight"] = [contextMlp2.weight.name]
     mapping["caption_projection.linear_2.bias"] = [contextMlp2.bias.name]
-    mapping["audio_patchify_proj.weight"] = [aEmbedder.weight.name]
-    aEmbedder.weight.to(.unifiedMemory)
-    mapping["audio_patchify_proj.bias"] = [aEmbedder.bias.name]
     mapping[
       "audio_caption_projection.linear_1.weight"
     ] = [aContextMlp0.weight.name]
@@ -480,11 +731,7 @@ func LTX2(b: Int, h: Int, w: Int) -> (ModelWeightMapper, Model) {
       (0..<2).map { scaleShiftModulations[$0].weight.name })
     mapping["audio_scale_shift_table"] = ModelWeightElement(
       (0..<2).map { audioScaleShiftModulations[$0].weight.name })
-    mapping["proj_out.weight"] = [projOut.weight.name]
-    mapping["proj_out.bias"] = [projOut.bias.name]
-    mapping["audio_proj_out.weight"] = [audioProjOut.weight.name]
-    mapping["audio_proj_out.bias"] = [audioProjOut.bias.name]
     return mapping
   }
-  return (mapper, Model([x, a, txt, aTxt, t, rot, rotC, rotA, rotAC, rotCX], [out, aOut]))
+  return (mapper, Model([txt, aTxt, t], outs))
 }

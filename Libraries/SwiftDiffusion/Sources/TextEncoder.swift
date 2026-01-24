@@ -2862,11 +2862,21 @@ extension TextEncoder {
       }
     }
     let tokensTensorGPU = tokens[0].toGPU(0)
-    let (rotaryLocal, rotary) = Gemma3RotaryEmbedding(
-      sequenceLength: tokenLength, of: FloatType.self
+    let maxTokenLength = 1024
+    let (rotaryLocalUncond, rotaryUncond) = Gemma3RotaryEmbedding(
+      sequenceLength: tokenLength, endAligned: max(0, maxTokenLength - tokenLengthUncond),
+      of: FloatType.self
     )
-    let rotaryLocalTensorGPU = graph.variable(rotaryLocal.toGPU(0))
-    let rotaryTensorGPU = graph.variable(rotary.toGPU(0))
+    let (rotaryLocalCond, rotaryCond) = Gemma3RotaryEmbedding(
+      sequenceLength: tokenLength, endAligned: max(0, maxTokenLength - tokenLengthCond),
+      of: FloatType.self
+    )
+    let rotaryLocalGPUUncond = graph.variable(rotaryLocalUncond.toGPU(0))
+    let rotaryGPUUncond = graph.variable(rotaryUncond.toGPU(0))
+    let rotaryLocalGPUCond = graph.variable(rotaryLocalCond.toGPU(0))
+    let rotaryGPUCond = graph.variable(rotaryCond.toGPU(0))
+    let rotaryLocalTensorGPU = Functional.concat(axis: 0, rotaryLocalGPUUncond, rotaryLocalGPUCond)
+    let rotaryTensorGPU = Functional.concat(axis: 0, rotaryGPUUncond, rotaryGPUCond)
     let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
     textModel.compile(
       inputs: [tokensTensorGPU, rotaryLocalTensorGPU, rotaryTensorGPU, causalAttentionMaskGPU])
@@ -2882,14 +2892,54 @@ extension TextEncoder {
           "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
       }
     }
-    let c = textModel(
+    let outputHiddenStates = textModel(
       inputs: tokensTensorGPU, [rotaryLocalTensorGPU, rotaryTensorGPU, causalAttentionMaskGPU]
     ).map {
       $0.as(
-        of: FloatType.self
+        of: Float.self
       ).reshaped(.HWC(2, tokenLength, 3840))
     }
     weightsCache.attach(filePaths[0], from: textModel.parameters)
+    var hiddenStates = graph.variable(.GPU(0), .NHWC(2, tokenLength, 3840, 49), of: Float.self)
+    for i in 0..<49 {
+      hiddenStates[0..<2, 0..<tokenLength, 0..<3840, i..<(i + 1)] = outputHiddenStates[i]
+        .reshaped(.NHWC(2, tokenLength, 3840, 1))
+    }
+    // Separately normalize unconditional / conditional branch.
+    var hiddenStatesUncond = hiddenStates[
+      0..<1, 0..<min(tokenLength, tokenLengthUncond), 0..<3840, 0..<49
+    ].contiguous()
+    let meanUncond = hiddenStatesUncond.reduced(.mean, axis: [1, 2])
+    let minUncond_ = hiddenStatesUncond.reduced(.min, axis: [1, 2])
+    let maxUncond_ = hiddenStatesUncond.reduced(.max, axis: [1, 2])
+    let rangeUncond_ = 8.0 * Functional.reciprocal(maxUncond_ - minUncond_)
+    hiddenStatesUncond = (hiddenStates[0..<1, 0..<tokenLength, 0..<3840, 0..<49] - meanUncond)
+      .* rangeUncond_
+    var hiddenStatesCond = hiddenStates[
+      1..<2, 0..<min(tokenLength, tokenLengthCond), 0..<3840, 0..<49
+    ].contiguous()
+    let meanCond = hiddenStatesCond.reduced(.mean, axis: [1, 2])
+    let minCond_ = hiddenStatesCond.reduced(.min, axis: [1, 2])
+    let maxCond_ = hiddenStatesCond.reduced(.max, axis: [1, 2])
+    let rangeCond_ = 8.0 * Functional.reciprocal(maxCond_ - minCond_)
+    hiddenStatesCond = (hiddenStates[1..<2, 0..<tokenLength, 0..<3840, 0..<49] - meanCond)
+      .* rangeCond_
+    let normedHiddenStates = DynamicGraph.Tensor<BFloat16>(
+      from: Functional.concat(axis: 0, hiddenStatesUncond, hiddenStatesCond)
+    ).reshaped(.HWC(2, tokenLength, 3840 * 49))
+    let featureExtractorLinear = Dense(count: 3840, noBias: true)
+    featureExtractorLinear.compile(inputs: normedHiddenStates)
+    graph.openStore(
+      filePaths[1], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[1])
+    ) {
+      $0.read(
+        "text_feature_extractor", model: featureExtractorLinear,
+        codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+    }
+    let c = featureExtractorLinear(inputs: normedHiddenStates).map {
+      DynamicGraph.Tensor<FloatType>(from: $0)
+    }
     return (c, [textModel])
   }
 

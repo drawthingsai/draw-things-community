@@ -2,12 +2,12 @@ import Foundation
 import NNC
 
 func Gemma3RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  sequenceLength: Int, of dataType: FloatType.Type = FloatType.self
+  sequenceLength: Int, endAligned: Int, of dataType: FloatType.Type = FloatType.self
 ) -> (Tensor<FloatType>, Tensor<FloatType>) {
   var rotaryLocal = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, 256))
   for i in 0..<sequenceLength {
     for k in 0..<128 {
-      let theta = Double(i) / pow(10_000, Double(k) * 2 / 256)
+      let theta = Double(endAligned + i) / pow(10_000, Double(k) * 2 / 256)
       let sintheta = sin(theta)
       let costheta = cos(theta)
       rotaryLocal[0, i, 0, k * 2] = FloatType(costheta)
@@ -17,7 +17,7 @@ func Gemma3RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, 256))
   for i in 0..<sequenceLength {
     for k in 0..<128 {
-      let theta = Double(i) * 0.125 / pow(1_000_000, Double(k) * 2 / 256)
+      let theta = Double(endAligned + i) * 0.125 / pow(1_000_000, Double(k) * 2 / 256)
       let sintheta = sin(theta)
       let costheta = cos(theta)
       rotary[0, i, 0, k * 2] = FloatType(costheta)
@@ -47,9 +47,10 @@ private func SelfAttention(
   keys = Functional.cmul(left: keys, right: rot)
   var out: Model.IO
   if usesFlashAttention {
-    out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), isCausal: true)(
-      queries, keys, values, causalAttentionMask
-    ).reshaped([b * t, h * k])
+    out = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(), isCausal: true, hasAttentionMask: true)(
+        queries, keys, values, causalAttentionMask
+      ).reshaped([b * t, h * k])
   } else {
     values = values.transposed(1, 2)
     queries = queries.transposed(1, 2)
@@ -101,20 +102,21 @@ private func TransformerBlock(
 ) -> Model {
   let x = Input()
   let rot = Input()
+  let causalAttentionMask = Input()
   let norm1 = RMSNorm(epsilon: 1e-6, axis: [1], name: "input_layernorm")
   var out = norm1(x).to(.Float16)
   let attention = SelfAttention(
     prefix: prefix, width: width, k: k, h: h, hk: hk, b: b, t: t,
     usesFlashAttention: usesFlashAttention)
   let norm2 = RMSNorm(epsilon: 1e-6, axis: [1], name: "post_attention_layernorm")
-  out = norm2(attention(out, rot).to(of: x)) + x
+  out = norm2(attention(out, rot, causalAttentionMask).to(of: x)) + x
   let residual = out
   let norm3 = RMSNorm(epsilon: 1e-6, axis: [1], name: "pre_feedforward_layernorm")
   out = norm3(out).to(.Float16)
   let (_, _, _, ffn) = FeedForward(hiddenSize: width, intermediateSize: MLP, name: "mlp")
   let norm4 = RMSNorm(epsilon: 1e-6, axis: [1], name: "post_feedforward_layernorm")
   out = residual + norm4(ffn(out).to(of: residual))
-  return Model([x, rot], [out])
+  return Model([x, rot, causalAttentionMask], [out])
 }
 
 private func TextEmbedding<T: TensorNumeric>(
@@ -141,13 +143,13 @@ func Gemma3<T: TensorNumeric>(
   var out = 62 * embedding(tokens).to(.Float32)
   var hiddenStates = [Model.IO]()
   for i in 0..<layers {
-    hiddenStates.append(out.to(.BFloat16))
+    hiddenStates.append(out)
     let layer = TransformerBlock(
       prefix: "layers.\(i)", width: width, k: 256, h: heads, hk: 8, b: batchSize,
       t: tokenLength, MLP: MLP, usesFlashAttention: usesFlashAttention)
     out = layer(out, (i + 1) % 6 == 0 ? rot : rotLocal, causalAttentionMask)
   }
   let norm = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm")
-  hiddenStates.append(norm(out).to(.BFloat16))
-  return Model([tokens, rotLocal, rot], hiddenStates)
+  hiddenStates.append(norm(out))
+  return Model([tokens, rotLocal, rot, causalAttentionMask], hiddenStates)
 }

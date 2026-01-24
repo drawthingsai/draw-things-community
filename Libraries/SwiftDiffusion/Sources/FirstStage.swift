@@ -55,11 +55,11 @@ extension FirstStage {
   {
     let shape = x.shape
     let batchSize = shape[0]
-    let startHeight = shape[1]
+    var startHeight = shape[1]
     let startWidth = shape[2]
     let graph = x.graph
     let scalingFactor = latentsScaling.scalingFactor
-    let z: DynamicGraph.Tensor<FloatType>
+    var z: DynamicGraph.Tensor<FloatType>
     if let latentsMean = latentsScaling.mean, let latentsStd = latentsScaling.std,
       latentsMean.count >= 4, latentsStd.count >= 4
     {
@@ -552,7 +552,33 @@ extension FirstStage {
       outputChannels = 3
       causalAttentionMask = nil
     case .ltx2:
-      fatalError()
+      let startDepth = shape[0]
+      let audioFrames = (startDepth - 1) * 8 + 1
+      let audioHeight = (audioFrames + startWidth * startDepth - 1) / (startWidth * startDepth)
+      startHeight = startHeight - audioHeight
+      z = z[0..<startDepth, 0..<startHeight, 0..<startWidth, 0..<shape[3]].contiguous()
+      decoder =
+        existingDecoder
+        ?? LTX2VideoDecoderCausal3D(
+          channels: [128, 256, 512, 1024], numRepeat: 5, startWidth: startWidth,
+          startHeight: startHeight, startDepth: startDepth
+        ).1
+      if existingDecoder == nil {
+        decoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          decoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(from: z))
+        } else {
+          decoder.compile(inputs: z)
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("decoder", model: decoder, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 3
+      causalAttentionMask = nil
     case .kandinsky21:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
@@ -611,7 +637,7 @@ extension FirstStage {
     // Hunyuan / Wan just do the decoding with the batch.
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
-        && version != .wan22_5b
+        && version != .wan22_5b && version != .ltx2
     else {
       if highPrecision {
         let result: DynamicGraph.Tensor<Float>

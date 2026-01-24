@@ -6,10 +6,8 @@ private func ResnetBlockCausal3D(
   ModelWeightMapper, Model
 ) {
   let x = Input()
-  let norm1 = RMSNorm(epsilon: 1e-8, axis: [0], elementwiseAffine: false, name: "resnet_norm1")
-  var out = norm1(x.reshaped([channels, depth, height, width])).reshaped([
-    1, channels, depth, height, width,
-  ])
+  let norm1 = RMSNorm(epsilon: 1e-8, axis: [3], elementwiseAffine: false, name: "resnet_norm1")
+  var out = norm1(x)
   out = out.swish()
   let conv1 = Convolution(
     groups: 1, filters: channels, filterSize: [3, 3, 3],
@@ -17,18 +15,22 @@ private func ResnetBlockCausal3D(
       stride: [1, 1, 1],
       border: Hint.Border(
         begin: [0, isCausal ? 1 : 0, isCausal ? 1 : 0],
-        end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])),
+        end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])), format: .OIHW,
     name: "resnet_conv1")
   out = out.padded(
-    .replicate, begin: [0, 0, isCausal ? 2 : 1, 0, 0], end: [0, 0, isCausal ? 0 : 1, 0, 0])
+    .replicate, begin: [isCausal ? 2 : 1, 0, 0, 0], end: [isCausal ? 0 : 1, 0, 0, 0])
   if !isCausal {
-    out = out.padded(.reflect, begin: [0, 0, 0, 1, 1], end: [0, 0, 0, 1, 1])
+    out = out.padded(.reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+      1, depth + 2, height + 2, width + 2, channels,
+    ])
+  } else {
+    out = out.reshaped([
+      1, depth + 2, height, width, channels,
+    ])
   }
   out = conv1(out)
-  let norm2 = RMSNorm(epsilon: 1e-8, axis: [0], elementwiseAffine: false, name: "resnet_norm2")
-  out = norm2(out.reshaped([channels, depth, height, width])).reshaped([
-    1, channels, depth, height, width,
-  ])
+  let norm2 = RMSNorm(epsilon: 1e-8, axis: [3], elementwiseAffine: false, name: "resnet_norm2")
+  out = norm2(out.reshaped([depth, height, width, channels]))
   out = out.swish()
   let conv2 = Convolution(
     groups: 1, filters: channels, filterSize: [3, 3, 3],
@@ -36,14 +38,20 @@ private func ResnetBlockCausal3D(
       stride: [1, 1, 1],
       border: Hint.Border(
         begin: [0, isCausal ? 1 : 0, isCausal ? 1 : 0],
-        end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])),
+        end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])), format: .OIHW,
     name: "resnet_conv2")
   out = out.padded(
-    .replicate, begin: [0, 0, isCausal ? 2 : 1, 0, 0], end: [0, 0, isCausal ? 0 : 1, 0, 0])
+    .replicate, begin: [isCausal ? 2 : 1, 0, 0, 0], end: [isCausal ? 0 : 1, 0, 0, 0])
   if !isCausal {
-    out = out.padded(.reflect, begin: [0, 0, 0, 1, 1], end: [0, 0, 0, 1, 1])
+    out = out.padded(.reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+      1, depth + 2, height + 2, width + 2, channels,
+    ])
+  } else {
+    out = out.reshaped([
+      1, depth + 2, height, width, channels,
+    ])
   }
-  out = conv2(out)
+  out = conv2(out).reshaped([depth, height, width, channels])
   out = x + out
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -67,6 +75,319 @@ func LTX2VideoDecoderCausal3D(
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+    format: .OIHW,
+    name: "conv_in")
+  var out = convIn(
+    x.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
+      .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
+    ).reshaped([1, startDepth + 2, startHeight + 2, startWidth + 2, 128])
+  ).reshaped([startDepth, startHeight, startWidth, previousChannel])
+  var mappers = [ModelWeightMapper]()
+  var j = 0
+  var depth = startDepth
+  var height = startHeight
+  var width = startWidth
+  for channel in channels.reversed() {
+    if previousChannel != channel {
+      // Convolution & reshape.
+      let conv = Convolution(
+        groups: 1, filters: channel * 8, filterSize: [3, 3, 3],
+        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+        format: .OIHW,
+        name: "depth_to_space_upsample")
+      var residual = out.reshaped([depth, height, width, previousChannel / 8, 2, 2, 2]).permuted(
+        0, 4, 1, 5, 2, 6, 3
+      ).contiguous().reshaped(
+        [depth * 2 - 1, height * 2, width * 2, previousChannel / 8], offset: [1, 0, 0, 0],
+        strides: [
+          height * width * previousChannel / 2, width * previousChannel / 4, previousChannel / 8, 1,
+        ]
+      ).contiguous()
+      residual = Functional.concat(
+        axis: 3, residual, residual, residual, residual, flags: [.disableOpt])
+      out = conv(
+        out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
+          .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
+        ).reshaped([1, depth + 2, height + 2, width + 2, previousChannel]))
+      let upBlocks = j
+      mappers.append { _ in
+        var mapping = ModelWeightMapping()
+        mapping["up_blocks.\(upBlocks).conv.conv.weight"] = [conv.weight.name]
+        mapping["up_blocks.\(upBlocks).conv.conv.bias"] = [conv.bias.name]
+        return mapping
+      }
+      out =
+        residual
+        + out.reshaped([depth, height, width, channel, 2, 2, 2]).permuted(0, 4, 1, 5, 2, 6, 3)
+        .contiguous().reshaped(
+          [depth * 2 - 1, height * 2, width * 2, channel], offset: [1, 0, 0, 0],
+          strides: [height * 2 * width * 2 * channel, width * 2 * channel, channel, 1]
+        ).contiguous()
+      j += 1
+      depth = depth * 2 - 1
+      height = height * 2
+      width = width * 2
+      previousChannel = channel
+    }
+    for i in 0..<numRepeat {
+      let (mapper, block) = ResnetBlockCausal3D(
+        prefix: "up_blocks.\(j).res_blocks.\(i)", channels: channel, depth: depth, height: height,
+        width: width, isCausal: false)
+      out = block(out)
+      mappers.append(mapper)
+    }
+    j += 1
+  }
+  let normOut = RMSNorm(epsilon: 1e-8, axis: [3], elementwiseAffine: false, name: "norm_out")
+  out = normOut(out).swish()
+  let convOut = Convolution(
+    groups: 1, filters: 48, filterSize: [3, 3, 3],
+    hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+    format: .OIHW,
+    name: "conv_out")
+  out = convOut(
+    out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
+      .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
+    ).reshaped([
+      1, depth + 2, height + 2, width + 2, previousChannel,
+    ]))
+  // LTXV weirdly, did "b (c p r q) f h w -> b c (f p) (h q) (w r)"
+  out = out.reshaped([depth, height, width, 3, 4, 4]).permuted(0, 1, 5, 2, 4, 3).contiguous()
+    .reshaped([depth, height * 4, width * 4, 3])
+
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    mapping["conv_in.conv.weight"] = [convIn.weight.name]
+    mapping["conv_in.conv.bias"] = [convIn.bias.name]
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    mapping["conv_out.conv.weight"] = [convOut.weight.name]
+    mapping["conv_out.conv.bias"] = [convOut.bias.name]
+    return mapping
+  }
+  return (mapper, Model([x], [out]))
+}
+
+func LTX2VideoEncoderCausal3D(
+  layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
+  startHeight: Int,
+  startDepth: Int
+)
+  -> (ModelWeightMapper, Model)
+{
+  let x = Input()
+  var height = startHeight
+  var width = startWidth
+  var depth = startDepth
+  for layer in layers {
+    depth = (depth - 1) * layer.stride.0 + 1
+    height *= layer.stride.1
+    width *= layer.stride.2
+  }
+  // LTXV weirdly, did "b (c p r q) f h w -> b c (f p) (h q) (w r)"
+  var out = x.reshaped([depth, height, 4, width, 4, 3]).permuted(0, 1, 3, 5, 4, 2).contiguous()
+    .reshaped([1, depth, height, width, 48])
+  var previousChannel = layers[0].channels
+  let convIn = Convolution(
+    groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
+    hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+    format: .OIHW,
+    name: "conv_in")
+  out = convIn(out.padded(.replicate, begin: [0, 2, 0, 0, 0], end: [0, 0, 0, 0, 0]))
+  var j = 0
+  var mappers = [ModelWeightMapper]()
+  for layer in layers {
+    let channels = layer.channels
+    if layer.stride.0 > 1 || layer.stride.1 > 1 || layer.stride.2 > 1 {
+      // Convolution & reshape.
+      let conv = Convolution(
+        groups: 1, filters: channels / (layer.stride.0 * layer.stride.1 * layer.stride.2),
+        filterSize: [3, 3, 3],
+        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+        format: .OIHW,
+        name: "space_to_depth_downsample")
+      if layer.stride.0 == 1 {
+        var residual = out.reshaped([
+          depth, height / layer.stride.1, layer.stride.1, width / layer.stride.2,
+          layer.stride.2, previousChannel,
+        ]).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped([
+          depth, height / layer.stride.1, width / layer.stride.2, channels,
+          previousChannel * layer.stride.1 * layer.stride.2 / channels,
+        ])
+        residual = residual.reduced(.mean, axis: [4]).reshaped([
+          1, depth, height / layer.stride.1, width / layer.stride.2, channels,
+        ])
+        out = conv(out.padded(.replicate, begin: [0, 2, 0, 0, 0]))
+        out = out.reshaped([
+          depth, height / layer.stride.1, layer.stride.1, width / layer.stride.2, layer.stride.2,
+          channels / (layer.stride.1 * layer.stride.2),
+        ]).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped([
+          1, depth, height / layer.stride.1, width / layer.stride.2, channels,
+        ])
+        out = residual + out
+        height = height / layer.stride.1
+        width = width / layer.stride.2
+      } else if layer.stride.1 == 1 && layer.stride.2 == 1 {
+        var residual = out.padded(.replicate, begin: [0, 1, 0, 0, 0]).reshaped([
+          (depth + 1) / layer.stride.0, layer.stride.0, height, width, previousChannel,
+        ]).permuted(0, 2, 3, 4, 1).contiguous()
+        if previousChannel * layer.stride.0 / channels > 1 {
+          residual = residual.reshaped([
+            (depth + 1) / layer.stride.0,
+            height, width, channels, previousChannel * layer.stride.0 / channels,
+          ])
+          residual = residual.reduced(.mean, axis: [4]).reshaped([
+            1, (depth + 1) / layer.stride.0, height, width, channels,
+          ])
+        } else {
+          residual = residual.reshaped([1, (depth + 1) / layer.stride.0, height, width, channels])
+        }
+        out = conv(out.padded(.replicate, begin: [0, 3, 0, 0, 0]))
+        out = out.reshaped([
+          (depth + 1) / layer.stride.0, layer.stride.0, height, width, channels / layer.stride.0,
+        ]).permuted(0, 2, 3, 4, 1).contiguous().reshaped([
+          1, (depth + 1) / layer.stride.0, height, width, channels,
+        ])
+        out = residual + out
+        depth = (depth + 1) / layer.stride.0
+      } else {
+        var residual = out.padded(.replicate, begin: [0, 1, 0, 0, 0]).reshaped([
+          (depth + 1) / layer.stride.0, layer.stride.0, height / layer.stride.1,
+          layer.stride.1, width / layer.stride.2, layer.stride.2, previousChannel,
+        ]).permuted(0, 2, 4, 6, 1, 3, 5).contiguous().reshaped([
+          (depth + 1) / layer.stride.0, height / layer.stride.1, width / layer.stride.2,
+          channels, previousChannel * layer.stride.0 * layer.stride.1 * layer.stride.2 / channels,
+        ])
+        residual = residual.reduced(.mean, axis: [4]).reshaped([
+          1, (depth + 1) / layer.stride.0, height / layer.stride.1,
+          width / layer.stride.2, channels,
+        ])
+        out = conv(out.padded(.replicate, begin: [0, 3, 0, 0, 0]))
+        out = out.reshaped([
+          (depth + 1) / layer.stride.0, layer.stride.0, height / layer.stride.1, layer.stride.1,
+          width / layer.stride.2, layer.stride.2,
+          channels / (layer.stride.0 * layer.stride.1 * layer.stride.2),
+        ]).permuted(0, 2, 4, 6, 1, 3, 5).contiguous().reshaped([
+          1, (depth + 1) / layer.stride.0, height / layer.stride.1,
+          width / layer.stride.2, channels,
+        ])
+        out = residual + out
+        depth = (depth + 1) / layer.stride.0
+        height = height / layer.stride.1
+        width = width / layer.stride.2
+      }
+      previousChannel = channels
+      let downBlocks = j
+      mappers.append { _ in
+        var mapping = ModelWeightMapping()
+        mapping["down_blocks.\(downBlocks).conv.conv.weight"] = [conv.weight.name]
+        mapping["down_blocks.\(downBlocks).conv.conv.bias"] = [conv.bias.name]
+        return mapping
+      }
+      j += 1
+    }
+    for i in 0..<layer.numRepeat {
+      let (mapper, block) = ResnetBlockCausal3D(
+        prefix: "down_blocks.\(j).res_blocks.\(i)", channels: channels, depth: depth,
+        height: height, width: width, isCausal: true)
+      out = block(out)
+      mappers.append(mapper)
+    }
+    j += 1
+  }
+  let normOut = RMSNorm(epsilon: 1e-8, axis: [3], elementwiseAffine: false, name: "norm_out")
+  out = normOut(out.reshaped([depth, height, width, previousChannel])).reshaped([
+    1, depth, height, width, previousChannel,
+  ]).swish()
+  let convOut = Convolution(
+    groups: 1, filters: 129, filterSize: [3, 3, 3],
+    hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+    format: .OIHW,
+    name: "conv_out")
+  out = convOut(out.padded(.replicate, begin: [0, 2, 0, 0, 0]))
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    mapping["conv_in.conv.weight"] = [convIn.weight.name]
+    mapping["conv_in.conv.bias"] = [convIn.bias.name]
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    mapping["conv_out.conv.weight"] = [convOut.weight.name]
+    mapping["conv_out.conv.bias"] = [convOut.bias.name]
+    return mapping
+  }
+  return (mapper, Model([x], [out]))
+}
+
+private func ResnetBlockCausal3DNCHW(
+  prefix: String, channels: Int, depth: Int, height: Int, width: Int, isCausal: Bool
+) -> (
+  ModelWeightMapper, Model
+) {
+  let x = Input()
+  let norm1 = RMSNorm(epsilon: 1e-8, axis: [0], elementwiseAffine: false, name: "resnet_norm1")
+  var out = norm1(x.reshaped([channels, depth, height, width])).reshaped([
+    1, channels, depth, height, width,
+  ])
+  out = out.swish()
+  let conv1 = Convolution(
+    groups: 1, filters: channels, filterSize: [3, 3, 3],
+    hint: Hint(
+      stride: [1, 1, 1],
+      border: Hint.Border(
+        begin: [0, isCausal ? 1 : 0, isCausal ? 1 : 0],
+        end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])), format: .OIHW,
+    name: "resnet_conv1")
+  out = out.padded(
+    .replicate, begin: [0, 0, isCausal ? 2 : 1, 0, 0], end: [0, 0, isCausal ? 0 : 1, 0, 0])
+  if !isCausal {
+    out = out.padded(.reflect, begin: [0, 0, 0, 1, 1], end: [0, 0, 0, 1, 1])
+  }
+  out = conv1(out)
+  let norm2 = RMSNorm(epsilon: 1e-8, axis: [0], elementwiseAffine: false, name: "resnet_norm2")
+  out = norm2(out.reshaped([channels, depth, height, width])).reshaped([
+    1, channels, depth, height, width,
+  ])
+  out = out.swish()
+  let conv2 = Convolution(
+    groups: 1, filters: channels, filterSize: [3, 3, 3],
+    hint: Hint(
+      stride: [1, 1, 1],
+      border: Hint.Border(
+        begin: [0, isCausal ? 1 : 0, isCausal ? 1 : 0],
+        end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])), format: .OIHW,
+    name: "resnet_conv2")
+  out = out.padded(
+    .replicate, begin: [0, 0, isCausal ? 2 : 1, 0, 0], end: [0, 0, isCausal ? 0 : 1, 0, 0])
+  if !isCausal {
+    out = out.padded(.reflect, begin: [0, 0, 0, 1, 1], end: [0, 0, 0, 1, 1])
+  }
+  out = conv2(out)
+  out = x + out
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).conv1.conv.weight"] = [conv1.weight.name]
+    mapping["\(prefix).conv1.conv.bias"] = [conv1.bias.name]
+    mapping["\(prefix).conv2.conv.weight"] = [conv2.weight.name]
+    mapping["\(prefix).conv2.conv.bias"] = [conv2.bias.name]
+    return mapping
+  }
+  return (mapper, Model([x], [out]))
+}
+
+func LTX2VideoDecoderCausal3DNCHW(
+  channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
+  startDepth: Int
+)
+  -> (ModelWeightMapper, Model)
+{
+  let x = Input()
+  var previousChannel = channels[channels.count - 1]
+  let convIn = Convolution(
+    groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
+    hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+    format: .OIHW,
     name: "conv_in")
   var out = convIn(
     x.padded(.replicate, begin: [0, 0, 1, 0, 0], end: [0, 0, 1, 0, 0]).padded(
@@ -82,6 +403,7 @@ func LTX2VideoDecoderCausal3D(
       let conv = Convolution(
         groups: 1, filters: channel * 8, filterSize: [3, 3, 3],
         hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+        format: .OIHW,
         name: "depth_to_space_upsample")
       var residual = out.reshaped([previousChannel / 8, 2, 2, 2, depth, height, width]).permuted(
         0, 4, 1, 5, 2, 6, 3
@@ -121,7 +443,7 @@ func LTX2VideoDecoderCausal3D(
       previousChannel = channel
     }
     for i in 0..<numRepeat {
-      let (mapper, block) = ResnetBlockCausal3D(
+      let (mapper, block) = ResnetBlockCausal3DNCHW(
         prefix: "up_blocks.\(j).res_blocks.\(i)", channels: channel, depth: depth, height: height,
         width: width, isCausal: false)
       out = block(out)
@@ -136,6 +458,7 @@ func LTX2VideoDecoderCausal3D(
   let convOut = Convolution(
     groups: 1, filters: 48, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+    format: .OIHW,
     name: "conv_out")
   out = convOut(
     out.padded(.replicate, begin: [0, 0, 1, 0, 0], end: [0, 0, 1, 0, 0]).padded(
@@ -158,7 +481,7 @@ func LTX2VideoDecoderCausal3D(
   return (mapper, Model([x], [out]))
 }
 
-func LTX2VideoEncoderCausal3D(
+func LTX2VideoEncoderCausal3DNCHW(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
   startHeight: Int,
   startDepth: Int
@@ -181,6 +504,7 @@ func LTX2VideoEncoderCausal3D(
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+    format: .OIHW,
     name: "conv_in")
   out = convIn(out.padded(.replicate, begin: [0, 0, 2, 0, 0], end: [0, 0, 0, 0, 0]))
   var j = 0
@@ -193,6 +517,7 @@ func LTX2VideoEncoderCausal3D(
         groups: 1, filters: channels / (layer.stride.0 * layer.stride.1 * layer.stride.2),
         filterSize: [3, 3, 3],
         hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+        format: .OIHW,
         name: "space_to_depth_downsample")
       if layer.stride.0 == 1 {
         var residual = out.reshaped([
@@ -276,7 +601,7 @@ func LTX2VideoEncoderCausal3D(
       j += 1
     }
     for i in 0..<layer.numRepeat {
-      let (mapper, block) = ResnetBlockCausal3D(
+      let (mapper, block) = ResnetBlockCausal3DNCHW(
         prefix: "down_blocks.\(j).res_blocks.\(i)", channels: channels, depth: depth,
         height: height, width: width, isCausal: true)
       out = block(out)
@@ -291,6 +616,7 @@ func LTX2VideoEncoderCausal3D(
   let convOut = Convolution(
     groups: 1, filters: 129, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
+    format: .OIHW,
     name: "conv_out")
   out = convOut(out.padded(.replicate, begin: [0, 0, 2, 0, 0]))
   let mapper: ModelWeightMapper = { format in

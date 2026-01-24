@@ -272,7 +272,14 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         }
       }
   case .ltx2:
-    fatalError()
+    return conditions.enumerated().map {
+      guard ($0.0 - 3) % 26 >= 4, $0.0 - 3 < 48 * 26 else {
+        return $0.1
+      }
+      let shape = $0.1.shape
+      return DynamicGraph.Tensor<Float>($0.1)[index..<(index + 1), 0..<shape[1], 0..<shape[2]]
+        .copied()
+    }
   case .pixart:
     var extractedConditions = [conditions[0]]
     let layers = (conditions.count - 3) / 8
@@ -1380,7 +1387,23 @@ extension UNetFromNNC {
         }
       }
     case .ltx2:
-      fatalError()
+      /*
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 2, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 2, startHeight) : startHeight
+       */
+      tiledWidth = startWidth
+      tiledHeight = startHeight
+      let audioFrames = (batchSize - 1) * 8 + 1
+      let audioHeight = (audioFrames + batchSize * tiledWidth - 1) / (batchSize * tiledWidth)
+      let videoHeight = startHeight - audioHeight
+      tileScaleFactor = 32
+      unet = ModelBuilderOrModel.model(
+        LTX2(
+          time: batchSize, h: videoHeight, w: tiledWidth, textLength: 1024, audioFrames: audioFrames
+        ).1)
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -1585,7 +1608,10 @@ extension UNetFromNNC {
                   return ($0, $0)
                 })
             case .ltx2:
-              fatalError()
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<48).map {
+                  return ($0, $0)
+                })
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
               fatalError()
             }
@@ -2055,7 +2081,7 @@ extension UNetFromNNC {
           return finalEncoding
         }
       case .ltx2:
-        fatalError()
+        return $0.1
       }
       let shape = $0.1.shape
       guard shape.count == 4 else { return $0.1 }
@@ -2284,7 +2310,22 @@ extension UNetFromNNC {
       // TODO: TeaCache insert here.
       return
     case .ltx2:
-      fatalError()
+      let firstInput = DynamicGraph.Tensor<FloatType>(inputs[0])
+      let shape = firstInput.shape
+      // Separate firstInput into video input and audio input.
+      let batchSize = shape[0]  // TODO: / 2 when it is cfg enabled.
+      let startWidth = shape[2]
+      let audioFrames = (batchSize - 1) * 8 + 1
+      let audioHeight = (audioFrames + startWidth * batchSize - 1) / (startWidth * batchSize)
+      let startHeight = shape[1] - audioHeight
+      let videoInput = firstInput[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]]
+        .contiguous().reshaped(.HWC(1, batchSize * startWidth * startHeight, shape[3]))
+      let audioInput = firstInput[
+        0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
+      ].contiguous().reshaped(.HWC(1, audioFrames, shape[3]))
+      let restInputs = inputs[1...]
+      unet.compile(inputs: [videoInput, audioInput] + restInputs)
+      return
     }
     unet.compile(inputs: inputs)
   }
@@ -3027,7 +3068,30 @@ extension UNetFromNNC {
       }
       return Functional.concat(axis: 0, etUncond, etCond)
     case .ltx2:
-      fatalError()
+      let graph = firstInput.graph
+      let shape = firstInput.shape
+      // Separate firstInput into video input and audio input.
+      let batchSize = shape[0]  // TODO: / 2 when it is cfg enabled.
+      let startWidth = shape[2]
+      let audioFrames = (batchSize - 1) * 8 + 1
+      let audioHeight = (audioFrames + startWidth * batchSize - 1) / (startWidth * batchSize)
+      let startHeight = shape[1] - audioHeight
+      let videoInput = firstInput[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]]
+        .copied().reshaped(.HWC(1, batchSize * startWidth * startHeight, shape[3]))
+      let audioInput = firstInput[
+        0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
+      ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
+      let output = unet(inputs: videoInput, [audioInput] + restInputs).map {
+        $0.as(of: FloatType.self)
+      }
+      let videoOutput = output[0].reshaped(.NHWC(batchSize, startHeight, startWidth, shape[3]))
+      var audioOutput = graph.variable(
+        .GPU(0), .HWC(1, batchSize * startWidth * audioHeight, shape[3]), of: FloatType.self)
+      audioOutput.full(0)
+      audioOutput[0..<1, 0..<audioFrames, 0..<shape[3]] = output[1]
+      return Functional.concat(
+        axis: 1, videoOutput,
+        audioOutput.reshaped(.NHWC(batchSize, audioHeight, startWidth, shape[3])))
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break

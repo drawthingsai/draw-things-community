@@ -389,7 +389,11 @@ extension ControlModel {
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
     case .ltx2:
-      fatalError()
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 2, startHeight) : startHeight
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 2, startWidth) : startWidth
     case .wurstchenStageC:
       tiledHeight = startHeight
       tiledWidth = startWidth

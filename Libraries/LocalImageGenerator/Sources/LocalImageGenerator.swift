@@ -1567,11 +1567,11 @@ extension LocalImageGenerator {
       return result
     case .ltx2:
       let result = tokenize(
-        graph: graph, tokenizer: tokenizerQwen3, text: text,
+        graph: graph, tokenizer: tokenizerGemma3, text: text,
         negativeText: negativeText,
         paddingToken: nil, addSpecialTokens: false,
         conditionalLength: 3840, modifier: .gemma3,
-        potentials: potentials, startLength: 0, endLength: 0, maxLength: 0,
+        potentials: potentials, startLength: 1, endLength: 0, maxLength: 0,
         paddingLength: 0)
       return result
     case .hiDreamI1:
@@ -3277,7 +3277,7 @@ extension LocalImageGenerator {
       .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       return (1, image, nil)
     case .ltx2:
-      fatalError()
+      return (1, image, nil)  // TODO:
     case .wan21_14b, .wan21_1_3b:
       let shape = image.shape
       let batchSize = batchSize.0 - batchSize.1
@@ -3779,10 +3779,14 @@ extension LocalImageGenerator {
         firstPassStartWidth =
           (hiresFixEnabled ? Int(configuration.hiresFixStartWidth) : Int(configuration.startWidth))
           * 2
+        let latentFrames = ((Int(configuration.numFrames) - 1) / 8) + 1
+        let audioFrames = (latentFrames - 1) * 8 + 1
         firstPassStartHeight =
           (hiresFixEnabled
             ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
-          * 2
+          * 2 + (audioFrames + firstPassStartWidth * latentFrames - 1)
+          / (firstPassStartWidth * latentFrames)
+      // Adding additional height for audio.
       case .wan22_5b:
         firstPassChannels = 48
         firstPassScaleFactor = 16

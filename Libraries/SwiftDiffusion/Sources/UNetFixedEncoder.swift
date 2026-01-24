@@ -1939,7 +1939,142 @@ extension UNetFixedEncoder {
       ).toGPU(0)
       return ([graph.variable(rotaryEmbedding)] + conditions, nil)
     case .ltx2:
-      fatalError()
+      let c0 = textEncoding[0]
+      let cBatchSize = isCfgEnabled ? 2 : 1
+      let textLength = c0.shape[1]
+      let audioFrames = (batchSize - 1) * 8 + 1
+      let audioHeight = (audioFrames + batchSize * startWidth - 1) / (batchSize * startWidth)
+      let h = startHeight - audioHeight
+      let w = startWidth
+      let paddedTextLength = max(textLength, 1024)
+      let videoConnector = Embedding1DConnector(
+        prefix: "embeddings_connector", layers: 2, tokenLength: paddedTextLength
+      ).0
+      let audioConnector = Embedding1DConnector(
+        prefix: "audio_embeddings_connector", layers: 2, tokenLength: paddedTextLength
+      ).0
+      let loadedVideoConnectorFromWeightsCache = weightsCache.detach(
+        "\(filePath):[video_connector]", to: videoConnector.parameters)
+      let loadedAudioConnectorFromWeightsCache = weightsCache.detach(
+        "\(filePath):[audio_connector]", to: audioConnector.parameters)
+      var videoHiddenStates = graph.variable(
+        .GPU(0), .HWC(cBatchSize, paddedTextLength, 3840), of: FloatType.self)
+      var audioHiddenStates = graph.variable(
+        .GPU(0), .HWC(cBatchSize, paddedTextLength, 3840), of: FloatType.self)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if let videoConnectorLearnableRegisters =
+          (store.read(
+            "text_video_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .ezm7]
+          ).map { Tensor<FloatType>(from: $0).toGPU(0) })
+        {
+          let registers = graph.variable(videoConnectorLearnableRegisters).reshaped(
+            .HWC(1, 128, 3840))
+          for i in 0..<cBatchSize {
+            for j in stride(from: 0, to: paddedTextLength, by: 128) {
+              videoHiddenStates[i..<(i + 1), j..<min(paddedTextLength, j + 128), 0..<3840] =
+                registers[0..<1, 0..<(min(paddedTextLength, j + 128) - j), 0..<3840]
+            }
+          }
+        }
+        if let audioConnectorLearnableRegisters =
+          (store.read(
+            "text_audio_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .ezm7]
+          ).map { Tensor<FloatType>(from: $0).toGPU(0) })
+        {
+          let registers = graph.variable(audioConnectorLearnableRegisters).reshaped(
+            .HWC(1, 128, 3840))
+          for i in 0..<cBatchSize {
+            for j in stride(from: 0, to: paddedTextLength, by: 128) {
+              audioHiddenStates[i..<(i + 1), j..<min(paddedTextLength, j + 128), 0..<3840] =
+                registers[0..<1, 0..<(min(paddedTextLength, j + 128) - j), 0..<3840]
+            }
+          }
+        }
+      }
+      if cBatchSize > 1 {
+        videoHiddenStates[0..<1, 0..<min(textLength, tokenLengthUncond), 0..<3840] =
+          c0[0..<1, 0..<min(textLength, tokenLengthUncond), 0..<3840]
+        audioHiddenStates[0..<1, 0..<min(textLength, tokenLengthUncond), 0..<3840] =
+          c0[0..<1, 0..<min(textLength, tokenLengthUncond), 0..<3840]
+        videoHiddenStates[1..<2, 0..<min(textLength, tokenLengthCond), 0..<3840] =
+          c0[1..<2, 0..<min(textLength, tokenLengthCond), 0..<3840]
+        audioHiddenStates[1..<2, 0..<min(textLength, tokenLengthCond), 0..<3840] =
+          c0[1..<2, 0..<min(textLength, tokenLengthCond), 0..<3840]
+      } else {
+        videoHiddenStates[0..<1, 0..<min(textLength, tokenLengthCond), 0..<3840] =
+          c0[(c0.shape[0] - 1)..<c0.shape[0], 0..<min(textLength, tokenLengthCond), 0..<3840]
+        audioHiddenStates[0..<1, 0..<min(textLength, tokenLengthCond), 0..<3840] =
+          c0[(c0.shape[0] - 1)..<c0.shape[0], 0..<min(textLength, tokenLengthCond), 0..<3840]
+      }
+      let rotaryEmbedding1D = graph.variable(
+        Tensor<FloatType>(
+          from: LTX2RotaryPositionEmbedding1D(
+            tokenLength: paddedTextLength, maxLength: 4096, channels: 3840, headDimension: 128
+          ).toGPU(0)))
+      videoConnector.compile(inputs: videoHiddenStates, rotaryEmbedding1D)
+      audioConnector.compile(inputs: audioHiddenStates, rotaryEmbedding1D)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !loadedVideoConnectorFromWeightsCache {
+          store.read(
+            "text_video_connector", model: videoConnector,
+            codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
+        if !loadedAudioConnectorFromWeightsCache {
+          store.read(
+            "text_audio_connector", model: audioConnector,
+            codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
+      }
+      let videoContext = videoConnector(inputs: videoHiddenStates, rotaryEmbedding1D)[0].as(
+        of: FloatType.self)
+      let audioContext = audioConnector(inputs: audioHiddenStates, rotaryEmbedding1D)[0].as(
+        of: FloatType.self)
+      weightsCache.attach("\(filePath):[video_connector]", from: videoConnector.parameters)
+      weightsCache.attach("\(filePath):[audio_connector]", from: audioConnector.parameters)
+      let (rotaryEmbedding, rotaryEmbeddingAudio, rotaryEmbeddingVideoToAudio) =
+        LTX2VideoAudioRotaryPositionEmbedding(
+          time: batchSize, height: h, width: w, audioTime: (batchSize - 1) * 8 + 1,
+          channels: (4096, 2048), numberOfHeads: 32)
+      var timeEmbeds = graph.variable(.GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: 1, embeddingSize: 256,
+              maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<1, 0..<256] = timeEmbed.reshaped(.HWC(1, 1, 256))
+      }
+      let unetFixed = LTX2Fixed(
+        time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
+        timesteps: timesteps.count
+      ).1
+      unetFixed.maxConcurrency = .limit(4)
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
+      unetFixed.compile(inputs: videoContext, audioContext, timeEmbeds)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !loadedFromWeightsCache {
+          store.read(
+            "dit", model: unetFixed,
+            codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
+      }
+      let contexts = unetFixed(inputs: videoContext, audioContext, timeEmbeds)
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      return (
+        [
+          graph.variable(Tensor<FloatType>(from: rotaryEmbedding).toGPU(0)),
+          graph.variable(Tensor<FloatType>(from: rotaryEmbeddingAudio).toGPU(0)),
+          graph.variable(Tensor<FloatType>(from: rotaryEmbeddingVideoToAudio).toGPU(0)),
+        ] + contexts, nil
+      )
     case .hiDreamI1:
       let h = startHeight / 2
       let w = startWidth / 2
