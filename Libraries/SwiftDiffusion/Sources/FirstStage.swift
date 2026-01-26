@@ -18,13 +18,19 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let alternativeFilePath: String?
   private let alternativeDecoderVersion: AlternativeDecoderVersion?
   private let latentsScaling:
-    (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?)
+    (
+      mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?, audioMean: [Float]?,
+      audioStd: [Float]?
+    )
   private let highPrecisionFallback: Bool
   private let deviceProperties: DeviceProperties  // If this device has more than 24GiB RAM, 8GiB - 24GiB, less than 8GiB
   private let isCancelled = ManagedAtomic<Bool>(false)
   public init(
     filePath: String, version: ModelVersion,
-    latentsScaling: (mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?),
+    latentsScaling: (
+      mean: [Float]?, std: [Float]?, scalingFactor: Float, shiftFactor: Float?, audioMean: [Float]?,
+      audioStd: [Float]?
+    ),
     highPrecisionKeysAndValues: Bool, highPrecisionFallback: Bool,
     tiledDecoding: TiledConfiguration,
     tiledDiffusion: TiledConfiguration, externalOnDemand: Bool, alternativeUsesFlashAttention: Bool,
