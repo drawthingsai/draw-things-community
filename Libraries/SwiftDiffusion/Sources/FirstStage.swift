@@ -553,14 +553,15 @@ extension FirstStage {
       causalAttentionMask = nil
     case .ltx2:
       let startDepth = shape[0]
-      let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight(z.shape)
+      let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight(z.shape)
       startHeight = startHeight - audioHeight
       z = z[0..<startDepth, 0..<startHeight, 0..<startWidth, 0..<shape[3]].contiguous()
       decoder =
         existingDecoder
         ?? LTX2VideoDecoderCausal3D(
           channels: [128, 256, 512, 1024], numRepeat: 5, startWidth: startWidth,
-          startHeight: startHeight, startDepth: startDepth
+          startHeight: startHeight, startDepth: startDepth,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)

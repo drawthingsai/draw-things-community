@@ -1,6 +1,6 @@
 import NNC
 
-private func ResnetBlockCausal3D(
+private func NHWCResnetBlockCausal3D(
   prefix: String, channels: Int, depth: Int, height: Int, width: Int, isCausal: Bool
 ) -> (
   ModelWeightMapper, Model
@@ -64,7 +64,7 @@ private func ResnetBlockCausal3D(
   return (mapper, Model([x], [out]))
 }
 
-func LTX2VideoDecoderCausal3D(
+func NHWCLTX2VideoDecoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
   startDepth: Int
 )
@@ -130,7 +130,7 @@ func LTX2VideoDecoderCausal3D(
       previousChannel = channel
     }
     for i in 0..<numRepeat {
-      let (mapper, block) = ResnetBlockCausal3D(
+      let (mapper, block) = NHWCResnetBlockCausal3D(
         prefix: "up_blocks.\(j).res_blocks.\(i)", channels: channel, depth: depth, height: height,
         width: width, isCausal: false)
       out = block(out)
@@ -169,10 +169,9 @@ func LTX2VideoDecoderCausal3D(
   return (mapper, Model([x], [out]))
 }
 
-func LTX2VideoEncoderCausal3D(
+func NHWCLTX2VideoEncoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int,
-  startDepth: Int
+  startHeight: Int, startDepth: Int
 )
   -> (ModelWeightMapper, Model)
 {
@@ -288,7 +287,7 @@ func LTX2VideoEncoderCausal3D(
       j += 1
     }
     for i in 0..<layer.numRepeat {
-      let (mapper, block) = ResnetBlockCausal3D(
+      let (mapper, block) = NHWCResnetBlockCausal3D(
         prefix: "down_blocks.\(j).res_blocks.\(i)", channels: channels, depth: depth,
         height: height, width: width, isCausal: true)
       out = block(out)
@@ -320,16 +319,14 @@ func LTX2VideoEncoderCausal3D(
   return (mapper, Model([x], [out]))
 }
 
-private func ResnetBlockCausal3DNCHW(
+private func NCHWResnetBlockCausal3D(
   prefix: String, channels: Int, depth: Int, height: Int, width: Int, isCausal: Bool
 ) -> (
   ModelWeightMapper, Model
 ) {
   let x = Input()
   let norm1 = RMSNorm(epsilon: 1e-8, axis: [0], elementwiseAffine: false, name: "resnet_norm1")
-  var out = norm1(x.reshaped([channels, depth, height, width])).reshaped([
-    1, channels, depth, height, width,
-  ])
+  var out = norm1(x)
   out = out.swish()
   let conv1 = Convolution(
     groups: 1, filters: channels, filterSize: [3, 3, 3],
@@ -340,15 +337,17 @@ private func ResnetBlockCausal3DNCHW(
         end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])), format: .OIHW,
     name: "resnet_conv1")
   out = out.padded(
-    .replicate, begin: [0, 0, isCausal ? 2 : 1, 0, 0], end: [0, 0, isCausal ? 0 : 1, 0, 0])
+    .replicate, begin: [0, isCausal ? 2 : 1, 0, 0], end: [0, isCausal ? 0 : 1, 0, 0])
   if !isCausal {
-    out = out.padded(.reflect, begin: [0, 0, 0, 1, 1], end: [0, 0, 0, 1, 1])
+    out = out.padded(.reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]).reshaped([
+      1, channels, depth + 2, height + 2, width + 2,
+    ])
+  } else {
+    out = out.reshaped([1, channels, depth + 2, height, width])
   }
   out = conv1(out)
   let norm2 = RMSNorm(epsilon: 1e-8, axis: [0], elementwiseAffine: false, name: "resnet_norm2")
-  out = norm2(out.reshaped([channels, depth, height, width])).reshaped([
-    1, channels, depth, height, width,
-  ])
+  out = norm2(out.reshaped([channels, depth, height, width]))
   out = out.swish()
   let conv2 = Convolution(
     groups: 1, filters: channels, filterSize: [3, 3, 3],
@@ -359,11 +358,15 @@ private func ResnetBlockCausal3DNCHW(
         end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])), format: .OIHW,
     name: "resnet_conv2")
   out = out.padded(
-    .replicate, begin: [0, 0, isCausal ? 2 : 1, 0, 0], end: [0, 0, isCausal ? 0 : 1, 0, 0])
+    .replicate, begin: [0, isCausal ? 2 : 1, 0, 0], end: [0, isCausal ? 0 : 1, 0, 0])
   if !isCausal {
-    out = out.padded(.reflect, begin: [0, 0, 0, 1, 1], end: [0, 0, 0, 1, 1])
+    out = out.padded(.reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]).reshaped([
+      1, channels, depth + 2, height + 2, width + 2,
+    ])
+  } else {
+    out = out.reshaped([1, channels, depth + 2, height, width])
   }
-  out = conv2(out)
+  out = conv2(out).reshaped([channels, depth, height, width])
   out = x + out
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -376,7 +379,7 @@ private func ResnetBlockCausal3DNCHW(
   return (mapper, Model([x], [out]))
 }
 
-func LTX2VideoDecoderCausal3DNCHW(
+func NCHWLTX2VideoDecoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
   startDepth: Int
 )
@@ -387,11 +390,14 @@ func LTX2VideoDecoderCausal3DNCHW(
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
-    format: .OIHW,
-    name: "conv_in")
+    format: .OIHW, name: "conv_in")
   var out = convIn(
-    x.padded(.replicate, begin: [0, 0, 1, 0, 0], end: [0, 0, 1, 0, 0]).padded(
-      .reflect, begin: [0, 0, 0, 1, 1], end: [0, 0, 0, 1, 1]))
+    x.permuted(3, 0, 1, 2).contiguous().reshaped(
+      [128, startDepth, startHeight, startWidth], format: .NCHW
+    ).padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
+      .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
+    ).reshaped([1, 128, startDepth + 2, startHeight + 2, startWidth + 2])
+  ).reshaped([previousChannel, startDepth, startHeight, startWidth])
   var mappers = [ModelWeightMapper]()
   var j = 0
   var depth = startDepth
@@ -403,22 +409,21 @@ func LTX2VideoDecoderCausal3DNCHW(
       let conv = Convolution(
         groups: 1, filters: channel * 8, filterSize: [3, 3, 3],
         hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
-        format: .OIHW,
-        name: "depth_to_space_upsample")
+        format: .OIHW, name: "depth_to_space_upsample")
       var residual = out.reshaped([previousChannel / 8, 2, 2, 2, depth, height, width]).permuted(
         0, 4, 1, 5, 2, 6, 3
       ).contiguous().reshaped(
-        [1, previousChannel / 8, depth * 2 - 1, height * 2, width * 2], offset: [0, 0, 1, 0, 0],
+        [previousChannel / 8, depth * 2 - 1, height * 2, width * 2], offset: [0, 1, 0, 0],
         strides: [
-          previousChannel * depth * height * width, depth * 2 * height * 2 * width * 2,
-          height * 2 * width * 2, width * 2, 1,
+          depth * 2 * height * 2 * width * 2, height * 2 * width * 2, width * 2, 1,
         ]
       ).contiguous()
       residual = Functional.concat(
-        axis: 1, residual, residual, residual, residual, flags: [.disableOpt])
+        axis: 0, residual, residual, residual, residual, flags: [.disableOpt])
       out = conv(
-        out.padded(.replicate, begin: [0, 0, 1, 0, 0], end: [0, 0, 1, 0, 0]).padded(
-          .reflect, begin: [0, 0, 0, 1, 1], end: [0, 0, 0, 1, 1]))
+        out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
+          .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
+        ).reshaped([1, previousChannel, depth + 2, height + 2, width + 2]))
       let upBlocks = j
       mappers.append { _ in
         var mapping = ModelWeightMapping()
@@ -430,11 +435,8 @@ func LTX2VideoDecoderCausal3DNCHW(
         residual
         + out.reshaped([channel, 2, 2, 2, depth, height, width]).permuted(0, 4, 1, 5, 2, 6, 3)
         .contiguous().reshaped(
-          [1, channel, depth * 2 - 1, height * 2, width * 2], offset: [0, 0, 1, 0, 0],
-          strides: [
-            channel * depth * 2 * height * 2 * width * 2, depth * 2 * height * 2 * width * 2,
-            height * 2 * width * 2, width * 2, 1,
-          ]
+          [channel, depth * 2 - 1, height * 2, width * 2], offset: [0, 1, 0, 0],
+          strides: [depth * 2 * height * 2 * width * 2, height * 2 * width * 2, width * 2, 1]
         ).contiguous()
       j += 1
       depth = depth * 2 - 1
@@ -443,7 +445,7 @@ func LTX2VideoDecoderCausal3DNCHW(
       previousChannel = channel
     }
     for i in 0..<numRepeat {
-      let (mapper, block) = ResnetBlockCausal3DNCHW(
+      let (mapper, block) = NCHWResnetBlockCausal3D(
         prefix: "up_blocks.\(j).res_blocks.\(i)", channels: channel, depth: depth, height: height,
         width: width, isCausal: false)
       out = block(out)
@@ -452,20 +454,21 @@ func LTX2VideoDecoderCausal3DNCHW(
     j += 1
   }
   let normOut = RMSNorm(epsilon: 1e-8, axis: [0], elementwiseAffine: false, name: "norm_out")
-  out = normOut(out.reshaped([previousChannel, depth, height, width])).reshaped([
-    1, previousChannel, depth, height, width,
-  ]).swish()
+  out = normOut(out.reshaped([previousChannel, depth, height, width])).swish()
   let convOut = Convolution(
     groups: 1, filters: 48, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
     format: .OIHW,
     name: "conv_out")
   out = convOut(
-    out.padded(.replicate, begin: [0, 0, 1, 0, 0], end: [0, 0, 1, 0, 0]).padded(
-      .reflect, begin: [0, 0, 0, 1, 1], end: [0, 0, 0, 1, 1]))
+    out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
+      .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
+    ).reshaped([
+      1, previousChannel, depth + 2, height + 2, width + 2,
+    ]))
   // LTXV weirdly, did "b (c p r q) f h w -> b c (f p) (h q) (w r)"
-  out = out.reshaped([3, 4, 4, depth, height, width]).permuted(0, 3, 4, 2, 5, 1).contiguous()
-    .reshaped([3, depth, height * 4, width * 4])
+  out = out.reshaped([3, 4, 4, depth, height, width]).permuted(3, 4, 2, 5, 1, 0).contiguous()
+    .reshaped([depth, height * 4, width * 4, 3], format: .NHWC)
 
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -481,10 +484,9 @@ func LTX2VideoDecoderCausal3DNCHW(
   return (mapper, Model([x], [out]))
 }
 
-func LTX2VideoEncoderCausal3DNCHW(
+func NCHWLTX2VideoEncoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int,
-  startDepth: Int
+  startHeight: Int, startDepth: Int
 )
   -> (ModelWeightMapper, Model)
 {
@@ -601,7 +603,7 @@ func LTX2VideoEncoderCausal3DNCHW(
       j += 1
     }
     for i in 0..<layer.numRepeat {
-      let (mapper, block) = ResnetBlockCausal3DNCHW(
+      let (mapper, block) = NCHWResnetBlockCausal3D(
         prefix: "down_blocks.\(j).res_blocks.\(i)", channels: channels, depth: depth,
         height: height, width: width, isCausal: true)
       out = block(out)
@@ -631,4 +633,22 @@ func LTX2VideoEncoderCausal3DNCHW(
     return mapping
   }
   return (mapper, Model([x], [out]))
+}
+
+public func LTX2VideoDecoderCausal3D(
+  channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
+  startDepth: Int, format: TensorFormat
+) -> (ModelWeightMapper, Model) {
+  switch format {
+  case .NHWC:
+    return NHWCLTX2VideoDecoderCausal3D(
+      channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
+      startDepth: startDepth)
+  case .NCHW:
+    return NCHWLTX2VideoDecoderCausal3D(
+      channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
+      startDepth: startDepth)
+  case .CHWN:
+    fatalError()
+  }
 }
