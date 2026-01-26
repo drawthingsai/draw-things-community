@@ -1396,14 +1396,17 @@ extension UNetFromNNC {
        */
       tiledWidth = startWidth
       tiledHeight = startHeight
-      let audioFrames = (batchSize - 1) * 8 + 1
-      let audioHeight = (audioFrames + batchSize * tiledWidth - 1) / (batchSize * tiledWidth)
-      let videoHeight = startHeight - audioHeight
       tileScaleFactor = 32
-      unet = ModelBuilderOrModel.model(
-        LTX2(
-          time: batchSize, h: videoHeight, w: tiledWidth, textLength: 1024, audioFrames: audioFrames
-        ).1)
+      unet = ModelBuilderOrModel.modelBuilder(
+        ModelBuilder {
+          let shape = $0[0].shape
+          let audioFrames = $0[1].shape[1]
+          let textLength = $0[5].shape[1]
+          return LTX2(
+            time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
+            audioFrames: audioFrames
+          ).1
+        })
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
@@ -2315,11 +2318,10 @@ extension UNetFromNNC {
       // Separate firstInput into video input and audio input.
       let batchSize = shape[0]  // TODO: / 2 when it is cfg enabled.
       let startWidth = shape[2]
-      let audioFrames = (batchSize - 1) * 8 + 1
-      let audioHeight = (audioFrames + startWidth * batchSize - 1) / (startWidth * batchSize)
+      let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight(shape)
       let startHeight = shape[1] - audioHeight
       let videoInput = firstInput[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]]
-        .contiguous().reshaped(.HWC(1, batchSize * startWidth * startHeight, shape[3]))
+        .contiguous()
       let audioInput = firstInput[
         0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
       ].contiguous().reshaped(.HWC(1, audioFrames, shape[3]))
@@ -3073,11 +3075,10 @@ extension UNetFromNNC {
       // Separate firstInput into video input and audio input.
       let batchSize = shape[0]  // TODO: / 2 when it is cfg enabled.
       let startWidth = shape[2]
-      let audioFrames = (batchSize - 1) * 8 + 1
-      let audioHeight = (audioFrames + startWidth * batchSize - 1) / (startWidth * batchSize)
+      let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight(shape)
       let startHeight = shape[1] - audioHeight
       let videoInput = firstInput[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]]
-        .copied().reshaped(.HWC(1, batchSize * startWidth * startHeight, shape[3]))
+        .copied()
       let audioInput = firstInput[
         0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
       ].copied().reshaped(.HWC(1, audioFrames, shape[3]))

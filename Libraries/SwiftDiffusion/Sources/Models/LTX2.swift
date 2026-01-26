@@ -99,6 +99,12 @@ public func LTX2VideoAudioRotaryPositionEmbedding(
   )
 }
 
+public func LTX2ExtractAudioFramesAndHeight(_ shape: TensorShape) -> (Int, Int) {
+  let audioFrames = (shape[0] - 1) * 8 + 1
+  let audioHeight = (audioFrames + shape[2] * shape[0] - 1) / (shape[2] * shape[0])
+  return (audioFrames, audioHeight)
+}
+
 private func BasicTransformerBlock1D(prefix: String, k: Int, h: Int, b: Int, t: Int) -> (
   ModelWeightMapper, Model
 ) {
@@ -466,8 +472,10 @@ func LTX2(time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int) -> (
   let rot = Input()
   let rotA = Input()
   let rotCX = Input()
-  let xEmbedder = Dense(count: 4096, name: "x_embedder")
-  var out = xEmbedder(x).to(.Float32)
+  let xEmbedder = Convolution(
+    groups: 1, filters: 4096, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+    name: "x_embedder")
+  var out = xEmbedder(x).reshaped(.HWC(1, time * h * w, 4096)).to(.Float32)
   let a = Input()
   let aEmbedder = Dense(count: 2048, name: "a_embedder")
   var aOut = aEmbedder(a).to(.Float32)

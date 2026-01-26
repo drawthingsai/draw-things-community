@@ -1942,8 +1942,9 @@ extension UNetFixedEncoder {
       let c0 = textEncoding[0]
       let cBatchSize = isCfgEnabled ? 2 : 1
       let textLength = c0.shape[1]
-      let audioFrames = (batchSize - 1) * 8 + 1
-      let audioHeight = (audioFrames + batchSize * startWidth - 1) / (batchSize * startWidth)
+      let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight([
+        batchSize, startHeight, startWidth,
+      ])
       let h = startHeight - audioHeight
       let w = startWidth
       let paddedTextLength = max(textLength, 1024)

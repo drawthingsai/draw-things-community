@@ -553,8 +553,7 @@ extension FirstStage {
       causalAttentionMask = nil
     case .ltx2:
       let startDepth = shape[0]
-      let audioFrames = (startDepth - 1) * 8 + 1
-      let audioHeight = (audioFrames + startWidth * startDepth - 1) / (startWidth * startDepth)
+      let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight(z.shape)
       startHeight = startHeight - audioHeight
       z = z[0..<startDepth, 0..<startHeight, 0..<startWidth, 0..<shape[3]].contiguous()
       decoder =
