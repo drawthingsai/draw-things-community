@@ -1403,7 +1403,7 @@ extension UNetFromNNC {
           let textLength = $0[5].shape[1]
           return LTX2(
             time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
-            audioFrames: audioFrames
+            audioFrames: audioFrames, channels: (4096, 2048), layers: 48
           ).1
         })
     }

@@ -2052,7 +2052,7 @@ extension UNetFixedEncoder {
       }
       let unetFixed = LTX2Fixed(
         time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
-        timesteps: timesteps.count
+        timesteps: timesteps.count, channels: (4096, 2048), layers: 48
       ).1
       unetFixed.maxConcurrency = .limit(4)
       let loadedFromWeightsCache = weightsCache.detach(
