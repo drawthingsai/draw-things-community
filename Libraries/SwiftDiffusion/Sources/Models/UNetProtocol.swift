@@ -1387,15 +1387,14 @@ extension UNetFromNNC {
         }
       }
     case .ltx2:
-      /*
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 2, startWidth) : startWidth
-      tiledHeight =
+      let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight(xT.shape)
+      let rawTiledHeight =
         tiledDiffusion.isEnabled
-        ? min(tiledDiffusion.tileSize.height * 2, startHeight) : startHeight
-       */
-      tiledWidth = startWidth
-      tiledHeight = startHeight
+        ? min(tiledDiffusion.tileSize.height * 2, startHeight - audioHeight)
+        : startHeight - audioHeight
+      tiledHeight = rawTiledHeight + LTX2ExtractAudioFramesAndHeight([batchSize, 1, tiledWidth]).1  // Adding back the audio height.
       tileScaleFactor = 32
       unet = ModelBuilderOrModel.modelBuilder(
         ModelBuilder {
