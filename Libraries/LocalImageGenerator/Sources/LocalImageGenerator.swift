@@ -2065,8 +2065,7 @@ extension LocalImageGenerator {
 
   private func randomLatentNoise(
     graph: DynamicGraph, batchSize: Int, startHeight: Int, startWidth: Int, channels: Int,
-    seed: UInt32,
-    seedMode: SeedMode
+    seed: UInt32, seedMode: SeedMode
   ) -> DynamicGraph.Tensor<FloatType> {
     let x_T: DynamicGraph.Tensor<FloatType>
     switch seedMode {
@@ -3746,10 +3745,12 @@ extension LocalImageGenerator {
     let firstPassStartHeight: Int
     let firstPassChannels: Int
     let firstPassScaleFactor: Int
+    let firstPassAudioHeight: Int
     if modelVersion == .wurstchenStageC {
       (firstPassStartWidth, firstPassStartHeight) = stageCLatentsSize(configuration)
       firstPassChannels = 16
       firstPassScaleFactor = 8  // This is not exactly right, but will work for the compute afterwards.
+      firstPassAudioHeight = 0
     } else {
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
@@ -3763,6 +3764,7 @@ extension LocalImageGenerator {
           (hiresFixEnabled
             ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
           * 8
+        firstPassAudioHeight = 0
       case .flux2, .flux2_9b, .flux2_4b:
         firstPassChannels = 32
         firstPassScaleFactor = 8
@@ -3773,6 +3775,7 @@ extension LocalImageGenerator {
           (hiresFixEnabled
             ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
           * 8
+        firstPassAudioHeight = 0
       case .ltx2:
         firstPassChannels = 128
         firstPassScaleFactor = 32
@@ -3780,12 +3783,12 @@ extension LocalImageGenerator {
           (hiresFixEnabled ? Int(configuration.hiresFixStartWidth) : Int(configuration.startWidth))
           * 2
         let latentFrames = ((Int(configuration.numFrames) - 1) / 8) + 1
-        let audioFrames = (latentFrames - 1) * 8 + 1
         firstPassStartHeight =
           (hiresFixEnabled
             ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
-          * 2 + (audioFrames + firstPassStartWidth * latentFrames - 1)
-          / (firstPassStartWidth * latentFrames)
+          * 2
+        firstPassAudioHeight =
+          LTX2ExtractAudioFramesAndHeight([latentFrames, 1, firstPassStartWidth]).1
       // Adding additional height for audio.
       case .wan22_5b:
         firstPassChannels = 48
@@ -3797,6 +3800,7 @@ extension LocalImageGenerator {
           (hiresFixEnabled
             ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
           * 4
+        firstPassAudioHeight = 0
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
         firstPassChannels = 4
@@ -3808,6 +3812,7 @@ extension LocalImageGenerator {
           (hiresFixEnabled
             ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
           * 8
+        firstPassAudioHeight = 0
       }
     }
     let firstPassScale = DeviceCapability.Scale(
@@ -4060,7 +4065,8 @@ extension LocalImageGenerator {
         guard feedback(.imageEncoded, signposts, nil) else { return (nil, 1) }
       }
       let x_T = randomLatentNoise(
-        graph: graph, batchSize: batchSize.0, startHeight: firstPassStartHeight,
+        graph: graph, batchSize: batchSize.0,
+        startHeight: firstPassStartHeight + firstPassAudioHeight,
         startWidth: firstPassStartWidth, channels: firstPassChannels, seed: configuration.seed,
         seedMode: configuration.seedMode)
       let depthImage = depth.map { graph.variable($0.toGPU(0)) }

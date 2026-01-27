@@ -66,6 +66,19 @@ extension FirstStage {
     let graph = x.graph
     let scalingFactor = latentsScaling.scalingFactor
     var z: DynamicGraph.Tensor<FloatType>
+    var audioZ: DynamicGraph.Tensor<Float>?
+    if version == .ltx2 {
+      // If it has audio, extract the audio track.
+      let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight(x.shape)
+      startHeight = startHeight - audioHeight
+      z = x[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]].contiguous()
+      audioZ = DynamicGraph.Tensor<Float>(
+        from: x[0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]].contiguous()
+          .reshaped(.HWC(1, audioFrames, shape[3])).contiguous())
+    } else {
+      z = x
+      audioZ = nil
+    }
     if let latentsMean = latentsScaling.mean, let latentsStd = latentsScaling.std,
       latentsMean.count >= 4, latentsStd.count >= 4
     {
@@ -88,14 +101,27 @@ extension FirstStage {
             format: .NHWC, shape: [shape[0], shape[1] / 2, shape[2] / 2, shape[3], 2, 2]
           ).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped(format: .NHWC, shape: shape)
       } else {
-        z = std .* x + mean
+        z = std .* z + mean
       }
     } else if let shiftFactor = latentsScaling.shiftFactor {
-      z = x / scalingFactor + shiftFactor
+      z = z / scalingFactor + shiftFactor
     } else {
-      z = x / scalingFactor
+      z = z / scalingFactor
+    }
+    if let audioLatentsMean = latentsScaling.audioMean,
+      let audioLatentsStd = latentsScaling.audioStd
+    {
+      let mean = graph.variable(
+        Tensor<Float>(
+          audioLatentsMean.map { Float($0) }, .GPU(0), .HWC(1, 1, audioLatentsMean.count)))
+      let std = graph.variable(
+        Tensor<Float>(
+          audioLatentsStd.map { Float($0) }, .GPU(0),
+          .HWC(1, 1, audioLatentsStd.count)))
+      audioZ = audioZ.map { std .* $0 + mean }
     }
     let decoder: Model
+    var audioDecoder = [Model]()
     var transparentDecoder: Model? = nil
     let queueWatermark = DynamicGraph.queueWatermark
     if version == .kandinsky21 || version == .hunyuanVideo {
@@ -559,9 +585,31 @@ extension FirstStage {
       causalAttentionMask = nil
     case .ltx2:
       let startDepth = shape[0]
-      let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight(z.shape)
-      startHeight = startHeight - audioHeight
-      z = z[0..<startDepth, 0..<startHeight, 0..<startWidth, 0..<shape[3]].contiguous()
+      if let audioZ = audioZ {
+        let shape = audioZ.shape
+        audioDecoder = [
+          LTX2AudioDecoderCausal2D(
+            channels: [128, 256, 512], numRepeat: 3, startWidth: 16, startHeight: shape[1]
+          ).1,
+          LTX2Vocoder(layers: [
+            (channels: 512, kernelSize: 16, stride: 6, padding: 5),
+            (channels: 256, kernelSize: 15, stride: 5, padding: 5),
+            (channels: 128, kernelSize: 8, stride: 2, padding: 3),
+            (channels: 64, kernelSize: 4, stride: 2, padding: 1),
+            (channels: 32, kernelSize: 4, stride: 2, padding: 1),
+          ]).1,
+        ]
+        audioDecoder[0].compile(inputs: audioZ)
+        let decodedAudio = graph.variable(
+          .GPU(0), .NCHW(1, 128, 1, (shape[1] - 1) * 4 + 1), of: Float.self)
+        audioDecoder[1].compile(inputs: decodedAudio)
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("audio_decoder", model: audioDecoder[0], codec: [.jit, externalData])
+          $0.read("vocoder", model: audioDecoder[1], codec: [.jit, externalData])
+        }
+      }
       decoder =
         existingDecoder
         ?? LTX2VideoDecoderCausal3D(
@@ -639,12 +687,19 @@ extension FirstStage {
     cancellation {
       isCancelled.store(true, ordering: .releasing)
       decoder.cancel()
+      audioDecoder.forEach {
+        $0.cancel()
+      }
     }
     // Hunyuan / Wan just do the decoding with the batch.
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
         && version != .wan22_5b && version != .ltx2
     else {
+      if audioDecoder.count > 1, let audioZ = audioZ {
+        let decodedAudio = audioDecoder[0](inputs: audioZ)[0].as(of: Float.self)
+        let waveform = audioDecoder[1](inputs: decodedAudio)[0].as(of: Float.self)
+      }
       if highPrecision {
         let result: DynamicGraph.Tensor<Float>
         if tiledDecoding {

@@ -44,7 +44,7 @@ private func ResBlock1(prefix: String, channels: Int, kernelSize: Int) -> (Model
   return (mapper, Model([x], [out]))
 }
 
-func LTX2Vocoder(width: Int, layers: [(channels: Int, kernelSize: Int, stride: Int, padding: Int)])
+func LTX2Vocoder(layers: [(channels: Int, kernelSize: Int, stride: Int, padding: Int)])
   -> (
     ModelWeightMapper, Model
   )
