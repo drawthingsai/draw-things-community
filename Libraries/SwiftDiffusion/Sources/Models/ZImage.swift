@@ -838,9 +838,13 @@ private func LoRAZImageTransformerBlock(
   } else {
     queries = toqueries(out).reshaped([b, t.0, h, k])
   }
-  let normK = RMSNorm(epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_k" : "\(name)_norm_k")
+  let normK = RMSNorm(
+    epsilon: 1e-5 / Float(scaleFactor.0.qk * scaleFactor.0.qk), axis: [3],
+    name: name.isEmpty ? "norm_k" : "\(name)_norm_k")
   keys = normK(keys)
-  let normQ = RMSNorm(epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_q" : "\(name)_norm_q")
+  let normQ = RMSNorm(
+    epsilon: 1e-5 / Float(scaleFactor.0.qk * scaleFactor.0.qk), axis: [3],
+    name: name.isEmpty ? "norm_q" : "\(name)_norm_q")
   queries = normQ(queries)
   if scaleFactor.0.proj > 1 {
     out = (1 / Float(scaleFactor.0.proj)) * out
