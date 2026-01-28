@@ -8,7 +8,7 @@ at the beginning and stopping it at the end.
 Workflow:
 1. Start NAS HTTP server (if not already running)
 2. Check if NAS HTTP server is accessible
-3. Load GPU servers from gpu_servers.txt
+3. Load GPU servers from gpu_servers.csv
 4. Download NAS sha256-list.csv as source of truth
 5. For each GPU server:
    a. Force refresh L1 (filesize) on GPU server (unless --skip-l1-refresh)
@@ -59,7 +59,6 @@ NAS_IP = "64.71.166.2"
 NAS_PATH = "/zfs/data/official-models-ckpt-tensordata"
 HTTP_PORT = 61767
 SCRIPT_DIR = Path(__file__).parent
-DEFAULT_GPU_PATH = "/mnt/models/official-models"  # Default path for GPU servers
 
 # Global flags
 DRY_RUN = False
@@ -160,27 +159,28 @@ def display_progress_status():
         print("="*70)
 
 
-def load_gpu_servers(filepath="gpu_servers.txt"):
-    """Load GPU servers from file
+def load_gpu_servers(filepath="gpu_servers.csv"):
+    """Load GPU servers from CSV file
 
-    Format: user@hostname
-       or:  user@hostname|nas_ip:port  (custom NAS URL override)
-    Example: root@dfw-026-001
-             root@dt-thpc-001|192.168.88.14:8000
+    Format: remote_host, models_path [, nas_url]
+    Example: root@dfw-026-001, /mnt/official-models
+             root@dt-thpc-001, /mnt/models/official-models, 192.168.88.14:8000
 
-    The default path will be appended automatically.
+    Lines starting with # are treated as comments.
 
     Returns:
         list of tuples: [(server_with_path, nas_url), ...]
         where nas_url is None for default NAS or "ip:port" for custom
     """
+    import csv
+
     servers = []
 
     if not os.path.exists(filepath):
         print(f"❌ Error: {filepath} not found")
         sys.exit(1)
 
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', newline='') as f:
         for line_num, line in enumerate(f, 1):
             line = line.strip()
 
@@ -188,30 +188,42 @@ def load_gpu_servers(filepath="gpu_servers.txt"):
             if not line or line.startswith('#'):
                 continue
 
-            # Parse optional custom NAS URL (format: user@host|nas_ip:port)
-            custom_nas_url = None
-            if '|' in line:
-                line, custom_nas_url = line.split('|', 1)
+            # Parse CSV row
+            reader = csv.reader([line])
+            row = next(reader)
+            row = [col.strip() for col in row]
 
-            # Validate format: user@hostname
-            if '@' not in line:
-                print(f"⚠️  Line {line_num}: Invalid format (expected user@hostname) - {line}")
+            if len(row) < 2:
+                print(f"⚠️  Line {line_num}: Invalid format (expected remote_host, models_path) - {line}")
                 continue
 
-            # Append default path
-            server_with_path = f"{line}:{DEFAULT_GPU_PATH}"
+            remote_host = row[0]
+            models_path = row[1]
+            custom_nas_url = row[2] if len(row) >= 3 else None
+
+            # Validate format: user@hostname
+            if '@' not in remote_host:
+                print(f"⚠️  Line {line_num}: Invalid format (expected user@hostname) - {remote_host}")
+                continue
+
+            # Validate models_path starts with /
+            if not models_path.startswith('/'):
+                print(f"⚠️  Line {line_num}: Invalid path (expected absolute path) - {models_path}")
+                continue
+
+            server_with_path = f"{remote_host}:{models_path}"
             servers.append((server_with_path, custom_nas_url))
 
     print(f"✅ Loaded {len(servers)} GPU server(s)")
-    print(f"   Using default path: {DEFAULT_GPU_PATH}")
 
-    # Show any custom NAS URLs
-    custom_servers = [(s, n) for s, n in servers if n]
-    if custom_servers:
-        print(f"   Custom NAS URLs:")
-        for server, nas_url in custom_servers:
-            hostname = server.split('@')[-1].split(':')[0]
-            print(f"     {hostname} -> http://{nas_url}")
+    # Show server configurations
+    for server, nas_url in servers:
+        remote_host, path = server.rsplit(':', 1)
+        hostname = remote_host.split('@')[-1]
+        if nas_url:
+            print(f"   {hostname}: {path} (NAS: http://{nas_url})")
+        else:
+            print(f"   {hostname}: {path}")
 
     return servers
 
@@ -354,7 +366,7 @@ def start_nas_http_server():
 
     The server binds to 0.0.0.0:8000 so it's accessible from both internal
     and external networks. Clients connect via NAS_IP:HTTP_PORT (external)
-    or internal_ip:8000 (internal, configured in gpu_servers.txt).
+    or internal_ip:8000 (internal, configured in gpu_servers.csv).
 
     Returns:
         bool: True if server started successfully or already running, False otherwise
@@ -1031,7 +1043,7 @@ Examples:
     print("="*70)
     print(f"NAS Source: {NAS_HOST}:{NAS_PATH}")
     print(f"NAS HTTP: http://{NAS_IP}:{HTTP_PORT}")
-    print(f"Server List: gpu_servers.txt")
+    print(f"Server List: gpu_servers.csv")
 
     try:
         # Step 1: Start NAS HTTP server
@@ -1047,11 +1059,11 @@ Examples:
             sys.exit(1)
 
         # Step 3: Load GPU servers
-        print_step(3, 5, "Load GPU servers from gpu_servers.txt")
+        print_step(3, 5, "Load GPU servers from gpu_servers.csv")
         servers = load_gpu_servers()
 
         if not servers:
-            print("❌ No servers found in gpu_servers.txt")
+            print("❌ No servers found in gpu_servers.csv")
             sys.exit(1)
 
         print(f"\nServers to sync:")

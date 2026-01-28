@@ -3,9 +3,8 @@
 # Usage: ./check_file_hash.sh <relative_file_path>
 # Example: ./check_file_hash.sh sd15/v1-5-pruned-emaonly.safetensors
 
-BASE_PATH="/mnt/models/official-models"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVERS_FILE="$SCRIPT_DIR/gpu_servers.txt"
+SERVERS_FILE="$SCRIPT_DIR/gpu_servers.csv"
 
 if [ -z "$1" ]; then
     echo "Usage: $0 <relative_file_path>"
@@ -14,15 +13,20 @@ if [ -z "$1" ]; then
 fi
 
 FILE_PATH="$1"
-FULL_PATH="$BASE_PATH/$FILE_PATH"
 
-echo "Checking: $FULL_PATH"
+echo "Checking: $FILE_PATH"
 echo "========================================"
 
 # Run all servers in parallel
-while read -r line; do
-    server="${line%%|*}"
+# CSV format: remote_host, models_path [, nas_url]
+while IFS=, read -r server models_path _; do
+    # Skip comments and empty lines
+    [[ "$server" =~ ^#.*$ || -z "$server" ]] && continue
+    # Trim whitespace
+    server=$(echo "$server" | xargs)
+    models_path=$(echo "$models_path" | xargs)
     hostname="${server#*@}"
-    (echo "$hostname: $(ssh -o ConnectTimeout=10 "$server" "sha256sum \"$FULL_PATH\"" 2>&1)") &
-done < <(grep -v '^#' "$SERVERS_FILE" | grep -v '^$')
+    full_path="$models_path/$FILE_PATH"
+    (echo "$hostname ($models_path): $(ssh -o ConnectTimeout=10 "$server" "sha256sum \"$full_path\"" 2>&1)") &
+done < "$SERVERS_FILE"
 wait

@@ -120,10 +120,19 @@ echo ""
 echo "➡️ Step 5: Installing Python and dependencies..."
 
 sudo apt-get update
-sudo apt-get install -y python3-pip nvtop htop
-pip3 install tqdm schedule boto3
+sudo apt-get install -y python3-pip python3-venv nvtop htop
 
-echo "✅ Python dependencies installed."
+# Create a virtual environment for Python packages
+python3 -m venv /opt/draw-things-venv
+/opt/draw-things-venv/bin/pip install --upgrade pip
+/opt/draw-things-venv/bin/pip install tqdm schedule boto3
+
+# Add venv to PATH for all users
+echo "export PATH=/opt/draw-things-venv/bin:\$PATH" | sudo tee /etc/profile.d/draw-things-venv.sh
+sudo chmod +x /etc/profile.d/draw-things-venv.sh
+source /etc/profile.d/draw-things-venv.sh
+
+echo "✅ Python dependencies installed in /opt/draw-things-venv"
 
 # --- 5. Pull Docker images ---
 echo ""

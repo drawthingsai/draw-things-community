@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 Verify that all GPU servers have the same number of models (.ckpt and .ckpt-tensordata).
-Reads server list from gpu_servers.txt, compares model counts, and optionally
+Reads server list from gpu_servers.csv, compares model counts, and optionally
 triggers control panel update.
 """
 
 import argparse
+import csv
 import subprocess
 import sys
 from pathlib import Path
@@ -13,9 +14,8 @@ from pathlib import Path
 # Paths derived from script location
 SCRIPT_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = SCRIPT_DIR.parents[3]  # Scripts/ServerManagement/GPUScript/UpdateModels -> repo root
-SERVERS_FILE = SCRIPT_DIR / "gpu_servers.txt"
+SERVERS_FILE = SCRIPT_DIR / "gpu_servers.csv"
 MODEL_LIST_FILE = REPO_ROOT / "model-list"
-MODELS_PATH = "/mnt/models/official-models/"
 SSH_TIMEOUT = 30
 
 # Control panel settings
@@ -23,22 +23,27 @@ CONTROL_PANEL_HOST = "100.80.251.87"
 CONTROL_PANEL_PORT = "50002"
 
 
-def parse_servers(file_path: Path) -> list[str]:
-    """Parse server list from config file, returning user@hostname entries."""
+def parse_servers(file_path: Path) -> list[tuple[str, str]]:
+    """Parse server list from CSV file, returning (user@hostname, models_path) tuples."""
     servers = []
-    with open(file_path, "r") as f:
+    with open(file_path, "r", newline="") as f:
         for line in f:
             line = line.strip()
             # Skip empty lines and comments
             if not line or line.startswith("#"):
                 continue
-            # Extract user@hostname (ignore NAS override if present)
-            server = line.split("|")[0]
-            servers.append(server)
+            # Parse CSV row: remote_host, models_path [, nas_url]
+            reader = csv.reader([line])
+            row = next(reader)
+            row = [col.strip() for col in row]
+            if len(row) >= 2:
+                remote_host = row[0]
+                models_path = row[1]
+                servers.append((remote_host, models_path))
     return servers
 
 
-def get_file_count(server: str, pattern: str) -> tuple[int | None, str]:
+def get_file_count(server: str, models_path: str, pattern: str) -> tuple[int | None, str]:
     """
     SSH into server and count files matching pattern.
     Returns (count, error_message). count is None if error occurred.
@@ -49,7 +54,7 @@ def get_file_count(server: str, pattern: str) -> tuple[int | None, str]:
         "-o", "StrictHostKeyChecking=no",
         "-o", "BatchMode=yes",
         server,
-        f"ls -lrta {MODELS_PATH} 2>/dev/null | awk '/{pattern}$/ {{print $NF}}' | sort | wc -l"
+        f"ls -lrta {models_path} 2>/dev/null | awk '/{pattern}$/ {{print $NF}}' | sort | wc -l"
     ]
 
     try:
@@ -72,7 +77,7 @@ def get_file_count(server: str, pattern: str) -> tuple[int | None, str]:
         return None, str(e)
 
 
-def get_model_list(server: str) -> tuple[list[str] | None, str]:
+def get_model_list(server: str, models_path: str) -> tuple[list[str] | None, str]:
     """
     SSH into server and get sorted list of .ckpt model names.
     Returns (model_list, error_message). model_list is None if error occurred.
@@ -83,7 +88,7 @@ def get_model_list(server: str) -> tuple[list[str] | None, str]:
         "-o", "StrictHostKeyChecking=no",
         "-o", "BatchMode=yes",
         server,
-        f"ls -lrta {MODELS_PATH} 2>/dev/null | awk '/\\.ckpt$/ {{print $NF}}' | sort"
+        f"ls -lrta {models_path} 2>/dev/null | awk '/\\.ckpt$/ {{print $NF}}' | sort"
     ]
 
     try:
@@ -134,24 +139,24 @@ def update_control_panel(model_list_path: Path) -> tuple[bool, str]:
         return False, str(e)
 
 
-def verify_counts(servers: list[str]) -> tuple[dict[str, dict], dict[str, str]]:
+def verify_counts(servers: list[tuple[str, str]]) -> tuple[dict[str, dict], dict[str, str]]:
     """
     Verify .ckpt and .ckpt-tensordata counts across all servers.
-    Returns (results, errors) where results maps server -> {ckpt: count, tensordata: count}
+    Returns (results, errors) where results maps server -> {ckpt: count, tensordata: count, models_path: path}
     """
     results = {}
     errors = {}
 
-    for server in servers:
-        print(f"Checking {server}...", end=" ", flush=True)
+    for server, models_path in servers:
+        print(f"Checking {server} ({models_path})...", end=" ", flush=True)
 
-        ckpt_count, ckpt_error = get_file_count(server, "\\.ckpt")
+        ckpt_count, ckpt_error = get_file_count(server, models_path, "\\.ckpt")
         if ckpt_error:
             errors[server] = ckpt_error
             print(f"ERROR: {ckpt_error}")
             continue
 
-        tensordata_count, tensordata_error = get_file_count(server, "\\.ckpt-tensordata")
+        tensordata_count, tensordata_error = get_file_count(server, models_path, "\\.ckpt-tensordata")
         if tensordata_error:
             errors[server] = tensordata_error
             print(f"ERROR: {tensordata_error}")
@@ -159,7 +164,8 @@ def verify_counts(servers: list[str]) -> tuple[dict[str, dict], dict[str, str]]:
 
         results[server] = {
             "ckpt": ckpt_count,
-            "tensordata": tensordata_count
+            "tensordata": tensordata_count,
+            "models_path": models_path
         }
         print(f".ckpt: {ckpt_count}, .ckpt-tensordata: {tensordata_count}")
 
@@ -235,7 +241,6 @@ def main():
 
     print(f"Repository root: {REPO_ROOT}")
     print(f"Checking model counts on {len(servers)} servers...")
-    print(f"Models path: {MODELS_PATH}")
     print("-" * 70)
 
     results, errors = verify_counts(servers)
@@ -274,9 +279,10 @@ def main():
 
         # Get model list from first successful server
         first_server = list(results.keys())[0]
-        print(f"Fetching model list from {first_server}...")
+        first_server_path = results[first_server]["models_path"]
+        print(f"Fetching model list from {first_server} ({first_server_path})...")
 
-        model_list, error = get_model_list(first_server)
+        model_list, error = get_model_list(first_server, first_server_path)
         if error:
             print(f"Error fetching model list: {error}")
             sys.exit(1)

@@ -4,9 +4,9 @@
 # Lines starting with # are comments
 # Empty lines are ignored
 
-root@dfw-032-002, /mnt/models/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs
-root@dfw-043-003, /mnt/models/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs
+root@dfw-032-002, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs
+root@dfw-043-003, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs
 root@dt-thpc-001, /mnt/models/official-models, /root/utils/LaunchGPU, /mnt/loraModels
 root@dt-thpc-002, /mnt/models/official-models, /root/utils/LaunchGPU, /mnt/loraModels
-root@dfw-141-005, /mnt/models/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs
-
+root@dfw-141-005, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs
+root@dfw-099-006, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs
