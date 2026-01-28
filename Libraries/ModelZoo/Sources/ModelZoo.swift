@@ -719,6 +719,10 @@ public struct ModelZoo: DownloadZoo {
       "9292a7107d30b6eef8282654c9746ac2e868a6d00704bdb9cfdadf45d4c325af",
     "ltx_2_audio_video_vae_f16.ckpt":
       "7e40bdffaf9f67227c6be38ee16e308dabf896545593cecec83576d9c81aa35e",
+    "z_image_1.0_q6p.ckpt":
+      "74dba3b854b61f422fa40851c046aa69c6f9b2659a671ae3938062cdfb235d70",
+    "z_image_1.0_q8p.ckpt":
+      "4233ac5ce386e824fce8628070ee985e070de55925c63bb0d6bf7890d523631e",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -777,6 +781,44 @@ public struct ModelZoo: DownloadZoo {
       note:
         "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
       copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Z Image Base 1.0", file: "z_image_1.0_q8p.ckpt", prefix: "",
+      version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationQkScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 1 : 32) }),
+        activationProjScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 2 : 1) }),
+        activationFfnProjUpScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 1 : 32) }),
+        activationFfnScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 2 : 1) })),
+      note:
+        "[Z Image](https://huggingface.co/Tongyi-MAI/Z-Image) is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 28 to 50 sampling steps recommended.",
+      copyright: "© 2026 Alibaba", huggingFaceLink: "Tongyi-MAI/Z-Image"
+    ),
+    Specification(
+      name: "Z Image Base 1.0 (6-bit)", file: "z_image_1.0_q6p.ckpt", prefix: "",
+      version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationQkScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 1 : 32) }),
+        activationProjScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 2 : 1) }),
+        activationFfnProjUpScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 1 : 32) }),
+        activationFfnScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 2 : 1) })),
+      note:
+        "[Z Image](https://huggingface.co/Tongyi-MAI/Z-Image) is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 28 to 50 sampling steps recommended.",
+      copyright: "© 2026 Alibaba"
     ),
     Specification(
       name: "Qwen Image 2512", file: "qwen_image_2512_q8p.ckpt", prefix: "",

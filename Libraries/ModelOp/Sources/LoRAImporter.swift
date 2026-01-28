@@ -168,9 +168,11 @@ public enum LoRAImporter {
     case .zImage:
       (unet, unetMapper) = ZImage(
         batchSize: 1, height: 64, width: 64, textLength: 32, channels: 3840, layers: 30,
-        usesFlashAttention: .scale1)
+        activationQkScaling: [:], activationProjScaling: [:], activationFfnProjUpScaling: [:],
+        activationFfnScaling: [:], usesFlashAttention: .scale1)
       (unetFixed, unetFixedMapper) = ZImageFixed(
-        batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 32,
+        batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 32, activationQkScaling: [:],
+        activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:],
         usesFlashAttention: .scale1
       )
     case .flux2:

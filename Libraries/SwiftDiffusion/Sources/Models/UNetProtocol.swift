@@ -1247,7 +1247,10 @@ extension UNetFromNNC {
             return LoRAZImage(
               batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength,
-              channels: 3_840, layers: 30,
+              channels: 3_840, layers: 30, activationQkScaling: activationQkScaling,
+              activationProjScaling: activationProjScaling,
+              activationFfnProjUpScaling: activationFfnProjUpScaling,
+              activationFfnScaling: activationFfnScaling,
               usesFlashAttention: usesFlashAttention ? .scale1 : .none,
               LoRAConfiguration: configuration
             ).0
@@ -1259,7 +1262,10 @@ extension UNetFromNNC {
             return ZImage(
               batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength,
-              channels: 3_840, layers: 30,
+              channels: 3_840, layers: 30, activationQkScaling: activationQkScaling,
+              activationProjScaling: activationProjScaling,
+              activationFfnProjUpScaling: activationFfnProjUpScaling,
+              activationFfnScaling: activationFfnScaling,
               usesFlashAttention: usesFlashAttention ? .scale1 : .none
             ).0
           })

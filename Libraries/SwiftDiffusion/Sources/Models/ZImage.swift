@@ -109,7 +109,8 @@ private func MLPEmbedder(channels: Int, intermediateSize: Int, name: String) -> 
 }
 
 private func FeedForward(
-  hiddenSize: Int, intermediateSize: Int, scaleFactor: Float?, name: String = ""
+  hiddenSize: Int, intermediateSize: Int, scaleFactor: (projUp: Int, projDown: Int),
+  name: String = ""
 )
   -> (
     Model, Model, Model, Model
@@ -119,22 +120,25 @@ private func FeedForward(
   let w1 = Dense(
     count: intermediateSize, noBias: true, flags: [.Float16], name: "\(name)_gate_proj")
   let w3 = Dense(count: intermediateSize, noBias: true, name: "\(name)_up_proj")
-  var out = w3(x)
-  if let scaleFactor = scaleFactor {
-    out = (1 / scaleFactor) * out
+  var gate = w1(x)
+  if scaleFactor.projUp > 1 {
+    gate = (Float(scaleFactor.projUp) * gate.to(of: x)).swish().to(.Float16)
+  } else {
+    gate = gate.swish()
   }
-  out = out .* w1(x).swish()
+  var out = w3(x)
+  if scaleFactor.projDown > 1 {
+    out = (1 / Float(scaleFactor.projDown)) * out
+  }
+  out = out .* gate
   let w2 = Dense(count: hiddenSize, noBias: true, name: "\(name)_down_proj")
   out = w2(out).to(.Float32)
-  if let scaleFactor = scaleFactor {
-    out = out * scaleFactor
-  }
   return (w1, w2, w3, Model([x], [out], name: name))
 }
 
 private func ZImageTransformerBlock(
   prefix: String, name: String, k: Int, h: Int, b: Int, t: (keyValue: Int, query: Int),
-  segments: [Int], scaleFactor: (Float, Float),
+  segments: [Int], scaleFactor: ((qk: Int, proj: Int), (projUp: Int, projDown: Int)),
   modulation: Bool, usesFlashAttention: FlashAttentionLevel
 ) -> (Model, ModelWeightMapper) {
   let x = Input()
@@ -154,6 +158,8 @@ private func ZImageTransformerBlock(
   var out = attentionNorm1(x)
   if modulation {
     out = out .* chunks[0]
+  } else if scaleFactor.0.qk > 1 {
+    out = (1 / Float(scaleFactor.0.qk)) * out
   }
   out = out.to(.Float16)
   var keys = tokeys(out).reshaped([b, t.keyValue, h, k])
@@ -165,12 +171,16 @@ private func ZImageTransformerBlock(
   } else {
     queries = toqueries(out).reshaped([b, t.0, h, k])
   }
-  let normK = RMSNorm(epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_k" : "\(name)_norm_k")
+  let normK = RMSNorm(
+    epsilon: 1e-5 / Float(scaleFactor.0.qk * scaleFactor.0.qk), axis: [3],
+    name: name.isEmpty ? "norm_k" : "\(name)_norm_k")
   keys = normK(keys)
-  let normQ = RMSNorm(epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_q" : "\(name)_norm_q")
+  let normQ = RMSNorm(
+    epsilon: 1e-5 / Float(scaleFactor.0.qk * scaleFactor.0.qk), axis: [3],
+    name: name.isEmpty ? "norm_q" : "\(name)_norm_q")
   queries = normQ(queries)
-  if scaleFactor.0 > 1 {
-    out = (1 / scaleFactor.0) * out
+  if scaleFactor.0.proj > 1 {
+    out = (1 / Float(scaleFactor.0.proj)) * out
   }
   var values = tovalues(out)
   values = values.reshaped([b, t.0, h, k])
@@ -314,11 +324,15 @@ private func ZImageTransformerBlock(
   }
   let unifyheads = Dense(count: k * h, noBias: true, name: name.isEmpty ? "o" : "\(name)_o")
   out = unifyheads(out).to(of: xIn)
-  if scaleFactor.0 > 1 {
-    out = scaleFactor.0 * out
+  var attentionNorm2Epsilon: Float = 1e-5
+  if scaleFactor.0.proj * scaleFactor.0.qk > 1 {
+    attentionNorm2Epsilon =
+      attentionNorm2Epsilon
+      / Float(scaleFactor.0.proj * scaleFactor.0.qk * scaleFactor.0.proj * scaleFactor.0.qk)
   }
   let attentionNorm2 = RMSNorm(
-    epsilon: 1e-5, axis: [2], name: name.isEmpty ? "attention_norm2" : "\(name)_attention_norm2")
+    epsilon: attentionNorm2Epsilon, axis: [2],
+    name: name.isEmpty ? "attention_norm2" : "\(name)_attention_norm2")
   out = attentionNorm2(out)
   if modulation {
     out = out .* chunks[1]
@@ -329,12 +343,23 @@ private func ZImageTransformerBlock(
     name: name.isEmpty ? "ffn" : "\(name)_ffn")
   let feedForwardNorm1 = RMSNorm(
     epsilon: 1e-5, axis: [2], name: name.isEmpty ? "ffn_norm1" : "\(name)_ffn_norm1")
+  var feedForwardNorm2Epsilon: Float = 1e-5
+  if scaleFactor.1.projUp * scaleFactor.1.projDown > 1 {
+    feedForwardNorm2Epsilon =
+      feedForwardNorm2Epsilon
+      / Float(
+        scaleFactor.1.projUp * scaleFactor.1.projDown * scaleFactor.1.projUp
+          * scaleFactor.1.projDown)
+  }
   let feedForwardNorm2 = RMSNorm(
-    epsilon: 1e-5, axis: [2], name: name.isEmpty ? "ffn_norm2" : "\(name)_ffn_norm2")
+    epsilon: feedForwardNorm2Epsilon, axis: [2],
+    name: name.isEmpty ? "ffn_norm2" : "\(name)_ffn_norm2")
   let residual = out
   out = feedForwardNorm1(out)
   if modulation {
     out = out .* chunks[2]
+  } else if scaleFactor.1.projUp > 1 {
+    out = (1.0 / Float(scaleFactor.1.projUp)) * out
   }
   out = out.to(.Float16)
   out = feedForwardNorm2(ffn(out))  // Already converted to Float32.
@@ -381,6 +406,8 @@ private func ZImageTransformerBlock(
 
 public func ZImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: Int,
+  activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
+  activationFfnProjUpScaling: [Int: Int], activationFfnScaling: [Int: Int],
   usesFlashAttention: FlashAttentionLevel
 ) -> (
   Model, ModelWeightMapper
@@ -409,12 +436,28 @@ public func ZImage(
   xOut = xOut.to(.Float32)
   let xRot = rot.reshaped([1, roundUpHW, 1, 128])
   for i in 0..<2 {
+    let qkScaling = activationQkScaling[i + 2] ?? 1
+    var projScaling = activationProjScaling[i + 2] ?? 1
+    if projScaling < 0 {
+      projScaling = 4 / -projScaling
+    } else {
+      projScaling = 4 * projScaling
+    }
+    let ffnProjUpScaling = activationFfnProjUpScaling[i + 2] ?? 1
+    var ffnScaling = activationFfnScaling[i + 2] ?? 1
+    if ffnScaling < 0 {
+      ffnScaling = 32 / -ffnScaling
+    } else {
+      ffnScaling = 32 * ffnScaling
+    }
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = ZImageTransformerBlock(
       prefix: "noise_refiner.\(i)", name: "noise_refiner", k: 128, h: channels / 128, b: batchSize,
-      t: (keyValue: roundUpHW, query: roundUpHW), segments: [], scaleFactor: (4, 32),
-      modulation: true,
-      usesFlashAttention: usesFlashAttention)
+      t: (keyValue: roundUpHW, query: roundUpHW), segments: [],
+      scaleFactor: (
+        (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
+      ),
+      modulation: true, usesFlashAttention: usesFlashAttention)
     xOut = block([xOut, xRot] + chunks)
     adaLNChunks.append(contentsOf: chunks)
     mappers.append(mapper)
@@ -422,13 +465,30 @@ public func ZImage(
   var out = Functional.concat(axis: 1, xOut, txtIn)
   let rotResized = rot.reshaped(.NHWC(1, roundUpHW + textLength, 1, 128))
   for i in 0..<layers {
+    let qkScaling = activationQkScaling[i + 4] ?? 1
+    var projScaling = activationProjScaling[i + 4] ?? 1
+    if projScaling < 0 {
+      projScaling = 4 / -projScaling
+    } else {
+      projScaling = 4 * projScaling
+    }
+    let ffnProjUpScaling = activationFfnProjUpScaling[i + 4] ?? 1
+    var ffnScaling = activationFfnScaling[i + 4] ?? 1
+    if ffnScaling < 0 {
+      ffnScaling = 32 / -ffnScaling
+    } else {
+      ffnScaling = 32 * ffnScaling
+    }
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = ZImageTransformerBlock(
       prefix: "layers.\(i)", name: "", k: 128, h: channels / 128, b: batchSize,
       t: (
         keyValue: roundUpHW + textLength, query: i == layers - 1 ? h * w : roundUpHW + textLength
       ),
-      segments: [], scaleFactor: (4, 32), modulation: true, usesFlashAttention: usesFlashAttention)
+      segments: [],
+      scaleFactor: (
+        (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
+      ), modulation: true, usesFlashAttention: usesFlashAttention)
     out = block([out, rotResized] + chunks)
     adaLNChunks.append(contentsOf: chunks)
     mappers.append(mapper)
@@ -466,7 +526,8 @@ public func ZImage(
 }
 
 private func ZImageTransformerBlockFixed(
-  prefix: String, name: String, channels: Int
+  prefix: String, name: String, channels: Int,
+  scaleFactor: ((qk: Int, proj: Int), (projUp: Int, projDown: Int))
 ) -> (Model, ModelWeightMapper) {
   let tEmbed = Input()
   let adaLNs = (0..<4).map {
@@ -474,8 +535,14 @@ private func ZImageTransformerBlockFixed(
   }
   var chunks = adaLNs.map { $0(tEmbed) }
   chunks[0] = (1 + chunks[0]).to(.Float32)
+  if scaleFactor.0.qk > 1 {
+    chunks[0] = (1.0 / Float(scaleFactor.0.qk)) * chunks[0]
+  }
   chunks[1] = chunks[1].tanh().to(.Float32)
   chunks[2] = (1 + chunks[2]).to(.Float32)
+  if scaleFactor.1.projUp > 1 {
+    chunks[2] = (1.0 / Float(scaleFactor.1.projUp)) * chunks[2]
+  }
   chunks[3] = chunks[3].tanh().to(.Float32)
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -490,6 +557,8 @@ private func ZImageTransformerBlockFixed(
 
 public func ZImageFixed(
   batchSize: Int, tokenLength: (Int, Int), channels: Int, layers: Int,
+  activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
+  activationFfnProjUpScaling: [Int: Int], activationFfnScaling: [Int: Int],
   usesFlashAttention: FlashAttentionLevel
 ) -> (
   Model, ModelWeightMapper
@@ -556,6 +625,10 @@ public func ZImageFixed(
     segments = []
   }
   for i in 0..<2 {
+    let qkScaling = activationQkScaling[i] ?? 1
+    let projScaling = activationProjScaling[i] ?? 1
+    let ffnProjUpScaling = activationFfnProjUpScaling[i] ?? 1
+    let ffnScaling = activationFfnScaling[i] ?? 1
     let (block, mapper) = ZImageTransformerBlock(
       prefix: "context_refiner.\(i)", name: "context_refiner", k: 128, h: channels / 128,
       b: batchSize,
@@ -563,21 +636,58 @@ public func ZImageFixed(
         keyValue: roundUpTokenLength.0 + roundUpTokenLength.1,
         query: roundUpTokenLength.0 + roundUpTokenLength.1
       ),
-      segments: segments, scaleFactor: (2, 2), modulation: false,
+      segments: segments,
+      scaleFactor: (
+        (qk: qkScaling, proj: 2 * projScaling), (projUp: ffnProjUpScaling, projDown: 2 * ffnScaling)
+      ), modulation: false,
       usesFlashAttention: usesFlashAttention)
     txtOut = block(txtOut, txtRot)
     mappers.append(mapper)
   }
   var outs = [txtOut]
   for i in 0..<2 {
+    let qkScaling = activationQkScaling[i + 2] ?? 1
+    var projScaling = activationProjScaling[i + 2] ?? 1
+    if projScaling < 0 {
+      projScaling = 4 / -projScaling
+    } else {
+      projScaling = 4 * projScaling
+    }
+    let ffnProjUpScaling = activationFfnProjUpScaling[i + 2] ?? 1
+    var ffnScaling = activationFfnScaling[i + 2] ?? 1
+    if ffnScaling < 0 {
+      ffnScaling = 32 / -ffnScaling
+    } else {
+      ffnScaling = 32 * ffnScaling
+    }
     let (block, mapper) = ZImageTransformerBlockFixed(
-      prefix: "noise_refiner.\(i)", name: "noise_refiner", channels: channels)
+      prefix: "noise_refiner.\(i)", name: "noise_refiner", channels: channels,
+      scaleFactor: (
+        (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
+      ))
     outs.append(block(tOut))
     mappers.append(mapper)
   }
   for i in 0..<layers {
+    let qkScaling = activationQkScaling[i + 4] ?? 1
+    var projScaling = activationProjScaling[i + 4] ?? 1
+    if projScaling < 0 {
+      projScaling = 4 / -projScaling
+    } else {
+      projScaling = 4 * projScaling
+    }
+    let ffnProjUpScaling = activationFfnProjUpScaling[i + 4] ?? 1
+    var ffnScaling = activationFfnScaling[i + 4] ?? 1
+    if ffnScaling < 0 {
+      ffnScaling = 32 / -ffnScaling
+    } else {
+      ffnScaling = 32 * ffnScaling
+    }
     let (block, mapper) = ZImageTransformerBlockFixed(
-      prefix: "layers.\(i)", name: "", channels: channels)
+      prefix: "layers.\(i)", name: "", channels: channels,
+      scaleFactor: (
+        (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
+      ))
     outs.append(block(tOut))
     mappers.append(mapper)
   }
@@ -654,7 +764,7 @@ private func LoRAMLPEmbedder(
 }
 
 private func LoRAFeedForward(
-  hiddenSize: Int, intermediateSize: Int, scaleFactor: Float?,
+  hiddenSize: Int, intermediateSize: Int, scaleFactor: (projUp: Int, projDown: Int),
   configuration: LoRANetworkConfiguration, index: Int, name: String = ""
 )
   -> (
@@ -669,24 +779,27 @@ private func LoRAFeedForward(
   let w3 = LoRADense(
     count: intermediateSize, configuration: configuration, noBias: true, prefix: name, index: index,
     name: "\(name)_up_proj")
-  var out = w3(x)
-  if let scaleFactor = scaleFactor {
-    out = (1 / scaleFactor) * out
+  var gate = w1(x)
+  if scaleFactor.projUp > 1 {
+    gate = (Float(scaleFactor.projUp) * gate.to(of: x)).swish().to(.Float16)
+  } else {
+    gate = gate.swish()
   }
-  out = out .* w1(x).swish()
+  var out = w3(x)
+  if scaleFactor.projDown > 1 {
+    out = (1 / Float(scaleFactor.projDown)) * out
+  }
+  out = out .* gate
   let w2 = LoRADense(
     count: hiddenSize, configuration: configuration, noBias: true, prefix: name, index: index,
     name: "\(name)_down_proj")
   out = w2(out).to(.Float32)
-  if let scaleFactor = scaleFactor {
-    out = out * scaleFactor
-  }
   return (w1, w2, w3, Model([x], [out], name: name))
 }
 
 private func LoRAZImageTransformerBlock(
   prefix: String, name: String, k: Int, h: Int, b: Int, t: (keyValue: Int, query: Int),
-  segments: [Int], scaleFactor: (Float, Float),
+  segments: [Int], scaleFactor: ((qk: Int, proj: Int), (projUp: Int, projDown: Int)),
   modulation: Bool, usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (Model, ModelWeightMapper) {
@@ -712,6 +825,8 @@ private func LoRAZImageTransformerBlock(
   var out = attentionNorm1(x)
   if modulation {
     out = out .* chunks[0]
+  } else if scaleFactor.0.qk > 1 {
+    out = (1 / Float(scaleFactor.0.qk)) * out
   }
   out = out.to(.Float16)
   var keys = tokeys(out).reshaped([b, t.keyValue, h, k])
@@ -727,8 +842,8 @@ private func LoRAZImageTransformerBlock(
   keys = normK(keys)
   let normQ = RMSNorm(epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_q" : "\(name)_norm_q")
   queries = normQ(queries)
-  if scaleFactor.0 > 1 {
-    out = (1 / scaleFactor.0) * out
+  if scaleFactor.0.proj > 1 {
+    out = (1 / Float(scaleFactor.0.proj)) * out
   }
   var values = tovalues(out)
   values = values.reshaped([b, t.0, h, k])
@@ -874,14 +989,20 @@ private func LoRAZImageTransformerBlock(
     count: k * h, configuration: configuration, noBias: true, index: layerIndex,
     name: name.isEmpty ? "o" : "\(name)_o")
   out = unifyheads(out).to(of: xIn)
-  if scaleFactor.0 > 1 {
-    out = scaleFactor.0 * out
+  var attentionNorm2Epsilon: Float = 1e-5
+  if scaleFactor.0.proj * scaleFactor.0.qk > 1 {
+    attentionNorm2Epsilon =
+      attentionNorm2Epsilon
+      / Float(scaleFactor.0.proj * scaleFactor.0.qk * scaleFactor.0.proj * scaleFactor.0.qk)
   }
   let attentionNorm2 = RMSNorm(
-    epsilon: 1e-5, axis: [2], name: name.isEmpty ? "attention_norm2" : "\(name)_attention_norm2")
+    epsilon: attentionNorm2Epsilon, axis: [2],
+    name: name.isEmpty ? "attention_norm2" : "\(name)_attention_norm2")
   out = attentionNorm2(out)
   if modulation {
     out = out .* chunks[1]
+  } else if scaleFactor.1.projUp > 1 {
+    out = (1.0 / Float(scaleFactor.1.projUp)) * out
   }
   out = xIn + out
   let (w1, w2, w3, ffn) = LoRAFeedForward(
@@ -890,8 +1011,17 @@ private func LoRAZImageTransformerBlock(
     name: name.isEmpty ? "ffn" : "\(name)_ffn")
   let feedForwardNorm1 = RMSNorm(
     epsilon: 1e-5, axis: [2], name: name.isEmpty ? "ffn_norm1" : "\(name)_ffn_norm1")
+  var feedForwardNorm2Epsilon: Float = 1e-5
+  if scaleFactor.1.projUp * scaleFactor.1.projDown > 1 {
+    feedForwardNorm2Epsilon =
+      feedForwardNorm2Epsilon
+      / Float(
+        scaleFactor.1.projUp * scaleFactor.1.projDown * scaleFactor.1.projUp
+          * scaleFactor.1.projDown)
+  }
   let feedForwardNorm2 = RMSNorm(
-    epsilon: 1e-5, axis: [2], name: name.isEmpty ? "ffn_norm2" : "\(name)_ffn_norm2")
+    epsilon: feedForwardNorm2Epsilon, axis: [2],
+    name: name.isEmpty ? "ffn_norm2" : "\(name)_ffn_norm2")
   let residual = out
   out = feedForwardNorm1(out)
   if modulation {
@@ -942,6 +1072,8 @@ private func LoRAZImageTransformerBlock(
 
 public func LoRAZImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: Int,
+  activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
+  activationFfnProjUpScaling: [Int: Int], activationFfnScaling: [Int: Int],
   usesFlashAttention: FlashAttentionLevel, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   Model, ModelWeightMapper
@@ -971,10 +1103,27 @@ public func LoRAZImage(
   xOut = xOut.to(.Float32)
   let xRot = rot.reshaped([1, roundUpHW, 1, 128])
   for i in 0..<2 {
+    let qkScaling = activationQkScaling[i + 2] ?? 1
+    var projScaling = activationProjScaling[i + 2] ?? 1
+    if projScaling < 0 {
+      projScaling = 4 / -projScaling
+    } else {
+      projScaling = 4 * projScaling
+    }
+    let ffnProjUpScaling = activationFfnProjUpScaling[i + 2] ?? 1
+    var ffnScaling = activationFfnScaling[i + 2] ?? 1
+    if ffnScaling < 0 {
+      ffnScaling = 32 / -ffnScaling
+    } else {
+      ffnScaling = 32 * ffnScaling
+    }
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = LoRAZImageTransformerBlock(
       prefix: "noise_refiner.\(i)", name: "noise_refiner", k: 128, h: channels / 128, b: batchSize,
-      t: (keyValue: roundUpHW, query: roundUpHW), segments: [], scaleFactor: (4, 32),
+      t: (keyValue: roundUpHW, query: roundUpHW), segments: [],
+      scaleFactor: (
+        (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
+      ),
       modulation: true, usesFlashAttention: usesFlashAttention, layerIndex: i,
       configuration: LoRAConfiguration)
     xOut = block([xOut, xRot] + chunks)
@@ -984,13 +1133,30 @@ public func LoRAZImage(
   var out = Functional.concat(axis: 1, xOut, txtIn)
   let rotResized = rot.reshaped(.NHWC(1, roundUpHW + textLength, 1, 128))
   for i in 0..<layers {
+    let qkScaling = activationQkScaling[i + 4] ?? 1
+    var projScaling = activationProjScaling[i + 4] ?? 1
+    if projScaling < 0 {
+      projScaling = 4 / -projScaling
+    } else {
+      projScaling = 4 * projScaling
+    }
+    let ffnProjUpScaling = activationFfnProjUpScaling[i + 4] ?? 1
+    var ffnScaling = activationFfnScaling[i + 4] ?? 1
+    if ffnScaling < 0 {
+      ffnScaling = 32 / -ffnScaling
+    } else {
+      ffnScaling = 32 * ffnScaling
+    }
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = LoRAZImageTransformerBlock(
       prefix: "layers.\(i)", name: "", k: 128, h: channels / 128, b: batchSize,
       t: (
         keyValue: roundUpHW + textLength, query: i == layers - 1 ? h * w : roundUpHW + textLength
       ),
-      segments: [], scaleFactor: (4, 32), modulation: true, usesFlashAttention: usesFlashAttention,
+      segments: [],
+      scaleFactor: (
+        (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
+      ), modulation: true, usesFlashAttention: usesFlashAttention,
       layerIndex: i, configuration: LoRAConfiguration)
     out = block([out, rotResized] + chunks)
     adaLNChunks.append(contentsOf: chunks)
@@ -1031,6 +1197,7 @@ public func LoRAZImage(
 
 private func LoRAZImageTransformerBlockFixed(
   prefix: String, name: String, channels: Int, layerIndex: Int,
+  scaleFactor: ((qk: Int, proj: Int), (projUp: Int, projDown: Int)),
   configuration: LoRANetworkConfiguration
 ) -> (Model, ModelWeightMapper) {
   let tEmbed = Input()
@@ -1041,8 +1208,14 @@ private func LoRAZImageTransformerBlockFixed(
   }
   var chunks = adaLNs.map { $0(tEmbed) }
   chunks[0] = (1 + chunks[0]).to(.Float32)
+  if scaleFactor.0.qk > 1 {
+    chunks[0] = (1.0 / Float(scaleFactor.0.qk)) * chunks[0]
+  }
   chunks[1] = chunks[1].tanh().to(.Float32)
   chunks[2] = (1 + chunks[2]).to(.Float32)
+  if scaleFactor.1.projUp > 1 {
+    chunks[2] = (1.0 / Float(scaleFactor.1.projUp)) * chunks[2]
+  }
   chunks[3] = chunks[3].tanh().to(.Float32)
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -1057,6 +1230,8 @@ private func LoRAZImageTransformerBlockFixed(
 
 public func LoRAZImageFixed(
   batchSize: Int, tokenLength: (Int, Int), channels: Int, layers: Int,
+  activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
+  activationFfnProjUpScaling: [Int: Int], activationFfnScaling: [Int: Int],
   usesFlashAttention: FlashAttentionLevel, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   Model, ModelWeightMapper
@@ -1124,6 +1299,10 @@ public func LoRAZImageFixed(
     segments = []
   }
   for i in 0..<2 {
+    let qkScaling = activationQkScaling[i] ?? 1
+    let projScaling = activationProjScaling[i] ?? 1
+    let ffnProjUpScaling = activationFfnProjUpScaling[i] ?? 1
+    let ffnScaling = activationFfnScaling[i] ?? 1
     let (block, mapper) = LoRAZImageTransformerBlock(
       prefix: "context_refiner.\(i)", name: "context_refiner", k: 128, h: channels / 128,
       b: batchSize,
@@ -1131,23 +1310,58 @@ public func LoRAZImageFixed(
         keyValue: roundUpTokenLength.0 + roundUpTokenLength.1,
         query: roundUpTokenLength.0 + roundUpTokenLength.1
       ),
-      segments: segments, scaleFactor: (2, 2), modulation: false,
+      segments: segments,
+      scaleFactor: (
+        (qk: qkScaling, proj: 2 * projScaling), (projUp: ffnProjUpScaling, projDown: 2 * ffnScaling)
+      ), modulation: false,
       usesFlashAttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration)
     txtOut = block(txtOut, txtRot)
     mappers.append(mapper)
   }
   var outs = [txtOut]
   for i in 0..<2 {
+    let qkScaling = activationQkScaling[i + 2] ?? 1
+    var projScaling = activationProjScaling[i + 2] ?? 1
+    if projScaling < 0 {
+      projScaling = 4 / -projScaling
+    } else {
+      projScaling = 4 * projScaling
+    }
+    let ffnProjUpScaling = activationFfnProjUpScaling[i + 2] ?? 1
+    var ffnScaling = activationFfnScaling[i + 2] ?? 1
+    if ffnScaling < 0 {
+      ffnScaling = 32 / -ffnScaling
+    } else {
+      ffnScaling = 32 * ffnScaling
+    }
     let (block, mapper) = LoRAZImageTransformerBlockFixed(
       prefix: "noise_refiner.\(i)", name: "noise_refiner", channels: channels, layerIndex: i,
-      configuration: LoRAConfiguration)
+      scaleFactor: (
+        (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
+      ), configuration: LoRAConfiguration)
     outs.append(block(tOut))
     mappers.append(mapper)
   }
   for i in 0..<layers {
+    let qkScaling = activationQkScaling[i + 4] ?? 1
+    var projScaling = activationProjScaling[i + 4] ?? 1
+    if projScaling < 0 {
+      projScaling = 4 / -projScaling
+    } else {
+      projScaling = 4 * projScaling
+    }
+    let ffnProjUpScaling = activationFfnProjUpScaling[i + 4] ?? 1
+    var ffnScaling = activationFfnScaling[i + 4] ?? 1
+    if ffnScaling < 0 {
+      ffnScaling = 32 / -ffnScaling
+    } else {
+      ffnScaling = 32 * ffnScaling
+    }
     let (block, mapper) = LoRAZImageTransformerBlockFixed(
       prefix: "layers.\(i)", name: "", channels: channels, layerIndex: i,
-      configuration: LoRAConfiguration)
+      scaleFactor: (
+        (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
+      ), configuration: LoRAConfiguration)
     outs.append(block(tOut))
     mappers.append(mapper)
   }

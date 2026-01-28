@@ -1608,7 +1608,10 @@ extension UNetFixedEncoder {
           LoRAZImageFixed(
             batchSize: batchSize,
             tokenLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond),
-            channels: 3_840, layers: 30,
+            channels: 3_840, layers: 30, activationQkScaling: activationQkScaling,
+            activationProjScaling: activationProjScaling,
+            activationFfnProjUpScaling: activationFfnProjUpScaling,
+            activationFfnScaling: activationFfnScaling,
             usesFlashAttention: usesFlashAttention ? .scale1 : .none,
             LoRAConfiguration: configuration
           ).0
@@ -1617,7 +1620,10 @@ extension UNetFixedEncoder {
           ZImageFixed(
             batchSize: batchSize,
             tokenLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond),
-            channels: 3_840, layers: 30,
+            channels: 3_840, layers: 30, activationQkScaling: activationQkScaling,
+            activationProjScaling: activationProjScaling,
+            activationFfnProjUpScaling: activationFfnProjUpScaling,
+            activationFfnScaling: activationFfnScaling,
             usesFlashAttention: usesFlashAttention ? .scale1 : .none
           ).0
       }
