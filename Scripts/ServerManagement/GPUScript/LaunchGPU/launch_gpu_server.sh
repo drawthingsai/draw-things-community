@@ -274,14 +274,14 @@ setup_overlay() {
         return 1
     fi
 
-    echo "  Running: sudo $mount_script -s $MODELS_PATH -l $MODELS_PATH -f $TMPFS_FILE_LIST -m $OVERLAY_MOUNT -z 448G"
+    echo "  Running: sudo $mount_script -s $MODELS_PATH -l $MODELS_PATH -f $TMPFS_FILE_LIST -m $OVERLAY_MOUNT -z 700G"
 
     sudo "$mount_script" \
         -s "$MODELS_PATH" \
         -l "$MODELS_PATH" \
         -f "$TMPFS_FILE_LIST" \
         -m "$OVERLAY_MOUNT" \
-        -z 448G
+        -z 700G
 
     if [ $? -eq 0 ]; then
         echo "  ✅ Overlay mounted successfully at $OVERLAY_MOUNT"

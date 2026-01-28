@@ -121,20 +121,22 @@ def update_control_panel(model_list_path: Path) -> tuple[bool, str]:
         "update-model-list", str(model_list_path)
     ]
 
+    print(f"  Command: {' '.join(cmd)}")
+    print("  (This may take a few minutes to build...)")
+
     try:
+        # Stream output in real-time instead of capturing
         result = subprocess.run(
             cmd,
-            capture_output=True,
             text=True,
             cwd=REPO_ROOT,
             timeout=300  # 5 minutes for bazel build + run
         )
-        output = result.stdout + result.stderr
         if result.returncode != 0:
-            return False, output
-        return True, output
+            return False, f"Command failed with exit code {result.returncode}"
+        return True, "Success"
     except subprocess.TimeoutExpired:
-        return False, "Command timed out"
+        return False, "Command timed out after 5 minutes"
     except Exception as e:
         return False, str(e)
 
