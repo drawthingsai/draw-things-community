@@ -2008,7 +2008,7 @@ extension UNetFromNNC {
           return finalEncoding
         }
       case .zImage:
-        if $0.0 == count - 131 {
+        if $0.0 == count - 131 || $0.0 == count - 132 {
           let shape = $0.1.shape
           let tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
           let graph = $0.1.graph
@@ -2271,22 +2271,28 @@ extension UNetFromNNC {
       return
     case .zImage:
       guard isCfgEnabled else {
+        var inputs = inputs
+        inputs.remove(at: inputs.count - 131)
         unet.compile(inputs: inputs)
         // TODO: TeaCache insert here.
         return
       }
       let count = inputs.count
-      let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().map {
+      let roundUpTokenLengthUncond = (tokenLengthUncond + 31) / 32 * 32
+      let roundUpTokenLengthCond = (tokenLengthCond + 31) / 32 * 32
+      let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
         let shape = $0.1.shape
         switch $0.0 {
         case 0:
           return DynamicGraph.Tensor<FloatType>($0.1)[
             0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
         case count - 130:
-          let roundUpTokenLengthUncond = (tokenLengthUncond + 31) / 32 * 32
-          let roundUpTokenLengthCond = (tokenLengthCond + 31) / 32 * 32
           return DynamicGraph.Tensor<Float>($0.1)[
             0..<shape[0], 0..<max(roundUpTokenLengthUncond, roundUpTokenLengthCond), 0..<shape[2]]
+        case count - 131:
+          return roundUpTokenLengthUncond > roundUpTokenLengthCond ? nil : $0.1
+        case count - 132:
+          return roundUpTokenLengthUncond > roundUpTokenLengthCond ? $0.1 : nil
         default:
           return $0.1
         }
@@ -2790,6 +2796,8 @@ extension UNetFromNNC {
       }
     case .zImage:
       guard isCfgEnabled else {
+        var restInputs = restInputs
+        restInputs.remove(at: restInputs.count - 131)
         let et = unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
         return et
       }
@@ -2805,7 +2813,7 @@ extension UNetFromNNC {
           (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
         ]
         .copied()
-        let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+        let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
           let shape = $0.1.shape
           switch $0.0 {
           case count - 130:  // Offset for text condition.
@@ -2814,6 +2822,8 @@ extension UNetFromNNC {
               roundUpTokenLengthUncond..<(roundUpTokenLengthUncond + roundUpTokenLengthCond),
               0..<shape[2]
             ].copied()
+          case count - 132:
+            return nil
           default:
             return $0.1
           }
@@ -2825,13 +2835,15 @@ extension UNetFromNNC {
         }
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+        let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
           let shape = $0.1.shape
           switch $0.0 {
           case count - 130:  // Offset for text condition.
             return DynamicGraph.Tensor<Float>($0.1)[
               0..<shape[0], 0..<roundUpTokenLengthUncond, 0..<shape[2]
             ].copied()
+          case count - 131:
+            return nil
           default:
             return $0.1
           }
@@ -2840,13 +2852,15 @@ extension UNetFromNNC {
       } else {
         let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
-        let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+        let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
           let shape = $0.1.shape
           switch $0.0 {
           case count - 130:  // Offset for text condition.
             return DynamicGraph.Tensor<Float>($0.1)[
               0..<shape[0], 0..<roundUpTokenLengthUncond, 0..<shape[2]
             ].copied()
+          case count - 131:
+            return nil
           default:
             return $0.1
           }
@@ -2860,7 +2874,7 @@ extension UNetFromNNC {
           (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
         ]
         .copied()
-        let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
+        let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
           let shape = $0.1.shape
           switch $0.0 {
           case count - 130:  // Offset for text condition.
@@ -2869,6 +2883,8 @@ extension UNetFromNNC {
               roundUpTokenLengthUncond..<(roundUpTokenLengthUncond + roundUpTokenLengthCond),
               0..<shape[2]
             ].copied()
+          case count - 132:
+            return nil
           default:
             return $0.1
           }

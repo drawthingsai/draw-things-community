@@ -2191,7 +2191,7 @@ extension TextEncoder {
       FloatType.self, vocabularySize: 151_936,
       maxLength: tokenLength, width: 2_560,
       tokenLength: tokenLength,
-      layers: 35 /* Should be 36, but only 27 is enough for this purpose */, MLP: 9_728, heads: 32,
+      layers: 35 /* Should be 36, but only 35 is enough for this purpose */, MLP: 9_728, heads: 32,
       outputHiddenStates: [34],
       noFinalNormalizedOutput: true, batchSize: 2, usesFlashAttention: usesFlashAttention)
     var causalAttentionMask = Tensor<FloatType>(

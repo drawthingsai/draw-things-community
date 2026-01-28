@@ -1753,14 +1753,33 @@ extension UNetFixedEncoder {
         [txtRot, timeEmbeds] + (capPadTokens.map { [graph.variable($0.toGPU(0))] } ?? [])
       )
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
-      let rotaryEmbedding = Tensor<FloatType>(
-        from: ZImageRotaryPositionEmbedding(
-          height: h, width: w, tokenLength: (textLength + 31) / 32 * 32,
-          imagePaddedLength: imagePaddedLength)
-      ).toGPU(0)
+      let rotaryEmbeddings: [DynamicGraph.Tensor<FloatType>]
+      if isCfgEnabled {
+        let rotaryEmbeddingUncond = Tensor<FloatType>(
+          from: ZImageRotaryPositionEmbedding(
+            height: h, width: w, tokenLength: roundUpTokenLengthUncond,
+            imagePaddedLength: imagePaddedLength)
+        ).toGPU(0)
+        let rotaryEmbeddingCond = Tensor<FloatType>(
+          from: ZImageRotaryPositionEmbedding(
+            height: h, width: w, tokenLength: roundUpTokenLengthCond,
+            imagePaddedLength: imagePaddedLength)
+        ).toGPU(0)
+        rotaryEmbeddings = [
+          graph.variable(rotaryEmbeddingUncond), graph.variable(rotaryEmbeddingCond),
+        ]
+      } else {
+        let rotaryEmbedding = Tensor<FloatType>(
+          from: ZImageRotaryPositionEmbedding(
+            height: h, width: w, tokenLength: roundUpTokenLengthCond,
+            imagePaddedLength: imagePaddedLength)
+        ).toGPU(0)
+        let rot = graph.variable(rotaryEmbedding)
+        rotaryEmbeddings = [rot, rot]
+      }
       return (
-        (xPadTokens.map { [graph.variable($0.toGPU(0))] } ?? []) + [graph.variable(rotaryEmbedding)]
-          + conditions, nil
+        (xPadTokens.map { [graph.variable($0.toGPU(0))] } ?? []) + rotaryEmbeddings + conditions,
+        nil
       )
     case .flux2, .flux2_9b, .flux2_4b:
       let c0 = textEncoding[0]
