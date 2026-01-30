@@ -2926,7 +2926,7 @@ extension TextEncoder {
       .* rangeCond_
     let normedHiddenStates = DynamicGraph.Tensor<BFloat16>(
       from: Functional.concat(axis: 0, hiddenStatesUncond, hiddenStatesCond)
-    ).reshaped(.HWC(2, tokenLength, 3840 * 49))
+    ).reshaped(.WC(2 * tokenLength, 3840 * 49))
     let featureExtractorLinear = Dense(count: 3840, noBias: true)
     featureExtractorLinear.compile(inputs: normedHiddenStates)
     graph.openStore(
@@ -2938,7 +2938,7 @@ extension TextEncoder {
         codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
     }
     let c = featureExtractorLinear(inputs: normedHiddenStates).map {
-      DynamicGraph.Tensor<FloatType>(from: $0)
+      DynamicGraph.Tensor<FloatType>(from: $0).reshaped(.HWC(2, tokenLength, 3840))
     }
     return (c, [textModel])
   }

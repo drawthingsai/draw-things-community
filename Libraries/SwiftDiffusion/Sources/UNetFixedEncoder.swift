@@ -1979,10 +1979,6 @@ extension UNetFixedEncoder {
       let audioConnector = Embedding1DConnector(
         prefix: "audio_embeddings_connector", layers: 2, tokenLength: paddedTextLength
       ).0
-      let loadedVideoConnectorFromWeightsCache = weightsCache.detach(
-        "\(filePath):[video_connector]", to: videoConnector.parameters)
-      let loadedAudioConnectorFromWeightsCache = weightsCache.detach(
-        "\(filePath):[audio_connector]", to: audioConnector.parameters)
       var videoHiddenStates = graph.variable(
         .GPU(0), .HWC(cBatchSize, paddedTextLength, 3840), of: FloatType.self)
       var audioHiddenStates = graph.variable(
@@ -2040,7 +2036,11 @@ extension UNetFixedEncoder {
             tokenLength: paddedTextLength, maxLength: 4096, channels: 3840, headDimension: 128
           ).toGPU(0)))
       videoConnector.compile(inputs: videoHiddenStates, rotaryEmbedding1D)
+      let loadedVideoConnectorFromWeightsCache = weightsCache.detach(
+        "\(filePath):[video_connector]", to: videoConnector.parameters)
       audioConnector.compile(inputs: audioHiddenStates, rotaryEmbedding1D)
+      let loadedAudioConnectorFromWeightsCache = weightsCache.detach(
+        "\(filePath):[audio_connector]", to: audioConnector.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
@@ -2080,9 +2080,9 @@ extension UNetFixedEncoder {
         timesteps: timesteps.count, channels: (4096, 2048), layers: 48
       ).1
       unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: videoContext, audioContext, timeEmbeds)
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
-      unetFixed.compile(inputs: videoContext, audioContext, timeEmbeds)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
