@@ -11,6 +11,12 @@ import UniformTypeIdentifiers
 #if canImport(UIKit)
   import UIKit
 #endif
+#if canImport(CoreML)
+  import CoreML
+  import NNCCoreMLConversion
+  import DiffusionCoreML
+  import ZIPFoundation
+#endif
 
 public enum ImageConverter {
   public static func bitmapContext(from cgImage: CGImage) -> CGContext? {
@@ -646,7 +652,337 @@ public enum ImageConverter {
       return x / 12.92
     }
   }
-  #if canImport(UIKit)
+  #if canImport(UIKit) && canImport(CoreML)
+    static let flux1UnzipItem: URL? = {
+      let fileManager = FileManager.default
+      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
+      do {
+        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
+        guard !fileManager.fileExists(atPath: coreMLUrl.appendingPathComponent("flux_1_tae").path)
+        else {
+          return coreMLUrl.appendingPathComponent("flux_1_tae")
+        }
+        try fileManager.unzipItem(
+          at: Bundle.main.url(
+            forResource: "flux_1_tae", withExtension: "zip")!,
+          to: coreMLUrl)
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_1_tae/768.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_1_tae/1024.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_1_tae/1280.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_1_tae/1536.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_1_tae/1792.mlmodelc/weights/weight.bin"))
+        try fileManager.moveItem(
+          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_1_tae/2048.mlmodelc/weights/weight.bin"))
+        return coreMLUrl.appendingPathComponent("flux_1_tae")
+      } catch {
+        try? fileManager.removeItem(at: coreMLUrl.appendingPathComponent("flux_1_tae"))
+        return nil
+      }
+    }()
+    static let flux1TinyDecoderFor768: ManagedMLModel? = {
+      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("768.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux1TinyDecoderFor1024: ManagedMLModel? = {
+      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("1024.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux1TinyDecoderFor1280: ManagedMLModel? = {
+      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("1280.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux1TinyDecoderFor1536: ManagedMLModel? = {
+      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("1536.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux1TinyDecoderFor1792: ManagedMLModel? = {
+      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("1792.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux1TinyDecoderFor2048: ManagedMLModel? = {
+      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("2048.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux2UnzipItem: URL? = {
+      let fileManager = FileManager.default
+      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
+      do {
+        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
+        guard !fileManager.fileExists(atPath: coreMLUrl.appendingPathComponent("flux_2_tae").path)
+        else {
+          return coreMLUrl.appendingPathComponent("flux_2_tae")
+        }
+        try fileManager.unzipItem(
+          at: Bundle.main.url(
+            forResource: "flux_2_tae", withExtension: "zip")!,
+          to: coreMLUrl)
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_2_tae/768.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_2_tae/1024.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_2_tae/1280.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_2_tae/1536.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_2_tae/1792.mlmodelc/weights/weight.bin"))
+        try fileManager.moveItem(
+          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("flux_2_tae/2048.mlmodelc/weights/weight.bin"))
+        return coreMLUrl.appendingPathComponent("flux_2_tae")
+      } catch {
+        try? fileManager.removeItem(at: coreMLUrl.appendingPathComponent("flux_2_tae"))
+        return nil
+      }
+    }()
+    static let flux2TinyDecoderFor768: ManagedMLModel? = {
+      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux2UnzipItem.appendingPathComponent("768.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux2TinyDecoderFor1024: ManagedMLModel? = {
+      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux2UnzipItem.appendingPathComponent("1024.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux2TinyDecoderFor1280: ManagedMLModel? = {
+      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux2UnzipItem.appendingPathComponent("1280.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux2TinyDecoderFor1536: ManagedMLModel? = {
+      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux2UnzipItem.appendingPathComponent("1536.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux2TinyDecoderFor1792: ManagedMLModel? = {
+      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux2UnzipItem.appendingPathComponent("1792.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let flux2TinyDecoderFor2048: ManagedMLModel? = {
+      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux2UnzipItem.appendingPathComponent("2048.mlmodelc"),
+        configuration: configuration)
+    }()
+    public static func imagesWithTAESD(fromLatent tensor: Tensor<FloatType>, version: ModelVersion)
+      -> [UIImage]
+    {
+      let shape = tensor.shape
+      let imageHeight = shape[1] * 8
+      let imageWidth = shape[2] * 8
+      let imagePaddingSize: Int
+      let taesd: ManagedMLModel?
+      let isFlux2 = shape[3] == 32
+      switch max(imageWidth, imageHeight) {
+      case 0...768:
+        taesd = isFlux2 ? flux2TinyDecoderFor768 : flux1TinyDecoderFor768
+        imagePaddingSize = 768
+      case 769...1024:
+        taesd = isFlux2 ? flux2TinyDecoderFor1024 : flux1TinyDecoderFor1024
+        imagePaddingSize = 1024
+      case 1025...1280:
+        taesd = isFlux2 ? flux2TinyDecoderFor1280 : flux1TinyDecoderFor1280
+        imagePaddingSize = 1280
+      case 1281...1536:
+        taesd = isFlux2 ? flux2TinyDecoderFor1536 : flux1TinyDecoderFor1536
+        imagePaddingSize = 1536
+      case 1537...1792:
+        taesd = isFlux2 ? flux2TinyDecoderFor1792 : flux1TinyDecoderFor1792
+        imagePaddingSize = 1792
+      case 1793...2048:
+        taesd = isFlux2 ? flux2TinyDecoderFor2048 : flux1TinyDecoderFor2048
+        imagePaddingSize = 2048
+      default:
+        return []
+      }
+      guard #available(iOS 16.0, *), let taesd = taesd else {
+        return []
+      }
+      do {
+        var images = [Tensor<FloatType>]()
+        if imageWidth != imagePaddingSize || imageHeight != imagePaddingSize {
+          for i in 0..<shape[0] {
+            var image = Tensor<FloatType>(
+              .CPU, .NHWC(1, imagePaddingSize / 8, imagePaddingSize / 8, shape[3]))
+            image[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+              tensor[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+            images.append(image)
+          }
+        } else if shape[0] > 1 {
+          for i in 0..<shape[0] {
+            images.append(
+              tensor[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].contiguous())
+          }
+        } else {
+          images.append(tensor)
+        }
+        try taesd.loadResources()
+        let array = images.map { MLMultiArray(MLShapedArray($0)) }
+        return try taesd.perform {
+          let provider = MLArrayBatchProvider(
+            array: try array.map {
+              try MLDictionaryFeatureProvider(dictionary: ["latent": MLFeatureValue(multiArray: $0)]
+              )
+            })
+          let name = $0.modelDescription.outputDescriptionsByName.keys.first!
+          let predictions = try $0.predictions(fromBatch: provider)
+          return (0..<predictions.count).compactMap {
+            let outFeatures = predictions.features(at: $0)
+            let outputArray = outFeatures.featureValue(for: name)!.multiArrayValue!
+            let stride = outputArray.strides[2].intValue
+            return outputArray.withUnsafeBytes {
+              guard var fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else {
+                return UIImage()
+              }
+              let bytes = UnsafeMutablePointer<UInt8>.allocate(
+                capacity: imageWidth * imageHeight * 4)
+              var o = bytes
+              for _ in 0..<imageHeight {
+                var i = fp16
+                for _ in 0..<imageWidth {
+                  // We need to do some computations from the latent values.
+                  let (v0, v1, v2) = (i[0], i[1], i[2])
+                  let r = 255.0 * v0
+                  let g = 255.0 * v1
+                  let b = 255.0 * v2
+                  o[0] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+                  o[1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+                  o[2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+                  o[3] = 255
+                  i += stride
+                  o += 4
+                }
+                fp16 += imagePaddingSize * 32
+              }
+              return UIImage(
+                cgImage: CGImage(
+                  width: imageWidth, height: imageHeight, bitsPerComponent: 8, bitsPerPixel: 32,
+                  bytesPerRow: 4 * imageWidth, space: CGColorSpaceCreateDeviceRGB(),
+                  bitmapInfo: CGBitmapInfo(
+                    rawValue: CGBitmapInfo.byteOrder32Big.rawValue
+                      | CGImageAlphaInfo.noneSkipLast.rawValue),
+                  provider: CGDataProvider(
+                    dataInfo: nil, data: bytes, size: imageWidth * imageHeight * 4,
+                    releaseData: { _, p, _ in
+                      p.deallocate()
+                    })!, decode: nil, shouldInterpolate: false,
+                  intent: CGColorRenderingIntent.defaultIntent)!)
+            }
+          }
+        }
+      } catch {
+        return []
+      }
+    }
     public static func images(fromLatent tensor: Tensor<FloatType>, version: ModelVersion)
       -> [UIImage]
     {
@@ -657,6 +993,14 @@ public enum ImageConverter {
       let channels = shape[3]
       guard channels == 4 || channels == 3 || channels == 16 || channels == 32 || channels == 48
       else { return [] }
+      if version == .flux1 || version == .hiDreamI1 || version == .zImage || version == .flux2
+        || version == .flux2_4b || version == .flux2_9b
+      {
+        let images = imagesWithTAESD(fromLatent: tensor, version: version)
+        guard images.isEmpty else {
+          return images
+        }
+      }
       return tensor.withUnsafeBytes {
         guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return [] }
         var images = [UIImage]()
