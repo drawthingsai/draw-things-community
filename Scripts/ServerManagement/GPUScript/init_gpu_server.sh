@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script to initialize GPU servers with Docker, CUDA, Tailscale, and dependencies
+# Script to initialize GPU servers with Docker, CUDA, and dependencies
 # Usage:
 #   ./InitGPUServer.sh root@hostname
 #   ./InitGPUServer.sh --dry-run root@hostname
@@ -99,14 +99,6 @@ sudo systemctl restart docker
 
 echo "✅ NVIDIA Container Toolkit installed and configured."
 
-# --- 2. Install Tailscale ---
-echo ""
-echo "➡️ Step 3: Installing Tailscale..."
-
-curl -fsSL https://tailscale.com/install.sh | sudo sh
-
-echo "✅ Tailscale installed. Run \"tailscale up\" to authenticate."
-
 # --- 3. Security & Directory Setup ---
 echo ""
 echo "➡️ Step 4: Applying security settings..."
@@ -134,15 +126,42 @@ source /etc/profile.d/draw-things-venv.sh
 
 echo "✅ Python dependencies installed in /opt/draw-things-venv"
 
-# --- 5. Pull Docker images ---
+# --- 5. Network Performance Tuning ---
 echo ""
-echo "➡️ Step 6: Pulling Docker images..."
+echo "➡️ Step 6: Configuring network performance settings..."
+
+# Apply TCP buffer and BBR settings immediately
+sudo sysctl -w net.ipv4.tcp_rmem='4096 87380 134217728'
+sudo sysctl -w net.ipv4.tcp_wmem='4096 65536 134217728'
+sudo sysctl -w net.core.rmem_max=134217728
+sudo sysctl -w net.core.wmem_max=134217728
+sudo sysctl -w net.core.default_qdisc=fq
+sudo sysctl -w net.ipv4.tcp_congestion_control=bbr
+
+# Make settings persistent across reboots
+cat <<EOF | sudo tee /etc/sysctl.d/99-network-performance.conf
+# TCP buffer sizes for high-bandwidth connections
+net.ipv4.tcp_rmem = 4096 87380 134217728
+net.ipv4.tcp_wmem = 4096 65536 134217728
+net.core.rmem_max = 134217728
+net.core.wmem_max = 134217728
+
+# BBR congestion control
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+EOF
+
+echo "✅ Network performance settings configured and persisted."
+
+# --- 6. Pull Docker images ---
+echo ""
+echo "➡️ Step 7: Pulling Docker images..."
 
 sudo docker pull drawthingsai/draw-things-grpc-server-cli:latest
 
 echo "✅ Docker images pulled."
 
-# --- Final Summary ---
+# --- 7. Final Summary ---
 echo ""
 echo "=================================================="
 echo "🎉 GPU Server Initialization Complete!"
@@ -153,8 +172,7 @@ echo ""
 echo "Post-reboot verification commands:"
 echo "  1. nvidia-smi                    # Check GPU status"
 echo "  2. nvcc --version                # Check CUDA version"
-echo "  3. tailscale up                  # Authenticate Tailscale"
-echo "  4. sudo docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi"
+echo "  3. sudo docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi"
 echo ""
 echo "=================================================="
 '
@@ -249,8 +267,8 @@ if [ -z "$REMOTE_HOST" ]; then
     echo "  - Docker"
     echo "  - CUDA Toolkit"
     echo "  - NVIDIA Container Toolkit"
-    echo "  - Tailscale"
     echo "  - Python dependencies (tqdm, schedule, boto3)"
+    echo "  - Network performance tuning (TCP buffers, BBR)"
     echo "  - Draw Things gRPC server Docker image"
     exit 1
 fi
@@ -283,7 +301,7 @@ else
         echo "=================================================="
         echo "✅ Initialization complete!"
         echo ""
-        echo "Remember to reboot the server and run 'tailscale up' to authenticate."
+        echo "Remember to reboot the server."
         exit 0
     else
         echo ""
