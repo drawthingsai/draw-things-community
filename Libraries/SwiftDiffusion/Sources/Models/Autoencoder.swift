@@ -131,11 +131,9 @@ private func NHWCAttnBlock(
   Model, PythonReader, ModelWeightMapper
 ) {
   let x = Input()
-  let kv = Input()
   let norm = GroupNorm(
     axis: 3, groups: 32, epsilon: 1e-6, reduce: [1, 2], name: specializingNames ? "attn_norm" : "")
   var out = norm(x)
-  let normKV = norm(kv)
   let hw = width * height
   let toqueries = Convolution(
     groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
