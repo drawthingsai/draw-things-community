@@ -983,7 +983,9 @@ public enum ImageConverter {
         return []
       }
     }
-    public static func images(fromLatent tensor: Tensor<FloatType>, version: ModelVersion)
+    public static func images(
+      fromLatent tensor: Tensor<FloatType>, canUseTAESD: Bool, version: ModelVersion
+    )
       -> [UIImage]
     {
       let shape = tensor.shape
@@ -993,8 +995,9 @@ public enum ImageConverter {
       let channels = shape[3]
       guard channels == 4 || channels == 3 || channels == 16 || channels == 32 || channels == 48
       else { return [] }
-      if version == .flux1 || version == .hiDreamI1 || version == .zImage || version == .flux2
-        || version == .flux2_4b || version == .flux2_9b
+      if canUseTAESD
+        && (version == .flux1 || version == .hiDreamI1 || version == .zImage || version == .flux2
+          || version == .flux2_4b || version == .flux2_9b)
       {
         let images = imagesWithTAESD(fromLatent: tensor, version: version)
         guard images.isEmpty else {
