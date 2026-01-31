@@ -986,7 +986,7 @@ public enum ImageConverter {
     public static func images(
       fromLatent tensor: Tensor<FloatType>, canUseTAESD: Bool, version: ModelVersion
     )
-      -> [UIImage]
+      -> ([UIImage], Bool)
     {
       let shape = tensor.shape
       let batchSize = shape[0]
@@ -994,18 +994,20 @@ public enum ImageConverter {
       let imageWidth = shape[2]
       let channels = shape[3]
       guard channels == 4 || channels == 3 || channels == 16 || channels == 32 || channels == 48
-      else { return [] }
+      else { return ([], false) }
       if canUseTAESD
         && (version == .flux1 || version == .hiDreamI1 || version == .zImage || version == .flux2
           || version == .flux2_4b || version == .flux2_9b)
       {
         let images = imagesWithTAESD(fromLatent: tensor, version: version)
         guard images.isEmpty else {
-          return images
+          return (images, true)
         }
       }
       return tensor.withUnsafeBytes {
-        guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return [] }
+        guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else {
+          return ([], false)
+        }
         var images = [UIImage]()
         for b in 0..<batchSize {
           let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: imageWidth * imageHeight * 4)
@@ -1350,7 +1352,7 @@ public enum ImageConverter {
                   })!, decode: nil, shouldInterpolate: false,
                 intent: CGColorRenderingIntent.defaultIntent)!))
         }
-        return images
+        return (images, false)
       }
     }
   #endif
