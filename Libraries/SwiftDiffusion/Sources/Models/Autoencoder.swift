@@ -2,28 +2,37 @@ import NNC
 
 /// Autoencoder
 
-private func NHWCResnetBlock(prefix: (String, String), outChannels: Int, shortcut: Bool)
+private func NHWCResnetBlock(
+  prefix: (String, String), outChannels: Int, shortcut: Bool, specializingNames: Bool
+)
   -> (Model, PythonReader, ModelWeightMapper)
 {
   let x = Input()
-  let norm1 = GroupNorm(axis: 3, groups: 32, epsilon: 1e-6, reduce: [1, 2])
+  let norm1 = GroupNorm(
+    axis: 3, groups: 32, epsilon: 1e-6, reduce: [1, 2],
+    name: specializingNames ? "resnet_norm1" : "")
   var out = norm1(x)
   out = out.swish()
   let conv1 = Convolution(
     groups: 1, filters: outChannels, filterSize: [3, 3],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW,
+    name: specializingNames ? "resnet_conv1" : "")
   out = conv1(out)
-  let norm2 = GroupNorm(axis: 3, groups: 32, epsilon: 1e-6, reduce: [1, 2])
+  let norm2 = GroupNorm(
+    axis: 3, groups: 32, epsilon: 1e-6, reduce: [1, 2],
+    name: specializingNames ? "resnet_norm2" : "")
   out = norm2(out)
   out = out.swish()
   let conv2 = Convolution(
     groups: 1, filters: outChannels, filterSize: [3, 3],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW,
+    name: specializingNames ? "resnet_conv2" : "")
   out = conv2(out)
   let ninShortcut: Model?
   if shortcut {
     let nin = Convolution(
-      groups: 1, filters: outChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW
+      groups: 1, filters: outChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
+      format: .OIHW, name: specializingNames ? "resnet_shortcut" : ""
     )
     out = nin(x) + out
     ninShortcut = nin
@@ -117,20 +126,26 @@ private func NHWCResnetBlock(prefix: (String, String), outChannels: Int, shortcu
 
 private func NHWCAttnBlock(
   prefix: (String, String), inChannels: Int, batchSize: Int, width: Int, height: Int,
-  highPrecisionKeysAndValues: Bool, usesFlashAttention: Bool
+  highPrecisionKeysAndValues: Bool, usesFlashAttention: Bool, specializingNames: Bool
 ) -> (
   Model, PythonReader, ModelWeightMapper
 ) {
   let x = Input()
-  let norm = GroupNorm(axis: 3, groups: 32, epsilon: 1e-6, reduce: [1, 2])
+  let kv = Input()
+  let norm = GroupNorm(
+    axis: 3, groups: 32, epsilon: 1e-6, reduce: [1, 2], name: specializingNames ? "attn_norm" : "")
   var out = norm(x)
+  let normKV = norm(kv)
   let hw = width * height
   let toqueries = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+    name: specializingNames ? "attn_to_q" : "")
   let tokeys = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+    name: specializingNames ? "attn_to_k" : "")
   let tovalues = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+    name: specializingNames ? "attn_to_v" : "")
   let projOut: Model
   if usesFlashAttention {
     if highPrecisionKeysAndValues {
@@ -140,7 +155,8 @@ private func NHWCAttnBlock(
     let k = tokeys(out).reshaped([batchSize, hw, inChannels]).identity()
     let v = tovalues(out).reshaped([batchSize, hw, inChannels])
     projOut = ScaledDotProductAttention(
-      scale: 1.0 / Float(inChannels).squareRoot(), multiHeadOutputProjectionFused: true)
+      scale: 1.0 / Float(inChannels).squareRoot(), multiHeadOutputProjectionFused: true,
+      name: specializingNames ? "attn_out" : "")
     out = projOut(q, k, v).reshaped([batchSize, height, width, inChannels])
     out = x + out.to(of: x)
   } else {
@@ -159,7 +175,8 @@ private func NHWCAttnBlock(
     dot = dot.reshaped([batchSize, hw, hw])
     out = dot.to(of: v) * v
     projOut = Convolution(
-      groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
+      groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+      name: specializingNames ? "attn_out" : "")
     out = x + projOut(out.reshaped([batchSize, height, width, inChannels]))
   }
   let reader: PythonReader = { stateDict, archive in
@@ -262,7 +279,7 @@ private func NHWCEncoder(
       let (block, reader, mapper) = NHWCResnetBlock(
         prefix: ("encoder.down.\(i).block.\(j)", "encoder.down_blocks.\(i).resnets.\(j)"),
         outChannels: channel,
-        shortcut: previousChannel != channel)
+        shortcut: previousChannel != channel, specializingNames: false)
       readers.append(reader)
       mappers.append(mapper)
       out = block(out)
@@ -322,16 +339,16 @@ private func NHWCEncoder(
   }
   let (midBlock1, midBlockReader1, midBlockMapper1) = NHWCResnetBlock(
     prefix: ("encoder.mid.block_1", "encoder.mid_block.resnets.0"), outChannels: previousChannel,
-    shortcut: false)
+    shortcut: false, specializingNames: false)
   out = midBlock1(out)
   let (midAttn1, midAttnReader1, midAttnMapper1) = NHWCAttnBlock(
     prefix: ("encoder.mid.attn_1", "encoder.mid_block.attentions.0"), inChannels: previousChannel,
     batchSize: batchSize, width: startWidth, height: startHeight, highPrecisionKeysAndValues: false,
-    usesFlashAttention: usesFlashAttention)
+    usesFlashAttention: usesFlashAttention, specializingNames: false)
   out = midAttn1(out)
   let (midBlock2, midBlockReader2, midBlockMapper2) = NHWCResnetBlock(
     prefix: ("encoder.mid.block_2", "encoder.mid_block.resnets.1"), outChannels: previousChannel,
-    shortcut: false)
+    shortcut: false, specializingNames: false)
   out = midBlock2(out)
   let normOut = GroupNorm(axis: 3, groups: 32, epsilon: 1e-6, reduce: [1, 2])
   out = normOut(out)
@@ -437,7 +454,7 @@ private func NHWCEncoder(
 private func NHWCDecoder(
   channels: [Int], numRepeat: Int, batchSize: Int, startWidth: Int, startHeight: Int,
   inputChannels: Int, highPrecisionKeysAndValues: Bool, usesFlashAttention: Bool,
-  paddingFinalConvLayer: Bool, quantLayer: Bool
+  paddingFinalConvLayer: Bool, quantLayer: Bool, specializingNames: Bool
 )
   -> (Model, PythonReader, ModelWeightMapper)
 {
@@ -447,7 +464,7 @@ private func NHWCDecoder(
   if quantLayer {
     let postQuantConv = Convolution(
       groups: 1, filters: inputChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
-      format: .OIHW)
+      format: .OIHW, name: specializingNames ? "post_quant_conv" : "")
     out = postQuantConv(x)
     postQuantConv2d = postQuantConv
   } else {
@@ -457,20 +474,22 @@ private func NHWCDecoder(
   var previousChannel = channels[channels.count - 1]
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW,
+    name: specializingNames ? "conv_in" : "")
   out = convIn(out)
   let (midBlock1, midBlockReader1, midBlockMapper1) = NHWCResnetBlock(
     prefix: ("decoder.mid.block_1", "decoder.mid_block.resnets.0"), outChannels: previousChannel,
-    shortcut: false)
+    shortcut: false, specializingNames: specializingNames)
   out = midBlock1(out)
   let (midAttn1, midAttnReader1, midAttnMapper1) = NHWCAttnBlock(
     prefix: ("decoder.mid.attn_1", "decoder.mid_block.attentions.0"), inChannels: previousChannel,
     batchSize: batchSize, width: startWidth, height: startHeight,
-    highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: usesFlashAttention)
+    highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: usesFlashAttention,
+    specializingNames: specializingNames)
   out = midAttn1(out)
   let (midBlock2, midBlockReader2, midBlockMapper2) = NHWCResnetBlock(
     prefix: ("decoder.mid.block_2", "decoder.mid_block.resnets.1"), outChannels: previousChannel,
-    shortcut: false)
+    shortcut: false, specializingNames: specializingNames)
   out = midBlock2(out)
   var readers = [PythonReader]()
   var mappers = [ModelWeightMapper]()
@@ -480,7 +499,7 @@ private func NHWCDecoder(
         prefix: (
           "decoder.up.\(i).block.\(j)", "decoder.up_blocks.\(channels.count - 1 - i).resnets.\(j)"
         ), outChannels: channel,
-        shortcut: previousChannel != channel)
+        shortcut: previousChannel != channel, specializingNames: specializingNames)
       readers.append(reader)
       mappers.append(mapper)
       out = block(out)
@@ -490,7 +509,8 @@ private func NHWCDecoder(
       out = Upsample(.nearest, widthScale: 2, heightScale: 2)(out)
       let conv2d = Convolution(
         groups: 1, filters: channel, filterSize: [3, 3],
-        hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
+        hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW,
+        name: specializingNames ? "upsample" : "")
       out = conv2d(out)
       let upLayer = i
       let reader: PythonReader = { stateDict, archive in
@@ -531,12 +551,14 @@ private func NHWCDecoder(
       mappers.append(mapper)
     }
   }
-  let normOut = GroupNorm(axis: 3, groups: 32, epsilon: 1e-6, reduce: [1, 2])
+  let normOut = GroupNorm(
+    axis: 3, groups: 32, epsilon: 1e-6, reduce: [1, 2], name: specializingNames ? "norm_out" : "")
   out = normOut(out)
   out = out.swish()
   let convOut = Convolution(
     groups: 1, filters: paddingFinalConvLayer ? 4 : 3, filterSize: [3, 3],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW,
+    name: specializingNames ? "conv_out" : "")
   out = convOut(out)
   let reader: PythonReader = { stateDict, archive in
     if let postQuantConv2d = postQuantConv2d {
@@ -623,28 +645,37 @@ private func NHWCDecoder(
   return (Model([x], [out]), reader, mapper)
 }
 
-private func NCHWResnetBlock(prefix: (String, String), outChannels: Int, shortcut: Bool)
+private func NCHWResnetBlock(
+  prefix: (String, String), outChannels: Int, shortcut: Bool, specializingNames: Bool
+)
   -> (Model, PythonReader, ModelWeightMapper)
 {
   let x = Input()
-  let norm1 = GroupNorm(axis: 1, groups: 32, epsilon: 1e-6, reduce: [2, 3])
+  let norm1 = GroupNorm(
+    axis: 1, groups: 32, epsilon: 1e-6, reduce: [2, 3],
+    name: specializingNames ? "resnet_norm1" : "")
   var out = norm1(x)
   out = out.swish()
   let conv1 = Convolution(
     groups: 1, filters: outChannels, filterSize: [3, 3],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW,
+    name: specializingNames ? "resnet_conv1" : "")
   out = conv1(out)
-  let norm2 = GroupNorm(axis: 1, groups: 32, epsilon: 1e-6, reduce: [2, 3])
+  let norm2 = GroupNorm(
+    axis: 1, groups: 32, epsilon: 1e-6, reduce: [2, 3],
+    name: specializingNames ? "resnet_norm2" : "")
   out = norm2(out)
   out = out.swish()
   let conv2 = Convolution(
     groups: 1, filters: outChannels, filterSize: [3, 3],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW,
+    name: specializingNames ? "resnet_conv2" : "")
   out = conv2(out)
   let ninShortcut: Model?
   if shortcut {
     let nin = Convolution(
-      groups: 1, filters: outChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW
+      groups: 1, filters: outChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
+      format: .OIHW, name: specializingNames ? "resnet_shortcut" : ""
     )
     out = nin(x) + out
     ninShortcut = nin
@@ -738,20 +769,24 @@ private func NCHWResnetBlock(prefix: (String, String), outChannels: Int, shortcu
 
 private func NCHWAttnBlock(
   prefix: (String, String), inChannels: Int, batchSize: Int, width: Int, height: Int,
-  highPrecisionKeysAndValues: Bool, usesFlashAttention: Bool
+  highPrecisionKeysAndValues: Bool, usesFlashAttention: Bool, specializingNames: Bool
 ) -> (
   Model, PythonReader, ModelWeightMapper
 ) {
   let x = Input()
-  let norm = GroupNorm(axis: 1, groups: 32, epsilon: 1e-6, reduce: [2, 3])
+  let norm = GroupNorm(
+    axis: 1, groups: 32, epsilon: 1e-6, reduce: [2, 3], name: specializingNames ? "attn_norm" : "")
   var out = norm(x)
   let hw = width * height
   let toqueries = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+    name: specializingNames ? "attn_to_q" : "")
   let tokeys = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+    name: specializingNames ? "attn_to_k" : "")
   let tovalues = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+    name: specializingNames ? "attn_to_v" : "")
   let original = out
   if highPrecisionKeysAndValues {
     out = out.to(.Float32)
@@ -767,7 +802,8 @@ private func NCHWAttnBlock(
   dot = dot.reshaped([batchSize, hw, hw])
   out = Matmul(transposeB: (1, 2))(v, dot.to(of: v))
   let projOut = Convolution(
-    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW)
+    groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]), format: .OIHW,
+    name: specializingNames ? "attn_out" : "")
   out = x + projOut(out.reshaped([batchSize, inChannels, height, width]))
   let reader: PythonReader = { stateDict, archive in
     guard let norm_weight = stateDict["first_stage_model.\(prefix.0).norm.weight"] else {
@@ -869,7 +905,7 @@ private func NCHWEncoder(
       let (block, reader, mapper) = NCHWResnetBlock(
         prefix: ("encoder.down.\(i).block.\(j)", "encoder.down_blocks.\(i).resnets.\(j)"),
         outChannels: channel,
-        shortcut: previousChannel != channel)
+        shortcut: previousChannel != channel, specializingNames: false)
       readers.append(reader)
       mappers.append(mapper)
       out = block(out)
@@ -929,16 +965,16 @@ private func NCHWEncoder(
   }
   let (midBlock1, midBlockReader1, midBlockMapper1) = NCHWResnetBlock(
     prefix: ("encoder.mid.block_1", "encoder.mid_block.resnets.0"), outChannels: previousChannel,
-    shortcut: false)
+    shortcut: false, specializingNames: false)
   out = midBlock1(out)
   let (midAttn1, midAttnReader1, midAttnMapper1) = NCHWAttnBlock(
     prefix: ("encoder.mid.attn_1", "encoder.mid_block.attentions.0"), inChannels: previousChannel,
     batchSize: batchSize, width: startWidth, height: startHeight, highPrecisionKeysAndValues: false,
-    usesFlashAttention: usesFlashAttention)
+    usesFlashAttention: usesFlashAttention, specializingNames: false)
   out = midAttn1(out)
   let (midBlock2, midBlockReader2, midBlockMapper2) = NCHWResnetBlock(
     prefix: ("encoder.mid.block_2", "encoder.mid_block.resnets.1"), outChannels: previousChannel,
-    shortcut: false)
+    shortcut: false, specializingNames: false)
   out = midBlock2(out)
   let normOut = GroupNorm(axis: 1, groups: 32, epsilon: 1e-6, reduce: [2, 3])
   out = normOut(out)
@@ -1047,7 +1083,7 @@ private func NCHWEncoder(
 private func NCHWDecoder(
   channels: [Int], numRepeat: Int, batchSize: Int, startWidth: Int, startHeight: Int,
   inputChannels: Int, highPrecisionKeysAndValues: Bool, usesFlashAttention: Bool,
-  paddingFinalConvLayer: Bool, quantLayer: Bool
+  paddingFinalConvLayer: Bool, quantLayer: Bool, specializingNames: Bool
 )
   -> (Model, PythonReader, ModelWeightMapper)
 {
@@ -1057,7 +1093,7 @@ private func NCHWDecoder(
   if quantLayer {
     let postQuantConv = Convolution(
       groups: 1, filters: inputChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
-      format: .OIHW)
+      format: .OIHW, name: specializingNames ? "post_quant_conv" : "")
     out = postQuantConv(
       x.permuted(0, 3, 1, 2).contiguous().reshaped(
         .NCHW(batchSize, inputChannels, startHeight, startWidth)))
@@ -1070,20 +1106,22 @@ private func NCHWDecoder(
   var previousChannel = channels[channels.count - 1]
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW,
+    name: specializingNames ? "conv_in" : "")
   out = convIn(out)
   let (midBlock1, midBlockReader1, midBlockMapper1) = NCHWResnetBlock(
     prefix: ("decoder.mid.block_1", "decoder.mid_block.resnets.0"), outChannels: previousChannel,
-    shortcut: false)
+    shortcut: false, specializingNames: specializingNames)
   out = midBlock1(out)
   let (midAttn1, midAttnReader1, midAttnMapper1) = NCHWAttnBlock(
     prefix: ("decoder.mid.attn_1", "decoder.mid_block.attentions.0"), inChannels: previousChannel,
     batchSize: batchSize, width: startWidth, height: startHeight,
-    highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: usesFlashAttention)
+    highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: usesFlashAttention,
+    specializingNames: specializingNames)
   out = midAttn1(out)
   let (midBlock2, midBlockReader2, midBlockMapper2) = NCHWResnetBlock(
     prefix: ("decoder.mid.block_2", "decoder.mid_block.resnets.1"), outChannels: previousChannel,
-    shortcut: false)
+    shortcut: false, specializingNames: specializingNames)
   out = midBlock2(out)
   var readers = [PythonReader]()
   var mappers = [ModelWeightMapper]()
@@ -1093,7 +1131,7 @@ private func NCHWDecoder(
         prefix: (
           "decoder.up.\(i).block.\(j)", "decoder.up_blocks.\(channels.count - 1 - i).resnets.\(j)"
         ), outChannels: channel,
-        shortcut: previousChannel != channel)
+        shortcut: previousChannel != channel, specializingNames: specializingNames)
       readers.append(reader)
       mappers.append(mapper)
       out = block(out)
@@ -1103,7 +1141,8 @@ private func NCHWDecoder(
       out = Upsample(.nearest, widthScale: 2, heightScale: 2)(out)
       let conv2d = Convolution(
         groups: 1, filters: channel, filterSize: [3, 3],
-        hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
+        hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW,
+        name: specializingNames ? "upsample" : "")
       out = conv2d(out)
       let upLayer = i
       let reader: PythonReader = { stateDict, archive in
@@ -1144,12 +1183,14 @@ private func NCHWDecoder(
       mappers.append(mapper)
     }
   }
-  let normOut = GroupNorm(axis: 1, groups: 32, epsilon: 1e-6, reduce: [2, 3])
+  let normOut = GroupNorm(
+    axis: 1, groups: 32, epsilon: 1e-6, reduce: [2, 3], name: specializingNames ? "norm_out" : "")
   out = normOut(out)
   out = out.swish()
   let convOut = Convolution(
     groups: 1, filters: paddingFinalConvLayer ? 4 : 3, filterSize: [3, 3],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW)
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])), format: .OIHW,
+    name: specializingNames ? "conv_out" : "")
   out = convOut(out).permuted(0, 2, 3, 1).contiguous().reshaped(
     .NHWC(batchSize, startHeight * 8, startWidth * 8, paddingFinalConvLayer ? 4 : 3))
   let reader: PythonReader = { stateDict, archive in
@@ -1262,7 +1303,8 @@ public func Encoder(
 public func Decoder(
   channels: [Int], numRepeat: Int, batchSize: Int, startWidth: Int, startHeight: Int,
   inputChannels: Int, highPrecisionKeysAndValues: Bool, usesFlashAttention: Bool,
-  paddingFinalConvLayer: Bool, format: TensorFormat, quantLayer: Bool = true
+  paddingFinalConvLayer: Bool, format: TensorFormat, quantLayer: Bool = true,
+  specializingNames: Bool = false
 )
   -> (Model, PythonReader, ModelWeightMapper)
 {
@@ -1273,15 +1315,158 @@ public func Decoder(
       startHeight: startHeight, inputChannels: inputChannels,
       highPrecisionKeysAndValues: highPrecisionKeysAndValues,
       usesFlashAttention: usesFlashAttention, paddingFinalConvLayer: paddingFinalConvLayer,
-      quantLayer: quantLayer)
+      quantLayer: quantLayer, specializingNames: specializingNames)
   case .NCHW:
     return NCHWDecoder(
       channels: channels, numRepeat: numRepeat, batchSize: batchSize, startWidth: startWidth,
       startHeight: startHeight, inputChannels: inputChannels,
       highPrecisionKeysAndValues: highPrecisionKeysAndValues,
       usesFlashAttention: usesFlashAttention, paddingFinalConvLayer: paddingFinalConvLayer,
-      quantLayer: quantLayer)
+      quantLayer: quantLayer, specializingNames: specializingNames)
   case .CHWN:
     fatalError()
   }
 }
+
+public let DecoderSpecializingNamesMapping: [String: String] = [
+  "t-post_quant_conv-0-0": "t-0-0",
+  "t-post_quant_conv-0-1": "t-0-1",
+  "t-conv_in-0-0": "t-1-0",
+  "t-conv_in-0-1": "t-1-1",
+  "t-attn_out-0-0": "t-10-0",
+  "t-attn_out-0-1": "t-10-1",
+  "t-resnet_norm1-1-0": "t-11-0",
+  "t-resnet_norm1-1-1": "t-11-1",
+  "t-resnet_conv1-1-0": "t-12-0",
+  "t-resnet_conv1-1-1": "t-12-1",
+  "t-resnet_norm2-1-0": "t-13-0",
+  "t-resnet_norm2-1-1": "t-13-1",
+  "t-resnet_conv2-1-0": "t-14-0",
+  "t-resnet_conv2-1-1": "t-14-1",
+  "t-resnet_norm1-2-0": "t-15-0",
+  "t-resnet_norm1-2-1": "t-15-1",
+  "t-resnet_conv1-2-0": "t-16-0",
+  "t-resnet_conv1-2-1": "t-16-1",
+  "t-resnet_norm2-2-0": "t-17-0",
+  "t-resnet_norm2-2-1": "t-17-1",
+  "t-resnet_conv2-2-0": "t-18-0",
+  "t-resnet_conv2-2-1": "t-18-1",
+  "t-resnet_norm1-3-0": "t-19-0",
+  "t-resnet_norm1-3-1": "t-19-1",
+  "t-resnet_norm1-0-0": "t-2-0",
+  "t-resnet_norm1-0-1": "t-2-1",
+  "t-resnet_conv1-3-0": "t-20-0",
+  "t-resnet_conv1-3-1": "t-20-1",
+  "t-resnet_norm2-3-0": "t-21-0",
+  "t-resnet_norm2-3-1": "t-21-1",
+  "t-resnet_conv2-3-0": "t-22-0",
+  "t-resnet_conv2-3-1": "t-22-1",
+  "t-resnet_norm1-4-0": "t-23-0",
+  "t-resnet_norm1-4-1": "t-23-1",
+  "t-resnet_conv1-4-0": "t-24-0",
+  "t-resnet_conv1-4-1": "t-24-1",
+  "t-resnet_norm2-4-0": "t-25-0",
+  "t-resnet_norm2-4-1": "t-25-1",
+  "t-resnet_conv2-4-0": "t-26-0",
+  "t-resnet_conv2-4-1": "t-26-1",
+  "t-upsample-0-0": "t-27-0",
+  "t-upsample-0-1": "t-27-1",
+  "t-resnet_norm1-5-0": "t-28-0",
+  "t-resnet_norm1-5-1": "t-28-1",
+  "t-resnet_conv1-5-0": "t-29-0",
+  "t-resnet_conv1-5-1": "t-29-1",
+  "t-resnet_conv1-0-0": "t-3-0",
+  "t-resnet_conv1-0-1": "t-3-1",
+  "t-resnet_norm2-5-0": "t-30-0",
+  "t-resnet_norm2-5-1": "t-30-1",
+  "t-resnet_conv2-5-0": "t-31-0",
+  "t-resnet_conv2-5-1": "t-31-1",
+  "t-resnet_norm1-6-0": "t-32-0",
+  "t-resnet_norm1-6-1": "t-32-1",
+  "t-resnet_conv1-6-0": "t-33-0",
+  "t-resnet_conv1-6-1": "t-33-1",
+  "t-resnet_norm2-6-0": "t-34-0",
+  "t-resnet_norm2-6-1": "t-34-1",
+  "t-resnet_conv2-6-0": "t-35-0",
+  "t-resnet_conv2-6-1": "t-35-1",
+  "t-resnet_norm1-7-0": "t-36-0",
+  "t-resnet_norm1-7-1": "t-36-1",
+  "t-resnet_conv1-7-0": "t-37-0",
+  "t-resnet_conv1-7-1": "t-37-1",
+  "t-resnet_norm2-7-0": "t-38-0",
+  "t-resnet_norm2-7-1": "t-38-1",
+  "t-resnet_conv2-7-0": "t-39-0",
+  "t-resnet_conv2-7-1": "t-39-1",
+  "t-resnet_norm2-0-0": "t-4-0",
+  "t-resnet_norm2-0-1": "t-4-1",
+  "t-upsample-1-0": "t-40-0",
+  "t-upsample-1-1": "t-40-1",
+  "t-resnet_norm1-8-0": "t-41-0",
+  "t-resnet_norm1-8-1": "t-41-1",
+  "t-resnet_conv1-8-0": "t-42-0",
+  "t-resnet_conv1-8-1": "t-42-1",
+  "t-resnet_norm2-8-0": "t-43-0",
+  "t-resnet_norm2-8-1": "t-43-1",
+  "t-resnet_conv2-8-0": "t-44-0",
+  "t-resnet_conv2-8-1": "t-44-1",
+  "t-resnet_shortcut-0-0": "t-45-0",
+  "t-resnet_shortcut-0-1": "t-45-1",
+  "t-resnet_norm1-9-0": "t-46-0",
+  "t-resnet_norm1-9-1": "t-46-1",
+  "t-resnet_conv1-9-0": "t-47-0",
+  "t-resnet_conv1-9-1": "t-47-1",
+  "t-resnet_norm2-9-0": "t-48-0",
+  "t-resnet_norm2-9-1": "t-48-1",
+  "t-resnet_conv2-9-0": "t-49-0",
+  "t-resnet_conv2-9-1": "t-49-1",
+  "t-resnet_conv2-0-0": "t-5-0",
+  "t-resnet_conv2-0-1": "t-5-1",
+  "t-resnet_norm1-10-0": "t-50-0",
+  "t-resnet_norm1-10-1": "t-50-1",
+  "t-resnet_conv1-10-0": "t-51-0",
+  "t-resnet_conv1-10-1": "t-51-1",
+  "t-resnet_norm2-10-0": "t-52-0",
+  "t-resnet_norm2-10-1": "t-52-1",
+  "t-resnet_conv2-10-0": "t-53-0",
+  "t-resnet_conv2-10-1": "t-53-1",
+  "t-upsample-2-0": "t-54-0",
+  "t-upsample-2-1": "t-54-1",
+  "t-resnet_norm1-11-0": "t-55-0",
+  "t-resnet_norm1-11-1": "t-55-1",
+  "t-resnet_conv1-11-0": "t-56-0",
+  "t-resnet_conv1-11-1": "t-56-1",
+  "t-resnet_norm2-11-0": "t-57-0",
+  "t-resnet_norm2-11-1": "t-57-1",
+  "t-resnet_conv2-11-0": "t-58-0",
+  "t-resnet_conv2-11-1": "t-58-1",
+  "t-resnet_shortcut-1-0": "t-59-0",
+  "t-resnet_shortcut-1-1": "t-59-1",
+  "t-attn_norm-0-0": "t-6-0",
+  "t-attn_norm-0-1": "t-6-1",
+  "t-resnet_norm1-12-0": "t-60-0",
+  "t-resnet_norm1-12-1": "t-60-1",
+  "t-resnet_conv1-12-0": "t-61-0",
+  "t-resnet_conv1-12-1": "t-61-1",
+  "t-resnet_norm2-12-0": "t-62-0",
+  "t-resnet_norm2-12-1": "t-62-1",
+  "t-resnet_conv2-12-0": "t-63-0",
+  "t-resnet_conv2-12-1": "t-63-1",
+  "t-resnet_norm1-13-0": "t-64-0",
+  "t-resnet_norm1-13-1": "t-64-1",
+  "t-resnet_conv1-13-0": "t-65-0",
+  "t-resnet_conv1-13-1": "t-65-1",
+  "t-resnet_norm2-13-0": "t-66-0",
+  "t-resnet_norm2-13-1": "t-66-1",
+  "t-resnet_conv2-13-0": "t-67-0",
+  "t-resnet_conv2-13-1": "t-67-1",
+  "t-norm_out-0-0": "t-68-0",
+  "t-norm_out-0-1": "t-68-1",
+  "t-conv_out-0-0": "t-69-0",
+  "t-conv_out-0-1": "t-69-1",
+  "t-attn_to_q-0-0": "t-7-0",
+  "t-attn_to_q-0-1": "t-7-1",
+  "t-attn_to_k-0-0": "t-8-0",
+  "t-attn_to_k-0-1": "t-8-1",
+  "t-attn_to_v-0-0": "t-9-0",
+  "t-attn_to_v-0-1": "t-9-1",
+]

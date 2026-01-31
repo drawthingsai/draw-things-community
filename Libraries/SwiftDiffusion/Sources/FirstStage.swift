@@ -288,7 +288,7 @@ extension FirstStage {
           startHeight: startHeight, inputChannels: 32,
           highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: false,
           paddingFinalConvLayer: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW,
-          quantLayer: true
+          quantLayer: true, specializingNames: true
         ).0
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -302,7 +302,15 @@ extension FirstStage {
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
         ) {
-          $0.read("decoder", model: decoder, codec: [.jit, externalData])
+          $0.read("decoder", model: decoder, codec: [.jit, externalData]) { name, _, _, _ in
+            guard let firstIndex = name.firstIndex(of: "[") else {
+              return .continue(name)
+            }
+            let extractedName = String(
+              name[name.index(after: firstIndex)..<name.index(before: name.endIndex)])
+            return .continue(
+              "__decoder__[\(DecoderSpecializingNamesMapping[extractedName] ?? extractedName)]")
+          }
         }
       }
       if let alternativeFilePath = alternativeFilePath, alternativeDecoderVersion == .transparent {
