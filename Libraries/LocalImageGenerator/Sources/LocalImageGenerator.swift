@@ -3982,7 +3982,7 @@ extension LocalImageGenerator {
         latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
-        externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
+        externalOnDemand: vaeExternalOnDemand, usesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
         deviceProperties: DeviceCapability.deviceProperties)
@@ -4163,7 +4163,7 @@ extension LocalImageGenerator {
         latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
-        externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
+        externalOnDemand: vaeExternalOnDemand, usesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
         deviceProperties: DeviceCapability.deviceProperties)
@@ -5065,7 +5065,7 @@ extension LocalImageGenerator {
         latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
-        externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
+        externalOnDemand: vaeExternalOnDemand, usesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
         deviceProperties: DeviceCapability.deviceProperties)
@@ -5266,7 +5266,7 @@ extension LocalImageGenerator {
           tiledDecoding: TiledConfiguration(
             isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
           tiledDiffusion: tiledDiffusion,
-          externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
+          externalOnDemand: vaeExternalOnDemand, usesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion,
           deviceProperties: DeviceCapability.deviceProperties)
@@ -6423,7 +6423,7 @@ extension LocalImageGenerator {
         latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
-        externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
+        externalOnDemand: vaeExternalOnDemand, usesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
         deviceProperties: DeviceCapability.deviceProperties)
@@ -6639,7 +6639,7 @@ extension LocalImageGenerator {
             isEnabled: false,
             tileSize: .init(width: 0, height: 0), tileOverlap: 0),
           tiledDiffusion: tiledDiffusion,
-          externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
+          externalOnDemand: vaeExternalOnDemand, usesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion,
           deviceProperties: DeviceCapability.deviceProperties)
@@ -7271,7 +7271,7 @@ extension LocalImageGenerator {
         latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
         highPrecisionFallback: isHighPrecisionVAEFallbackEnabled,
         tiledDecoding: tiledDecoding, tiledDiffusion: tiledDiffusion,
-        externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
+        externalOnDemand: vaeExternalOnDemand, usesFlashAttention: isMFAEnabled,
         alternativeFilePath: alternativeDecoderFilePath,
         alternativeDecoderVersion: alternativeDecoderVersion,
         deviceProperties: DeviceCapability.deviceProperties)
@@ -7614,7 +7614,7 @@ extension LocalImageGenerator {
             isEnabled: false,
             tileSize: .init(width: 0, height: 0), tileOverlap: 0),
           tiledDiffusion: tiledDiffusion,
-          externalOnDemand: vaeExternalOnDemand, alternativeUsesFlashAttention: isMFAEnabled,
+          externalOnDemand: vaeExternalOnDemand, usesFlashAttention: isMFAEnabled,
           alternativeFilePath: alternativeDecoderFilePath,
           alternativeDecoderVersion: alternativeDecoderVersion,
           deviceProperties: DeviceCapability.deviceProperties)

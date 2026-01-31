@@ -225,7 +225,7 @@ public struct LoRATrainer {
       tiledDiffusion: TiledConfiguration(
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
-      externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
+      externalOnDemand: false, usesFlashAttention: false, alternativeFilePath: nil,
       alternativeDecoderVersion: nil, deviceProperties: DeviceCapability.deviceProperties)
     let graph = DynamicGraph()
     var processedInputs = [ProcessedInput]()
@@ -481,7 +481,7 @@ public struct LoRATrainer {
       tiledDiffusion: TiledConfiguration(
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
-      externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
+      externalOnDemand: false, usesFlashAttention: false, alternativeFilePath: nil,
       alternativeDecoderVersion: nil, deviceProperties: DeviceCapability.deviceProperties)
     let graph = DynamicGraph()
     var processedInputs = [ProcessedInput]()
@@ -1005,7 +1005,7 @@ public struct LoRATrainer {
       tiledDiffusion: TiledConfiguration(
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
-      externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
+      externalOnDemand: false, usesFlashAttention: false, alternativeFilePath: nil,
       alternativeDecoderVersion: nil, deviceProperties: DeviceCapability.deviceProperties)
     let graph = DynamicGraph()
     let imageWidth = Int(scale.widthScale) * 64
@@ -2402,7 +2402,7 @@ public struct LoRATrainer {
       tiledDiffusion: TiledConfiguration(
         isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
         tileOverlap: 0),
-      externalOnDemand: false, alternativeUsesFlashAttention: false, alternativeFilePath: nil,
+      externalOnDemand: false, usesFlashAttention: false, alternativeFilePath: nil,
       alternativeDecoderVersion: nil, deviceProperties: DeviceCapability.deviceProperties)
     graph.maxConcurrency = .limit(1)
     var dataFrame = dataFrame

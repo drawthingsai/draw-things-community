@@ -14,7 +14,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let externalOnDemand: Bool
   public let tiledDecoding: TiledConfiguration
   public let tiledDiffusion: TiledConfiguration
-  private let alternativeUsesFlashAttention: Bool
+  private let usesFlashAttention: Bool
   private let alternativeFilePath: String?
   private let alternativeDecoderVersion: AlternativeDecoderVersion?
   private let latentsScaling:
@@ -33,7 +33,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     ),
     highPrecisionKeysAndValues: Bool, highPrecisionFallback: Bool,
     tiledDecoding: TiledConfiguration,
-    tiledDiffusion: TiledConfiguration, externalOnDemand: Bool, alternativeUsesFlashAttention: Bool,
+    tiledDiffusion: TiledConfiguration, externalOnDemand: Bool, usesFlashAttention: Bool,
     alternativeFilePath: String?, alternativeDecoderVersion: AlternativeDecoderVersion?,
     deviceProperties: DeviceProperties
   ) {
@@ -45,7 +45,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.externalOnDemand = externalOnDemand
     self.tiledDecoding = tiledDecoding
     self.tiledDiffusion = tiledDiffusion
-    self.alternativeUsesFlashAttention = alternativeUsesFlashAttention
+    self.usesFlashAttention = usesFlashAttention
     self.alternativeFilePath = alternativeFilePath
     self.alternativeDecoderVersion = alternativeDecoderVersion
     self.deviceProperties = deviceProperties
@@ -170,12 +170,17 @@ extension FirstStage {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .pixart, .auraflow:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
+      let decoderUsesFlashAttention =
+        usesFlashAttention
+        && ((startWidth * startHeight >= 128 * 176 && highPrecisionKeysAndValues)
+          || startWidth * startHeight >= 256 * 176)
       decoder =
         existingDecoder
         ?? Decoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
           startHeight: startHeight, inputChannels: 4,
-          highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: false,
+          highPrecisionKeysAndValues: highPrecisionKeysAndValues,
+          usesFlashAttention: decoderUsesFlashAttention,
           paddingFinalConvLayer: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).0
       if existingDecoder == nil {
@@ -196,7 +201,7 @@ extension FirstStage {
       if let alternativeFilePath = alternativeFilePath, alternativeDecoderVersion == .transparent {
         let decoder = TransparentVAEDecoder(
           startHeight: startHeight * 8, startWidth: startWidth * 8,
-          usesFlashAttention: alternativeUsesFlashAttention ? .scaleMerged : .none)
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
         decoder.maxConcurrency = .limit(4)
         if highPrecision {
           let pixels = graph.variable(
@@ -225,12 +230,17 @@ extension FirstStage {
     case .sd3, .sd3Large, .flux1, .hiDreamI1, .zImage:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
+      let decoderUsesFlashAttention =
+        usesFlashAttention
+        && ((startWidth * startHeight >= 128 * 176 && highPrecisionKeysAndValues)
+          || startWidth * startHeight >= 256 * 176)
       decoder =
         existingDecoder
         ?? Decoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
           startHeight: startHeight, inputChannels: 16,
-          highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: false,
+          highPrecisionKeysAndValues: highPrecisionKeysAndValues,
+          usesFlashAttention: decoderUsesFlashAttention,
           paddingFinalConvLayer: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW,
           quantLayer: false
         ).0
@@ -252,7 +262,7 @@ extension FirstStage {
       if let alternativeFilePath = alternativeFilePath, alternativeDecoderVersion == .transparent {
         let decoder = TransparentVAEDecoder(
           startHeight: startHeight * 8, startWidth: startWidth * 8,
-          usesFlashAttention: alternativeUsesFlashAttention ? .scaleMerged : .none)
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
         decoder.maxConcurrency = .limit(4)
         if highPrecision {
           let pixels = graph.variable(
@@ -281,12 +291,17 @@ extension FirstStage {
     case .flux2, .flux2_9b, .flux2_4b:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
+      let decoderUsesFlashAttention =
+        usesFlashAttention
+        && ((startWidth * startHeight >= 128 * 176 && highPrecisionKeysAndValues)
+          || startWidth * startHeight >= 256 * 176)
       decoder =
         existingDecoder
         ?? Decoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
           startHeight: startHeight, inputChannels: 32,
-          highPrecisionKeysAndValues: highPrecisionKeysAndValues, usesFlashAttention: false,
+          highPrecisionKeysAndValues: highPrecisionKeysAndValues,
+          usesFlashAttention: decoderUsesFlashAttention,
           paddingFinalConvLayer: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW,
           quantLayer: true, specializingNames: true
         ).0
@@ -316,7 +331,7 @@ extension FirstStage {
       if let alternativeFilePath = alternativeFilePath, alternativeDecoderVersion == .transparent {
         let decoder = TransparentVAEDecoder(
           startHeight: startHeight * 8, startWidth: startWidth * 8,
-          usesFlashAttention: alternativeUsesFlashAttention ? .scaleMerged : .none)
+          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
         decoder.maxConcurrency = .limit(4)
         if highPrecision {
           let pixels = graph.variable(
@@ -1090,11 +1105,12 @@ extension FirstStage {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .pixart, .auraflow:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight
+      let encoderUsesFlashAttention = usesFlashAttention && startWidth * startHeight >= 256 * 176
       encoder =
         existingEncoder
         ?? Encoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, usesFlashAttention: false,
+          startHeight: startHeight, usesFlashAttention: encoderUsesFlashAttention,
           format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).0
       if existingEncoder == nil {
@@ -1118,11 +1134,12 @@ extension FirstStage {
     case .sd3, .sd3Large, .flux1, .hiDreamI1, .zImage:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight
+      let encoderUsesFlashAttention = usesFlashAttention && startWidth * startHeight >= 256 * 176
       encoder =
         existingEncoder
         ?? Encoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, usesFlashAttention: false,
+          startHeight: startHeight, usesFlashAttention: encoderUsesFlashAttention,
           format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW, quantLayer: false,
           outputChannels: 16
         ).0
@@ -1148,11 +1165,12 @@ extension FirstStage {
     case .flux2, .flux2_9b, .flux2_4b:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight
+      let encoderUsesFlashAttention = usesFlashAttention && startWidth * startHeight >= 256 * 176
       encoder =
         existingEncoder
         ?? Encoder(
           channels: [128, 256, 512, 512], numRepeat: 2, batchSize: 1, startWidth: startWidth,
-          startHeight: startHeight, usesFlashAttention: false,
+          startHeight: startHeight, usesFlashAttention: encoderUsesFlashAttention,
           format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW, quantLayer: true,
           outputChannels: 32
         ).0
