@@ -741,7 +741,7 @@ public struct ModelZoo: DownloadZoo {
       name: "LTX-2 19B [distilled] (6-bit)", file: "ltx_2_19b_distilled_q6p.ckpt", prefix: "",
       version: .ltx2, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
       autoencoder: "ltx_2_audio_video_vae_f16.ckpt",
-      clipEncoder: "ltx_2_19b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
+      clipEncoder: "ltx_2_19b_distilled_q6p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       note: "",
       copyright: "© 2026 Lightricks"
