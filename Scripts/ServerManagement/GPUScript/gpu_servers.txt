@@ -8,9 +8,10 @@
 #
 # Add your GPU servers below:
 
-root@dfw-026-001
-root@dfw-032-002
-root@dfw-039-004
+
 root@dfw-043-003
 root@dt-thpc-001
 root@dt-thpc-002
+root@dfw-141-005
+root@dfw-099-006
+root@dfw-100-007

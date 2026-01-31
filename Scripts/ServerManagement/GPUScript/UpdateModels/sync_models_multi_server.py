@@ -15,6 +15,8 @@ Workflow:
    b. Update checksums on GPU server using compare_checksums.py
    c. Compare GPU server CSV with NAS CSV at all levels (L1, L2, L3)
    d. Download missing/corrupted files from NAS HTTP server
+      - Downloads to models_path_1 (fast NVMe)
+      - If free space < 100G, moves file to models_path_2 (overflow)
       - Updates sha256sum in CSV immediately after each file download
    e. Run 'compare_checksums.py all' to fill in L1/L2 checksums for downloaded files
 6. Stop NAS HTTP server
@@ -42,6 +44,7 @@ Notes:
   - wget uses dot format (--progress=dot:mega) for cleaner logs
   - By default, L1 (filesize) is force-refreshed on each GPU server before comparison
   - Use --skip-l1-refresh to use cached filesize values (faster but may miss changes)
+  - Downloads go to models_path_1 first (fast). If free space < 100G, files are moved to models_path_2
 """
 
 import os
@@ -162,15 +165,18 @@ def display_progress_status():
 def load_gpu_servers(filepath="gpu_servers.csv"):
     """Load GPU servers from CSV file
 
-    Format: remote_host, models_path [, nas_url]
-    Example: root@dfw-026-001, /mnt/official-models
-             root@dt-thpc-001, /mnt/models/official-models, 192.168.88.14:8000
+    Format: remote_host, models_path_1, models_path_2 [, nas_url]
+    Example: root@dfw-026-001, /mnt/models, /mnt/loraModels/models_extra
+             root@dt-thpc-001, /mnt/models/official-models, /mnt/models/official-models, 192.168.88.14:8000
+
+    Downloads go to models_path_1 (fast). If free space < 100G, files are moved to models_path_2.
 
     Lines starting with # are treated as comments.
 
     Returns:
-        list of tuples: [(server_with_path, nas_url), ...]
-        where nas_url is None for default NAS or "ip:port" for custom
+        list of tuples: [(server_with_path1, path2, nas_url), ...]
+        where server_with_path1 is "user@host:/path1", path2 is the overflow path,
+        and nas_url is None for default NAS or "ip:port" for custom
     """
     import csv
 
@@ -193,37 +199,47 @@ def load_gpu_servers(filepath="gpu_servers.csv"):
             row = next(reader)
             row = [col.strip() for col in row]
 
-            if len(row) < 2:
-                print(f"⚠️  Line {line_num}: Invalid format (expected remote_host, models_path) - {line}")
+            if len(row) < 3:
+                print(f"⚠️  Line {line_num}: Invalid format (expected remote_host, models_path_1, models_path_2) - {line}")
                 continue
 
             remote_host = row[0]
-            models_path = row[1]
-            custom_nas_url = row[2] if len(row) >= 3 else None
+            models_path_1 = row[1]
+            models_path_2 = row[2]
+            custom_nas_url = row[3] if len(row) >= 4 else None
 
             # Validate format: user@hostname
             if '@' not in remote_host:
                 print(f"⚠️  Line {line_num}: Invalid format (expected user@hostname) - {remote_host}")
                 continue
 
-            # Validate models_path starts with /
-            if not models_path.startswith('/'):
-                print(f"⚠️  Line {line_num}: Invalid path (expected absolute path) - {models_path}")
+            # Validate models_path_1 starts with /
+            if not models_path_1.startswith('/'):
+                print(f"⚠️  Line {line_num}: Invalid path (expected absolute path) - {models_path_1}")
                 continue
 
-            server_with_path = f"{remote_host}:{models_path}"
-            servers.append((server_with_path, custom_nas_url))
+            # Validate models_path_2 starts with /
+            if not models_path_2.startswith('/'):
+                print(f"⚠️  Line {line_num}: Invalid path (expected absolute path) - {models_path_2}")
+                continue
+
+            server_with_path = f"{remote_host}:{models_path_1}"
+            servers.append((server_with_path, models_path_2, custom_nas_url))
 
     print(f"✅ Loaded {len(servers)} GPU server(s)")
 
     # Show server configurations
-    for server, nas_url in servers:
-        remote_host, path = server.rsplit(':', 1)
+    for server, path2, nas_url in servers:
+        remote_host, path1 = server.rsplit(':', 1)
         hostname = remote_host.split('@')[-1]
-        if nas_url:
-            print(f"   {hostname}: {path} (NAS: http://{nas_url})")
+        if path1 == path2:
+            path_info = f"{path1}"
         else:
-            print(f"   {hostname}: {path}")
+            path_info = f"{path1} -> {path2}"
+        if nas_url:
+            print(f"   {hostname}: {path_info} (NAS: http://{nas_url})")
+        else:
+            print(f"   {hostname}: {path_info}")
 
     return servers
 
@@ -325,21 +341,34 @@ def get_files_to_download(gpu_csv_local, nas_csv_local, log_file=None):
     Returns:
         list: Filenames that need to be downloaded
     """
-    log_print(log_file, f"\n📋 Comparing checksums at all levels to determine files to download...")
+    log_print(log_file, f"\n📋 Comparing checksums (L3/sha256sum) to determine files to download...")
     log_print(log_file, f"   GPU server CSV: {gpu_csv_local}")
     log_print(log_file, f"   NAS CSV (source of truth): {nas_csv_local}")
 
     # Check if GPU CSV exists locally
     if not Path(gpu_csv_local).exists():
         log_print(log_file, f"   ⚠️  GPU server CSV not found: {gpu_csv_local}")
-        if DRY_RUN:
-            log_print(log_file, f"   [DRY RUN] Cannot compare - CSV not available")
-        return []
+        log_print(log_file, f"   ℹ️  Fresh server - will download ALL files from source")
+        # Return all files from NAS/source CSV
+        import csv
+        all_files = []
+        with open(nas_csv_local, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            if reader.fieldnames:
+                reader.fieldnames = [name.strip() for name in reader.fieldnames]
+            for row in reader:
+                filename = (row.get('filename', '') or '').strip()
+                if filename:
+                    all_files.append(filename)
+        log_print(log_file, f"   ✅ Found {len(all_files)} file(s) to download (full sync)")
+        return all_files
 
+    # Use L3 (sha256sum) comparison only - this checks actual file content
+    # Using 'all' would also check L2 (8k_sha256sum) which may not be populated
     cmd = [
         'python3',
         str(SCRIPT_DIR / 'compare_checksums.py'),
-        'all',
+        'L3',
         gpu_csv_local,
         nas_csv_local
     ]
@@ -362,8 +391,9 @@ def get_files_to_download(gpu_csv_local, nas_csv_local, log_file=None):
 
 
 def start_nas_http_server():
-    """Start HTTP server on NAS for model distribution
+    """Start nginx HTTP server on NAS for model distribution
 
+    Uses nginx for high-performance file serving with optimized settings.
     The server binds to 0.0.0.0:8000 so it's accessible from both internal
     and external networks. Clients connect via NAS_IP:HTTP_PORT (external)
     or internal_ip:8000 (internal, configured in gpu_servers.csv).
@@ -371,13 +401,12 @@ def start_nas_http_server():
     Returns:
         bool: True if server started successfully or already running, False otherwise
     """
-    nas_bind_ip = "0.0.0.0"
     nas_bind_port = 8000
 
-    print(f"\n🚀 Starting HTTP server on NAS...")
+    print(f"\n🚀 Starting nginx HTTP server on NAS...")
     print(f"   Host: {NAS_HOST}")
     print(f"   Path: {NAS_PATH}")
-    print(f"   Bind: {nas_bind_ip}:{nas_bind_port}")
+    print(f"   Port: {nas_bind_port}")
 
     # Note: We always start the server, even in dry-run mode, because we need
     # it to download the CSV and determine what files would be synced.
@@ -392,14 +421,39 @@ def start_nas_http_server():
     existing_pid = result.stdout.strip()
 
     if existing_pid:
-        print(f"   ✅ HTTP server already running (PID: {existing_pid})")
+        print(f"   ✅ nginx already running (PID: {existing_pid})")
         return True
 
-    # Start the HTTP server
-    print(f"   Starting HTTP server...")
-    start_cmd = f"setsid sh -c 'cd {NAS_PATH} && python3 -m http.server {nas_bind_port} --bind {nas_bind_ip} </dev/null >/dev/null 2>&1 &'"
+    # Stop any existing nginx and start fresh with optimized config
+    print(f"   Starting nginx with optimized config...")
+    nginx_config = f'''
+worker_processes auto;
+events {{
+    worker_connections 4096;
+    use epoll;
+}}
+http {{
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    directio 1m;
+    output_buffers 2 1m;
+    sendfile_max_chunk 1m;
+    server {{
+        listen {nas_bind_port} reuseport;
+        root {NAS_PATH};
+        autoindex on;
+    }}
+}}
+'''
+    # Write config and start nginx
+    start_cmd = f'''nginx -s stop 2>/dev/null; cat > /tmp/nginx.conf <<'NGINX_EOF'
+{nginx_config}
+NGINX_EOF
+nginx -c /tmp/nginx.conf'''
+
     subprocess.run(
-        ['ssh', '-T', '-n', NAS_HOST, start_cmd],
+        ['ssh', '-T', NAS_HOST, start_cmd],
         capture_output=True
     )
 
@@ -418,88 +472,35 @@ def start_nas_http_server():
     verify_pid = result.stdout.strip()
 
     if not verify_pid:
-        print(f"   ❌ Server started but not listening on port {nas_bind_port}")
+        print(f"   ❌ nginx not listening on port {nas_bind_port}")
         return False
 
-    print(f"   ✅ HTTP server started successfully")
+    print(f"   ✅ nginx started successfully")
     print(f"   PID: {verify_pid}")
     return True
 
 
 def stop_nas_http_server():
-    """Stop HTTP server on NAS for model distribution
-
-    The server runs on port 8000 (bound to 0.0.0.0).
+    """Stop nginx HTTP server on NAS
 
     Returns:
         bool: True if server stopped successfully or wasn't running, False otherwise
     """
-    nas_bind_port = 8000
-
-    print(f"\n🛑 Stopping HTTP server on NAS...")
+    print(f"\n🛑 Stopping nginx on NAS...")
     print(f"   Host: {NAS_HOST}")
-    print(f"   Port: {nas_bind_port}")
 
-    # Note: We always stop the server, even in dry-run mode, because we started it.
-
-    # Find process listening on the port
-    print(f"   Checking for running server...")
-    result = subprocess.run(
-        ['ssh', '-T', NAS_HOST, f'lsof -ti:{nas_bind_port}'],
+    # Use nginx -s stop for graceful shutdown
+    print(f"   Stopping nginx...")
+    subprocess.run(
+        ['ssh', '-T', NAS_HOST, 'nginx -s stop 2>/dev/null || true'],
         capture_output=True,
         text=True
     )
-    existing_pid = result.stdout.strip()
-
-    if not existing_pid:
-        print(f"   ℹ️  No HTTP server running on port {nas_bind_port}")
-        return True
-
-    print(f"   Found server process (PID: {existing_pid})")
-
-    # Kill the process
-    print(f"   Stopping server...")
-    result = subprocess.run(
-        ['ssh', NAS_HOST, f'kill {existing_pid}'],
-        capture_output=True
-    )
-
-    if result.returncode != 0:
-        print(f"   ❌ Failed to stop server (PID: {existing_pid})")
-        print(f"   Try: ssh {NAS_HOST} 'kill -9 {existing_pid}'")
-        return False
 
     # Wait a moment for graceful shutdown
     time.sleep(1)
 
-    # Verify it's stopped
-    result = subprocess.run(
-        ['ssh', '-T', NAS_HOST, f'lsof -ti:{nas_bind_port}'],
-        capture_output=True,
-        text=True
-    )
-    verify_pid = result.stdout.strip()
-
-    if verify_pid:
-        print(f"   ⚠️  Server still running, forcing shutdown...")
-        subprocess.run(
-            ['ssh', NAS_HOST, f'kill -9 {verify_pid}'],
-            capture_output=True
-        )
-        time.sleep(1)
-
-        # Final check
-        result = subprocess.run(
-            ['ssh', '-T', NAS_HOST, f'lsof -ti:{nas_bind_port}'],
-            capture_output=True,
-            text=True
-        )
-        final_pid = result.stdout.strip()
-        if final_pid:
-            print(f"   ❌ Failed to force stop server")
-            return False
-
-    print(f"   ✅ HTTP server stopped successfully")
+    print(f"   ✅ nginx stopped")
     return True
 
 
@@ -626,7 +627,68 @@ def compute_remote_hash(hostname, filepath, log_file=None):
         return None
 
 
-def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, custom_nas_url=None, nas_csv_local=None):
+def get_remote_free_space_gb(hostname, path, log_file=None):
+    """Get free space in GB on remote server path
+
+    Args:
+        hostname: SSH hostname (user@host)
+        path: Path to check
+        log_file: Optional file object to write logs to
+
+    Returns:
+        float: Free space in GB, or -1 if failed
+    """
+    cmd = f'df -BG "{path}" | tail -1 | awk \'{{print $4}}\' | tr -d G'
+    result = subprocess.run(
+        ['ssh', hostname, cmd],
+        capture_output=True,
+        text=True,
+        timeout=30
+    )
+    if result.returncode == 0:
+        try:
+            return float(result.stdout.strip())
+        except ValueError:
+            log_print(log_file, f"      ⚠️  Could not parse free space: {result.stdout.strip()}")
+            return -1
+    else:
+        log_print(log_file, f"      ⚠️  Could not get free space: {result.stderr}")
+        return -1
+
+
+def move_remote_file(hostname, src_path, dest_path, log_file=None):
+    """Move a file on remote server
+
+    Args:
+        hostname: SSH hostname (user@host)
+        src_path: Source file path
+        dest_path: Destination file path
+        log_file: Optional file object to write logs to
+
+    Returns:
+        bool: True if move successful, False otherwise
+    """
+    # Ensure destination directory exists
+    dest_dir = os.path.dirname(dest_path)
+    cmd = f'mkdir -p "{dest_dir}" && mv "{src_path}" "{dest_path}"'
+    result = subprocess.run(
+        ['ssh', hostname, cmd],
+        capture_output=True,
+        text=True,
+        timeout=300  # 5 minutes for move (large files)
+    )
+    if result.returncode == 0:
+        return True
+    else:
+        log_print(log_file, f"      ⚠️  Move failed: {result.stderr}")
+        return False
+
+
+# Minimum free space threshold (in GB) before moving files to overflow path
+MIN_FREE_SPACE_GB = 100
+
+
+def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, custom_nas_url=None, nas_csv_local=None, overflow_path=None):
     """Download files from NAS HTTP server to GPU server one by one
 
     Uses wget -O to download and overwrite existing files automatically.
@@ -634,6 +696,8 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, 
     After each successful download, verifies hash against NAS CSV.
     If hash mismatch: recompute once, then retry download once.
     If still mismatch after retry, stops sync for this server.
+
+    After download, if free space on path1 < 100G, moves file to overflow_path.
 
     Verification flow for each file:
         Download -> Compute Hash -> Match?
@@ -651,6 +715,7 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, 
         server_name: Server name for progress tracking
         custom_nas_url: Optional custom NAS URL in format "ip:port"
         nas_csv_local: Path to NAS CSV file for hash verification
+        overflow_path: Path to move files to when path1 is nearly full (optional)
 
     Returns:
         tuple: (success_count, error_message) - error_message is None if all OK,
@@ -817,6 +882,18 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, 
             else:
                 log_print(log_file, f"      ⚠️  No checksum to save")
 
+            # Check free space and move to overflow path if needed
+            if overflow_path and overflow_path != path:
+                free_space_gb = get_remote_free_space_gb(hostname, path, log_file)
+                if free_space_gb >= 0 and free_space_gb < MIN_FREE_SPACE_GB:
+                    log_print(log_file, f"      📦 Free space {free_space_gb:.0f}G < {MIN_FREE_SPACE_GB}G, moving to overflow path...")
+                    src_file = dest_path
+                    dest_file = f"{overflow_path}/{filename}"
+                    if move_remote_file(hostname, src_file, dest_file, log_file):
+                        log_print(log_file, f"      ✅ Moved to {overflow_path}")
+                    else:
+                        log_print(log_file, f"      ⚠️  Failed to move file, keeping in {path}")
+
             # Update progress after successful download
             if server_name:
                 update_progress(server_name, "Downloading", success_count, len(files))
@@ -833,13 +910,14 @@ def download_files_from_nas(gpu_server, files, log_file=None, server_name=None, 
 
 
 
-def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=None, custom_nas_url=None):
+def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=None, custom_nas_url=None, overflow_path=None):
     """Sync a single GPU server with NAS
 
     Workflow:
     1. Update checksums on GPU server
     2. Compare checksums to get files to download
     3. Download files from NAS HTTP server (updates sha256sum in CSV after each file)
+       - If free space < 100G, moves files to overflow_path
     4. Run 'compare_checksums.py all' to fill in L1/L2 checksums for downloaded files
 
     Args:
@@ -848,6 +926,7 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
         log_file: Optional file object to write logs to
         server_name: Server name for progress tracking
         custom_nas_url: Optional custom NAS URL in format "ip:port"
+        overflow_path: Path to move files when primary path is nearly full
 
     Returns:
         bool: True if sync successful, False otherwise
@@ -856,6 +935,10 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
     log_print(log_file, f"Syncing: {gpu_server}")
     if custom_nas_url:
         log_print(log_file, f"Using custom NAS: http://{custom_nas_url}")
+    if overflow_path:
+        _, path = gpu_server.split(':')
+        if overflow_path != path:
+            log_print(log_file, f"Overflow path: {overflow_path}")
     log_print(log_file, '='*70)
 
     try:
@@ -891,7 +974,7 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
         else:
             log_print(log_file, f"\n[Step 3/4] Download files from NAS")
         success_count, error_msg = download_files_from_nas(
-            gpu_server, files_to_download, log_file, server_name, custom_nas_url, nas_csv_local
+            gpu_server, files_to_download, log_file, server_name, custom_nas_url, nas_csv_local, overflow_path
         )
 
         # Check for fatal error (hash verification failure)
@@ -942,7 +1025,7 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
         return False
 
 
-def sync_server_with_logging(server, nas_csv_local, log_dir=".", custom_nas_url=None):
+def sync_server_with_logging(server, nas_csv_local, log_dir=".", custom_nas_url=None, overflow_path=None):
     """Wrapper to sync a single server with logging to file
 
     Args:
@@ -950,6 +1033,7 @@ def sync_server_with_logging(server, nas_csv_local, log_dir=".", custom_nas_url=
         nas_csv_local: Local path to NAS CSV file (source of truth)
         log_dir: Directory to write log files to
         custom_nas_url: Optional custom NAS URL in format "ip:port"
+        overflow_path: Path to move files when primary path is nearly full
 
     Returns:
         bool: True if sync successful, False otherwise
@@ -965,12 +1049,16 @@ def sync_server_with_logging(server, nas_csv_local, log_dir=".", custom_nas_url=
         log_file.write(f"Sync Log for {server}\n")
         if custom_nas_url:
             log_file.write(f"Custom NAS: http://{custom_nas_url}\n")
+        if overflow_path:
+            _, path = server.split(':')
+            if overflow_path != path:
+                log_file.write(f"Overflow path: {overflow_path}\n")
         log_file.write(f"Started at: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         log_file.write("="*70 + "\n\n")
         log_file.flush()
 
         # Sync the server
-        success = sync_single_server(server, nas_csv_local, log_file, hostname, custom_nas_url)
+        success = sync_single_server(server, nas_csv_local, log_file, hostname, custom_nas_url, overflow_path)
 
         # Write footer to log
         log_file.write("\n" + "="*70 + "\n")
@@ -1023,6 +1111,7 @@ Examples:
     )
 
     args = parser.parse_args()
+
     DRY_RUN = args.dry_run
     SKIP_L1_REFRESH = args.skip_l1_refresh
 
@@ -1046,20 +1135,8 @@ Examples:
     print(f"Server List: gpu_servers.csv")
 
     try:
-        # Step 1: Start NAS HTTP server
-        print_step(1, 5, "Start NAS HTTP server")
-        if not start_nas_http_server():
-            print("\n❌ Failed to start NAS HTTP server. Exiting.")
-            sys.exit(1)
-
-        # Step 2: Check if NAS HTTP server is accessible
-        print_step(2, 5, "Check NAS HTTP server")
-        if not check_nas_http_server():
-            print("\n❌ NAS HTTP server is not accessible. Exiting.")
-            sys.exit(1)
-
-        # Step 3: Load GPU servers
-        print_step(3, 5, "Load GPU servers from gpu_servers.csv")
+        # Step 1: Load GPU servers
+        print_step(1, 5, "Load GPU servers from gpu_servers.csv")
         servers = load_gpu_servers()
 
         if not servers:
@@ -1067,16 +1144,32 @@ Examples:
             sys.exit(1)
 
         print(f"\nServers to sync:")
-        for i, (server, custom_nas) in enumerate(servers, 1):
-            if custom_nas:
-                print(f"  {i}. {server} (NAS: http://{custom_nas})")
+        for i, (server, path2, custom_nas) in enumerate(servers, 1):
+            _, path1 = server.rsplit(':', 1)
+            if path1 == path2:
+                path_info = path1
             else:
-                print(f"  {i}. {server}")
+                path_info = f"{path1} -> {path2}"
+            if custom_nas:
+                print(f"  {i}. {server.split(':')[0]}: {path_info} (NAS: http://{custom_nas})")
+            else:
+                print(f"  {i}. {server.split(':')[0]}: {path_info}")
 
-        # Step 4: Download NAS CSV (source of truth) via HTTP
+        # Step 2: Start NAS HTTP server
+        print_step(2, 5, "Start NAS HTTP server")
+        if not start_nas_http_server():
+            print("\n❌ Failed to start NAS HTTP server. Exiting.")
+            sys.exit(1)
+
+        # Step 3: Check if NAS HTTP server is accessible
+        print_step(3, 5, "Check NAS HTTP server")
+        if not check_nas_http_server():
+            print("\n❌ NAS HTTP server is not accessible. Exiting.")
+            sys.exit(1)
+
+        # Step 4: Download NAS CSV (source of truth)
         print_step(4, 5, "Download NAS CSV (source of truth)")
         nas_csv_local = download_nas_csv()
-
         if not nas_csv_local:
             print("❌ Failed to download NAS CSV")
             sys.exit(1)
@@ -1092,7 +1185,7 @@ Examples:
             print(f"   Detailed logs will be written to logs/sync-*.log files\n")
 
             # Display initial status
-            for server, custom_nas in servers:
+            for server, path2, custom_nas in servers:
                 hostname = server.split('@')[-1].split(':')[0]
                 log_filename = f"logs/sync-{hostname}.log"
                 update_progress(hostname, "Starting", 0, 0)
@@ -1117,13 +1210,13 @@ Examples:
             with ThreadPoolExecutor(max_workers=len(servers)) as executor:
                 # Submit all server sync tasks
                 future_to_server = {
-                    executor.submit(sync_server_with_logging, server, nas_csv_local, str(logs_dir), custom_nas): (server, custom_nas)
-                    for server, custom_nas in servers
+                    executor.submit(sync_server_with_logging, server, nas_csv_local, str(logs_dir), custom_nas, path2): (server, path2, custom_nas)
+                    for server, path2, custom_nas in servers
                 }
 
                 # Process results as they complete
                 for future in as_completed(future_to_server):
-                    server, custom_nas = future_to_server[future]
+                    server, path2, custom_nas = future_to_server[future]
                     hostname = server.split('@')[-1].split(':')[0]
                     try:
                         success = future.result()
@@ -1151,12 +1244,12 @@ Examples:
 
         else:
             # Sequential execution - sync servers one at a time
-            for i, (server, custom_nas) in enumerate(servers, 1):
+            for i, (server, path2, custom_nas) in enumerate(servers, 1):
                 print(f"\n{'#'*70}")
                 print(f"# Server {i}/{len(servers)}")
                 print(f"{'#'*70}")
 
-                success = sync_single_server(server, nas_csv_local, custom_nas_url=custom_nas)
+                success = sync_single_server(server, nas_csv_local, custom_nas_url=custom_nas, overflow_path=path2)
                 results[server] = success
 
         # Summary
