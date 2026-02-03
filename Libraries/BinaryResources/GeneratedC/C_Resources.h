@@ -4,6 +4,7 @@
 
 #include "bpe_simple_vocab_16e6_generated.h"
 #include "chatglm3.spiece_generated.h"
+#include "gemma3.spiece_generated.h"
 #include "isrgrootx1_generated.h"
 #include "merges_generated.h"
 #include "merges_llama3_generated.h"
@@ -16,8 +17,8 @@
 #include "server_key_generated.h"
 #include "t5.spiece_generated.h"
 #include "umt5.spiece_generated.h"
-#include "vocab_generated.h"
 #include "vocab_16e6_generated.h"
+#include "vocab_generated.h"
 #include "vocab_llama3_generated.h"
 #include "vocab_mistral3_generated.h"
 #include "vocab_qwen2.5_generated.h"
