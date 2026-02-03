@@ -131,8 +131,8 @@ echo ""
 echo "➡️ Step 6: Configuring network performance settings..."
 
 # Apply TCP buffer and BBR settings immediately
-sudo sysctl -w net.ipv4.tcp_rmem='4096 87380 134217728'
-sudo sysctl -w net.ipv4.tcp_wmem='4096 65536 134217728'
+sudo sysctl -w net.ipv4.tcp_rmem="4096 87380 134217728"
+sudo sysctl -w net.ipv4.tcp_wmem="4096 65536 134217728"
 sudo sysctl -w net.core.rmem_max=134217728
 sudo sysctl -w net.core.wmem_max=134217728
 sudo sysctl -w net.core.default_qdisc=fq
