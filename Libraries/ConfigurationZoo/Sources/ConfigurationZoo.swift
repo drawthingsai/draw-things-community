@@ -21,6 +21,78 @@ public struct ConfigurationZoo {
     }
   }
 
+  // MARK: - Community Configurations (Network)
+
+  /// Community configurations fetched from network and cached to disk
+  public static var community: [Specification] = communityFromDisk()
+
+  /// Request community configurations from network
+  public static func requestNetworkPayload() {
+    DispatchQueue.global(qos: .userInitiated).async {
+      internalRequestNetworkPayload()
+    }
+  }
+
+  private static func internalRequestNetworkPayload() {
+    let request = URLRequest(url: URL(string: "https://models.drawthings.ai/configs.json")!)
+    let task = URLSession.shared.downloadTask(with: request) { url, response, error in
+      guard let url = url, let response = response as? HTTPURLResponse else {
+        if let error = error {
+          print("request error \(error)")
+        }
+        return
+      }
+      guard 200...299 ~= response.statusCode else { return }
+      guard let _ = try? Data(contentsOf: url) else {
+        return
+      }
+      // If we can decode, then it is OK. Move this file to the cache directory.
+      let fileManager = FileManager.default
+      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+      let cacheUrl = urls.first!
+      let networkUrl = cacheUrl.appendingPathComponent("net")
+      try? fileManager.createDirectory(at: networkUrl, withIntermediateDirectories: true)
+      try? fileManager.removeItem(at: networkUrl.appendingPathComponent("configs.json"))
+      try? fileManager.moveItem(at: url, to: networkUrl.appendingPathComponent("configs.json"))
+      let json = communityFromDisk()
+      DispatchQueue.main.async {
+        community = json
+      }
+    }
+    task.resume()
+  }
+
+  private static func communityFromDisk() -> [Specification] {
+    let fileManager = FileManager.default
+    let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+    let cacheUrl = urls.first!
+    let modelsUrl = cacheUrl.appendingPathComponent("net").appendingPathComponent(
+      "configs.json")
+    guard let jsonData = try? Data(contentsOf: modelsUrl) else {
+      return []
+    }
+
+    guard
+      let jsonSpecifications = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]]
+    else {
+      return []
+    }
+    var specifications = [Specification]()
+    for specification in jsonSpecifications {
+      guard let name = specification["name"] as? String,
+        let configuration = specification["configuration"] as? [String: Any]
+      else { continue }
+      specifications.append(
+        Specification(
+          name: name,
+          version: (specification["version"] as? String).flatMap { ModelVersion(rawValue: $0) },
+          negative: specification["negative"] as? String, configuration: configuration))
+    }
+    return specifications
+  }
+
+  // MARK: - Custom Configurations (Local)
+
   public static var availableSpecifications: [Specification] = {
     let jsonFile = filePathForModelDownloaded("custom_configs.json")
     guard let jsonData = try? Data(contentsOf: URL(fileURLWithPath: jsonFile)) else {
