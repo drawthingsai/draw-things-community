@@ -27,23 +27,28 @@ public struct ConfigurationZoo {
   public static var community: [Specification] = communityFromDisk()
 
   /// Request community configurations from network
-  public static func requestNetworkPayload() {
+  public static func requestNetworkPayload(completion: (([Specification]) -> Void)? = nil) {
     DispatchQueue.global(qos: .userInitiated).async {
-      internalRequestNetworkPayload()
+      internalRequestNetworkPayload(completion: completion)
     }
   }
 
-  private static func internalRequestNetworkPayload() {
+  private static func internalRequestNetworkPayload(completion: (([Specification]) -> Void)?) {
     let request = URLRequest(url: URL(string: "https://models.drawthings.ai/configs.json")!)
     let task = URLSession.shared.downloadTask(with: request) { url, response, error in
       guard let url = url, let response = response as? HTTPURLResponse else {
         if let error = error {
           print("request error \(error)")
         }
+        completion?(communityFromDisk())
         return
       }
-      guard 200...299 ~= response.statusCode else { return }
+      guard 200...299 ~= response.statusCode else {
+        completion?(communityFromDisk())
+        return
+      }
       guard let _ = try? Data(contentsOf: url) else {
+        completion?(communityFromDisk())
         return
       }
       // If we can decode, then it is OK. Move this file to the cache directory.
@@ -58,6 +63,7 @@ public struct ConfigurationZoo {
       DispatchQueue.main.async {
         community = json
       }
+      completion?(json)
     }
     task.resume()
   }
