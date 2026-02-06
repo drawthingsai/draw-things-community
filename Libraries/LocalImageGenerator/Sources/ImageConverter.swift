@@ -763,6 +763,117 @@ public enum ImageConverter {
         contentsOf: flux1UnzipItem.appendingPathComponent("2048.mlmodelc"),
         configuration: configuration)
     }()
+    static let qwenImageUnzipItem: URL? = {
+      let fileManager = FileManager.default
+      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
+      do {
+        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
+        guard
+          !fileManager.fileExists(atPath: coreMLUrl.appendingPathComponent("qwenimage_tae").path)
+        else {
+          return coreMLUrl.appendingPathComponent("qwenimage_tae")
+        }
+        try fileManager.unzipItem(
+          at: Bundle.main.url(
+            forResource: "qwenimage_tae", withExtension: "zip")!,
+          to: coreMLUrl)
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("qwenimage_tae/768.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("qwenimage_tae/1024.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("qwenimage_tae/1280.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("qwenimage_tae/1536.mlmodelc/weights/weight.bin"))
+        try fileManager.copyItem(
+          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("qwenimage_tae/1792.mlmodelc/weights/weight.bin"))
+        try fileManager.moveItem(
+          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("qwenimage_tae/2048.mlmodelc/weights/weight.bin"))
+        return coreMLUrl.appendingPathComponent("qwenimage_tae")
+      } catch {
+        try? fileManager.removeItem(at: coreMLUrl.appendingPathComponent("qwenimage_tae"))
+        return nil
+      }
+    }()
+    static let qwenImageTinyDecoderFor768: ManagedMLModel? = {
+      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("768.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImageTinyDecoderFor1024: ManagedMLModel? = {
+      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("1024.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImageTinyDecoderFor1280: ManagedMLModel? = {
+      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("1280.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImageTinyDecoderFor1536: ManagedMLModel? = {
+      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("1536.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImageTinyDecoderFor1792: ManagedMLModel? = {
+      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("1792.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImageTinyDecoderFor2048: ManagedMLModel? = {
+      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: flux1UnzipItem.appendingPathComponent("2048.mlmodelc"),
+        configuration: configuration)
+    }()
     static let flux2UnzipItem: URL? = {
       let fileManager = FileManager.default
       let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
@@ -881,27 +992,79 @@ public enum ImageConverter {
       let imageWidth = shape[2] * 8
       let imagePaddingSize: Int
       let taesd: ManagedMLModel?
-      let isFlux2 = shape[3] == 32
-      switch max(imageWidth, imageHeight) {
-      case 0...768:
-        taesd = isFlux2 ? flux2TinyDecoderFor768 : flux1TinyDecoderFor768
-        imagePaddingSize = 768
-      case 769...1024:
-        taesd = isFlux2 ? flux2TinyDecoderFor1024 : flux1TinyDecoderFor1024
-        imagePaddingSize = 1024
-      case 1025...1280:
-        taesd = isFlux2 ? flux2TinyDecoderFor1280 : flux1TinyDecoderFor1280
-        imagePaddingSize = 1280
-      case 1281...1536:
-        taesd = isFlux2 ? flux2TinyDecoderFor1536 : flux1TinyDecoderFor1536
-        imagePaddingSize = 1536
-      case 1537...1792:
-        taesd = isFlux2 ? flux2TinyDecoderFor1792 : flux1TinyDecoderFor1792
-        imagePaddingSize = 1792
-      case 1793...2048:
-        taesd = isFlux2 ? flux2TinyDecoderFor2048 : flux1TinyDecoderFor2048
-        imagePaddingSize = 2048
-      default:
+      switch version {
+      case .flux1, .hiDreamI1, .zImage:
+        switch max(imageWidth, imageHeight) {
+        case 0...768:
+          taesd = flux1TinyDecoderFor768
+          imagePaddingSize = 768
+        case 769...1024:
+          taesd = flux1TinyDecoderFor1024
+          imagePaddingSize = 1024
+        case 1025...1280:
+          taesd = flux1TinyDecoderFor1280
+          imagePaddingSize = 1280
+        case 1281...1536:
+          taesd = flux1TinyDecoderFor1536
+          imagePaddingSize = 1536
+        case 1537...1792:
+          taesd = flux1TinyDecoderFor1792
+          imagePaddingSize = 1792
+        case 1793...2048:
+          taesd = flux1TinyDecoderFor2048
+          imagePaddingSize = 2048
+        default:
+          return []
+        }
+      case .qwenImage:
+        switch max(imageWidth, imageHeight) {
+        case 0...768:
+          taesd = qwenImageTinyDecoderFor768
+          imagePaddingSize = 768
+        case 769...1024:
+          taesd = qwenImageTinyDecoderFor1024
+          imagePaddingSize = 1024
+        case 1025...1280:
+          taesd = qwenImageTinyDecoderFor1280
+          imagePaddingSize = 1280
+        case 1281...1536:
+          taesd = qwenImageTinyDecoderFor1536
+          imagePaddingSize = 1536
+        case 1537...1792:
+          taesd = qwenImageTinyDecoderFor1792
+          imagePaddingSize = 1792
+        case 1793...2048:
+          taesd = qwenImageTinyDecoderFor2048
+          imagePaddingSize = 2048
+        default:
+          return []
+        }
+      case .flux2, .flux2_4b, .flux2_9b:
+        switch max(imageWidth, imageHeight) {
+        case 0...768:
+          taesd = flux2TinyDecoderFor768
+          imagePaddingSize = 768
+        case 769...1024:
+          taesd = flux2TinyDecoderFor1024
+          imagePaddingSize = 1024
+        case 1025...1280:
+          taesd = flux2TinyDecoderFor1280
+          imagePaddingSize = 1280
+        case 1281...1536:
+          taesd = flux2TinyDecoderFor1536
+          imagePaddingSize = 1536
+        case 1537...1792:
+          taesd = flux2TinyDecoderFor1792
+          imagePaddingSize = 1792
+        case 1793...2048:
+          taesd = flux2TinyDecoderFor2048
+          imagePaddingSize = 2048
+        default:
+          return []
+        }
+      case .auraflow, .hunyuanVideo, .kandinsky21, .ltx2, .pixart, .sd3, .sd3Large, .sdxlBase,
+        .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wan21_14b, .wan21_1_3b, .wan22_5b,
+        .wurstchenStageB, .wurstchenStageC:
         return []
       }
       guard #available(iOS 16.0, *), let taesd = taesd else {
@@ -997,7 +1160,7 @@ public enum ImageConverter {
       else { return ([], false) }
       if canUseTAESD
         && (version == .flux1 || version == .hiDreamI1 || version == .zImage || version == .flux2
-          || version == .flux2_4b || version == .flux2_9b)
+          || version == .flux2_4b || version == .flux2_9b || version == .qwenImage)
       {
         let images = imagesWithTAESD(fromLatent: tensor, version: version)
         guard images.isEmpty else {
