@@ -921,6 +921,13 @@ public enum LoRAImporter {
         stateDict[newKey + ".lora_down.weight"] = stateDict[key]
       }
     }
+    // Fix LoRA formulation for Z Image Base Fun Distill.
+    for key in keys {
+      guard key.hasPrefix("lora_unet__") else { continue }
+      var newKey = key
+      newKey.removeFirst(11)
+      stateDict[newKey] = stateDict[key]
+    }
     let modelVersion: ModelVersion = try {
       let isSD3Large = stateDict.keys.contains {
         $0.contains("joint_blocks_37_attn_")
