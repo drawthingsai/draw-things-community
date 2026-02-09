@@ -675,9 +675,13 @@ private func LoRAMLPEmbedder(
   channels: Int, configuration: LoRANetworkConfiguration, index: Int, name: String
 ) -> (Model, Model, Model) {
   let x = Input()
-  let fc0 = Dense(count: channels, noBias: true, name: "\(name)_embedder_0")
+  let fc0 = LoRADense(
+    count: channels, configuration: configuration, noBias: true, index: index,
+    name: "\(name)_embedder_0")
   var out = fc0(x).swish()
-  let fc2 = Dense(count: channels, noBias: true, name: "\(name)_embedder_1")
+  let fc2 = LoRADense(
+    count: channels, configuration: configuration, noBias: true, index: index,
+    name: "\(name)_embedder_1")
   out = fc2(out)
   return (fc0, fc2, Model([x], [out]))
 }
