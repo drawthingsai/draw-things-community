@@ -89,6 +89,7 @@ sudo apt-get update
 
 echo "Installing NVIDIA Container Toolkit..."
 sudo apt-get install -y nvidia-container-toolkit
+sudo apt-get install -y mergerfs
 
 ## Section 4: Configure Docker
 echo "Configuring Docker to use the NVIDIA runtime..."
@@ -161,7 +162,98 @@ sudo docker pull drawthingsai/draw-things-grpc-server-cli:latest
 
 echo "✅ Docker images pulled."
 
-# --- 7. Final Summary ---
+# --- 7. Disk Mounting and MergerFS Setup ---
+echo ""
+echo "➡️ Step 8: Setting up disk mounts and MergerFS..."
+echo ""
+
+# Show current disk layout
+echo "--- Current Disk Layout (df -h) ---"
+df -h
+echo ""
+echo "--- Block Devices (lsblk) ---"
+lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE
+echo ""
+
+# Prompt for disk devices
+echo "Please enter the mount points to unmount and disk partitions to mount."
+echo "(Press Enter on first prompt to skip disk mounting setup)"
+echo ""
+read -p "Enter current mount point to unmount for models disk (e.g., /mnt/disk1): " UNMOUNT1
+read -p "Enter current mount point to unmount for loraModels disk (e.g., /mnt/disk2): " UNMOUNT2
+read -p "Enter disk partition for /mnt/models (e.g., /dev/nvme2n1p1): " DISK1
+read -p "Enter disk partition for /mnt/loraModels (e.g., /dev/nvme3n1p1): " DISK2
+
+if [ -n "$UNMOUNT1" ] && [ -n "$UNMOUNT2" ] && [ -n "$DISK1" ] && [ -n "$DISK2" ]; then
+    echo ""
+    echo "Setting up disk mounts..."
+
+    # Unmount existing locations
+    echo "Unmounting existing mounts..."
+    if [ -n "$UNMOUNT1" ]; then
+        echo "  Unmounting $UNMOUNT1..."
+        umount "$UNMOUNT1" 2>/dev/null || true
+    fi
+    if [ -n "$UNMOUNT2" ]; then
+        echo "  Unmounting $UNMOUNT2..."
+        umount "$UNMOUNT2" 2>/dev/null || true
+    fi
+
+    # Also unmount target mount points if something else is mounted there
+    umount /mnt/models /mnt/loraModels /mnt/official-models 2>/dev/null || true
+
+    # Ensure mount points exist
+    echo "Creating mount points..."
+    mkdir -p /mnt/models /mnt/loraModels /mnt/official-models
+
+    # Mount the physical partitions
+    echo "Mounting $DISK1 to /mnt/models..."
+    mount "$DISK1" /mnt/models
+
+    echo "Mounting $DISK2 to /mnt/loraModels..."
+    mount "$DISK2" /mnt/loraModels
+
+    # Create the extra directory on the second drive
+    mkdir -p /mnt/loraModels/models_extra
+
+    # Set up mergerfs to merge both paths
+    echo "Setting up MergerFS overlay at /mnt/official-models..."
+    mergerfs -o allow_other,use_ino,ro \
+      /mnt/loraModels/models_extra:/mnt/models \
+      /mnt/official-models
+
+    # Add to fstab for persistence
+    echo ""
+    echo "Adding entries to /etc/fstab for persistence..."
+
+    # Remove any existing entries for old and new mount points
+    sed -i "\|$UNMOUNT1|d" /etc/fstab
+    sed -i "\|$UNMOUNT2|d" /etc/fstab
+    sed -i '\|/mnt/models|d' /etc/fstab
+    sed -i '\|/mnt/loraModels|d' /etc/fstab
+    sed -i '\|/mnt/official-models|d' /etc/fstab
+
+    # Detect filesystem types
+    FSTYPE1=$(blkid -s TYPE -o value "$DISK1" 2>/dev/null || echo "auto")
+    FSTYPE2=$(blkid -s TYPE -o value "$DISK2" 2>/dev/null || echo "auto")
+
+    # Add new entries
+    echo "$DISK1 /mnt/models $FSTYPE1 defaults 0 2" >> /etc/fstab
+    echo "$DISK2 /mnt/loraModels $FSTYPE2 defaults 0 2" >> /etc/fstab
+    echo "/mnt/loraModels/models_extra:/mnt/models /mnt/official-models fuse.mergerfs allow_other,use_ino,ro 0 0" >> /etc/fstab
+
+    echo "✅ Disk mounts and MergerFS configured successfully."
+    echo ""
+    echo "Mount summary:"
+    echo "  Unmounted: $UNMOUNT1, $UNMOUNT2"
+    echo "  $DISK1 ($FSTYPE1) → /mnt/models"
+    echo "  $DISK2 ($FSTYPE2) → /mnt/loraModels"
+    echo "  MergerFS overlay → /mnt/official-models (read-only)"
+else
+    echo "Skipping disk mounting setup."
+fi
+
+# --- 8. Final Summary ---
 echo ""
 echo "=================================================="
 echo "🎉 GPU Server Initialization Complete!"
@@ -173,6 +265,8 @@ echo "Post-reboot verification commands:"
 echo "  1. nvidia-smi                    # Check GPU status"
 echo "  2. nvcc --version                # Check CUDA version"
 echo "  3. sudo docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi"
+echo "  4. df -h                         # Check disk mounts"
+echo "  5. ls /mnt/official-models       # Verify MergerFS overlay"
 echo ""
 echo "=================================================="
 '
@@ -210,6 +304,12 @@ dry_run_server() {
 
     echo "--- GPU Information ---"
     ssh "$HOST" "nvidia-smi 2>/dev/null || echo 'nvidia-smi not available (GPU driver may not be installed yet)'" < /dev/null
+    echo ""
+
+    echo "--- Disk Information ---"
+    ssh "$HOST" "df -h 2>/dev/null" < /dev/null
+    echo ""
+    ssh "$HOST" "lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE 2>/dev/null || lsblk 2>/dev/null || echo 'lsblk not available'" < /dev/null
     echo ""
 
     echo "--- Commands that would be executed ---"
@@ -270,6 +370,7 @@ if [ -z "$REMOTE_HOST" ]; then
     echo "  - Python dependencies (tqdm, schedule, boto3)"
     echo "  - Network performance tuning (TCP buffers, BBR)"
     echo "  - Draw Things gRPC server Docker image"
+    echo "  - Disk mounting with MergerFS overlay (interactive)"
     exit 1
 fi
 
