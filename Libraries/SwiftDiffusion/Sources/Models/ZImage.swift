@@ -122,13 +122,13 @@ private func FeedForward(
   let w3 = Dense(count: intermediateSize, noBias: true, name: "\(name)_up_proj")
   var gate = w1(x)
   if scaleFactor.projUp > 1 {
-    gate = (Float(scaleFactor.projUp) * gate.to(of: x)).swish().to(.Float16)
+    gate = gate.swish(beta: Float(scaleFactor.projUp))
   } else {
     gate = gate.swish()
   }
   var out = w3(x)
-  if scaleFactor.projDown > 1 {
-    out = (1 / Float(scaleFactor.projDown)) * out
+  if scaleFactor.projDown != scaleFactor.projUp {
+    out = (Float(scaleFactor.projUp) / Float(scaleFactor.projDown)) * out
   }
   out = out .* gate
   let w2 = Dense(count: hiddenSize, noBias: true, name: "\(name)_down_proj")
@@ -781,13 +781,13 @@ private func LoRAFeedForward(
     name: "\(name)_up_proj")
   var gate = w1(x)
   if scaleFactor.projUp > 1 {
-    gate = (Float(scaleFactor.projUp) * gate.to(of: x)).swish().to(.Float16)
+    gate = gate.swish(beta: Float(scaleFactor.projUp))
   } else {
     gate = gate.swish()
   }
   var out = w3(x)
-  if scaleFactor.projDown > 1 {
-    out = (1 / Float(scaleFactor.projDown)) * out
+  if scaleFactor.projDown != scaleFactor.projUp {
+    out = (Float(scaleFactor.projUp) / Float(scaleFactor.projDown)) * out
   }
   out = out .* gate
   let w2 = LoRADense(
