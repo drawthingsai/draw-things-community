@@ -21,7 +21,7 @@ pkg_tar(
 
 oci_image(
     name = "gRPCServerCLI_image",
-    base = "@cuda12.4.1_swift6.0.3_ubuntu22.04",
+    base = "@cuda12.8.1_swift6.0.3_ubuntu22.04",
     tars = [
         ":gRPCServerCLI_layer",
     ],

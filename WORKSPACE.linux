@@ -351,8 +351,8 @@ oci_register_toolchains(
 load("@rules_oci//oci:pull.bzl", "oci_pull")
 
 oci_pull(
-    name = "cuda12.4.1_swift6.0.3_ubuntu22.04",
-    digest = "sha256:b57f6c277bf00f43f1dbf3343178a4c763749377e3592708e6e754f48111d6de",
+    name = "cuda12.8.1_swift6.0.3_ubuntu22.04",
+    digest = "sha256:a647b9323bd879348ff9dccf0d5c2a028e14852b8654ae242d232ee5c8438dcd",
     image = "docker.io/drawthingsai/cuda-swift",
 )
 
