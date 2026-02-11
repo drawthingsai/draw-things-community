@@ -149,15 +149,17 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, scaleFactor: Fl
   let w1 = Dense(
     count: intermediateSize, noBias: true, flags: [.Float16], name: "\(name)_gate_proj")
   let w3 = Dense(count: intermediateSize, noBias: true, name: "\(name)_up_proj")
-  var out = w3(x)
+  var out: Model.IO
   if let scaleFactor = scaleFactor {
-    out = (1 / scaleFactor) * out
+    out = w3((1 / scaleFactor) * x)  // x usually is smaller (hiddenSize < intermediateSize).
+  } else {
+    out = w3(x)
   }
   out = out .* w1(x).swish()
   let w2 = Dense(count: hiddenSize, noBias: true, name: "\(name)_down_proj")
   out = w2(out)
-  if let scaleFactor = scaleFactor {
-    out = out.to(.Float32) * scaleFactor
+  if let _ = scaleFactor {
+    out = out.to(.Float32)  // scaleFactor is fused in the other add kernel.
   }
   return (w1, w2, w3, Model([x], [out]))
 }
@@ -272,10 +274,10 @@ private func JointTransformerBlock(
     (contextW1, contextW2, contextW3, contextFF) = FeedForward(
       hiddenSize: k * h, intermediateSize: k * h * 3, scaleFactor: scaleFactor, name: "c")
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-    if let _ = scaleFactor {
-      contextOut =
-        contextOut
-        + (contextFF(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])
+    if let scaleFactor = scaleFactor {
+      contextOut = Add(rightScalar: scaleFactor)(
+        contextOut,
+        contextFF(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])
           .* contextChunks[5].to(of: contextOut))
     } else {
       contextOut =
@@ -292,9 +294,9 @@ private func JointTransformerBlock(
   let (xW1, xW2, xW3, xFF) = FeedForward(
     hiddenSize: k * h, intermediateSize: k * h * 3, scaleFactor: scaleFactor, name: "x")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  if let _ = scaleFactor {
-    xOut =
-      xOut + (xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]) .* xChunks[5].to(of: xOut))
+  if let scaleFactor = scaleFactor {
+    xOut = Add(rightScalar: scaleFactor)(
+      xOut, xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]) .* xChunks[5].to(of: xOut))
   } else {
     xOut =
       xOut + (xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]) .* xChunks[5]).to(of: xOut)
@@ -701,9 +703,11 @@ private func LoRAFeedForward(
   let w3 = LoRADense(
     count: intermediateSize, configuration: configuration, noBias: true, index: index,
     name: "\(name)_up_proj")
-  var out = w3(x)
+  var out: Model.IO
   if let scaleFactor = scaleFactor {
-    out = (1 / scaleFactor) * out
+    out = w3((1 / scaleFactor) * x)  // x usually is smaller (hiddenSize < intermediateSize).
+  } else {
+    out = w3(x)
   }
   out = out .* w1(x).swish()
   let w2 = LoRADense(
@@ -711,7 +715,7 @@ private func LoRAFeedForward(
     name: "\(name)_down_proj")
   out = w2(out)
   if let scaleFactor = scaleFactor {
-    out = out.to(.Float32) * scaleFactor
+    out = out.to(.Float32)  // scaleFactor is fused in the other add kernel.
   }
   return (w1, w2, w3, Model([x], [out]))
 }
@@ -838,11 +842,12 @@ private func LoRAJointTransformerBlock(
       hiddenSize: k * h, intermediateSize: k * h * 3, scaleFactor: scaleFactor,
       configuration: configuration, index: layerIndex, name: "c")
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-    if let _ = scaleFactor {
+    if let scaleFactor = scaleFactor {
       contextOut =
-        contextOut
-        + (contextFF(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])
-          .* contextChunks[5].to(of: contextOut))
+        Add(rightScalar: scaleFactor)(
+          contextOut,
+          contextFF(contextNorm2(contextOut).to(.Float16) .* contextChunks[4] + contextChunks[3])
+            .* contextChunks[5].to(of: contextOut))
     } else {
       contextOut =
         contextOut
@@ -859,9 +864,9 @@ private func LoRAJointTransformerBlock(
     hiddenSize: k * h, intermediateSize: k * h * 3, scaleFactor: scaleFactor,
     configuration: configuration, index: layerIndex, name: "x")
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  if let _ = scaleFactor {
-    xOut =
-      xOut + (xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]) .* xChunks[5].to(of: xOut))
+  if let scaleFactor = scaleFactor {
+    xOut = Add(rightScalar: scaleFactor)(
+      xOut, (xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]) .* xChunks[5].to(of: xOut)))
   } else {
     xOut =
       xOut + (xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]) .* xChunks[5]).to(of: xOut)
