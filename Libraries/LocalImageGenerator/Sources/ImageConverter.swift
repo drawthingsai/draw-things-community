@@ -667,21 +667,51 @@ public enum ImageConverter {
           at: Bundle.main.url(
             forResource: "flux_1_tae", withExtension: "zip")!,
           to: coreMLUrl)
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_1_tae/768.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_1_tae/1024.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_1_tae/1280.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_1_tae/1536.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_1_tae/1792.mlmodelc/weights/weight.bin"))
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_1_tae/768.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_1_tae/768.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_1_tae/1024.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_1_tae/1024.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_1_tae/1280.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_1_tae/1280.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_1_tae/1536.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_1_tae/1536.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_1_tae/1792.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_1_tae/1792.mlmodelc/weights/weight.bin"))
+        }
         try fileManager.moveItem(
           at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
           to: coreMLUrl.appendingPathComponent("flux_1_tae/2048.mlmodelc/weights/weight.bin"))
@@ -778,21 +808,51 @@ public enum ImageConverter {
           at: Bundle.main.url(
             forResource: "qwenimage_tae", withExtension: "zip")!,
           to: coreMLUrl)
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("qwenimage_tae/768.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("qwenimage_tae/1024.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("qwenimage_tae/1280.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("qwenimage_tae/1536.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("qwenimage_tae/1792.mlmodelc/weights/weight.bin"))
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("qwenimage_tae/768.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("qwenimage_tae/768.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1024.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1024.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1280.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1280.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1536.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1536.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1792.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1792.mlmodelc/weights/weight.bin"))
+        }
         try fileManager.moveItem(
           at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
           to: coreMLUrl.appendingPathComponent("qwenimage_tae/2048.mlmodelc/weights/weight.bin"))
@@ -888,21 +948,51 @@ public enum ImageConverter {
           at: Bundle.main.url(
             forResource: "flux_2_tae", withExtension: "zip")!,
           to: coreMLUrl)
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_2_tae/768.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_2_tae/1024.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_2_tae/1280.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_2_tae/1536.mlmodelc/weights/weight.bin"))
-        try fileManager.copyItem(
-          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_2_tae/1792.mlmodelc/weights/weight.bin"))
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_2_tae/768.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_2_tae/768.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_2_tae/1024.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_2_tae/1024.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_2_tae/1280.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_2_tae/1280.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_2_tae/1536.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_2_tae/1536.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_2_tae/1792.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("flux_2_tae/1792.mlmodelc/weights/weight.bin"))
+        }
         try fileManager.moveItem(
           at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
           to: coreMLUrl.appendingPathComponent("flux_2_tae/2048.mlmodelc/weights/weight.bin"))

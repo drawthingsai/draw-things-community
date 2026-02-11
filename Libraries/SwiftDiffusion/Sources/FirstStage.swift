@@ -57,7 +57,7 @@ extension FirstStage {
     _ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?, highPrecision: Bool,
     cancellation: (@escaping () -> Void) -> Void
   )
-    -> (DynamicGraph.Tensor<FloatType>, Model)
+    -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model)
   {
     let shape = x.shape
     let batchSize = shape[0]
@@ -719,9 +719,13 @@ extension FirstStage {
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
         && version != .wan22_5b && version != .ltx2
     else {
+      let audio: DynamicGraph.Tensor<Float>?
       if audioDecoder.count > 1, let audioZ = audioZ {
         let decodedAudio = audioDecoder[0](inputs: audioZ)[0].as(of: Float.self)
         let waveform = audioDecoder[1](inputs: decodedAudio)[0].as(of: Float.self)
+        audio = waveform
+      } else {
+        audio = nil
       }
       if highPrecision {
         let result: DynamicGraph.Tensor<Float>
@@ -742,6 +746,7 @@ extension FirstStage {
         return (
           DynamicGraph.Tensor<FloatType>(
             from: result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<outputChannels].contiguous()),
+          audio,
           decoder
         )
       } else {
@@ -764,7 +769,8 @@ extension FirstStage {
         }
         let shape = result.shape
         return (
-          result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<outputChannels].copied(), decoder
+          result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<outputChannels].copied(), nil,
+          decoder
         )
       }
     }
@@ -821,32 +827,32 @@ extension FirstStage {
           partial[0..<1, 0..<shape[1], 0..<shape[2], 0..<outputChannels]
       }
     }
-    return (result, decoder)
+    return (result, nil, decoder)
   }
 
   public func decode(
     _ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?,
     cancellation: (@escaping () -> Void) -> Void
   )
-    -> (DynamicGraph.Tensor<FloatType>, Model)
+    -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model)
   {
-    let (result, decoder) = decode(
+    let (result, audio, decoder) = decode(
       x, decoder: existingDecoder, highPrecision: false, cancellation: cancellation)
     if highPrecisionFallback && !isCancelled.load(ordering: .acquiring)
       && isNaN(result.rawValue.toCPU())
     {
-      let (highPrecisionResult, _) = decode(
+      let (highPrecisionResult, audio, _) = decode(
         x, decoder: nil, highPrecision: true, cancellation: cancellation)
-      return (highPrecisionResult, decoder)
+      return (highPrecisionResult, audio, decoder)
     }
-    return (result, decoder)
+    return (result, audio, decoder)
   }
 
   public func decode(
     _ x: DynamicGraph.Tensor<FloatType>, batchSize: (Int, Int), decoder existingDecoder: Model?,
     cancellation: (@escaping () -> Void) -> Void
   )
-    -> (DynamicGraph.Tensor<FloatType>, Model)
+    -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model)
   {
     let shape = x.shape
     if batchSize.1 == 0 {
@@ -865,7 +871,7 @@ extension FirstStage {
         x[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(), decoder: decoder,
         cancellation: cancellation)
       results.append(result.0)
-      decoder = result.1
+      decoder = result.2
     }
     decoder = nil
     let graph = x.graph
@@ -882,7 +888,7 @@ extension FirstStage {
     fullResult[
       batchSize.1..<resultShape[0], 0..<resultShape[1], 0..<resultShape[2], 0..<resultShape[3]] =
       result.0
-    return (fullResult, result.1)
+    return (fullResult, result.1, result.2)
   }
 
   public func sampleFromDistribution(

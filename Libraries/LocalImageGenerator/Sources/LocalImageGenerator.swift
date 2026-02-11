@@ -4195,12 +4195,14 @@ extension LocalImageGenerator {
         firstStageResult = x
       } else {
         // For Wurstchen model, we don't need to run decode.
-        firstStageResult = modelPreloader.consumeFirstStageDecode(
-          firstStage.decode(
-            x, batchSize: (hiresFixEnabled ? batchSize : (batchSize.0 - batchSize.1, 0)),
-            decoder: modelPreloader.retrieveFirstStageDecoder(
-              firstStage: firstStage, scale: firstPassScale), cancellation: cancellation),
-          firstStage: firstStage, scale: firstPassScale)
+        firstStageResult =
+          modelPreloader.consumeFirstStageDecode(
+            firstStage.decode(
+              x, batchSize: (hiresFixEnabled ? batchSize : (batchSize.0 - batchSize.1, 0)),
+              decoder: modelPreloader.retrieveFirstStageDecoder(
+                firstStage: firstStage, scale: firstPassScale), cancellation: cancellation),
+            firstStage: firstStage, scale: firstPassScale
+          ).0
         guard !isNaN(firstStageResult.rawValue.toCPU()) else { return (nil, 1) }
       }
       guard feedback(.imageDecoded, signposts, nil) else { return (nil, 1) }
@@ -4553,7 +4555,8 @@ extension LocalImageGenerator {
           x, batchSize: (batchSize.0 - batchSize.1, 0),
           decoder: modelPreloader.retrieveFirstStageDecoder(
             firstStage: firstStage, scale: imageScale), cancellation: cancellation),
-        firstStage: firstStage, scale: imageScale)
+        firstStage: firstStage, scale: imageScale
+      ).0
       guard !isNaN(secondPassResult.rawValue.toCPU()) else { return (nil, 1) }
       guard feedback(.secondPassImageDecoded, signposts, nil) else { return (nil, 1) }
       secondPassResult = faceRestoreImage(secondPassResult, configuration: configuration)
@@ -5420,7 +5423,8 @@ extension LocalImageGenerator {
           x, batchSize: (batchSize.0 - batchSize.1, 0),
           decoder: modelPreloader.retrieveFirstStageDecoder(
             firstStage: firstStage, scale: imageScale), cancellation: cancellation),
-        firstStage: firstStage, scale: imageScale)
+        firstStage: firstStage, scale: imageScale
+      ).0
       guard !isNaN(firstStageResult.rawValue.toCPU()) else { return (nil, 1) }
       if modelVersion == .wurstchenStageC {
         guard feedback(.secondPassImageDecoded, signposts, nil) else { return (nil, 1) }
@@ -6782,7 +6786,7 @@ extension LocalImageGenerator {
             decoder: modelPreloader.retrieveFirstStageDecoder(
               firstStage: firstStage, scale: imageScale), cancellation: cancellation),
           firstStage: firstStage, scale: imageScale
-        )
+        ).0
       ).rawValue.toCPU()
       guard !isNaN(result) else { return nil }
       if modelVersion == .wurstchenStageC {
@@ -7815,7 +7819,7 @@ extension LocalImageGenerator {
             decoder: modelPreloader.retrieveFirstStageDecoder(
               firstStage: firstStage, scale: imageScale), cancellation: cancellation),
           firstStage: firstStage, scale: imageScale
-        )
+        ).0
       ).rawValue.toCPU()
       guard !isNaN(result) else { return nil }
       if modelVersion == .wurstchenStageC {

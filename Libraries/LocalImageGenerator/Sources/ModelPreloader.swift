@@ -1311,13 +1311,14 @@ extension ModelPreloader {
     return firstStageDecoder
   }
   func consumeFirstStageDecode(
-    _ x: (DynamicGraph.Tensor<FloatType>, Model), firstStage: FirstStage<FloatType>,
+    _ x: (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model),
+    firstStage: FirstStage<FloatType>,
     scale: DeviceCapability.Scale
   )
-    -> DynamicGraph.Tensor<FloatType>
+    -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?)
   {
     if (mode == .preload || mode == .yes) && isEnabled {
-      firstStageDecoder = x.1
+      firstStageDecoder = x.2
       firstStageDecoderFilePath = firstStage.filePath
       firstStageDecoderExternalOnDemand = firstStage.externalOnDemand
       firstStageDecoderVersion = firstStage.version
@@ -1325,7 +1326,7 @@ extension ModelPreloader {
       firstStageDecoderHighPrecision = firstStage.highPrecisionKeysAndValues
       firstStageDecoderTiledDecoding = firstStage.tiledDecoding
     }
-    return x.0
+    return (x.0, x.1)
   }
   func retrieveUNet(
     sampler: any Sampler<FloatType, UNetWrapper<FloatType>>, scale: DeviceCapability.Scale,
