@@ -10,3 +10,4 @@ root@dt-thpc-002, /mnt/models/official-models, /root/utils/LaunchGPU, /mnt/loraM
 root@dfw-141-005, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs
 root@dfw-099-006, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs
 root@dfw-100-007, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs
+root@dfw-049-008, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --skip-tmpfs

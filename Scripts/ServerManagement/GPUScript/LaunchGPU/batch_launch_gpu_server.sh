@@ -63,10 +63,17 @@ if [ ! -f "$LAUNCH_SCRIPT" ]; then
     exit 1
 fi
 
+# Extract Docker image from launch script
+DOCKER_IMAGE=$(grep -o 'docker pull [^[:space:]]*' "$LAUNCH_SCRIPT" | head -1 | awk '{print $3}')
+if [ -z "$DOCKER_IMAGE" ]; then
+    DOCKER_IMAGE="(unable to detect)"
+fi
+
 echo "=================================================="
 echo "  Batch GPU Server Launch"
 echo "=================================================="
 echo "Config file: $CONFIG_FILE"
+echo "Docker image: $DOCKER_IMAGE"
 echo "Dry run: $DRY_RUN"
 echo ""
 
