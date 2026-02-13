@@ -723,7 +723,7 @@ extension FirstStage {
       if audioDecoder.count > 1, let audioZ = audioZ {
         let decodedAudio = audioDecoder[0](inputs: audioZ)[0].as(of: Float.self)
         let waveform = audioDecoder[1](inputs: decodedAudio)[0].as(of: Float.self)
-        audio = waveform
+        audio = waveform.reshaped(.NC(waveform.shape[1], waveform.shape[3]))
       } else {
         audio = nil
       }
@@ -769,7 +769,7 @@ extension FirstStage {
         }
         let shape = result.shape
         return (
-          result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<outputChannels].copied(), nil,
+          result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<outputChannels].copied(), audio,
           decoder
         )
       }

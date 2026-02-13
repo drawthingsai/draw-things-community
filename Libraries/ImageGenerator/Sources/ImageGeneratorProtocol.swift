@@ -38,7 +38,7 @@ public protocol ImageGenerator {
     cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
       -> Bool
-  ) throws -> ([Tensor<FloatType>]?, Int)
+  ) throws -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int)
 }
 
 extension ImageGeneratorSignpost {

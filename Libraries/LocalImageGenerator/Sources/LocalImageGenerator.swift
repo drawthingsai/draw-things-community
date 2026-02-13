@@ -989,7 +989,7 @@ extension LocalImageGenerator {
     fileMapping: [String: String], keywords: [String], cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
-  ) -> ([Tensor<FloatType>]?, Int) {
+  ) -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
 
     let depth =
       (hints.first {
@@ -3444,7 +3444,7 @@ extension LocalImageGenerator {
     cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
       -> Bool
-  ) -> ([Tensor<FloatType>]?, Int) {
+  ) -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
     defer {
       if coreMLGuard {
@@ -3467,7 +3467,7 @@ extension LocalImageGenerator {
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     // generateTextOnly cannot handle I2v model.
     guard modelVersion != .svdI2v else {
-      return (nil, 1)
+      return (nil, nil, 1)
     }
     let modelObjective = ModelZoo.objectiveForModel(file)
     let modelUpcastAttention = ModelZoo.isUpcastAttentionForModel(file)
@@ -3950,7 +3950,7 @@ extension LocalImageGenerator {
         unconditionalAttentionWeights: unconditionalAttentionWeights,
         attentionWeights: attentionWeights, version: modelVersion, tokenLength: tokenLength,
         batchSize: batchSize, hasNonOneWeights: hasNonOneWeights)
-      guard feedback(.textEncoded, signposts, nil) else { return (nil, 1) }
+      guard feedback(.textEncoded, signposts, nil) else { return (nil, nil, 1) }
       var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
       var mask: DynamicGraph.Tensor<FloatType>? = nil
       var firstPassImage: DynamicGraph.Tensor<FloatType>? = nil
@@ -4062,7 +4062,7 @@ extension LocalImageGenerator {
             0..<imageSize, 0..<firstPassStartHeight, 0..<firstPassStartWidth, 0..<firstPassChannels
           ].copied()
         }
-        guard feedback(.imageEncoded, signposts, nil) else { return (nil, 1) }
+        guard feedback(.imageEncoded, signposts, nil) else { return (nil, nil, 1) }
       }
       let x_T = randomLatentNoise(
         graph: graph, batchSize: batchSize.0,
@@ -4113,7 +4113,7 @@ extension LocalImageGenerator {
         version: modelVersion, tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage,
         cancellation: cancellation)
-      guard feedback(.controlsGenerated, signposts, nil) else { return (nil, 1) }
+      guard feedback(.controlsGenerated, signposts, nil) else { return (nil, nil, 1) }
 
       if let image = maskedImage {
         maskedImage = injectVACEFrames(
@@ -4150,10 +4150,10 @@ extension LocalImageGenerator {
             }, sampler: sampler, scale: firstPassScale, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond)
       else {
-        return (nil, 1)
+        return (nil, nil, 1)
       }
       guard feedback(.sampling(sampling.steps), signposts, nil) else {
-        return (nil, 1)
+        return (nil, nil, 1)
       }
       let isHighPrecisionVAEFallbackEnabled = DeviceCapability.isHighPrecisionVAEFallbackEnabled(
         scale: imageScale)
@@ -4190,9 +4190,9 @@ extension LocalImageGenerator {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
       }
-      var firstStageResult: DynamicGraph.Tensor<FloatType>
+      var firstStageResult: (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?)
       if modelVersion == .wurstchenStageC {
-        firstStageResult = x
+        firstStageResult = (x, nil)
       } else {
         // For Wurstchen model, we don't need to run decode.
         firstStageResult =
@@ -4202,18 +4202,18 @@ extension LocalImageGenerator {
               decoder: modelPreloader.retrieveFirstStageDecoder(
                 firstStage: firstStage, scale: firstPassScale), cancellation: cancellation),
             firstStage: firstStage, scale: firstPassScale
-          ).0
-        guard !isNaN(firstStageResult.rawValue.toCPU()) else { return (nil, 1) }
+          )
+        guard !isNaN(firstStageResult.0.rawValue.toCPU()) else { return (nil, nil, 1) }
       }
-      guard feedback(.imageDecoded, signposts, nil) else { return (nil, 1) }
+      guard feedback(.imageDecoded, signposts, nil) else { return (nil, nil, 1) }
       // We go through second image sampling with Wurstchen.
       guard hiresFixEnabled || modelVersion == .wurstchenStageC else {
-        firstStageResult = faceRestoreImage(firstStageResult, configuration: configuration)
+        firstStageResult.0 = faceRestoreImage(firstStageResult.0, configuration: configuration)
         if signposts.contains(.faceRestored) {
-          guard feedback(.faceRestored, signposts, nil) else { return (nil, 1) }
+          guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
         }
         let (result, scaleFactor) = upscaleImageAndToCPU(
-          firstStageResult, configuration: configuration)
+          firstStageResult.0, configuration: configuration)
         if signposts.contains(.imageUpscaled) {
           let _ = feedback(.imageUpscaled, signposts, nil)
         }
@@ -4221,15 +4221,16 @@ extension LocalImageGenerator {
         if ImageGeneratorUtils.isVideoModel(modelVersion) {
           batchSize = Int(configuration.numFrames)
         }
+        let audio = firstStageResult.1?.rawValue.toCPU()
         guard batchSize > 1 else {
-          return ([result], scaleFactor)
+          return ([result], audio.map { [$0] }, scaleFactor)
         }
         var batch = [Tensor<FloatType>]()
         let shape = result.shape
         for i in 0..<min(batchSize, shape[0]) {
           batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
         }
-        return (batch, scaleFactor)
+        return (batch, audio.map { [$0] }, scaleFactor)
       }
       let startWidth: Int
       let startHeight: Int
@@ -4251,21 +4252,23 @@ extension LocalImageGenerator {
       let sample: DynamicGraph.Tensor<FloatType>
       // Bypass decode / scale / encode for Wurstchen model.
       if modelVersion == .wurstchenStageC {
-        firstStageImage = firstStageResult
-        sample = firstStageResult
+        firstStageImage = firstStageResult.0
+        sample = firstStageResult.0
       } else {
-        let shape = firstStageResult.shape
+        let shape = firstStageResult.0.shape
         if shape[3] > 3 {
           // Keep the last 3-components (RGB). Remove alpha channel.
           firstStageImage = Upsample(
             .bilinear, widthScale: Float(startWidth) / Float(firstPassStartWidth),
             heightScale: Float(startHeight) / Float(firstPassStartHeight))(
-              firstStageResult[0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]]
-                .copied())
+              firstStageResult.0[
+                0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]
+              ]
+              .copied())
         } else {
           firstStageImage = Upsample(
             .bilinear, widthScale: Float(startWidth) / Float(firstPassStartWidth),
-            heightScale: Float(startHeight) / Float(firstPassStartHeight))(firstStageResult)
+            heightScale: Float(startHeight) / Float(firstPassStartHeight))(firstStageResult.0)
         }
         // encode image again.
         (sample, _, _) = firstStage.sample(
@@ -4332,7 +4335,7 @@ extension LocalImageGenerator {
           .copied()
         }
       }
-      guard feedback(.secondPassImageEncoded, signposts, nil) else { return (nil, 1) }
+      guard feedback(.secondPassImageEncoded, signposts, nil) else { return (nil, nil, 1) }
       let secondPassDepthImage = depthImage.map {
         let depthHeight = $0.shape[1]
         let depthWidth = $0.shape[2]
@@ -4393,7 +4396,7 @@ extension LocalImageGenerator {
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: secondPassControlExternalOnDemand, steps: sampling.steps,
         firstStage: firstStage, cancellation: cancellation)
-      guard feedback(.controlsGenerated, signposts, nil) else { return (nil, 1) }
+      guard feedback(.controlsGenerated, signposts, nil) else { return (nil, nil, 1) }
 
       let secondPassModelVersion: ModelVersion
       let secondPassModelFilePath: String
@@ -4521,14 +4524,14 @@ extension LocalImageGenerator {
             }, sampler: secondPassSampler, scale: imageScale,
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond)
       else {
-        return (nil, 1)
+        return (nil, nil, 1)
       }
       guard
         feedback(
           .secondPassSampling(secondPassSampling.steps - initTimestep.roundedDownStartStep),
           signposts, nil)
       else {
-        return (nil, 1)
+        return (nil, nil, 1)
       }
       if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
         || modelVersion == .ssd1b || modelVersion == .wurstchenStageC || modelVersion == .sd3
@@ -4556,30 +4559,31 @@ extension LocalImageGenerator {
           decoder: modelPreloader.retrieveFirstStageDecoder(
             firstStage: firstStage, scale: imageScale), cancellation: cancellation),
         firstStage: firstStage, scale: imageScale
-      ).0
-      guard !isNaN(secondPassResult.rawValue.toCPU()) else { return (nil, 1) }
-      guard feedback(.secondPassImageDecoded, signposts, nil) else { return (nil, 1) }
-      secondPassResult = faceRestoreImage(secondPassResult, configuration: configuration)
+      )
+      guard !isNaN(secondPassResult.0.rawValue.toCPU()) else { return (nil, nil, 1) }
+      guard feedback(.secondPassImageDecoded, signposts, nil) else { return (nil, nil, 1) }
+      secondPassResult.0 = faceRestoreImage(secondPassResult.0, configuration: configuration)
       if signposts.contains(.faceRestored) {
-        guard feedback(.faceRestored, signposts, nil) else { return (nil, 1) }
+        guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
       let (result, scaleFactor) = upscaleImageAndToCPU(
-        secondPassResult, configuration: configuration)
+        secondPassResult.0, configuration: configuration)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
+      let audio = secondPassResult.1?.rawValue.toCPU()
       if ImageGeneratorUtils.isVideoModel(modelVersion) {
         batchSize.0 = Int(configuration.numFrames)
       }
       guard batchSize.0 > 1 else {
-        return ([result], scaleFactor)
+        return ([result], audio.map { [$0] }, scaleFactor)
       }
       var batch = [Tensor<FloatType>]()
       let shape = result.shape
       for i in 0..<min(batchSize.0, shape[0]) {
         batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
       }
-      return (batch, scaleFactor)
+      return (batch, audio.map { [$0] }, scaleFactor)
     }
   }
 
@@ -4594,7 +4598,7 @@ extension LocalImageGenerator {
     cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
-  ) -> ([Tensor<FloatType>]?, Int) {
+  ) -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
     defer {
       if coreMLGuard {
@@ -5062,7 +5066,7 @@ extension LocalImageGenerator {
         unconditionalAttentionWeights: unconditionalAttentionWeights,
         attentionWeights: attentionWeights, version: modelVersion, tokenLength: tokenLength,
         batchSize: batchSize, hasNonOneWeights: hasNonOneWeights)
-      guard feedback(.textEncoded, signposts, nil) else { return (nil, 1) }
+      guard feedback(.textEncoded, signposts, nil) else { return (nil, nil, 1) }
       var firstStage = FirstStage<FloatType>(
         filePath: firstStageFilePath, version: modelVersion,
         latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
@@ -5078,7 +5082,7 @@ extension LocalImageGenerator {
         // Otherwise, just run upscaler if needed.
         let (result, scaleFactor) = upscaleImageAndToCPU(image, configuration: configuration)
         // Because we just run the upscaler, there is no more than 1 image generation, return directly.
-        return ([result], scaleFactor)
+        return ([result], nil, scaleFactor)
       }
       var firstPassImage: DynamicGraph.Tensor<FloatType>
       if modelVersion == .wurstchenStageC {
@@ -5154,7 +5158,7 @@ extension LocalImageGenerator {
         maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
           .copied()
       }
-      guard feedback(.imageEncoded, signposts, nil) else { return (nil, 1) }
+      guard feedback(.imageEncoded, signposts, nil) else { return (nil, nil, 1) }
       let noise = randomLatentNoise(
         graph: graph, batchSize: batchSize.0, startHeight: startHeight,
         startWidth: startWidth, channels: channels, seed: configuration.seed,
@@ -5195,7 +5199,7 @@ extension LocalImageGenerator {
         tiledDiffusion: tiledDiffusion, usesFlashAttention: isMFAEnabled,
         externalOnDemand: controlExternalOnDemand, steps: sampling.steps, firstStage: firstStage,
         cancellation: cancellation)
-      guard feedback(.controlsGenerated, signposts, nil) else { return (nil, 1) }
+      guard feedback(.controlsGenerated, signposts, nil) else { return (nil, nil, 1) }
       if let image = maskedImage {
         maskedImage = injectVACEFrames(
           batchSize: batchSize, version: modelVersion, image: image,
@@ -5252,16 +5256,16 @@ extension LocalImageGenerator {
             }, sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond)
       else {
-        return (nil, 1)
+        return (nil, nil, 1)
       }
       guard
         feedback(.sampling(sampling.steps - initTimestep.roundedDownStartStep), signposts, nil)
       else {
-        return (nil, 1)
+        return (nil, nil, 1)
       }
       // If it is Wurstchen, run the stage 2.
       if modelVersion == .wurstchenStageC {
-        guard feedback(.imageDecoded, signposts, nil) else { return (nil, 1) }
+        guard feedback(.imageDecoded, signposts, nil) else { return (nil, nil, 1) }
         firstStage = FirstStage<FloatType>(
           filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile), version: .wurstchenStageB,
           latentsScaling: latentsScaling, highPrecisionKeysAndValues: highPrecisionForAutoencoder,
@@ -5306,7 +5310,7 @@ extension LocalImageGenerator {
         } else if modelVersion == .svdI2v {
           maskedImage = encodedImage[0..<1, 0..<startHeight, 0..<startWidth, 0..<channels].copied()
         }
-        guard feedback(.secondPassImageEncoded, signposts, nil) else { return (nil, 1) }
+        guard feedback(.secondPassImageEncoded, signposts, nil) else { return (nil, nil, 1) }
         let secondPassModelVersion = ModelVersion.wurstchenStageB
         let secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(
           ModelZoo.stageModelsForModel(file)[0])
@@ -5385,14 +5389,14 @@ extension LocalImageGenerator {
               }, sampler: secondPassSampler, scale: imageScale,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond)
         else {
-          return (nil, 1)
+          return (nil, nil, 1)
         }
         guard
           feedback(
             .secondPassSampling(secondPassSampling.steps - initTimestep.roundedDownStartStep),
             signposts, nil)
         else {
-          return (nil, 1)
+          return (nil, nil, 1)
         }
         x = b
       }
@@ -5425,15 +5429,15 @@ extension LocalImageGenerator {
             firstStage: firstStage, scale: imageScale), cancellation: cancellation),
         firstStage: firstStage, scale: imageScale
       ).0
-      guard !isNaN(firstStageResult.rawValue.toCPU()) else { return (nil, 1) }
+      guard !isNaN(firstStageResult.rawValue.toCPU()) else { return (nil, nil, 1) }
       if modelVersion == .wurstchenStageC {
-        guard feedback(.secondPassImageDecoded, signposts, nil) else { return (nil, 1) }
+        guard feedback(.secondPassImageDecoded, signposts, nil) else { return (nil, nil, 1) }
       } else {
-        guard feedback(.imageDecoded, signposts, nil) else { return (nil, 1) }
+        guard feedback(.imageDecoded, signposts, nil) else { return (nil, nil, 1) }
       }
       firstStageResult = faceRestoreImage(firstStageResult, configuration: configuration)
       if signposts.contains(.faceRestored) {
-        guard feedback(.faceRestored, signposts, nil) else { return (nil, 1) }
+        guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
       let (result, scaleFactor) = upscaleImageAndToCPU(
         firstStageResult, configuration: configuration)
@@ -5444,14 +5448,14 @@ extension LocalImageGenerator {
         batchSize.0 = Int(configuration.numFrames)
       }
       guard batchSize.0 > 1 else {
-        return ([result], scaleFactor)
+        return ([result], nil, scaleFactor)
       }
       var batch = [Tensor<FloatType>]()
       let shape = result.shape
       for i in 0..<min(batchSize.0, shape[0]) {
         batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
       }
-      return (batch, scaleFactor)
+      return (batch, nil, scaleFactor)
     }
   }
 
@@ -5646,7 +5650,7 @@ extension LocalImageGenerator {
     cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
-  ) -> ([Tensor<FloatType>]?, Int) {
+  ) -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
     // The binary mask is a shape of (height, width), with content of 0, 1, 2, 3
     // 2 means it is explicit masked, if 2 is presented, we will treat 0 as areas to retain, and
     // 1 as areas to fill in from pure noise. If 2 is not presented, we will fill in 1 as pure noise
@@ -5874,7 +5878,7 @@ extension LocalImageGenerator {
           configuration: configuration, denoiserParameterization: denoiserParameterization,
           sampling: sampling, signposts: &signposts, cancellation: cancellation, feedback: feedback)
       else {
-        return (nil, 1)
+        return (nil, nil, 1)
       }
       if configuration.preserveOriginalAfterInpaint {
         let original = downscaleImage(image, scaleFactor: scaleFactor)
@@ -5887,13 +5891,13 @@ extension LocalImageGenerator {
       }
       result = faceRestoreImages(result, configuration: configuration)
       if signposts.contains(.faceRestored) {
-        guard feedback(.faceRestored, signposts, nil) else { return (nil, 1) }
+        guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
       let batch = upscaleImages(result, configuration: configuration)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
-      return batch
+      return (batch.0, nil, batch.1)
     }
     // If there is no 2 or 3, only 0 or 1, we don't need to use mask2 (as it covered everything).
     if !exists2 && !exists3 {
@@ -5906,7 +5910,7 @@ extension LocalImageGenerator {
             negativeText: negativeText, configuration: configuration,
             denoiserParameterization: denoiserParameterization, sampling: sampling,
             signposts: &signposts, cancellation: cancellation, feedback: feedback)
-      else { return (nil, 1) }
+      else { return (nil, nil, 1) }
       if configuration.strength == 0 && configuration.preserveOriginalAfterInpaint {
         let original = downscaleImage(image, scaleFactor: scaleFactor)
         for i in 0..<result.count {
@@ -5919,13 +5923,13 @@ extension LocalImageGenerator {
       }
       result = faceRestoreImages(result, configuration: configuration)
       if signposts.contains(.faceRestored) {
-        guard feedback(.faceRestored, signposts, nil) else { return (nil, 1) }
+        guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
       let batch = upscaleImages(result, configuration: configuration)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
-      return batch
+      return (batch.0, nil, batch.1)
     }
     guard
       var result = generateImageWithMask1AndMask2(
@@ -5936,7 +5940,7 @@ extension LocalImageGenerator {
         denoiserParameterization: denoiserParameterization, sampling: sampling,
         signposts: &signposts, cancellation: cancellation, feedback: feedback)
     else {
-      return (nil, 1)
+      return (nil, nil, 1)
     }
     if configuration.preserveOriginalAfterInpaint {
       let original = downscaleImage(image, scaleFactor: scaleFactor)
@@ -5950,13 +5954,13 @@ extension LocalImageGenerator {
     }
     result = faceRestoreImages(result, configuration: configuration)
     if signposts.contains(.faceRestored) {
-      guard feedback(.faceRestored, signposts, nil) else { return (nil, 1) }
+      guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
     }
     let batch = upscaleImages(result, configuration: configuration)
     if signposts.contains(.imageUpscaled) {
       let _ = feedback(.imageUpscaled, signposts, nil)
     }
-    return batch
+    return (batch.0, nil, batch.1)
   }
 
   // This is vanilla inpainting, we directly go to steps - tEnc, and retain what we need till the end.

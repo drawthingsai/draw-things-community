@@ -83,7 +83,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     fileMapping: [String: String], keywords: [String], cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
       -> Bool
-  ) throws -> ([Tensor<FloatType>]?, Int) {
+  ) throws -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
     let sharedSecret = client.sharedSecret
     guard let client = client.client else {
       throw RemoteImageGeneratorError.notConnected
@@ -323,6 +323,6 @@ public struct RemoteImageGenerator: ImageGenerator {
     if tensors.isEmpty, let unknownFailures {
       throw unknownFailures
     }
-    return (tensors, scaleFactor)
+    return (tensors, nil, scaleFactor)
   }
 }
