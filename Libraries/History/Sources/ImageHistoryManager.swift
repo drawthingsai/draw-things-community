@@ -413,11 +413,13 @@ extension ImageHistoryManager {
     public var framesPerSecond: Double
     public var size: Size
     public var frames: [FrameData]
-    init(clipId: Int64, framesPerSecond: Double, size: Size, frames: [FrameData]) {
+    public var audioId: Int64?
+    init(clipId: Int64, framesPerSecond: Double, size: Size, frames: [FrameData], audioId: Int64?) {
       self.clipId = clipId
       self.framesPerSecond = framesPerSecond
       self.size = size
       self.frames = frames
+      self.audioId = audioId
     }
   }
 }
@@ -516,7 +518,7 @@ public final class ImageHistoryManager {
               frames: frames.map {
                 return ClipData.FrameData(
                   logicalTime: $0.logicalTime, lineage: $0.lineage, previewId: $0.previewId)
-              })
+              }, audioId: clip.audioId > 0 ? clip.audioId : nil)
           } else {
             clipData = nil
           }
@@ -700,8 +702,9 @@ public final class ImageHistoryManager {
     }
   }
 
-  public func pushHistory(_ histories: [History], asClip: Bool = false, framesPerSecond: Double = 0)
-  {
+  public func pushHistory(
+    _ histories: [History], asClip: Bool = false, framesPerSecond: Double = 0, audioId: Int64? = nil
+  ) {
     dispatchPrecondition(condition: .onQueue(.main))
     guard !histories.isEmpty else { return }
     // We need to fork this history.
@@ -860,7 +863,7 @@ public final class ImageHistoryManager {
         size: ClipData.Size(
           width: Int32(histories.first?.configuration.startWidth ?? 0) * 64,
           height: Int32(histories.first?.configuration.startHeight ?? 0) * 64
-        ), frames: [])
+        ), frames: [], audioId: audioId)
     } else {
       clipId = nil
       clipData = nil
@@ -1073,6 +1076,9 @@ public final class ImageHistoryManager {
         creationRequest.framesPerSecond = framesPerSecond
         creationRequest.width = clipData.size.width
         creationRequest.height = clipData.size.height
+        if let audioId = clipData.audioId {
+          creationRequest.audioId = audioId
+        }
         transactionContext.try(submit: creationRequest)
       }
     } completionHandler: { _ in
@@ -1169,6 +1175,14 @@ public final class ImageHistoryManager {
     return (image, binaryMask, depthMap, scribble, pose, colorPalette, custom, shuffle)
   }
 
+  public func addAudio(_ audio: Tensor<Float>) -> Int64 {
+    let audioId: Int64 = Int64.random(in: 1_800_000_000...2_199_999_999)
+    dynamicGraph.openStore(filePath, flags: []) {
+      $0.write("audio_\(audioId)", tensor: audio, codec: [.fpzip, .zip])
+    }
+    return audioId
+  }
+
   public func addImage(
     _ image: Tensor<FloatType>?, binaryMask: Tensor<UInt8>?, depthMap: Tensor<FloatType>?,
     scribble: Tensor<UInt8>?, pose: Tensor<Float>?, colorPalette: Tensor<FloatType>?,
@@ -1255,7 +1269,7 @@ public final class ImageHistoryManager {
         frames: frames.map {
           return ClipData.FrameData(
             logicalTime: $0.logicalTime, lineage: $0.lineage, previewId: $0.previewId)
-        })
+        }, audioId: clip.audioId > 0 ? clip.audioId : nil)
     }
   }
 
@@ -1412,6 +1426,18 @@ public final class ImageHistoryManager {
     return UIImage(data: Data(node.data))
   }
 
+  public func popAudioClip(_ audioClip: inout Tensor<Float>?) {
+    dynamicGraph.openStore(filePath, flags: []) {
+      if let audioId = clipData?.audioId {
+        audioClip = $0.read("audio_\(audioId)", codec: [.fpzip, .zip]).map {
+          Tensor<Float>(from: $0)
+        }
+      } else {
+        audioClip = nil
+      }
+    }
+  }
+
   public func popImage(
     image: inout Tensor<FloatType>?, binaryMask: inout Tensor<UInt8>?,
     depthMap: inout Tensor<FloatType>?, scribble: inout Tensor<UInt8>?, pose: inout Tensor<Float>?,
@@ -1478,9 +1504,10 @@ public final class ImageHistoryManager {
     var isDeleted = false
     var imageData = [TensorData]()
     var moodboardData = [TensorMoodboardData]()
+    var clipAudioId: Int64 = 0
     project.performChanges([
       TensorHistoryNode.self, ThumbnailHistoryNode.self, ThumbnailHistoryHalfNode.self,
-      TensorData.self, TensorMoodboardData.self,
+      TensorData.self, TensorMoodboardData.self, Clip.self,
     ]) { transactionContext in
       guard let deletionRequest = TensorHistoryNodeChangeRequest.deletionRequest(imageHistory)
       else { return }
@@ -1587,6 +1614,7 @@ public final class ImageHistoryManager {
       let thumbnailHistoryHalfNode = project.fetch(for: ThumbnailHistoryHalfNode.self).where(
         ThumbnailHistoryHalfNode.id == previewId, limit: .limit(1)
       ).first
+      let clipId = deletionRequest.clipId
       // Delete this one.
       transactionContext.try(submit: deletionRequest)
       let imageHistoriesChangeRequests = affectedImageHistories.compactMap {
@@ -1629,6 +1657,19 @@ public final class ImageHistoryManager {
           let deletionRequest = ThumbnailHistoryHalfNodeChangeRequest.deletionRequest(
             thumbnailHistoryHalfNode)
         {
+          transactionContext.try(submit: deletionRequest)
+        }
+      }
+      if clipId > 0,
+        project.fetch(for: TensorHistoryNode.self).where(
+          TensorHistoryNode.clipId == clipId, limit: .limit(1)
+        ).count == 0,
+        let clipData = project.fetch(for: Clip.self).where(Clip.clipId == clipId, limit: .limit(1))
+          .first
+      {
+        // Delete the clip too.
+        if let deletionRequest = ClipChangeRequest.deletionRequest(clipData) {
+          clipAudioId = clipData.audioId
           transactionContext.try(submit: deletionRequest)
         }
       }
@@ -1737,6 +1778,12 @@ public final class ImageHistoryManager {
               $0.remove("shuffle_\(shuffleId)")
             }
           }
+          if clipAudioId > 0
+            && project.fetch(for: Clip.self).where(Clip.audioId == clipAudioId, limit: .limit(1))
+              .count == 0
+          {
+            $0.remove("audio_\(clipAudioId)")
+          }
         }
       }
       DispatchQueue.main.async { [weak self] in
@@ -1786,7 +1833,7 @@ public final class ImageHistoryManager {
                   frames: frames.map {
                     return ClipData.FrameData(
                       logicalTime: $0.logicalTime, lineage: $0.lineage, previewId: $0.previewId)
-                  })
+                  }, audioId: clip.audioId > 0 ? clip.audioId : nil)
               } else {
                 clipData = nil
               }
@@ -1827,6 +1874,7 @@ public final class ImageHistoryManager {
     let imageHistories = project.fetch(for: TensorHistoryNode.self).all()
     let imageData = project.fetch(for: TensorData.self).all()
     let shuffleData = project.fetch(for: TensorMoodboardData.self).all()
+    let clipData = project.fetch(for: Clip.self).all()
     var keys = Set<String>()
     var previewIds = Set<Int64>()
     for item in imageData {
@@ -1850,6 +1898,11 @@ public final class ImageHistoryManager {
       }
       if item.customId > 0 {
         keys.insert("custom_\(item.customId)")
+      }
+    }
+    for clip in clipData {
+      if clip.audioId > 0 {
+        keys.insert("audio_\(clip.audioId)")
       }
     }
     for item in shuffleData {
