@@ -273,7 +273,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
       }
   case .ltx2:
     return conditions.enumerated().map {
-      guard ($0.0 - 3) % 26 >= 4, $0.0 - 3 < 48 * 26 else {
+      guard ($0.0 - 3) % 26 >= 4 || $0.0 - 3 >= 48 * 26 else {
         return $0.1
       }
       let shape = $0.1.shape
