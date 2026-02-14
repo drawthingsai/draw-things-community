@@ -608,6 +608,8 @@ extension FirstStage {
       causalAttentionMask = nil
     case .ltx2:
       let startDepth = shape[0]
+      var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
+      var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       if let audioZ = audioZ {
         let shape = audioZ.shape
         audioDecoder = [
@@ -632,6 +634,19 @@ extension FirstStage {
           $0.read("audio_decoder", model: audioDecoder[0], codec: [.jit, externalData])
           $0.read("vocoder", model: audioDecoder[1], codec: [.jit, externalData])
         }
+      }
+      let sizeLimit = deviceProperties.memoryCapacity == .high ? 16 : 10
+      if startWidth > sizeLimit || startHeight > sizeLimit {
+        // We turn on tiled decoding forcefully.
+        if !tiledDecoding {
+          decodingTileOverlap = 4
+        }
+        tiledDecoding = true
+        startWidth = min(startWidth, sizeLimit)
+        startHeight = min(startHeight, sizeLimit)
+        decodingTileSize.width = startWidth
+        decodingTileSize.height = startHeight
+        decodingTileSize.depth = startDepth
       }
       decoder =
         existingDecoder
