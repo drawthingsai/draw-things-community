@@ -660,6 +660,9 @@ public struct ImageGenerationResponse: @unchecked Sendable {
   /// Clears the value of `remoteDownload`. Subsequent reads from it will return its default value.
   public mutating func clearRemoteDownload() {self._remoteDownload = nil}
 
+  /// Generated audio data as bytes.
+  public var generatedAudio: [Data] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1867,6 +1870,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     7: .same(proto: "downloadSize"),
     8: .same(proto: "chunkState"),
     9: .same(proto: "remoteDownload"),
+    10: .same(proto: "generatedAudio"),
   ]
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -1884,6 +1888,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
       case 7: try { try decoder.decodeSingularInt64Field(value: &self._downloadSize) }()
       case 8: try { try decoder.decodeSingularEnumField(value: &self.chunkState) }()
       case 9: try { try decoder.decodeSingularMessageField(value: &self._remoteDownload) }()
+      case 10: try { try decoder.decodeRepeatedBytesField(value: &self.generatedAudio) }()
       default: break
       }
     }
@@ -1921,6 +1926,9 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     try { if let v = self._remoteDownload {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
     } }()
+    if !self.generatedAudio.isEmpty {
+      try visitor.visitRepeatedBytesField(value: self.generatedAudio, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1934,6 +1942,7 @@ extension ImageGenerationResponse: SwiftProtobuf.Message, SwiftProtobuf._Message
     if lhs._downloadSize != rhs._downloadSize {return false}
     if lhs.chunkState != rhs.chunkState {return false}
     if lhs._remoteDownload != rhs._remoteDownload {return false}
+    if lhs.generatedAudio != rhs.generatedAudio {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

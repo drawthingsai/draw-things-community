@@ -142,6 +142,7 @@ message ImageGenerationResponse {
   optional int64 downloadSize = 7; // The size of final image will be sent in the next payload.
   ChunkState chunkState = 8; // What's this chunk is, it helps to compose the chunks together.
   optional RemoteDownloadResponse remoteDownload = 9; // If the remote needs to download something, which are they.
+  repeated bytes generatedAudio = 10;      // Generated audio data as bytes.
 }
 
 message FileChunk {
