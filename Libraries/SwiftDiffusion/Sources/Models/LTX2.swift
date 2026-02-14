@@ -61,11 +61,11 @@ public func LTX2VideoAudioRotaryPositionEmbedding(
   }
   var rotAudioTensor = Tensor<Float>(.CPU, .HWC(1, audioLength, channels.1))
   let dim1 = channels.1 / 2
-  let thetas1: [Double] = (0..<dim1).map { pow(10_000, Double($0) / Double(dim0 - 1)) * .pi * 0.5 }
+  let thetas1: [Double] = (0..<dim1).map { pow(10_000, Double($0) / Double(dim1 - 1)) * .pi * 0.5 }
   rotAudioTensor.withUnsafeMutableBytes {
     guard let fp32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
     DispatchQueue.concurrentPerform(iterations: audioLength) { i in
-      let fractionPosition: Double = Double(max(i * 4 - 3, 0) + i * 4 + 1) / 200 / 10 - 1
+      let fractionPosition: Double = Double(max(i * 4 - 3, 0) + i * 4 + 1) / 2000 - 1
       let fp = fp32 + i * channels.1
       for j in 0..<dim1 {
         let theta = thetas1[j] * fractionPosition
