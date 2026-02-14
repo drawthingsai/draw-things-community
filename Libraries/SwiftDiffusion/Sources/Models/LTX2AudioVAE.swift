@@ -167,7 +167,7 @@ func LTX2AudioDecoderCausal2D(
     groups: 1, filters: 2, filterSize: [3, 3],
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 0], end: [0, 0])), name: "conv_out")
   out = convOut(out.padded(.zero, begin: [0, 0, 2, 1], end: [0, 0, 0, 1])).transposed(2, 3)
-    .reshaped([1, 128, 1, (startHeight - 1) * 4 - 1])
+    .reshaped([1, 128, 1, -1])
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     mapping["conv_in.conv.weight"] = [convIn.weight.name]

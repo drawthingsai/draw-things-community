@@ -657,7 +657,7 @@ func LTX2Fixed(
     channels: channels.0, name: "context")
   let txtOut = contextEmbedder(txt)
   let (aContextMlp0, aContextMlp2, aContextEmbedder) = GELUMLPEmbedder(
-    channels: 2048, name: "a_context")
+    channels: channels.1, name: "a_context")
   let aTxtOut = aContextEmbedder(aTxt)
   let t = Input()
   let (txMapper, txEmb, txEmbChunks) = LTX2AdaLNSingle(
