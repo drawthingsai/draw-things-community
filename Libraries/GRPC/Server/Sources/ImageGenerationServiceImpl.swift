@@ -474,9 +474,8 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
 
       let codec: DynamicGraph.Store.Codec = responseCompression ? [.zip, .fpzip] : []
       let imageDatas =
-        images?.compactMap { tensor in
-          return tensor.data(using: codec)
-        } ?? []
+        images?.compactMap { $0.data(using: codec) } ?? []
+      let audioData = audio?.compactMap { $0.data(using: codec) }
       logger.info("Image processed")
       let totalBytes = imageDatas.reduce(0) { partialResult, imageData in
         return partialResult + imageData.count
@@ -543,6 +542,44 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             let finalResponse = ImageGenerationResponse.with {
               $0.generatedImages = [imageData]
               $0.scaleFactor = Int32(scaleFactor)
+              $0.chunkState = .lastChunk
+            }
+            context.sendResponse(finalResponse, promise: nil)
+          }
+        }
+      }
+      if let audioData = audioData {
+        let chunked = chunked && totalBytes > 4 * 1024 * 1024  // If total bytes is less than 4MiB, send them in one batch. Otherwise, chunk them up.
+        logger.info("Audio processed successfully, should send in chunks? \(chunked)")
+        if chunked {
+          for audio in audioData {
+            let dataSize = audio.count
+            if dataSize <= 4 * 1024 * 1024 {
+              let finalResponse = ImageGenerationResponse.with {
+                $0.generatedAudio = [audio]
+                $0.chunkState = .lastChunk
+              }
+              context.sendResponse(finalResponse, promise: nil)
+            } else {
+              for j in stride(from: 0, to: dataSize, by: 4 * 1024 * 1024) {
+                let chunkSize = min(4 * 1024 * 1024, dataSize - j)
+                let subdata = audio[j..<(j + chunkSize)]
+                let finalResponse = ImageGenerationResponse.with {
+                  $0.generatedAudio = [subdata]
+                  if j + chunkSize == dataSize {
+                    $0.chunkState = .lastChunk
+                  } else {
+                    $0.chunkState = .moreChunks
+                  }
+                }
+                context.sendResponse(finalResponse, promise: nil)
+              }
+            }
+          }
+        } else {
+          for audio in audioData {
+            let finalResponse = ImageGenerationResponse.with {
+              $0.generatedAudio = [audio]
               $0.chunkState = .lastChunk
             }
             context.sendResponse(finalResponse, promise: nil)

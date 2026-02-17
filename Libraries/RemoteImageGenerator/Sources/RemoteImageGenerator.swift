@@ -216,6 +216,8 @@ public struct RemoteImageGenerator: ImageGenerator {
     let logger = logger
     var lastChunk = Data()
     var tensors = [Tensor<FloatType>]()
+    var lastAudioChunk = Data()
+    var audios = [Tensor<Float>]()
     var scaleFactor: Int = 1
     var call: ServerStreamingCall<ImageGenerationRequest, ImageGenerationResponse>? = nil
     var metadata = HPACKHeaders()
@@ -260,6 +262,36 @@ public struct RemoteImageGenerator: ImageGenerator {
         }
         logger.info("Received generated image data")
         tensors.append(contentsOf: imageTensors)
+      }
+      if !response.generatedAudio.isEmpty {
+        let audioTensors: [Tensor<Float>]
+        switch response.chunkState {
+        case .lastChunk:
+          audioTensors = response.generatedAudio.enumerated().compactMap { i, generatedAudioData in
+            let audioData: Data
+            if i == 0, !lastAudioChunk.isEmpty {
+              audioData = lastAudioChunk + generatedAudioData
+            } else {
+              audioData = generatedAudioData
+            }
+            if let audio = Tensor<Float>(data: audioData, using: [.zip, .fpzip]) {
+              return Tensor<Float>(from: audio)
+            } else {
+              return nil
+            }
+          }
+          lastChunk = Data()
+        case .moreChunks:
+          // There are more chunks to decode, in this case, we just simply append the chunk.
+          if let first = response.generatedAudio.first {
+            lastAudioChunk += first
+          }
+          audioTensors = []
+        case .UNRECOGNIZED(_):
+          audioTensors = []
+        }
+        logger.info("Received generated image data")
+        audios.append(contentsOf: audioTensors)
       }
       if response.hasDownloadSize && response.downloadSize > 0 {
         transferDataCallback?.beginDownload(Int(response.downloadSize))
@@ -323,6 +355,6 @@ public struct RemoteImageGenerator: ImageGenerator {
     if tensors.isEmpty, let unknownFailures {
       throw unknownFailures
     }
-    return (tensors, nil, scaleFactor)
+    return (tensors, audios.isEmpty ? nil : audios, scaleFactor)
   }
 }
