@@ -293,11 +293,11 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
       var modulation = graph.variable(.GPU(0), .HWC(batchSize, shape[1], shape[2]), of: Float.self)
       modulation[0..<1, 0..<shape[1], 0..<shape[2]] = DynamicGraph.Tensor<Float>($0.1)[
         (shape[0] - 1)..<shape[0], 0..<shape[1], 0..<shape[2]
-      ].copied()
+      ].contiguous()
       for i in 1..<batchSize {
         modulation[i..<(i + 1), 0..<shape[1], 0..<shape[2]] = DynamicGraph.Tensor<Float>($0.1)[
           index..<(index + 1), 0..<shape[1], 0..<shape[2]
-        ].copied()
+        ].contiguous()
       }
       return modulation
     }

@@ -3264,7 +3264,7 @@ extension LocalImageGenerator {
     }
   }
 
-  private func sampleImageCond(
+  private func applyImageCond(
     _ x: DynamicGraph.Tensor<FloatType>, modifier: SamplerModifier, version: ModelVersion,
     imageCond: (DynamicGraph.Tensor<FloatType>?, [DynamicGraph.Tensor<FloatType>])
   ) -> DynamicGraph.Tensor<FloatType> {
@@ -4189,7 +4189,7 @@ extension LocalImageGenerator {
       guard feedback(.sampling(sampling.steps), signposts, nil) else {
         return (nil, nil, 1)
       }
-      x = sampleImageCond(
+      x = applyImageCond(
         x, modifier: modifier, version: modelVersion, imageCond: firstPassImageCond)
 
       let isHighPrecisionVAEFallbackEnabled = DeviceCapability.isHighPrecisionVAEFallbackEnabled(
