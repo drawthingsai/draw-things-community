@@ -3264,6 +3264,31 @@ extension LocalImageGenerator {
     }
   }
 
+  private func sampleImageCond(
+    _ x: DynamicGraph.Tensor<FloatType>, modifier: SamplerModifier, version: ModelVersion,
+    imageCond: (DynamicGraph.Tensor<FloatType>?, [DynamicGraph.Tensor<FloatType>])
+  ) -> DynamicGraph.Tensor<FloatType> {
+    switch modifier {
+    case .depth, .canny, .qwenimageEditPlus, .qwenimageLayered, .qwenimageEdit2511, .double,
+      .editing, .inpainting, .none:
+      return x
+    case .kontext:
+      switch version {
+      case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
+        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
+        .hiDreamI1, .wan22_5b, .zImage, .flux1, .qwenImage, .flux2, .flux2_9b, .flux2_4b:
+        return x
+      case .ltx2:
+        guard let firstFrame = imageCond.1.first else { return x }
+        var x = x
+        let shape = x.shape
+        x[0..<min(shape[0], firstFrame.shape[0]), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+          firstFrame
+        return x
+      }
+    }
+  }
+
   private func isI2v(version: ModelVersion, modifier: SamplerModifier) -> Bool {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
@@ -4130,7 +4155,7 @@ extension LocalImageGenerator {
           injectedControls: injectedControls)
       }
       guard
-        let x =
+        var x =
           try? modelPreloader.consumeUNet(
             sampler.sample(
               x_T,
@@ -4164,6 +4189,9 @@ extension LocalImageGenerator {
       guard feedback(.sampling(sampling.steps), signposts, nil) else {
         return (nil, nil, 1)
       }
+      x = sampleImageCond(
+        x, modifier: modifier, version: modelVersion, imageCond: firstPassImageCond)
+
       let isHighPrecisionVAEFallbackEnabled = DeviceCapability.isHighPrecisionVAEFallbackEnabled(
         scale: imageScale)
 

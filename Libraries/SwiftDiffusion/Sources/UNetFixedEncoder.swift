@@ -2065,6 +2065,10 @@ extension UNetFixedEncoder {
         LTX2VideoAudioRotaryPositionEmbedding(
           time: batchSize, height: h, width: w, audioTime: (batchSize - 1) * 8 + 1,
           channels: (4096, 2048), numberOfHeads: 32)
+      var timesteps = timesteps
+      if !referenceImages.isEmpty {  // Need condition on 0 timestep.
+        timesteps.append(0)
+      }
       var timeEmbeds = graph.variable(.GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(

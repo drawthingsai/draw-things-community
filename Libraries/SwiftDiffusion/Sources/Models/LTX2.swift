@@ -330,7 +330,8 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -
 }
 
 private func LTX2TransformerBlock(
-  prefix: String, k: (Int, Int), h: Int, b: Int, t: Int, hw: Int, a: Int
+  prefix: String, k: (Int, Int), h: Int, b: Int, t: Int, time: Int, hw: Int, a: Int,
+  tokenModulation: Bool
 ) -> (ModelWeightMapper, Model) {
   let vx = Input()
   let ax = Input()
@@ -343,13 +344,27 @@ private func LTX2TransformerBlock(
   let rotCX = Input()
   let modulations = (0..<22).map { _ in Input() }
   let norm = RMSNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  var out =
-    norm(vx) .* modulations[0] + modulations[1]
+  var out: Model.IO
+  if tokenModulation {
+    out = (norm(vx).reshaped([time, hw, k.0 * h]) .* modulations[0] + modulations[1]).reshaped([
+      1, time * hw, k.0 * h,
+    ])
+  } else {
+    out = norm(vx) .* modulations[0] + modulations[1]
+  }
   let (attn1Mapper, attn1) = LTX2SelfAttention(
-    prefix: "\(prefix).attn1", k: k.0, h: h, b: b, t: hw, name: "x")
-  out = vx + attn1(out.to(.Float16), rot).to(of: vx) .* modulations[2]
+    prefix: "\(prefix).attn1", k: k.0, h: h, b: b, t: time * hw, name: "x")
+  if tokenModulation {
+    out =
+      vx
+      + (attn1(out.to(.Float16), rot).to(of: vx).reshaped([time, hw, k.0 * h]) .* modulations[2])
+      .reshaped([1, time * hw, k.0 * h])
+  } else {
+    out = vx + attn1(out.to(.Float16), rot).to(of: vx) .* modulations[2]
+  }
   let (attn2Mapper, attn2) = LTX2CrossAttention(
-    prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, b: b, t: (hw, t), positionEmbedding: false,
+    prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, b: b, t: (time * hw, t),
+    positionEmbedding: false,
     KV: true, name: "cv")
   let normOut = norm(out).to(.Float16)
   out = out + attn2(normOut, cvK, cvV).to(of: out)
@@ -367,20 +382,38 @@ private func LTX2TransformerBlock(
   let vxNorm3 = norm(out)
   let axNorm3 = norm(aOut)
   let (audioToVideoAttnMapper, audioToVideoAttn) = LTX2CrossAttention(
-    prefix: "\(prefix).audio_to_video_attn", k: (k.0, k.1, k.1), h: h, b: b, t: (hw, a),
+    prefix: "\(prefix).audio_to_video_attn", k: (k.0, k.1, k.1), h: h, b: b, t: (time * hw, a),
     positionEmbedding: true, KV: false, name: "ax")
-  let vxScaled =
-    vxNorm3 .* modulations[6] + modulations[7]
+  let vxScaled: Model.IO
+  if tokenModulation {
+    vxScaled = (vxNorm3.reshaped([time, hw, k.0 * h]) .* modulations[6] + modulations[7]).reshaped([
+      1, time * hw, k.0 * h,
+    ])
+  } else {
+    vxScaled = vxNorm3 .* modulations[6] + modulations[7]
+  }
   let axScaled =
     axNorm3 .* modulations[8] + modulations[9]
-  out =
-    out + audioToVideoAttn(vxScaled.to(.Float16), rotCX, axScaled.to(.Float16), rotA).to(of: out)
-    .* modulations[10]
+  if tokenModulation {
+    out =
+      out
+      + (audioToVideoAttn(vxScaled.to(.Float16), rotCX, axScaled.to(.Float16), rotA).to(of: out)
+      .reshaped([time, hw, k.0 * h]) .* modulations[10]).reshaped([1, time * hw, k.0 * h])
+  } else {
+    out =
+      out + audioToVideoAttn(vxScaled.to(.Float16), rotCX, axScaled.to(.Float16), rotA).to(of: out)
+      .* modulations[10]
+  }
   let (videoToAudioAttnMapper, videoToAudioAttn) = LTX2CrossAttention(
-    prefix: "\(prefix).video_to_audio_attn", k: (k.1, k.1, k.0), h: h, b: b, t: (a, hw),
+    prefix: "\(prefix).video_to_audio_attn", k: (k.1, k.1, k.0), h: h, b: b, t: (a, time * hw),
     positionEmbedding: true, KV: false, name: "xa")
-  let audioVxScaled =
-    vxNorm3 .* modulations[11] + modulations[12]
+  let audioVxScaled: Model.IO
+  if tokenModulation {
+    audioVxScaled = (vxNorm3.reshaped([time, hw, k.0 * h]) .* modulations[11] + modulations[12])
+      .reshaped([1, time * hw, k.0 * h])
+  } else {
+    audioVxScaled = vxNorm3 .* modulations[11] + modulations[12]
+  }
   let audioAxScaled =
     axNorm3 .* modulations[13] + modulations[14]
   aOut =
@@ -391,9 +424,19 @@ private func LTX2TransformerBlock(
   // Now attention done, do MLP.
   let (xLinear1, xOutProjection, xFF) = FeedForward(
     hiddenSize: 4096, intermediateSize: 4096 * 4, name: "x")
-  let lastVxScaled =
-    norm(out) .* modulations[16] + modulations[17]
-  out = out + xFF(lastVxScaled.to(.Float16)).to(of: out) .* modulations[18]
+  let lastVxScaled: Model.IO
+  if tokenModulation {
+    lastVxScaled = (norm(out).reshaped([time, hw, k.0 * h]) .* modulations[16] + modulations[17])
+      .reshaped([1, time * hw, k.0 * h])
+    out =
+      out
+      + (xFF(lastVxScaled.to(.Float16)).to(of: out).reshaped([time, hw, k.0 * h]) .* modulations[18])
+      .reshaped([1, time * hw, k.0 * h])
+  } else {
+    lastVxScaled =
+      norm(out) .* modulations[16] + modulations[17]
+    out = out + xFF(lastVxScaled.to(.Float16)).to(of: out) .* modulations[18]
+  }
   let lastAxScaled =
     norm(aOut) .* modulations[19] + modulations[20]
   let (audioLinear1, audioOutProjection, audioFF) = FeedForward(
@@ -466,7 +509,8 @@ private func LTX2AdaLNSingle(
 }
 
 func LTX2(
-  time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int, channels: (Int, Int), layers: Int
+  time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int, channels: (Int, Int), layers: Int,
+  tokenModulation: Bool
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -482,12 +526,12 @@ func LTX2(
   let aEmbedder = Dense(count: channels.1, name: "a_embedder")
   var aOut = aEmbedder(a).to(.Float32)
   var mappers = [ModelWeightMapper]()
-  let hw = h * w * time
+  let hw = h * w
   var modulationsAndKVs = [Input]()
   for i in 0..<layers {
     let (mapper, block) = LTX2TransformerBlock(
       prefix: "transformer_blocks.\(i)", k: (channels.0 / 32, channels.1 / 32), h: 32, b: 1,
-      t: textLength, hw: hw, a: audioFrames)
+      t: textLength, time: time, hw: hw, a: audioFrames, tokenModulation: tokenModulation)
     let cvK = Input()
     let cvV = Input()
     let caK = Input()
@@ -502,7 +546,12 @@ func LTX2(
   }
   let scaleShiftModulations = [Input(), Input()]
   let normOut = RMSNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
-  out = normOut(out) .* scaleShiftModulations[0] + scaleShiftModulations[1]
+  if tokenModulation {
+    out = normOut(out).reshaped([time, hw, channels.0]) .* scaleShiftModulations[0]
+      + scaleShiftModulations[1]
+  } else {
+    out = normOut(out) .* scaleShiftModulations[0] + scaleShiftModulations[1]
+  }
   modulationsAndKVs.append(contentsOf: scaleShiftModulations)
   let projOut = Dense(count: 128, name: "proj_out")
   out = projOut(out.to(.Float16))

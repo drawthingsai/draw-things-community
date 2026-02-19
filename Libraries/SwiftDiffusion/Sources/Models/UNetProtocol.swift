@@ -273,13 +273,33 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
       }
   case .ltx2:
     let offset = conditions.count - 1255
+    let tokenModulation = referenceImageCount > 0
+    let batchSize = isCfgEnabled ? batchSize / 2 : batchSize
     return conditions.enumerated().map {
       guard ($0.0 - 3 - offset) % 26 >= 4 || $0.0 - 3 - offset >= 48 * 26 else {
         return $0.1
       }
       let shape = $0.1.shape
-      return DynamicGraph.Tensor<Float>($0.1)[index..<(index + 1), 0..<shape[1], 0..<shape[2]]
-        .copied()
+      let modulationIndex =
+        $0.0 - 3 - offset >= 48 * 26
+        ? $0.0 - 3 - offset - 48 * 26 + 22 : (($0.0 - 3 - offset) % 26) - 4
+      // Only do this for video modulation.
+      guard tokenModulation,
+        [0, 1, 2, 6, 7, 10, 11, 12, 16, 17, 18, 22, 23].contains(modulationIndex)
+      else {
+        return DynamicGraph.Tensor<Float>($0.1)[index..<(index + 1), 0..<shape[1], 0..<shape[2]]
+          .copied()
+      }
+      var modulation = graph.variable(.GPU(0), .HWC(batchSize, shape[1], shape[2]), of: Float.self)
+      modulation[0..<1, 0..<shape[1], 0..<shape[2]] = DynamicGraph.Tensor<Float>($0.1)[
+        (shape[0] - 1)..<shape[0], 0..<shape[1], 0..<shape[2]
+      ].copied()
+      for i in 1..<batchSize {
+        modulation[i..<(i + 1), 0..<shape[1], 0..<shape[2]] = DynamicGraph.Tensor<Float>($0.1)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      }
+      return modulation
     }
   case .pixart:
     var extractedConditions = [conditions[0]]
@@ -1403,6 +1423,7 @@ extension UNetFromNNC {
         : startHeight - audioHeight
       tiledHeight = rawTiledHeight + LTX2ExtractAudioFramesAndHeight([batchSize, 1, tiledWidth]).1  // Adding back the audio height.
       tileScaleFactor = 32
+      let tokenModulation = referenceImageCount > 0
       unet = ModelBuilderOrModel.modelBuilder(
         ModelBuilder {
           let shape = $0[0].shape
@@ -1410,7 +1431,8 @@ extension UNetFromNNC {
           let textLength = $0[5].shape[1]
           return LTX2(
             time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
-            audioFrames: audioFrames, channels: (4096, 2048), layers: 48
+            audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
+            tokenModulation: tokenModulation
           ).1
         })
     }
