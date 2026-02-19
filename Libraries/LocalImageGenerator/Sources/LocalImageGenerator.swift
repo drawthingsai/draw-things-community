@@ -3206,8 +3206,19 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .wan22_5b, .zImage, .ltx2:
+        .hiDreamI1, .wan22_5b, .zImage:
         return (nil, [])
+      case .ltx2:
+        guard let image = image else { return (nil, []) }
+        let encoded = firstStage.encode(image, encoder: nil, cancellation: { _ in }).0
+        let shape = encoded.shape
+        return (
+          nil,
+          [
+            firstStage.scale(
+              encoded[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<128].contiguous())
+          ]
+        )
       case .flux1, .qwenImage, .flux2, .flux2_9b, .flux2_4b:
         let inputChannels =
           (version == .flux2 || version == .flux2_9b || version == .flux2_4b) ? 32 : 16
@@ -3273,10 +3284,8 @@ extension LocalImageGenerator {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
+      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
       return (1, image, nil)
-    case .ltx2:
-      return (1, image, nil)  // TODO:
     case .wan21_14b, .wan21_1_3b:
       let shape = image.shape
       let batchSize = batchSize.0 - batchSize.1

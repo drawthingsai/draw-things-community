@@ -731,7 +731,7 @@ public struct ModelZoo: DownloadZoo {
     Specification(
       name: "LTX-2 19B [distilled]", file: "ltx_2_19b_distilled_q8p.ckpt", prefix: "",
       version: .ltx2, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
-      autoencoder: "ltx_2_audio_video_vae_f16.ckpt",
+      autoencoder: "ltx_2_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2_19b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       note: "",
@@ -740,7 +740,7 @@ public struct ModelZoo: DownloadZoo {
     Specification(
       name: "LTX-2 19B [distilled] (6-bit)", file: "ltx_2_19b_distilled_q6p.ckpt", prefix: "",
       version: .ltx2, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
-      autoencoder: "ltx_2_audio_video_vae_f16.ckpt",
+      autoencoder: "ltx_2_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2_19b_distilled_q6p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       note: "",
@@ -749,7 +749,7 @@ public struct ModelZoo: DownloadZoo {
     Specification(
       name: "LTX-2 19B [dev]", file: "ltx_2_19b_dev_q8p.ckpt", prefix: "",
       version: .ltx2, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
-      autoencoder: "ltx_2_audio_video_vae_f16.ckpt",
+      autoencoder: "ltx_2_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2_19b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       note: "",
@@ -758,7 +758,7 @@ public struct ModelZoo: DownloadZoo {
     Specification(
       name: "LTX-2 19B [dev] (6-bit)", file: "ltx_2_19b_dev_q6p.ckpt", prefix: "",
       version: .ltx2, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
-      autoencoder: "ltx_2_audio_video_vae_f16.ckpt",
+      autoencoder: "ltx_2_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2_19b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       note: "",

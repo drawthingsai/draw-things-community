@@ -1462,7 +1462,54 @@ extension FirstStage {
       outputChannels = 96
       causalAttentionMask = nil
     case .ltx2:
-      fatalError()
+      let startDepth = (shape[0] - 1) / 8 + 1
+      var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
+      var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
+      let sizeLimit = deviceProperties.memoryCapacity == .high ? 32 : 20
+      if startWidth > sizeLimit || startHeight > sizeLimit {
+        // We turn on tiled decoding forcefully.
+        if !tiledEncoding {
+          encodingTileOverlap = 4
+        }
+        tiledEncoding = true
+        startWidth = min(startWidth, sizeLimit)
+        startHeight = min(startHeight, sizeLimit)
+        encodingTileSize.width = startWidth
+        encodingTileSize.height = startHeight
+      }
+      encoder =
+        existingEncoder
+        ?? LTX2VideoEncoderCausal3D(
+          layers: [
+            (channels: 128, numRepeat: 4, stride: (1, 1, 1)),
+            (channels: 256, numRepeat: 6, stride: (1, 2, 2)),
+            (channels: 512, numRepeat: 6, stride: (2, 1, 1)),
+            (channels: 1024, numRepeat: 2, stride: (2, 2, 2)),
+            (channels: 2048, numRepeat: 2, stride: (2, 2, 2)),
+          ], startWidth: startWidth, startHeight: startHeight, startDepth: startDepth,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+        ).1
+      let batchSize = (startDepth - 1) * 8 + 1
+      if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          encoder.compile(
+            inputs:
+              DynamicGraph.Tensor<Float>(
+                from: x[0..<batchSize, 0..<(startHeight * 32), 0..<(startWidth * 32), 0..<shape[3]])
+          )
+        } else {
+          encoder.compile(
+            inputs: x[0..<batchSize, 0..<(startHeight * 32), 0..<(startWidth * 32), 0..<shape[3]])
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("encoder", model: encoder, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 128
+      causalAttentionMask = nil
     case .kandinsky21:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight

@@ -1967,7 +1967,7 @@ extension UNetFixedEncoder {
       let c0 = textEncoding[0]
       let cBatchSize = isCfgEnabled ? 2 : 1
       let textLength = c0.shape[1]
-      let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight([
+      let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight([
         batchSize, startHeight, startWidth,
       ])
       let h = startHeight - audioHeight
@@ -2095,7 +2095,7 @@ extension UNetFixedEncoder {
       let contexts = unetFixed(inputs: videoContext, audioContext, timeEmbeds)
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       return (
-        [
+        referenceImages + [
           graph.variable(Tensor<FloatType>(from: rotaryEmbedding).toGPU(0)),
           graph.variable(Tensor<FloatType>(from: rotaryEmbeddingAudio).toGPU(0)),
           graph.variable(Tensor<FloatType>(from: rotaryEmbeddingVideoToAudio).toGPU(0)),

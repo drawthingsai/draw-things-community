@@ -272,8 +272,9 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         }
       }
   case .ltx2:
+    let offset = conditions.count - 1255
     return conditions.enumerated().map {
-      guard ($0.0 - 3) % 26 >= 4 || $0.0 - 3 >= 48 * 26 else {
+      guard ($0.0 - 3 - offset) % 26 >= 4 || $0.0 - 3 - offset >= 48 * 26 else {
         return $0.1
       }
       let shape = $0.1.shape
@@ -2336,7 +2337,7 @@ extension UNetFromNNC {
       let audioInput = firstInput[
         0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
       ].contiguous().reshaped(.HWC(1, audioFrames, shape[3]))
-      let restInputs = inputs[1...]
+      let restInputs = inputs[(inputs.count - 1255)...]
       unet.compile(inputs: [videoInput, audioInput] + restInputs)
       return
     }
@@ -3098,14 +3099,25 @@ extension UNetFromNNC {
       let startWidth = shape[2]
       let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight(shape)
       let startHeight = shape[1] - audioHeight
-      let videoInput = firstInput[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]]
+      var videoInput = firstInput[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]]
         .copied()
       let audioInput = firstInput[
         0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
       ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
-      let output = unet(inputs: videoInput, [audioInput] + restInputs).map {
-        $0.as(of: FloatType.self)
+      if restInputs.count > 1255 {
+        let firstFrame = DynamicGraph.Tensor<FloatType>(restInputs[0])
+        let firstFrameShape = firstFrame.shape
+        videoInput[
+          0..<min(batchSize, firstFrameShape[0]), 0..<min(startHeight, firstFrameShape[1]),
+          0..<min(startWidth, firstFrameShape[2]), 0..<shape[3]] =
+          firstFrame[
+            0..<min(batchSize, firstFrameShape[0]), 0..<min(startHeight, firstFrameShape[1]),
+            0..<min(startWidth, firstFrameShape[2]), 0..<shape[3]]
       }
+      let output = unet(inputs: videoInput, [audioInput] + restInputs[(restInputs.count - 1255)...])
+        .map {
+          $0.as(of: FloatType.self)
+        }
       let videoOutput = output[0].reshaped(.NHWC(batchSize, startHeight, startWidth, shape[3]))
       var audioOutput = graph.variable(
         .GPU(0), .HWC(1, batchSize * startWidth * audioHeight, shape[3]), of: FloatType.self)

@@ -47,12 +47,12 @@ public enum AlternativeDecoderVersion: String, Codable {
 
 public enum SamplerModifier: String, Codable {
   case none = "none"
-  case inpainting = "inpainting"
+  case inpainting = "inpainting"  // More technically, this means the reference image is concatenated by the channel.
   case depth = "depth"
   case editing = "editing"
   case double = "double"
   case canny = "canny"
-  case kontext = "kontext"
+  case kontext = "kontext"  // More technically, this means we concatenate tokens.
   case qwenimageEditPlus = "qwenimage_edit_plus"
   case qwenimageLayered = "qwenimage_layered"
   case qwenimageEdit2511 = "qwenimage_edit_2511"
