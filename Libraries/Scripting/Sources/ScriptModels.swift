@@ -178,6 +178,8 @@ public final class JSGenerationConfiguration: Codable {
   public var causalInferencePad: Int32
   public var cfgZeroStar: Bool
   public var cfgZeroInitSteps: Int32
+  public var compressionArtifacts: String?
+  public var compressionArtifactsQuality: Double?
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -260,6 +262,17 @@ public final class JSGenerationConfiguration: Codable {
     causalInferencePad = configuration.causalInferenceEnabled ? configuration.causalInferencePad : 0
     cfgZeroStar = configuration.cfgZeroStar
     cfgZeroInitSteps = configuration.cfgZeroInitSteps
+    switch configuration.compressionArtifacts {
+    case .disabled:
+      compressionArtifacts = "disabled"
+    case .H264:
+      compressionArtifacts = "h264"
+    case .H265:
+      compressionArtifacts = "h265"
+    case .jpeg:
+      compressionArtifacts = "jpeg"
+    }
+    compressionArtifactsQuality = min(max(configuration.compressionArtifactsQuality, 0), 100)
   }
 
   public func createGenerationConfiguration() -> GenerationConfiguration {
@@ -272,6 +285,19 @@ public final class JSGenerationConfiguration: Codable {
     let clipLText = clipLText?.isEmpty == true ? nil : clipLText
     let openClipGText = openClipGText?.isEmpty == true ? nil : openClipGText
     let t5Text = t5Text?.isEmpty == true ? nil : t5Text
+    let compressionArtifactsSetting: DataModels.CompressionMethod = {
+      switch compressionArtifacts?.lowercased() {
+      case "h264":
+        return .H264
+      case "h265":
+        return .H265
+      case "jpeg":
+        return .jpeg
+      default:
+        return .disabled
+      }
+    }()
+    let compressionArtifactsQuality = min(max(compressionArtifactsQuality ?? 43.1, 0), 100)
     return GenerationConfiguration(
       id: id, startWidth: UInt16(width / 64), startHeight: UInt16(height / 64),
       seed: seed >= 0 ? UInt32(seed) : UInt32.random(in: UInt32.min...UInt32.max), steps: steps,
@@ -324,7 +350,9 @@ public final class JSGenerationConfiguration: Codable {
       causalInference: causalInference,
       causalInferencePad: causalInferencePad,
       cfgZeroStar: cfgZeroStar,
-      cfgZeroInitSteps: cfgZeroInitSteps
+      cfgZeroInitSteps: cfgZeroInitSteps,
+      compressionArtifacts: compressionArtifactsSetting,
+      compressionArtifactsQuality: compressionArtifactsQuality
     )
   }
 }

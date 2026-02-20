@@ -124,6 +124,36 @@ extension DataModels.SeedMode {
   }
 }
 
+extension CompressionMethod {
+  public init(from method: DataModels.CompressionMethod) {
+    switch method {
+    case .disabled:
+      self = .disabled
+    case .H264:
+      self = .H264
+    case .H265:
+      self = .H265
+    case .jpeg:
+      self = .jpeg
+    }
+  }
+}
+
+extension DataModels.CompressionMethod {
+  public init(from method: CompressionMethod) {
+    switch method {
+    case .disabled:
+      self = .disabled
+    case .H264:
+      self = .H264
+    case .H265:
+      self = .H265
+    case .jpeg:
+      self = .jpeg
+    }
+  }
+}
+
 extension ControlMode {
   public init(from controlMode: DataModels.ControlMode) {
     switch controlMode {
@@ -632,7 +662,10 @@ public final class ImageHistoryManager {
       causalInference: imageHistory.causalInference,
       causalInferencePad: imageHistory.causalInferencePad,
       cfgZeroStar: imageHistory.cfgZeroStar,
-      cfgZeroInitSteps: imageHistory.cfgZeroInitSteps
+      cfgZeroInitSteps: imageHistory.cfgZeroInitSteps,
+      compressionArtifacts: DataModels.CompressionMethod(
+        from: imageHistory.compressionArtifacts),
+      compressionArtifactsQuality: imageHistory.compressionArtifactsQuality
     )
     isVideo = imageHistory.clipId >= 0
     _profileData = imageHistory.profileData
@@ -992,7 +1025,9 @@ public final class ImageHistoryManager {
         cfgZeroStar: configuration.cfgZeroStar,
         cfgZeroInitSteps: configuration.cfgZeroInitSteps,
         generationTime: history.profile?.duration,
-        reason: history.reason
+        reason: history.reason,
+        compressionArtifacts: CompressionMethod(from: configuration.compressionArtifacts),
+        compressionArtifactsQuality: configuration.compressionArtifactsQuality
       )
       // Only needs to append
       clipData?.frames.append(

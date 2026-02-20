@@ -92,6 +92,13 @@ enum Reason: int {
   Clear,
 }
 
+enum CompressionMethod: byte {
+  Disabled,
+  H264,
+  H265,
+  Jpeg,
+}
+
 table TensorHistoryNode {
   lineage: long (primary);
   logical_time: long (primary);
@@ -202,6 +209,8 @@ table TensorHistoryNode {
   cfg_zero_init_steps: int = 0;
   generation_time: double = 0;
   reason: Reason = Other;
+  compression_artifacts: CompressionMethod = Disabled;
+  compression_artifacts_quality: double = 43.1;
 }
 
 root_type TensorHistoryNode;

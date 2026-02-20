@@ -74,6 +74,13 @@ enum LoRAMode: byte {
   Refiner,
 }
 
+enum CompressionMethod: byte {
+  Disabled,
+  H264,
+  H265,
+  Jpeg,
+}
+
 table LoRA {
   file: string;
   weight: float = 0.6;
@@ -165,6 +172,8 @@ table GenerationConfiguration {
   causal_inference_pad: int = 0;
   cfg_zero_star: bool = false;
   cfg_zero_init_steps: int = 0;
+  compression_artifacts: CompressionMethod = Disabled;
+  compression_artifacts_quality: double = 43.1;
 }
 
 root_type GenerationConfiguration;
