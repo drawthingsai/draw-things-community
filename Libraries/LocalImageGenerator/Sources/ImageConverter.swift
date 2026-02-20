@@ -196,22 +196,32 @@ public enum ImageConverter {
     let bytesPerRow = bitmapContext.bytesPerRow
     let imageHeight = bitmapContext.height
     let imageWidth = bitmapContext.width
-    var tensor = Tensor<UInt8>(.CPU, .NC(bitmapContext.height, bitmapContext.width))
-    tensor.withUnsafeMutableBytes {
-      guard let u8 = $0.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+    func fillGrayscaleTensor(destination u8: UnsafeMutablePointer<UInt8>) {
       for y in 0..<imageHeight {
+        let srcRow = y * bytesPerRow
+        let dstRow = y * imageWidth
         for x in 0..<imageWidth {
-          let alpha = bytes[y * bytesPerRow + x * 4 + 3]
-          let r = Int32(bytes[y * bytesPerRow + x * 4])
-          let g = Int32(bytes[y * bytesPerRow + x * 4 + 1])
-          let b = Int32(bytes[y * bytesPerRow + x * 4 + 2])
+          let srcOffset = srcRow + x * 4
+          let alpha = bytes[srcOffset + 3]
           if alpha < 128 {
-            u8[y * imageWidth + x] = 255  // We treat transparent as white.
+            u8[dstRow + x] = 255  // We treat transparent as white.
           } else {
-            u8[y * imageWidth + x] = UInt8((r * 6969 + g * 23434 + b * 2365) >> 15)
+            let r = Int32(bytes[srcOffset])
+            let g = Int32(bytes[srcOffset + 1])
+            let b = Int32(bytes[srcOffset + 2])
+            u8[dstRow + x] = UInt8((r * 6969 + g * 23434 + b * 2365) >> 15)
           }
         }
       }
+    }
+    var tensor = Tensor<UInt8>(.CPU, .NC(bitmapContext.height, bitmapContext.width))
+    tensor.withUnsafeMutableBytes {
+      (unsafeMutableRawBufferPointer: UnsafeMutableRawBufferPointer) in
+      guard
+        let u8: UnsafeMutablePointer<UInt8> = unsafeMutableRawBufferPointer.baseAddress?
+          .assumingMemoryBound(to: UInt8.self)
+      else { return }
+      fillGrayscaleTensor(destination: u8)
     }
     return tensor
   }
