@@ -1974,10 +1974,12 @@ extension UNetFixedEncoder {
       let w = startWidth
       let paddedTextLength = max(textLength, 1024)
       let videoConnector = Embedding1DConnector(
-        prefix: "embeddings_connector", layers: 2, tokenLength: paddedTextLength
+        prefix: "embeddings_connector", layers: 2, batchSize: cBatchSize,
+        tokenLength: paddedTextLength
       ).0
       let audioConnector = Embedding1DConnector(
-        prefix: "audio_embeddings_connector", layers: 2, tokenLength: paddedTextLength
+        prefix: "audio_embeddings_connector", layers: 2, batchSize: cBatchSize,
+        tokenLength: paddedTextLength
       ).0
       var videoHiddenStates = graph.variable(
         .GPU(0), .HWC(cBatchSize, paddedTextLength, 3840), of: FloatType.self)

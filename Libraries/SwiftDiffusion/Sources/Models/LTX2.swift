@@ -155,7 +155,7 @@ private func BasicTransformerBlock1D(prefix: String, k: Int, h: Int, b: Int, t: 
   return (mapper, Model([x, rot], [out]))
 }
 
-func Embedding1DConnector(prefix: String, layers: Int, tokenLength: Int) -> (
+func Embedding1DConnector(prefix: String, layers: Int, batchSize: Int, tokenLength: Int) -> (
   Model, ModelWeightMapper
 ) {
   let x = Input()
@@ -164,7 +164,7 @@ func Embedding1DConnector(prefix: String, layers: Int, tokenLength: Int) -> (
   var out: Model.IO = x.to(.Float32)
   for i in 0..<layers {
     let (mapper, block) = BasicTransformerBlock1D(
-      prefix: "\(prefix).transformer_1d_blocks.\(i)", k: 128, h: 30, b: 1, t: tokenLength)
+      prefix: "\(prefix).transformer_1d_blocks.\(i)", k: 128, h: 30, b: batchSize, t: tokenLength)
     out = block(out, rot)
     mappers.append(mapper)
   }
@@ -576,7 +576,7 @@ func LTX2(
 }
 
 private func LTX2CrossAttentionFixed(
-  prefix: String, k: (Int, Int, Int), h: Int, b: Int, t: Int, positionEmbedding: Bool,
+  prefix: String, k: (Int, Int, Int), h: Int, t: Int, positionEmbedding: Bool,
   name: String
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
@@ -584,8 +584,8 @@ private func LTX2CrossAttentionFixed(
   let toValues = Dense(count: k.1 * h, name: "\(name)_v")
   var keys = toKeys(context)
   let normK = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(name)_norm_k")
-  keys = normK(keys).reshaped([b, t, h, k.1])
-  let values = toValues(context).reshaped([b, t, h, k.1])
+  keys = normK(keys).reshaped([-1, t, h, k.1])
+  let values = toValues(context).reshaped([-1, t, h, k.1])
   keys = (1 / Float(k.1).squareRoot().squareRoot()) * keys
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -605,12 +605,12 @@ private func LTX2TransformerBlockFixed(
   let cv = Input()
   let ca = Input()
   let (attn2Mapper, attn2) = LTX2CrossAttentionFixed(
-    prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, b: b, t: t, positionEmbedding: false,
+    prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, t: t, positionEmbedding: false,
     name: "cv")
   var outs = [Model.IO]()
   outs.append(attn2(cv))
   let (audioAttn2Mapper, audioAttn2) = LTX2CrossAttentionFixed(
-    prefix: "\(prefix).audio_attn2", k: (k.1, k.1, k.1), h: h, b: b, t: t,
+    prefix: "\(prefix).audio_attn2", k: (k.1, k.1, k.1), h: h, t: t,
     positionEmbedding: false, name: "ca")
   outs.append(audioAttn2(ca))
   let timesteps = (0..<6).map { _ in Input() }
