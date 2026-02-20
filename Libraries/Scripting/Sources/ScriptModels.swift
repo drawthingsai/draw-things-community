@@ -179,7 +179,7 @@ public final class JSGenerationConfiguration: Codable {
   public var cfgZeroStar: Bool
   public var cfgZeroInitSteps: Int32
   public var compressionArtifacts: String?
-  public var compressionArtifactsQuality: Double?
+  public var compressionArtifactsQuality: Float32?
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id

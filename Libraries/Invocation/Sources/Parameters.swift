@@ -69,6 +69,21 @@ extension SamplerType: CommandLineAbbreviatable {
   }
 }
 
+extension CompressionMethod: CommandLineAbbreviatable {
+  public var commandLineAbbreviation: String {
+    switch self {
+    case .disabled:
+      return "disabled"
+    case .H264:
+      return "h264"
+    case .H265:
+      return "h265"
+    case .jpeg:
+      return "jpeg"
+    }
+  }
+}
+
 func fileList(model: ModelZoo.Specification) -> String {
   let lines: [String?] = [
     "model: \(model.file)",
@@ -109,9 +124,10 @@ public final class Parameters {
     negativeAestheticScoreParameter, guidingFrameNoiseParameter,
     startFrameGuidanceParameter, sharpnessParameter, shiftParameter, stage2CfgParameter,
     stage2ShiftParameter, stochasticSamplingGammaParameter, guidanceEmbedParameter,
-    teaCacheThresholdParameter: DoubleParameter
+    teaCacheThresholdParameter, compressionArtifactsQualityParameter: DoubleParameter
   let seedModeParameter: EnumParameter<SeedMode>
   let samplerParameter: EnumParameter<SamplerType>
+  let compressionArtifactsParameter: EnumParameter<CompressionMethod>
   let negativePromptForImagePriorParameter, hiresFixParameter,
     zeroNegativePromptParameter, tiledDecodingParameter,
     preserveOriginalAfterInpaintParameter, tiledDiffusionParameter,
@@ -446,6 +462,15 @@ public final class Parameters {
       titleKey: "cfg_zero_init_steps", explanationKey: nil,
       defaultValue: Int(defaultConfiguration.cfgZeroInitSteps),
       range: 0...1000, commandLineFlag: "cfg-zero-init-steps")
+    compressionArtifactsParameter = EnumParameter<CompressionMethod>(
+      titleKey: "compression_artifacts", explanationKey: nil,
+      defaultValue: defaultConfiguration.compressionArtifacts,
+      commandLineFlag: "compression-artifacts", additionalJsonKeys: ["compression_artifacts"])
+    compressionArtifactsQualityParameter = DoubleParameter(
+      titleKey: "compression_artifacts_quality", explanationKey: nil,
+      defaultValue: Double(defaultConfiguration.compressionArtifactsQuality), range: 0...100,
+      commandLineFlag: "compression-artifacts-quality",
+      additionalJsonKeys: ["compression_artifacts_quality"])
   }
 
   public func allParameters() -> [Parameter] {
@@ -529,6 +554,8 @@ public final class Parameters {
       causalInferencePadParameter,
       cfgZeroStarParameter,
       cfgZeroInitStepsParameter,
+      compressionArtifactsParameter,
+      compressionArtifactsQualityParameter,
     ]
   }
 }

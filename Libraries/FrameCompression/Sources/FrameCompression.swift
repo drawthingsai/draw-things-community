@@ -25,7 +25,7 @@ public enum CompressionCodec: String, CaseIterable {
 public enum FrameCompression {
   public enum Error: Swift.Error, CustomStringConvertible {
     case unsupportedPlatform
-    case invalidQuality(Double)
+    case invalidQuality(Float)
     case tensorMustBeCPU
     case tensorMustBeNHWC
     case invalidTensorShape(String)
@@ -92,7 +92,7 @@ public enum FrameCompression {
   ///   - quality: 0...100 where lower quality introduces stronger artifacts.
   /// - Returns: Tensor with compression artifacts introduced by encode/decode round-trip.
   public static func applyCompressionArtifacts(
-    to tensor: Tensor<FloatType>, codec: CompressionCodec, quality: Double
+    to tensor: Tensor<FloatType>, codec: CompressionCodec, quality: Float
   ) throws -> Tensor<FloatType> {
     let (width, height) = try validateInput(tensor, codec: codec, quality: quality)
     let pixelBuffer = try createPixelBuffer(from: tensor, width: width, height: height)
@@ -110,7 +110,7 @@ public enum FrameCompression {
   }
 
   private static func validateInput(
-    _ tensor: Tensor<FloatType>, codec: CompressionCodec, quality: Double
+    _ tensor: Tensor<FloatType>, codec: CompressionCodec, quality: Float
   ) throws -> (width: Int, height: Int) {
     guard quality >= 0, quality <= 100 else {
       throw Error.invalidQuality(quality)
@@ -234,7 +234,7 @@ public enum FrameCompression {
 
 #if canImport(CoreGraphics) && canImport(ImageIO) && canImport(UniformTypeIdentifiers) && canImport(CoreImage)
   extension FrameCompression {
-    private static func jpegArtifacts(from pixelBuffer: CVPixelBuffer, quality: Double) throws
+    private static func jpegArtifacts(from pixelBuffer: CVPixelBuffer, quality: Float) throws
       -> Tensor<FloatType>
     {
       let width = CVPixelBufferGetWidth(pixelBuffer)
@@ -321,7 +321,7 @@ public enum FrameCompression {
   extension FrameCompression {
     fileprivate static func videoToolboxArtifacts(
       from pixelBuffer: CVPixelBuffer, width: Int, height: Int, codec: CompressionCodec,
-      quality: Double
+      quality: Float
     ) throws -> Tensor<FloatType> {
       let sampleBuffer = try encodeFrame(
         pixelBuffer: pixelBuffer, width: width, height: height, codec: codec, quality: quality)
@@ -331,7 +331,7 @@ public enum FrameCompression {
 
     fileprivate static func encodeFrame(
       pixelBuffer: CVPixelBuffer, width: Int, height: Int, codec: CompressionCodec,
-      quality: Double
+      quality: Float
     ) throws -> CMSampleBuffer {
       var compressionSession: VTCompressionSession?
       let createStatus = VTCompressionSessionCreate(
@@ -464,10 +464,10 @@ public enum FrameCompression {
     }
 
     fileprivate static func setCompressionProperties(
-      compressionSession: VTCompressionSession, codec: CompressionCodec, quality: Double
+      compressionSession: VTCompressionSession, codec: CompressionCodec, quality: Float
     ) throws {
       let crf = crfValue(fromQuality: quality)
-      let constantQuality = 1.0 - (Double(crf) / 51.0)
+      let constantQuality = 1.0 - (Float(crf) / 51.0)
 
       try setProperty(
         for: compressionSession,
@@ -542,9 +542,9 @@ public enum FrameCompression {
       }
     }
 
-    fileprivate static func crfValue(fromQuality quality: Double) -> Int {
+    fileprivate static func crfValue(fromQuality quality: Float) -> Int {
       let normalizedQuality = max(0, min(100, quality))
-      return Int(round((100.0 - normalizedQuality) / 100.0 * 51.0))
+      return Int(roundf((100.0 - normalizedQuality) / 100.0 * 51.0))
     }
   }
 #endif

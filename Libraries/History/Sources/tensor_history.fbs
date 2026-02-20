@@ -210,7 +210,7 @@ table TensorHistoryNode {
   generation_time: double = 0;
   reason: Reason = Other;
   compression_artifacts: CompressionMethod = Disabled;
-  compression_artifacts_quality: double = 43.1;
+  compression_artifacts_quality: float = 43.1;
 }
 
 root_type TensorHistoryNode;

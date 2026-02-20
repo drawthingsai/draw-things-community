@@ -173,7 +173,7 @@ table GenerationConfiguration {
   cfg_zero_star: bool = false;
   cfg_zero_init_steps: int = 0;
   compression_artifacts: CompressionMethod = Disabled;
-  compression_artifacts_quality: double = 43.1;
+  compression_artifacts_quality: float = 43.1;
 }
 
 root_type GenerationConfiguration;

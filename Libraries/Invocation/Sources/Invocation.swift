@@ -188,7 +188,9 @@ public struct Invocation {
       causalInference: parameters.causalInferenceParameter.int32Value(),
       causalInferencePad: max(parameters.causalInferencePadParameter.int32Value(), 0),
       cfgZeroStar: parameters.cfgZeroStarParameter.value,
-      cfgZeroInitSteps: parameters.cfgZeroInitStepsParameter.int32Value()
+      cfgZeroInitSteps: parameters.cfgZeroInitStepsParameter.int32Value(),
+      compressionArtifacts: parameters.compressionArtifactsParameter.value,
+      compressionArtifactsQuality: parameters.compressionArtifactsQualityParameter.float32Value()
     )
     self.prompt = try unwrapOrThrow(
       parameters.promptParameter.value, errorMessage: "Missing prompt")
@@ -264,6 +266,8 @@ extension Invocation: CustomDebugStringConvertible {
       ("teaCache", configuration.teaCache as Any),
       ("separateT5", configuration.separateT5),
       ("t5Text", configuration.t5Text as Any),
+      ("compressionArtifacts", configuration.compressionArtifacts),
+      ("compressionArtifactsQuality", configuration.compressionArtifactsQuality),
     ]
     return pairs.map { (name, value) in
       "\(name): \(value)"
