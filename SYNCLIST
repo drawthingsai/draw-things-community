@@ -2,6 +2,7 @@
 .bazelrc.linux
 .swift-format.json
 external/
+AGENTS.md
 Apps/EmbeddingConverter
 Apps/Linux
 Apps/macOS
@@ -19,6 +20,7 @@ Libraries/ImageGenerator
 Libraries/ImageSegmentation
 Libraries/LocalImageGenerator
 Libraries/RemoteImageGenerator
+Libraries/FrameCompression
 Libraries/GRPC
 Libraries/BinaryResources
 Libraries/HTTPServer
