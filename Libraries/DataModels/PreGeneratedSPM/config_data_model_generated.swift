@@ -82,6 +82,16 @@ public enum LoRAMode: Int8, DflatFriendlyValue, CaseIterable {
   }
 }
 
+public enum CompressionMethod: Int8, DflatFriendlyValue, CaseIterable {
+  case disabled = 0
+  case H264 = 1
+  case H265 = 2
+  case jpeg = 3
+  public static func < (lhs: CompressionMethod, rhs: CompressionMethod) -> Bool {
+    return lhs.rawValue < rhs.rawValue
+  }
+}
+
 public struct Control: Equatable, FlatBuffersDecodable {
   public var file: String?
   public var weight: Float32
@@ -270,6 +280,8 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     guard lhs.causalInferencePad == rhs.causalInferencePad else { return false }
     guard lhs.cfgZeroStar == rhs.cfgZeroStar else { return false }
     guard lhs.cfgZeroInitSteps == rhs.cfgZeroInitSteps else { return false }
+    guard lhs.compressionArtifacts == rhs.compressionArtifacts else { return false }
+    guard lhs.compressionArtifactsQuality == rhs.compressionArtifactsQuality else { return false }
     return true
   }
   public var _rowid: Int64 = -1
@@ -356,6 +368,8 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
   public let causalInferencePad: Int32
   public let cfgZeroStar: Bool
   public let cfgZeroInitSteps: Int32
+  public let compressionArtifacts: CompressionMethod
+  public let compressionArtifactsQuality: Double
   public init(
     id: Int64, startWidth: UInt16? = 0, startHeight: UInt16? = 0, seed: UInt32? = 0,
     steps: UInt32? = 0, guidanceScale: Float32? = 0.0, strength: Float32? = 0.0,
@@ -387,7 +401,8 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     teaCacheThreshold: Float32? = 0.06, teaCache: Bool? = false, separateT5: Bool? = false,
     t5Text: String? = nil, teaCacheMaxSkipSteps: Int32? = 3, causalInferenceEnabled: Bool? = false,
     causalInference: Int32? = 3, causalInferencePad: Int32? = 0, cfgZeroStar: Bool? = false,
-    cfgZeroInitSteps: Int32? = 0
+    cfgZeroInitSteps: Int32? = 0, compressionArtifacts: CompressionMethod? = .disabled,
+    compressionArtifactsQuality: Double? = 43.1
   ) {
     self.id = id
     self.startWidth = startWidth ?? 0
@@ -471,6 +486,8 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     self.causalInferencePad = causalInferencePad ?? 0
     self.cfgZeroStar = cfgZeroStar ?? false
     self.cfgZeroInitSteps = cfgZeroInitSteps ?? 0
+    self.compressionArtifacts = compressionArtifacts ?? .disabled
+    self.compressionArtifactsQuality = compressionArtifactsQuality ?? 43.1
   }
   public init(_ obj: zzz_DflatGen_GenerationConfiguration) {
     self.id = obj.id
@@ -565,6 +582,9 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     self.causalInferencePad = obj.causalInferencePad
     self.cfgZeroStar = obj.cfgZeroStar
     self.cfgZeroInitSteps = obj.cfgZeroInitSteps
+    self.compressionArtifacts =
+      CompressionMethod(rawValue: obj.compressionArtifacts.rawValue) ?? .disabled
+    self.compressionArtifactsQuality = obj.compressionArtifactsQuality
   }
   public static func from(data: Data) -> Self {
     return data.withUnsafeBytes { buffer in
@@ -720,6 +740,8 @@ public struct GenerationConfigurationBuilder {
   public var causalInferencePad: Int32
   public var cfgZeroStar: Bool
   public var cfgZeroInitSteps: Int32
+  public var compressionArtifacts: CompressionMethod
+  public var compressionArtifactsQuality: Double
   public init(from object: GenerationConfiguration) {
     id = object.id
     startWidth = object.startWidth
@@ -803,6 +825,8 @@ public struct GenerationConfigurationBuilder {
     causalInferencePad = object.causalInferencePad
     cfgZeroStar = object.cfgZeroStar
     cfgZeroInitSteps = object.cfgZeroInitSteps
+    compressionArtifacts = object.compressionArtifacts
+    compressionArtifactsQuality = object.compressionArtifactsQuality
   }
   public func build() -> GenerationConfiguration {
     GenerationConfiguration(
@@ -838,7 +862,8 @@ public struct GenerationConfigurationBuilder {
       separateT5: separateT5, t5Text: t5Text, teaCacheMaxSkipSteps: teaCacheMaxSkipSteps,
       causalInferenceEnabled: causalInferenceEnabled, causalInference: causalInference,
       causalInferencePad: causalInferencePad, cfgZeroStar: cfgZeroStar,
-      cfgZeroInitSteps: cfgZeroInitSteps)
+      cfgZeroInitSteps: cfgZeroInitSteps, compressionArtifacts: compressionArtifacts,
+      compressionArtifactsQuality: compressionArtifactsQuality)
   }
 }
 

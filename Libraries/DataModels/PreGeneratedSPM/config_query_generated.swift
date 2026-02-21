@@ -862,4 +862,28 @@ extension GenerationConfiguration {
   public static let cfgZeroInitSteps: FieldExpr<Int32, GenerationConfiguration> = FieldExpr(
     name: "f170", primaryKey: false, hasIndex: false, tableReader: _tr__f170,
     objectReader: _or__f170)
+
+  private static func _tr__f172(_ table: ByteBuffer) -> CompressionMethod? {
+    let tr0 = zzz_DflatGen_GenerationConfiguration.getRootAsGenerationConfiguration(bb: table)
+    return CompressionMethod(rawValue: tr0.compressionArtifacts.rawValue)!
+  }
+  private static func _or__f172(_ or0: GenerationConfiguration) -> CompressionMethod? {
+    return or0.compressionArtifacts
+  }
+  public static let compressionArtifacts: FieldExpr<CompressionMethod, GenerationConfiguration> =
+    FieldExpr(
+      name: "f172", primaryKey: false, hasIndex: false, tableReader: _tr__f172,
+      objectReader: _or__f172)
+
+  private static func _tr__f174(_ table: ByteBuffer) -> Double? {
+    let tr0 = zzz_DflatGen_GenerationConfiguration.getRootAsGenerationConfiguration(bb: table)
+    return tr0.compressionArtifactsQuality
+  }
+  private static func _or__f174(_ or0: GenerationConfiguration) -> Double? {
+    return or0.compressionArtifactsQuality
+  }
+  public static let compressionArtifactsQuality: FieldExpr<Double, GenerationConfiguration> =
+    FieldExpr(
+      name: "f174", primaryKey: false, hasIndex: false, tableReader: _tr__f174,
+      objectReader: _or__f174)
 }

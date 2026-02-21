@@ -97,6 +97,19 @@ public enum zzz_DflatGen_LoRAMode: Int8, Enum, Verifiable {
   public static var min: zzz_DflatGen_LoRAMode { return .all }
 }
 
+public enum zzz_DflatGen_CompressionMethod: Int8, Enum, Verifiable {
+  public typealias T = Int8
+  public static var byteSize: Int { return MemoryLayout<Int8>.size }
+  public var value: Int8 { return self.rawValue }
+  case disabled = 0
+  case h264 = 1
+  case h265 = 2
+  case jpeg = 3
+
+  public static var max: zzz_DflatGen_CompressionMethod { return .jpeg }
+  public static var min: zzz_DflatGen_CompressionMethod { return .disabled }
+}
+
 public struct zzz_DflatGen_Control: FlatBufferObject, Verifiable {
 
   static func validateVersion() { FlatBuffersVersion_22_9_29() }
@@ -462,6 +475,8 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     case causalInferencePad = 166
     case cfgZeroStar = 168
     case cfgZeroInitSteps = 170
+    case compressionArtifacts = 172
+    case compressionArtifactsQuality = 174
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
@@ -836,8 +851,19 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     let o = _accessor.offset(VTOFFSET.cfgZeroInitSteps.v)
     return o == 0 ? 0 : _accessor.readBuffer(of: Int32.self, at: o)
   }
+  public var compressionArtifacts: zzz_DflatGen_CompressionMethod {
+    let o = _accessor.offset(VTOFFSET.compressionArtifacts.v)
+    return o == 0
+      ? .disabled
+      : zzz_DflatGen_CompressionMethod(rawValue: _accessor.readBuffer(of: Int8.self, at: o))
+        ?? .disabled
+  }
+  public var compressionArtifactsQuality: Double {
+    let o = _accessor.offset(VTOFFSET.compressionArtifactsQuality.v)
+    return o == 0 ? 43.1 : _accessor.readBuffer(of: Double.self, at: o)
+  }
   public static func startGenerationConfiguration(_ fbb: inout FlatBufferBuilder) -> UOffset {
-    fbb.startTable(with: 84)
+    fbb.startTable(with: 86)
   }
   public static func add(id: Int64, _ fbb: inout FlatBufferBuilder) {
     fbb.add(element: id, def: 0, at: VTOFFSET.id.p)
@@ -1116,6 +1142,13 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
   public static func add(cfgZeroInitSteps: Int32, _ fbb: inout FlatBufferBuilder) {
     fbb.add(element: cfgZeroInitSteps, def: 0, at: VTOFFSET.cfgZeroInitSteps.p)
   }
+  public static func add(
+    compressionArtifacts: zzz_DflatGen_CompressionMethod, _ fbb: inout FlatBufferBuilder
+  ) { fbb.add(element: compressionArtifacts.rawValue, def: 0, at: VTOFFSET.compressionArtifacts.p) }
+  public static func add(compressionArtifactsQuality: Double, _ fbb: inout FlatBufferBuilder) {
+    fbb.add(
+      element: compressionArtifactsQuality, def: 43.1, at: VTOFFSET.compressionArtifactsQuality.p)
+  }
   public static func endGenerationConfiguration(_ fbb: inout FlatBufferBuilder, start: UOffset)
     -> Offset
   {
@@ -1205,7 +1238,9 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     causalInference: Int32 = 3,
     causalInferencePad: Int32 = 0,
     cfgZeroStar: Bool = false,
-    cfgZeroInitSteps: Int32 = 0
+    cfgZeroInitSteps: Int32 = 0,
+    compressionArtifacts: zzz_DflatGen_CompressionMethod = .disabled,
+    compressionArtifactsQuality: Double = 43.1
   ) -> Offset {
     let __start = zzz_DflatGen_GenerationConfiguration.startGenerationConfiguration(&fbb)
     zzz_DflatGen_GenerationConfiguration.add(id: id, &fbb)
@@ -1296,6 +1331,9 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     zzz_DflatGen_GenerationConfiguration.add(causalInferencePad: causalInferencePad, &fbb)
     zzz_DflatGen_GenerationConfiguration.add(cfgZeroStar: cfgZeroStar, &fbb)
     zzz_DflatGen_GenerationConfiguration.add(cfgZeroInitSteps: cfgZeroInitSteps, &fbb)
+    zzz_DflatGen_GenerationConfiguration.add(compressionArtifacts: compressionArtifacts, &fbb)
+    zzz_DflatGen_GenerationConfiguration.add(
+      compressionArtifactsQuality: compressionArtifactsQuality, &fbb)
     return zzz_DflatGen_GenerationConfiguration.endGenerationConfiguration(&fbb, start: __start)
   }
 
@@ -1512,6 +1550,12 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     try _v.visit(
       field: VTOFFSET.cfgZeroInitSteps.p, fieldName: "cfgZeroInitSteps", required: false,
       type: Int32.self)
+    try _v.visit(
+      field: VTOFFSET.compressionArtifacts.p, fieldName: "compressionArtifacts", required: false,
+      type: zzz_DflatGen_CompressionMethod.self)
+    try _v.visit(
+      field: VTOFFSET.compressionArtifactsQuality.p, fieldName: "compressionArtifactsQuality",
+      required: false, type: Double.self)
     _v.finish()
   }
 }
