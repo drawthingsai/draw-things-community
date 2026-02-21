@@ -858,9 +858,9 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
       : zzz_DflatGen_CompressionMethod(rawValue: _accessor.readBuffer(of: Int8.self, at: o))
         ?? .disabled
   }
-  public var compressionArtifactsQuality: Double {
+  public var compressionArtifactsQuality: Float32 {
     let o = _accessor.offset(VTOFFSET.compressionArtifactsQuality.v)
-    return o == 0 ? 43.1 : _accessor.readBuffer(of: Double.self, at: o)
+    return o == 0 ? 43.1 : _accessor.readBuffer(of: Float32.self, at: o)
   }
   public static func startGenerationConfiguration(_ fbb: inout FlatBufferBuilder) -> UOffset {
     fbb.startTable(with: 86)
@@ -1145,7 +1145,7 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
   public static func add(
     compressionArtifacts: zzz_DflatGen_CompressionMethod, _ fbb: inout FlatBufferBuilder
   ) { fbb.add(element: compressionArtifacts.rawValue, def: 0, at: VTOFFSET.compressionArtifacts.p) }
-  public static func add(compressionArtifactsQuality: Double, _ fbb: inout FlatBufferBuilder) {
+  public static func add(compressionArtifactsQuality: Float32, _ fbb: inout FlatBufferBuilder) {
     fbb.add(
       element: compressionArtifactsQuality, def: 43.1, at: VTOFFSET.compressionArtifactsQuality.p)
   }
@@ -1240,7 +1240,7 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     cfgZeroStar: Bool = false,
     cfgZeroInitSteps: Int32 = 0,
     compressionArtifacts: zzz_DflatGen_CompressionMethod = .disabled,
-    compressionArtifactsQuality: Double = 43.1
+    compressionArtifactsQuality: Float32 = 43.1
   ) -> Offset {
     let __start = zzz_DflatGen_GenerationConfiguration.startGenerationConfiguration(&fbb)
     zzz_DflatGen_GenerationConfiguration.add(id: id, &fbb)
@@ -1555,7 +1555,7 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
       type: zzz_DflatGen_CompressionMethod.self)
     try _v.visit(
       field: VTOFFSET.compressionArtifactsQuality.p, fieldName: "compressionArtifactsQuality",
-      required: false, type: Double.self)
+      required: false, type: Float32.self)
     _v.finish()
   }
 }

@@ -875,14 +875,14 @@ extension GenerationConfiguration {
       name: "f172", primaryKey: false, hasIndex: false, tableReader: _tr__f172,
       objectReader: _or__f172)
 
-  private static func _tr__f174(_ table: ByteBuffer) -> Double? {
+  private static func _tr__f174(_ table: ByteBuffer) -> Float32? {
     let tr0 = zzz_DflatGen_GenerationConfiguration.getRootAsGenerationConfiguration(bb: table)
     return tr0.compressionArtifactsQuality
   }
-  private static func _or__f174(_ or0: GenerationConfiguration) -> Double? {
+  private static func _or__f174(_ or0: GenerationConfiguration) -> Float32? {
     return or0.compressionArtifactsQuality
   }
-  public static let compressionArtifactsQuality: FieldExpr<Double, GenerationConfiguration> =
+  public static let compressionArtifactsQuality: FieldExpr<Float32, GenerationConfiguration> =
     FieldExpr(
       name: "f174", primaryKey: false, hasIndex: false, tableReader: _tr__f174,
       objectReader: _or__f174)

@@ -369,7 +369,7 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
   public let cfgZeroStar: Bool
   public let cfgZeroInitSteps: Int32
   public let compressionArtifacts: CompressionMethod
-  public let compressionArtifactsQuality: Double
+  public let compressionArtifactsQuality: Float32
   public init(
     id: Int64, startWidth: UInt16? = 0, startHeight: UInt16? = 0, seed: UInt32? = 0,
     steps: UInt32? = 0, guidanceScale: Float32? = 0.0, strength: Float32? = 0.0,
@@ -402,7 +402,7 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     t5Text: String? = nil, teaCacheMaxSkipSteps: Int32? = 3, causalInferenceEnabled: Bool? = false,
     causalInference: Int32? = 3, causalInferencePad: Int32? = 0, cfgZeroStar: Bool? = false,
     cfgZeroInitSteps: Int32? = 0, compressionArtifacts: CompressionMethod? = .disabled,
-    compressionArtifactsQuality: Double? = 43.1
+    compressionArtifactsQuality: Float32? = 43.1
   ) {
     self.id = id
     self.startWidth = startWidth ?? 0
@@ -741,7 +741,7 @@ public struct GenerationConfigurationBuilder {
   public var cfgZeroStar: Bool
   public var cfgZeroInitSteps: Int32
   public var compressionArtifacts: CompressionMethod
-  public var compressionArtifactsQuality: Double
+  public var compressionArtifactsQuality: Float32
   public init(from object: GenerationConfiguration) {
     id = object.id
     startWidth = object.startWidth

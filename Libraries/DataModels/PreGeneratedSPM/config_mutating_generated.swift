@@ -355,7 +355,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
   public var cfgZeroStar: Bool
   public var cfgZeroInitSteps: Int32
   public var compressionArtifacts: CompressionMethod
-  public var compressionArtifactsQuality: Double
+  public var compressionArtifactsQuality: Float32
   private init(type _type: ChangeRequestType) {
     _o = nil
     self._type = _type
