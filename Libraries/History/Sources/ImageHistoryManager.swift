@@ -1473,6 +1473,24 @@ public final class ImageHistoryManager {
     }
   }
 
+  public func audio(for clipId: Int64) -> Tensor<Float>? {
+    guard
+      let clipData = project.fetch(for: Clip.self).where(Clip.clipId == clipId, limit: .limit(1))
+        .first
+    else {
+      return nil
+    }
+    let audioId = clipData.audioId
+    guard audioId > 0 else { return nil }
+
+    return try?
+      (dynamicGraph.openStore(filePath, flags: []) {
+        return $0.read("audio_\(audioId)", codec: [.fpzip, .zip]).map {
+          Tensor<Float>(from: $0)
+        }
+      }).get()
+  }
+
   public func popImage(
     image: inout Tensor<FloatType>?, binaryMask: inout Tensor<UInt8>?,
     depthMap: inout Tensor<FloatType>?, scribble: inout Tensor<UInt8>?, pose: inout Tensor<Float>?,

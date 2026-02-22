@@ -1,4 +1,6 @@
 import AVFoundation
+import AudioToolbox
+import CoreMedia
 import Diffusion
 import NNC
 import UIKit
@@ -8,6 +10,11 @@ public protocol VideoExporterDelegate: AnyObject {
 }
 
 public final class VideoExporter {
+  private struct PendingAudioSegment {
+    let tensor: Tensor<Float>
+    let timing: Double
+  }
+
   public enum Format: Int {
     case proRes4444 = 0
     case proRes422HQ
@@ -16,20 +23,17 @@ public final class VideoExporter {
 
   public weak var delegate: VideoExporterDelegate? = nil
   private var pendingFrames = [CVPixelBuffer]()
+  private var pendingAudioSegments = [PendingAudioSegment]()
   private lazy var videoExportQueue = DispatchQueue(
     label: "com.draw-things.video-exporter", qos: .userInteractive)
   public private(set) var isExportingInProgress = false  // main queue
   private var frameAppendingFinished = false  // videoExportQueue
+  private var audioAppendingFinished = false  // videoExportQueue
   private var pixelBufferPool: CVPixelBufferPool? = nil
   private var exportingImageSize: CGSize? = nil
-  private var lastAppendedFrame: Tensor<FloatType>? = nil
-  private var subPyramidExtractorModel: Model? = nil
-  private var predictors: [Model]? = nil
-  private var fusion: Model? = nil
-  private var graph: DynamicGraph? = nil
-  private var interpolateRounds = 0
   private var processedFrameCount = 0
   private var aborted = false
+  private var exportAudioSampleRate: Double? = nil
 
   public func abortVideoExporting() {
     videoExportQueue.async {
@@ -37,26 +41,24 @@ public final class VideoExporter {
     }
   }
   private let format: Format
-  private let FILMPath: String?
-  public init(format: Format, FILMPath: String?) {
+  public init(format: Format) {
     self.format = format
-    self.FILMPath = FILMPath
   }
 
   public func startVideoExporting(
-    frameDuration: CMTime, outputFileURL: URL, imageSize: CGSize, interpolateRounds: Int,
-    completion: @escaping (Bool) -> Void
+    frameDuration: CMTime, outputFileURL: URL, imageSize: CGSize,
+    audioSampleRate: Double? = nil, completion: @escaping (Bool) -> Void
   ) {
     self.isExportingInProgress = true
     self.exportingImageSize = imageSize
-    self.interpolateRounds = interpolateRounds
 
     videoExportQueue.async {
       self.pendingFrames.removeAll()
+      self.pendingAudioSegments.removeAll()
       self.frameAppendingFinished = false
+      self.audioAppendingFinished = false
       self.aborted = false
-      self.graph = DynamicGraph()
-      self.lastAppendedFrame = nil
+      self.exportAudioSampleRate = audioSampleRate
       self.processedFrameCount = 0
       self.initialVideoExportingOnExporterQueue(
         frameDuration: frameDuration, outputFileURL: outputFileURL, imageSize: imageSize
@@ -64,10 +66,8 @@ public final class VideoExporter {
         DispatchQueue.main.async {
           self.isExportingInProgress = false
           self.exportingImageSize = nil
-          self.resetInterpolateModels()
-          self.lastAppendedFrame = nil
           self.pixelBufferPool = nil
-          self.interpolateRounds = 0
+          self.exportAudioSampleRate = nil
 
           completion(finish)
         }
@@ -75,16 +75,28 @@ public final class VideoExporter {
     }
   }
 
-  private func resetInterpolateModels() {
-    self.subPyramidExtractorModel = nil
-    self.predictors = nil
-    self.fusion = nil
-    self.graph = nil
-  }
-
   public func markFrameAppendingEnd() {
     videoExportQueue.async {
       self.frameAppendingFinished = true
+      self.audioAppendingFinished = true
+    }
+  }
+
+  /// Appends a stereo waveform tensor shaped [2, frames] with normalized samples in [-1, 1].
+  /// The tensor format matches TensorAudioPlayer.play(_:timing:), but `timing` is the start time
+  /// on the exported video timeline.
+  public func appendAudio(audio: Tensor<Float>, timing: Double) {
+    precondition(self.exportAudioSampleRate != nil)
+    precondition(audio.kind == .CPU)
+    precondition(audio.shape.count == 2 && audio.shape[0] == 2)
+    precondition(audio.shape[1] > 0)
+    precondition(timing >= 0)
+    videoExportQueue.async {
+      guard !self.aborted else { return }
+      if let lastTiming = self.pendingAudioSegments.last?.timing {
+        precondition(timing >= lastTiming)
+      }
+      self.pendingAudioSegments.append(PendingAudioSegment(tensor: audio, timing: timing))
     }
   }
 
@@ -95,64 +107,9 @@ public final class VideoExporter {
       guard !self.aborted else { return }
       self.processedFrameCount += 1  // for the original frame
       self.delegate?.didProcessedFrameCount(processedFrameCount: self.processedFrameCount)
-      if let lastAppendedFrame = self.lastAppendedFrame, let graph = self.graph,
-        let modelFilePath = self.FILMPath
-      {
-        var frames = [lastAppendedFrame, frame]
-        for _ in 0..<self.interpolateRounds {
-          frames = self.interpolateFrames(from: frames, modelFilePath: modelFilePath, graph: graph)
-        }
-
-        // lastAppendedFrame is already exported, we only use it to build the frames, no need export it again
-        frames.removeFirst()
-        for frame in frames {
-          self.appendFrameToExport(frame: Tensor<FloatType>(from: frame))
-        }
-      } else {
-        self.appendFrameToExport(frame: frame)
-      }
-
-      self.lastAppendedFrame = frame
+      self.appendFrameToExport(frame: frame)
       completion()
     }
-  }
-
-  private func interpolateFrames(
-    from frames: [Tensor<FloatType>], modelFilePath: String, graph: DynamicGraph
-  ) -> [Tensor<
-    FloatType
-  >] {
-    if frames.count <= 1 {
-      return frames
-    }
-    var frames = frames
-    var previousFrame = frames.removeFirst()
-    var interpolatedFrames = [Tensor<FloatType>]()
-    interpolatedFrames.append(previousFrame)
-    while frames.count > 0 && !self.aborted {
-      let curFrame = frames.removeFirst()
-      let midFrame = generateMidFrameFrom(
-        previousFrame, curFrame, modelFilePath: modelFilePath, graph: graph)
-      interpolatedFrames.append(midFrame)
-      interpolatedFrames.append(curFrame)
-      previousFrame = curFrame
-    }
-    return interpolatedFrames
-  }
-
-  private func generateMidFrameFrom(
-    _ frame1: Tensor<FloatType>, _ frame2: Tensor<FloatType>, modelFilePath: String,
-    graph: DynamicGraph
-  ) -> Tensor<FloatType> {
-    let midFrame: Tensor<FloatType>
-    (midFrame, subPyramidExtractorModel, predictors, fusion) =
-      generateFILMIntermediateImage(
-        imageTensor: frame1, imageTensor2: frame2,
-        modelPath: modelFilePath, presetSubPyramidExtractorModel: subPyramidExtractorModel,
-        presetPredictors: predictors, presetFusion: fusion, graph: graph)
-    self.processedFrameCount += 1
-    self.delegate?.didProcessedFrameCount(processedFrameCount: self.processedFrameCount)
-    return midFrame
   }
 
   private func appendFrameToExport(frame: Tensor<FloatType>) {
@@ -230,6 +187,21 @@ public final class VideoExporter {
     ]
 
     let videoWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+    videoWriterInput.expectsMediaDataInRealTime = false
+    let audioSampleRate = exportAudioSampleRate
+    let audioWriterInput = audioSampleRate.map {
+      let audioSettings: [String: Any] = [
+        AVFormatIDKey: kAudioFormatLinearPCM,
+        AVSampleRateKey: $0,
+        AVNumberOfChannelsKey: 2,
+        AVLinearPCMBitDepthKey: 32,
+        AVLinearPCMIsFloatKey: true,
+        AVLinearPCMIsBigEndianKey: false,
+        AVLinearPCMIsNonInterleaved: false,
+      ]
+      return AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+    }
+    audioWriterInput?.expectsMediaDataInRealTime = false
     let pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
       assetWriterInput: videoWriterInput, sourcePixelBufferAttributes: pixelBufferAttributes)
 
@@ -237,7 +209,18 @@ public final class VideoExporter {
       completion(false)
       return
     }
+    guard videoWriter.canAdd(videoWriterInput) else {
+      completion(false)
+      return
+    }
+    if let audioWriterInput = audioWriterInput, !videoWriter.canAdd(audioWriterInput) {
+      completion(false)
+      return
+    }
     videoWriter.add(videoWriterInput)
+    if let audioWriterInput = audioWriterInput {
+      videoWriter.add(audioWriterInput)
+    }
     videoWriter.startWriting()
     videoWriter.startSession(atSourceTime: .zero)
     pixelBufferPool = pixelBufferAdaptor.pixelBufferPool
@@ -246,31 +229,174 @@ public final class VideoExporter {
       return
     }
 
+    var completionCalled = false
+    var videoInputFinished = false
+    var audioInputFinished = (audioWriterInput == nil)
+    var audioSegmentIndex = 0
+    var audioNextSampleIndex = 0
     var time = CMTime.zero
+    let audioChunkFrameCount = 1024
+
+    func cancelAndComplete() {
+      guard !completionCalled else { return }
+      completionCalled = true
+      videoWriter.cancelWriting()
+      completion(false)
+    }
+
+    func finishWritingIfReady() {
+      guard !completionCalled, videoInputFinished, audioInputFinished else { return }
+      completionCalled = true
+      videoWriter.finishWriting {
+        completion(videoWriter.status == .completed)
+      }
+    }
+
     videoWriterInput.requestMediaDataWhenReady(on: videoExportQueue) { [weak self] in
       guard let self = self else { return }
       while videoWriterInput.isReadyForMoreMediaData {
+        guard !completionCalled else { return }
         if let buffer = self.pendingFrames.first {
-          pixelBufferAdaptor.append(buffer, withPresentationTime: time)
+          guard pixelBufferAdaptor.append(buffer, withPresentationTime: time) else {
+            cancelAndComplete()
+            return
+          }
           time = CMTimeAdd(time, frameDuration)
           self.pendingFrames.removeFirst()
         } else {
           if self.pendingFrames.isEmpty, self.frameAppendingFinished {
-            videoWriterInput.markAsFinished()
-            videoWriter.finishWriting {
-              completion(videoWriter.status == .completed)
+            if !videoInputFinished {
+              videoWriterInput.markAsFinished()
+              videoInputFinished = true
             }
+            finishWritingIfReady()
+            break
           } else if self.aborted {
-            videoWriter.cancelWriting()
-            completion(false)
+            cancelAndComplete()
+            return
           } else {
             break
           }
         }
-
       }
       Thread.sleep(forTimeInterval: 0.01)
     }
+
+    audioWriterInput?.requestMediaDataWhenReady(on: videoExportQueue) { [weak self] in
+      guard let self = self else { return }
+      guard let audioWriterInput = audioWriterInput, let audioSampleRate = audioSampleRate else {
+        return
+      }
+      while audioWriterInput.isReadyForMoreMediaData {
+        guard !completionCalled else { return }
+        if self.aborted {
+          cancelAndComplete()
+          return
+        }
+        if audioSegmentIndex < self.pendingAudioSegments.count {
+          let pendingAudioSegment = self.pendingAudioSegments[audioSegmentIndex]
+          let totalSampleCount = Int(pendingAudioSegment.tensor.shape[1])
+          if audioNextSampleIndex < totalSampleCount {
+            let chunkSampleCount = min(
+              audioChunkFrameCount, totalSampleCount - audioNextSampleIndex)
+            let segmentPresentationSampleOffset = max(
+              0, Int((pendingAudioSegment.timing * audioSampleRate).rounded(.down)))
+            guard
+              let sampleBuffer = self.newAudioSampleBufferFrom(
+                audioTensor: pendingAudioSegment.tensor, tensorSampleOffset: audioNextSampleIndex,
+                presentationSampleOffset: segmentPresentationSampleOffset + audioNextSampleIndex,
+                sampleCount: chunkSampleCount, sampleRate: audioSampleRate)
+            else {
+              cancelAndComplete()
+              return
+            }
+            guard audioWriterInput.append(sampleBuffer) else {
+              cancelAndComplete()
+              return
+            }
+            audioNextSampleIndex += chunkSampleCount
+          } else {
+            audioSegmentIndex += 1
+            audioNextSampleIndex = 0
+          }
+        } else if self.audioAppendingFinished {
+          if !audioInputFinished {
+            audioWriterInput.markAsFinished()
+            audioInputFinished = true
+          }
+          finishWritingIfReady()
+          break
+        } else {
+          break
+        }
+      }
+      Thread.sleep(forTimeInterval: 0.01)
+    }
+  }
+
+  private func newAudioSampleBufferFrom(
+    audioTensor: Tensor<Float>, tensorSampleOffset: Int, presentationSampleOffset: Int,
+    sampleCount: Int,
+    sampleRate: Double
+  ) -> CMSampleBuffer? {
+    guard sampleCount > 0 else { return nil }
+
+    let channelCount: Int = 2
+    let byteCount = sampleCount * channelCount * MemoryLayout<Float32>.size
+    var interleaved = [Float32](repeating: 0, count: sampleCount * channelCount)
+    for i in 0..<sampleCount {
+      interleaved[i * 2] = max(-1, min(1, audioTensor[0, tensorSampleOffset + i]))
+      interleaved[i * 2 + 1] = max(-1, min(1, audioTensor[1, tensorSampleOffset + i]))
+    }
+
+    var blockBuffer: CMBlockBuffer?
+    let blockBufferStatus = CMBlockBufferCreateWithMemoryBlock(
+      allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: byteCount,
+      blockAllocator: kCFAllocatorDefault, customBlockSource: nil, offsetToData: 0,
+      dataLength: byteCount, flags: 0, blockBufferOut: &blockBuffer)
+    guard blockBufferStatus == kCMBlockBufferNoErr, let blockBuffer = blockBuffer else {
+      return nil
+    }
+
+    let replaceStatus = interleaved.withUnsafeBytes { rawBuffer in
+      CMBlockBufferReplaceDataBytes(
+        with: rawBuffer.baseAddress!, blockBuffer: blockBuffer, offsetIntoDestination: 0,
+        dataLength: byteCount)
+    }
+    guard replaceStatus == kCMBlockBufferNoErr else { return nil }
+
+    let bytesPerFrame = UInt32(channelCount * MemoryLayout<Float32>.size)
+    var asbd = AudioStreamBasicDescription(
+      mSampleRate: sampleRate,
+      mFormatID: kAudioFormatLinearPCM,
+      mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+      mBytesPerPacket: bytesPerFrame,
+      mFramesPerPacket: 1,
+      mBytesPerFrame: bytesPerFrame,
+      mChannelsPerFrame: 2,
+      mBitsPerChannel: 32,
+      mReserved: 0)
+
+    var audioFormatDescription: CMAudioFormatDescription?
+    let formatStatus = CMAudioFormatDescriptionCreate(
+      allocator: kCFAllocatorDefault, asbd: &asbd, layoutSize: 0, layout: nil,
+      magicCookieSize: 0, magicCookie: nil, extensions: nil,
+      formatDescriptionOut: &audioFormatDescription)
+    guard formatStatus == noErr, let audioFormatDescription = audioFormatDescription else {
+      return nil
+    }
+
+    let presentationTime = CMTime(
+      value: CMTimeValue(presentationSampleOffset),
+      timescale: CMTimeScale(max(1, Int(sampleRate.rounded()))))
+    var sampleBuffer: CMSampleBuffer?
+    let sampleBufferStatus = CMAudioSampleBufferCreateWithPacketDescriptions(
+      allocator: kCFAllocatorDefault, dataBuffer: blockBuffer, dataReady: true,
+      makeDataReadyCallback: nil, refcon: nil, formatDescription: audioFormatDescription,
+      sampleCount: sampleCount, presentationTimeStamp: presentationTime, packetDescriptions: nil,
+      sampleBufferOut: &sampleBuffer)
+    guard sampleBufferStatus == noErr else { return nil }
+    return sampleBuffer
   }
 
   private func newPixelBufferFrom(
