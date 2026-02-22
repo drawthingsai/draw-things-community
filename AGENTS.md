@@ -36,3 +36,16 @@
 - If an operation is inherently callback-driven and cannot be made truly synchronous with native APIs, expose an async completion-handler API directly.
 - Do not introduce `DispatchQueue`, `DispatchGroup`, or `DispatchSemaphore` in utility functions to simulate sync/async behavior unless absolutely necessary.
 - Keep utility functions thread-agnostic and leave threading/queue decisions to upper-level call sites.
+
+## Instruction Count Utilities (s4nnc Models)
+- For model compute-estimation helpers, prefer exact, boring names derived from the original builder:
+  - use `{ORIGINAL_FUNC}InstructionCount` (for example `Flux1InstructionCount`, `Flux1FixedInstructionCount`).
+  - avoid creative wrapper names when the goal is to mirror existing model-builder functions.
+- Put shared counting primitives in a separate reusable file so multiple models can reuse them:
+  - `DenseInstructionCount(...)`
+  - `ConvolutionInstructionCount(...)`
+  - `ScaledDotProductAttentionInstructionCount(...)` (use full name, not `SDPA` abbreviation in the function name).
+- Keep per-model instruction count functions separate by builder path (for example main denoiser vs fixed encoder), instead of forcing a combined API.
+- For the simplified estimator, return a single total `Int` unless a detailed breakdown is explicitly requested.
+- Validate Swift syntax/type correctness with Bazel on the affected library target after refactors:
+  - `bazel build //Libraries/SwiftDiffusion:SwiftDiffusion`
