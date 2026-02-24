@@ -4272,21 +4272,32 @@ extension LocalImageGenerator {
       let startWidth: Int
       let startHeight: Int
       let startScaleFactor: Int
+      let audioHeight: Int
       if modelVersion == .wurstchenStageC {
         startWidth = Int(configuration.startWidth) * 16
         startHeight = Int(configuration.startHeight) * 16
         startScaleFactor = 8
+        audioHeight = 0
       } else if modelVersion == .wan22_5b {
-        startWidth = Int(configuration.startWidth) * 16
-        startHeight = Int(configuration.startHeight) * 16
-        startScaleFactor = 4
+        startWidth = Int(configuration.startWidth) * 4
+        startHeight = Int(configuration.startHeight) * 4
+        startScaleFactor = 16
+        audioHeight = 0
+      } else if modelVersion == .ltx2 {
+        startWidth = Int(configuration.startWidth) * 2
+        startHeight = Int(configuration.startHeight) * 2
+        startScaleFactor = 32
+        let latentFrames = ((Int(configuration.numFrames) - 1) / 8) + 1
+        audioHeight =
+          LTX2ExtractAudioFramesAndHeight([latentFrames, 1, startWidth]).1
       } else {
         startWidth = Int(configuration.startWidth) * 8
         startHeight = Int(configuration.startHeight) * 8
         startScaleFactor = 8
+        audioHeight = 0
       }
       let firstStageImage: DynamicGraph.Tensor<FloatType>
-      let sample: DynamicGraph.Tensor<FloatType>
+      var sample: DynamicGraph.Tensor<FloatType>
       // Bypass decode / scale / encode for Wurstchen model.
       if modelVersion == .wurstchenStageC {
         firstStageImage = firstStageResult.0
@@ -4499,8 +4510,26 @@ extension LocalImageGenerator {
           .wurstchenStageB:
           channels = 4
         }
+        if audioHeight > 0 {
+          let audioFrames = Int(configuration.numFrames)
+          let shape = x.shape
+          var audioLatents = graph.variable(
+            .GPU(0), .HWC(1, shape[0] * startWidth * audioHeight, shape[3]), of: FloatType.self)
+          audioLatents.full(0)
+          if firstPassAudioHeight > 0 {
+            let firstPassAudioLatents = x[
+              0..<shape[0], firstPassStartHeight..<(firstPassStartHeight + firstPassAudioHeight),
+              0..<firstPassStartWidth, 0..<shape[3]
+            ].contiguous().reshaped(.HWC(1, audioFrames, shape[3]))
+            audioLatents[0..<1, 0..<audioFrames, 0..<shape[3]] = firstPassAudioLatents
+          }
+          sample = Functional.concat(
+            axis: 1, sample,
+            audioLatents.reshaped(.NHWC(shape[0], audioHeight, startWidth, shape[3])))
+        }
         let noise = graph.variable(
-          .GPU(0), .NHWC(batchSize.0, startHeight, startWidth, channels), of: FloatType.self)
+          .GPU(0), .NHWC(batchSize.0, startHeight + audioHeight, startWidth, channels),
+          of: FloatType.self)
         noise.randn(std: 1, mean: 0)
         let sampleScaleFactor = secondPassSampler.sampleScaleFactor(
           at: initTimestep.startStep, sampling: sampling)

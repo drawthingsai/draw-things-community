@@ -942,7 +942,7 @@ extension FirstStage {
     guard version != .kandinsky21 && version != .wurstchenStageC else {
       return (parameters, parameters, encoder)
     }
-    guard version != .wurstchenStageB else {
+    guard version != .wurstchenStageB && version != .ltx2 else {
       // For stage b, we need to scale it properly.
       let sample = scale(parameters)
       return (sample, sample, encoder)
@@ -1584,7 +1584,7 @@ extension FirstStage {
     }
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
-        && version != .wan22_5b
+        && version != .wan22_5b && version != .ltx2
     else {
       if highPrecision {
         if tiledEncoding {
