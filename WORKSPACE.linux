@@ -68,7 +68,7 @@ git_repository(
     name = "s4nnc",
     commit = "cd5e8226b234df01930a4bb1851ec1b6591abc53",
     remote = "https://github.com/liuliu/s4nnc.git",
-    shallow_since = "1770758517 -0500",
+    shallow_since = "1771953372 -0800",
 )
 
 load("@s4nnc//:deps.bzl", "s4nnc_deps")
@@ -112,7 +112,7 @@ git_repository(
     name = "swift-sentencepiece",
     commit = "8d17bf2e017c97563e8805545d676be9739b6c0e",
     remote = "https://github.com/liuliu/swift-sentencepiece.git",
-    shallow_since = "1753399872 -0400",
+    shallow_since = "1771957042 -0800",
 )
 
 load("@swift-sentencepiece//:deps.bzl", "swift_sentencepiece_deps")
