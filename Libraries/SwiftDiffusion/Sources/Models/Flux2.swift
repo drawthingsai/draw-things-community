@@ -714,7 +714,7 @@ private func LoRAFeedForward(
     count: hiddenSize, configuration: configuration, noBias: true, index: index,
     name: "\(name)_down_proj")
   out = w2(out)
-  if let scaleFactor = scaleFactor {
+  if let _ = scaleFactor {
     out = out.to(.Float32)  // scaleFactor is fused in the other add kernel.
   }
   return (w1, w2, w3, Model([x], [out]))
@@ -931,6 +931,7 @@ private func LoRAJointTransformerBlock(
 private func LoRASingleTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, referenceSequenceLength: Int,
   contextBlockPreOnly: Bool, usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
+  MLPLayerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -1020,11 +1021,12 @@ private func LoRASingleTransformerBlock(
     count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_o")
   let xW1 = LoRADense(
     count: k * h * 3, configuration: configuration, noBias: true, flags: [.Float16],
-    index: layerIndex, name: "x_w1")
+    index: MLPLayerIndex, name: "x_w1")
   let xW3 = LoRADense(
-    count: k * h * 3, configuration: configuration, noBias: true, index: layerIndex, name: "x_w3")
+    count: k * h * 3, configuration: configuration, noBias: true, index: MLPLayerIndex, name: "x_w3"
+  )
   let xW2 = LoRADense(
-    count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_w2")
+    count: k * h, configuration: configuration, noBias: true, index: MLPLayerIndex, name: "x_w2")
   out = xUnifyheads(out) + xW2(xW3(xOut) .* xW1(xOut).swish())
   out = xIn + (out .* xChunks[2]).to(of: xIn)
   let mapper: ModelWeightMapper = { format in
@@ -1106,7 +1108,7 @@ public func LoRAFlux2(
       t: tokenLength, hw: h * w + referenceSequenceLength,
       referenceSequenceLength: referenceSequenceLength,
       contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention,
-      layerIndex: i + layers.0, configuration: LoRAConfiguration)
+      layerIndex: i + layers.0, MLPLayerIndex: i, configuration: LoRAConfiguration)
     out = block([out, rotResized] + singleChunks)
     mappers.append(mapper)
   }

@@ -49,3 +49,11 @@
 - For the simplified estimator, return a single total `Int` unless a detailed breakdown is explicitly requested.
 - Validate Swift syntax/type correctness with Bazel on the affected library target after refactors:
   - `bazel build //Libraries/SwiftDiffusion:SwiftDiffusion`
+
+## Flux2 LoRA Layer Indexing
+- In `Flux2` LoRA single blocks, do not assume one shared LoRA layer index for all projections if the exported layer naming hierarchy differs.
+- `LoRASingleTransformerBlock` needs separate indices for:
+  - attention/output projections (`x_q`, `x_k`, `x_v`, `x_o`) using the global single-block layer index (`i + layers.0`)
+  - MLP projections (`x_w1`, `x_w2`, `x_w3`) using the single-block-local MLP index (`i`)
+- Reason: the single-block MLP layer names start from `0`, so reusing the global index causes LoRA weight lookup mismatches.
+- When reviewing LoRA parity, check not only operator replacement (`LoRADense`/`LoRAConvolution`) but also index mapping semantics against the target naming scheme.
