@@ -78,7 +78,7 @@ dflat_deps()
 
 git_repository(
     name = "s4nnc",
-    commit = "56b73a034ad8619ce590015fc1ce7c176e055905",
+    commit = "cd5e8226b234df01930a4bb1851ec1b6591abc53",
     remote = "https://github.com/liuliu/s4nnc.git",
     shallow_since = "1770758517 -0500",
 )
@@ -117,7 +117,7 @@ swift_fickling_deps()
 
 git_repository(
     name = "swift-sentencepiece",
-    commit = "b0f9edd91fccbc4a1ba2323d82542beaec684fa5",
+    commit = "8d17bf2e017c97563e8805545d676be9739b6c0e",
     remote = "https://github.com/liuliu/swift-sentencepiece.git",
     shallow_since = "1753399872 -0400",
 )
