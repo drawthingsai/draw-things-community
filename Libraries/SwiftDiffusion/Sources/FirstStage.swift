@@ -1465,7 +1465,7 @@ extension FirstStage {
       let startDepth = (shape[0] - 1) / 8 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
-      let sizeLimit = deviceProperties.memoryCapacity == .high ? 32 : 20
+      let sizeLimit = deviceProperties.memoryCapacity == .high ? 16 : 10
       if startWidth > sizeLimit || startHeight > sizeLimit {
         // We turn on tiled decoding forcefully.
         if !tiledEncoding {
@@ -1476,6 +1476,7 @@ extension FirstStage {
         startHeight = min(startHeight, sizeLimit)
         encodingTileSize.width = startWidth
         encodingTileSize.height = startHeight
+        encodingTileSize.depth = startDepth
       }
       encoder =
         existingEncoder
