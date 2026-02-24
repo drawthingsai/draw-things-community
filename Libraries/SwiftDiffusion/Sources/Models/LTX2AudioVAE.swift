@@ -12,7 +12,7 @@ private func ResnetBlockCausal2D(prefix: String, inChannels: Int, outChannels: I
   let conv1 = Convolution(
     groups: 1, filters: outChannels, filterSize: [3, 3],
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 0], end: [0, 0])),
-    name: "resnet_conv1")
+    format: .OIHW, name: "resnet_conv1")
   out = conv1(out.padded(.zero, begin: [0, 0, 2, 1], end: [0, 0, 0, 1]))
   let norm2 = RMSNorm(epsilon: 1e-8, axis: [1], elementwiseAffine: false, name: "resnet_norm2")
   out = norm2(out)
@@ -20,13 +20,13 @@ private func ResnetBlockCausal2D(prefix: String, inChannels: Int, outChannels: I
   let conv2 = Convolution(
     groups: 1, filters: outChannels, filterSize: [3, 3],
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 0], end: [0, 0])),
-    name: "resnet_conv2")
+    format: .OIHW, name: "resnet_conv2")
   out = conv2(out.padded(.zero, begin: [0, 0, 2, 1], end: [0, 0, 0, 1]))
   let ninShortcut: Model?
   if shortcut {
     let nin = Convolution(
       groups: 1, filters: outChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
-      name: "resnet_shortcut")
+      format: .OIHW, name: "resnet_shortcut")
     out = nin(x) + out
     ninShortcut = nin
   } else {
@@ -56,7 +56,7 @@ func LTX2AudioEncoderCausal2D(
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3],
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 0], end: [0, 0])),
-    name: "conv_in")
+    format: .OIHW, name: "conv_in")
   var out = convIn(x.padded(.zero, begin: [0, 0, 2, 1], end: [0, 0, 0, 1]))
   var mappers = [ModelWeightMapper]()
   for (i, channel) in channels.enumerated() {
@@ -72,7 +72,7 @@ func LTX2AudioEncoderCausal2D(
       let conv = Convolution(
         groups: 1, filters: previousChannel, filterSize: [3, 3],
         hint: Hint(stride: [2, 2], border: Hint.Border(begin: [0, 0], end: [0, 0])),
-        name: "upsample")
+        format: .OIHW, name: "upsample")
       out = conv(out.padded(.zero, begin: [0, 0, 2, 0], end: [0, 0, 0, 1]))
       let downBlocks = i
       mappers.append { _ in
@@ -97,7 +97,8 @@ func LTX2AudioEncoderCausal2D(
   out = normOut(out).swish()
   let convOut = Convolution(
     groups: 1, filters: 16, filterSize: [3, 3],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 0], end: [0, 0])), name: "conv_out")
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 0], end: [0, 0])), format: .OIHW,
+    name: "conv_out")
   out = convOut(out.padded(.zero, begin: [0, 0, 2, 1], end: [0, 0, 0, 1]))
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -121,7 +122,7 @@ func LTX2AudioDecoderCausal2D(
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3],
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 0], end: [0, 0])),
-    name: "conv_in")
+    format: .OIHW, name: "conv_in")
   var out = convIn(
     x.reshaped(.NCHW(1, startHeight, 8, startWidth)).transposed(1, 2).padded(
       .zero, begin: [0, 0, 2, 1], end: [0, 0, 0, 1]))
@@ -150,7 +151,7 @@ func LTX2AudioDecoderCausal2D(
       let conv = Convolution(
         groups: 1, filters: previousChannel, filterSize: [3, 3],
         hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 0], end: [0, 0])),
-        name: "upsample")
+        format: .OIHW, name: "upsample")
       out = conv(out.padded(.zero, begin: [0, 0, 1, 1], end: [0, 0, 0, 1]))
       let upBlocks = i
       mappers.append { _ in
@@ -165,7 +166,8 @@ func LTX2AudioDecoderCausal2D(
   out = normOut(out).swish()
   let convOut = Convolution(
     groups: 1, filters: 2, filterSize: [3, 3],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 0], end: [0, 0])), name: "conv_out")
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 0], end: [0, 0])), format: .OIHW,
+    name: "conv_out")
   out = convOut(out.padded(.zero, begin: [0, 0, 2, 1], end: [0, 0, 0, 1])).transposed(2, 3)
     .reshaped([1, 128, 1, -1])
   let mapper: ModelWeightMapper = { format in

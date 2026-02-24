@@ -14,7 +14,7 @@ private func ResBlock1(prefix: String, channels: Int, kernelSize: Int) -> (Model
         stride: [1, 1],
         border: Hint.Border(
           begin: [0, (kernelSize - 1) * k / 2], end: [0, (kernelSize - 1) * k / 2])),
-      name: "resnet_conv1")
+      format: .OIHW, name: "resnet_conv1")
     out = conv1(out)
     out = out.leakyReLU(negativeSlope: 0.1)
     let conv2 = Convolution(
@@ -22,7 +22,7 @@ private func ResBlock1(prefix: String, channels: Int, kernelSize: Int) -> (Model
       hint: Hint(
         stride: [1, 1],
         border: Hint.Border(begin: [0, (kernelSize - 1) / 2], end: [0, (kernelSize - 1) / 2])),
-      name: "resnet_conv2")
+      format: .OIHW, name: "resnet_conv2")
     out = conv2(out) + residual
     let idx = i
     mappers.append { _ in
@@ -52,7 +52,8 @@ func LTX2Vocoder(layers: [(channels: Int, kernelSize: Int, stride: Int, padding:
   let x = Input()
   let convPre = Convolution(
     groups: 1, filters: 1024, filterSize: [1, 7],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 3], end: [0, 3])), name: "conv_pre")
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 3], end: [0, 3])), format: .OIHW,
+    name: "conv_pre")
   var out = convPre(x)
   var mappers = [ModelWeightMapper]()
   for (i, layer) in layers.enumerated() {
@@ -61,7 +62,8 @@ func LTX2Vocoder(layers: [(channels: Int, kernelSize: Int, stride: Int, padding:
       groups: 1, filters: layer.channels, filterSize: [1, layer.kernelSize],
       hint: Hint(
         stride: [1, layer.stride],
-        border: Hint.Border(begin: [0, layer.padding], end: [0, layer.padding])), name: "up")
+        border: Hint.Border(begin: [0, layer.padding], end: [0, layer.padding])), format: .OIHW,
+      name: "up")
     out = up(out)
     let upIdx = i
     mappers.append { _ in
@@ -82,7 +84,8 @@ func LTX2Vocoder(layers: [(channels: Int, kernelSize: Int, stride: Int, padding:
   }
   let convPost = Convolution(
     groups: 1, filters: 2, filterSize: [1, 7],
-    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 3], end: [0, 3])), name: "conv_post")
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [0, 3], end: [0, 3])), format: .OIHW,
+    name: "conv_post")
   out = convPost(out.leakyReLU(negativeSlope: 0.01)).tanh()
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
