@@ -5219,42 +5219,52 @@ extension LocalImageGenerator {
         batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage,
         forSample: true)
       var sample: DynamicGraph.Tensor<FloatType>
-      let encodedImage: DynamicGraph.Tensor<FloatType>
-      (sample, encodedImage) = modelPreloader.consumeFirstStageSample(
-        firstStage.sample(
-          firstPassImage,
-          encoder: modelPreloader.retrieveFirstStageEncoder(
-            firstStage: firstStage, scale: imageScale), cancellation: cancellation),
-        firstStage: firstStage, scale: imageScale)
-      if let firstPassImageForSample = firstPassImageForSample {
-        (sample, _) = modelPreloader.consumeFirstStageSample(
+      var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
+      var mask: DynamicGraph.Tensor<FloatType>? = nil
+      if modifier == .inpainting || modifier == .editing || modelVersion == .svdI2v {
+        let encodedImage: DynamicGraph.Tensor<FloatType>
+        (sample, encodedImage) = modelPreloader.consumeFirstStageSample(
           firstStage.sample(
-            firstPassImageForSample,
+            firstPassImage,
             encoder: modelPreloader.retrieveFirstStageEncoder(
               firstStage: firstStage, scale: imageScale), cancellation: cancellation),
           firstStage: firstStage, scale: imageScale)
-      }
-      var maskedImage: DynamicGraph.Tensor<FloatType>? = nil
-      var mask: DynamicGraph.Tensor<FloatType>? = nil
-      if modifier == .inpainting {
-        maskedImage = firstStage.scale(
-          encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
-        mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
-        mask?.full(1)
-        maskedImage = concatMaskWithMaskedImage(
-          hasImage: true, batchSize: batchSize,
-          version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil)
-      } else if modifier == .editing {
-        if modelVersion == .v1 {
-          maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
-            .copied()
-        } else {
+        if modifier == .inpainting {
           maskedImage = firstStage.scale(
             encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
+          mask = graph.variable(.GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
+          mask?.full(1)
+          maskedImage = concatMaskWithMaskedImage(
+            hasImage: true, batchSize: batchSize,
+            version: modelVersion, encodedImage: maskedImage!, encodedMask: mask!, imageNegMask: nil
+          )
+        } else if modifier == .editing {
+          if modelVersion == .v1 {
+            maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
+              .copied()
+          } else {
+            maskedImage = firstStage.scale(
+              encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels].copied())
+          }
+        } else if modelVersion == .svdI2v {
+          maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
+            .copied()
         }
-      } else if modelVersion == .svdI2v {
-        maskedImage = encodedImage[0..<imageSize, 0..<startHeight, 0..<startWidth, 0..<channels]
-          .copied()
+        if let firstPassImageForSample = firstPassImageForSample {
+          (sample, _) = modelPreloader.consumeFirstStageSample(
+            firstStage.sample(
+              firstPassImageForSample,
+              encoder: modelPreloader.retrieveFirstStageEncoder(
+                firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+            firstStage: firstStage, scale: imageScale)
+        }
+      } else {
+        (sample, _) = modelPreloader.consumeFirstStageSample(
+          firstStage.sample(
+            firstPassImageForSample ?? firstPassImage,
+            encoder: modelPreloader.retrieveFirstStageEncoder(
+              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+          firstStage: firstStage, scale: imageScale)
       }
       guard feedback(.imageEncoded, signposts, nil) else { return (nil, nil, 1) }
       let noise = randomLatentNoise(
@@ -6272,12 +6282,14 @@ extension LocalImageGenerator {
     let startHeight: Int
     let startScaleFactor: Int
     let channels: Int
+    let audioHeight: Int
     let firstStageFilePath: String
     if modelVersion == .wurstchenStageC {
       (startWidth, startHeight) = stageCLatentsSize(configuration)
       channels = 16
       startScaleFactor = 8
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(file)
+      audioHeight = 0
     } else {
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
@@ -6286,27 +6298,34 @@ extension LocalImageGenerator {
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
+        audioHeight = 0
       case .flux2, .flux2_9b, .flux2_4b:
         channels = 32
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
+        audioHeight = 0
       case .wan22_5b:
         channels = 48
         startScaleFactor = 16
         startWidth = image.shape[2] / 16 / imageScaleFactor
         startHeight = image.shape[1] / 16 / imageScaleFactor
+        audioHeight = 0
       case .ltx2:
         channels = 128
         startScaleFactor = 32
         startWidth = image.shape[2] / 32 / imageScaleFactor
         startHeight = image.shape[1] / 32 / imageScaleFactor
+        let latentFrames = ((Int(configuration.numFrames) - 1) / 8) + 1
+        audioHeight =
+          LTX2ExtractAudioFramesAndHeight([latentFrames, 1, startWidth]).1
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
         channels = 4
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
+        audioHeight = 0
       }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
     }
@@ -6653,7 +6672,7 @@ extension LocalImageGenerator {
         injectedControls: injectedControls)
       guard feedback(.imageEncoded, signposts, nil) else { return nil }
       let noise = randomLatentNoise(
-        graph: graph, batchSize: batchSize.0, startHeight: startHeight,
+        graph: graph, batchSize: batchSize.0, startHeight: startHeight + audioHeight,
         startWidth: startWidth, channels: channels, seed: configuration.seed,
         seedMode: configuration.seedMode)
       var initMask = graph.variable(mask2.toGPU(0))
