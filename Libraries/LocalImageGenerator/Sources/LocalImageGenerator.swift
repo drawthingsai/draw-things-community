@@ -3304,13 +3304,31 @@ extension LocalImageGenerator {
 
   private func expandImageForEncoding(
     batchSize: (Int, Int), version: ModelVersion, modifier: SamplerModifier,
-    image: DynamicGraph.Tensor<FloatType>
+    image: DynamicGraph.Tensor<FloatType>, forSample: Bool
   ) -> (Int, DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>?) {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
+      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       return (1, image, nil)
+    case .ltx2:
+      guard forSample else {
+        return (1, image, nil)
+      }
+      let graph = image.graph
+      let batchSize = batchSize.0 - batchSize.1
+      let decodedSize = (batchSize - 1) * 8 + 1
+      let shape = image.shape
+      var repeatedImage = graph.variable(
+        .GPU(0), .NHWC(decodedSize, shape[1], shape[2], shape[3]), of: FloatType.self)
+      // Replicate images throughout.
+      for i in stride(from: 0, to: decodedSize, by: shape[0]) {
+        repeatedImage[
+          i..<min(i + shape[0], decodedSize), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = image[
+            0..<min(shape[0], decodedSize - i), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+          ].copied()
+      }
+      return (1, image, repeatedImage)
     case .wan21_14b, .wan21_1_3b:
       let shape = image.shape
       let batchSize = batchSize.0 - batchSize.1
@@ -3318,7 +3336,7 @@ extension LocalImageGenerator {
         let copied = image[0..<(batchSize - 1) * 4 + 1, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
           .copied()
         if modifier == .inpainting {
-          return (batchSize, copied, copied)
+          return (batchSize, copied, forSample ? copied : nil)
         } else {
           return (batchSize, copied, nil)
         }
@@ -3341,7 +3359,7 @@ extension LocalImageGenerator {
         .GPU(0), .NHWC(decodedSize, shape[1], shape[2], shape[3]), of: FloatType.self)
       expandedImage.full(0)
       expandedImage[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] = image
-      return (batchSize, expandedImage, repeatedImage)
+      return (batchSize, expandedImage, forSample ? repeatedImage : nil)
     }
   }
 
@@ -4055,7 +4073,8 @@ extension LocalImageGenerator {
           }()
         let imageSize: Int
         (imageSize, firstPassImage, _) = expandImageForEncoding(
-          batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
+          batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage,
+          forSample: false)
         let encodedImage = modelPreloader.consumeFirstStageEncode(
           firstStage.encode(
             firstPassImage,
@@ -4343,7 +4362,8 @@ extension LocalImageGenerator {
           }()
         let imageSize: Int
         (imageSize, image, _) = expandImageForEncoding(
-          batchSize: (batchSize.0, 0), version: modelVersion, modifier: modifier, image: image)
+          batchSize: (batchSize.0, 0), version: modelVersion, modifier: modifier, image: image,
+          forSample: false)
         let encodedImage = modelPreloader.consumeFirstStageEncode(
           firstStage.encode(
             image,
@@ -4560,7 +4580,7 @@ extension LocalImageGenerator {
         }
       }
       guard
-        let x =
+        var x =
           try? modelPreloader.consumeUNet(
             secondPassSampler.sample(
               xEnc,
@@ -4599,6 +4619,8 @@ extension LocalImageGenerator {
       else {
         return (nil, nil, 1)
       }
+      x = applyImageCond(
+        x, modifier: modifier, version: modelVersion, imageCond: secondPassImageCond)
       if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
         || modelVersion == .ssd1b || modelVersion == .wurstchenStageC || modelVersion == .sd3
         || modelVersion == .pixart
@@ -4955,12 +4977,14 @@ extension LocalImageGenerator {
     let startHeight: Int
     let startScaleFactor: Int
     let channels: Int
+    let audioHeight: Int
     let firstStageFilePath: String
     if modelVersion == .wurstchenStageC {
       (startWidth, startHeight) = stageCLatentsSize(configuration)
       channels = 16
       startScaleFactor = 8
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(file)
+      audioHeight = 0
     } else {
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
@@ -4969,27 +4993,34 @@ extension LocalImageGenerator {
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
+        audioHeight = 0
       case .flux2, .flux2_9b, .flux2_4b:
         channels = 32
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
+        audioHeight = 0
       case .ltx2:
         channels = 128
         startScaleFactor = 32
         startWidth = image.shape[2] / 32 / imageScaleFactor
         startHeight = image.shape[1] / 32 / imageScaleFactor
+        let latentFrames = ((Int(configuration.numFrames) - 1) / 8) + 1
+        audioHeight =
+          LTX2ExtractAudioFramesAndHeight([latentFrames, 1, startWidth]).1
       case .wan22_5b:
         channels = 48
         startScaleFactor = 16
         startWidth = image.shape[2] / 16 / imageScaleFactor
         startHeight = image.shape[1] / 16 / imageScaleFactor
+        audioHeight = 0
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
         channels = 4
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
+        audioHeight = 0
       }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
     }
@@ -5185,7 +5216,8 @@ extension LocalImageGenerator {
       let imageSize: Int
       let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
       (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
-        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
+        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage,
+        forSample: true)
       var sample: DynamicGraph.Tensor<FloatType>
       let encodedImage: DynamicGraph.Tensor<FloatType>
       (sample, encodedImage) = modelPreloader.consumeFirstStageSample(
@@ -5226,7 +5258,7 @@ extension LocalImageGenerator {
       }
       guard feedback(.imageEncoded, signposts, nil) else { return (nil, nil, 1) }
       let noise = randomLatentNoise(
-        graph: graph, batchSize: batchSize.0, startHeight: startHeight,
+        graph: graph, batchSize: batchSize.0, startHeight: startHeight + audioHeight,
         startWidth: startWidth, channels: channels, seed: configuration.seed,
         seedMode: configuration.seedMode)
       let depthImage = depth.map {
@@ -5277,6 +5309,14 @@ extension LocalImageGenerator {
       sample = injectVACEFrames(
         batchSize: batchSize, version: modelVersion, image: sample,
         injectedControls: injectedControls)
+      if audioHeight > 0 {
+        let audioLatents = graph.variable(
+          .GPU(0), .HWC(1, batchSize.0 * startWidth * audioHeight, channels), of: FloatType.self)
+        audioLatents.full(0)
+        sample = Functional.concat(
+          axis: 1, sample,
+          audioLatents.reshaped(.NHWC(batchSize.0, audioHeight, startWidth, channels)))
+      }
       let x_T: DynamicGraph.Tensor<FloatType>
       if initTimestep.startStep > 0 {
         let sampleScaleFactor = sampler.sampleScaleFactor(
@@ -5466,6 +5506,8 @@ extension LocalImageGenerator {
         }
         x = b
       }
+      x = applyImageCond(
+        x, modifier: modifier, version: modelVersion, imageCond: imageCond)
       if DeviceCapability.isLowPerformance {
         graph.garbageCollect()
       }
@@ -5494,34 +5536,35 @@ extension LocalImageGenerator {
           decoder: modelPreloader.retrieveFirstStageDecoder(
             firstStage: firstStage, scale: imageScale), cancellation: cancellation),
         firstStage: firstStage, scale: imageScale
-      ).0
-      guard !isNaN(firstStageResult.rawValue.toCPU()) else { return (nil, nil, 1) }
+      )
+      guard !isNaN(firstStageResult.0.rawValue.toCPU()) else { return (nil, nil, 1) }
       if modelVersion == .wurstchenStageC {
         guard feedback(.secondPassImageDecoded, signposts, nil) else { return (nil, nil, 1) }
       } else {
         guard feedback(.imageDecoded, signposts, nil) else { return (nil, nil, 1) }
       }
-      firstStageResult = faceRestoreImage(firstStageResult, configuration: configuration)
+      firstStageResult.0 = faceRestoreImage(firstStageResult.0, configuration: configuration)
       if signposts.contains(.faceRestored) {
         guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
       let (result, scaleFactor) = upscaleImageAndToCPU(
-        firstStageResult, configuration: configuration)
+        firstStageResult.0, configuration: configuration)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
       if ImageGeneratorUtils.isVideoModel(modelVersion) {
         batchSize.0 = Int(configuration.numFrames)
       }
+      let audio = firstStageResult.1?.rawValue.toCPU()
       guard batchSize.0 > 1 else {
-        return ([result], nil, scaleFactor)
+        return ([result], audio.map { [$0] }, scaleFactor)
       }
       var batch = [Tensor<FloatType>]()
       let shape = result.shape
       for i in 0..<min(batchSize.0, shape[0]) {
         batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
       }
-      return (batch, nil, scaleFactor)
+      return (batch, audio.map { [$0] }, scaleFactor)
     }
   }
 
@@ -6536,7 +6579,8 @@ extension LocalImageGenerator {
       let imageSize: Int
       let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
       (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
-        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
+        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage,
+        forSample: true)
       var (sample, _) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
           firstPassImageForSample ?? firstPassImage,
@@ -7384,7 +7428,8 @@ extension LocalImageGenerator {
       let imageSize: Int
       let firstPassImageForSample: DynamicGraph.Tensor<FloatType>?
       (imageSize, firstPassImage, firstPassImageForSample) = expandImageForEncoding(
-        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage)
+        batchSize: batchSize, version: modelVersion, modifier: modifier, image: firstPassImage,
+        forSample: true)
       var (sample, _) = modelPreloader.consumeFirstStageSample(
         firstStage.sample(
           firstPassImageForSample ?? firstPassImage,
