@@ -1357,7 +1357,7 @@ public enum ImageConverter {
           return try taesd.perform { model in
             func zeroFill(_ array: MLMultiArray) {
               guard array.dataType == .float16 else { return }
-              let ptr = array.dataPointer.bindMemory(to: Float16.self, capacity: array.count)
+              let ptr = array.dataPointer.bindMemory(to: FloatType.self, capacity: array.count)
               ptr.initialize(repeating: 0, count: array.count)
             }
             func imageFromBytes(_ bytes: UnsafeMutablePointer<UInt8>) -> UIImage {
@@ -1463,7 +1463,7 @@ public enum ImageConverter {
                 return nil
               }
               let ptr = outputArray.dataPointer.bindMemory(
-                to: Float16.self, capacity: outputArray.count)
+                to: FloatType.self, capacity: outputArray.count)
               var o = bytes
               let frameBase = frameIndex * tStride
               for y in 0..<imageHeight {
