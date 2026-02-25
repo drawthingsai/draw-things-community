@@ -35,10 +35,13 @@ while IFS= read -r -d '' file; do
 done < <(find "$OUTPUT_DIR" -name "*.swift" -print0)
 
 if [[ ${#swift_files[@]} -gt 0 ]]; then
+    bazel_swift_format_args=(--compilation_mode=opt)
     if [[ "$(uname)" == "Darwin" ]]; then
         export DYLD_FALLBACK_LIBRARY_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx"
+        # Keep the formatter binary runnable on CI hosts older than the current Xcode SDK.
+        bazel_swift_format_args+=(--macos_minimum_os=15.0)
     fi
-    bazel run --compilation_mode=opt @SwiftFormat//:swift-format -- \
+    bazel run "${bazel_swift_format_args[@]}" @SwiftFormat//:swift-format -- \
         format --configuration "$PROJECT_ROOT/.swift-format.json" -i "${swift_files[@]}"
 fi
 
