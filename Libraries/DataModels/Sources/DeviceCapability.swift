@@ -82,11 +82,15 @@ public struct DeviceCapability {
   }()
   // Only enable this for more than 12GiB RAM and 18 above.
   public static let isTAESDPreferred: Bool = {
-    if #available(iOS 18, macOS 15, macCatalyst 18, *) {
-      return isMaxPerformance ? true : false
-    } else {
+    #if arch(i386) || arch(x86_64)
       return false
-    }
+    #else
+      if #available(iOS 18, macOS 15, macCatalyst 18, *) {
+        return isMaxPerformance ? true : false
+      } else {
+        return false
+      }
+    #endif
   }()
   public static let isMFASupported: Bool = {
     #if !canImport(Metal)
