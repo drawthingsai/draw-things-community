@@ -57,3 +57,22 @@
   - MLP projections (`x_w1`, `x_w2`, `x_w3`) using the single-block-local MLP index (`i`)
 - Reason: the single-block MLP layer names start from `0`, so reusing the global index causes LoRA weight lookup mismatches.
 - When reviewing LoRA parity, check not only operator replacement (`LoRADense`/`LoRAConvolution`) but also index mapping semantics against the target naming scheme.
+
+## LTX2 Stateful TAE Integration (ImageConverter)
+- `ImageConverter.imagesWithTAESD(fromLatent:version:)` for `.ltx2` should use the **stateful Core ML API** (`prediction(from:)`) rather than the batch API used by image TAEs.
+- LTX2 stateful decoder activation tensors are fixed and known in app integration:
+  - inputs: `act_0 ... act_8`
+  - outputs: `act_0_out ... act_8_out`
+  - no parsing/sorting of activation names is needed.
+- Keep the app-side LTX2 TAE path **FP16-only**:
+  - require FP16 `latent`, `image`, and `act_*` tensors; return `[]` on mismatch instead of adding FP32 handling.
+- Preferred latent chunk construction style (match image path ergonomics):
+  - build a padded CPU tensor with explicit zero init using `Array(repeating: 0, ...)`
+  - copy source frames via tensor slicing/subscript assignment
+  - reshape to rank-5 `NTHWC` (`[1, chunkT, H, W, C]`) before `MLShapedArray`
+  - convert with `MLMultiArray(MLShapedArray(...))`
+- LTX2 stateful output semantics:
+  - outputs are raw chunk frames; apply a **global trim** after concatenation
+  - trim count is `tUpscale - 1` (preview `dtu000` naturally trims `0`)
+- Verify compileability of the integration path with:
+  - `bazel build Libraries/LocalImageGenerator --ios_multi_cpus=arm64`

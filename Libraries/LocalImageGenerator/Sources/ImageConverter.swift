@@ -1084,16 +1084,161 @@ public enum ImageConverter {
         contentsOf: flux2UnzipItem.appendingPathComponent("2048.mlmodelc"),
         configuration: configuration)
     }()
+    static let LTX2UnzipItem: URL? = {
+      let fileManager = FileManager.default
+      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
+      do {
+        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
+        guard !fileManager.fileExists(atPath: coreMLUrl.appendingPathComponent("ltx_2_tae").path)
+        else {
+          return coreMLUrl.appendingPathComponent("ltx_2_tae")
+        }
+        try fileManager.unzipItem(
+          at: Bundle.main.url(
+            forResource: "ltx_2_tae", withExtension: "zip")!,
+          to: coreMLUrl)
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("ltx_2_tae/768.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("ltx_2_tae/768.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1024.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1024.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1280.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1280.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1536.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1536.mlmodelc/weights/weight.bin"))
+        }
+        do {
+          try fileManager.linkItem(
+            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1792.mlmodelc/weights/weight.bin"))
+        } catch {
+          try fileManager.copyItem(
+            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1792.mlmodelc/weights/weight.bin"))
+        }
+        try fileManager.moveItem(
+          at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
+          to: coreMLUrl.appendingPathComponent("ltx_2_tae/2048.mlmodelc/weights/weight.bin"))
+        return coreMLUrl.appendingPathComponent("ltx_2_tae")
+      } catch {
+        try? fileManager.removeItem(at: coreMLUrl.appendingPathComponent("ltx_2_tae"))
+        return nil
+      }
+    }()
+    static let LTX2TinyDecoderFor768: ManagedMLModel? = {
+      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: LTX2UnzipItem.appendingPathComponent("768.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let LTX2TinyDecoderFor1024: ManagedMLModel? = {
+      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: LTX2UnzipItem.appendingPathComponent("1024.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let LTX2TinyDecoderFor1280: ManagedMLModel? = {
+      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: LTX2UnzipItem.appendingPathComponent("1280.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let LTX2TinyDecoderFor1536: ManagedMLModel? = {
+      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: LTX2UnzipItem.appendingPathComponent("1536.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let LTX2TinyDecoderFor1792: ManagedMLModel? = {
+      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: LTX2UnzipItem.appendingPathComponent("1792.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let LTX2TinyDecoderFor2048: ManagedMLModel? = {
+      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: LTX2UnzipItem.appendingPathComponent("2048.mlmodelc"),
+        configuration: configuration)
+    }()
     public static func imagesWithTAESD(fromLatent tensor: Tensor<FloatType>, version: ModelVersion)
       -> [UIImage]
     {
-      let shape = tensor.shape
-      let imageHeight = shape[1] * 8
-      let imageWidth = shape[2] * 8
+      var tensor = tensor
+      var shape = tensor.shape
+      let imageHeight: Int
+      let imageWidth: Int
       let imagePaddingSize: Int
       let taesd: ManagedMLModel?
+      let isVideo: Bool
       switch version {
       case .flux1, .hiDreamI1, .zImage:
+        imageHeight = shape[1] * 8
+        imageWidth = shape[2] * 8
+        isVideo = false
         switch max(imageWidth, imageHeight) {
         case 0...768:
           taesd = flux1TinyDecoderFor768
@@ -1117,6 +1262,9 @@ public enum ImageConverter {
           return []
         }
       case .qwenImage:
+        imageHeight = shape[1] * 8
+        imageWidth = shape[2] * 8
+        isVideo = false
         switch max(imageWidth, imageHeight) {
         case 0...768:
           taesd = qwenImageTinyDecoderFor768
@@ -1140,6 +1288,9 @@ public enum ImageConverter {
           return []
         }
       case .flux2, .flux2_4b, .flux2_9b:
+        imageHeight = shape[1] * 8
+        imageWidth = shape[2] * 8
+        isVideo = false
         switch max(imageWidth, imageHeight) {
         case 0...768:
           taesd = flux2TinyDecoderFor768
@@ -1162,7 +1313,37 @@ public enum ImageConverter {
         default:
           return []
         }
-      case .auraflow, .hunyuanVideo, .kandinsky21, .ltx2, .pixart, .sd3, .sd3Large, .sdxlBase,
+      case .ltx2:
+        let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight(shape)
+        tensor = tensor[0..<shape[0], 0..<(shape[1] - audioHeight), 0..<shape[2], 0..<shape[3]]
+          .copied()
+        shape = tensor.shape
+        imageHeight = shape[1] * 32
+        imageWidth = shape[2] * 32
+        isVideo = true
+        switch max(imageWidth, imageHeight) {
+        case 0...768:
+          taesd = LTX2TinyDecoderFor768
+          imagePaddingSize = 768
+        case 769...1024:
+          taesd = LTX2TinyDecoderFor1024
+          imagePaddingSize = 1024
+        case 1025...1280:
+          taesd = LTX2TinyDecoderFor1280
+          imagePaddingSize = 1280
+        case 1281...1536:
+          taesd = LTX2TinyDecoderFor1536
+          imagePaddingSize = 1536
+        case 1537...1792:
+          taesd = LTX2TinyDecoderFor1792
+          imagePaddingSize = 1792
+        case 1793...2048:
+          taesd = LTX2TinyDecoderFor2048
+          imagePaddingSize = 2048
+        default:
+          return []
+        }
+      case .auraflow, .hunyuanVideo, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
         .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wan21_14b, .wan21_1_3b, .wan22_5b,
         .wurstchenStageB, .wurstchenStageC:
         return []
@@ -1171,62 +1352,16 @@ public enum ImageConverter {
         return []
       }
       do {
-        var images = [Tensor<FloatType>]()
-        if imageWidth != imagePaddingSize || imageHeight != imagePaddingSize {
-          for i in 0..<shape[0] {
-            var image = Tensor<FloatType>(
-              .CPU, .NHWC(1, imagePaddingSize / 8, imagePaddingSize / 8, shape[3]))
-            image[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
-              tensor[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-            images.append(image)
-          }
-        } else if shape[0] > 1 {
-          for i in 0..<shape[0] {
-            images.append(
-              tensor[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].contiguous())
-          }
-        } else {
-          images.append(tensor)
-        }
-        try taesd.loadResources()
-        let array = images.map { MLMultiArray(MLShapedArray($0)) }
-        return try taesd.perform {
-          let provider = MLArrayBatchProvider(
-            array: try array.map {
-              try MLDictionaryFeatureProvider(dictionary: ["latent": MLFeatureValue(multiArray: $0)]
-              )
-            })
-          let name = $0.modelDescription.outputDescriptionsByName.keys.first!
-          let predictions = try $0.predictions(fromBatch: provider)
-          return (0..<predictions.count).compactMap {
-            let outFeatures = predictions.features(at: $0)
-            let outputArray = outFeatures.featureValue(for: name)!.multiArrayValue!
-            let stride = outputArray.strides[2].intValue
-            return outputArray.withUnsafeBytes {
-              guard var fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else {
-                return UIImage()
-              }
-              let bytes = UnsafeMutablePointer<UInt8>.allocate(
-                capacity: imageWidth * imageHeight * 4)
-              var o = bytes
-              for _ in 0..<imageHeight {
-                var i = fp16
-                for _ in 0..<imageWidth {
-                  // We need to do some computations from the latent values.
-                  let (v0, v1, v2) = (i[0], i[1], i[2])
-                  let r = 255.0 * v0
-                  let g = 255.0 * v1
-                  let b = 255.0 * v2
-                  o[0] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
-                  o[1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
-                  o[2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
-                  o[3] = 255
-                  i += stride
-                  o += 4
-                }
-                fp16 += imagePaddingSize * 32
-              }
-              return UIImage(
+        if isVideo {
+          try taesd.loadResources()
+          return try taesd.perform { model in
+            func zeroFill(_ array: MLMultiArray) {
+              guard array.dataType == .float16 else { return }
+              let ptr = array.dataPointer.bindMemory(to: Float16.self, capacity: array.count)
+              ptr.initialize(repeating: 0, count: array.count)
+            }
+            func imageFromBytes(_ bytes: UnsafeMutablePointer<UInt8>) -> UIImage {
+              UIImage(
                 cgImage: CGImage(
                   width: imageWidth, height: imageHeight, bitsPerComponent: 8, bitsPerPixel: 32,
                   bytesPerRow: 4 * imageWidth, space: CGColorSpaceCreateDeviceRGB(),
@@ -1239,6 +1374,232 @@ public enum ImageConverter {
                       p.deallocate()
                     })!, decode: nil, shouldInterpolate: false,
                   intent: CGColorRenderingIntent.defaultIntent)!)
+            }
+            guard
+              let latentConstraint = model.modelDescription.inputDescriptionsByName["latent"]?
+                .multiArrayConstraint,
+              let imageConstraint = model.modelDescription.outputDescriptionsByName["image"]?
+                .multiArrayConstraint
+            else {
+              return []
+            }
+            let latentModelShape = latentConstraint.shape.map { $0.intValue }
+            let imageModelShape = imageConstraint.shape.map { $0.intValue }
+            guard latentConstraint.dataType == .float16, imageConstraint.dataType == .float16,
+              latentModelShape.count == 5, imageModelShape.count == 5
+            else {
+              return []
+            }
+            let chunkT = latentModelShape[1]
+            let paddedLatentHeight = latentModelShape[2]
+            let paddedLatentWidth = latentModelShape[3]
+            let latentChannels = latentModelShape[4]
+            let outputFramesPerCall = imageModelShape[1]
+            let outputHeight = imageModelShape[2]
+            let outputWidth = imageModelShape[3]
+            let outputChannels = imageModelShape[4]
+            guard chunkT > 0, outputFramesPerCall > 0, outputFramesPerCall % chunkT == 0 else {
+              return []
+            }
+            let tUpscale = outputFramesPerCall / chunkT
+            let framesToTrim = max(0, tUpscale - 1)
+            guard shape.count == 4, shape[1] <= paddedLatentHeight, shape[2] <= paddedLatentWidth,
+              shape[3] == latentChannels, outputHeight >= imageHeight, outputWidth >= imageWidth,
+              outputChannels >= 3
+            else {
+              return []
+            }
+            let actInputNames = (0...8).map { "act_\($0)" }
+            let actOutputNames = (0...8).map { "act_\($0)_out" }
+            var states = [MLMultiArray]()
+            states.reserveCapacity(actInputNames.count)
+            for name in actInputNames {
+              guard
+                let constraint = model.modelDescription.inputDescriptionsByName[name]?
+                  .multiArrayConstraint,
+                constraint.dataType == .float16
+              else {
+                return []
+              }
+              guard
+                let state = try? MLMultiArray(
+                  shape: constraint.shape, dataType: constraint.dataType)
+              else {
+                return []
+              }
+              zeroFill(state)
+              states.append(state)
+            }
+            func copyLatentChunk(from sourceStartFrame: Int, realFrames: Int) -> MLMultiArray {
+              var latentChunkTensor = Tensor<FloatType>(
+                Array(
+                  repeating: 0,
+                  count: chunkT * paddedLatentHeight * paddedLatentWidth * shape[3]),
+                .CPU, .NHWC(chunkT, paddedLatentHeight, paddedLatentWidth, shape[3]))
+              latentChunkTensor[0..<realFrames, 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+                tensor[
+                  sourceStartFrame..<(sourceStartFrame + realFrames), 0..<shape[1], 0..<shape[2],
+                  0..<shape[3]
+                ]
+              return MLMultiArray(
+                MLShapedArray(
+                  latentChunkTensor.reshaped(
+                    format: .NHWC,
+                    shape: [
+                      1, chunkT, paddedLatentHeight, paddedLatentWidth, shape[3],
+                    ])))
+            }
+            func frameImage(from outputArray: MLMultiArray, frameIndex: Int) -> UIImage? {
+              let strides = outputArray.strides.map { $0.intValue }
+              guard strides.count == 5 else { return nil }
+              let tStride = strides[1]
+              let hStride = strides[2]
+              let wStride = strides[3]
+              let cStride = strides[4]
+              let bytes = UnsafeMutablePointer<UInt8>.allocate(
+                capacity: imageWidth * imageHeight * 4)
+              guard outputArray.dataType == .float16 else {
+                bytes.deallocate()
+                return nil
+              }
+              let ptr = outputArray.dataPointer.bindMemory(
+                to: Float16.self, capacity: outputArray.count)
+              var o = bytes
+              let frameBase = frameIndex * tStride
+              for y in 0..<imageHeight {
+                for x in 0..<imageWidth {
+                  let pixelBase = frameBase + y * hStride + x * wStride
+                  let r = 255.0 * Float(ptr[pixelBase])
+                  let g = 255.0 * Float(ptr[pixelBase + cStride])
+                  let b = 255.0 * Float(ptr[pixelBase + 2 * cStride])
+                  o[0] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+                  o[1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+                  o[2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+                  o[3] = 255
+                  o += 4
+                }
+              }
+              return imageFromBytes(bytes)
+            }
+            do {
+              var images = [UIImage]()
+              images.reserveCapacity(max(0, shape[0] * tUpscale - framesToTrim))
+              var producedRawFrames = 0
+              for start in stride(from: 0, to: shape[0], by: chunkT) {
+                let realFrames = min(chunkT, shape[0] - start)
+                let chunkLatent = copyLatentChunk(from: start, realFrames: realFrames)
+                var features: [String: MLFeatureValue] = [
+                  "latent": MLFeatureValue(multiArray: chunkLatent)
+                ]
+                for (i, name) in actInputNames.enumerated() {
+                  features[name] = MLFeatureValue(multiArray: states[i])
+                }
+                let out = try model.prediction(
+                  from: MLDictionaryFeatureProvider(dictionary: features))
+                guard let outputArray = out.featureValue(for: "image")?.multiArrayValue else {
+                  return []
+                }
+                let rawFramesInChunk = realFrames * tUpscale
+                for localFrame in 0..<rawFramesInChunk {
+                  let globalRawFrame = producedRawFrames + localFrame
+                  if globalRawFrame < framesToTrim {
+                    continue
+                  }
+                  guard let image = frameImage(from: outputArray, frameIndex: localFrame) else {
+                    return []
+                  }
+                  images.append(image)
+                }
+                let nextStates = actOutputNames.compactMap {
+                  out.featureValue(for: $0)?.multiArrayValue
+                }
+                guard nextStates.count == actOutputNames.count,
+                  nextStates.allSatisfy({ $0.dataType == .float16 })
+                else {
+                  return []
+                }
+                states = nextStates
+                producedRawFrames += rawFramesInChunk
+              }
+              return images
+            } catch {
+              return []
+            }
+          }
+        } else {
+          var images = [Tensor<FloatType>]()
+          if imageWidth != imagePaddingSize || imageHeight != imagePaddingSize {
+            for i in 0..<shape[0] {
+              var image = Tensor<FloatType>(
+                Array(
+                  repeating: 0, count: (imagePaddingSize / 8) * (imagePaddingSize / 8) * shape[3]),
+                .CPU, .NHWC(1, imagePaddingSize / 8, imagePaddingSize / 8, shape[3]))
+              image[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+                tensor[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+              images.append(image)
+            }
+          } else if shape[0] > 1 {
+            for i in 0..<shape[0] {
+              images.append(
+                tensor[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].contiguous())
+            }
+          } else {
+            images.append(tensor)
+          }
+          try taesd.loadResources()
+          let array = images.map { MLMultiArray(MLShapedArray($0)) }
+          return try taesd.perform {
+            let provider = MLArrayBatchProvider(
+              array: try array.map {
+                try MLDictionaryFeatureProvider(dictionary: [
+                  "latent": MLFeatureValue(multiArray: $0)
+                ]
+                )
+              })
+            let name = $0.modelDescription.outputDescriptionsByName.keys.first!
+            let predictions = try $0.predictions(fromBatch: provider)
+            return (0..<predictions.count).compactMap {
+              let outFeatures = predictions.features(at: $0)
+              let outputArray = outFeatures.featureValue(for: name)!.multiArrayValue!
+              let stride = outputArray.strides[2].intValue
+              return outputArray.withUnsafeBytes {
+                guard var fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else {
+                  return UIImage()
+                }
+                let bytes = UnsafeMutablePointer<UInt8>.allocate(
+                  capacity: imageWidth * imageHeight * 4)
+                var o = bytes
+                for _ in 0..<imageHeight {
+                  var i = fp16
+                  for _ in 0..<imageWidth {
+                    // We need to do some computations from the latent values.
+                    let (v0, v1, v2) = (i[0], i[1], i[2])
+                    let r = 255.0 * v0
+                    let g = 255.0 * v1
+                    let b = 255.0 * v2
+                    o[0] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+                    o[1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+                    o[2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+                    o[3] = 255
+                    i += stride
+                    o += 4
+                  }
+                  fp16 += imagePaddingSize * 32
+                }
+                return UIImage(
+                  cgImage: CGImage(
+                    width: imageWidth, height: imageHeight, bitsPerComponent: 8, bitsPerPixel: 32,
+                    bytesPerRow: 4 * imageWidth, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGBitmapInfo(
+                      rawValue: CGBitmapInfo.byteOrder32Big.rawValue
+                        | CGImageAlphaInfo.noneSkipLast.rawValue),
+                    provider: CGDataProvider(
+                      dataInfo: nil, data: bytes, size: imageWidth * imageHeight * 4,
+                      releaseData: { _, p, _ in
+                        p.deallocate()
+                      })!, decode: nil, shouldInterpolate: false,
+                    intent: CGColorRenderingIntent.defaultIntent)!)
+              }
             }
           }
         }
@@ -1256,11 +1617,14 @@ public enum ImageConverter {
       let imageHeight = shape[1]
       let imageWidth = shape[2]
       let channels = shape[3]
-      guard channels == 4 || channels == 3 || channels == 16 || channels == 32 || channels == 48
+      guard
+        channels == 4 || channels == 3 || channels == 16 || channels == 32 || channels == 48
+          || channels == 128
       else { return ([], false) }
       if canUseTAESD
         && (version == .flux1 || version == .hiDreamI1 || version == .zImage || version == .flux2
-          || version == .flux2_4b || version == .flux2_9b || version == .qwenImage)
+          || version == .flux2_4b || version == .flux2_9b || version == .qwenImage
+          || version == .ltx2)
       {
         let images = imagesWithTAESD(fromLatent: tensor, version: version)
         guard images.isEmpty else {
@@ -1405,7 +1769,8 @@ public enum ImageConverter {
               bytes[i * 4 + 3] = 255
             }
           case .ltx2:
-            fatalError()
+            bytes.deallocate()
+            continue
           case .hunyuanVideo:
             // Need to update the coefficients.
             for i in 0..<imageHeight * imageWidth {
