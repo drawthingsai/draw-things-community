@@ -43,3 +43,5 @@ WORKSPACE.linux
 WORKSPACE.darwin
 SYNCLIST
 BUILD
+Package.swift
+Package.resolved
