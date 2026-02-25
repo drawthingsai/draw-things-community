@@ -1,3 +1,4 @@
+import DiffusionMappings
 import NNC
 
 private func PerceiverAttention(

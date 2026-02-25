@@ -32,11 +32,13 @@ swift_library(
             "Sources/Preprocessors/**/*.swift",
             "Sources/CoreMLModelManager/**/*.swift",
             "Sources/UNetWrapper/**/*.swift",
+            "Sources/Mappings/**/*.swift",
         ],
     ),
     module_name = "Diffusion",
     visibility = ["//visibility:public"],
     deps = [
+        ":Mappings",
         "//Libraries/Tokenizer",
         "//Libraries/WeightsCache",
         "//Vendors/ZIPFoundation",
@@ -46,6 +48,13 @@ swift_library(
         "@swift-atomics//:SwiftAtomics",
         "@swift-fickling//:fickling",
     ],
+)
+
+swift_library(
+    name = "Mappings",
+    srcs = glob(["Sources/Mappings/**/*.swift"]),
+    module_name = "DiffusionMappings",
+    visibility = ["//visibility:public"],
 )
 
 swift_library(

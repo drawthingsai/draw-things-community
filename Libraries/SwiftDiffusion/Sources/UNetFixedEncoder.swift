@@ -1,4 +1,5 @@
 import Collections
+import DiffusionMappings
 import Foundation
 import NNC
 import WeightsCache

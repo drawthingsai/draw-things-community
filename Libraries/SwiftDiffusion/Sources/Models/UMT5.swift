@@ -1,3 +1,4 @@
+import DiffusionMappings
 import Foundation
 import NNC
 

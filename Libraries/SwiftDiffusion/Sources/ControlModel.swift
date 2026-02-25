@@ -1,4 +1,5 @@
 import Atomics
+import DiffusionMappings
 import NNC
 
 #if canImport(C_ccv)

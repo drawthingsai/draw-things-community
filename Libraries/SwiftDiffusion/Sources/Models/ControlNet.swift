@@ -1,3 +1,4 @@
+import DiffusionMappings
 import NNC
 
 func InputHintBlocks(modelChannel: Int, hint: Model.IO) -> (

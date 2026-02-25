@@ -1,3 +1,4 @@
+import DiffusionMappings
 import NNC
 
 private func TimeEmbedder(channels: Int) -> (Model, Model, Model) {

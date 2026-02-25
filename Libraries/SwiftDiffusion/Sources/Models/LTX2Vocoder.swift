@@ -1,3 +1,4 @@
+import DiffusionMappings
 import NNC
 
 private func ResBlock1(prefix: String, channels: Int, kernelSize: Int) -> (ModelWeightMapper, Model)

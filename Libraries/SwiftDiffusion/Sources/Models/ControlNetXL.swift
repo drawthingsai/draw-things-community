@@ -1,3 +1,4 @@
+import DiffusionMappings
 import NNC
 
 public func ControlAddEmbed(modelChannels: Int) -> (Model, Model, Model) {

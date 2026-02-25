@@ -1,3 +1,4 @@
+import DiffusionMappings
 import NNC
 
 private func ResnetBlockCausal2D(prefix: String, inChannels: Int, outChannels: Int, shortcut: Bool)

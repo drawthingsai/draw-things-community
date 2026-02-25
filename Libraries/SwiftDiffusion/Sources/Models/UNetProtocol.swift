@@ -1,5 +1,6 @@
 import Atomics
 import Collections
+import DiffusionMappings
 import NNC
 import WeightsCache
 

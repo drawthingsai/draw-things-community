@@ -1,3 +1,4 @@
+import DiffusionMappings
 import Fickling
 import Foundation
 import NNC
