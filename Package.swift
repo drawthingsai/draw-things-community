@@ -1,13 +1,23 @@
+import Foundation
 // swift-tools-version:5.9
 import PackageDescription
+
+let hasDrawThingsSDKSwiftPMTargets = [
+  "Libraries/DeviceAttestation/Sources",
+  "Libraries/DrawThingsSDK/Sources",
+  "Apps/SDKCLI",
+].allSatisfy { FileManager.default.fileExists(atPath: $0) }
 
 let package = Package(
   name: "DrawThings",
   platforms: [.macOS(.v13), .iOS(.v16)],
   products: [
-    .executable(name: "gRPCServerCLI", targets: ["gRPCServerCLI"]),
-    .library(name: "DrawThingsSDK", targets: ["DrawThingsSDK"]),
-  ],
+    .executable(name: "gRPCServerCLI", targets: ["gRPCServerCLI"])
+  ]
+    + (hasDrawThingsSDKSwiftPMTargets
+      ? [
+        .library(name: "DrawThingsSDK", targets: ["DrawThingsSDK"])
+      ] : []),
   dependencies: [
     .package(
       url: "https://github.com/liuliu/ccv.git", revision: "99844e6fdd9229fb1f97f868694cc279aecfa990"
@@ -42,10 +52,6 @@ let package = Package(
     .package(url: "https://github.com/apple/swift-numerics.git", from: "1.0.0"),
   ],
   targets: [
-    .target(
-      name: "DeviceAttestation",
-      path: "Libraries/DeviceAttestation/Sources"
-    ),
     .target(
       name: "Utils",
       path: "Libraries/Utils/Sources"
@@ -309,28 +315,6 @@ let package = Package(
       path: "Libraries/RemoteImageGenerator/Sources"
     ),
     .target(
-      name: "DrawThingsSDK",
-      dependencies: [
-        "BinaryResources",
-        "ConfigurationZoo",
-        "DataModels",
-        "DeviceAttestation",
-        "Diffusion",
-        "ImageGenerator",
-        "LocalImageGenerator",
-        "RemoteImageGenerator",
-        "ModelZoo",
-        "ScriptDataModels",
-        "Tokenizer",
-        "GRPCServer",
-        .product(name: "NNC", package: "s4nnc"),
-        .product(name: "SQLiteDflat", package: "dflat"),
-        .product(name: "Crypto", package: "swift-crypto"),
-      ],
-      path: "Libraries/DrawThingsSDK/Sources"
-    ),
-
-    .target(
       name: "GRPCImageServiceModels",
       dependencies: [
         .product(name: "GRPC", package: "grpc-swift")
@@ -432,16 +416,44 @@ let package = Package(
       sources: ["gRPCServerCLI.swift"]
     ),
 
-    .executableTarget(
-      name: "SDKCLI",
-      dependencies: [
-        "DrawThingsSDK",
-        "DataModels",
-        "ImageGenerator",
-        .product(name: "ArgumentParser", package: "swift-argument-parser"),
-      ],
-      path: "Apps/SDKCLI",
-      sources: ["SDKCLI.swift"]
-    ),
   ]
+    + (hasDrawThingsSDKSwiftPMTargets
+      ? [
+        .target(
+          name: "DeviceAttestation",
+          path: "Libraries/DeviceAttestation/Sources"
+        ),
+        .target(
+          name: "DrawThingsSDK",
+          dependencies: [
+            "BinaryResources",
+            "ConfigurationZoo",
+            "DataModels",
+            "DeviceAttestation",
+            "Diffusion",
+            "ImageGenerator",
+            "LocalImageGenerator",
+            "RemoteImageGenerator",
+            "ModelZoo",
+            "ScriptDataModels",
+            "Tokenizer",
+            "GRPCServer",
+            .product(name: "NNC", package: "s4nnc"),
+            .product(name: "SQLiteDflat", package: "dflat"),
+            .product(name: "Crypto", package: "swift-crypto"),
+          ],
+          path: "Libraries/DrawThingsSDK/Sources"
+        ),
+        .executableTarget(
+          name: "SDKCLI",
+          dependencies: [
+            "DrawThingsSDK",
+            "DataModels",
+            "ImageGenerator",
+            .product(name: "ArgumentParser", package: "swift-argument-parser"),
+          ],
+          path: "Apps/SDKCLI",
+          sources: ["SDKCLI.swift"]
+        ),
+      ] : [])
 )
