@@ -14,22 +14,24 @@ The Draw Things app is managed through a private mono-repository. We do per-comm
 
 That being said, we don't plan to publish roadmap for internal mono-repository. Whether we would like to publish roadmap for public community repository would require further deliberation and feedback from the community.
 
-# Getting Started
+# Quick Start with Swift Package Manager on macOS
 
-We use [Bazel](https://bazel.build/) as our main build system. You can build components either on Linux or on macOS. On macOS, you need to have Xcode installed. On Linux, depending on whether you have NVIDIA CUDA-compatible GPU, the setup can be different.
-
-After neccessary dependencies installed, you can run:
+If you want to build the SwiftPM `gRPCServerCLI` target locally, you can build it with:
 
 ```bash
-./Scripts/install.sh
+swift build --target gRPCServerCLI
 ```
 
-To setup the repo properly.
-
-To verify the installation, run:
+To run the CLI with SwiftPM, use the executable name form (not `--target`):
 
 ```bash
-bazel run Apps:ModelConverter
+swift run gRPCServerCLI /path/to/models
+```
+
+You can also inspect CLI options with:
+
+```bash
+swift run gRPCServerCLI --help
 ```
 
 # Self-host gRPCServerCLI from Packaged Binaries
@@ -134,6 +136,24 @@ For RTX 20xx graphics cards, you need to disable FlashAttention:
 
 ```
 docker run -v /[Your local path to store models]:/grpc-models -p 7859:7859 --gpus all drawthingsai/draw-things-grpc-server-cli:latest gRPCServerCLI /grpc-models --no-flash-attention
+```
+
+# Getting Started for Development
+
+We use [Bazel](https://bazel.build/) as our main build system. You can build components either on Linux or on macOS. On macOS, you need to have Xcode installed. On Linux, depending on whether you have NVIDIA CUDA-compatible GPU, the setup can be different.
+
+After neccessary dependencies installed, you can run:
+
+```bash
+./Scripts/install.sh
+```
+
+To setup the repo properly.
+
+To verify the installation, run:
+
+```bash
+bazel run Apps:ModelConverter
 ```
 
 # Self-host gRPCServerCLI from Scratch
