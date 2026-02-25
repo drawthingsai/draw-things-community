@@ -1628,7 +1628,7 @@ public enum ImageConverter {
       {
         let images = imagesWithTAESD(fromLatent: tensor, version: version)
         guard images.isEmpty else {
-          return (images, true)
+          return (images, version != .ltx2)  // It is still fairly low quality for LTX-2.
         }
       }
       return tensor.withUnsafeBytes {
