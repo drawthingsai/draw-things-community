@@ -482,7 +482,7 @@ func NCHWLTX2VideoDecoderCausal3D(
     ]))
   // LTXV weirdly, did "b (c p r q) f h w -> b c (f p) (h q) (w r)"
   out = out.reshaped([3, 4, 4, depth, height, width]).permuted(3, 4, 2, 5, 1, 0).contiguous()
-    .reshaped([depth, height * 4, width * 4, 3], format: .NHWC)
+    .reshaped(.NHWC(depth, height * 4, width * 4, 3))
 
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -515,14 +515,18 @@ func NCHWLTX2VideoEncoderCausal3D(
   }
   // LTXV weirdly, did "b (c p r q) f h w -> b c (f p) (h q) (w r)"
   var out = x.reshaped([depth, height, 4, width, 4, 3]).permuted(5, 4, 2, 0, 1, 3).contiguous()
-    .reshaped([1, 48, depth, height, width])
+    .reshaped([48, depth, height, width], format: .NCHW)
   var previousChannel = layers[0].channels
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
     format: .OIHW,
     name: "conv_in")
-  out = convIn(out.padded(.replicate, begin: [0, 0, 2, 0, 0], end: [0, 0, 0, 0, 0]))
+  out = convIn(
+    out.padded(.replicate, begin: [0, 2, 0, 0], end: [0, 0, 0, 0]).reshaped([
+      1, 48, 2 + depth, height, width,
+    ])
+  ).reshaped([previousChannel, depth, height, width])
   var j = 0
   var mappers = [ModelWeightMapper]()
   for layer in layers {
@@ -540,65 +544,74 @@ func NCHWLTX2VideoEncoderCausal3D(
           previousChannel, depth, height / layer.stride.1, layer.stride.1, width / layer.stride.2,
           layer.stride.2,
         ]).permuted(0, 3, 5, 1, 2, 4).contiguous().reshaped([
-          1, channels, previousChannel * layer.stride.1 * layer.stride.2 / channels, depth,
+          channels, previousChannel * layer.stride.1 * layer.stride.2 / channels, depth,
           height / layer.stride.1, width / layer.stride.2,
         ])
-        residual = residual.reduced(.mean, axis: [2]).reshaped([
-          1, channels, depth, height / layer.stride.1, width / layer.stride.2,
+        residual = residual.reduced(.mean, axis: [1]).reshaped([
+          channels, depth, height / layer.stride.1, width / layer.stride.2,
         ])
-        out = conv(out.padded(.replicate, begin: [0, 0, 2, 0, 0]))
+        out = conv(
+          out.padded(.replicate, begin: [0, 2, 0, 0]).reshaped([
+            1, previousChannel, depth + 2, height, width,
+          ]))
         out = out.reshaped([
           channels / (layer.stride.1 * layer.stride.2), depth, height / layer.stride.1,
           layer.stride.1, width / layer.stride.2, layer.stride.2,
         ]).permuted(0, 3, 5, 1, 2, 4).contiguous().reshaped([
-          1, channels, depth, height / layer.stride.1, width / layer.stride.2,
+          channels, depth, height / layer.stride.1, width / layer.stride.2,
         ])
         out = residual + out
         height = height / layer.stride.1
         width = width / layer.stride.2
       } else if layer.stride.1 == 1 && layer.stride.2 == 1 {
-        var residual = out.padded(.replicate, begin: [0, 0, 1, 0, 0]).reshaped([
+        var residual = out.padded(.replicate, begin: [0, 1, 0, 0]).reshaped([
           previousChannel, (depth + 1) / layer.stride.0, layer.stride.0, height, width,
         ]).permuted(0, 2, 1, 3, 4).contiguous()
         if previousChannel * layer.stride.0 / channels > 1 {
           residual = residual.reshaped([
-            1, channels, previousChannel * layer.stride.0 / channels, (depth + 1) / layer.stride.0,
+            channels, previousChannel * layer.stride.0 / channels, (depth + 1) / layer.stride.0,
             height, width,
           ])
-          residual = residual.reduced(.mean, axis: [2]).reshaped([
-            1, channels, (depth + 1) / layer.stride.0, height, width,
+          residual = residual.reduced(.mean, axis: [1]).reshaped([
+            channels, (depth + 1) / layer.stride.0, height, width,
           ])
         } else {
-          residual = residual.reshaped([1, channels, (depth + 1) / layer.stride.0, height, width])
+          residual = residual.reshaped([channels, (depth + 1) / layer.stride.0, height, width])
         }
-        out = conv(out.padded(.replicate, begin: [0, 0, 3, 0, 0]))
+        out = conv(
+          out.padded(.replicate, begin: [0, 3, 0, 0]).reshaped([
+            1, previousChannel, depth + 3, height, width,
+          ]))
         out = out.reshaped([
           channels / layer.stride.0, (depth + 1) / layer.stride.0, layer.stride.0, height, width,
         ]).permuted(0, 2, 1, 3, 4).contiguous().reshaped([
-          1, channels, (depth + 1) / layer.stride.0, height, width,
+          channels, (depth + 1) / layer.stride.0, height, width,
         ])
         out = residual + out
         depth = (depth + 1) / layer.stride.0
       } else {
-        var residual = out.padded(.replicate, begin: [0, 0, 1, 0, 0]).reshaped([
+        var residual = out.padded(.replicate, begin: [0, 1, 0, 0]).reshaped([
           previousChannel, (depth + 1) / layer.stride.0, layer.stride.0, height / layer.stride.1,
           layer.stride.1, width / layer.stride.2, layer.stride.2,
         ]).permuted(0, 2, 4, 6, 1, 3, 5).contiguous().reshaped([
-          1, channels,
+          channels,
           previousChannel * layer.stride.0 * layer.stride.1 * layer.stride.2 / channels,
           (depth + 1) / layer.stride.0, height / layer.stride.1, width / layer.stride.2,
         ])
-        residual = residual.reduced(.mean, axis: [2]).reshaped([
-          1, channels, (depth + 1) / layer.stride.0, height / layer.stride.1,
+        residual = residual.reduced(.mean, axis: [1]).reshaped([
+          channels, (depth + 1) / layer.stride.0, height / layer.stride.1,
           width / layer.stride.2,
         ])
-        out = conv(out.padded(.replicate, begin: [0, 0, 3, 0, 0]))
+        out = conv(
+          out.padded(.replicate, begin: [0, 3, 0, 0]).reshaped([
+            1, previousChannel, depth + 3, height, width,
+          ]))
         out = out.reshaped([
           channels / (layer.stride.0 * layer.stride.1 * layer.stride.2),
           (depth + 1) / layer.stride.0, layer.stride.0, height / layer.stride.1, layer.stride.1,
           width / layer.stride.2, layer.stride.2,
         ]).permuted(0, 2, 4, 6, 1, 3, 5).contiguous().reshaped([
-          1, channels, (depth + 1) / layer.stride.0, height / layer.stride.1,
+          channels, (depth + 1) / layer.stride.0, height / layer.stride.1,
           width / layer.stride.2,
         ])
         out = residual + out
@@ -626,16 +639,20 @@ func NCHWLTX2VideoEncoderCausal3D(
     j += 1
   }
   let normOut = RMSNorm(epsilon: 1e-8, axis: [0], elementwiseAffine: false, name: "norm_out")
-  out = normOut(out.reshaped([previousChannel, depth, height, width])).reshaped([
-    1, previousChannel, depth, height, width,
-  ]).swish()
+  out = normOut(out.reshaped([previousChannel, depth, height, width])).swish()
   let convOut = Convolution(
     groups: 1, filters: 128,  // Ignore the last channel which is only useful when training 129
     filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
     format: .OIHW,
     name: "conv_out")
-  out = convOut(out.padded(.replicate, begin: [0, 0, 2, 0, 0])).permuted(0, 2, 3, 4, 1).copied()
+  out = convOut(
+    out.padded(.replicate, begin: [0, 2, 0, 0]).reshaped([
+      1, previousChannel, depth + 2, height, width,
+    ])
+  ).reshaped([
+    128, depth, height, width,
+  ]).permuted(1, 2, 3, 0).copied()
     .reshaped(.NHWC(depth, height, width, 128))
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
