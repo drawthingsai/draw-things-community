@@ -6001,22 +6001,22 @@ extension LocalImageGenerator {
       }
       if configuration.preserveOriginalAfterInpaint {
         let original = downscaleImage(image, scaleFactor: scaleFactor)
-        for i in 0..<result.count {
+        for i in 0..<result.0.count {
           imageWithMask(
-            &result[i], original: original, mask: mask, maskBlur: configuration.maskBlur,
+            &result.0[i], original: original, mask: mask, maskBlur: configuration.maskBlur,
             maskBlurOutset: Int(configuration.maskBlurOutset), overwrite0: overwrite0,
             transparent: alternativeDecoderVersion == .transparent)
         }
       }
-      result = faceRestoreImages(result, configuration: configuration)
+      result.0 = faceRestoreImages(result.0, configuration: configuration)
       if signposts.contains(.faceRestored) {
         guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
-      let batch = upscaleImages(result, configuration: configuration)
+      let batch = upscaleImages(result.0, configuration: configuration)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
-      return (batch.0, nil, batch.1)
+      return (batch.0, result.1, batch.1)
     }
     // If there is no 2 or 3, only 0 or 1, we don't need to use mask2 (as it covered everything).
     if !exists2 && !exists3 {
@@ -6032,23 +6032,23 @@ extension LocalImageGenerator {
       else { return (nil, nil, 1) }
       if configuration.strength == 0 && configuration.preserveOriginalAfterInpaint {
         let original = downscaleImage(image, scaleFactor: scaleFactor)
-        for i in 0..<result.count {
+        for i in 0..<result.0.count {
           // If strength is zero, we need to put original back for mask = 0 case.
           imageWithMask(
-            &result[i], original: original, mask: mask, maskBlur: configuration.maskBlur,
+            &result.0[i], original: original, mask: mask, maskBlur: configuration.maskBlur,
             maskBlurOutset: Int(configuration.maskBlurOutset), overwrite0: false, transparent: false
           )
         }
       }
-      result = faceRestoreImages(result, configuration: configuration)
+      result.0 = faceRestoreImages(result.0, configuration: configuration)
       if signposts.contains(.faceRestored) {
         guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
-      let batch = upscaleImages(result, configuration: configuration)
+      let batch = upscaleImages(result.0, configuration: configuration)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
-      return (batch.0, nil, batch.1)
+      return (batch.0, result.1, batch.1)
     }
     guard
       var result = generateImageWithMask1AndMask2(
@@ -6063,23 +6063,23 @@ extension LocalImageGenerator {
     }
     if configuration.preserveOriginalAfterInpaint {
       let original = downscaleImage(image, scaleFactor: scaleFactor)
-      for i in 0..<result.count {
+      for i in 0..<result.0.count {
         // If strength is zero, we need to put original back for mask = 0 case.
         imageWithMask(
-          &result[i], original: original, mask: mask, maskBlur: configuration.maskBlur,
+          &result.0[i], original: original, mask: mask, maskBlur: configuration.maskBlur,
           maskBlurOutset: Int(configuration.maskBlurOutset),
           overwrite0: overwrite0 && configuration.strength > 0, transparent: false)
       }
     }
-    result = faceRestoreImages(result, configuration: configuration)
+    result.0 = faceRestoreImages(result.0, configuration: configuration)
     if signposts.contains(.faceRestored) {
       guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
     }
-    let batch = upscaleImages(result, configuration: configuration)
+    let batch = upscaleImages(result.0, configuration: configuration)
     if signposts.contains(.imageUpscaled) {
       let _ = feedback(.imageUpscaled, signposts, nil)
     }
-    return (batch.0, nil, batch.1)
+    return (batch.0, result.1, batch.1)
   }
 
   // This is vanilla inpainting, we directly go to steps - tEnc, and retain what we need till the end.
@@ -6094,7 +6094,7 @@ extension LocalImageGenerator {
     cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
-  ) -> [Tensor<FloatType>]? {
+  ) -> ([Tensor<FloatType>], [Tensor<Float>]?)? {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
     defer {
       if coreMLGuard {
@@ -6681,8 +6681,22 @@ extension LocalImageGenerator {
           .nearest, widthScale: Float(startWidth) / Float(initMask.shape[2]),
           heightScale: Float(startHeight) / Float(initMask.shape[1]))(initMask)
       }
+      if audioHeight > 0 {
+        let audioLatents = graph.variable(
+          .GPU(0), .HWC(1, batchSize.0 * startWidth * audioHeight, channels), of: FloatType.self)
+        audioLatents.full(0)
+        sample = Functional.concat(
+          axis: 1, sample,
+          audioLatents.reshaped(.NHWC(batchSize.0, audioHeight, startWidth, channels)))
+        let audioLatentsMask = graph.variable(
+          .GPU(0), .HWC(1, startWidth * audioHeight, 1), of: FloatType.self)
+        audioLatentsMask.full(1)
+        initMask = Functional.concat(
+          axis: 1, initMask,
+          audioLatentsMask.reshaped(.NHWC(1, audioHeight, startWidth, 1)))
+      }
       var initNegMask = graph.variable(
-        .GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
+        .GPU(0), .NHWC(1, startHeight + audioHeight, startWidth, 1), of: FloatType.self)
       initNegMask.full(1)
       initNegMask = initNegMask - initMask
       let x_T: DynamicGraph.Tensor<FloatType>
@@ -6890,6 +6904,8 @@ extension LocalImageGenerator {
         }
         x = b
       }
+      x = applyImageCond(
+        x, modifier: modifier, version: modelVersion, imageCond: imageCond)
       if DeviceCapability.isLowPerformance {
         graph.garbageCollect()
       }
@@ -6912,15 +6928,14 @@ extension LocalImageGenerator {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
       }
-      let result = DynamicGraph.Tensor<FloatType>(
-        from: modelPreloader.consumeFirstStageDecode(
-          firstStage.decode(
-            x, batchSize: (batchSize.0 - batchSize.1, 0),
-            decoder: modelPreloader.retrieveFirstStageDecoder(
-              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
-          firstStage: firstStage, scale: imageScale
-        ).0
-      ).rawValue.toCPU()
+      let firstStageResult = modelPreloader.consumeFirstStageDecode(
+        firstStage.decode(
+          x, batchSize: (batchSize.0 - batchSize.1, 0),
+          decoder: modelPreloader.retrieveFirstStageDecoder(
+            firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+        firstStage: firstStage, scale: imageScale
+      )
+      let result = DynamicGraph.Tensor<FloatType>(from: firstStageResult.0).rawValue.toCPU()
       guard !isNaN(result) else { return nil }
       if modelVersion == .wurstchenStageC {
         guard feedback(.secondPassImageDecoded, signposts, nil) else { return nil }
@@ -6930,15 +6945,16 @@ extension LocalImageGenerator {
       if ImageGeneratorUtils.isVideoModel(modelVersion) {
         batchSize.0 = Int(configuration.numFrames)
       }
+      let audio = firstStageResult.1?.rawValue.toCPU()
       guard batchSize.0 > 1 else {
-        return [result]
+        return ([result], audio.map { [$0] })
       }
       var batch = [Tensor<FloatType>]()
       let shape = result.shape
       for i in 0..<min(batchSize.0, shape[0]) {
         batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
       }
-      return batch
+      return (batch, audio.map { [$0] })
     }
   }
 
@@ -6953,7 +6969,7 @@ extension LocalImageGenerator {
     signposts: inout Set<ImageGeneratorSignpost>, cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
-  ) -> [Tensor<FloatType>]? {
+  ) -> ([Tensor<FloatType>], [Tensor<Float>]?)? {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
     defer {
       if coreMLGuard {
@@ -7141,12 +7157,14 @@ extension LocalImageGenerator {
     let startHeight: Int
     let startScaleFactor: Int
     let channels: Int
+    let audioHeight: Int
     let firstStageFilePath: String
     if modelVersion == .wurstchenStageC {
       (startWidth, startHeight) = stageCLatentsSize(configuration)
       channels = 16
       startScaleFactor = 8
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(file)
+      audioHeight = 0
     } else {
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
@@ -7155,27 +7173,34 @@ extension LocalImageGenerator {
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
+        audioHeight = 0
       case .flux2, .flux2_9b, .flux2_4b:
         channels = 32
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
+        audioHeight = 0
       case .wan22_5b:
         channels = 48
         startScaleFactor = 16
         startWidth = image.shape[2] / 16 / imageScaleFactor
         startHeight = image.shape[1] / 16 / imageScaleFactor
+        audioHeight = 0
       case .ltx2:
         channels = 128
         startScaleFactor = 32
         startWidth = image.shape[2] / 32 / imageScaleFactor
         startHeight = image.shape[1] / 32 / imageScaleFactor
+        let latentFrames = ((Int(configuration.numFrames) - 1) / 8) + 1
+        audioHeight =
+          LTX2ExtractAudioFramesAndHeight([latentFrames, 1, startWidth]).1
       case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
         .wurstchenStageB:
         channels = 4
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
+        audioHeight = 0
       }
       firstStageFilePath = ModelZoo.filePathForModelDownloaded(autoencoderFile)
     }
@@ -7516,8 +7541,16 @@ extension LocalImageGenerator {
           .nearest, widthScale: Float(startWidth) / Float(initMask1.shape[2]),
           heightScale: Float(startHeight) / Float(initMask1.shape[1]))(initMask1)
       }
+      if audioHeight > 0 {
+        let audioLatentsMask = graph.variable(
+          .GPU(0), .HWC(1, startWidth * audioHeight, 1), of: FloatType.self)
+        audioLatentsMask.full(1)
+        initMask1 = Functional.concat(
+          axis: 1, initMask1,
+          audioLatentsMask.reshaped(.NHWC(1, audioHeight, startWidth, 1)))
+      }
       var initNegMask = graph.variable(
-        .GPU(0), .NHWC(1, startHeight, startWidth, 1), of: FloatType.self)
+        .GPU(0), .NHWC(1, startHeight + audioHeight, startWidth, 1), of: FloatType.self)
       initNegMask.full(1)
       initNegMask = initNegMask - initMask1
       let depthImage = depth.map {
@@ -7566,9 +7599,17 @@ extension LocalImageGenerator {
         batchSize: batchSize, version: modelVersion, image: sample,
         injectedControls: injectedControls)
       let noise = randomLatentNoise(
-        graph: graph, batchSize: batchSize.0, startHeight: startHeight,
+        graph: graph, batchSize: batchSize.0, startHeight: startHeight + audioHeight,
         startWidth: startWidth, channels: channels, seed: configuration.seed,
         seedMode: configuration.seedMode)
+      if audioHeight > 0 {
+        let audioLatents = graph.variable(
+          .GPU(0), .HWC(1, batchSize.0 * startWidth * audioHeight, channels), of: FloatType.self)
+        audioLatents.full(0)
+        sample = Functional.concat(
+          axis: 1, sample,
+          audioLatents.reshaped(.NHWC(batchSize.0, audioHeight, startWidth, channels)))
+      }
       let customImage = custom.map {
         let customImage = graph.variable($0.toGPU(0))
         let customHeight = customImage.shape[1]
@@ -7656,6 +7697,14 @@ extension LocalImageGenerator {
           initMask = Upsample(
             .nearest, widthScale: Float(startWidth) / Float(initMask.shape[2]),
             heightScale: Float(startHeight) / Float(initMask.shape[1]))(initMask)
+        }
+        if audioHeight > 0 {
+          let audioLatentsMask = graph.variable(
+            .GPU(0), .HWC(1, startWidth * audioHeight, 1), of: FloatType.self)
+          audioLatentsMask.full(1)
+          initMask = Functional.concat(
+            axis: 1, initMask,
+            audioLatentsMask.reshaped(.NHWC(1, audioHeight, startWidth, 1)))
         }
         initNegMask.full(1)
         initNegMask = initNegMask - initMask
@@ -7924,6 +7973,8 @@ extension LocalImageGenerator {
         }
         x = b
       }
+      x = applyImageCond(
+        x, modifier: modifier, version: modelVersion, imageCond: imageCond)
       if DeviceCapability.isLowPerformance {
         graph.garbageCollect()
       }
@@ -7946,14 +7997,15 @@ extension LocalImageGenerator {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
       }
+      let firstStageResult = modelPreloader.consumeFirstStageDecode(
+        firstStage.decode(
+          x, batchSize: (batchSize.0 - batchSize.1, 0),
+          decoder: modelPreloader.retrieveFirstStageDecoder(
+            firstStage: firstStage, scale: imageScale), cancellation: cancellation),
+        firstStage: firstStage, scale: imageScale
+      )
       let result = DynamicGraph.Tensor<FloatType>(
-        from: modelPreloader.consumeFirstStageDecode(
-          firstStage.decode(
-            x, batchSize: (batchSize.0 - batchSize.1, 0),
-            decoder: modelPreloader.retrieveFirstStageDecoder(
-              firstStage: firstStage, scale: imageScale), cancellation: cancellation),
-          firstStage: firstStage, scale: imageScale
-        ).0
+        from: firstStageResult.0
       ).rawValue.toCPU()
       guard !isNaN(result) else { return nil }
       if modelVersion == .wurstchenStageC {
@@ -7964,15 +8016,16 @@ extension LocalImageGenerator {
       if ImageGeneratorUtils.isVideoModel(modelVersion) {
         batchSize.0 = Int(configuration.numFrames)
       }
+      let audio = firstStageResult.1?.rawValue.toCPU()
       guard batchSize.0 > 1 else {
-        return [result]
+        return ([result], audio.map { [$0] })
       }
       var batch = [Tensor<FloatType>]()
       let shape = result.shape
       for i in 0..<min(batchSize.0, shape[0]) {
         batch.append(result[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied())
       }
-      return batch
+      return (batch, audio.map { [$0] })
     }
   }
 }
