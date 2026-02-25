@@ -28,6 +28,20 @@ mkdir -p "$OUTPUT_DIR"
 # Copy all generated Swift files (skip JSON files)
 find bazel-bin/Libraries/DataModels -name "*_generated.swift" -exec cp {} "$OUTPUT_DIR/" \;
 
+echo "Formatting generated Swift files with swift-format..."
+swift_files=()
+while IFS= read -r -d '' file; do
+    swift_files+=("$file")
+done < <(find "$OUTPUT_DIR" -name "*.swift" -print0)
+
+if [[ ${#swift_files[@]} -gt 0 ]]; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+        export DYLD_FALLBACK_LIBRARY_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx"
+    fi
+    bazel run --compilation_mode=opt @SwiftFormat//:swift-format -- \
+        format --configuration "$PROJECT_ROOT/.swift-format.json" -i "${swift_files[@]}"
+fi
+
 echo "Generated files:"
 ls -la "$OUTPUT_DIR/"
 

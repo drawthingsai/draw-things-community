@@ -76,3 +76,20 @@
   - trim count is `tUpscale - 1` (preview `dtu000` naturally trims `0`)
 - Verify compileability of the integration path with:
   - `bazel build Libraries/LocalImageGenerator --ios_multi_cpus=arm64`
+
+## SwiftPM Support (gRPCServerCLI + Generated Sources)
+- The `swift-package-build` workflow validates the SwiftPM path by:
+  - running `./Scripts/swift-package/generate_binary_resources.sh`
+  - running `./Scripts/swift-package/generate_datamodels.sh`
+  - building `swift build --target gRPCServerCLI`
+- Keep `Package.swift` in sync with Bazel module splits for `Libraries/SwiftDiffusion`:
+  - when `Libraries/SwiftDiffusion/BUILD` splits out `Sources/Mappings/**/*.swift` into module `DiffusionMappings`, mirror that in SPM by adding a `DiffusionMappings` target in `Package.swift`
+  - make `Diffusion` depend on `DiffusionMappings`
+  - exclude `Mappings` from the `Diffusion` target sources to avoid duplicate compilation
+- Symptom of missing SPM mirror for the mappings split:
+  - `swift build --target gRPCServerCLI` fails with `no such module 'DiffusionMappings'` from `Libraries/SwiftDiffusion/Sources/...`
+- `Libraries/DataModels/PreGeneratedSPM` output can differ from committed files if generated code is copied without formatting:
+  - `Scripts/swift-package/generate_datamodels.sh` should run `swift-format` on generated `*.swift` files after copying
+  - use repo config `.swift-format.json`
+  - use the repo's Bazel formatter target `@SwiftFormat//:swift-format` (same formatting path as the pre-commit hook)
+- `Libraries/BinaryResources/GeneratedC` is SPM-generated too, but may already be byte-for-byte up to date when regenerated; check diffs separately from `PreGeneratedSPM`.
