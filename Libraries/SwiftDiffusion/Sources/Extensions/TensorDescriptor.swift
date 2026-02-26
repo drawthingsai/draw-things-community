@@ -72,7 +72,9 @@ extension ModelWeightElement {
               tensor.reshaped(
                 format: tensor.format, shape: [numberOfHeads, 2, headDimension / 2, -1]
               ).toGPU()
-            ).transposed(1, 2).toCPU().rawValue)
+            ).transposed(1, 2).reshaped(
+              format: tensor.format, shape: [numberOfHeads * headDimension, -1]
+            ).toCPU().rawValue)
         }
       }
       if self.count > 1 {

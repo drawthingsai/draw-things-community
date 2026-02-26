@@ -2928,15 +2928,76 @@ extension TextEncoder {
     let normedHiddenStates = DynamicGraph.Tensor<BFloat16>(
       from: Functional.concat(axis: 0, hiddenStatesUncond, hiddenStatesCond)
     ).reshaped(.WC(2 * tokenLength, 3840 * 49))
-    let featureExtractorLinear = Dense(count: 3840, noBias: true)
+    let featureExtractorLinear: Model
+    let lora = Array(
+      (OrderedDictionary<String, LoRAConfiguration>(
+        lora.filter({ $0.version == version }).map {
+          ($0.file, $0)
+        }
+      ) {
+        LoRAConfiguration(
+          file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
+          modifier: $0.modifier, mode: $0.mode)
+      })
+      .values
+    ).filter { $0.weight != 0 }
+    let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
+      graph, of: lora.map { $0.file }, modelFile: filePaths[1])
+    let isLoHa = lora.contains { $0.isLoHa }
+    var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+    let runLoRASeparatelyIsPreferred = true
+    let shouldRunLoRASeparately =
+      !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+    if shouldRunLoRASeparately {
+      let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePaths[1])
+      configuration.keys = keys
+      featureExtractorLinear = LoRADense(
+        count: 3840, configuration: configuration, noBias: true, index: 0)
+    } else {
+      featureExtractorLinear = Dense(count: 3840, noBias: true)
+    }
     featureExtractorLinear.compile(inputs: normedHiddenStates)
     graph.openStore(
       filePaths[1], flags: .readOnly,
       externalStore: TensorData.externalStore(filePath: filePaths[1])
-    ) {
-      $0.read(
-        "text_feature_extractor", model: featureExtractorLinear,
-        codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+    ) { store in
+      if !lora.isEmpty {
+        if shouldRunLoRASeparately {
+          let mapping: [Int: Int] = [Int: Int](
+            uniqueKeysWithValues: (0..<(19 + 38)).map {
+              return ($0, $0)
+            })
+          LoRALoader.openStore(graph, lora: lora) { loader in
+            store.read(
+              "text_feature_extractor", model: featureExtractorLinear,
+              codec: [.jit, .q6p, .q8p, .q4p, .ezm7, externalData]
+            ) {
+              name, dataType, format, shape in
+              let result = loader.concatenateLoRA(
+                graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
+              )
+              return result
+            }
+          }
+        } else {
+          LoRALoader.openStore(graph, lora: lora) { loader in
+            store.read(
+              "text_feature_extractor", model: featureExtractorLinear,
+              codec: [.jit, .q6p, .q8p, .q4p, .ezm7, externalData]
+            ) {
+              name, dataType, _, shape in
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
+            }
+          }
+        }
+      } else {
+        store.read(
+          "text_feature_extractor", model: featureExtractorLinear,
+          codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+      }
     }
     let c = featureExtractorLinear(inputs: normedHiddenStates).map {
       DynamicGraph.Tensor<FloatType>(from: $0).reshaped(.HWC(2, tokenLength, 3840))

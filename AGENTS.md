@@ -93,3 +93,25 @@
   - use repo config `.swift-format.json`
   - use the repo's Bazel formatter target `@SwiftFormat//:swift-format` (same formatting path as the pre-commit hook)
 - `Libraries/BinaryResources/GeneratedC` is SPM-generated too, but may already be byte-for-byte up to date when regenerated; check diffs separately from `PreGeneratedSPM`.
+
+## LTX2 LoRA Complementary Models + Integration
+- When adding LoRA support for an LTX2 model builder in `Libraries/SwiftDiffusion/Sources/Models/LTX2.swift`, mirror the `Flux2.swift` pattern exactly:
+  - public APIs should be `LoRA{Original}` (`LoRALTX2`, `LoRALTX2Fixed`, `LoRAEmbedding1DConnector`)
+  - private helpers should also use `LoRA{Helper}` names (for example `LoRALTX2TransformerBlock`, `LoRABasicTransformerBlock1D`)
+- Preserve original weight mapping keys and behavior; the LoRA version should primarily swap `Dense` / `Convolution` with `LoRADense` / `LoRAConvolution`.
+- For repeated LTX2 transformer blocks, pass explicit LoRA `layerIndex` into helper functions so exported LoRA keys are stable and non-colliding across layers.
+- LTX2 LoRA integration is not just the main denoiser:
+  - `UNetProtocol.swift` `.ltx2` branch needs separate-LoRA gating and should switch builder between `LTX2` and `LoRALTX2`
+  - `UNetFixedEncoder.swift` `.ltx2` branch must cover **both** connectors (`videoConnector` / `audioConnector`) and `LTX2Fixed`
+  - `TextEncoder.encodeLTX2(...)` also needs LoRA support for `text_feature_extractor` (the post-text-model projection), not just the Gemma text model
+- In `UNetFixedEncoder.swift`, canonicalize/dedupe `lora` once near the top of `encode(...)` and reuse that list in every branch:
+  - do not re-merge/re-dedupe LoRA files inside individual model branches (including `.ltx2`)
+- For LTX2 separate-LoRA loading in `UNetFixedEncoder.swift`, use per-submodel identity layer mappings that match the component depth:
+  - connectors (`Embedding1DConnector`): `0..<2`
+  - `LTX2Fixed` transformer blocks: `0..<48`
+- When adding separate-LoRA load paths, keep weights-cache logic aligned with existing patterns:
+  - use `concatenateLoRA(...)` only for separate execution path
+  - use `mergeLoRA(...)` for merged path
+  - preserve existing non-LoRA `store.read(...)` behavior and cache attach/detach flow
+- Validate all LTX2 LoRA integration changes with:
+  - `bazel build //Libraries/SwiftDiffusion:SwiftDiffusion`

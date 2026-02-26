@@ -1425,17 +1425,36 @@ extension UNetFromNNC {
       tiledHeight = rawTiledHeight + LTX2ExtractAudioFramesAndHeight([batchSize, 1, tiledWidth]).1  // Adding back the audio height.
       tileScaleFactor = 32
       let tokenModulation = referenceImageCount > 0
-      unet = ModelBuilderOrModel.modelBuilder(
-        ModelBuilder {
-          let shape = $0[0].shape
-          let audioFrames = $0[1].shape[1]
-          let textLength = $0[5].shape[1]
-          return LTX2(
-            time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
-            audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-            tokenModulation: tokenModulation
-          ).1
-        })
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let shape = $0[0].shape
+            let audioFrames = $0[1].shape[1]
+            let textLength = $0[5].shape[1]
+            return LoRALTX2(
+              time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
+              audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
+              tokenModulation: tokenModulation, LoRAConfiguration: configuration
+            ).1
+          })
+      } else {
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let shape = $0[0].shape
+            let audioFrames = $0[1].shape[1]
+            let textLength = $0[5].shape[1]
+            return LTX2(
+              time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
+              audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
+              tokenModulation: tokenModulation
+            ).1
+          })
+      }
     }
     // Need to assign version now such that sliceInputs will have the correct version.
     self.version = version
