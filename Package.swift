@@ -258,6 +258,27 @@ let package = Package(
       path: "Libraries/ModelZoo/Sources"
     ),
     .target(
+      name: "Downloader",
+      dependencies: [
+        "ModelZoo"
+      ],
+      path: "Libraries/Downloader/Sources"
+    ),
+    .target(
+      name: "ModelOp",
+      dependencies: [
+        "DataModels",
+        "Diffusion",
+        "ModelZoo",
+        "Upscaler",
+        "WeightsCache",
+        "ZIPFoundation",
+        .product(name: "Fickling", package: "swift-fickling"),
+        .product(name: "NNC", package: "s4nnc"),
+      ],
+      path: "Libraries/ModelOp/Sources"
+    ),
+    .target(
       name: "ConfigurationZoo",
       dependencies: [
         "DataModels",
@@ -431,8 +452,10 @@ let package = Package(
             "DataModels",
             "DeviceAttestation",
             "Diffusion",
+            "Downloader",
             "ImageGenerator",
             "LocalImageGenerator",
+            "ModelOp",
             "RemoteImageGenerator",
             "ModelZoo",
             "ScriptDataModels",
