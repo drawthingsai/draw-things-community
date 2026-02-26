@@ -1566,7 +1566,6 @@ extension UNetFixedEncoder {
       )
     case .zImage:
       let c0 = textEncoding[0]
-      let textLength = c0.shape[1]
       let h = startHeight / 2
       let w = startWidth / 2
       var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
