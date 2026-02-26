@@ -53,7 +53,7 @@ private func SelfAttention(
       ).reshaped([b * t, h * k])
   } else {
     values = values.transposed(1, 2)
-    queries = queries.transposed(1, 2)
+    queries = ((1.0 / Float(k).squareRoot()) * queries).transposed(1, 2)
     keys = keys.transposed(1, 2)
     var outs = [Model.IO]()
     for i in 0..<hk {
