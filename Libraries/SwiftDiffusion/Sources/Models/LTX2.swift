@@ -137,10 +137,14 @@ private func BasicTransformerBlock1D(prefix: String, k: Int, h: Int, b: Int, t: 
   out = Add(leftScalar: 8, rightScalar: 1)(downProj(out).to(of: residual), residual)
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).attn1.to_q.weight"] = [toQueries.weight.name]
-    mapping["\(prefix).attn1.to_q.bias"] = [toQueries.bias.name]
-    mapping["\(prefix).attn1.to_k.weight"] = [toKeys.weight.name]
-    mapping["\(prefix).attn1.to_k.bias"] = [toKeys.bias.name]
+    mapping["\(prefix).attn1.to_q.weight"] = ModelWeightElement(
+      [toQueries.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+    mapping["\(prefix).attn1.to_q.bias"] = ModelWeightElement(
+      [toQueries.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
+    mapping["\(prefix).attn1.to_k.weight"] = ModelWeightElement(
+      [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+    mapping["\(prefix).attn1.to_k.bias"] = ModelWeightElement(
+      [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
     mapping["\(prefix).attn1.to_v.weight"] = [toValues.weight.name]
     mapping["\(prefix).attn1.to_v.bias"] = [toValues.bias.name]
     mapping["\(prefix).attn1.to_out.0.weight"] = [unifyheads.weight.name]
@@ -223,10 +227,14 @@ private func LTX2SelfAttention(prefix: String, k: Int, h: Int, b: Int, t: Int, n
   out = unifyheads(out)
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).to_q.weight"] = [toQueries.weight.name]
-    mapping["\(prefix).to_q.bias"] = [toQueries.bias.name]
-    mapping["\(prefix).to_k.weight"] = [toKeys.weight.name]
-    mapping["\(prefix).to_k.bias"] = [toKeys.bias.name]
+    mapping["\(prefix).to_q.weight"] = ModelWeightElement(
+      [toQueries.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+    mapping["\(prefix).to_q.bias"] = ModelWeightElement(
+      [toQueries.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
+    mapping["\(prefix).to_k.weight"] = ModelWeightElement(
+      [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+    mapping["\(prefix).to_k.bias"] = ModelWeightElement(
+      [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
     mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
     mapping["\(prefix).to_v.bias"] = [toValues.bias.name]
     mapping["\(prefix).to_out.0.weight"] = [unifyheads.weight.name]
@@ -295,11 +303,15 @@ private func LTX2CrossAttention(
   out = unifyheads(out)
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).to_q.weight"] = [toQueries.weight.name]
-    mapping["\(prefix).to_q.bias"] = [toQueries.bias.name]
+    mapping["\(prefix).to_q.weight"] = ModelWeightElement(
+      [toQueries.weight.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+    mapping["\(prefix).to_q.bias"] = ModelWeightElement(
+      [toQueries.bias.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
     if let toKeys = toKeys {
-      mapping["\(prefix).to_k.weight"] = [toKeys.weight.name]
-      mapping["\(prefix).to_k.bias"] = [toKeys.bias.name]
+      mapping["\(prefix).to_k.weight"] = ModelWeightElement(
+        [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+      mapping["\(prefix).to_k.bias"] = ModelWeightElement(
+        [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
     }
     if let toValues = toValues {
       mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
@@ -593,8 +605,10 @@ private func LTX2CrossAttentionFixed(
   keys = (1 / Float(k.1).squareRoot().squareRoot()) * keys
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).to_k.weight"] = [toKeys.weight.name]
-    mapping["\(prefix).to_k.bias"] = [toKeys.bias.name]
+    mapping["\(prefix).to_k.weight"] = ModelWeightElement(
+      [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+    mapping["\(prefix).to_k.bias"] = ModelWeightElement(
+      [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
     mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
     mapping["\(prefix).to_v.bias"] = [toValues.bias.name]
     mapping["\(prefix).k_norm.weight"] = [normK.weight.name]
@@ -824,50 +838,20 @@ private func LTX2TransformerBlockFixedOutputShapes(
   outs.append(
     contentsOf: LTX2CrossAttentionFixedOutputShapes(
       time: time, k: (k.1, k.1, k.1), h: h, t: t, positionEmbedding: false, name: "ca"))
-  let timesteps = (0..<6).map { _ in Input() }
-  let attn1Modulations = (0..<6).map {
-    Parameter<Float>(.GPU(0), .HWC(1, 1, k.0 * h), name: "attn1_ada_ln_\($0)")
-  }
   outs.append(TensorShape([1, 1, k.0 * h]))
   outs.append(TensorShape([1, 1, k.0 * h]))
   outs.append(TensorShape([1, 1, k.0 * h]))
-  let audioTimesteps = (0..<6).map { _ in Input() }
-  let audioAttn1Modulations = (0..<6).map {
-    Parameter<Float>(.GPU(0), .HWC(1, 1, k.1 * h), name: "audio_attn1_ada_ln_\($0)")
-  }
+
   outs.append(TensorShape([1, 1, k.1 * h]))
   outs.append(TensorShape([1, 1, k.1 * h]))
   outs.append(TensorShape([1, 1, k.1 * h]))
-  let caScaleShiftTimesteps = (0..<4).map { _ in Input() }
-  let caGateTimesteps = Input()
-  let audioToVideoAttnModulations = (0..<5).map {
-    if $0 < 2 {
-      return Parameter<Float>(
-        .GPU(0), .HWC(1, 1, k.0 * h), name: "audio_to_video_attn_ada_ln_\($0)")
-    } else if $0 < 4 {
-      return Parameter<Float>(
-        .GPU(0), .HWC(1, 1, k.1 * h), name: "audio_to_video_attn_ada_ln_\($0)")
-    } else {
-      return Parameter<Float>(
-        .GPU(0), .HWC(1, 1, k.0 * h), name: "audio_to_video_attn_ada_ln_\($0)")
-    }
-  }
+
   outs.append(TensorShape([1, 1, k.0 * h]))
   outs.append(TensorShape([1, 1, k.0 * h]))
   outs.append(TensorShape([1, 1, k.1 * h]))
   outs.append(TensorShape([1, 1, k.1 * h]))
   outs.append(TensorShape([1, 1, k.0 * h]))
-  let audioCaScaleShiftTimesteps = (0..<4).map { _ in Input() }
-  let audioCaGateTimesteps = Input()
-  let videoToAudioAttnModulations = (0..<5).map {
-    if $0 < 2 {
-      return Parameter<Float>(
-        .GPU(0), .HWC(1, 1, k.0 * h), name: "video_to_audio_attn_ada_ln_\($0)")
-    } else {
-      return Parameter<Float>(
-        .GPU(0), .HWC(1, 1, k.1 * h), name: "video_to_audio_attn_ada_ln_\($0)")
-    }
-  }
+
   outs.append(TensorShape([1, 1, k.0 * h]))
   outs.append(TensorShape([1, 1, k.0 * h]))
   outs.append(TensorShape([1, 1, k.1 * h]))

@@ -65,6 +65,16 @@ extension ModelWeightElement {
     }
     switch format {
     case .O:
+      if interleaved, numberOfHeads > 0, headDimension > 0 {
+        tensor = graph.withNoGrad {
+          Tensor<FloatType>(
+            from: graph.variable(
+              tensor.reshaped(
+                format: tensor.format, shape: [numberOfHeads, 2, headDimension / 2, -1]
+              ).toGPU()
+            ).transposed(1, 2).toCPU().rawValue)
+        }
+      }
       if self.count > 1 {
         let squeezedDim = tensor.shape.compactMap { $0 == 1 ? nil : $0 }
         tensor = tensor.reshaped(format: tensor.format, shape: TensorShape(squeezedDim))
