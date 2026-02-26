@@ -156,7 +156,7 @@ private func BasicTransformerBlock1D(prefix: String, k: Int, h: Int, b: Int, t: 
   return (mapper, Model([x, rot], [out]))
 }
 
-func Embedding1DConnector(prefix: String, layers: Int, batchSize: Int, tokenLength: Int) -> (
+public func Embedding1DConnector(prefix: String, layers: Int, batchSize: Int, tokenLength: Int) -> (
   Model, ModelWeightMapper
 ) {
   let x = Input()
@@ -509,7 +509,7 @@ private func LTX2AdaLNSingle(
   return (mapper, tEmb, chunks)
 }
 
-func LTX2(
+public func LTX2(
   time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int, channels: (Int, Int), layers: Int,
   tokenModulation: Bool
 ) -> (
@@ -563,6 +563,9 @@ func LTX2(
   aOut = audioProjOut(aOut.to(.Float16))
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
     mapping["patchify_proj.weight"] = [xEmbedder.weight.name]
     mapping["patchify_proj.bias"] = [xEmbedder.bias.name]
     mapping["audio_patchify_proj.weight"] = [aEmbedder.weight.name]
@@ -696,7 +699,7 @@ private func LTX2TransformerBlockFixed(
   return (mapper, Model(inputs, outs))
 }
 
-func LTX2Fixed(
+public func LTX2Fixed(
   time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int
 ) -> (
   ModelWeightMapper, Model
@@ -802,4 +805,98 @@ func LTX2Fixed(
     return mapping
   }
   return (mapper, Model([txt, aTxt, t], outs))
+}
+
+private func LTX2CrossAttentionFixedOutputShapes(
+  time: Int, k: (Int, Int, Int), h: Int, t: Int, positionEmbedding: Bool,
+  name: String
+) -> [TensorShape] {
+  return [TensorShape([time, t, h, k.1]), TensorShape([time, t, h, k.1])]
+}
+
+private func LTX2TransformerBlockFixedOutputShapes(
+  time: Int, k: (Int, Int), h: Int, b: Int, t: Int
+) -> [TensorShape] {
+  var outs = [TensorShape]()
+  outs.append(
+    contentsOf: LTX2CrossAttentionFixedOutputShapes(
+      time: time, k: (k.0, k.0, k.0), h: h, t: t, positionEmbedding: false, name: "cv"))
+  outs.append(
+    contentsOf: LTX2CrossAttentionFixedOutputShapes(
+      time: time, k: (k.1, k.1, k.1), h: h, t: t, positionEmbedding: false, name: "ca"))
+  let timesteps = (0..<6).map { _ in Input() }
+  let attn1Modulations = (0..<6).map {
+    Parameter<Float>(.GPU(0), .HWC(1, 1, k.0 * h), name: "attn1_ada_ln_\($0)")
+  }
+  outs.append(TensorShape([1, 1, k.0 * h]))
+  outs.append(TensorShape([1, 1, k.0 * h]))
+  outs.append(TensorShape([1, 1, k.0 * h]))
+  let audioTimesteps = (0..<6).map { _ in Input() }
+  let audioAttn1Modulations = (0..<6).map {
+    Parameter<Float>(.GPU(0), .HWC(1, 1, k.1 * h), name: "audio_attn1_ada_ln_\($0)")
+  }
+  outs.append(TensorShape([1, 1, k.1 * h]))
+  outs.append(TensorShape([1, 1, k.1 * h]))
+  outs.append(TensorShape([1, 1, k.1 * h]))
+  let caScaleShiftTimesteps = (0..<4).map { _ in Input() }
+  let caGateTimesteps = Input()
+  let audioToVideoAttnModulations = (0..<5).map {
+    if $0 < 2 {
+      return Parameter<Float>(
+        .GPU(0), .HWC(1, 1, k.0 * h), name: "audio_to_video_attn_ada_ln_\($0)")
+    } else if $0 < 4 {
+      return Parameter<Float>(
+        .GPU(0), .HWC(1, 1, k.1 * h), name: "audio_to_video_attn_ada_ln_\($0)")
+    } else {
+      return Parameter<Float>(
+        .GPU(0), .HWC(1, 1, k.0 * h), name: "audio_to_video_attn_ada_ln_\($0)")
+    }
+  }
+  outs.append(TensorShape([1, 1, k.0 * h]))
+  outs.append(TensorShape([1, 1, k.0 * h]))
+  outs.append(TensorShape([1, 1, k.1 * h]))
+  outs.append(TensorShape([1, 1, k.1 * h]))
+  outs.append(TensorShape([1, 1, k.0 * h]))
+  let audioCaScaleShiftTimesteps = (0..<4).map { _ in Input() }
+  let audioCaGateTimesteps = Input()
+  let videoToAudioAttnModulations = (0..<5).map {
+    if $0 < 2 {
+      return Parameter<Float>(
+        .GPU(0), .HWC(1, 1, k.0 * h), name: "video_to_audio_attn_ada_ln_\($0)")
+    } else {
+      return Parameter<Float>(
+        .GPU(0), .HWC(1, 1, k.1 * h), name: "video_to_audio_attn_ada_ln_\($0)")
+    }
+  }
+  outs.append(TensorShape([1, 1, k.0 * h]))
+  outs.append(TensorShape([1, 1, k.0 * h]))
+  outs.append(TensorShape([1, 1, k.1 * h]))
+  outs.append(TensorShape([1, 1, k.1 * h]))
+  outs.append(TensorShape([1, 1, k.1 * h]))
+
+  outs.append(TensorShape([1, 1, k.0 * h]))
+  outs.append(TensorShape([1, 1, k.0 * h]))
+  outs.append(TensorShape([1, 1, k.0 * h]))
+
+  outs.append(TensorShape([1, 1, k.1 * h]))
+  outs.append(TensorShape([1, 1, k.1 * h]))
+  outs.append(TensorShape([1, 1, k.1 * h]))
+
+  return outs
+}
+
+public func LTX2FixedOutputShapes(
+  time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int
+) -> [TensorShape] {
+  var outs = [TensorShape]()
+  for i in 0..<layers {
+    let outputShapes = LTX2TransformerBlockFixedOutputShapes(
+      time: time, k: (channels.0 / 32, channels.1 / 32), h: 32, b: 1, t: textLength)
+    outs.append(contentsOf: outputShapes)
+  }
+  outs.append(TensorShape([1, 1, channels.0]))
+  outs.append(TensorShape([1, 1, channels.0]))
+  outs.append(TensorShape([1, 1, channels.1]))
+  outs.append(TensorShape([1, 1, channels.1]))
+  return outs
 }

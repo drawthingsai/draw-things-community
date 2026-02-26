@@ -12,7 +12,8 @@ public enum LoRAImporter {
   }
   public static func modelWeightsMapping(
     by version: ModelVersion, qkNorm: Bool, dualAttentionLayers: [Int], format: [ModelWeightFormat]
-  ) -> (ModelWeightMapping, ModelWeightMapping, [String: [String]]) {
+  ) -> (ModelWeightMapping, ModelWeightMapping, [String: [String]], [(String, ModelWeightMapping)])
+  {
     let graph = DynamicGraph()
     var UNetMapping = ModelWeightMapping()
     var UNetMappingFixed = ModelWeightMapping()
@@ -42,7 +43,7 @@ public enum LoRAImporter {
           }
         }
       }
-      return (UNetMappingFixed, UNetMapping, [:])
+      return (UNetMappingFixed, UNetMapping, [:], [])
     }
     let unet: Model
     let unetFixed: Model
@@ -194,7 +195,12 @@ public enum LoRAImporter {
       (unetFixedMapper, unetFixed) = Flux2Fixed(
         channels: 3072, numberOfReferenceImages: 0, guidanceEmbed: true)
     case .ltx2:
-      fatalError()
+      (unetMapper, unet) = LTX2(
+        time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
+        layers: 48, tokenModulation: false)
+      (unetFixedMapper, unetFixed) = LTX2Fixed(
+        time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
+        layers: 48)
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -213,6 +219,7 @@ public enum LoRAImporter {
         middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
         usesFlashAttention: .none, isTemporalMixEnabled: false)
     }
+    var otherMappings = [(String, ModelWeightMapping)]()
     return graph.withNoGrad {
       let inputDim: Int
       let conditionalLength: Int
@@ -266,7 +273,8 @@ public enum LoRAImporter {
         inputDim = 32
         conditionalLength = 7680
       case .ltx2:
-        fatalError()
+        inputDim = 128
+        conditionalLength = 3840
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
@@ -411,7 +419,40 @@ public enum LoRAImporter {
         ]
         tEmb = nil
       case .ltx2:
-        fatalError()
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 1024, 3840), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 1024, 3840), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+        let (videoConnector, videoConnectorMapper) = Embedding1DConnector(
+          prefix: "embeddings_connector", layers: 2, batchSize: 1,
+          tokenLength: 1024
+        )
+        let (audioConnector, audioConnectorMapper) = Embedding1DConnector(
+          prefix: "audio_embeddings_connector", layers: 2, batchSize: 1,
+          tokenLength: 1024
+        )
+        let rotaryEmbedding1D = graph.variable(
+          Tensor<FloatType>(
+            from: LTX2RotaryPositionEmbedding1D(
+              tokenLength: 1024, maxLength: 4096, channels: 3840, headDimension: 128
+            )))
+        let hiddenStates = graph.variable(.CPU, .HWC(1, 1024, 3840), of: FloatType.self)
+        videoConnector.compile(inputs: hiddenStates, rotaryEmbedding1D)
+        audioConnector.compile(inputs: hiddenStates, rotaryEmbedding1D)
+        if format.contains(.diffusers) {
+          otherMappings.append(("text_video_connector", videoConnectorMapper(.diffusers)))
+          otherMappings.append(("text_audio_connector", audioConnectorMapper(.diffusers)))
+        } else {
+          otherMappings.append(("text_video_connector", videoConnectorMapper(.generativeModels)))
+          otherMappings.append(("text_audio_connector", audioConnectorMapper(.generativeModels)))
+        }
+        var textFeatureExtractorMapping = ModelWeightMapping()
+        textFeatureExtractorMapping["text_embedding_projection.aggregate_embed.weight"] = ["t-0-0"]
+        otherMappings.append(("text_feature_extractor", textFeatureExtractorMapping))
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -632,7 +673,23 @@ public enum LoRAImporter {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
       case .ltx2:
-        fatalError()
+        let (rotaryEmbedding, rotaryEmbeddingAudio, rotaryEmbeddingVideoToAudio) =
+          LTX2VideoAudioRotaryPositionEmbedding(
+            time: 16, height: 16, width: 16, audioTime: 121,
+            channels: (4096, 2048), numberOfHeads: 32)
+        cArr =
+          [
+            graph.variable(.CPU, format: .NHWC, shape: [1, 121, 128], of: FloatType.self),  // audio
+            graph.variable(Tensor<FloatType>(from: rotaryEmbedding)),
+            graph.variable(Tensor<FloatType>(from: rotaryEmbeddingAudio)),
+            graph.variable(Tensor<FloatType>(from: rotaryEmbeddingVideoToAudio)),
+          ]
+          + LTX2FixedOutputShapes(
+            time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
+            layers: 48
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .kandinsky21, .v1, .v2:
         fatalError()
       }
@@ -692,7 +749,7 @@ public enum LoRAImporter {
           UNetMapping.merge(diffusersUNetMapping) { v, _ in v }
         }
       }
-      return (UNetMappingFixed, UNetMapping, reverseUNetMapping)
+      return (UNetMappingFixed, UNetMapping, reverseUNetMapping, otherMappings)
     }
   }
 
@@ -1256,7 +1313,7 @@ public enum LoRAImporter {
       }
     }
     // Prepare UNet mapping.
-    var (UNetMappingFixed, UNetMapping, reverseUNetMapping) = modelWeightsMapping(
+    var (UNetMappingFixed, UNetMapping, reverseUNetMapping, otherMappings) = modelWeightsMapping(
       by: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
       format: [.diffusers, .generativeModels])
     let UNetMappingKeys = UNetMapping.keys
@@ -1344,6 +1401,39 @@ public enum LoRAImporter {
         }
         return $0
       }
+    }
+    otherMappings = otherMappings.map {
+      var mapping = $0.1
+      let mappingKeys = mapping.keys
+      for key in mappingKeys {
+        let value = mapping[key]
+        let parts = key.components(separatedBy: ".")
+        if parts[0] == "model" {
+          if parts.count > 3 {
+            mapping[
+              parts[2..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+              value
+          }
+          if parts.count > 2 {
+            mapping[
+              parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+              value
+          }
+        } else if parts[0] == "diffusion_model" {
+          if parts.count > 2 {
+            mapping[
+              parts[1..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+              value
+          }
+        } else {
+          if parts.count > 1 {
+            mapping[
+              parts[0..<(parts.count - 1)].joined(separator: "_") + "." + parts[parts.count - 1]] =
+              value
+          }
+        }
+      }
+      return ($0.0, mapping)
     }
     var didImportTIEmbedding = false
     var textEmbeddingLength = 0
@@ -1779,6 +1869,80 @@ public enum LoRAImporter {
               }
               isLoHa = true
             }
+          } else if let (model, mapping) =
+            (otherMappings.first {
+              Self.findKeysAndValues($0.1, keys: newKeys) != nil
+            }), let (newKey, unetParams) = Self.findKeysAndValues(mapping, keys: newKeys)
+          {
+            if key.hasSuffix("up.weight") {
+              let scalar = try stateDict[
+                String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -14))) + "alpha"
+              ].map {
+                return try archive.with($0) {
+                  return Tensor<Float32>(from: $0)[0]
+                }
+              }
+              try archive.with(descriptor) {
+                var tensor = Tensor<FloatType>(from: $0)
+                let loraDim = Float(tensor.shape[1])
+                let isDiagonalUp =
+                  unetParams.count > 1 ? Self.isDiagonalUp(tensor, weights: unetParams) : false
+                if let scalar = scalar, abs(scalar - loraDim) > 1e-5 {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(Double(scalar / loraDim) * scaleFactor.squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                } else if scaleFactor != 1 {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(scaleFactor.squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                }
+                if isDiagonalUp {
+                  diagonalUpMatrixKeys.insert(newKey)
+                }
+                unetParams.write(
+                  graph: graph,
+                  to: store, tensor: tensor, format: .O, isDiagonalUp: isDiagonalUp,
+                  isDiagonalDown: false
+                ) {
+                  "__\(model)__[\($0)]__up__"
+                }
+              }
+            } else if key.hasSuffix("hada_w1_a") || key.hasSuffix("hada_w2_a") {
+              let scalar = try stateDict[
+                String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -9))) + "alpha"
+              ].map {
+                return try archive.with($0) {
+                  return Tensor<Float32>(from: $0)[0]
+                }
+              }
+              let wSuffix = key.hasSuffix("hada_w1_a") ? "w1_a" : "w2_a"
+              try archive.with(descriptor) {
+                var tensor = Tensor<FloatType>(from: $0)
+                let loraDim = Float(tensor.shape[1])
+                if let scalar = scalar {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(
+                      Double(scalar / loraDim).squareRoot()
+                        * scaleFactor.squareRoot().squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                } else if scaleFactor != 1 {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(scaleFactor.squareRoot().squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                }
+                unetParams.write(
+                  graph: graph,
+                  to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
+                ) {
+                  "__\(model)__[\($0)]__\(wSuffix)__"
+                }
+              }
+              isLoHa = true
+            }
           } else {
             let textModelMapping: ModelWeightMapping
             if te2 != swapTE2 {
@@ -2072,6 +2236,70 @@ public enum LoRAImporter {
                   to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
                 ) {
                   return "__\(modelPrefixFixed)__[\($0)]"
+                }
+              }
+            }
+          } else if let (model, mapping) =
+            (otherMappings.first {
+              Self.findKeysAndValues($0.1, keys: newKeys) != nil
+            }), let (newKey, unetParams) = Self.findKeysAndValues(mapping, keys: newKeys)
+          {
+            if key.hasSuffix("down.weight") {
+              try archive.with(descriptor) {
+                var tensor = Tensor<FloatType>(from: $0)
+                let isDiagonalDown = Self.isDiagonalDown(tensor, weights: unetParams)
+                if isDiagonalDown {
+                  diagonalDownsForRedefine.append(
+                    (
+                      String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -16))),
+                      model, unetParams
+                    ))
+                }
+                if scaleFactor != 1 {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(scaleFactor.squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                }
+                unetParams.write(
+                  graph: graph,
+                  to: store, tensor: tensor, format: .I,
+                  isDiagonalUp: diagonalUpMatrixKeys.contains(newKey),
+                  isDiagonalDown: isDiagonalDown
+                ) {
+                  return "__\(model)__[\($0)]__down__"
+                }
+              }
+            } else if key.hasSuffix("mid.weight") {
+              try archive.with(descriptor) {
+                let tensor = Tensor<FloatType>(from: $0)
+                for name in unetParams {
+                  store.write("__\(model)__[\(name)]__mid__", tensor: tensor)
+                }
+              }
+            } else if key.hasSuffix("hada_w1_b") || key.hasSuffix("hada_w2_b") {
+              let wSuffix = key.hasSuffix("hada_w1_b") ? "w1_b" : "w2_b"
+              try archive.with(descriptor) {
+                var tensor = Tensor<FloatType>(from: $0)
+                if scaleFactor != 1 {
+                  tensor = Tensor<FloatType>(
+                    from: (Float(scaleFactor.squareRoot().squareRoot())
+                      * graph.variable(Tensor<Float>(from: tensor)))
+                      .rawValue)
+                }
+                for name in unetParams {
+                  store.write("__\(model)__[\(name)]__\(wSuffix)__", tensor: tensor)
+                }
+              }
+              isLoHa = true
+            } else if key.hasSuffix(".diff") || key.hasSuffix(".diff_b") {
+              try archive.with(descriptor) {
+                let tensor = Tensor<FloatType>(from: $0)
+                unetParams.write(
+                  graph: graph,
+                  to: store, tensor: tensor, format: .O, isDiagonalUp: false, isDiagonalDown: false
+                ) {
+                  return "__\(model)__[\($0)]"
                 }
               }
             }
