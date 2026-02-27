@@ -1027,7 +1027,8 @@ public final class ImageHistoryManager {
         generationTime: history.profile?.duration,
         reason: history.reason,
         compressionArtifacts: CompressionMethod(from: configuration.compressionArtifacts),
-        compressionArtifactsQuality: configuration.compressionArtifactsQuality
+        compressionArtifactsQuality: configuration.compressionArtifactsQuality,
+        audio: audioId != nil
       )
       // Only needs to append
       clipData?.frames.append(

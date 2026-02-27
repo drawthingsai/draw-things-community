@@ -211,6 +211,7 @@ table TensorHistoryNode {
   reason: Reason = Other;
   compression_artifacts: CompressionMethod = Disabled;
   compression_artifacts_quality: float = 43.1;
+  audio: bool = false;
 }
 
 root_type TensorHistoryNode;
