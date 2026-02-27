@@ -873,7 +873,7 @@ public func LTX2FixedOutputShapes(
   time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int
 ) -> [TensorShape] {
   var outs = [TensorShape]()
-  for i in 0..<layers {
+  for _ in 0..<layers {
     let outputShapes = LTX2TransformerBlockFixedOutputShapes(
       time: time, k: (channels.0 / 32, channels.1 / 32), h: 32, b: 1, t: textLength)
     outs.append(contentsOf: outputShapes)

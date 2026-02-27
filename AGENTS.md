@@ -139,3 +139,25 @@
 - Validation checklist for sampler additions:
   - `bazel build //Libraries/LocalImageGenerator --ios_multi_cpus=arm64`
   - `bazel build //Apps/DrawThings:DrawThings`
+
+## TextHistoryManager Edge Cases (NSRange + Lineage)
+- `NSRange` must be treated as UTF-16 indexed when used with `NSString` APIs:
+  - for full-text replacements, use `.utf16.count` (not `.count`) at call-sites.
+  - affected app-side text history call-sites are in `EditWorkflow.swift`.
+- Keep a shared range validator in `TextHistoryManager`:
+  - use `private static func normalizedRange(...) -> NSRange?` for bounds checking only.
+  - do not include migration/rewriting behavior in the validator; validation only.
+- In `setTextHistory`, if a persisted modification range is invalid:
+  - skip applying that modification and continue replay safely (avoid crash from invalid ranges).
+- In `pushChange`, validate range before any fork/lineage/history state mutation:
+  - use explicit `switch textType` validation branches against the current text.
+- For non-sacred seeks, persist the resolved lineage:
+  - set `project.dictionary["text_seek_to_lineage"]` from `self.lineage` (resolved target), not requested alias lineage.
+- During lineage remap/fork caching:
+  - key temporary `nodeLineageCache` entries by the remapped lineage (`newLineage`) consistently for insert/cleanup.
+- Focused test strategy for these edge cases:
+  - use a dedicated `swift_test` target (`//Libraries/History:TextHistoryManagerTests`) backed by a text-only library target (`TextHistory`) to avoid unrelated UIKit dependencies from `History`.
+  - include regressions for UTF-16 replacement behavior, invalid persisted range replay safety, segmentation sanity, and unsacred-lineage seek persistence.
+- Verification checklist after refactors:
+  - `bazel test //Libraries/History:TextHistoryManagerTests`
+  - `bazel build //Apps/DrawThings:DrawThings`

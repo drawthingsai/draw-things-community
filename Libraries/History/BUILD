@@ -1,4 +1,4 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library", "swift_test")
 load("@dflat//:dflat.bzl", "dflatc")
 
 dflatc(
@@ -42,5 +42,27 @@ swift_library(
         "//Libraries/SwiftDiffusion",
         "@dflat//:SQLiteDflat",
         "@s4nnc//nnc",
+    ],
+)
+
+swift_library(
+    name = "TextHistory",
+    srcs = [
+        "Sources/TextHistoryManager.swift",
+        ":text_history_schema",
+    ],
+    module_name = "TextHistory",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@dflat//:SQLiteDflat",
+    ],
+)
+
+swift_test(
+    name = "TextHistoryManagerTests",
+    srcs = glob(["Tests/**/*.swift"]),
+    deps = [
+        ":TextHistory",
+        "@dflat//:SQLiteDflat",
     ],
 )

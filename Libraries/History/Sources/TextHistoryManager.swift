@@ -12,6 +12,28 @@ public final class TextHistoryManager {
     var positiveText: String
     var negativeText: String
   }
+
+  private static func normalizedRange(_ range: NSRange, in text: String) -> NSRange? {
+    let textLength = (text as NSString).length
+    guard range.location >= 0 && range.length >= 0 else { return nil }
+    guard range.location <= textLength && range.length <= textLength - range.location else {
+      return nil
+    }
+    return range
+  }
+
+  private static func normalizedRange(_ range: TextRange?, in text: String) -> NSRange? {
+    guard
+      let range = range,
+      range.location >= 0,
+      range.length >= 0
+    else {
+      return nil
+    }
+    return normalizedRange(
+      NSRange(location: Int(range.location), length: Int(range.length)),
+      in: text)
+  }
   private var startPositiveText = ""
   private var startNegativeText = ""
   private var startEdits = 0
@@ -76,15 +98,17 @@ public final class TextHistoryManager {
     for (i, modification) in modifications.enumerated() {
       switch modification.type {
       case .positiveText:
+        guard let range = Self.normalizedRange(modification.range, in: currentPositiveText) else {
+          break
+        }
         currentPositiveText = (currentPositiveText as NSString).replacingCharacters(
-          in: NSRange(
-            location: Int(modification.range?.location ?? 0),
-            length: Int(modification.range?.length ?? 0)), with: modification.text ?? "")
+          in: range, with: modification.text ?? "")
       case .negativeText:
+        guard let range = Self.normalizedRange(modification.range, in: currentNegativeText) else {
+          break
+        }
         currentNegativeText = (currentNegativeText as NSString).replacingCharacters(
-          in: NSRange(
-            location: Int(modification.range?.location ?? 0),
-            length: Int(modification.range?.length ?? 0)), with: modification.text ?? "")
+          in: range, with: modification.text ?? "")
       }
       history[startEdits + i + 1] = InMemoryHistoryNode(
         positiveText: currentPositiveText, negativeText: currentNegativeText)
@@ -130,6 +154,18 @@ public final class TextHistoryManager {
 
   public func pushChange(range: NSRange, replacementText: String, textType: TextType) {
     dispatchPrecondition(condition: .onQueue(.main))
+    switch textType {
+    case .positiveText:
+      guard Self.normalizedRange(range, in: currentPositiveText) != nil else {
+        assertionFailure("Invalid range for text change.")
+        return
+      }
+    case .negativeText:
+      guard Self.normalizedRange(range, in: currentNegativeText) != nil else {
+        assertionFailure("Invalid range for text change.")
+        return
+      }
+    }
     // If we are not at the tip, when push a change, we need to rewind
     precondition(lineage <= maxLineage)
     if currentEdits != maxEdits || lineage < maxLineage {
@@ -165,7 +201,7 @@ public final class TextHistoryManager {
           nodeCache[textHistory.logicalTime] = node
           nodeLineageCache[
             LogicalTimeAndLineage(
-              logicalTime: textHistory.logicalTime, lineage: textHistory.lineage)] = node
+              logicalTime: textHistory.logicalTime, lineage: newLineage)] = node
         }
         // Because we update lineage, but in the image history, the lineage pointing to is constant.
         // We need to keep track of our update both in memory, as well as on the disk.
@@ -199,7 +235,7 @@ public final class TextHistoryManager {
                 self.nodeCache[textHistory.logicalTime] = nil
               }
               let logicalTimeAndLineage = LogicalTimeAndLineage(
-                logicalTime: textHistory.logicalTime, lineage: textHistory.lineage)
+                logicalTime: textHistory.logicalTime, lineage: newLineage)
               if let node = self.nodeLineageCache[logicalTimeAndLineage], node.1 == textVersions[i]
               {
                 self.nodeLineageCache[logicalTimeAndLineage] = nil
@@ -415,7 +451,12 @@ public final class TextHistoryManager {
       project.dictionary["text_seek_to_lineage", Int.self] = nil
     } else {
       project.dictionary["text_seek_to"] = edits
-      project.dictionary["text_seek_to_lineage", Int.self] = lineage.map { Int($0) }
+      if let _ = lineage {
+        // Persist the resolved lineage we actually landed on (not the requested alias lineage).
+        project.dictionary["text_seek_to_lineage", Int.self] = Int(self.lineage)
+      } else {
+        project.dictionary["text_seek_to_lineage", Int.self] = nil
+      }
     }
     return isSacred
   }
