@@ -169,6 +169,7 @@ extension TCDSampler: Sampler {
     if version != .svdI2v {
       for i in 0..<c.count {
         let shape = c[i].shape
+        let batchSize = shape[0] / 2
         if shape.count == 3 {
           let conditionalLength = version == .kandinsky21 ? shape[1] : tokenLengthCond
           // Only tokenLengthCond is used.
@@ -179,6 +180,7 @@ extension TCDSampler: Sampler {
       }
       if var projection = extraProjection {
         let shape = projection.shape
+        let batchSize = shape[0] / 2
         if shape.count == 3 {
           // Only tokenLengthCond is used.
           projection = projection[batchSize..<(batchSize * 2), 0..<shape[1], 0..<shape[2]].copied()

@@ -315,7 +315,7 @@ extension LocalImageGenerator {
           causalInference: causalInference, isBF16: isBF16,
           discretization: Denoiser.CosineDiscretization(parameterization, objective: objective),
           weightsCache: weightsCache)
-      case .TCD:
+      case .TCD, .tCDTrailing:
         return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
           filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
@@ -922,6 +922,27 @@ extension LocalImageGenerator {
         conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
         causalInference: causalInference, isBF16: isBF16,
         discretization: Denoiser.LinearDiscretization(parameterization, objective: objective),
+        weightsCache: weightsCache)
+    case .tCDTrailing:
+      return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
+        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
+        activationQkScaling: activationQkScaling,
+        activationProjScaling: activationProjScaling,
+        activationFfnProjUpScaling: activationFfnProjUpScaling,
+        activationFfnScaling: activationFfnScaling,
+        usesFlashAttention: usesFlashAttention,
+        upcastAttention: upcastAttention, externalOnDemand: externalOnDemand,
+        injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
+        injectAttentionKV: injectAttentionKV,
+        injectIPAdapterLengths: injectIPAdapterLengths, lora: lora,
+        isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, isQuantizedModel: isQuantizedModel,
+        canRunLoRASeparately: canRunLoRASeparately, deviceProperties: deviceProperties,
+        stochasticSamplingGamma: stochasticSamplingGamma,
+        conditioning: conditioning, tiledDiffusion: tiledDiffusion, teaCache: teaCache,
+        causalInference: causalInference, isBF16: isBF16,
+        discretization: Denoiser.LinearDiscretization(
+          parameterization, objective: objective, timestepSpacing: .trailing),
         weightsCache: weightsCache)
     case .eulerASubstep:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearManualDiscretization>(

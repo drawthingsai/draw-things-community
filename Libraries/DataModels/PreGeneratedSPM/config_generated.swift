@@ -27,8 +27,9 @@ public enum zzz_DflatGen_SamplerType: Int8, Enum, Verifiable {
   case ddimtrailing = 16
   case unipctrailing = 17
   case unipcays = 18
+  case tcdtrailing = 19
 
-  public static var max: zzz_DflatGen_SamplerType { return .unipcays }
+  public static var max: zzz_DflatGen_SamplerType { return .tcdtrailing }
   public static var min: zzz_DflatGen_SamplerType { return .dpmpp2mkarras }
 }
 

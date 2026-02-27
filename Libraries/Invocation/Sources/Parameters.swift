@@ -47,6 +47,8 @@ extension SamplerType: CommandLineAbbreviatable {
       return "DPM++ SDE Substep"
     case .TCD:
       return "TCD"
+    case .tCDTrailing:
+      return "TCD Trailing"
     case .eulerATrailing:
       return "Euler A Trailing"
     case .dPMPPSDETrailing:

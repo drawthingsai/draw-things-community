@@ -2205,7 +2205,7 @@ public enum ImageConverter {
           json["causal_inference"] = configuration.causalInference
           description += ", Causal Inference: \(configuration.causalInference)"
         }
-        if configuration.sampler == .TCD {
+        if configuration.sampler == .TCD || configuration.sampler == .tCDTrailing {
           json["stochastic_sampling_gamma"] = configuration.stochasticSamplingGamma
           description += ", Strategic Stochastic Sampling: \(configuration.stochasticSamplingGamma)"
         }

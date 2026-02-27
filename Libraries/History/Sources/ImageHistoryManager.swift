@@ -27,6 +27,8 @@ extension SamplerType {
       self = .dPMPPSDESubstep
     case .TCD:
       self = .TCD
+    case .tCDTrailing:
+      self = .tCDTrailing
     case .eulerATrailing:
       self = .eulerATrailing
     case .dPMPPSDETrailing:
@@ -72,6 +74,8 @@ extension DataModels.SamplerType {
       self = .dPMPPSDESubstep
     case .TCD:
       self = .TCD
+    case .tCDTrailing:
+      self = .tCDTrailing
     case .eulerATrailing:
       self = .eulerATrailing
     case .dPMPPSDETrailing:

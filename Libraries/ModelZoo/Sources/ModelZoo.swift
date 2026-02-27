@@ -2718,7 +2718,7 @@ extension ModelZoo {
     case .u(_):
       switch sampler {
       case .DPMPP2MAYS, .DPMPPSDEAYS, .dDIMTrailing, .dPMPP2MTrailing, .dPMPPSDETrailing,
-        .eulerAAYS, .eulerATrailing, .uniPCAYS, .uniPCTrailing:
+        .eulerAAYS, .eulerATrailing, .uniPCAYS, .uniPCTrailing, .tCDTrailing:
         return true
       case .DDIM, .PLMS, .LCM, .TCD, .dPMPP2MKarras, .dPMPPSDEKarras, .dPMPPSDESubstep, .eulerA,
         .eulerASubstep, .uniPC:

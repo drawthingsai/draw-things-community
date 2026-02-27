@@ -115,3 +115,27 @@
   - preserve existing non-LoRA `store.read(...)` behavior and cache attach/detach flow
 - Validate all LTX2 LoRA integration changes with:
   - `bazel build //Libraries/SwiftDiffusion:SwiftDiffusion`
+
+## SamplerType Additions (TCDTrailing)
+- For FlatBuffers sampler enums, append new values **at the end** in both schemas for backward compatibility:
+  - `Libraries/DataModels/Sources/config.fbs`
+  - `Libraries/History/Sources/tensor_history.fbs`
+- Do not hand-edit `Libraries/DataModels/PreGeneratedSPM/*`; regenerate via:
+  - `./Scripts/swift-package/generate_datamodels.sh`
+- Generated Swift enum case naming may not preserve acronym casing exactly:
+  - `TCDTrailing` in `.fbs` becomes `.tCDTrailing` in generated Swift (similar to `.dDIMTrailing`)
+  - use the generated case spelling everywhere in Swift switch/mapping logic.
+- Adding a sampler variant requires cross-layer updates, not just enum/schema:
+  - DataModels parser/display (`Defaults.swift`)
+  - History/DataModels bridging (`ImageHistoryManager.swift`)
+  - CLI/display (`Libraries/Invocation/Sources/Parameters.swift`)
+  - scripting constants (`Libraries/Scripting/Sources/SharedScript.swift`)
+  - runtime sampler construction (`Libraries/LocalImageGenerator/Sources/LocalImageGenerator.swift`)
+  - compatibility gates (`Libraries/ModelZoo/Sources/ModelZoo.swift`, `SettingsWorkflow.swift`)
+  - UI/metadata fields gated on sampler type (for TCD gamma): settings sections, edit summary, serialization/export paths.
+- For `TCDTrailing`, behavior should mirror other trailing samplers:
+  - use `TCDSampler` with `Denoiser.LinearDiscretization(..., timestepSpacing: .trailing)`.
+  - keep regular `.TCD` path unchanged.
+- Validation checklist for sampler additions:
+  - `bazel build //Libraries/LocalImageGenerator --ios_multi_cpus=arm64`
+  - `bazel build //Apps/DrawThings:DrawThings`

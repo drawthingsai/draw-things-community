@@ -53,7 +53,8 @@ extension ScriptExecutor {
       DPMPP_2M_TRAILING: 15,
       DDIM_TRAILING: 16,
       UNI_PC_TRAILING: 17,
-      UNI_PC_AYS: 18
+      UNI_PC_AYS: 18,
+      TCD_TRAILING: 19
     }
 
     const BodyMaskType = {

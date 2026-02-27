@@ -49,6 +49,8 @@ extension SamplerType: CustomStringConvertible {
       return "DPM++ SDE Substep"
     case .TCD:
       return "TCD"
+    case .tCDTrailing:
+      return "TCD Trailing"
     case .eulerATrailing:
       return "Euler A Trailing"
     case .dPMPPSDETrailing:
@@ -121,7 +123,11 @@ extension SamplerType: CustomStringConvertible {
     } else if sampler.contains("lcm") {
       self = SamplerType.LCM
     } else if sampler.contains("tcd") {
-      self = SamplerType.TCD
+      if sampler.contains("trailing") {
+        self = SamplerType.tCDTrailing
+      } else {
+        self = SamplerType.TCD
+      }
     } else {
       self = SamplerType.dPMPP2MKarras
     }
