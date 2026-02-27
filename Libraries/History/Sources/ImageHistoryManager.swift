@@ -1,8 +1,17 @@
 import DataModels
 import Dflat
 import Diffusion
+import Dispatch
+import Foundation
 import NNC
-import UIKit
+
+#if canImport(UIKit)
+  import UIKit
+#else
+  public struct UIImage {
+    public init() {}
+  }
+#endif
 
 extension SamplerType {
   public init(from sampler: DataModels.SamplerType) {
@@ -336,28 +345,34 @@ extension DataModels.LoRA {
   }
 }
 
-func downsampleImage(_ image: UIImage?) -> UIImage? {
-  guard let image = image else { return nil }
-  let imageSize = image.size
-  // At least scale it down by 2. It could be more.
-  let scale = max(Int(floor(CGFloat(min(image.size.width, image.size.height) / 384))), 2)
-  let imageWidth = Int(imageSize.width) / scale
-  let imageHeight = Int(imageSize.height) / scale
-  guard
-    let bitmapContext = CGContext(
-      data: nil, width: imageWidth, height: imageHeight, bitsPerComponent: 8,
-      bytesPerRow: imageWidth * 4, space: CGColorSpaceCreateDeviceRGB(),
-      bitmapInfo: CGBitmapInfo.byteOrderDefault.rawValue
-        | CGImageAlphaInfo.premultipliedLast.rawValue, releaseCallback: nil, releaseInfo: nil)
-  else {
+#if canImport(UIKit)
+  func downsampleImage(_ image: UIImage?) -> UIImage? {
+    guard let image = image else { return nil }
+    let imageSize = image.size
+    // At least scale it down by 2. It could be more.
+    let scale = max(Int(floor(CGFloat(min(image.size.width, image.size.height) / 384))), 2)
+    let imageWidth = Int(imageSize.width) / scale
+    let imageHeight = Int(imageSize.height) / scale
+    guard
+      let bitmapContext = CGContext(
+        data: nil, width: imageWidth, height: imageHeight, bitsPerComponent: 8,
+        bytesPerRow: imageWidth * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGBitmapInfo.byteOrderDefault.rawValue
+          | CGImageAlphaInfo.premultipliedLast.rawValue, releaseCallback: nil, releaseInfo: nil)
+    else {
+      return nil
+    }
+    if let cgImage = image.cgImage {
+      bitmapContext.draw(
+        cgImage, in: CGRect(x: 0, y: 0, width: CGFloat(imageWidth), height: CGFloat(imageHeight)))
+    }
+    return bitmapContext.makeImage().flatMap { UIImage(cgImage: $0) }
+  }
+#else
+  func downsampleImage(_ image: UIImage?) -> UIImage? {
     return nil
   }
-  if let cgImage = image.cgImage {
-    bitmapContext.draw(
-      cgImage, in: CGRect(x: 0, y: 0, width: CGFloat(imageWidth), height: CGFloat(imageHeight)))
-  }
-  return bitmapContext.makeImage().flatMap { UIImage(cgImage: $0) }
-}
+#endif
 
 extension ImageHistoryManager {
   public struct ImageData: Equatable & Hashable {
@@ -778,14 +793,15 @@ public final class ImageHistoryManager {
             let isAncestor =
               canOverwrite
               ? imageHistory.logicalTime <= logicalTime : imageHistory.logicalTime < logicalTime
+            let updatedLineage = isAncestor ? newLineage + 1 : newLineage
             let uniqueVersion = uniqueVersion()
             imageVersions.append(uniqueVersion)
             var builder = TensorHistoryNodeBuilder(from: imageHistory)
-            builder.lineage = isAncestor ? newLineage + 1 : newLineage
+            builder.lineage = updatedLineage
             let node = (builder.build(), uniqueVersion)
             nodeCache[imageHistory.logicalTime] = node
             let logicalTimeAndLineage = LogicalTimeAndLineage(
-              logicalTime: imageHistory.logicalTime, lineage: newLineage)
+              logicalTime: imageHistory.logicalTime, lineage: updatedLineage)
             nodeLineageCache[logicalTimeAndLineage] = node
             let imageDataForHistory = Array(
               project.fetch(for: TensorData.self).where(
@@ -844,8 +860,12 @@ public final class ImageHistoryManager {
                 if let node = self.nodeCache[imageHistory.logicalTime], node.1 == imageVersions[i] {
                   self.nodeCache[imageHistory.logicalTime] = nil
                 }
+                let isAncestor =
+                  canOverwrite
+                  ? imageHistory.logicalTime <= logicalTime : imageHistory.logicalTime < logicalTime
+                let updatedLineage = isAncestor ? newLineage + 1 : newLineage
                 let logicalTimeAndLineage = LogicalTimeAndLineage(
-                  logicalTime: imageHistory.logicalTime, lineage: newLineage)
+                  logicalTime: imageHistory.logicalTime, lineage: updatedLineage)
                 if let node = self.nodeLineageCache[logicalTimeAndLineage],
                   node.1 == imageVersions[i]
                 {
@@ -1078,23 +1098,27 @@ public final class ImageHistoryManager {
       for (history, historyNode) in zip(histories, historyNodes) {
         let upsertRequest = TensorHistoryNodeChangeRequest.upsertRequest(
           historyNode.tensorHistoryNode)
-        if let preview = history.preview, let previewId = historyNode.previewId {
-          let previewData = preview.jpegData(compressionQuality: 0.75)
-          let downsampleData = downsampleImage(preview)?.jpegData(compressionQuality: 0.5)
-          let thumbnailHistoryNodeChangeRequest =
-            ThumbnailHistoryNodeChangeRequest.creationRequest()
-          thumbnailHistoryNodeChangeRequest.id = previewId
-          thumbnailHistoryNodeChangeRequest.data = previewData.map { [UInt8]($0) } ?? []
-          let thumbnailHistoryHalfNodeChangeRequest =
-            ThumbnailHistoryHalfNodeChangeRequest.creationRequest()
-          thumbnailHistoryHalfNodeChangeRequest.id = previewId
-          thumbnailHistoryHalfNodeChangeRequest.data = downsampleData.map { [UInt8]($0) } ?? []
-          if thumbnailHistoryNodeChangeRequest.data.count > 0 {
-            let _ = try? transactionContext.submit(thumbnailHistoryNodeChangeRequest)
-          }
-          if thumbnailHistoryHalfNodeChangeRequest.data.count > 0 {
-            let _ = try? transactionContext.submit(thumbnailHistoryHalfNodeChangeRequest)
-          }
+        if let previewId = historyNode.previewId {
+          #if canImport(UIKit)
+            if let preview = history.preview {
+              let previewData = preview.jpegData(compressionQuality: 0.75)
+              let downsampleData = downsampleImage(preview)?.jpegData(compressionQuality: 0.5)
+              let thumbnailHistoryNodeChangeRequest =
+                ThumbnailHistoryNodeChangeRequest.creationRequest()
+              thumbnailHistoryNodeChangeRequest.id = previewId
+              thumbnailHistoryNodeChangeRequest.data = previewData.map { [UInt8]($0) } ?? []
+              let thumbnailHistoryHalfNodeChangeRequest =
+                ThumbnailHistoryHalfNodeChangeRequest.creationRequest()
+              thumbnailHistoryHalfNodeChangeRequest.id = previewId
+              thumbnailHistoryHalfNodeChangeRequest.data = downsampleData.map { [UInt8]($0) } ?? []
+              if thumbnailHistoryNodeChangeRequest.data.count > 0 {
+                let _ = try? transactionContext.submit(thumbnailHistoryNodeChangeRequest)
+              }
+              if thumbnailHistoryHalfNodeChangeRequest.data.count > 0 {
+                let _ = try? transactionContext.submit(thumbnailHistoryHalfNodeChangeRequest)
+              }
+            }
+          #endif
         }
         if let profileData = historyNode.profileData {
           upsertRequest.profileData = profileData
@@ -1374,8 +1398,11 @@ public final class ImageHistoryManager {
           maxLogicalTimeForLineage[lineage] = maxLogicalTime
         }
         project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
-        project.dictionary["image_seek_to_lineage", Int.self] = targetLineage.map { _ in
-          Int(self.lineage)
+        if let _ = targetLineage {
+          // Persist the resolved lineage we actually landed on, not the requested alias lineage.
+          project.dictionary["image_seek_to_lineage", Int.self] = Int(self.lineage)
+        } else {
+          project.dictionary["image_seek_to_lineage", Int.self] = nil
         }
         return false
       }
@@ -1399,7 +1426,11 @@ public final class ImageHistoryManager {
         setImageHistory(
           imageHistory, imageData: imageData, shuffleData: shuffleData, clipData: clipData)
         project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
-        project.dictionary["image_seek_to_lineage", Int.self] = lineage.map { _ in Int(self.lineage)
+        if let _ = lineage {
+          // Persist the resolved lineage we actually landed on, not the requested alias lineage.
+          project.dictionary["image_seek_to_lineage", Int.self] = Int(self.lineage)
+        } else {
+          project.dictionary["image_seek_to_lineage", Int.self] = nil
         }
         return false
       }
@@ -1428,7 +1459,12 @@ public final class ImageHistoryManager {
       _profileData = nil
     }
     project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
-    project.dictionary["image_seek_to_lineage", Int.self] = lineage.map { _ in Int(self.lineage) }
+    if let _ = lineage {
+      // Persist the resolved lineage we actually landed on, not the requested alias lineage.
+      project.dictionary["image_seek_to_lineage", Int.self] = Int(self.lineage)
+    } else {
+      project.dictionary["image_seek_to_lineage", Int.self] = nil
+    }
     return true
   }
 
@@ -1449,21 +1485,25 @@ public final class ImageHistoryManager {
     if let preview = previewCache[previewId] {
       return preview
     }
-    if lowestResolutionAvailable {
-      if let halfNode = project.fetch(for: ThumbnailHistoryHalfNode.self).where(
-        ThumbnailHistoryHalfNode.id == previewId, limit: .limit(1)
-      ).first {
-        return UIImage(data: Data(halfNode.data))
+    #if canImport(UIKit)
+      if lowestResolutionAvailable {
+        if let halfNode = project.fetch(for: ThumbnailHistoryHalfNode.self).where(
+          ThumbnailHistoryHalfNode.id == previewId, limit: .limit(1)
+        ).first {
+          return UIImage(data: Data(halfNode.data))
+        }
       }
-    }
-    guard
-      let node = project.fetch(for: ThumbnailHistoryNode.self).where(
-        ThumbnailHistoryNode.id == previewId, limit: .limit(1)
-      ).first
-    else {
+      guard
+        let node = project.fetch(for: ThumbnailHistoryNode.self).where(
+          ThumbnailHistoryNode.id == previewId, limit: .limit(1)
+        ).first
+      else {
+        return nil
+      }
+      return UIImage(data: Data(node.data))
+    #else
       return nil
-    }
-    return UIImage(data: Data(node.data))
+    #endif
   }
 
   public func popAudioClip(_ audioClip: inout Tensor<Float>?) {
@@ -1900,7 +1940,7 @@ public final class ImageHistoryManager {
           {
             self.maxLineage = imageHistory.lineage
             self.maxLogicalTime = imageHistory.logicalTime
-            self.maxLogicalTimeForLineage[self.lineage] = self.maxLogicalTime
+            self.maxLogicalTimeForLineage[imageHistory.lineage] = self.maxLogicalTime
             if isDeleted {
               // Just seek to the very beginning.
               self.setImageHistory(

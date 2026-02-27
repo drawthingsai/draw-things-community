@@ -60,9 +60,22 @@ swift_library(
 
 swift_test(
     name = "TextHistoryManagerTests",
-    srcs = glob(["Tests/**/*.swift"]),
+    srcs = [
+        "Tests/TextHistoryManagerTests.swift",
+    ],
     deps = [
         ":TextHistory",
+        "@dflat//:SQLiteDflat",
+    ],
+)
+
+swift_test(
+    name = "ImageHistoryManagerTests",
+    srcs = [
+        "Tests/ImageHistoryManagerTests.swift",
+    ],
+    deps = [
+        ":History",
         "@dflat//:SQLiteDflat",
     ],
 )

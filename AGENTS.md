@@ -161,3 +161,33 @@
 - Verification checklist after refactors:
   - `bazel test //Libraries/History:TextHistoryManagerTests`
   - `bazel build //Apps/DrawThings:DrawThings`
+
+## ImageHistoryManager Edge Cases (Lineage Remap + Seek Persistence)
+- In non-sacred fork remap paths, cache keys must use the exact remapped lineage per node:
+  - compute `updatedLineage = isAncestor ? newLineage + 1 : newLineage`
+  - use that value consistently for `nodeLineageCache`, `imageDataCache`, and `shuffleDataCache` insert/cleanup keys.
+- In async cleanup, recompute remapped lineage with the same condition used during remap:
+  - avoid cleaning with only `newLineage`, which can miss `newLineage + 1` ancestor entries.
+- After deletion snapshot refresh, record lineage max time with the snapshot lineage:
+  - `maxLogicalTimeForLineage[imageHistory.lineage] = maxLogicalTime`
+  - avoid writing with stale `self.lineage` before seek/set updates.
+- For explicit lineage seeks, persist the resolved lineage:
+  - when a lineage is requested, write `image_seek_to_lineage` from `self.lineage` after seek resolution.
+  - use explicit `if let` branches and document why resolved lineage is persisted.
+- Verification checklist after refactors:
+  - `bazel test //Libraries/History:TextHistoryManagerTests`
+  - `bazel build //Apps/DrawThings:DrawThings`
+
+## History Swift Testability (UIKit Gating)
+- `Libraries/History/Sources/ImageHistoryManager.swift` should not hard-require UIKit for core history logic:
+  - gate UI image import with `#if canImport(UIKit)`.
+  - in non-UIKit builds, provide a minimal fallback `UIImage` type so core history APIs remain buildable.
+- Keep non-UIKit builds functional by gating preview thumbnail encode/decode paths:
+  - only call `jpegData`, `UIImage(data:)`, and bitmap downsampling when UIKit is available.
+  - return `nil` from preview fetch helpers on non-UIKit builds.
+- When removing UIKit as an implicit dependency, add explicit imports needed by core logic:
+  - `Foundation` for `Data`, `Date`, `JSONEncoder`/`JSONDecoder`.
+  - `Dispatch` for `DispatchQueue` and `dispatchPrecondition`.
+- Use a dedicated Image history test target once History is non-UIKit buildable:
+  - `//Libraries/History:ImageHistoryManagerTests` (separate from text-only tests).
+  - include regression for unsacred seek persistence (`image_seek_to_lineage` resolved lineage behavior).
