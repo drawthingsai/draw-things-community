@@ -2080,32 +2080,13 @@ extension UNetFromNNC {
       case .flux2, .flux2_9b, .flux2_4b:
         if $0.0 == 0 {
           let shape = $0.1.shape
-          let referenceSequenceLength: Int
-          let tokenLength: Int
-          if referenceImageCount > 0 {
-            tokenLength = inputs[2].shape[1]
-            referenceSequenceLength = inputs[1].shape[1]
-          } else {
-            tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
-            referenceSequenceLength = 0
-          }
+          let tokenLength = shape[1] - (originalShape[1] / 2) * (originalShape[2] / 2)
           let graph = $0.1.graph
           let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
-            0..<shape[0], 0..<(shape[1] - tokenLength - referenceSequenceLength), 0..<shape[2],
+            0..<shape[0], 0..<(shape[1] - tokenLength), 0..<shape[2],
             0..<shape[3]
           ].copied().reshaped(
             .NHWC(1, originalShape[1] / 2, originalShape[2] / 2, shape[3]))
-          let referenceEncoding: DynamicGraph.Tensor<FloatType>?
-          if referenceSequenceLength > 0 {
-            referenceEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
-              0..<shape[0],
-              (shape[1] - tokenLength - referenceSequenceLength)..<(shape[1] - tokenLength),
-              0..<shape[2],
-              0..<shape[3]
-            ].copied()
-          } else {
-            referenceEncoding = nil
-          }
           let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
             0..<shape[0], (shape[1] - tokenLength)..<shape[1], 0..<shape[2], 0..<shape[3]
           ]
@@ -2121,14 +2102,9 @@ extension UNetFromNNC {
           finalEncoding[0..<shape[0], 0..<(h * w), 0..<1, 0..<shape[3]] = sliceEncoding
           finalEncoding[
             0..<shape[0],
-            (h * w + referenceSequenceLength)..<(tokenLength + referenceSequenceLength + h * w),
+            (h * w)..<(tokenLength + h * w),
             0..<1, 0..<shape[3]] =
             tokenEncoding
-          if let referenceEncoding = referenceEncoding {
-            finalEncoding[
-              0..<shape[0], (h * w)..<(h * w + referenceSequenceLength),
-              0..<1, 0..<shape[3]] = referenceEncoding
-          }
           return finalEncoding
         }
       case .ltx2:
