@@ -478,10 +478,11 @@ extension UNetFromNNC {
     let injectedAttentionKVs = injectedControlsAndAdapters.injectedAttentionKVs
     let shape = xT.shape
     let batchSize = shape[0]
-    let startHeight = shape[1]
+    var startHeight = shape[1]
     let startWidth = shape[2]
     let tiledWidth: Int
     let tiledHeight: Int
+    let tiledAudioHeight: Int
     let tileScaleFactor: Int
     let graph = xT.graph
     var unet: ModelBuilderOrModel
@@ -514,6 +515,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
@@ -549,6 +551,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
@@ -579,6 +582,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       let model: Model
       didRunLoRASeparately = false
@@ -599,6 +603,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately = false
       unet = ModelBuilderOrModel.model(
@@ -614,6 +619,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       let model: Model
       didRunLoRASeparately =
@@ -653,6 +659,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       let model: Model
       didRunLoRASeparately =
@@ -688,6 +695,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       let model: Model
       didRunLoRASeparately =
@@ -722,6 +730,7 @@ extension UNetFromNNC {
     case .wurstchenStageC:
       tiledWidth = startWidth
       tiledHeight = startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 1
       didRunLoRASeparately = false
       unet = ModelBuilderOrModel.model(
@@ -737,6 +746,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 16, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 16
       didRunLoRASeparately = false
       unet = ModelBuilderOrModel.model(
@@ -757,6 +767,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
@@ -787,6 +798,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
@@ -819,6 +831,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
@@ -848,6 +861,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately = false
       let maxSequence =
@@ -873,6 +887,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       var injectIPAdapterLengths = [Int: [Int]]()
       for i in [0, 2, 4, 6, 8, 10, 12, 14, 16, 18] {
@@ -964,6 +979,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
@@ -1036,6 +1052,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       let injectImage =
         c.count > 9 + (isCfgEnabled ? 4 : 2) * 30 + vaceLayers.count * (isCfgEnabled ? 4 : 2)
@@ -1098,6 +1115,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 4, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 4
       let textLength = c[7].shape[1]
       didRunLoRASeparately =
@@ -1132,6 +1150,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       let injectImage =
         c.count > 9 + (isCfgEnabled ? 4 : 2) * 40 + vaceLayers.count * (isCfgEnabled ? 4 : 2)
@@ -1194,6 +1213,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
@@ -1256,6 +1276,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
@@ -1298,6 +1319,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
@@ -1362,6 +1384,7 @@ extension UNetFromNNC {
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
       tileScaleFactor = 8
       let llama3Length = c[48].shape[1]
       let t5Length = c[49].shape[1] - llama3Length
@@ -1418,12 +1441,13 @@ extension UNetFromNNC {
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 2, startWidth) : startWidth
       let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight(xT.shape)
-      let rawTiledHeight =
+      tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 2, startHeight - audioHeight)
         : startHeight - audioHeight
-      tiledHeight = rawTiledHeight + LTX2ExtractAudioFramesAndHeight([batchSize, 1, tiledWidth]).1  // Adding back the audio height.
-      tileScaleFactor = 32
+      startHeight = startHeight - audioHeight
+      tiledAudioHeight = LTX2ExtractAudioFramesAndHeight([batchSize, 1, tiledWidth]).1  // Adding back the audio height.
+      tileScaleFactor = 2
       let tokenModulation = referenceImageCount > 0
       didRunLoRASeparately =
         !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
@@ -1530,7 +1554,8 @@ extension UNetFromNNC {
       compile(
         unet, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
-        inputs: [xT[0..<shape[0], 0..<tiledHeight, 0..<tiledWidth, 0..<shape[3]]] + inputs)
+        inputs: [xT.reshaped(.NHWC(shape[0], tiledHeight + tiledAudioHeight, tiledWidth, shape[3]))]
+          + inputs)
     } else {
       compile(
         unet, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
@@ -2108,7 +2133,18 @@ extension UNetFromNNC {
           return finalEncoding
         }
       case .ltx2:
-        return $0.1
+        if $0.0 == 0 || $0.0 == 2 {
+          let shape = $0.1.shape
+          let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1).reshaped(
+            format: $0.1.format,
+            shape: [originalShape[0], -1, originalShape[2], shape[2] * shape[3]])
+          let h = inputEndYPad - inputStartYPad
+          let w = inputEndXPad - inputStartXPad
+          return imageEncoding[
+            0..<originalShape[0], inputStartYPad..<inputEndYPad,
+            inputStartXPad..<inputEndXPad, 0..<(shape[2] * shape[3])
+          ].copied().reshaped(.NHWC(1, originalShape[0] * h * w, shape[2], shape[3]))
+        }
       }
       let shape = $0.1.shape
       guard shape.count == 4 else { return $0.1 }
@@ -3251,6 +3287,17 @@ extension UNetFromNNC {
     return unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
   }
 
+  private static func audioHeight(_ shape: TensorShape, version: ModelVersion) -> (Int, Int) {
+    switch version {
+    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
+      .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
+      return (0, 0)
+    case .ltx2:
+      return LTX2ExtractAudioFramesAndHeight(shape)
+    }
+  }
+
   private func internalDiffuse(
     xyTiles: Int, index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int,
     inputEndXPad: Int, xT: DynamicGraph.Tensor<FloatType>, inputs: [DynamicGraph.AnyTensor],
@@ -3263,17 +3310,44 @@ extension UNetFromNNC {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     ), referenceImageCount: Int, step: Int, tokenLengthUncond: Int, tokenLengthCond: Int,
-    isCfgEnabled: Bool,
+    isCfgEnabled: Bool, audioFrames: Int, audioHeight: Int,
     controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
     let shape = xT.shape
-    let xT = xT[
+    let graph = xT.graph
+    var x = xT[
       0..<shape[0], inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad, 0..<shape[3]
     ].copied()
+    if audioHeight > 0 {
+      let h = inputEndYPad - inputStartYPad
+      let w = inputEndXPad - inputStartXPad
+      var slicedAudio = graph.variable(
+        .GPU(0), .HWC(1, shape[0] * h * w, shape[3]), of: FloatType.self)
+      slicedAudio.full(0)
+      if isCfgEnabled {
+        let audioInputUncond = xT[
+          0..<(shape[0] / 2), (shape[1] - audioHeight)..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
+        let audioInputCond = xT[
+          (shape[0] / 2)..<shape[0], (shape[1] - audioHeight)..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
+        slicedAudio[0..<1, 0..<audioFrames, 0..<shape[3]] = audioInputUncond
+        slicedAudio[
+          0..<1, ((shape[0] / 2) * h * w)..<((shape[0] / 2) * h * w + audioFrames), 0..<shape[3]] =
+          audioInputCond
+      } else {
+        let audioInput = xT[
+          0..<shape[0], (shape[1] - audioHeight)..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
+        slicedAudio[0..<1, 0..<audioFrames, 0..<shape[3]] = audioInput
+      }
+      x = Functional.concat(
+        axis: 1, x, slicedAudio.reshaped(.NHWC(shape[0], audioHeight, w, shape[3])))
+    }
     // Need to rework the shape. For Wurstchen B, we need to slice them up.
     // For ControlNet, we already sliced them up into batch dimension, now need to extract them out.
     let (injectedControls, injectedT2IAdapters, injectedAttentionKVs) = injectedControlsAndAdapters(
-      xT, inputs, inputStartYPad, inputEndYPad, inputStartXPad, inputEndXPad, &controlNets)
+      x, inputs, inputStartYPad, inputEndYPad, inputStartXPad, inputEndXPad, &controlNets)
     let inputs = sliceInputs(
       inputs + injectedControls + injectedT2IAdapters, originalShape: shape, xyTiles: xyTiles,
       index: index, inputStartYPad: inputStartYPad,
@@ -3283,7 +3357,7 @@ extension UNetFromNNC {
       referenceImageCount: referenceImageCount,
       step: step, index: index,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-      isCfgEnabled: isCfgEnabled, inputs: xT, inputs + injectedAttentionKVs)
+      isCfgEnabled: isCfgEnabled, inputs: x, inputs + injectedAttentionKVs)
   }
 
   private func tiledDiffuse(
@@ -3315,9 +3389,24 @@ extension UNetFromNNC {
         inputs: xT, inputs + injectedControls + injectedT2IAdapters + injectedAttentionKVs)
     }
     let shape = xT.shape
-    let startHeight = shape[1]
+    let (audioFrames, audioHeight) = Self.audioHeight(shape, version: version)
+    let startHeight = shape[1] - audioHeight
     let startWidth = shape[2]
-    let tileScaleFactor = version == .wurstchenStageB ? 16 : 8
+    let tileScaleFactor: Int
+    switch version {
+    case .wurstchenStageB:
+      tileScaleFactor = 16
+    case .wan22_5b:
+      tileScaleFactor = 4
+    case .ltx2:
+      tileScaleFactor = 2
+    case .wurstchenStageC:
+      tileScaleFactor = 1
+    case .auraflow, .pixart, .flux1, .flux2, .flux2_4b, .flux2_9b, .hunyuanVideo, .hiDreamI1,
+      .kandinsky21, .qwenImage, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
+      .wan21_14b, .wan21_1_3b, .zImage:
+      tileScaleFactor = 8
+    }
     let tiledWidth =
       tiledDiffusion.isEnabled
       ? min(tiledDiffusion.tileSize.width * tileScaleFactor, startWidth) : startWidth
@@ -3356,15 +3445,27 @@ extension UNetFromNNC {
             xT: xT, inputs: inputs, injectedControlsAndAdapters: injectedControlsAndAdapters,
             referenceImageCount: referenceImageCount,
             step: step, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-            isCfgEnabled: isCfgEnabled, controlNets: &controlNets))
+            isCfgEnabled: isCfgEnabled, audioFrames: audioFrames, audioHeight: audioHeight,
+            controlNets: &controlNets))
         guard !isCancelled.load(ordering: .acquiring) else {
           return graph.variable(
-            Tensor<FloatType>(.GPU(0), .NHWC(shape[0], startHeight, startWidth, shape[3])))
+            Tensor<FloatType>(
+              .GPU(0), .NHWC(shape[0], startHeight + audioHeight, startWidth, shape[3])))
         }
       }
     }
     graph.joined()
-    let etRawValues = et.map { $0.rawValue.toCPU() }
+    let etRawValues: [Tensor<FloatType>]
+    if audioHeight > 0 {
+      etRawValues = et.map {
+        let shape = $0.shape
+        let audioHeight = Self.audioHeight(shape, version: version).1
+        return $0[0..<shape[0], 0..<(shape[1] - audioHeight), 0..<shape[2], 0..<shape[3]].copied()
+          .rawValue.toCPU()
+      }
+    } else {
+      etRawValues = et.map { $0.rawValue.toCPU() }
+    }
     let channels = etRawValues[0].shape[3]
     var etRaw = Tensor<FloatType>(.CPU, .NHWC(shape[0], startHeight, startWidth, channels))
     etRaw.withUnsafeMutableBytes {
@@ -3401,7 +3502,69 @@ extension UNetFromNNC {
         }
       }
     }
-    return graph.variable(etRaw.toGPU(0))
+    guard audioHeight > 0 else { return graph.variable(etRaw.toGPU(0)) }
+    var finalEt = graph.variable(
+      .GPU(0), .NHWC(shape[0], startHeight + audioHeight, startWidth, channels), of: FloatType.self)
+    finalEt[0..<shape[0], 0..<startHeight, 0..<startWidth, 0..<channels] = graph.variable(
+      etRaw.toGPU(0))
+    // Extract and homonizing all audios to the same shape.
+    if isCfgEnabled {
+      let audioOutputs = et.map {
+        let shape = $0.shape
+        let audioHeight = Self.audioHeight(shape, version: version).1
+        let audioOutputUncond = $0[
+          0..<(shape[0] / 2), (shape[1] - audioHeight)..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
+        let audioOutputCond = $0[
+          (shape[0] / 2)..<shape[0], (shape[1] - audioHeight)..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
+        return (audioOutputUncond, audioOutputCond)
+      }
+      var audioOutput = graph.variable(
+        .GPU(0), .HWC(1, shape[0] * startWidth * audioHeight, shape[3]), of: FloatType.self)
+      audioOutput.full(0)
+      if audioOutputs.count > 1 {
+        audioOutput[0..<1, 0..<audioFrames, 0..<shape[3]] =
+          (1 / Float(audioOutputs.count))
+          * (audioOutputs[1..<audioOutputs.count].reduce(audioOutputs[0].0) { $0 + $1.0 })
+        audioOutput[
+          0..<1,
+          ((shape[0] / 2) * startWidth * audioHeight)..<((shape[0] / 2) * startWidth * audioHeight
+            + audioFrames), 0..<shape[3]] =
+          (1 / Float(audioOutputs.count))
+          * (audioOutputs[1..<audioOutputs.count].reduce(audioOutputs[0].1) { $0 + $1.1 })
+      } else {
+        audioOutput[0..<1, 0..<audioFrames, 0..<shape[3]] = audioOutputs[0].0
+        audioOutput[
+          0..<1,
+          ((shape[0] / 2) * startWidth * audioHeight)..<((shape[0] / 2) * startWidth * audioHeight
+            + audioFrames), 0..<shape[3]] = audioOutputs[0].1
+      }
+      finalEt[
+        0..<shape[0], startHeight..<(startHeight + audioHeight), 0..<startWidth, 0..<channels] =
+        audioOutput.reshaped(.NHWC(shape[0], audioHeight, startWidth, channels))
+    } else {
+      let audioOutputs = et.map {
+        let shape = $0.shape
+        let audioHeight = Self.audioHeight(shape, version: version).1
+        return $0[0..<shape[0], (shape[1] - audioHeight)..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied().reshaped(.HWC(1, audioFrames, shape[3]))
+      }
+      var audioOutput = graph.variable(
+        .GPU(0), .HWC(1, shape[0] * startWidth * audioHeight, shape[3]), of: FloatType.self)
+      audioOutput.full(0)
+      if audioOutputs.count > 1 {
+        audioOutput[0..<1, 0..<audioFrames, 0..<shape[3]] =
+          (1 / Float(audioOutputs.count))
+          * (audioOutputs[1..<audioOutputs.count].reduce(audioOutputs[0]) { $0 + $1 })
+      } else {
+        audioOutput[0..<1, 0..<audioFrames, 0..<shape[3]] = audioOutputs[0]
+      }
+      finalEt[
+        0..<shape[0], startHeight..<(startHeight + audioHeight), 0..<startWidth, 0..<channels] =
+        audioOutput.reshaped(.NHWC(shape[0], audioHeight, startWidth, channels))
+    }
+    return finalEt
   }
 
   public func callAsFunction(
