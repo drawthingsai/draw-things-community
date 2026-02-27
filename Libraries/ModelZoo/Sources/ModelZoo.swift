@@ -734,7 +734,8 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "ltx_2_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2_19b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
-      note: "",
+      note:
+        "[LTX-2](https://huggingface.co/Lightricks/LTX-2) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [distilled] checkpoint is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
       copyright: "© 2026 Lightricks"
     ),
     Specification(
@@ -743,7 +744,8 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "ltx_2_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2_19b_distilled_q6p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
-      note: "",
+      note:
+        "[LTX-2](https://huggingface.co/Lightricks/LTX-2) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [distilled] checkpoint is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
       copyright: "© 2026 Lightricks"
     ),
     Specification(
@@ -752,7 +754,8 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "ltx_2_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2_19b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
-      note: "",
+      note:
+        "[LTX-2](https://huggingface.co/Lightricks/LTX-2) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [dev] checkpoint is the full model variant. For best results, set Text Guidance to 3.5 and use 20–30 sampling steps.",
       copyright: "© 2026 Lightricks"
     ),
     Specification(
@@ -761,7 +764,8 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "ltx_2_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2_19b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
-      note: "",
+      note:
+        "[LTX-2](https://huggingface.co/Lightricks/LTX-2) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [dev] checkpoint is the full model variant. For best results, set Text Guidance to 3.5 and use 20–30 sampling steps.",
       copyright: "© 2026 Lightricks"
     ),
     Specification(
