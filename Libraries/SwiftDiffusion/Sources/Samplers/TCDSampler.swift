@@ -555,7 +555,9 @@ extension TCDSampler: Sampler {
         let alphaPrev = alphasCumprod[i + 1]
         let timestepPrev = discretization.timestep(for: alphaPrev)
         let timestepS = (1 - stochasticSamplingGamma) * timestepPrev
-        let alphaCumprodS = discretization.alphaCumprod(timestep: timestepS, shift: sampling.shift)
+        // `timestepPrev` is derived from already-shifted `alphaPrev`; use shift=1 here to avoid
+        // applying schedule shift twice. This keeps gamma=0 exactly equivalent to DDIM.
+        let alphaCumprodS = discretization.alphaCumprod(timestep: timestepS, shift: 1)
         switch discretization.objective {
         case .u(_):
           let sigmaS = discretization.sigma(from: alphaCumprodS)
@@ -601,14 +603,17 @@ extension TCDSampler: Sampler {
           if stochasticSamplingGamma > 0 {
             noise.randn(std: 1, mean: 0)
             if case .u(_) = discretization.objective {
+              // For flow matching, move from s -> t_prev by correcting x0 coefficient, then add
+              // independent noise to match the target sigma marginal.
               x = Functional.add(
                 left: predictNoisedSample, right: predictOriginalSample, leftScalar: 1,
-                rightScalar: Float(alphaCumprodS - alphaPrev))
-              let sigmaPrev = 1 - alphaPrev
-              let sigmaS = 1 - alphaCumprodS
+                rightScalar: Float(alphaPrev - alphaCumprodS))
+              let sigmaPrev = discretization.sigma(from: alphaPrev)
+              let sigmaS = discretization.sigma(from: alphaCumprodS)
+              let stochasticStd = max(0, sigmaPrev * sigmaPrev - sigmaS * sigmaS).squareRoot()
               x = Functional.add(
                 left: x, right: noise, leftScalar: 1,
-                rightScalar: Float((sigmaPrev * sigmaPrev - sigmaS * sigmaS).squareRoot()))
+                rightScalar: Float(stochasticStd))
             } else {
               x = Functional.add(
                 left: predictNoisedSample, right: noise,
