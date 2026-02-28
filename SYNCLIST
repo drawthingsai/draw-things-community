@@ -13,6 +13,7 @@ Apps/gRPCServerCLI
 Apps/DrawThingsCLI
 Libraries/ConfigurationZoo
 Libraries/DataModels
+Libraries/Downloader
 Libraries/Exporter
 Libraries/FaceRestorer
 Libraries/FeaturesMatrix
