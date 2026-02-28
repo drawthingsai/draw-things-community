@@ -32,51 +32,65 @@ public func xorshift(_ a: UInt32) -> UInt32 {
 
 public struct LocalImageGenerator: ImageGenerator {
   public let modelPreloader: ModelPreloader
-  public var tokenizerV1: TextualInversionAttentionCLIPTokenizer
-  public var tokenizerV2: TextualInversionAttentionCLIPTokenizer
-  public var tokenizerXL: TextualInversionAttentionCLIPTokenizer
-  public var tokenizerKandinsky: SentencePieceTokenizer
-  public var tokenizerT5: SentencePieceTokenizer
-  public var tokenizerPileT5: SentencePieceTokenizer
-  public var tokenizerChatGLM3: SentencePieceTokenizer
-  public var tokenizerLlama3: TiktokenTokenizer
-  public var tokenizerUMT5: SentencePieceTokenizer
-  public var tokenizerQwen25: TiktokenTokenizer
-  public var tokenizerQwen3: TiktokenTokenizer
-  public var tokenizerMistral3: TiktokenTokenizer
-  public var tokenizerGemma3: SentencePieceTokenizer
+  private let tokenizerV1Factory: () -> TextualInversionAttentionCLIPTokenizer
+  private let tokenizerV2Factory: () -> TextualInversionAttentionCLIPTokenizer
+  private let tokenizerXLFactory: () -> TextualInversionAttentionCLIPTokenizer
+  private let tokenizerKandinskyFactory: () -> SentencePieceTokenizer
+  private let tokenizerT5Factory: () -> SentencePieceTokenizer
+  private let tokenizerPileT5Factory: () -> SentencePieceTokenizer
+  private let tokenizerChatGLM3Factory: () -> SentencePieceTokenizer
+  private let tokenizerLlama3Factory: () -> TiktokenTokenizer
+  private let tokenizerUMT5Factory: () -> SentencePieceTokenizer
+  private let tokenizerQwen25Factory: () -> TiktokenTokenizer
+  private let tokenizerQwen3Factory: () -> TiktokenTokenizer
+  private let tokenizerMistral3Factory: () -> TiktokenTokenizer
+  private let tokenizerGemma3Factory: () -> SentencePieceTokenizer
+  public var tokenizerV1: TextualInversionAttentionCLIPTokenizer { tokenizerV1Factory() }
+  public var tokenizerV2: TextualInversionAttentionCLIPTokenizer { tokenizerV2Factory() }
+  public var tokenizerXL: TextualInversionAttentionCLIPTokenizer { tokenizerXLFactory() }
+  public var tokenizerKandinsky: SentencePieceTokenizer { tokenizerKandinskyFactory() }
+  public var tokenizerT5: SentencePieceTokenizer { tokenizerT5Factory() }
+  public var tokenizerPileT5: SentencePieceTokenizer { tokenizerPileT5Factory() }
+  public var tokenizerChatGLM3: SentencePieceTokenizer { tokenizerChatGLM3Factory() }
+  public var tokenizerLlama3: TiktokenTokenizer { tokenizerLlama3Factory() }
+  public var tokenizerUMT5: SentencePieceTokenizer { tokenizerUMT5Factory() }
+  public var tokenizerQwen25: TiktokenTokenizer { tokenizerQwen25Factory() }
+  public var tokenizerQwen3: TiktokenTokenizer { tokenizerQwen3Factory() }
+  public var tokenizerMistral3: TiktokenTokenizer { tokenizerMistral3Factory() }
+  public var tokenizerGemma3: SentencePieceTokenizer { tokenizerGemma3Factory() }
   private let queue: DispatchQueue
   private let weightsCache: WeightsCache
   public init(
     queue: DispatchQueue, configurations: FetchedResult<GenerationConfiguration>,
-    workspace: Workspace, tokenizerV1: TextualInversionAttentionCLIPTokenizer,
-    tokenizerV2: TextualInversionAttentionCLIPTokenizer,
-    tokenizerXL: TextualInversionAttentionCLIPTokenizer,
-    tokenizerKandinsky: SentencePieceTokenizer,
-    tokenizerT5: SentencePieceTokenizer,
-    tokenizerPileT5: SentencePieceTokenizer,
-    tokenizerChatGLM3: SentencePieceTokenizer,
-    tokenizerLlama3: TiktokenTokenizer,
-    tokenizerUMT5: SentencePieceTokenizer,
-    tokenizerQwen25: TiktokenTokenizer,
-    tokenizerQwen3: TiktokenTokenizer,
-    tokenizerMistral3: TiktokenTokenizer,
-    tokenizerGemma3: SentencePieceTokenizer
+    workspace: Workspace,
+    tokenizerV1: @autoclosure @escaping () -> TextualInversionAttentionCLIPTokenizer,
+    tokenizerV2: @autoclosure @escaping () -> TextualInversionAttentionCLIPTokenizer,
+    tokenizerXL: @autoclosure @escaping () -> TextualInversionAttentionCLIPTokenizer,
+    tokenizerKandinsky: @autoclosure @escaping () -> SentencePieceTokenizer,
+    tokenizerT5: @autoclosure @escaping () -> SentencePieceTokenizer,
+    tokenizerPileT5: @autoclosure @escaping () -> SentencePieceTokenizer,
+    tokenizerChatGLM3: @autoclosure @escaping () -> SentencePieceTokenizer,
+    tokenizerLlama3: @autoclosure @escaping () -> TiktokenTokenizer,
+    tokenizerUMT5: @autoclosure @escaping () -> SentencePieceTokenizer,
+    tokenizerQwen25: @autoclosure @escaping () -> TiktokenTokenizer,
+    tokenizerQwen3: @autoclosure @escaping () -> TiktokenTokenizer,
+    tokenizerMistral3: @autoclosure @escaping () -> TiktokenTokenizer,
+    tokenizerGemma3: @autoclosure @escaping () -> SentencePieceTokenizer
   ) {
     self.queue = queue
-    self.tokenizerV1 = tokenizerV1
-    self.tokenizerV2 = tokenizerV2
-    self.tokenizerXL = tokenizerXL
-    self.tokenizerKandinsky = tokenizerKandinsky
-    self.tokenizerT5 = tokenizerT5
-    self.tokenizerPileT5 = tokenizerPileT5
-    self.tokenizerChatGLM3 = tokenizerChatGLM3
-    self.tokenizerLlama3 = tokenizerLlama3
-    self.tokenizerUMT5 = tokenizerUMT5
-    self.tokenizerQwen25 = tokenizerQwen25
-    self.tokenizerQwen3 = tokenizerQwen3
-    self.tokenizerMistral3 = tokenizerMistral3
-    self.tokenizerGemma3 = tokenizerGemma3
+    tokenizerV1Factory = tokenizerV1
+    tokenizerV2Factory = tokenizerV2
+    tokenizerXLFactory = tokenizerXL
+    tokenizerKandinskyFactory = tokenizerKandinsky
+    tokenizerT5Factory = tokenizerT5
+    tokenizerPileT5Factory = tokenizerPileT5
+    tokenizerChatGLM3Factory = tokenizerChatGLM3
+    tokenizerLlama3Factory = tokenizerLlama3
+    tokenizerUMT5Factory = tokenizerUMT5
+    tokenizerQwen25Factory = tokenizerQwen25
+    tokenizerQwen3Factory = tokenizerQwen3
+    tokenizerMistral3Factory = tokenizerMistral3
+    tokenizerGemma3Factory = tokenizerGemma3
     weightsCache = WeightsCache(
       maxTotalCacheSize: DeviceCapability.maxTotalWeightsCacheSize,
       memorySubsystem: DeviceCapability.isUMA ? .UMA : .dGPU)

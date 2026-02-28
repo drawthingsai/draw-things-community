@@ -191,3 +191,17 @@
 - Use a dedicated Image history test target once History is non-UIKit buildable:
   - `//Libraries/History:ImageHistoryManagerTests` (separate from text-only tests).
   - include regression for unsacred seek persistence (`image_seek_to_lineage` resolved lineage behavior).
+
+## Tokenizers Lazy Init + LoRA Training Dependency
+- Keep `Tokenizers` in `Apps/DrawThings/Sources` (app-only dependency), not in `LocalImageGenerator`.
+- `Tokenizers` should be a `struct` with static tokenizer storage; rely on Swift static lazy once-semantics for base tokenizer initialization (`v1` / `v2` / `xl`) instead of locking.
+- Do not keep `InitializationPolicy`; remove that indirection and keep initialization behavior explicit at call-sites.
+- Use `os_unfair_lock` only for textual inversion state:
+  - hold lock when constructing/modifying textual inversion arrays.
+  - hold lock when returning textual-inversion-aware tokenizer vars so `textualInversions` assignment is consistent.
+- Keep `gRPCServerCLI` tokenizer initialization call-sites unchanged (still eager by direct access); defer usage primarily in `EditWorkflow`.
+- For `LoRATrainingDependency`, borrow the `LocalImageGenerator` pattern:
+  - store tokenizer providers as private closure-backed factories.
+  - expose computed tokenizer properties that call the factories.
+  - accept tokenizer inputs via `@autoclosure @escaping` initializer parameters.
+- At `EditWorkflow` call-sites, snapshot tokenizer values into local variables before passing into escaping autoclosure-based dependency initializers to avoid escaping-capture issues around `self`.
