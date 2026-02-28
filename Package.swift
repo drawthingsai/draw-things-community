@@ -12,7 +12,8 @@ let package = Package(
   name: "DrawThings",
   platforms: [.macOS(.v13), .iOS(.v16)],
   products: [
-    .executable(name: "gRPCServerCLI", targets: ["gRPCServerCLI"])
+    .executable(name: "gRPCServerCLI", targets: ["gRPCServerCLI"]),
+    .executable(name: "draw-things-cli", targets: ["DrawThingsCLI"]),
   ]
     + (hasDrawThingsSDKSwiftPMTargets
       ? [
@@ -50,6 +51,9 @@ let package = Package(
     .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.3"),
     .package(url: "https://github.com/apple/swift-algorithms.git", from: "1.1.0"),
     .package(url: "https://github.com/apple/swift-numerics.git", from: "1.0.0"),
+    .package(
+      url: "https://github.com/kelvin13/swift-png",
+      revision: "075dfb248ae327822635370e9d4f94a5d3fe93b2"),
   ],
   targets: [
     .target(
@@ -73,6 +77,13 @@ let package = Package(
         .product(name: "NNC", package: "s4nnc"),
       ],
       path: "Libraries/WeightsCache/Sources"
+    ),
+    .target(
+      name: "SFMT",
+      dependencies: [
+        .product(name: "sfmt", package: "ccv")
+      ],
+      path: "Libraries/SFMT/Sources"
     ),
     .target(
       name: "C_Resources",
@@ -265,6 +276,21 @@ let package = Package(
       path: "Libraries/Downloader/Sources"
     ),
     .target(
+      name: "Trainer",
+      dependencies: [
+        "DataModels",
+        "Diffusion",
+        "ModelZoo",
+        "Tokenizer",
+        "WeightsCache",
+        "SFMT",
+        .product(name: "NNC", package: "s4nnc"),
+        .product(name: "TensorBoard", package: "s4nnc"),
+        .product(name: "SQLiteDflat", package: "dflat"),
+      ],
+      path: "Libraries/Trainer/Sources"
+    ),
+    .target(
       name: "ModelOp",
       dependencies: [
         "DataModels",
@@ -435,6 +461,25 @@ let package = Package(
       path: "Apps/gRPCServerCLI",
       exclude: ["SupportingFiles"],
       sources: ["gRPCServerCLI.swift"]
+    ),
+    .executableTarget(
+      name: "DrawThingsCLI",
+      dependencies: [
+        "BinaryResources",
+        "DataModels",
+        "Downloader",
+        "ImageGenerator",
+        "LocalImageGenerator",
+        "ModelZoo",
+        "ScriptDataModels",
+        "Diffusion",
+        "Trainer",
+        "Tokenizer",
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "PNG", package: "swift-png"),
+      ],
+      path: "Apps/DrawThingsCLI",
+      sources: ["DrawThingsCLI.swift"]
     ),
 
   ]

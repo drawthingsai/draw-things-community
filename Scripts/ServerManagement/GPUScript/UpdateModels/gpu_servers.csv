@@ -12,7 +12,6 @@
 
 root@dt-thpc-001, /mnt/models/official-models, /mnt/models/official-models, 192.168.88.14:8000
 root@dt-thpc-002, /mnt/models/official-models, /mnt/models/official-models, 192.168.88.14:8000
-root@dfw-043-003, /mnt/models, /mnt/loraModels/models_extra
 root@dfw-141-005, /mnt/models, /mnt/loraModels/models_extra
 root@dfw-099-006, /mnt/models, /mnt/loraModels/models_extra
 root@dfw-100-007, /mnt/models, /mnt/loraModels/models_extra

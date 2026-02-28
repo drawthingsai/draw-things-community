@@ -228,6 +228,14 @@
       }
     },
     {
+      "identity" : "swift-png",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kelvin13/swift-png",
+      "state" : {
+        "revision" : "075dfb248ae327822635370e9d4f94a5d3fe93b2"
+      }
+    },
+    {
       "identity" : "swift-protobuf",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-protobuf.git",
