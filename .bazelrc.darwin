@@ -1,6 +1,6 @@
 common:mps --define=enable_mps=true
 
-common --disk_cache=.cache
+common --disk_cache=~/.cache/bazel
 
 build --cxxopt='-std=c++17'
 build --config=mps
