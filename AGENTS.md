@@ -205,3 +205,41 @@
   - expose computed tokenizer properties that call the factories.
   - accept tokenizer inputs via `@autoclosure @escaping` initializer parameters.
 - At `EditWorkflow` call-sites, snapshot tokenizer values into local variables before passing into escaping autoclosure-based dependency initializers to avoid escaping-capture issues around `self`.
+
+## DrawThingsCLI Migration (ArgumentParser + Legacy Cleanup)
+- The canonical local-inference CLI now lives in `Apps/DrawThingsCLI/DrawThingsCLI.swift` and is built as:
+  - Bazel: `//Apps:DrawThingsCLI`
+  - SwiftPM product: `draw-things-cli` (legacy product name `DrawThingsCLI` removed).
+- `generate` model resolution expectations:
+  - `--model` is required; if missing/unresolved, print model help/list.
+  - model input supports file id, human-readable model name, `hf://owner/repo`, and Hugging Face URL/repo style via `ModelZoo`.
+- `--models-dir` is optional and should resolve in this order:
+  - explicit `--models-dir`
+  - `DRAWTHINGS_MODELS_DIR`
+  - executable-adjacent `Models/` (if exists)
+  - fallback `~/Documents/Models` (auto-create directory if missing).
+- `generate` img2img syntax support:
+  - `--image` with aliases `--init-image` and `--input-image` (conflict if multiple values differ).
+  - `--strength` in `[0, 1]`.
+  - decode input image with the same training-tensor loading path for consistent normalization.
+- LoRA train config policy:
+  - use `LoRATrainingConfiguration` JSON directly via `--config-json`.
+  - removed legacy `--config` / `--train-config`.
+  - merge JSON onto `LoRATrainingConfiguration.default` using snake_case decoding semantics.
+  - parse `memory_saver` and `weights_memory_management` explicitly from raw JSON dictionary because they are not fields on `LoRATrainingConfiguration`.
+- Keep train CLI surface intentionally small; advanced dataset filtering/repeat knobs were removed from CLI and should be handled by preprocessed datasets or JSON workflows.
+  - removed flags include `--default-caption`, `--repeats`, `--include`, `--exclude`, `--minimum-mp`, `--maximum-mp`, `--trigger-word`, `--unet-lr-lower`, `--unet-lr-upper`, `--text-learning-rate`, `--max-text-length`.
+  - `--learning-rate` accepts either single value (`1e-4`) or range (`[5e-5,1e-4]`, `5e-5,1e-4`, or `5e-5:1e-4`).
+- Legacy cleanup completed:
+  - removed `Apps/DrawThings/Sources/CLI/*`.
+  - removed `Apps/DrawThings/Sources/Trainer/main.swift`.
+  - removed `CLILib` target and related legacy references from `Apps/DrawThings/BUILD`.
+- Important boundary: do **not** remove `Libraries/Invocation/Sources/Parameters.swift` as part of legacy CLI cleanup alone.
+  - `Parameters` is still required by active HTTP API flow in:
+    - `Libraries/HTTPAPIServer/Sources/HTTPAPIServer.swift`
+    - `Libraries/HTTPAPIServer/Sources/ServerModels.swift`
+    - `Apps/DrawThings/Sources/Edit/EditWorkflow.swift` delegate implementation.
+- Verification checklist for CLI migration / rebases:
+  - `swift run draw-things-cli --help`
+  - `bazel build //Apps:DrawThingsCLI`
+  - `bazel build //Apps/DrawThings:DrawThings`

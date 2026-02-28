@@ -10,6 +10,7 @@ Apps/LoRAConverter
 Apps/ModelConverter
 Apps/ModelQuantizer
 Apps/gRPCServerCLI
+Apps/DrawThingsCLI
 Libraries/ConfigurationZoo
 Libraries/DataModels
 Libraries/Exporter
