@@ -516,6 +516,9 @@ public final class ImageHistoryManager {
   private var nodeCache = [Int64: (TensorHistoryNode, Int)]()  // Keyed by logical time.
   private var clipDataCache = [Int64: ClipData]()  // keyed by clip id
   private var maxLogicalTimeForLineage = [Int64: Int64]()  // This never cleared up and will grow, but it is OK, because we probably at around 10k lineage or somewhere around that.
+  private var waveformAudioId: Int64? = nil
+  private var waveformBins: Int = 0
+  private var waveformValues: [Float]? = nil
   private var dynamicGraph = DynamicGraph()  // We don't do computations on this graph, it is just used to write tensors to disk.
   public init(project: Workspace, filePath: String) {
     self.project = project
@@ -1534,6 +1537,73 @@ public final class ImageHistoryManager {
           Tensor<Float>(from: $0)
         }
       }).get()
+  }
+
+  public func waveforms(bins: Int) -> [Float]? {
+    guard let audioId = clipData?.audioId else { return nil }
+    let bins = max(1, bins)
+    if waveformAudioId == audioId, waveformBins == bins {
+      return waveformValues
+    }
+    var audioClip: Tensor<Float>? = nil
+    popAudioClip(&audioClip)
+    guard let audioClip = audioClip, let waveforms = Self.waveforms(from: audioClip, bins: bins)
+    else { return nil }
+    waveformAudioId = audioId
+    waveformBins = bins
+    waveformValues = waveforms
+    return waveforms
+  }
+
+  private static func waveforms(from audio: Tensor<Float>, bins: Int) -> [Float]? {
+    let cpuAudio = audio.kind == .CPU ? audio : audio.toCPU()
+    let shape = cpuAudio.shape
+    guard shape.count == 2 else { return nil }
+    let channels = shape[0]
+    let sampleCount = shape[1]
+    guard channels > 0, sampleCount > 0 else { return nil }
+
+    let outputCount = max(1, min(bins, sampleCount))
+    var waveforms = Array(repeating: Float(0), count: outputCount)
+    var maxAmplitude: Float = 0
+    let computed = cpuAudio.withUnsafeBytes {
+      rawBuffer -> (waveforms: [Float], maxAmplitude: Float)? in
+      guard let baseAddress = rawBuffer.baseAddress else { return nil }
+      let fp32 = baseAddress.assumingMemoryBound(to: Float.self)
+      var waveforms = Array(repeating: Float(0), count: outputCount)
+      var maxAmplitude: Float = 0
+      let leftChannelOffset = 0
+      let rightChannelOffset = sampleCount
+      for i in 0..<outputCount {
+        let start = i * sampleCount / outputCount
+        let end = max(start + 1, (i + 1) * sampleCount / outputCount)
+        var bucketPeak: Float = 0
+        if channels >= 2 {
+          for j in start..<end {
+            let monoSample = 0.5 * (fp32[leftChannelOffset + j] + fp32[rightChannelOffset + j])
+            bucketPeak = max(bucketPeak, abs(monoSample))
+          }
+        } else {
+          for j in start..<end {
+            bucketPeak = max(bucketPeak, abs(fp32[leftChannelOffset + j]))
+          }
+        }
+        bucketPeak = max(0, min(1, bucketPeak))
+        waveforms[i] = bucketPeak
+        maxAmplitude = max(maxAmplitude, bucketPeak)
+      }
+      return (waveforms, maxAmplitude)
+    }
+    guard let computed else { return nil }
+    waveforms = computed.waveforms
+    maxAmplitude = computed.maxAmplitude
+
+    guard maxAmplitude > 0 else { return waveforms }
+    let reciprocal = 1 / maxAmplitude
+    for i in waveforms.indices {
+      waveforms[i] = max(0, min(1, waveforms[i] * reciprocal))
+    }
+    return waveforms
   }
 
   public func popImage(
