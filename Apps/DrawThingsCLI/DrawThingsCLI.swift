@@ -15,6 +15,11 @@ import ScriptDataModels
 import Tokenizer
 import Trainer
 
+#if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo)
+  import AVFoundation
+  import CoreMedia
+  import CoreVideo
+#endif
 #if canImport(CoreGraphics)
   import CoreGraphics
 #endif
@@ -34,6 +39,8 @@ private enum DrawThingsCLIError: LocalizedError {
   case unsupportedTensorShape(String)
   case invalidImageDimensions(Int, Int)
   case pngEncodeFailed(String)
+  case videoEncodeFailed(String)
+  case unsupportedVideoOutput(String)
   case invalidInputImagePath(String)
   case invalidInputImage(String)
 
@@ -42,7 +49,7 @@ private enum DrawThingsCLIError: LocalizedError {
     case .invalidModelsDirectory(let path):
       return "Models directory path is not valid: \(path)"
     case .invalidOutputPath(let path):
-      return "Output path must end with .png: \(path)"
+      return "Output path extension must be .png, .mov, or .mp4: \(path)"
     case .invalidConfigurationJSON:
       return "Failed to parse JSON as JSGenerationConfiguration"
     case .invalidLoRAConfigurationJSON:
@@ -62,6 +69,11 @@ private enum DrawThingsCLIError: LocalizedError {
       return "Image dimensions must be multiples of 64, got \(width)x\(height)"
     case .pngEncodeFailed(let outputPath):
       return "Failed to encode PNG at path: \(outputPath)"
+    case .videoEncodeFailed(let outputPath):
+      return "Failed to encode video at path: \(outputPath)"
+    case .unsupportedVideoOutput(let outputPath):
+      return
+        "Video output is not supported on this platform for path: \(outputPath). Use .png output instead."
     case .invalidInputImagePath(let path):
       return "Input image path does not exist: \(path)"
     case .invalidInputImage(let path):
@@ -416,6 +428,17 @@ private func createLocalImageGenerator(queue: DispatchQueue) throws -> (String, 
 }
 
 private final class LocalGenerationRunner {
+  private enum OutputDestination {
+    case png(URL)
+    case video(URL, containerExtension: String)
+  }
+
+  private struct ImageTensorShape {
+    let width: Int
+    let height: Int
+    let channels: Int
+  }
+
   private let queue = DispatchQueue(label: "com.drawthings.cli.generate", qos: .userInteractive)
   private let temporaryDirectory: String
   private let imageGenerator: LocalImageGenerator
@@ -458,29 +481,47 @@ private final class LocalGenerationRunner {
     guard let images, !images.isEmpty else {
       throw DrawThingsCLIError.generationFailed
     }
-    return try saveImages(images, outputPath: outputPath)
+    return try saveOutputs(images, outputPath: outputPath, configuration: configuration)
   }
 
-  private func saveImages(_ tensors: [Tensor<FloatType>], outputPath: String) throws -> [String] {
-    let outputURL = try normalizedOutputURL(outputPath)
-    let outputPaths = imageOutputPaths(baseOutputURL: outputURL, count: tensors.count)
-    for (tensor, path) in zip(tensors, outputPaths) {
-      try writePNG(tensor: tensor, to: path)
+  private func saveOutputs(
+    _ tensors: [Tensor<FloatType>], outputPath: String, configuration: GenerationConfiguration
+  ) throws -> [String] {
+    let destination = try normalizedOutputDestination(outputPath)
+    switch destination {
+    case .png(let outputURL):
+      let outputPaths = imageOutputPaths(baseOutputURL: outputURL, count: tensors.count)
+      for (tensor, path) in zip(tensors, outputPaths) {
+        try writePNG(tensor: tensor, to: path)
+      }
+      return outputPaths
+    case .video(let outputURL, let containerExtension):
+      let framesPerSecond = ModelZoo.framesPerSecondForModel(configuration.model ?? "")
+      let path = try writeVideo(
+        tensors: tensors, to: outputURL, containerExtension: containerExtension,
+        framesPerSecond: framesPerSecond)
+      return [path]
     }
-    return outputPaths
   }
 
-  private func normalizedOutputURL(_ outputPath: String) throws -> URL {
+  private func normalizedOutputDestination(_ outputPath: String) throws -> OutputDestination {
     var url = URL(fileURLWithPath: outputPath)
     if url.pathExtension.isEmpty {
       url = url.appendingPathExtension("png")
     }
-    guard url.pathExtension.lowercased() == "png" else {
+    let ext = url.pathExtension.lowercased()
+    let destination: OutputDestination
+    switch ext {
+    case "png":
+      destination = .png(url)
+    case "mov", "mp4":
+      destination = .video(url, containerExtension: ext)
+    default:
       throw DrawThingsCLIError.invalidOutputPath(url.path)
     }
     try FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    return url
+    return destination
   }
 
   private func imageOutputPaths(baseOutputURL: URL, count: Int) -> [String] {
@@ -495,25 +536,29 @@ private final class LocalGenerationRunner {
     }
   }
 
-  private func writePNG(tensor: Tensor<FloatType>, to outputPath: String) throws {
+  private func imageTensorShape(_ tensor: Tensor<FloatType>) throws -> ImageTensorShape {
     let shape = tensor.shape
-    let height: Int
-    let width: Int
-    let channels: Int
     switch shape.count {
     case 4:
-      height = shape[1]
-      width = shape[2]
-      channels = shape[3]
+      return ImageTensorShape(width: shape[2], height: shape[1], channels: shape[3])
     case 3:
-      height = shape[0]
-      width = shape[1]
-      channels = shape[2]
+      return ImageTensorShape(width: shape[1], height: shape[0], channels: shape[2])
     default:
       throw DrawThingsCLIError.unsupportedTensorShape("\(shape)")
     }
+  }
+
+  private func pixelByte(_ value: FloatType) -> UInt8 {
+    UInt8(min(max(Int((value + 1) * 127.5), 0), 255))
+  }
+
+  private func writePNG(tensor: Tensor<FloatType>, to outputPath: String) throws {
+    let shape = try imageTensorShape(tensor)
+    let height = shape.height
+    let width = shape.width
+    let channels = shape.channels
     guard channels >= 3 else {
-      throw DrawThingsCLIError.unsupportedTensorShape("\(shape)")
+      throw DrawThingsCLIError.unsupportedTensorShape("\(tensor.shape)")
     }
     let pixelCount = width * height
     var rgba = [PNG.RGBA<UInt8>](repeating: .init(0), count: pixelCount)
@@ -521,9 +566,9 @@ private final class LocalGenerationRunner {
       guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
       for i in 0..<pixelCount {
         let base = i * channels
-        rgba[i].r = UInt8(min(max(Int((fp16[base] + 1) * 127.5), 0), 255))
-        rgba[i].g = UInt8(min(max(Int((fp16[base + 1] + 1) * 127.5), 0), 255))
-        rgba[i].b = UInt8(min(max(Int((fp16[base + 2] + 1) * 127.5), 0), 255))
+        rgba[i].r = pixelByte(fp16[base])
+        rgba[i].g = pixelByte(fp16[base + 1])
+        rgba[i].b = pixelByte(fp16[base + 2])
         rgba[i].a = 255
       }
     }
@@ -536,18 +581,197 @@ private final class LocalGenerationRunner {
       throw DrawThingsCLIError.pngEncodeFailed(outputPath)
     }
   }
+
+  private func writeVideo(
+    tensors: [Tensor<FloatType>], to outputURL: URL, containerExtension: String,
+    framesPerSecond: Double
+  ) throws -> String {
+    #if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo)
+      guard let first = tensors.first else {
+        throw DrawThingsCLIError.generationFailed
+      }
+      let firstShape = try imageTensorShape(first)
+      guard firstShape.channels >= 3 else {
+        throw DrawThingsCLIError.unsupportedTensorShape("\(first.shape)")
+      }
+      for frame in tensors.dropFirst() {
+        let frameShape = try imageTensorShape(frame)
+        guard frameShape.channels >= 3 else {
+          throw DrawThingsCLIError.unsupportedTensorShape("\(frame.shape)")
+        }
+        guard frameShape.width == firstShape.width, frameShape.height == firstShape.height else {
+          throw DrawThingsCLIError.unsupportedTensorShape(
+            "Inconsistent frame dimensions: expected \(firstShape.width)x\(firstShape.height), got \(frameShape.width)x\(frameShape.height)"
+          )
+        }
+      }
+      if FileManager.default.fileExists(atPath: outputURL.path) {
+        try? FileManager.default.removeItem(at: outputURL)
+      }
+      let fileType: AVFileType = containerExtension == "mp4" ? .mp4 : .mov
+      let videoSettings: [String: Any] = [
+        AVVideoCodecKey: AVVideoCodecType.h264.rawValue,
+        AVVideoWidthKey: NSNumber(value: firstShape.width),
+        AVVideoHeightKey: NSNumber(value: firstShape.height),
+      ]
+      let writer = try AVAssetWriter(outputURL: outputURL, fileType: fileType)
+      let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+      writerInput.expectsMediaDataInRealTime = false
+      let pixelBufferAttributes: [String: Any] = [
+        kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
+        kCVPixelBufferWidthKey as String: firstShape.width,
+        kCVPixelBufferHeightKey as String: firstShape.height,
+      ]
+      let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+        assetWriterInput: writerInput, sourcePixelBufferAttributes: pixelBufferAttributes)
+
+      guard writer.canAdd(writerInput) else {
+        throw DrawThingsCLIError.videoEncodeFailed(outputURL.path)
+      }
+      writer.add(writerInput)
+      guard writer.startWriting() else {
+        throw writer.error ?? DrawThingsCLIError.videoEncodeFailed(outputURL.path)
+      }
+      writer.startSession(atSourceTime: .zero)
+      guard let pixelBufferPool = adaptor.pixelBufferPool else {
+        throw DrawThingsCLIError.videoEncodeFailed(outputURL.path)
+      }
+
+      let frameDuration = frameDurationForVideo(frameRate: framesPerSecond)
+      for (index, tensor) in tensors.enumerated() {
+        while !writerInput.isReadyForMoreMediaData {
+          Thread.sleep(forTimeInterval: 0.002)
+        }
+        var pixelBuffer: CVPixelBuffer?
+        let status = CVPixelBufferPoolCreatePixelBuffer(nil, pixelBufferPool, &pixelBuffer)
+        guard status == kCVReturnSuccess, let pixelBuffer else {
+          throw DrawThingsCLIError.videoEncodeFailed(outputURL.path)
+        }
+        try populate(
+          pixelBuffer: pixelBuffer, with: tensor, expected: firstShape, outputPath: outputURL.path)
+        let presentationTime = CMTimeMultiply(frameDuration, multiplier: Int32(index))
+        guard adaptor.append(pixelBuffer, withPresentationTime: presentationTime) else {
+          throw writer.error ?? DrawThingsCLIError.videoEncodeFailed(outputURL.path)
+        }
+      }
+
+      writerInput.markAsFinished()
+      let semaphore = DispatchSemaphore(value: 0)
+      var finishError: Error?
+      writer.finishWriting {
+        if writer.status != .completed {
+          finishError = writer.error ?? DrawThingsCLIError.videoEncodeFailed(outputURL.path)
+        }
+        semaphore.signal()
+      }
+      semaphore.wait()
+      if let finishError {
+        throw finishError
+      }
+      return outputURL.path
+    #else
+      throw DrawThingsCLIError.unsupportedVideoOutput(outputURL.path)
+    #endif
+  }
+
+  #if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo)
+    private func frameDurationForVideo(frameRate: Double) -> CMTime {
+      guard frameRate > 0 else {
+        return CMTime(value: 1, timescale: 30)
+      }
+      if abs(frameRate - frameRate.rounded()) < 1e-12 {
+        return CMTime(value: 1, timescale: Int32(frameRate.rounded()))
+      }
+      let timescale: Int32 = 60_000
+      let value = max(1, Int64((Double(timescale) / frameRate).rounded()))
+      return CMTime(value: value, timescale: timescale)
+    }
+
+    private func populate(
+      pixelBuffer: CVPixelBuffer, with tensor: Tensor<FloatType>, expected: ImageTensorShape,
+      outputPath: String
+    ) throws {
+      let shape = try imageTensorShape(tensor)
+      guard shape.width == expected.width, shape.height == expected.height, shape.channels >= 3
+      else {
+        throw DrawThingsCLIError.unsupportedTensorShape("\(tensor.shape)")
+      }
+      CVPixelBufferLockBaseAddress(pixelBuffer, [])
+      defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+      guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+        throw DrawThingsCLIError.videoEncodeFailed(outputPath)
+      }
+      let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+      let destination = baseAddress.assumingMemoryBound(to: UInt8.self)
+      tensor.withUnsafeBytes {
+        guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
+        for y in 0..<shape.height {
+          let row = destination.advanced(by: y * bytesPerRow)
+          for x in 0..<shape.width {
+            let pixelIndex = y * shape.width + x
+            let source = pixelIndex * shape.channels
+            let destinationIndex = x * 4
+            row[destinationIndex] = pixelByte(fp16[source + 2])  // B
+            row[destinationIndex + 1] = pixelByte(fp16[source + 1])  // G
+            row[destinationIndex + 2] = pixelByte(fp16[source])  // R
+            row[destinationIndex + 3] = 255
+          }
+        }
+      }
+    }
+  #endif
+}
+
+private func printTable(headers: [String], rows: [[String]], maxWidths: [Int]? = nil) {
+  guard !headers.isEmpty else { return }
+  let columnCount = headers.count
+  let normalizedRows: [[String]] = rows.map { row in
+    (0..<columnCount).map { index in index < row.count ? row[index] : "" }
+  }
+  var widths = headers.map(\.count)
+  for row in normalizedRows {
+    for (index, value) in row.enumerated() {
+      widths[index] = max(widths[index], value.count)
+    }
+  }
+  if let maxWidths {
+    for index in 0..<min(columnCount, maxWidths.count) {
+      widths[index] = min(widths[index], maxWidths[index])
+    }
+  }
+
+  func truncated(_ value: String, width: Int) -> String {
+    guard value.count > width else { return value }
+    guard width > 3 else { return String(value.prefix(width)) }
+    return String(value.prefix(width - 3)) + "..."
+  }
+
+  func formattedRow(_ row: [String]) -> String {
+    row.enumerated().map { index, rawValue in
+      let value = truncated(rawValue, width: widths[index])
+      if value.count < widths[index] {
+        return value + String(repeating: " ", count: widths[index] - value.count)
+      }
+      return value
+    }.joined(separator: "  ")
+  }
+
+  print(formattedRow(headers))
+  print(widths.map { String(repeating: "-", count: $0) }.joined(separator: "  "))
+  for row in normalizedRows {
+    print(formattedRow(row))
+  }
 }
 
 private func printModelList(limit: Int? = nil, downloadedOnly: Bool = false) {
   let specs = ModelZoo.availableSpecifications
     .filter { $0.remoteApiModelConfig == nil }
     .sorted { lhs, rhs in
-      let lhsDownloaded = ModelZoo.isModelDownloaded(lhs)
-      let rhsDownloaded = ModelZoo.isModelDownloaded(rhs)
-      if lhsDownloaded != rhsDownloaded {
-        return lhsDownloaded && !rhsDownloaded
+      let byName = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+      if byName == .orderedSame {
+        return lhs.file.localizedCaseInsensitiveCompare(rhs.file) == .orderedAscending
       }
-      return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+      return byName == .orderedAscending
     }
   let filtered =
     downloadedOnly
@@ -558,14 +782,15 @@ private func printModelList(limit: Int? = nil, downloadedOnly: Bool = false) {
     print("No models found.")
     return
   }
-  for spec in output {
-    let downloadedMarker = ModelZoo.isModelDownloaded(spec) ? "[x]" : "[ ]"
-    if let hf = spec.huggingFaceLink, !hf.isEmpty {
-      print("\(downloadedMarker) \(spec.file) | \(spec.name) | hf: \(hf)")
-    } else {
-      print("\(downloadedMarker) \(spec.file) | \(spec.name)")
-    }
+  let rows = output.map { spec in
+    let downloaded = ModelZoo.isModelDownloaded(spec) ? "yes" : "no"
+    let hf = (spec.huggingFaceLink?.isEmpty == false) ? (spec.huggingFaceLink ?? "") : "-"
+    return [spec.file, spec.name, downloaded, hf]
   }
+  printTable(
+    headers: ["MODEL", "NAME", "DOWNLOADED", "HUGGING_FACE"],
+    rows: rows,
+    maxWidths: [42, 42, 10, 52])
 }
 
 private func printModelResolutionHelp(limit: Int = 20) {
@@ -636,7 +861,7 @@ struct DrawThingsCLI: ParsableCommand {
 extension DrawThingsCLI {
   struct Generate: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Run local inference and save generated output image(s).")
+      abstract: "Run local inference and save generated output image(s) or video.")
 
     @OptionGroup var modelsDirectoryOptions: ModelsDirectoryOptions
 
@@ -670,7 +895,7 @@ extension DrawThingsCLI {
     @Option(name: .shortAndLong, help: "Random seed.")
     var seed: UInt32?
 
-    @Option(name: .shortAndLong, help: "Output PNG file path.")
+    @Option(name: .shortAndLong, help: "Output path (.png, .mov, or .mp4).")
     var output: String = "output.png"
 
     @Option(name: .long, help: "Inline JSON string in JSGenerationConfiguration format.")
