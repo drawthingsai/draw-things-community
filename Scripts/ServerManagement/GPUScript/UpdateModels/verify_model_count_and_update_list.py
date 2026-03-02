@@ -14,7 +14,7 @@ from pathlib import Path
 # Paths derived from script location
 SCRIPT_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = SCRIPT_DIR.parents[3]  # Scripts/ServerManagement/GPUScript/UpdateModels -> repo root
-SERVERS_FILE = SCRIPT_DIR / "gpu_servers.csv"
+SERVERS_FILE = SCRIPT_DIR / "gpu_servers_logic.csv"
 MODEL_LIST_FILE = REPO_ROOT / "model-list"
 SSH_TIMEOUT = 30
 
@@ -216,6 +216,54 @@ def check_consistency(results: dict[str, dict]) -> tuple[bool, str]:
     return consistent, "\n".join(messages)
 
 
+def find_missing_models(results: dict[str, dict]) -> None:
+    """
+    Find and print specific .ckpt models missing on servers that have fewer files.
+    Uses the server(s) with the highest count as the reference.
+    """
+    if not results:
+        return
+
+    max_ckpt = max(r["ckpt"] for r in results.values())
+    deficient = {s: r for s, r in results.items() if r["ckpt"] < max_ckpt}
+    if not deficient:
+        return
+
+    # Pick first reference server (highest count)
+    ref_server, ref_info = next((s, r) for s, r in results.items() if r["ckpt"] == max_ckpt)
+    ref_path = ref_info["models_path"]
+
+    print(f"\nFetching model list from reference: {ref_server} ({ref_path})...")
+    ref_models, ref_err = get_model_list(ref_server, ref_path)
+    if ref_err:
+        print(f"  Error: {ref_err}")
+        return
+    ref_set = set(ref_models)
+
+    for server, info in deficient.items():
+        server_path = info["models_path"]
+        print(f"\nFetching model list from {server} ({server_path})...")
+        server_models, server_err = get_model_list(server, server_path)
+        if server_err:
+            print(f"  Error: {server_err}")
+            continue
+        server_set = set(server_models)
+
+        missing = sorted(ref_set - server_set)
+        extra = sorted(server_set - ref_set)
+
+        if missing:
+            print(f"  Missing on {server} ({len(missing)}):")
+            for m in missing:
+                print(f"    - {m}")
+        if extra:
+            print(f"  Extra on {server} not on reference ({len(extra)}):")
+            for m in extra:
+                print(f"    + {m}")
+        if not missing and not extra:
+            print(f"  No .ckpt name differences found (mismatch may be in sub-paths or symlinks)")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Verify model counts across GPU servers and optionally update control panel"
@@ -263,6 +311,9 @@ def main():
     consistent, summary = check_consistency(results)
     print(f"\n{'✓' if consistent else '✗'} Verification {'passed' if consistent else 'failed'}:")
     print(summary)
+
+    if not consistent:
+        find_missing_models(results)
 
     # Determine if we should update
     should_update = args.force_update or (args.update and consistent and not errors)
