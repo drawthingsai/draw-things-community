@@ -3,77 +3,20 @@ import Diffusion
 import Foundation
 
 public enum ComputeUnits {
-  private static func modelCoefficient(_ modelVersion: ModelVersion) -> Double {
-    switch modelVersion {
-    case .v1:
-      return 0.5
-    case .v2:
-      return 0.5294117647
-    case .sdxlBase:
-      return 0.5882352941
-    case .kandinsky21:
-      return 0.7647058824
-    case .sdxlRefiner:
-      return 0.5588235294
-    case .ssd1b:
-      return 0.4117647059
-    case .sd3:
-      return 0.5294117647
-    case .pixart:
-      return 0.4117647059
-    case .auraflow:
-      return 1.029411765
-    case .flux1:
-      return 2.588235294
-    case .sd3Large:
-      return 1.176470588
-    case .svdI2v:
-      return 0.88 * 0.8
-    case .wurstchenStageC:
-      return 1.18
-    case .wurstchenStageB:
-      return 1.18
-    case .hunyuanVideo:
-      return 3.529411765 * 0.8
-    case .wan21_1_3b:
-      return 1.176470588 * 0.8
-    case .wan21_14b:
-      return 2.823529412 * 0.8
-    case .wan22_5b:
-      return 1.176470588 * 0.8
-    case .hiDreamI1:
-      return 2.84465488969
-    case .qwenImage:
-      return 2.84465488969
-    case .zImage:
-      return 1.176470588
-    case .flux2:
-      return 2.588235294 * 2
-    case .flux2_9b:
-      return 2.588235294
-    case .flux2_4b:
-      return 1.176470588 * 0.8
-    case .ltx2:
-      return 1.176470588 * 0.8
-    }
+  private struct ResolvedModelContext {
+    let modelName: String
+    let modelVersion: ModelVersion
+    let samplerModifier: SamplerModifier
+    let isGuidanceEmbedEnabled: Bool
+    let isConsistencyModel: Bool
   }
 
-  public static func thresholdAfterBoost(
-    policyThreshold: Int,
-    boostsToSpend: Int
-  ) -> Int {
-    return max(
-      policyThreshold,
-      (boostsToSpend - 1) * ComputeUnits.perBoost + max(policyThreshold, ComputeUnits.perBoost))
-  }
-
-  public static func from(
+  private static func resolveModelContext(
     _ configuration: GenerationConfiguration,
-    hasImage: Bool, shuffleCount: Int,
     overrideMapping: (
       model: [String: ModelZoo.Specification], lora: [String: LoRAZoo.Specification]
     )? = nil
-  ) -> Int? {
+  ) -> ResolvedModelContext? {
     guard let model = configuration.model else {
       return nil
     }
@@ -116,74 +59,444 @@ public enum ComputeUnits {
         ModelZoo.guidanceEmbedForModel(model) && configuration.speedUpWithGuidanceEmbed
       isConsistencyModel = ModelZoo.isConsistencyModelForModel(model)
     }
+    return ResolvedModelContext(
+      modelName: model,
+      modelVersion: modelVersion,
+      samplerModifier: samplerModifier,
+      isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
+      isConsistencyModel: isConsistencyModel
+    )
+  }
 
-    let batchSize: Int
-    let numFrames: Int
-
+  private static func cfgChannels(
+    configuration: GenerationConfiguration, context: ResolvedModelContext
+  ) -> Int {
     let isCfgEnabled =
-      (!isConsistencyModel && !isGuidanceEmbedEnabled)
+      (!context.isConsistencyModel && !context.isGuidanceEmbedEnabled)
       && isCfgEnabled(
         textGuidanceScale: configuration.guidanceScale,
         imageGuidanceScale: configuration.imageGuidanceScale,
-        startFrameCfg: configuration.startFrameCfg, version: modelVersion, modifier: samplerModifier
+        startFrameCfg: configuration.startFrameCfg, version: context.modelVersion,
+        modifier: context.samplerModifier
       )
     let (cfgChannels, _) = cfgChannelsAndInputChannels(
       channels: 0, conditionShape: nil, isCfgEnabled: isCfgEnabled,
       textGuidanceScale: configuration.guidanceScale,
-      imageGuidanceScale: configuration.imageGuidanceScale, version: modelVersion,
-      modifier: samplerModifier)
-    var modelCoefficient = modelCoefficient(modelVersion)
-    var root = Double(Int(configuration.startWidth) * 64 * Int(configuration.startHeight) * 64)
-    switch modelVersion {
-    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large:
-      batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
-      numFrames = 1
-    case .flux1, .qwenImage, .zImage, .flux2, .flux2_9b, .flux2_4b:
-      batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
-      numFrames = 1
-      if samplerModifier == .kontext || samplerModifier == .qwenimageEditPlus
-        || modelVersion == .flux2 || modelVersion == .flux2_9b || modelVersion == .flux2_4b
-        || samplerModifier == .qwenimageEdit2511
-      {  // For Kontext, if the reference image is provided, we effectively double the cost at least.
-        root = root * Double(1 + (hasImage ? 1 : 0) + shuffleCount)
-      }
-    case .hiDreamI1:
-      batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
-      numFrames = 1
-      if samplerModifier == .editing {  // For HiDream E1, we extends the width, effectively double the resolution.
-        root = root * 2
-      }
-    case .svdI2v:
-      batchSize = cfgChannels
-      numFrames = Int(configuration.numFrames)
-    case .hunyuanVideo:
-      batchSize = cfgChannels
-      numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
-    case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2:
-      batchSize = cfgChannels
-      numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
-      if configuration.causalInferenceEnabled && configuration.causalInference > 0
-        && configuration.causalInference + max(0, configuration.causalInferencePad) < numFrames
-      {
-        // A perfect causal inference would be 1/2 cheaper than non-causal variant. But given causal inference for these models are based on full frames, it is not 1/2, it needs to add batch these extra edges.
-        let sequenceLength = root * Double(numFrames)
-        let lowerTriangle = sequenceLength * sequenceLength * 0.5
-        let upperRidgeLength = root * Double(configuration.causalInference)
-        // upperRidgePad is an rectangle.
-        let upperRidgePad = upperRidgeLength * root * Double(configuration.causalInferencePad)
-        let upperRidge = upperRidgeLength * upperRidgeLength * 0.5 + upperRidgePad
-        let totalArea =
-          lowerTriangle + upperRidge * Double(configuration.causalInference) / Double(numFrames)
-        modelCoefficient = modelCoefficient * (totalArea / (sequenceLength * sequenceLength))
-      }
-    }
-    root = root * Double(numFrames)
-    let scalingFactor: Double = 0.00000922917
+      imageGuidanceScale: configuration.imageGuidanceScale, version: context.modelVersion,
+      modifier: context.samplerModifier)
+    return cfgChannels
+  }
 
-    return Int(
-      (modelCoefficient * pow(root * scalingFactor, 1.9) * Double(configuration.steps)
-        * Double(max(configuration.strength, 0.05)) * Double(batchSize)).rounded(.up))
+  private static func batchSizeAndNumFrames(
+    configuration: GenerationConfiguration,
+    context: ResolvedModelContext,
+    cfgChannels: Int
+  ) -> (batchSize: Int, numFrames: Int) {
+    switch context.modelVersion {
+    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .flux1, .qwenImage, .zImage, .flux2,
+      .flux2_9b, .flux2_4b, .hiDreamI1:
+      return (max(1, Int(configuration.batchSize)) * cfgChannels, 1)
+    case .svdI2v:
+      return (cfgChannels, max(1, Int(configuration.numFrames)))
+    case .hunyuanVideo:
+      return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 4 + 1))
+    case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2:
+      return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 4 + 1))
+    }
+  }
+
+  private static func referenceImageCount(
+    context: ResolvedModelContext,
+    hasImage: Bool,
+    shuffleCount: Int
+  ) -> Int {
+    let baseReferenceCount = hasImage ? 1 : 0
+    let extraReferenceCount = max(0, shuffleCount)
+    switch context.samplerModifier {
+    case .qwenimageLayered:
+      return baseReferenceCount
+    case .kontext, .qwenimageEditPlus, .qwenimageEdit2511:
+      return baseReferenceCount + extraReferenceCount
+    default:
+      if context.modelVersion == .flux2 || context.modelVersion == .flux2_9b
+        || context.modelVersion == .flux2_4b
+      {
+        return baseReferenceCount + extraReferenceCount
+      }
+      return baseReferenceCount
+    }
+  }
+
+  private static func defaultTokenLength(modelName: String, version: ModelVersion) -> Int {
+    let paddedLength = ModelZoo.paddedTextEncodingLengthForModel(modelName)
+    if paddedLength > 0 {
+      return paddedLength
+    }
+    switch version {
+    case .flux1:
+      return 512
+    case .hunyuanVideo:
+      return 256
+    case .qwenImage, .zImage, .flux2, .flux2_9b, .flux2_4b:
+      return 512
+    case .ltx2:
+      return 128
+    case .hiDreamI1:
+      return 128
+    default:
+      return 77
+    }
+  }
+
+  private static func modelStartSizeFromConfiguration(
+    _ configuration: GenerationConfiguration,
+    version: ModelVersion
+  ) -> (width: Int, height: Int) {
+    let rawWidth = max(1, Int(configuration.startWidth))
+    let rawHeight = max(1, Int(configuration.startHeight))
+    switch version {
+    case .wurstchenStageC:
+      return (
+        Int((Double(rawWidth) * 3.0 / 2.0).rounded(.up)),
+        Int((Double(rawHeight) * 3.0 / 2.0).rounded(.up))
+      )
+    case .wan22_5b:
+      return (rawWidth * 4, rawHeight * 4)
+    case .ltx2:
+      return (rawWidth * 2, rawHeight * 2)
+    default:
+      return (rawWidth * 8, rawHeight * 8)
+    }
+  }
+
+  private static func instructionCountFromResolvedModel(
+    _ configuration: GenerationConfiguration,
+    context: ResolvedModelContext,
+    hasImage: Bool,
+    shuffleCount: Int
+  ) -> (main: Int, fixed: Int) {
+    let modelStartSize = modelStartSizeFromConfiguration(
+      configuration, version: context.modelVersion)
+    let startWidth = modelStartSize.width
+    let startHeight = modelStartSize.height
+    let cfgChannels = cfgChannels(configuration: configuration, context: context)
+    let (batchSize, numFrames) = batchSizeAndNumFrames(
+      configuration: configuration, context: context, cfgChannels: cfgChannels)
+    let baseTokenLength = max(
+      1, defaultTokenLength(modelName: context.modelName, version: context.modelVersion))
+    let tokenLengths = (baseTokenLength, baseTokenLength)
+    let referenceLengthPerImage = max(1, (startHeight / 2) * (startWidth / 2))
+    let referenceSequenceLength =
+      referenceLengthPerImage
+      * referenceImageCount(context: context, hasImage: hasImage, shuffleCount: shuffleCount)
+
+    switch context.modelVersion {
+    case .v1:
+      let mainCount = UNetInstructionCount(
+        batchSize: 1, embeddingLength: tokenLengths, startWidth: startWidth,
+        startHeight: startHeight, injectIPAdapterLengths: [], injectAttentionKV: false)
+      return (main: mainCount * batchSize, fixed: 0)
+    case .v2:
+      let mainCount = UNetv2InstructionCount(
+        batchSize: 1, embeddingLength: tokenLengths, startWidth: startWidth,
+        startHeight: startHeight)
+      return (main: mainCount * batchSize, fixed: 0)
+    case .svdI2v:
+      let mainCount = UNetXLInstructionCount(
+        batchSize: numFrames, startHeight: startHeight, startWidth: startWidth,
+        channels: [320, 640, 1280, 1280],
+        inputAttentionRes: [1: [1, 1], 2: [1, 1], 4: [1, 1]], middleAttentionBlocks: 1,
+        outputAttentionRes: [1: [1, 1, 1], 2: [1, 1, 1], 4: [1, 1, 1]], embeddingLength: (1, 1),
+        injectIPAdapterLengths: [], isTemporalMixEnabled: true)
+      let fixedCount = UNetXLFixedInstructionCount(
+        batchSize: numFrames, startHeight: startHeight, startWidth: startWidth,
+        channels: [320, 640, 1280, 1280], embeddingLength: (1, 1),
+        inputAttentionRes: [1: [1, 1], 2: [1, 1], 4: [1, 1]], middleAttentionBlocks: 1,
+        outputAttentionRes: [1: [1, 1, 1], 2: [1, 1, 1], 4: [1, 1, 1]], isTemporalMixEnabled: true,
+        temporalFrameEmbeddingRows: numFrames)
+      return (
+        main: mainCount * batchSize,
+        fixed: fixedCount * batchSize
+      )
+    case .kandinsky21:
+      let mainCount = UNetKandinskyInstructionCount(
+        batchSize: 1, channels: 384, outChannels: 8, channelMult: [1, 2, 3, 4],
+        numResBlocks: 3, numHeadChannels: 64, t: 87, startHeight: startHeight,
+        startWidth: startWidth, attentionResolutions: Set([2, 4, 8]))
+      return (main: mainCount * batchSize, fixed: 0)
+    case .sdxlBase:
+      let mainCount = UNetXLInstructionCount(
+        batchSize: 1, startHeight: startHeight, startWidth: startWidth,
+        channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [10, 10]],
+        middleAttentionBlocks: 10, outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
+        embeddingLength: tokenLengths, injectIPAdapterLengths: [], isTemporalMixEnabled: false)
+      let fixedCount = UNetXLFixedInstructionCount(
+        batchSize: 1, startHeight: startHeight, startWidth: startWidth,
+        channels: [320, 640, 1280], embeddingLength: tokenLengths,
+        inputAttentionRes: [2: [2, 2], 4: [10, 10]], middleAttentionBlocks: 10,
+        outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]], isTemporalMixEnabled: false)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .sdxlRefiner:
+      let mainCount = UNetXLInstructionCount(
+        batchSize: 1, startHeight: startHeight, startWidth: startWidth,
+        channels: [384, 768, 1536, 1536], inputAttentionRes: [2: [4, 4], 4: [4, 4]],
+        middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
+        embeddingLength: tokenLengths, injectIPAdapterLengths: [], isTemporalMixEnabled: false)
+      let fixedCount = UNetXLFixedInstructionCount(
+        batchSize: 1, startHeight: startHeight, startWidth: startWidth,
+        channels: [384, 768, 1536, 1536], embeddingLength: tokenLengths,
+        inputAttentionRes: [2: [4, 4], 4: [4, 4]], middleAttentionBlocks: 4,
+        outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]], isTemporalMixEnabled: false)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .ssd1b:
+      let mainCount = UNetXLInstructionCount(
+        batchSize: 1, startHeight: startHeight, startWidth: startWidth,
+        channels: [320, 640, 1280], inputAttentionRes: [2: [2, 2], 4: [4, 4]],
+        middleAttentionBlocks: 0, outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
+        embeddingLength: tokenLengths, injectIPAdapterLengths: [], isTemporalMixEnabled: false)
+      let fixedCount = UNetXLFixedInstructionCount(
+        batchSize: 1, startHeight: startHeight, startWidth: startWidth,
+        channels: [320, 640, 1280], embeddingLength: tokenLengths,
+        inputAttentionRes: [2: [2, 2], 4: [4, 4]], middleAttentionBlocks: 0,
+        outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]], isTemporalMixEnabled: false)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .wurstchenStageC:
+      let mainCount = WurstchenStageCInstructionCount(
+        batchSize: 1, height: startHeight, width: startWidth,
+        t: (baseTokenLength + 8, baseTokenLength + 8))
+      let fixedCount = WurstchenStageCFixedInstructionCount(
+        batchSize: 1, t: (baseTokenLength + 8, baseTokenLength + 8))
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .wurstchenStageB:
+      let mainCount = WurstchenStageBInstructionCount(
+        batchSize: 1, cIn: 4, height: startHeight, width: startWidth)
+      let fixedCount = WurstchenStageBFixedInstructionCount(
+        batchSize: 1, height: startHeight, width: startWidth, effnetHeight: startHeight,
+        effnetWidth: startWidth)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .sd3:
+      let dualAttentionLayers =
+        ModelZoo.specificationForModel(context.modelName)?.mmdit?
+        .dualAttentionLayers ?? []
+      let mainCount = MMDiTInstructionCount(
+        batchSize: 1, t: baseTokenLength, height: startHeight, width: startWidth,
+        channels: 1536, layers: 24, dualAttentionLayers: dualAttentionLayers)
+      let fixedCount = MMDiTFixedInstructionCount(
+        batchSize: 1, contextLength: baseTokenLength, channels: 1536, layers: 24,
+        dualAttentionLayers: dualAttentionLayers)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .sd3Large:
+      let mainCount = MMDiTInstructionCount(
+        batchSize: 1, t: baseTokenLength, height: startHeight, width: startWidth,
+        channels: 2432, layers: 38, dualAttentionLayers: [])
+      let fixedCount = MMDiTFixedInstructionCount(
+        batchSize: 1, contextLength: baseTokenLength, channels: 2432, layers: 38,
+        dualAttentionLayers: [])
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .pixart:
+      let mainCount = PixArtInstructionCount(
+        batchSize: 1, height: startHeight, width: startWidth, channels: 1152, layers: 28,
+        tokenLength: tokenLengths)
+      let fixedCount = PixArtFixedInstructionCount(
+        batchSize: 1, channels: 1152, layers: 28, tokenLength: tokenLengths)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .auraflow:
+      let tokenLength = max(256, baseTokenLength)
+      let mainCount = AuraFlowInstructionCount(
+        batchSize: 1, tokenLength: tokenLength, height: startHeight,
+        width: startWidth, channels: 3072, layers: (4, 32))
+      let fixedCount = AuraFlowFixedInstructionCount(
+        batchSize: (1, 1), tokenLength: tokenLength, channels: 3072, layers: (4, 32))
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .flux1:
+      let mainCount = Flux1InstructionCount(
+        batchSize: 1, tokenLength: baseTokenLength,
+        referenceSequenceLength: referenceSequenceLength,
+        height: startHeight, width: startWidth, channels: 3072, layers: (19, 38),
+        contextPreloaded: true)
+      let fixedCount = Flux1FixedInstructionCount(
+        batchSize: (1, 1), tokenLength: baseTokenLength,
+        referenceSequenceLength: referenceSequenceLength, channels: 3072, layers: (19, 38),
+        contextPreloaded: true, guidanceEmbed: context.isGuidanceEmbedEnabled)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .hunyuanVideo:
+      let fixedTextLength: (Int, Int) =
+        cfgChannels > 1
+        ? (baseTokenLength, baseTokenLength)
+        : (0, baseTokenLength)
+      let mainCount = HunyuanInstructionCount(
+        time: numFrames, height: startHeight, width: startWidth, textLength: baseTokenLength,
+        channels: 3072, layers: (20, 40))
+      let fixedCount = HunyuanFixedInstructionCount(
+        timesteps: 1, channels: 3072, layers: (20, 40), textLength: fixedTextLength)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .wan21_1_3b:
+      let causalInference: (Int, pad: Int) =
+        configuration.causalInferenceEnabled
+        ? (
+          max(0, Int(configuration.causalInference)), max(0, Int(configuration.causalInferencePad))
+        )
+        : (0, 0)
+      let mainCount = WanInstructionCount(
+        channels: 1536, layers: 30, vaceLayers: [], intermediateSize: 8960,
+        time: numFrames, height: startHeight, width: startWidth, textLength: baseTokenLength,
+        causalInference: causalInference, injectImage: hasImage, outputChannels: 16)
+      let fixedCount = WanFixedInstructionCount(
+        timesteps: 1, batchSize: (1, 1), channels: 1536, layers: 30, vaceLayers: [],
+        textLength: baseTokenLength, injectImage: hasImage)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .wan21_14b:
+      let causalInference: (Int, pad: Int) =
+        configuration.causalInferenceEnabled
+        ? (
+          max(0, Int(configuration.causalInference)), max(0, Int(configuration.causalInferencePad))
+        )
+        : (0, 0)
+      let mainCount = WanInstructionCount(
+        channels: 5120, layers: 40, vaceLayers: [], intermediateSize: 13_824,
+        time: numFrames, height: startHeight, width: startWidth, textLength: baseTokenLength,
+        causalInference: causalInference, injectImage: hasImage, outputChannels: 16)
+      let fixedCount = WanFixedInstructionCount(
+        timesteps: 1, batchSize: (1, 1), channels: 5120, layers: 40, vaceLayers: [],
+        textLength: baseTokenLength, injectImage: hasImage)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .wan22_5b:
+      let causalInference: (Int, pad: Int) =
+        configuration.causalInferenceEnabled
+        ? (
+          max(0, Int(configuration.causalInference)), max(0, Int(configuration.causalInferencePad))
+        )
+        : (0, 0)
+      let mainCount = WanInstructionCount(
+        channels: 3072, layers: 30, vaceLayers: [], intermediateSize: 14_336,
+        time: numFrames, height: startHeight, width: startWidth, textLength: baseTokenLength,
+        causalInference: causalInference, injectImage: false, outputChannels: 48)
+      let fixedCount = WanFixedInstructionCount(
+        timesteps: 1, batchSize: (1, 1), channels: 3072, layers: 30, vaceLayers: [],
+        textLength: baseTokenLength, injectImage: false)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .qwenImage:
+      let mainCount = QwenImageInstructionCount(
+        batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,
+        referenceSequenceLength: referenceSequenceLength, channels: 3072, layers: 60,
+        isQwenImageLayered: context.samplerModifier == .qwenimageLayered)
+      let fixedCount = QwenImageFixedInstructionCount(
+        timesteps: 1, batchSize: 1, textLength: baseTokenLength, channels: 3072, layers: 60,
+        referenceSequenceLength: referenceSequenceLength)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .zImage:
+      let mainCount = ZImageInstructionCount(
+        batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,
+        channels: 3840, layers: 30)
+      let fixedCount = ZImageFixedInstructionCount(
+        batchSize: 1, timesteps: 1, tokenLength: tokenLengths, channels: 3840, layers: 30)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .flux2, .flux2_9b, .flux2_4b:
+      let channels: Int
+      let layers: (Int, Int)
+      if context.modelVersion == .flux2_9b {
+        channels = 4096
+        layers = (8, 24)
+      } else if context.modelVersion == .flux2_4b {
+        channels = 3072
+        layers = (5, 20)
+      } else {
+        channels = 6144
+        layers = (8, 48)
+      }
+      let mainCount = Flux2InstructionCount(
+        batchSize: 1, tokenLength: baseTokenLength,
+        referenceSequenceLength: referenceSequenceLength, height: startHeight, width: startWidth,
+        channels: channels, layers: layers)
+      let fixedCount = Flux2FixedInstructionCount(
+        contextBatchSize: 1, tokenLength: baseTokenLength, timestepCount: 1,
+        referenceSequenceLength: referenceSequenceLength, channels: channels,
+        guidanceEmbed: context.isGuidanceEmbedEnabled)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .hiDreamI1:
+      let hiDreamWidth =
+        context.samplerModifier == .editing
+        ? startWidth * 2
+        : startWidth
+      let mainCount = HiDreamInstructionCount(
+        batchSize: 1, height: startHeight, width: hiDreamWidth, textLength: tokenLengths,
+        layers: (16, 32))
+      let fixedCount = HiDreamFixedInstructionCount(
+        timesteps: 1, layers: (16, 32), t5TextLength: baseTokenLength,
+        llamaTextLength: baseTokenLength)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .ltx2:
+      let videoFrames = numFrames
+      let audioFrames = (videoFrames - 1) * 8 + 1
+      let mainCount = LTX2InstructionCount(
+        time: videoFrames, h: startHeight, w: startWidth, textLength: baseTokenLength,
+        audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
+        tokenModulation: hasImage)
+      let fixedCount = LTX2FixedInstructionCount(
+        time: videoFrames, textLength: baseTokenLength, audioFrames: audioFrames, timesteps: 1,
+        channels: (4096, 2048), layers: 48)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    }
+  }
+
+  // Single global calibration scalar from instruction-count domain to legacy compute-unit domain.
+  // Calibrated against Flux1 / Flux2_9B and intentionally biased low.
+  private static let instructionCalibrationScale: Double = 2.9852210252799205e-12
+
+  // Policy-side multiplier to bias compute-unit cost by model family.
+  // This is intentionally non-physical and is used to steer usage toward preferred models.
+  private static func modelUsageBiasMultiplier(for version: ModelVersion) -> Double {
+    switch version {
+    case .v1, .kandinsky21, .wurstchenStageC, .wurstchenStageB, .sdxlBase, .sdxlRefiner, .ssd1b,
+      .svdI2v:
+      return 2.5
+    default:
+      return 1.0
+    }
+  }
+
+  private static func from(
+    _ configuration: GenerationConfiguration,
+    context: ResolvedModelContext,
+    hasImage: Bool,
+    shuffleCount: Int
+  ) -> Int {
+    let instructionCounts = instructionCountFromResolvedModel(
+      configuration, context: context, hasImage: hasImage, shuffleCount: shuffleCount)
+    let mainEstimate =
+      Double(instructionCounts.main) * instructionCalibrationScale
+      * Double(configuration.steps) * Double(max(configuration.strength, 0.05))
+    let fixedEstimate = Double(instructionCounts.fixed) * instructionCalibrationScale
+    let biasedEstimate =
+      (mainEstimate + fixedEstimate) * modelUsageBiasMultiplier(for: context.modelVersion)
+    guard biasedEstimate.isFinite, biasedEstimate > 0 else { return 0 }
+    return Int(min(Double(Int.max), biasedEstimate.rounded(.up)))
+  }
+
+  public static func thresholdAfterBoost(
+    policyThreshold: Int,
+    boostsToSpend: Int
+  ) -> Int {
+    return max(
+      policyThreshold,
+      (boostsToSpend - 1) * ComputeUnits.perBoost + max(policyThreshold, ComputeUnits.perBoost))
+  }
+
+  public static func from(
+    _ configuration: GenerationConfiguration,
+    hasImage: Bool, shuffleCount: Int,
+    overrideMapping: (
+      model: [String: ModelZoo.Specification], lora: [String: LoRAZoo.Specification]
+    )? = nil
+  ) -> Int? {
+    guard
+      let context = resolveModelContext(configuration, overrideMapping: overrideMapping)
+    else {
+      return nil
+    }
+    return from(
+      configuration, context: context, hasImage: hasImage, shuffleCount: shuffleCount)
   }
 
   public static func threshold(for priority: String?) -> Int {

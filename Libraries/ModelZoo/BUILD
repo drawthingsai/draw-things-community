@@ -1,4 +1,4 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library", "swift_test")
 
 swift_library(
     name = "ModelZoo",
@@ -10,5 +10,17 @@ swift_library(
         "//Libraries/SwiftDiffusion",
         "//Libraries/Upscaler",
         "@s4nnc//nnc",
+    ],
+)
+
+swift_test(
+    name = "ComputeUnitsTests",
+    srcs = [
+        "Tests/ComputeUnitsTests.swift",
+    ],
+    deps = [
+        ":ModelZoo",
+        "//Libraries/DataModels",
+        "//Libraries/SwiftDiffusion",
     ],
 )
