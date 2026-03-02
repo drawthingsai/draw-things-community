@@ -25,7 +25,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/liuliu/s4nnc.git",
-      revision: "c29c310c8963424c68886c89fbaa54edce143ea4"),
+      revision: "250a721139150b40218300e574f49a622bb624cb"),
     .package(
       url: "https://github.com/liuliu/dflat.git",
       revision: "73925e51e4f44add842177a229f9990cb13711ff"),
@@ -35,15 +35,11 @@ let package = Package(
     .package(
       url: "https://github.com/liuliu/swift-sentencepiece",
       revision: "8d17bf2e017c97563e8805545d676be9739b6c0e"),
-    .package(url: "https://github.com/apple/swift-nio.git", from: "2.42.0"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.4.4"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.1"),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "3.7.1"),
     .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0"),
     .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.23.1"),
-    .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.4.0"),
-    .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.26.0"),
-    .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.15.0"),
     .package(url: "https://github.com/jagreenwood/swift-log-datadog.git", from: "0.3.0"),
 
     .package(url: "https://github.com/grpc/grpc-swift.git", from: "1.16.0"),
