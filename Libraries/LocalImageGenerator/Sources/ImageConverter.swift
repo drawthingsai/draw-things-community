@@ -663,685 +663,6 @@ public enum ImageConverter {
     }
   }
   #if canImport(UIKit) && canImport(CoreML)
-    static let flux1UnzipItem: URL? = {
-      let fileManager = FileManager.default
-      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
-      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
-      do {
-        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
-        guard !fileManager.fileExists(atPath: coreMLUrl.appendingPathComponent("flux_1_tae").path)
-        else {
-          return coreMLUrl.appendingPathComponent("flux_1_tae")
-        }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "flux_1_tae", withExtension: "zip")!,
-          to: coreMLUrl)
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_1_tae/768.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_1_tae/768.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_1_tae/1024.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_1_tae/1024.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_1_tae/1280.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_1_tae/1280.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_1_tae/1536.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_1_tae/1536.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_1_tae/1792.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_1_tae/1792.mlmodelc/weights/weight.bin"))
-        }
-        try fileManager.moveItem(
-          at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_1_tae/2048.mlmodelc/weights/weight.bin"))
-        return coreMLUrl.appendingPathComponent("flux_1_tae")
-      } catch {
-        try? fileManager.removeItem(at: coreMLUrl.appendingPathComponent("flux_1_tae"))
-        return nil
-      }
-    }()
-    static let flux1TinyDecoderFor768: ManagedMLModel? = {
-      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("768.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux1TinyDecoderFor1024: ManagedMLModel? = {
-      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("1024.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux1TinyDecoderFor1280: ManagedMLModel? = {
-      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("1280.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux1TinyDecoderFor1536: ManagedMLModel? = {
-      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("1536.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux1TinyDecoderFor1792: ManagedMLModel? = {
-      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("1792.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux1TinyDecoderFor2048: ManagedMLModel? = {
-      guard let flux1UnzipItem = flux1UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("2048.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let qwenImageUnzipItem: URL? = {
-      let fileManager = FileManager.default
-      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
-      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
-      do {
-        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
-        guard
-          !fileManager.fileExists(atPath: coreMLUrl.appendingPathComponent("qwenimage_tae").path)
-        else {
-          return coreMLUrl.appendingPathComponent("qwenimage_tae")
-        }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "qwenimage_tae", withExtension: "zip")!,
-          to: coreMLUrl)
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("qwenimage_tae/768.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("qwenimage_tae/768.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1024.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1024.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1280.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1280.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1536.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1536.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1792.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("qwenimage_tae/1792.mlmodelc/weights/weight.bin"))
-        }
-        try fileManager.moveItem(
-          at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("qwenimage_tae/2048.mlmodelc/weights/weight.bin"))
-        return coreMLUrl.appendingPathComponent("qwenimage_tae")
-      } catch {
-        try? fileManager.removeItem(at: coreMLUrl.appendingPathComponent("qwenimage_tae"))
-        return nil
-      }
-    }()
-    static let qwenImageTinyDecoderFor768: ManagedMLModel? = {
-      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("768.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let qwenImageTinyDecoderFor1024: ManagedMLModel? = {
-      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("1024.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let qwenImageTinyDecoderFor1280: ManagedMLModel? = {
-      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("1280.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let qwenImageTinyDecoderFor1536: ManagedMLModel? = {
-      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("1536.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let qwenImageTinyDecoderFor1792: ManagedMLModel? = {
-      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("1792.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let qwenImageTinyDecoderFor2048: ManagedMLModel? = {
-      guard let flux1UnzipItem = qwenImageUnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux1UnzipItem.appendingPathComponent("2048.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let wan21UnzipItem: URL? = {
-      let fileManager = FileManager.default
-      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
-      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
-      do {
-        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
-        guard !fileManager.fileExists(atPath: coreMLUrl.appendingPathComponent("wan_2.1_tae").path)
-        else {
-          return coreMLUrl.appendingPathComponent("wan_2.1_tae")
-        }
-        guard
-          let qwenImageTAEArchiveURL = Bundle.main.url(
-            forResource: "qwenimage_tae", withExtension: "zip"),
-          let wan21TAEArchiveURL = Bundle.main.url(
-            forResource: "wan_2.1_tae", withExtension: "zip")
-        else {
-          return nil
-        }
-        guard let qwenImageTAEArchive = Archive(url: qwenImageTAEArchiveURL, accessMode: .read),
-          let qwenImageWeight = qwenImageTAEArchive["qwenimage_tae/weight.bin"]
-        else {
-          return nil
-        }
-        try fileManager.unzipItem(at: wan21TAEArchiveURL, to: coreMLUrl)
-        var qwenImageWeightData = Data()
-        let _ = try qwenImageTAEArchive.extract(qwenImageWeight) { qwenImageWeightData.append($0) }
-        let weightDiffUrl = coreMLUrl.appendingPathComponent("wan_2.1_tae/weight.bin.insdiff")
-        let wan21PatchData = try Data(contentsOf: weightDiffUrl)
-        let weightData = try InsdiffPatcher.apply(
-          baseData: qwenImageWeightData, patchData: wan21PatchData)
-        let weightUrl = coreMLUrl.appendingPathComponent("wan_2.1_tae/weight.bin")
-        try weightData.write(to: weightUrl, options: .atomic)
-        try fileManager.removeItem(at: weightDiffUrl)
-
-        do {
-          try fileManager.linkItem(
-            at: weightUrl,
-            to: coreMLUrl.appendingPathComponent("wan_2.1_tae/512.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: weightUrl,
-            to: coreMLUrl.appendingPathComponent("wan_2.1_tae/512.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: weightUrl,
-            to: coreMLUrl.appendingPathComponent("wan_2.1_tae/768.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: weightUrl,
-            to: coreMLUrl.appendingPathComponent("wan_2.1_tae/768.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: weightUrl,
-            to: coreMLUrl.appendingPathComponent("wan_2.1_tae/1024.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: weightUrl,
-            to: coreMLUrl.appendingPathComponent("wan_2.1_tae/1024.mlmodelc/weights/weight.bin"))
-        }
-        try fileManager.moveItem(
-          at: weightUrl,
-          to: coreMLUrl.appendingPathComponent("wan_2.1_tae/1280.mlmodelc/weights/weight.bin"))
-        return coreMLUrl.appendingPathComponent("wan_2.1_tae")
-      } catch {
-        try? fileManager.removeItem(at: coreMLUrl.appendingPathComponent("wan_2.1_tae"))
-        return nil
-      }
-    }()
-    static let wan21TinyDecoderFor512: ManagedMLModel? = {
-      guard let wan21UnzipItem = wan21UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: wan21UnzipItem.appendingPathComponent("512.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let wan21TinyDecoderFor768: ManagedMLModel? = {
-      guard let wan21UnzipItem = wan21UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: wan21UnzipItem.appendingPathComponent("768.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let wan21TinyDecoderFor1024: ManagedMLModel? = {
-      guard let wan21UnzipItem = wan21UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: wan21UnzipItem.appendingPathComponent("1024.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let wan21TinyDecoderFor1280: ManagedMLModel? = {
-      guard let wan21UnzipItem = wan21UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: wan21UnzipItem.appendingPathComponent("1280.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux2UnzipItem: URL? = {
-      let fileManager = FileManager.default
-      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
-      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
-      do {
-        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
-        guard !fileManager.fileExists(atPath: coreMLUrl.appendingPathComponent("flux_2_tae").path)
-        else {
-          return coreMLUrl.appendingPathComponent("flux_2_tae")
-        }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "flux_2_tae", withExtension: "zip")!,
-          to: coreMLUrl)
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_2_tae/768.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_2_tae/768.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_2_tae/1024.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_2_tae/1024.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_2_tae/1280.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_2_tae/1280.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_2_tae/1536.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_2_tae/1536.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_2_tae/1792.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("flux_2_tae/1792.mlmodelc/weights/weight.bin"))
-        }
-        try fileManager.moveItem(
-          at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("flux_2_tae/2048.mlmodelc/weights/weight.bin"))
-        return coreMLUrl.appendingPathComponent("flux_2_tae")
-      } catch {
-        try? fileManager.removeItem(at: coreMLUrl.appendingPathComponent("flux_2_tae"))
-        return nil
-      }
-    }()
-    static let flux2TinyDecoderFor768: ManagedMLModel? = {
-      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux2UnzipItem.appendingPathComponent("768.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux2TinyDecoderFor1024: ManagedMLModel? = {
-      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux2UnzipItem.appendingPathComponent("1024.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux2TinyDecoderFor1280: ManagedMLModel? = {
-      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux2UnzipItem.appendingPathComponent("1280.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux2TinyDecoderFor1536: ManagedMLModel? = {
-      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux2UnzipItem.appendingPathComponent("1536.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux2TinyDecoderFor1792: ManagedMLModel? = {
-      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux2UnzipItem.appendingPathComponent("1792.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let flux2TinyDecoderFor2048: ManagedMLModel? = {
-      guard let flux2UnzipItem = flux2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: flux2UnzipItem.appendingPathComponent("2048.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let LTX2UnzipItem: URL? = {
-      let fileManager = FileManager.default
-      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
-      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
-      do {
-        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
-        guard !fileManager.fileExists(atPath: coreMLUrl.appendingPathComponent("ltx_2_tae").path)
-        else {
-          return coreMLUrl.appendingPathComponent("ltx_2_tae")
-        }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "ltx_2_tae", withExtension: "zip")!,
-          to: coreMLUrl)
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("ltx_2_tae/768.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("ltx_2_tae/768.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1024.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1024.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1280.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1280.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1536.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1536.mlmodelc/weights/weight.bin"))
-        }
-        do {
-          try fileManager.linkItem(
-            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1792.mlmodelc/weights/weight.bin"))
-        } catch {
-          try fileManager.copyItem(
-            at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-            to: coreMLUrl.appendingPathComponent("ltx_2_tae/1792.mlmodelc/weights/weight.bin"))
-        }
-        try fileManager.moveItem(
-          at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
-          to: coreMLUrl.appendingPathComponent("ltx_2_tae/2048.mlmodelc/weights/weight.bin"))
-        return coreMLUrl.appendingPathComponent("ltx_2_tae")
-      } catch {
-        try? fileManager.removeItem(at: coreMLUrl.appendingPathComponent("ltx_2_tae"))
-        return nil
-      }
-    }()
-    static let LTX2TinyDecoderFor768: ManagedMLModel? = {
-      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: LTX2UnzipItem.appendingPathComponent("768.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let LTX2TinyDecoderFor1024: ManagedMLModel? = {
-      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: LTX2UnzipItem.appendingPathComponent("1024.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let LTX2TinyDecoderFor1280: ManagedMLModel? = {
-      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: LTX2UnzipItem.appendingPathComponent("1280.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let LTX2TinyDecoderFor1536: ManagedMLModel? = {
-      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: LTX2UnzipItem.appendingPathComponent("1536.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let LTX2TinyDecoderFor1792: ManagedMLModel? = {
-      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: LTX2UnzipItem.appendingPathComponent("1792.mlmodelc"),
-        configuration: configuration)
-    }()
-    static let LTX2TinyDecoderFor2048: ManagedMLModel? = {
-      guard let LTX2UnzipItem = LTX2UnzipItem else { return nil }
-      var configuration = MLModelConfiguration()
-      if #available(iOS 16.0, *) {
-        configuration.computeUnits = .cpuAndNeuralEngine
-      } else {
-        configuration.computeUnits = .all
-      }
-      return ManagedMLModel(
-        contentsOf: LTX2UnzipItem.appendingPathComponent("2048.mlmodelc"),
-        configuration: configuration)
-    }()
     public static func imagesWithTAESD(fromLatent tensor: Tensor<FloatType>, version: ModelVersion)
       -> [UIImage]
     {
@@ -1375,6 +696,84 @@ public enum ImageConverter {
           imagePaddingSize = 1792
         case 1793...2048:
           taesd = flux1TinyDecoderFor2048
+          imagePaddingSize = 2048
+        default:
+          return []
+        }
+      case .v1, .v2, .svdI2v:
+        imageHeight = shape[1] * 8
+        imageWidth = shape[2] * 8
+        isVideo = false
+        switch max(imageWidth, imageHeight) {
+        case 0...768:
+          taesd = sdTinyDecoderFor768
+          imagePaddingSize = 768
+        case 769...1024:
+          taesd = sdTinyDecoderFor1024
+          imagePaddingSize = 1024
+        case 1025...1280:
+          taesd = sdTinyDecoderFor1280
+          imagePaddingSize = 1280
+        case 1281...1536:
+          taesd = sdTinyDecoderFor1536
+          imagePaddingSize = 1536
+        case 1537...1792:
+          taesd = sdTinyDecoderFor1792
+          imagePaddingSize = 1792
+        case 1793...2048:
+          taesd = sdTinyDecoderFor2048
+          imagePaddingSize = 2048
+        default:
+          return []
+        }
+      case .sd3, .sd3Large:
+        imageHeight = shape[1] * 8
+        imageWidth = shape[2] * 8
+        isVideo = false
+        switch max(imageWidth, imageHeight) {
+        case 0...768:
+          taesd = sd3TinyDecoderFor768
+          imagePaddingSize = 768
+        case 769...1024:
+          taesd = sd3TinyDecoderFor1024
+          imagePaddingSize = 1024
+        case 1025...1280:
+          taesd = sd3TinyDecoderFor1280
+          imagePaddingSize = 1280
+        case 1281...1536:
+          taesd = sd3TinyDecoderFor1536
+          imagePaddingSize = 1536
+        case 1537...1792:
+          taesd = sd3TinyDecoderFor1792
+          imagePaddingSize = 1792
+        case 1793...2048:
+          taesd = sd3TinyDecoderFor2048
+          imagePaddingSize = 2048
+        default:
+          return []
+        }
+      case .sdxlBase, .sdxlRefiner, .ssd1b, .pixart, .auraflow:
+        imageHeight = shape[1] * 8
+        imageWidth = shape[2] * 8
+        isVideo = false
+        switch max(imageWidth, imageHeight) {
+        case 0...768:
+          taesd = sdxlTinyDecoderFor768
+          imagePaddingSize = 768
+        case 769...1024:
+          taesd = sdxlTinyDecoderFor1024
+          imagePaddingSize = 1024
+        case 1025...1280:
+          taesd = sdxlTinyDecoderFor1280
+          imagePaddingSize = 1280
+        case 1281...1536:
+          taesd = sdxlTinyDecoderFor1536
+          imagePaddingSize = 1536
+        case 1537...1792:
+          taesd = sdxlTinyDecoderFor1792
+          imagePaddingSize = 1792
+        case 1793...2048:
+          taesd = sdxlTinyDecoderFor2048
           imagePaddingSize = 2048
         default:
           return []
@@ -1481,8 +880,7 @@ public enum ImageConverter {
         default:
           return []
         }
-      case .auraflow, .hunyuanVideo, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
-        .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wan22_5b,
+      case .hunyuanVideo, .kandinsky21, .wan22_5b,
         .wurstchenStageB, .wurstchenStageC:
         return []
       }
@@ -1762,7 +1160,10 @@ public enum ImageConverter {
       if canUseTAESD
         && (version == .flux1 || version == .hiDreamI1 || version == .zImage || version == .flux2
           || version == .flux2_4b || version == .flux2_9b || version == .qwenImage
-          || version == .wan21_1_3b || version == .wan21_14b || version == .ltx2)
+          || version == .wan21_1_3b || version == .wan21_14b || version == .ltx2
+          || version == .v1 || version == .v2 || version == .svdI2v || version == .sd3
+          || version == .sd3Large || version == .sdxlBase || version == .sdxlRefiner
+          || version == .ssd1b || version == .pixart || version == .auraflow)
       {
         let images = imagesWithTAESD(fromLatent: tensor, version: version)
         guard images.isEmpty else {
