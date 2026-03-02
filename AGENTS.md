@@ -77,6 +77,25 @@
 - Verify compileability of the integration path with:
   - `bazel build Libraries/LocalImageGenerator --ios_multi_cpus=arm64`
 
+## WAN2.1 Stateful TAE + INSDIFF (ImageConverter)
+- `wan_2.1_tae.zip` packaging is intentionally deduped against `qwenimage_tae.zip`:
+  - ship `wan_2.1_tae/weight.bin.insdiff` instead of full `weight.bin`
+  - reconstruct runtime `weight.bin` from qwen base + insdiff patch.
+- Keep `InsdiffPatcher` CoreML-independent and data-centric:
+  - API should operate on `Data` + `Data` -> `Data`
+  - no coupling to model loading or CoreML feature logic.
+- For WAN2.1 unzip flow in `ImageConverter`:
+  - unzip `wan_2.1_tae.zip` once (cannot selectively skip entries with `FileManager.unzipItem`)
+  - read `weight.bin.insdiff` from the unzipped folder
+  - extract qwen `weight.bin` from `qwenimage_tae.zip` via `Archive`
+  - apply patch and write reconstructed `wan_2.1_tae/weight.bin`
+  - remove `weight.bin.insdiff` after successful reconstruction.
+- Current WAN2.1 tiny decoder package targets are:
+  - `512`, `768`, `1024`, `1280` only.
+- WAN2.1 TAESD decode path should use the stateful branch (`isVideo = true`):
+  - models expose fixed activation tensors `act_0 ... act_8` and `act_0_out ... act_8_out`
+  - output is `NTHWC` (`image` has temporal dim), matching chunk/state decode flow.
+
 ## SwiftPM Support (gRPCServerCLI + Generated Sources)
 - The `swift-package-build` workflow validates the SwiftPM path by:
   - running `./Scripts/swift-package/generate_binary_resources.sh`
