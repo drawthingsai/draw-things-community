@@ -167,7 +167,7 @@ final class ComputeUnitsTests: XCTestCase {
         * Double(max(configuration.strength, 0.05)) * Double(batchSize)).rounded(.up))
   }
 
-  private static let instructionCalibrationScale: Double = 2.9852210252799205e-12
+  private static let instructionCalibrationScale: Double = 5.14816e-12
 
   private func cfgChannels(
     _ configuration: GenerationConfiguration, version: ModelVersion,

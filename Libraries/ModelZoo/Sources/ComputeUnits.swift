@@ -170,6 +170,20 @@ public enum ComputeUnits {
     }
   }
 
+  private static func wurstchenStageBCountsForStageC(
+    _ configuration: GenerationConfiguration,
+    batchSize: Int
+  ) -> (main: Int, fixed: Int) {
+    let width = max(1, Int(configuration.startWidth)) * 16
+    let height = max(1, Int(configuration.startHeight)) * 16
+    let mainCount = WurstchenStageBInstructionCount(
+      batchSize: 1, cIn: 4, height: height, width: width)
+    let fixedCount = WurstchenStageBFixedInstructionCount(
+      batchSize: 1, height: height, width: width, effnetHeight: height,
+      effnetWidth: width)
+    return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+  }
+
   private static func instructionCountFromResolvedModel(
     _ configuration: GenerationConfiguration,
     context: ResolvedModelContext,
@@ -441,14 +455,15 @@ public enum ComputeUnits {
   }
 
   // Single global calibration scalar from instruction-count domain to legacy compute-unit domain.
-  // Calibrated against Flux1 / Flux2_9B and intentionally biased low.
-  private static let instructionCalibrationScale: Double = 2.9852210252799205e-12
+  // Calibrated against Flux1 / Flux2_9B with a 1024x1024 focus.
+  private static let instructionCalibrationScale: Double = 5.14816e-12
 
   // Policy-side multiplier to bias compute-unit cost by model family.
   // This is intentionally non-physical and is used to steer usage toward preferred models.
   private static func modelUsageBiasMultiplier(for version: ModelVersion) -> Double {
     switch version {
-    case .v1, .kandinsky21, .wurstchenStageC, .wurstchenStageB, .sdxlBase, .sdxlRefiner, .ssd1b,
+    case .v1, .v2, .kandinsky21, .wurstchenStageC, .wurstchenStageB, .sdxlBase, .sdxlRefiner,
+      .ssd1b,
       .svdI2v:
       return 2.5
     default:
@@ -462,6 +477,25 @@ public enum ComputeUnits {
     hasImage: Bool,
     shuffleCount: Int
   ) -> Int {
+    if context.modelVersion == .wurstchenStageC {
+      let firstPassCounts = instructionCountFromResolvedModel(
+        configuration, context: context, hasImage: hasImage, shuffleCount: shuffleCount)
+      let cfgChannels = cfgChannels(configuration: configuration, context: context)
+      let (batchSize, _) = batchSizeAndNumFrames(
+        configuration: configuration, context: context, cfgChannels: cfgChannels)
+      let secondPassCounts = wurstchenStageBCountsForStageC(configuration, batchSize: batchSize)
+      let strength = Double(max(configuration.strength, 0.05))
+      let mainEstimate =
+        (Double(firstPassCounts.main) * Double(configuration.steps)
+          + Double(secondPassCounts.main) * Double(configuration.stage2Steps))
+        * instructionCalibrationScale * strength
+      let fixedEstimate =
+        Double(firstPassCounts.fixed + secondPassCounts.fixed) * instructionCalibrationScale
+      let biasedEstimate =
+        (mainEstimate + fixedEstimate) * modelUsageBiasMultiplier(for: context.modelVersion)
+      guard biasedEstimate.isFinite, biasedEstimate > 0 else { return 0 }
+      return Int(min(Double(Int.max), biasedEstimate.rounded(.up)))
+    }
     let instructionCounts = instructionCountFromResolvedModel(
       configuration, context: context, hasImage: hasImage, shuffleCount: shuffleCount)
     let mainEstimate =
