@@ -47,6 +47,7 @@ swift_library(
         "//Libraries/SwiftDiffusion:SwiftDiffusionPreprocessors",
         "//Libraries/SwiftDiffusion:SwiftDiffusionWrapper",
         "//Libraries/Upscaler",
+        "@SwiftCrypto//:Crypto",
         "@SwiftLog//:Logging",
         "@ccv//lib:ccv",
         "@s4nnc//nnc",

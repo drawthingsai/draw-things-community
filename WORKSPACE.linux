@@ -1,6 +1,16 @@
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# rules_go >= v0.60.0 loads @rules_cc//cc/common:cc_common.bzl.
+# Pinning this early avoids older transitive rules_cc pins that don't expose
+# cc/common as a package.
+http_archive(
+    name = "rules_cc",
+    sha256 = "b8b918a85f9144c01f6cfe0f45e4f2838c7413961a8ff23bc0c6cdf8bb07a3b6",
+    strip_prefix = "rules_cc-0.1.5",
+    url = "https://github.com/bazelbuild/rules_cc/releases/download/0.1.5/rules_cc-0.1.5.tar.gz",
+)
+
 http_archive(
     name = "build_bazel_rules_apple",
     sha256 = "e21e13568f6cbd1167a3b4c29ee865440c11b680153a7b6014ee15e64cc57c2d",
