@@ -3317,7 +3317,9 @@ extension LocalImageGenerator {
         guard let firstFrame = imageCond.1.first else { return x }
         var x = x
         let shape = x.shape
-        x[0..<min(shape[0], firstFrame.shape[0]), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+        x[
+          0..<min(shape[0], firstFrame.shape[0]), 0..<min(shape[1], firstFrame.shape[1]),
+          0..<shape[2], 0..<shape[3]] =
           firstFrame
         return x
       }
