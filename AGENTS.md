@@ -262,3 +262,41 @@
   - `swift run draw-things-cli --help`
   - `bazel build //Apps:DrawThingsCLI`
   - `bazel build //Apps/DrawThings:DrawThings`
+
+## Edit Video UI (Playback Slider + Audio Mute)
+- For the clip audio button in both `EditViewController.swift` and `EditViewControllerForiPad.swift`:
+  - keep the button styled like `clipButton` and anchored to `zoomButton` with trailing `-16`.
+  - keep clip slider trailing fallback to `zoomButton` at lower priority, and use one stored `clipSliderTrailingToAudioConstraint` for the `slider -> audio button` path (8pt spacing).
+  - toggle only `clipSliderTrailingToAudioConstraint?.isActive` based on audio-button visibility; avoid managing two stored constraints.
+- Prefer explicit inline visibility updates for this UI path:
+  - update audio-button visibility/constraint activation directly in `isVideoAudioEnabled.didSet` and `isVideo` setter.
+  - set explicit initial `clipAudioButton.isHidden` after constraints setup.
+- Mute state source of truth:
+  - expose `var isAudioMuted: Bool { get set }` on `EditViewControllable`.
+  - in both view controllers, map `isAudioMuted` to `clipAudioButton.isSelected`.
+  - do not toggle `clipAudioButton.isSelected` in button tap handlers; route taps to delegate (`didTapMuteVideo` / `didTapUnmuteVideo`) based on current `isAudioMuted`.
+  - avoid a second mute flag in `EditWorkflow`; use `viewController.isAudioMuted` as the single source.
+- In `EditWorkflow`, keep audio-play helper name as `playAudioForVideo(...)`:
+  - guard playback with `!viewController.isAudioMuted`.
+  - keep a note that although helper takes `clipData`, `imageHistoryManager.popAudioClip` reads from current `imageHistoryManager.clipData`.
+  - on mute: set `viewController.isAudioMuted = true` and stop current audio.
+  - on unmute: set `viewController.isAudioMuted = false`; if video is playing, resume audio from current animator frame.
+- Verification checklist after this UI/audio wiring:
+  - `bazel build //Apps/DrawThings:DrawThings --ios_multi_cpus=arm64`
+
+## ChatTools iPad {HIDDEN} Button
+- `draftButton` in `ChatToolsController` should be always added to the hierarchy; show/hide via `is{HIDDEN}Available`.
+- Keep two trailing paths for each bottom tools view (`edit/selection/eraser/paint`):
+  - fallback: `trailing = generateView.leading` (lower priority),
+  - draft path: `trailing = draftButton.leading - 16` (stored constraint, toggled active when available).
+- For spacing, use `draftButton.trailing = generateView.leading + 10`:
+  - because `generateButtonView.leading = generateView.leading + 16`, this yields effective `6pt` spacing between `draftButton` and the visible generate button.
+- Constraint ordering matters:
+  - if `draftButton` constraints reference `generateButtonView` before `generateButtonView` is in a view hierarchy with a common ancestor, Auto Layout can fail at runtime.
+  - add `generateButtonView` before creating `draftButton` constraints that reference it.
+- For enabled/selected visual state, use stored state on controller:
+  - `is{HIDDEN}Enabled` is the source of truth and updates `draftButton.isSelected`.
+  - button action should only toggle `is{HIDDEN}Enabled`.
+- Expansion animation pitfall:
+  - driving `configuration.title` inside `configurationUpdateHandler` can prevent the enable (expand) animation from animating as expected.
+  - set button title outside the update handler (from `is{HIDDEN}Enabled`), then animate `view.layoutIfNeeded()`.
