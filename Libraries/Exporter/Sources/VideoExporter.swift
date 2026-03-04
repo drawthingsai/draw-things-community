@@ -86,7 +86,6 @@ public final class VideoExporter {
   /// The tensor format matches TensorAudioPlayer.play(_:timing:), but `timing` is the start time
   /// on the exported video timeline.
   public func appendAudio(audio: Tensor<Float>, timing: Double) {
-    precondition(self.exportAudioSampleRate != nil)
     precondition(audio.kind == .CPU)
     precondition(audio.shape.count == 2 && audio.shape[0] == 2)
     precondition(audio.shape[1] > 0)
