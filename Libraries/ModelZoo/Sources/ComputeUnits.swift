@@ -119,12 +119,7 @@ public enum ComputeUnits {
     case .kontext, .qwenimageEditPlus, .qwenimageEdit2511:
       return baseReferenceCount + extraReferenceCount
     default:
-      if context.modelVersion == .flux2 || context.modelVersion == .flux2_9b
-        || context.modelVersion == .flux2_4b
-      {
-        return baseReferenceCount + extraReferenceCount
-      }
-      return baseReferenceCount
+      return 0
     }
   }
 
