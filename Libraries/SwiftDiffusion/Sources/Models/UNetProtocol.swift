@@ -1610,6 +1610,16 @@ extension UNetFromNNC {
         if version == .flux2 && (name.contains("_w1-") || name.contains("_w2-")) {
           return true
         }
+      } else if version == .ltx2
+        && (name.contains("a_q-") || name.contains("a_k-") || name.contains("a_v-")
+          || name.contains("cv_q-") || name.contains("cv_k-") || name.contains("cv_v-")
+          || name.contains("ca_q-") || name.contains("ca_k-") || name.contains("ca_v-")
+          || name.contains("ax_q-") || name.contains("ax_k-") || name.contains("ax_v-")
+          || name.contains("xa_q-") || name.contains("xa_k-") || name.contains("xa_v-")
+          || name.contains("a_linear1-")
+          || name.contains("x_out_proj-") || name.contains("a_out_proj-"))
+      {  // LTX-2 uses x/a/cv/ca/ax/xa prefixes for attention projections and x/a for FFN.
+        return true
       }
       return false
     }
