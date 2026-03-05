@@ -930,6 +930,11 @@ public enum LoRAImporter {
       let newKey = components[0..<(components.count - 2)].joined(separator: "_")
       let isUp = key.hasSuffix(".lora_up.weight")
       if isUp {
+        let alphaKey = String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -14))) + "alpha"
+        let newAlphaKey = newKey + ".alpha"
+        if let alpha = stateDict[alphaKey] {
+          stateDict[newAlphaKey] = alpha
+        }
         stateDict[newKey + ".lora_up.weight"] = stateDict[key]
       } else {
         stateDict[newKey + ".lora_down.weight"] = stateDict[key]
