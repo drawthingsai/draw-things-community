@@ -86,7 +86,11 @@ public struct DeviceCapability {
       return false
     #else
       if #available(iOS 18, macOS 15, macCatalyst 18, *) {
-        return isMaxPerformance ? true : false
+        // Gate to M2 and above.
+        if isMaxPerformance, let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple8) {
+          return true
+        }
+        return false
       } else {
         return false
       }
