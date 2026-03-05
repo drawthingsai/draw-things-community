@@ -880,6 +880,14 @@ public enum LoRAImporter {
       throw UnpickleError.dataNotFound
     }
     let keys = stateDict.keys
+    func copyAlphaIfPresent(
+      from oldKey: String, stripping suffix: String, alpha: String, to newKey: String
+    ) {
+      guard oldKey.hasSuffix(suffix) else { return }
+      let alphaBaseKey = String(oldKey.dropLast(suffix.count))
+      guard let alphaTensor = stateDict[alphaBaseKey + alpha] else { return }
+      stateDict[newKey + ".alpha"] = alphaTensor
+    }
     // Fix for one LoRA formulation (commonly found in LyCORIS)
     for key in keys {
       guard key.hasSuffix(".lora_A.weight") || key.hasSuffix(".lora_B.weight") else { continue }
@@ -894,6 +902,7 @@ public enum LoRAImporter {
       let newKey = components[0..<(components.count - 2)].joined(separator: "_")
       let isUp = key.hasSuffix(".lora_B.weight")
       if isUp {
+        copyAlphaIfPresent(from: key, stripping: ".lora_B.weight", alpha: ".alpha", to: newKey)
         stateDict[newKey + ".lora_up.weight"] = stateDict[key]
       } else {
         stateDict[newKey + ".lora_down.weight"] = stateDict[key]
@@ -913,6 +922,7 @@ public enum LoRAImporter {
       let newKey = components[0..<(components.count - 3)].joined(separator: "_")
       let isUp = key.hasSuffix(".lora.up.weight")
       if isUp {
+        copyAlphaIfPresent(from: key, stripping: ".lora.up.weight", alpha: ".alpha", to: newKey)
         stateDict[newKey + ".lora_up.weight"] = stateDict[key]
       } else {
         stateDict[newKey + ".lora_down.weight"] = stateDict[key]
@@ -930,11 +940,7 @@ public enum LoRAImporter {
       let newKey = components[0..<(components.count - 2)].joined(separator: "_")
       let isUp = key.hasSuffix(".lora_up.weight")
       if isUp {
-        let alphaKey = String(key.prefix(upTo: key.index(key.endIndex, offsetBy: -14))) + "alpha"
-        let newAlphaKey = newKey + ".alpha"
-        if let alpha = stateDict[alphaKey] {
-          stateDict[newAlphaKey] = alpha
-        }
+        copyAlphaIfPresent(from: key, stripping: ".lora_up.weight", alpha: ".alpha", to: newKey)
         stateDict[newKey + ".lora_up.weight"] = stateDict[key]
       } else {
         stateDict[newKey + ".lora_down.weight"] = stateDict[key]
@@ -948,6 +954,7 @@ public enum LoRAImporter {
       let newKey = components[0..<(components.count - 1)].joined(separator: "_")
       let isUp = key.hasSuffix("::lora::0")
       if isUp {
+        copyAlphaIfPresent(from: key, stripping: "::lora::0", alpha: "::alpha", to: newKey)
         stateDict[newKey + ".lora_up.weight"] = stateDict[key]
       } else {
         stateDict[newKey + ".lora_down.weight"] = stateDict[key]
@@ -978,6 +985,8 @@ public enum LoRAImporter {
       let newKey = components[0..<(components.count - 3)].joined(separator: "_")
       let isUp = key.hasSuffix(".lora_B.default.weight")
       if isUp {
+        copyAlphaIfPresent(
+          from: key, stripping: ".lora_B.default.weight", alpha: ".alpha", to: newKey)
         stateDict[newKey + ".lora_up.weight"] = stateDict[key]
       } else {
         stateDict[newKey + ".lora_down.weight"] = stateDict[key]
