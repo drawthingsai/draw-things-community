@@ -616,13 +616,18 @@ extension FirstStage {
           LTX2AudioDecoderCausal2D(
             channels: [128, 256, 512], numRepeat: 3, startWidth: 16, startHeight: shape[1]
           ).1,
-          LTX2Vocoder(layers: [
-            (channels: 512, kernelSize: 16, stride: 6, padding: 5),
-            (channels: 256, kernelSize: 15, stride: 5, padding: 5),
-            (channels: 128, kernelSize: 8, stride: 2, padding: 3),
-            (channels: 64, kernelSize: 4, stride: 2, padding: 1),
-            (channels: 32, kernelSize: 4, stride: 2, padding: 1),
-          ]).1,
+          LTX2Vocoder(
+            width: (shape[1] - 1) * 4 + 1, initialChannels: 1024,
+            layers: [
+              (channels: 512, kernelSize: 16, stride: 6, padding: 5),
+              (channels: 256, kernelSize: 15, stride: 5, padding: 5),
+              (channels: 128, kernelSize: 8, stride: 2, padding: 3),
+              (channels: 64, kernelSize: 4, stride: 2, padding: 1),
+              (channels: 32, kernelSize: 4, stride: 2, padding: 1),
+            ], resblockKernelSizes: [3, 7, 11],
+            resblockDilations: [[1, 3, 5], [1, 3, 5], [1, 3, 5]], activation: .leakyReLU,
+            finalConvBias: true, finalActivation: .tanh
+          ).1,
         ]
         audioDecoder[0].compile(inputs: audioZ)
         let decodedAudio = graph.variable(
