@@ -658,7 +658,7 @@ extension FirstStage {
             (channels: 128, numRepeat: 5, stride: (2, 2, 2)),
           ], startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth,
-          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+          paddingMode: .reflect, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -1493,7 +1493,7 @@ extension FirstStage {
             (channels: 1024, numRepeat: 2, stride: (2, 2, 2)),
             (channels: 2048, numRepeat: 2, stride: (2, 2, 2)),
           ], startWidth: startWidth, startHeight: startHeight, startDepth: startDepth,
-          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+          paddingMode: .reflect, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       let batchSize = (startDepth - 1) * 8 + 1
       if existingEncoder == nil {

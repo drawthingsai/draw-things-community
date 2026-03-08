@@ -1,12 +1,19 @@
 import DiffusionMappings
 import NNC
 
+public enum LTX2VideoVAEPaddingMode {
+  case zero
+  case reflect
+}
+
 private func NHWCResnetBlockCausal3D(
-  prefix: String, channels: Int, depth: Int, height: Int, width: Int, isCausal: Bool
+  prefix: String, channels: Int, depth: Int, height: Int, width: Int, isCausal: Bool,
+  paddingMode: LTX2VideoVAEPaddingMode
 ) -> (
   ModelWeightMapper, Model
 ) {
   let x = Input()
+  let spatialPadding = !isCausal && paddingMode == .zero ? 1 : 0
   let norm1 = RMSNorm(epsilon: 1e-8, axis: [3], elementwiseAffine: false, name: "resnet_norm1")
   var out = norm1(x)
   out = out.swish()
@@ -15,12 +22,12 @@ private func NHWCResnetBlockCausal3D(
     hint: Hint(
       stride: [1, 1, 1],
       border: Hint.Border(
-        begin: [0, isCausal ? 1 : 0, isCausal ? 1 : 0],
-        end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])), format: .OIHW,
+        begin: [0, isCausal ? 1 : spatialPadding, isCausal ? 1 : spatialPadding],
+        end: [0, isCausal ? 1 : spatialPadding, isCausal ? 1 : spatialPadding])), format: .OIHW,
     name: "resnet_conv1")
   out = out.padded(
     .replicate, begin: [isCausal ? 2 : 1, 0, 0, 0], end: [isCausal ? 0 : 1, 0, 0, 0])
-  if !isCausal {
+  if !isCausal && paddingMode == .reflect {
     out = out.padded(.reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
       1, depth + 2, height + 2, width + 2, channels,
     ])
@@ -38,12 +45,12 @@ private func NHWCResnetBlockCausal3D(
     hint: Hint(
       stride: [1, 1, 1],
       border: Hint.Border(
-        begin: [0, isCausal ? 1 : 0, isCausal ? 1 : 0],
-        end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])), format: .OIHW,
+        begin: [0, isCausal ? 1 : spatialPadding, isCausal ? 1 : spatialPadding],
+        end: [0, isCausal ? 1 : spatialPadding, isCausal ? 1 : spatialPadding])), format: .OIHW,
     name: "resnet_conv2")
   out = out.padded(
     .replicate, begin: [isCausal ? 2 : 1, 0, 0, 0], end: [isCausal ? 0 : 1, 0, 0, 0])
-  if !isCausal {
+  if !isCausal && paddingMode == .reflect {
     out = out.padded(.reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
       1, depth + 2, height + 2, width + 2, channels,
     ])
@@ -67,7 +74,7 @@ private func NHWCResnetBlockCausal3D(
 
 func NHWCLTX2VideoDecoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int, startDepth: Int
+  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode
 )
   -> (ModelWeightMapper, Model)
 {
@@ -76,14 +83,24 @@ func NHWCLTX2VideoDecoderCausal3D(
   var previousChannel = layers[0].channels
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
-    hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+    hint: Hint(
+      stride: [1, 1, 1],
+      border: Hint.Border(
+        begin: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0],
+        end: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0])),
     format: .OIHW,
     name: "conv_in")
-  var out = convIn(
-    x.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
-      .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
-    ).reshaped([1, startDepth + 2, startHeight + 2, startWidth + 2, 128])
-  ).reshaped([startDepth, startHeight, startWidth, previousChannel])
+  var out = x.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0])
+  if paddingMode == .reflect {
+    out = out.padded(.reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+      1, startDepth + 2, startHeight + 2, startWidth + 2, 128,
+    ])
+  } else {
+    out = out.reshaped([
+      1, startDepth + 2, startHeight, startWidth, 128,
+    ])
+  }
+  out = convIn(out).reshaped([startDepth, startHeight, startWidth, previousChannel])
   var mappers = [ModelWeightMapper]()
   var j = 0
   var depth = startDepth
@@ -96,7 +113,11 @@ func NHWCLTX2VideoDecoderCausal3D(
       let conv = Convolution(
         groups: 1, filters: channels * layer.stride.0 * layer.stride.1 * layer.stride.2,
         filterSize: [3, 3, 3],
-        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+        hint: Hint(
+          stride: [1, 1, 1],
+          border: Hint.Border(
+            begin: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0],
+            end: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0])),
         format: .OIHW,
         name: "depth_to_space_upsample")
       if layer.stride.0 == 1 {
@@ -117,10 +138,17 @@ func NHWCLTX2VideoDecoderCausal3D(
               repeating: residual,
               count: channels * layer.stride.1 * layer.stride.2 / previousChannel))
         }
-        out = conv(
-          out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
-            .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
-          ).reshaped([1, depth + 2, height + 2, width + 2, previousChannel]))
+        out = out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0])
+        if paddingMode == .reflect {
+          out = out.padded(.reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+            1, depth + 2, height + 2, width + 2, previousChannel,
+          ])
+        } else {
+          out = out.reshaped([
+            1, depth + 2, height, width, previousChannel,
+          ])
+        }
+        out = conv(out)
         out = out.reshaped([
           depth, height, width, channels, layer.stride.1, layer.stride.2,
         ]).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([
@@ -149,10 +177,17 @@ func NHWCLTX2VideoDecoderCausal3D(
           residual = concat(
             Array(repeating: residual, count: channels * layer.stride.0 / previousChannel))
         }
-        out = conv(
-          out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
-            .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
-          ).reshaped([1, depth + 2, height + 2, width + 2, previousChannel]))
+        out = out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0])
+        if paddingMode == .reflect {
+          out = out.padded(.reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+            1, depth + 2, height + 2, width + 2, previousChannel,
+          ])
+        } else {
+          out = out.reshaped([
+            1, depth + 2, height, width, previousChannel,
+          ])
+        }
+        out = conv(out)
         out = out.reshaped([
           depth, height, width, channels, layer.stride.0,
         ]).permuted(0, 4, 1, 2, 3).contiguous().reshaped(
@@ -189,10 +224,17 @@ func NHWCLTX2VideoDecoderCausal3D(
               repeating: residual,
               count: channels * layer.stride.0 * layer.stride.1 * layer.stride.2 / previousChannel))
         }
-        out = conv(
-          out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
-            .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
-          ).reshaped([1, depth + 2, height + 2, width + 2, previousChannel]))
+        out = out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0])
+        if paddingMode == .reflect {
+          out = out.padded(.reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
+            1, depth + 2, height + 2, width + 2, previousChannel,
+          ])
+        } else {
+          out = out.reshaped([
+            1, depth + 2, height, width, previousChannel,
+          ])
+        }
+        out = conv(out)
         out = out.reshaped([
           depth, height, width, channels, layer.stride.0, layer.stride.1, layer.stride.2,
         ]).permuted(0, 4, 1, 5, 2, 6, 3).contiguous().reshaped(
@@ -224,7 +266,7 @@ func NHWCLTX2VideoDecoderCausal3D(
       let (mapper, block) = NHWCResnetBlockCausal3D(
         prefix: "up_blocks.\(j).res_blocks.\(i)", channels: channels, depth: depth,
         height: height,
-        width: width, isCausal: false)
+        width: width, isCausal: false, paddingMode: paddingMode)
       out = block(out)
       mappers.append(mapper)
     }
@@ -234,15 +276,24 @@ func NHWCLTX2VideoDecoderCausal3D(
   out = normOut(out).swish()
   let convOut = Convolution(
     groups: 1, filters: 48, filterSize: [3, 3, 3],
-    hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+    hint: Hint(
+      stride: [1, 1, 1],
+      border: Hint.Border(
+        begin: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0],
+        end: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0])),
     format: .OIHW,
     name: "conv_out")
-  out = convOut(
-    out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
-      .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
-    ).reshaped([
+  out = out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0])
+  if paddingMode == .reflect {
+    out = out.padded(.reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]).reshaped([
       1, depth + 2, height + 2, width + 2, previousChannel,
-    ]))
+    ])
+  } else {
+    out = out.reshaped([
+      1, depth + 2, height, width, previousChannel,
+    ])
+  }
+  out = convOut(out)
   // LTXV weirdly, did "b (c p r q) f h w -> b c (f p) (h q) (w r)"
   out = out.reshaped([depth, height, width, 3, 4, 4]).permuted(0, 1, 5, 2, 4, 3).contiguous()
     .reshaped([depth, height * 4, width * 4, 3])
@@ -263,7 +314,7 @@ func NHWCLTX2VideoDecoderCausal3D(
 
 func NHWCLTX2VideoEncoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int, startDepth: Int
+  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode
 )
   -> (ModelWeightMapper, Model)
 {
@@ -392,7 +443,7 @@ func NHWCLTX2VideoEncoderCausal3D(
     for i in 0..<layer.numRepeat {
       let (mapper, block) = NHWCResnetBlockCausal3D(
         prefix: "down_blocks.\(j).res_blocks.\(i)", channels: channels, depth: depth,
-        height: height, width: width, isCausal: true)
+        height: height, width: width, isCausal: true, paddingMode: paddingMode)
       out = block(out)
       mappers.append(mapper)
     }
@@ -425,11 +476,13 @@ func NHWCLTX2VideoEncoderCausal3D(
 }
 
 private func NCHWResnetBlockCausal3D(
-  prefix: String, channels: Int, depth: Int, height: Int, width: Int, isCausal: Bool
+  prefix: String, channels: Int, depth: Int, height: Int, width: Int, isCausal: Bool,
+  paddingMode: LTX2VideoVAEPaddingMode
 ) -> (
   ModelWeightMapper, Model
 ) {
   let x = Input()
+  let spatialPadding = !isCausal && paddingMode == .zero ? 1 : 0
   let norm1 = RMSNorm(epsilon: 1e-8, axis: [0], elementwiseAffine: false, name: "resnet_norm1")
   var out = norm1(x)
   out = out.swish()
@@ -438,12 +491,12 @@ private func NCHWResnetBlockCausal3D(
     hint: Hint(
       stride: [1, 1, 1],
       border: Hint.Border(
-        begin: [0, isCausal ? 1 : 0, isCausal ? 1 : 0],
-        end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])), format: .OIHW,
+        begin: [0, isCausal ? 1 : spatialPadding, isCausal ? 1 : spatialPadding],
+        end: [0, isCausal ? 1 : spatialPadding, isCausal ? 1 : spatialPadding])), format: .OIHW,
     name: "resnet_conv1")
   out = out.padded(
     .replicate, begin: [0, isCausal ? 2 : 1, 0, 0], end: [0, isCausal ? 0 : 1, 0, 0])
-  if !isCausal {
+  if !isCausal && paddingMode == .reflect {
     out = out.padded(.reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]).reshaped([
       1, channels, depth + 2, height + 2, width + 2,
     ])
@@ -459,12 +512,12 @@ private func NCHWResnetBlockCausal3D(
     hint: Hint(
       stride: [1, 1, 1],
       border: Hint.Border(
-        begin: [0, isCausal ? 1 : 0, isCausal ? 1 : 0],
-        end: [0, isCausal ? 1 : 0, isCausal ? 1 : 0])), format: .OIHW,
+        begin: [0, isCausal ? 1 : spatialPadding, isCausal ? 1 : spatialPadding],
+        end: [0, isCausal ? 1 : spatialPadding, isCausal ? 1 : spatialPadding])), format: .OIHW,
     name: "resnet_conv2")
   out = out.padded(
     .replicate, begin: [0, isCausal ? 2 : 1, 0, 0], end: [0, isCausal ? 0 : 1, 0, 0])
-  if !isCausal {
+  if !isCausal && paddingMode == .reflect {
     out = out.padded(.reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]).reshaped([
       1, channels, depth + 2, height + 2, width + 2,
     ])
@@ -486,7 +539,7 @@ private func NCHWResnetBlockCausal3D(
 
 func NCHWLTX2VideoDecoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int, startDepth: Int
+  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode
 )
   -> (ModelWeightMapper, Model)
 {
@@ -495,15 +548,23 @@ func NCHWLTX2VideoDecoderCausal3D(
   var previousChannel = layers[0].channels
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
-    hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+    hint: Hint(
+      stride: [1, 1, 1],
+      border: Hint.Border(
+        begin: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0],
+        end: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0])),
     format: .OIHW, name: "conv_in")
-  var out = convIn(
-    x.permuted(3, 0, 1, 2).contiguous().reshaped(
-      [128, startDepth, startHeight, startWidth], format: .NCHW
-    ).padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
-      .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
-    ).reshaped([1, 128, startDepth + 2, startHeight + 2, startWidth + 2])
-  ).reshaped([previousChannel, startDepth, startHeight, startWidth])
+  var out = x.permuted(3, 0, 1, 2).contiguous().reshaped(
+    [128, startDepth, startHeight, startWidth], format: .NCHW)
+  out = out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0])
+  if paddingMode == .reflect {
+    out = out.padded(.reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]).reshaped([
+      1, 128, startDepth + 2, startHeight + 2, startWidth + 2,
+    ])
+  } else {
+    out = out.reshaped([1, 128, startDepth + 2, startHeight, startWidth])
+  }
+  out = convIn(out).reshaped([previousChannel, startDepth, startHeight, startWidth])
   var mappers = [ModelWeightMapper]()
   var j = 0
   var depth = startDepth
@@ -516,7 +577,11 @@ func NCHWLTX2VideoDecoderCausal3D(
       let conv = Convolution(
         groups: 1, filters: channels * layer.stride.0 * layer.stride.1 * layer.stride.2,
         filterSize: [3, 3, 3],
-        hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+        hint: Hint(
+          stride: [1, 1, 1],
+          border: Hint.Border(
+            begin: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0],
+            end: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0])),
         format: .OIHW, name: "depth_to_space_upsample")
       if layer.stride.0 == 1 {
         precondition(previousChannel % (layer.stride.1 * layer.stride.2) == 0)
@@ -536,10 +601,15 @@ func NCHWLTX2VideoDecoderCausal3D(
               repeating: residual,
               count: channels * layer.stride.1 * layer.stride.2 / previousChannel))
         }
-        out = conv(
-          out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
-            .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
-          ).reshaped([1, previousChannel, depth + 2, height + 2, width + 2]))
+        out = out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0])
+        if paddingMode == .reflect {
+          out = out.padded(.reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]).reshaped([
+            1, previousChannel, depth + 2, height + 2, width + 2,
+          ])
+        } else {
+          out = out.reshaped([1, previousChannel, depth + 2, height, width])
+        }
+        out = conv(out)
         out = out.reshaped([
           channels, layer.stride.1, layer.stride.2, depth, height, width,
         ]).permuted(0, 3, 4, 1, 5, 2).contiguous().reshaped([
@@ -565,10 +635,15 @@ func NCHWLTX2VideoDecoderCausal3D(
           residual = concat(
             Array(repeating: residual, count: channels * layer.stride.0 / previousChannel))
         }
-        out = conv(
-          out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
-            .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
-          ).reshaped([1, previousChannel, depth + 2, height + 2, width + 2]))
+        out = out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0])
+        if paddingMode == .reflect {
+          out = out.padded(.reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]).reshaped([
+            1, previousChannel, depth + 2, height + 2, width + 2,
+          ])
+        } else {
+          out = out.reshaped([1, previousChannel, depth + 2, height, width])
+        }
+        out = conv(out)
         out = out.reshaped([
           channels, layer.stride.0, depth, height, width,
         ]).permuted(0, 2, 1, 3, 4).contiguous().reshaped(
@@ -603,10 +678,15 @@ func NCHWLTX2VideoDecoderCausal3D(
               repeating: residual,
               count: channels * layer.stride.0 * layer.stride.1 * layer.stride.2 / previousChannel))
         }
-        out = conv(
-          out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
-            .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
-          ).reshaped([1, previousChannel, depth + 2, height + 2, width + 2]))
+        out = out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0])
+        if paddingMode == .reflect {
+          out = out.padded(.reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]).reshaped([
+            1, previousChannel, depth + 2, height + 2, width + 2,
+          ])
+        } else {
+          out = out.reshaped([1, previousChannel, depth + 2, height, width])
+        }
+        out = conv(out)
         out = out.reshaped([
           channels, layer.stride.0, layer.stride.1, layer.stride.2, depth, height, width,
         ]).permuted(0, 4, 1, 5, 2, 6, 3).contiguous().reshaped(
@@ -638,7 +718,7 @@ func NCHWLTX2VideoDecoderCausal3D(
       let (mapper, block) = NCHWResnetBlockCausal3D(
         prefix: "up_blocks.\(j).res_blocks.\(i)", channels: channels, depth: depth,
         height: height,
-        width: width, isCausal: false)
+        width: width, isCausal: false, paddingMode: paddingMode)
       out = block(out)
       mappers.append(mapper)
     }
@@ -648,15 +728,22 @@ func NCHWLTX2VideoDecoderCausal3D(
   out = normOut(out.reshaped([previousChannel, depth, height, width])).swish()
   let convOut = Convolution(
     groups: 1, filters: 48, filterSize: [3, 3, 3],
-    hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
+    hint: Hint(
+      stride: [1, 1, 1],
+      border: Hint.Border(
+        begin: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0],
+        end: [0, paddingMode == .zero ? 1 : 0, paddingMode == .zero ? 1 : 0])),
     format: .OIHW,
     name: "conv_out")
-  out = convOut(
-    out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
-      .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
-    ).reshaped([
+  out = out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0])
+  if paddingMode == .reflect {
+    out = out.padded(.reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]).reshaped([
       1, previousChannel, depth + 2, height + 2, width + 2,
-    ]))
+    ])
+  } else {
+    out = out.reshaped([1, previousChannel, depth + 2, height, width])
+  }
+  out = convOut(out)
   // LTXV weirdly, did "b (c p r q) f h w -> b c (f p) (h q) (w r)"
   out = out.reshaped([3, 4, 4, depth, height, width]).permuted(3, 4, 2, 5, 1, 0).contiguous()
     .reshaped(.NHWC(depth, height * 4, width * 4, 3))
@@ -677,7 +764,7 @@ func NCHWLTX2VideoDecoderCausal3D(
 
 func NCHWLTX2VideoEncoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int, startDepth: Int
+  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode
 )
   -> (ModelWeightMapper, Model)
 {
@@ -809,7 +896,7 @@ func NCHWLTX2VideoEncoderCausal3D(
     for i in 0..<layer.numRepeat {
       let (mapper, block) = NCHWResnetBlockCausal3D(
         prefix: "down_blocks.\(j).res_blocks.\(i)", channels: channels, depth: depth,
-        height: height, width: width, isCausal: true)
+        height: height, width: width, isCausal: true, paddingMode: paddingMode)
       out = block(out)
       mappers.append(mapper)
     }
@@ -847,15 +934,17 @@ func NCHWLTX2VideoEncoderCausal3D(
 
 public func LTX2VideoDecoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int, startDepth: Int, format: TensorFormat
+  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode, format: TensorFormat
 ) -> (ModelWeightMapper, Model) {
   switch format {
   case .NHWC:
     return NHWCLTX2VideoDecoderCausal3D(
-      layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth)
+      layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth,
+      paddingMode: paddingMode)
   case .NCHW:
     return NCHWLTX2VideoDecoderCausal3D(
-      layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth)
+      layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth,
+      paddingMode: paddingMode)
   case .CHWN:
     fatalError()
   }
@@ -863,15 +952,17 @@ public func LTX2VideoDecoderCausal3D(
 
 public func LTX2VideoEncoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int, startDepth: Int, format: TensorFormat
+  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode, format: TensorFormat
 ) -> (ModelWeightMapper, Model) {
   switch format {
   case .NHWC:
     return NHWCLTX2VideoEncoderCausal3D(
-      layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth)
+      layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth,
+      paddingMode: paddingMode)
   case .NCHW:
     return NCHWLTX2VideoEncoderCausal3D(
-      layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth)
+      layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth,
+      paddingMode: paddingMode)
   case .CHWN:
     fatalError()
   }
