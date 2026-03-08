@@ -31,6 +31,21 @@
   - inverse: `quality ≈ 100 - (crf / 51 * 100)`.
   - example: `crf = 29` corresponds to quality around `43` to `44`.
 
+## LTX2 Video Decoder Refactor Notes
+- When aligning `LTX2VideoDecoderCausal3D` with the encoder / LTX-2.3 construction API, switch the public constructor to `layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))]`, but keep the decoder implementation structurally close to the existing code path.
+- For decoder stride handling, mirror the encoder branching style instead of introducing generic stride-product helper logic:
+  - first branch on `layer.stride.0 == 1`
+  - then `layer.stride.1 == 1 && layer.stride.2 == 1`
+  - otherwise handle the mixed temporal+spatial upsample path
+- In this decoder path, if residual replication needs `Concat`, use the explicit op instance form so memory-saving flags are preserved:
+  - `let concat = Concat(axis: n)`
+  - `concat.flags = [.disableOpt]`
+  - `residual = concat(Array(repeating: residual, count: k))`
+  - do not assume `Concat(axis: n, flags: ...)` is available here.
+- During signature refactors, prefer writing the parameter list on one line first and let the formatter decide the final line wrapping later.
+- Validate decoder/API refactors with:
+  - `bazel build //Libraries/SwiftDiffusion:SwiftDiffusion`
+
 ## Utility Function Style
 - Prefer synchronous utility functions whenever possible.
 - If an operation is inherently callback-driven and cannot be made truly synchronous with native APIs, expose an async completion-handler API directly.

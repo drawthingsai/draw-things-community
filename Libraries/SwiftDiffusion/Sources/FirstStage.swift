@@ -651,7 +651,12 @@ extension FirstStage {
       decoder =
         existingDecoder
         ?? LTX2VideoDecoderCausal3D(
-          channels: [128, 256, 512, 1024], numRepeat: 5, startWidth: startWidth,
+          layers: [
+            (channels: 1024, numRepeat: 5, stride: (1, 1, 1)),
+            (channels: 512, numRepeat: 5, stride: (2, 2, 2)),
+            (channels: 256, numRepeat: 5, stride: (2, 2, 2)),
+            (channels: 128, numRepeat: 5, stride: (2, 2, 2)),
+          ], startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth,
           format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1

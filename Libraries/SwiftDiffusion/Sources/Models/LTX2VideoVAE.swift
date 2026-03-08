@@ -66,13 +66,14 @@ private func NHWCResnetBlockCausal3D(
 }
 
 func NHWCLTX2VideoDecoderCausal3D(
-  channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
-  startDepth: Int
+  layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
+  startHeight: Int, startDepth: Int
 )
   -> (ModelWeightMapper, Model)
 {
+  precondition(!layers.isEmpty)
   let x = Input()
-  var previousChannel = channels[channels.count - 1]
+  var previousChannel = layers[0].channels
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
@@ -88,28 +89,126 @@ func NHWCLTX2VideoDecoderCausal3D(
   var depth = startDepth
   var height = startHeight
   var width = startWidth
-  for channel in channels.reversed() {
-    if previousChannel != channel {
+  for layer in layers {
+    let channels = layer.channels
+    if layer.stride.0 > 1 || layer.stride.1 > 1 || layer.stride.2 > 1 {
       // Convolution & reshape.
       let conv = Convolution(
-        groups: 1, filters: channel * 8, filterSize: [3, 3, 3],
+        groups: 1, filters: channels * layer.stride.0 * layer.stride.1 * layer.stride.2,
+        filterSize: [3, 3, 3],
         hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW,
         name: "depth_to_space_upsample")
-      var residual = out.reshaped([depth, height, width, previousChannel / 8, 2, 2, 2]).permuted(
-        0, 4, 1, 5, 2, 6, 3
-      ).contiguous().reshaped(
-        [depth * 2 - 1, height * 2, width * 2, previousChannel / 8], offset: [1, 0, 0, 0],
-        strides: [
-          height * width * previousChannel / 2, width * previousChannel / 4, previousChannel / 8, 1,
-        ]
-      ).contiguous()
-      residual = Functional.concat(
-        axis: 3, residual, residual, residual, residual, flags: [.disableOpt])
-      out = conv(
-        out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
-          .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
-        ).reshaped([1, depth + 2, height + 2, width + 2, previousChannel]))
+      if layer.stride.0 == 1 {
+        precondition(previousChannel % (layer.stride.1 * layer.stride.2) == 0)
+        precondition(channels * layer.stride.1 * layer.stride.2 % previousChannel == 0)
+        var residual = out.reshaped([
+          depth, height, width, previousChannel / (layer.stride.1 * layer.stride.2),
+          layer.stride.1, layer.stride.2,
+        ]).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([
+          depth, height * layer.stride.1, width * layer.stride.2,
+          previousChannel / (layer.stride.1 * layer.stride.2),
+        ])
+        if channels * layer.stride.1 * layer.stride.2 / previousChannel > 1 {
+          let concat = Concat(axis: 3)
+          concat.flags = [.disableOpt]
+          residual = concat(
+            Array(
+              repeating: residual,
+              count: channels * layer.stride.1 * layer.stride.2 / previousChannel))
+        }
+        out = conv(
+          out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
+            .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
+          ).reshaped([1, depth + 2, height + 2, width + 2, previousChannel]))
+        out = out.reshaped([
+          depth, height, width, channels, layer.stride.1, layer.stride.2,
+        ]).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([
+          depth, height * layer.stride.1, width * layer.stride.2, channels,
+        ])
+        out = residual + out
+        height = height * layer.stride.1
+        width = width * layer.stride.2
+      } else if layer.stride.1 == 1 && layer.stride.2 == 1 {
+        precondition(layer.stride.0 == 2)
+        precondition(previousChannel % layer.stride.0 == 0)
+        precondition(channels * layer.stride.0 % previousChannel == 0)
+        var residual = out.reshaped([
+          depth, height, width, previousChannel / layer.stride.0, layer.stride.0,
+        ]).permuted(0, 4, 1, 2, 3).contiguous().reshaped(
+          [depth * layer.stride.0 - 1, height, width, previousChannel / layer.stride.0],
+          offset: [1, 0, 0, 0],
+          strides: [
+            height * width * previousChannel / layer.stride.0,
+            width * previousChannel / layer.stride.0, previousChannel / layer.stride.0, 1,
+          ]
+        ).contiguous()
+        if channels * layer.stride.0 / previousChannel > 1 {
+          let concat = Concat(axis: 3)
+          concat.flags = [.disableOpt]
+          residual = concat(
+            Array(repeating: residual, count: channels * layer.stride.0 / previousChannel))
+        }
+        out = conv(
+          out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
+            .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
+          ).reshaped([1, depth + 2, height + 2, width + 2, previousChannel]))
+        out = out.reshaped([
+          depth, height, width, channels, layer.stride.0,
+        ]).permuted(0, 4, 1, 2, 3).contiguous().reshaped(
+          [depth * layer.stride.0 - 1, height, width, channels], offset: [1, 0, 0, 0],
+          strides: [height * width * channels, width * channels, channels, 1]
+        ).contiguous()
+        out = residual + out
+        depth = depth * layer.stride.0 - 1
+      } else {
+        precondition(layer.stride.0 == 2)
+        precondition(previousChannel % (layer.stride.0 * layer.stride.1 * layer.stride.2) == 0)
+        precondition(
+          channels * layer.stride.0 * layer.stride.1 * layer.stride.2 % previousChannel == 0)
+        var residual = out.reshaped([
+          depth, height, width,
+          previousChannel / (layer.stride.0 * layer.stride.1 * layer.stride.2), layer.stride.0,
+          layer.stride.1, layer.stride.2,
+        ]).permuted(0, 4, 1, 5, 2, 6, 3).contiguous().reshaped(
+          [
+            depth * layer.stride.0 - 1, height * layer.stride.1, width * layer.stride.2,
+            previousChannel / (layer.stride.0 * layer.stride.1 * layer.stride.2),
+          ], offset: [1, 0, 0, 0],
+          strides: [
+            height * width * previousChannel / layer.stride.0,
+            width * previousChannel / (layer.stride.0 * layer.stride.1),
+            previousChannel / (layer.stride.0 * layer.stride.1 * layer.stride.2), 1,
+          ]
+        ).contiguous()
+        if channels * layer.stride.0 * layer.stride.1 * layer.stride.2 / previousChannel > 1 {
+          let concat = Concat(axis: 3)
+          concat.flags = [.disableOpt]
+          residual = concat(
+            Array(
+              repeating: residual,
+              count: channels * layer.stride.0 * layer.stride.1 * layer.stride.2 / previousChannel))
+        }
+        out = conv(
+          out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0]).padded(
+            .reflect, begin: [0, 1, 1, 0], end: [0, 1, 1, 0]
+          ).reshaped([1, depth + 2, height + 2, width + 2, previousChannel]))
+        out = out.reshaped([
+          depth, height, width, channels, layer.stride.0, layer.stride.1, layer.stride.2,
+        ]).permuted(0, 4, 1, 5, 2, 6, 3).contiguous().reshaped(
+          [depth * layer.stride.0 - 1, height * layer.stride.1, width * layer.stride.2, channels],
+          offset: [1, 0, 0, 0],
+          strides: [
+            height * layer.stride.1 * width * layer.stride.2 * channels,
+            width * layer.stride.2 * channels, channels, 1,
+          ]
+        ).contiguous()
+        out = residual + out
+        depth = depth * layer.stride.0 - 1
+        height = height * layer.stride.1
+        width = width * layer.stride.2
+      }
+      previousChannel = channels
       let upBlocks = j
       mappers.append { _ in
         var mapping = ModelWeightMapping()
@@ -117,22 +216,14 @@ func NHWCLTX2VideoDecoderCausal3D(
         mapping["up_blocks.\(upBlocks).conv.conv.bias"] = [conv.bias.name]
         return mapping
       }
-      out =
-        residual
-        + out.reshaped([depth, height, width, channel, 2, 2, 2]).permuted(0, 4, 1, 5, 2, 6, 3)
-        .contiguous().reshaped(
-          [depth * 2 - 1, height * 2, width * 2, channel], offset: [1, 0, 0, 0],
-          strides: [height * 2 * width * 2 * channel, width * 2 * channel, channel, 1]
-        ).contiguous()
       j += 1
-      depth = depth * 2 - 1
-      height = height * 2
-      width = width * 2
-      previousChannel = channel
+    } else {
+      precondition(channels == previousChannel)
     }
-    for i in 0..<numRepeat {
+    for i in 0..<layer.numRepeat {
       let (mapper, block) = NHWCResnetBlockCausal3D(
-        prefix: "up_blocks.\(j).res_blocks.\(i)", channels: channel, depth: depth, height: height,
+        prefix: "up_blocks.\(j).res_blocks.\(i)", channels: channels, depth: depth,
+        height: height,
         width: width, isCausal: false)
       out = block(out)
       mappers.append(mapper)
@@ -394,13 +485,14 @@ private func NCHWResnetBlockCausal3D(
 }
 
 func NCHWLTX2VideoDecoderCausal3D(
-  channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
-  startDepth: Int
+  layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
+  startHeight: Int, startDepth: Int
 )
   -> (ModelWeightMapper, Model)
 {
+  precondition(!layers.isEmpty)
   let x = Input()
-  var previousChannel = channels[channels.count - 1]
+  var previousChannel = layers[0].channels
   let convIn = Convolution(
     groups: 1, filters: previousChannel, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
@@ -417,27 +509,120 @@ func NCHWLTX2VideoDecoderCausal3D(
   var depth = startDepth
   var height = startHeight
   var width = startWidth
-  for channel in channels.reversed() {
-    if previousChannel != channel {
+  for layer in layers {
+    let channels = layer.channels
+    if layer.stride.0 > 1 || layer.stride.1 > 1 || layer.stride.2 > 1 {
       // Convolution & reshape.
       let conv = Convolution(
-        groups: 1, filters: channel * 8, filterSize: [3, 3, 3],
+        groups: 1, filters: channels * layer.stride.0 * layer.stride.1 * layer.stride.2,
+        filterSize: [3, 3, 3],
         hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 0, 0], end: [0, 0, 0])),
         format: .OIHW, name: "depth_to_space_upsample")
-      var residual = out.reshaped([previousChannel / 8, 2, 2, 2, depth, height, width]).permuted(
-        0, 4, 1, 5, 2, 6, 3
-      ).contiguous().reshaped(
-        [previousChannel / 8, depth * 2 - 1, height * 2, width * 2], offset: [0, 1, 0, 0],
-        strides: [
-          depth * 2 * height * 2 * width * 2, height * 2 * width * 2, width * 2, 1,
-        ]
-      ).contiguous()
-      residual = Functional.concat(
-        axis: 0, residual, residual, residual, residual, flags: [.disableOpt])
-      out = conv(
-        out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
-          .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
-        ).reshaped([1, previousChannel, depth + 2, height + 2, width + 2]))
+      if layer.stride.0 == 1 {
+        precondition(previousChannel % (layer.stride.1 * layer.stride.2) == 0)
+        precondition(channels * layer.stride.1 * layer.stride.2 % previousChannel == 0)
+        var residual = out.reshaped([
+          previousChannel / (layer.stride.1 * layer.stride.2), layer.stride.1, layer.stride.2,
+          depth, height, width,
+        ]).permuted(0, 3, 4, 1, 5, 2).contiguous().reshaped([
+          previousChannel / (layer.stride.1 * layer.stride.2), depth,
+          height * layer.stride.1, width * layer.stride.2,
+        ])
+        if channels * layer.stride.1 * layer.stride.2 / previousChannel > 1 {
+          let concat = Concat(axis: 0)
+          concat.flags = [.disableOpt]
+          residual = concat(
+            Array(
+              repeating: residual,
+              count: channels * layer.stride.1 * layer.stride.2 / previousChannel))
+        }
+        out = conv(
+          out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
+            .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
+          ).reshaped([1, previousChannel, depth + 2, height + 2, width + 2]))
+        out = out.reshaped([
+          channels, layer.stride.1, layer.stride.2, depth, height, width,
+        ]).permuted(0, 3, 4, 1, 5, 2).contiguous().reshaped([
+          channels, depth, height * layer.stride.1, width * layer.stride.2,
+        ])
+        out = residual + out
+        height = height * layer.stride.1
+        width = width * layer.stride.2
+      } else if layer.stride.1 == 1 && layer.stride.2 == 1 {
+        precondition(layer.stride.0 == 2)
+        precondition(previousChannel % layer.stride.0 == 0)
+        precondition(channels * layer.stride.0 % previousChannel == 0)
+        var residual = out.reshaped([
+          previousChannel / layer.stride.0, layer.stride.0, depth, height, width,
+        ]).permuted(0, 2, 1, 3, 4).contiguous().reshaped(
+          [previousChannel / layer.stride.0, depth * layer.stride.0 - 1, height, width],
+          offset: [0, 1, 0, 0],
+          strides: [depth * layer.stride.0 * height * width, height * width, width, 1]
+        ).contiguous()
+        if channels * layer.stride.0 / previousChannel > 1 {
+          let concat = Concat(axis: 0)
+          concat.flags = [.disableOpt]
+          residual = concat(
+            Array(repeating: residual, count: channels * layer.stride.0 / previousChannel))
+        }
+        out = conv(
+          out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
+            .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
+          ).reshaped([1, previousChannel, depth + 2, height + 2, width + 2]))
+        out = out.reshaped([
+          channels, layer.stride.0, depth, height, width,
+        ]).permuted(0, 2, 1, 3, 4).contiguous().reshaped(
+          [channels, depth * layer.stride.0 - 1, height, width], offset: [0, 1, 0, 0],
+          strides: [depth * layer.stride.0 * height * width, height * width, width, 1]
+        ).contiguous()
+        out = residual + out
+        depth = depth * layer.stride.0 - 1
+      } else {
+        precondition(layer.stride.0 == 2)
+        precondition(previousChannel % (layer.stride.0 * layer.stride.1 * layer.stride.2) == 0)
+        precondition(
+          channels * layer.stride.0 * layer.stride.1 * layer.stride.2 % previousChannel == 0)
+        var residual = out.reshaped([
+          previousChannel / (layer.stride.0 * layer.stride.1 * layer.stride.2), layer.stride.0,
+          layer.stride.1, layer.stride.2, depth, height, width,
+        ]).permuted(0, 4, 1, 5, 2, 6, 3).contiguous().reshaped(
+          [
+            previousChannel / (layer.stride.0 * layer.stride.1 * layer.stride.2),
+            depth * layer.stride.0 - 1, height * layer.stride.1, width * layer.stride.2,
+          ], offset: [0, 1, 0, 0],
+          strides: [
+            depth * layer.stride.0 * height * layer.stride.1 * width * layer.stride.2,
+            height * layer.stride.1 * width * layer.stride.2, width * layer.stride.2, 1,
+          ]
+        ).contiguous()
+        if channels * layer.stride.0 * layer.stride.1 * layer.stride.2 / previousChannel > 1 {
+          let concat = Concat(axis: 0)
+          concat.flags = [.disableOpt]
+          residual = concat(
+            Array(
+              repeating: residual,
+              count: channels * layer.stride.0 * layer.stride.1 * layer.stride.2 / previousChannel))
+        }
+        out = conv(
+          out.padded(.replicate, begin: [0, 1, 0, 0], end: [0, 1, 0, 0]).padded(
+            .reflect, begin: [0, 0, 1, 1], end: [0, 0, 1, 1]
+          ).reshaped([1, previousChannel, depth + 2, height + 2, width + 2]))
+        out = out.reshaped([
+          channels, layer.stride.0, layer.stride.1, layer.stride.2, depth, height, width,
+        ]).permuted(0, 4, 1, 5, 2, 6, 3).contiguous().reshaped(
+          [channels, depth * layer.stride.0 - 1, height * layer.stride.1, width * layer.stride.2],
+          offset: [0, 1, 0, 0],
+          strides: [
+            depth * layer.stride.0 * height * layer.stride.1 * width * layer.stride.2,
+            height * layer.stride.1 * width * layer.stride.2, width * layer.stride.2, 1,
+          ]
+        ).contiguous()
+        out = residual + out
+        depth = depth * layer.stride.0 - 1
+        height = height * layer.stride.1
+        width = width * layer.stride.2
+      }
+      previousChannel = channels
       let upBlocks = j
       mappers.append { _ in
         var mapping = ModelWeightMapping()
@@ -445,22 +630,14 @@ func NCHWLTX2VideoDecoderCausal3D(
         mapping["up_blocks.\(upBlocks).conv.conv.bias"] = [conv.bias.name]
         return mapping
       }
-      out =
-        residual
-        + out.reshaped([channel, 2, 2, 2, depth, height, width]).permuted(0, 4, 1, 5, 2, 6, 3)
-        .contiguous().reshaped(
-          [channel, depth * 2 - 1, height * 2, width * 2], offset: [0, 1, 0, 0],
-          strides: [depth * 2 * height * 2 * width * 2, height * 2 * width * 2, width * 2, 1]
-        ).contiguous()
       j += 1
-      depth = depth * 2 - 1
-      height = height * 2
-      width = width * 2
-      previousChannel = channel
+    } else {
+      precondition(channels == previousChannel)
     }
-    for i in 0..<numRepeat {
+    for i in 0..<layer.numRepeat {
       let (mapper, block) = NCHWResnetBlockCausal3D(
-        prefix: "up_blocks.\(j).res_blocks.\(i)", channels: channel, depth: depth, height: height,
+        prefix: "up_blocks.\(j).res_blocks.\(i)", channels: channels, depth: depth,
+        height: height,
         width: width, isCausal: false)
       out = block(out)
       mappers.append(mapper)
@@ -669,18 +846,16 @@ func NCHWLTX2VideoEncoderCausal3D(
 }
 
 public func LTX2VideoDecoderCausal3D(
-  channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
-  startDepth: Int, format: TensorFormat
+  layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
+  startHeight: Int, startDepth: Int, format: TensorFormat
 ) -> (ModelWeightMapper, Model) {
   switch format {
   case .NHWC:
     return NHWCLTX2VideoDecoderCausal3D(
-      channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
-      startDepth: startDepth)
+      layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth)
   case .NCHW:
     return NCHWLTX2VideoDecoderCausal3D(
-      channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
-      startDepth: startDepth)
+      layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth)
   case .CHWN:
     fatalError()
   }
