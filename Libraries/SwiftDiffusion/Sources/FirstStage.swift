@@ -67,7 +67,7 @@ extension FirstStage {
     let scalingFactor = latentsScaling.scalingFactor
     var z: DynamicGraph.Tensor<FloatType>
     var audioZ: DynamicGraph.Tensor<Float>?
-    if version == .ltx2 {
+    if version == .ltx2 || version == .ltx2_3 {
       // If it has audio, extract the audio track.
       let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight(x.shape)
       startHeight = startHeight - audioHeight
@@ -145,7 +145,7 @@ extension FirstStage {
     case .wan22_5b:
       scaleFactor = 16
       scaleFactorZ = 4
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       scaleFactor = 32
       scaleFactorZ = 8
     case .wurstchenStageB, .wurstchenStageC:
@@ -606,7 +606,7 @@ extension FirstStage {
       }
       outputChannels = 3
       causalAttentionMask = nil
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       let startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
@@ -742,7 +742,7 @@ extension FirstStage {
     // Hunyuan / Wan just do the decoding with the batch.
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
-        && version != .wan22_5b && version != .ltx2
+        && version != .wan22_5b && version != .ltx2 && version != .ltx2_3
     else {
       let audio: DynamicGraph.Tensor<Float>?
       if audioDecoder.count > 1, let audioZ = audioZ {
@@ -952,7 +952,7 @@ extension FirstStage {
     guard version != .kandinsky21 && version != .wurstchenStageC else {
       return (parameters, parameters, encoder)
     }
-    guard version != .wurstchenStageB && version != .ltx2 else {
+    guard version != .wurstchenStageB && version != .ltx2 && version != .ltx2_3 else {
       // For stage b, we need to scale it properly.
       let sample = scale(parameters)
       return (sample, sample, encoder)
@@ -1109,7 +1109,7 @@ extension FirstStage {
     case .wan22_5b:
       scaleFactor = 16
       scaleFactorZ = 4
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       scaleFactor = 32
       scaleFactorZ = 8
     case .wurstchenStageC:
@@ -1471,7 +1471,7 @@ extension FirstStage {
       }
       outputChannels = 96
       causalAttentionMask = nil
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       let startDepth = (shape[0] - 1) / 8 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
@@ -1595,7 +1595,7 @@ extension FirstStage {
     }
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
-        && version != .wan22_5b && version != .ltx2
+        && version != .wan22_5b && version != .ltx2 && version != .ltx2_3
     else {
       if highPrecision {
         if tiledEncoding {

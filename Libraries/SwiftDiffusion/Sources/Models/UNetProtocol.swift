@@ -106,7 +106,7 @@ extension UNetProtocol {
             maxPeriod: 10_000)
         ).toGPU(0))
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
       return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
@@ -272,7 +272,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
           ].copied()
         }
       }
-  case .ltx2:
+  case .ltx2, .ltx2_3:
     let offset = conditions.count - 1255
     let tokenModulation = referenceImageCount > 0
     let batchSize = isCfgEnabled ? batchSize / 2 : batchSize
@@ -438,7 +438,7 @@ public func externalOnDemandPartially(
       .wurstchenStageB, .sd3, .pixart, .auraflow, .wan21_1_3b, .wan22_5b:
       return false
     case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .wan21_14b, .qwenImage, .zImage, .flux2,
-      .flux2_9b, .flux2_4b, .ltx2:
+      .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
       return true
     }
   }
@@ -1437,7 +1437,7 @@ extension UNetFromNNC {
             ).0)
         }
       }
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 2, startWidth) : startWidth
       let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight(xT.shape)
@@ -1517,7 +1517,7 @@ extension UNetFromNNC {
         c.append(contentsOf: injectedIPAdapters)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-        .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
+        .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
         fatalError()
       }
     }
@@ -1576,7 +1576,7 @@ extension UNetFromNNC {
     case .wurstchenStageC:
       modelKey = "stage_c"
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -1613,7 +1613,7 @@ extension UNetFromNNC {
         if version == .flux2 && (name.contains("_w1-") || name.contains("_w2-")) {
           return true
         }
-      } else if version == .ltx2
+      } else if (version == .ltx2 || version == .ltx2_3)
         && (name.contains("a_q-") || name.contains("a_k-") || name.contains("a_v-")
           || name.contains("cv_q-") || name.contains("cv_k-") || name.contains("cv_v-")
           || name.contains("ca_q-") || name.contains("ca_k-") || name.contains("ca_v-")
@@ -1696,7 +1696,7 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<(8 + 48)).map {
                   return ($0, $0)
                 })
-            case .ltx2:
+            case .ltx2, .ltx2_3:
               return [Int: Int](
                 uniqueKeysWithValues: (0..<48).map {
                   return ($0, $0)
@@ -2145,7 +2145,7 @@ extension UNetFromNNC {
             tokenEncoding
           return finalEncoding
         }
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         if $0.0 == 0 || $0.0 == 2 {
           let shape = $0.1.shape
           let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1).reshaped(
@@ -2391,7 +2391,7 @@ extension UNetFromNNC {
       unet.compile(inputs: inputs)
       // TODO: TeaCache insert here.
       return
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       let firstInput = DynamicGraph.Tensor<FloatType>(inputs[0])
       var shape = firstInput.shape
       if isCfgEnabled {
@@ -3173,7 +3173,7 @@ extension UNetFromNNC {
         etCond = unet(inputs: xCond, otherConds)[0].as(of: FloatType.self)
       }
       return Functional.concat(axis: 0, etUncond, etCond)
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       let graph = firstInput.graph
       var shape = firstInput.shape
       // Separate firstInput into video input and audio input.
@@ -3306,7 +3306,7 @@ extension UNetFromNNC {
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       return (0, 0)
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       return LTX2ExtractAudioFramesAndHeight(shape)
     }
   }
@@ -3411,7 +3411,7 @@ extension UNetFromNNC {
       tileScaleFactor = 16
     case .wan22_5b:
       tileScaleFactor = 4
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       tileScaleFactor = 2
     case .wurstchenStageC:
       tileScaleFactor = 1
@@ -3655,7 +3655,7 @@ extension UNetFromNNC {
         c = newC
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-        .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
+        .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
         fatalError()
       }
     }
@@ -3688,7 +3688,7 @@ extension UNetFromNNC {
       return x
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
+      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
       return x
     }
   }

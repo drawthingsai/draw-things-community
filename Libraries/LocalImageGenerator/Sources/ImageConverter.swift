@@ -850,7 +850,7 @@ public enum ImageConverter {
         default:
           return []
         }
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight(shape)
         tensor = tensor[0..<shape[0], 0..<(shape[1] - audioHeight), 0..<shape[2], 0..<shape[3]]
           .copied()
@@ -1161,13 +1161,14 @@ public enum ImageConverter {
         && (version == .flux1 || version == .hiDreamI1 || version == .zImage || version == .flux2
           || version == .flux2_4b || version == .flux2_9b || version == .qwenImage
           || version == .wan21_1_3b || version == .wan21_14b || version == .ltx2
+          || version == .ltx2_3
           || version == .v1 || version == .v2 || version == .svdI2v || version == .sd3
           || version == .sd3Large || version == .sdxlBase || version == .sdxlRefiner
           || version == .ssd1b || version == .pixart || version == .auraflow)
       {
         let images = imagesWithTAESD(fromLatent: tensor, version: version)
         guard images.isEmpty else {
-          return (images, version != .ltx2)  // It is still fairly low quality for LTX-2.
+          return (images, version != .ltx2 && version != .ltx2_3)  // It is still fairly low quality for LTX-2.
         }
       }
       return tensor.withUnsafeBytes {
@@ -1307,7 +1308,7 @@ public enum ImageConverter {
               bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
               bytes[i * 4 + 3] = 255
             }
-          case .ltx2:
+          case .ltx2, .ltx2_3:
             bytes.deallocate()
             continue
           case .hunyuanVideo:

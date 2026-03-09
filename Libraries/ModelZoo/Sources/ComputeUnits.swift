@@ -101,7 +101,7 @@ public enum ComputeUnits {
       return (cfgChannels, max(1, Int(configuration.numFrames)))
     case .hunyuanVideo:
       return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 4 + 1))
-    case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3:
       return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 4 + 1))
     }
   }
@@ -135,7 +135,7 @@ public enum ComputeUnits {
       return 256
     case .qwenImage, .zImage, .flux2, .flux2_9b, .flux2_4b:
       return 512
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       return 128
     case .hiDreamI1:
       return 128
@@ -158,7 +158,7 @@ public enum ComputeUnits {
       )
     case .wan22_5b:
       return (rawWidth * 4, rawHeight * 4)
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       return (rawWidth * 2, rawHeight * 2)
     default:
       return (rawWidth * 8, rawHeight * 8)
@@ -435,7 +435,7 @@ public enum ComputeUnits {
         timesteps: 1, layers: (16, 32), t5TextLength: baseTokenLength,
         llamaTextLength: baseTokenLength)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       let videoFrames = numFrames
       let audioFrames = (videoFrames - 1) * 8 + 1
       let mainCount = LTX2InstructionCount(

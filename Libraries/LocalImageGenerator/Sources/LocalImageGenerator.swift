@@ -162,7 +162,7 @@ extension LocalImageGenerator {
       ]
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB,
       .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-      .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
+      .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1600,7 +1600,7 @@ extension LocalImageGenerator {
         potentials: potentials, startLength: 0, endLength: 0, maxLength: paddedTextEncodingLength,
         paddingLength: paddedTextEncodingLength)
       return result
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       let result = tokenize(
         graph: graph, tokenizer: tokenizerGemma3, text: text,
         negativeText: negativeText,
@@ -3105,7 +3105,7 @@ extension LocalImageGenerator {
         fatalError()
       case .flux2, .flux2_9b, .flux2_4b:
         fatalError()
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         fatalError()
       case .auraflow, .flux1, .kandinsky21, .pixart, .hunyuanVideo:
         break
@@ -3206,7 +3206,7 @@ extension LocalImageGenerator {
         fatalError()
       case .wan21_1_3b, .wan21_14b, .wan22_5b:
         fatalError()
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         fatalError()
       case .qwenImage:
         fatalError()
@@ -3217,7 +3217,7 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
         return (nil, [])
       case .flux1:
         guard
@@ -3243,7 +3243,7 @@ extension LocalImageGenerator {
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .wan22_5b, .zImage:
         return (nil, [])
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         guard let image = image else { return (nil, []) }
         let encoded = firstStage.encode(image, encoder: nil, cancellation: { _ in }).0
         let shape = encoded.shape
@@ -3313,7 +3313,7 @@ extension LocalImageGenerator {
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .wan22_5b, .zImage, .flux1, .qwenImage, .flux2, .flux2_9b, .flux2_4b:
         return x
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         guard let firstFrame = imageCond.1.first else { return x }
         var x = x
         let shape = x.shape
@@ -3334,7 +3334,7 @@ extension LocalImageGenerator {
       return false
     case .svdI2v:
       return true
-    case .wan21_14b, .wan21_1_3b, .hunyuanVideo, .ltx2:
+    case .wan21_14b, .wan21_1_3b, .hunyuanVideo, .ltx2, .ltx2_3:
       return modifier == .inpainting
     }
   }
@@ -3348,7 +3348,7 @@ extension LocalImageGenerator {
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1, .hiDreamI1,
       .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
       return (1, image, nil)
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       guard forSample else {
         return (1, image, nil)
       }
@@ -3446,7 +3446,7 @@ extension LocalImageGenerator {
       )
     case .hunyuanVideo, .auraflow, .flux1, .hiDreamI1, .qwenImage, .kandinsky21, .pixart, .sd3,
       .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
-      .wurstchenStageC, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
+      .wurstchenStageC, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
       return (batchSize, 0)
     }
   }
@@ -3519,7 +3519,7 @@ extension LocalImageGenerator {
       return result
     case .flux2, .flux2_9b, .flux2_4b:
       fatalError()
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       fatalError()
     }
   }
@@ -3865,7 +3865,7 @@ extension LocalImageGenerator {
             ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
           * 8
         firstPassAudioHeight = 0
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         firstPassChannels = 128
         firstPassScaleFactor = 32
         firstPassStartWidth =
@@ -4084,7 +4084,7 @@ extension LocalImageGenerator {
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
           hasCustom: custom != nil)
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 8) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
@@ -4339,7 +4339,7 @@ extension LocalImageGenerator {
         startHeight = Int(configuration.startHeight) * 4
         startScaleFactor = 16
         audioHeight = 0
-      } else if modelVersion == .ltx2 {
+      } else if modelVersion == .ltx2 || modelVersion == .ltx2_3 {
         startWidth = Int(configuration.startWidth) * 2
         startHeight = Int(configuration.startHeight) * 2
         startScaleFactor = 32
@@ -4561,7 +4561,7 @@ extension LocalImageGenerator {
           channels = 32
         case .wan22_5b:
           channels = 48
-        case .ltx2:
+        case .ltx2, .ltx2_3:
           channels = 128
         case .auraflow, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
           .wurstchenStageB:
@@ -5037,7 +5037,7 @@ extension LocalImageGenerator {
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
         audioHeight = 0
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         channels = 128
         startScaleFactor = 32
         startWidth = image.shape[2] / 32 / imageScaleFactor
@@ -5240,7 +5240,7 @@ extension LocalImageGenerator {
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
           hasCustom: custom != nil)
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 8) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
@@ -6348,7 +6348,7 @@ extension LocalImageGenerator {
         startWidth = image.shape[2] / 16 / imageScaleFactor
         startHeight = image.shape[1] / 16 / imageScaleFactor
         audioHeight = 0
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         channels = 128
         startScaleFactor = 32
         startWidth = image.shape[2] / 32 / imageScaleFactor
@@ -6622,7 +6622,7 @@ extension LocalImageGenerator {
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
           hasCustom: custom != nil)
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 8) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
@@ -7223,7 +7223,7 @@ extension LocalImageGenerator {
         startWidth = image.shape[2] / 16 / imageScaleFactor
         startHeight = image.shape[1] / 16 / imageScaleFactor
         audioHeight = 0
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         channels = 128
         startScaleFactor = 32
         startWidth = image.shape[2] / 32 / imageScaleFactor
@@ -7496,7 +7496,7 @@ extension LocalImageGenerator {
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
           hasCustom: custom != nil)
-      case .ltx2:
+      case .ltx2, .ltx2_3:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 8) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,

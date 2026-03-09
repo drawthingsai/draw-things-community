@@ -150,7 +150,7 @@ struct Converter: ParsableCommand {
       fatalError()
     case .flux2, .flux2_9b, .flux2_4b:
       fatalError()
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       fatalError()
     case .kandinsky21, .wurstchenStageC, .wurstchenStageB, .auraflow:
       fatalError()

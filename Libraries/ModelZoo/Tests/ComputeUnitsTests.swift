@@ -108,7 +108,7 @@ final class ComputeUnitsTests: XCTestCase {
       return 2.588235294
     case .flux2_4b:
       return 1.176470588 * 0.8
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       return 1.176470588 * 0.8
     }
   }
@@ -144,7 +144,7 @@ final class ComputeUnitsTests: XCTestCase {
     case .hunyuanVideo:
       batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
-    case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3:
       batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
       if configuration.causalInferenceEnabled && configuration.causalInference > 0
@@ -198,7 +198,7 @@ final class ComputeUnitsTests: XCTestCase {
       return 256
     case .qwenImage, .zImage, .flux2, .flux2_9b, .flux2_4b:
       return 512
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       return 128
     case .hiDreamI1:
       return 128
@@ -220,7 +220,7 @@ final class ComputeUnitsTests: XCTestCase {
       )
     case .wan22_5b:
       return (rawWidth * 4, rawHeight * 4)
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       return (rawWidth * 2, rawHeight * 2)
     default:
       return (rawWidth * 8, rawHeight * 8)
@@ -249,7 +249,7 @@ final class ComputeUnitsTests: XCTestCase {
         batchSize: 1, tokenLength: tokenLength, referenceSequenceLength: 0,
         height: startHeight, width: startWidth, channels: 4096, layers: (8, 24))
       return count * imageBatch
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       let ltx2VideoFrames = max(1, (numFrames - 1) / 8 + 1)
       let audioFrames = (ltx2VideoFrames - 1) * 8 + 1
       let count = LTX2InstructionCount(

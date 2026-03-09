@@ -3066,7 +3066,7 @@ extension TextEncoder {
         injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
         modifier: modifier, textModels: existingTextModels)
-    case .ltx2:
+    case .ltx2, .ltx2_3:
       return encodeLTX2(
         images: images, tokens: tokens, positions: positions, mask: mask,
         injectedEmbeddings: injectedEmbeddings,
@@ -3184,7 +3184,7 @@ extension TextEncoder {
           ).0
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -3222,7 +3222,7 @@ extension TextEncoder {
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                   .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2,
-                  .flux2_9b, .flux2_4b, .ltx2:
+                  .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -3262,7 +3262,7 @@ extension TextEncoder {
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                 .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2,
-                .flux2_9b, .flux2_4b, .ltx2:
+                .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
                 fatalError()
               }
               return .continue(name)

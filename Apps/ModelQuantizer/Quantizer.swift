@@ -15,7 +15,8 @@ struct Quantizer: ParsableCommand {
       The model version of the input file. Available versions:
       v1, v2, kandinsky2.1, sdxl_base_v0.9, sdxl_refiner_v0.9, ssd_1b, svd_i2v,
       wurstchen_v3.0_stage_c, wurstchen_v3.0_stage_b, sd3, pixart, auraflow,
-      flux1, sd3_large, hunyuan_video, wan_v2.1_1.3b, wan_v2.1_14b, hidream_i1
+      flux1, sd3_large, hunyuan_video, wan_v2.1_1.3b, wan_v2.1_14b, hidream_i1,
+      qwen_image, wan_v2.2_5b, z_image, flux2, flux2_9b, flux2_4b, ltx2, ltx2.3
       """)
   var modelVersion: String
 
@@ -243,7 +244,7 @@ struct Quantizer: ParsableCommand {
                 $0.write(key, tensor: fp16, codec: .ezm7)
               }
             }
-          case .ltx2:
+          case .ltx2, .ltx2_3:
             fatalError()
           case .flux2, .flux2_9b, .flux2_4b:
             if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {
