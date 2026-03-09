@@ -441,10 +441,12 @@ public enum ComputeUnits {
       let mainCount = LTX2InstructionCount(
         time: videoFrames, h: startHeight, w: startWidth, textLength: baseTokenLength,
         audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-        tokenModulation: hasImage)
+        tokenModulation: hasImage, useGatedAttention: false,
+        textCrossAttention: (adaLN: false, rotaryEmbedding: false))
       let fixedCount = LTX2FixedInstructionCount(
         time: videoFrames, textLength: baseTokenLength, audioFrames: audioFrames, timesteps: 1,
-        channels: (4096, 2048), layers: 48)
+        channels: (4096, 2048), layers: 48, contextProjection: true,
+        textCrossAttention: (adaLN: false, rotaryEmbedding: false))
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     }
   }

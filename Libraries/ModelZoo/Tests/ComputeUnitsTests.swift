@@ -254,7 +254,8 @@ final class ComputeUnitsTests: XCTestCase {
       let audioFrames = (ltx2VideoFrames - 1) * 8 + 1
       let count = LTX2InstructionCount(
         time: ltx2VideoFrames, h: startHeight, w: startWidth, textLength: tokenLength,
-        audioFrames: audioFrames, channels: (4096, 2048), layers: 48, tokenModulation: false)
+        audioFrames: audioFrames, channels: (4096, 2048), layers: 48, tokenModulation: false,
+        useGatedAttention: false, textCrossAttention: (adaLN: false, rotaryEmbedding: false))
       return count * imageBatch
     default:
       fatalError("unsupported version")
@@ -276,7 +277,8 @@ final class ComputeUnitsTests: XCTestCase {
     let audioFrames = (chunkedVideoFrames - 1) * 8 + 1
     let count = LTX2InstructionCount(
       time: chunkedVideoFrames, h: startHeight, w: startWidth, textLength: tokenLength,
-      audioFrames: audioFrames, channels: (4096, 2048), layers: 48, tokenModulation: false)
+      audioFrames: audioFrames, channels: (4096, 2048), layers: 48, tokenModulation: false,
+      useGatedAttention: false, textCrossAttention: (adaLN: false, rotaryEmbedding: false))
     return count * imageBatch
   }
 

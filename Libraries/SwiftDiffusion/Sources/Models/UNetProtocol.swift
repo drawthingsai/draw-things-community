@@ -1463,7 +1463,9 @@ extension UNetFromNNC {
             return LoRALTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-              tokenModulation: tokenModulation, LoRAConfiguration: configuration
+              tokenModulation: tokenModulation, useGatedAttention: false,
+              textCrossAttention: (adaLN: false, rotaryEmbedding: false),
+              LoRAConfiguration: configuration
             ).1
           })
       } else {
@@ -1475,7 +1477,8 @@ extension UNetFromNNC {
             return LTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-              tokenModulation: tokenModulation
+              tokenModulation: tokenModulation, useGatedAttention: false,
+              textCrossAttention: (adaLN: false, rotaryEmbedding: false)
             ).1
           })
       }

@@ -197,10 +197,12 @@ public enum LoRAImporter {
     case .ltx2:
       (unetMapper, unet) = LTX2(
         time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
-        layers: 48, tokenModulation: false)
+        layers: 48, tokenModulation: false, useGatedAttention: false,
+        textCrossAttention: (adaLN: false, rotaryEmbedding: false))
       (unetFixedMapper, unetFixed) = LTX2Fixed(
         time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
-        layers: 48)
+        layers: 48, contextProjection: true,
+        textCrossAttention: (adaLN: false, rotaryEmbedding: false))
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -429,11 +431,11 @@ public enum LoRAImporter {
         tEmb = nil
         let (videoConnector, videoConnectorMapper) = Embedding1DConnector(
           prefix: "embeddings_connector", layers: 2, batchSize: 1,
-          tokenLength: 1024
+          tokenLength: 1024, headDimension: 128, numberOfHeads: 30, useGatedAttention: false
         )
         let (audioConnector, audioConnectorMapper) = Embedding1DConnector(
           prefix: "audio_embeddings_connector", layers: 2, batchSize: 1,
-          tokenLength: 1024
+          tokenLength: 1024, headDimension: 128, numberOfHeads: 30, useGatedAttention: false
         )
         let rotaryEmbedding1D = graph.variable(
           Tensor<FloatType>(
@@ -686,7 +688,7 @@ public enum LoRAImporter {
           ]
           + LTX2FixedOutputShapes(
             time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
-            layers: 48
+            layers: 48, textCrossAttention: (adaLN: false, rotaryEmbedding: false)
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }

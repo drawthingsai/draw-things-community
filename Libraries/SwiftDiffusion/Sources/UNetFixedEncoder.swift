@@ -1942,23 +1942,27 @@ extension UNetFixedEncoder {
         videoConnector =
           LoRAEmbedding1DConnector(
             prefix: "embeddings_connector", layers: 2, batchSize: cBatchSize,
-            tokenLength: paddedTextLength, LoRAConfiguration: configuration
+            tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
+            useGatedAttention: false, LoRAConfiguration: configuration
           ).0
         audioConnector =
           LoRAEmbedding1DConnector(
             prefix: "audio_embeddings_connector", layers: 2, batchSize: cBatchSize,
-            tokenLength: paddedTextLength, LoRAConfiguration: configuration
+            tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
+            useGatedAttention: false, LoRAConfiguration: configuration
           ).0
       } else {
         videoConnector =
           Embedding1DConnector(
             prefix: "embeddings_connector", layers: 2, batchSize: cBatchSize,
-            tokenLength: paddedTextLength
+            tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
+            useGatedAttention: false
           ).0
         audioConnector =
           Embedding1DConnector(
             prefix: "audio_embeddings_connector", layers: 2, batchSize: cBatchSize,
-            tokenLength: paddedTextLength
+            tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
+            useGatedAttention: false
           ).0
       }
       var videoHiddenStates = graph.variable(
@@ -2135,13 +2139,17 @@ extension UNetFixedEncoder {
           LoRALTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
+            contextProjection: true,
+            textCrossAttention: (adaLN: false, rotaryEmbedding: false),
             LoRAConfiguration: configuration
           ).1
       } else {
         unetFixed =
           LTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
-            timesteps: timesteps.count, channels: (4096, 2048), layers: 48
+            timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
+            contextProjection: true,
+            textCrossAttention: (adaLN: false, rotaryEmbedding: false)
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)

@@ -1,12 +1,15 @@
 import Foundation
 
 private func LTX2SelfAttentionInstructionCount(
-  batchSize: Int, sequenceLength: Int, hiddenSize: Int, heads: Int
+  batchSize: Int, sequenceLength: Int, hiddenSize: Int, heads: Int, useGatedAttention: Bool
 ) -> Int {
   let headDimension = hiddenSize / heads
   let rows = batchSize * sequenceLength
   var total = 0
   total += 4 * DenseInstructionCount(rows: rows, input: hiddenSize, output: hiddenSize)  // q,k,v,o
+  if useGatedAttention {
+    total += DenseInstructionCount(rows: rows, input: hiddenSize, output: heads)  // gate
+  }
   total += ScaledDotProductAttentionInstructionCount(
     batchSize: batchSize, heads: heads, headDimension: headDimension,
     sequenceDimensionA: sequenceLength,
@@ -16,7 +19,7 @@ private func LTX2SelfAttentionInstructionCount(
 
 private func LTX2CrossAttentionInstructionCount(
   batchSize: Int, queryLength: Int, keyLength: Int, queryInput: Int, keyValueInput: Int,
-  attnHidden: Int, outputHidden: Int, heads: Int, precomputedKV: Bool
+  attnHidden: Int, outputHidden: Int, heads: Int, precomputedKV: Bool, useGatedAttention: Bool
 ) -> Int {
   let headDimension = attnHidden / heads
   var total = 0
@@ -34,6 +37,9 @@ private func LTX2CrossAttentionInstructionCount(
     sequenceDimensionB: keyLength)
   total += DenseInstructionCount(
     rows: batchSize * queryLength, input: attnHidden, output: outputHidden)  // o
+  if useGatedAttention {
+    total += DenseInstructionCount(rows: batchSize * queryLength, input: queryInput, output: heads)  // gate
+  }
   return total
 }
 
@@ -50,7 +56,9 @@ private func LTX2FeedForwardInstructionCount(
 // Extra input-channel params are needed because `LTX2(...)` builder does not expose them.
 public func LTX2InstructionCount(
   time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int, channels: (Int, Int), layers: Int,
-  tokenModulation: Bool, videoInputChannels: Int = 128, audioInputChannels: Int = 128
+  tokenModulation: Bool, useGatedAttention: Bool,
+  textCrossAttention: (adaLN: Bool, rotaryEmbedding: Bool),
+  videoInputChannels: Int = 128, audioInputChannels: Int = 128
 ) -> Int {
   precondition(channels.0 % 32 == 0 && channels.1 % 32 == 0)
   let batchSize = 1
@@ -70,31 +78,33 @@ public func LTX2InstructionCount(
   for _ in 0..<layers {
     // Video self-attn + text cross-attn.
     total += LTX2SelfAttentionInstructionCount(
-      batchSize: batchSize, sequenceLength: videoLength, hiddenSize: channels.0, heads: heads)
+      batchSize: batchSize, sequenceLength: videoLength, hiddenSize: channels.0, heads: heads,
+      useGatedAttention: useGatedAttention)
     total += LTX2CrossAttentionInstructionCount(
       batchSize: batchSize, queryLength: videoLength, keyLength: textLength, queryInput: channels.0,
       keyValueInput: channels.0, attnHidden: channels.0, outputHidden: channels.0, heads: heads,
-      precomputedKV: true)
+      precomputedKV: true, useGatedAttention: useGatedAttention)
 
     // Audio self-attn + text cross-attn.
     total += LTX2SelfAttentionInstructionCount(
-      batchSize: batchSize, sequenceLength: audioLength, hiddenSize: channels.1, heads: heads)
+      batchSize: batchSize, sequenceLength: audioLength, hiddenSize: channels.1, heads: heads,
+      useGatedAttention: useGatedAttention)
     total += LTX2CrossAttentionInstructionCount(
       batchSize: batchSize, queryLength: audioLength, keyLength: textLength, queryInput: channels.1,
       keyValueInput: channels.1, attnHidden: channels.1, outputHidden: channels.1, heads: heads,
-      precomputedKV: true)
+      precomputedKV: true, useGatedAttention: useGatedAttention)
 
     // Cross-modal attentions.
     total += LTX2CrossAttentionInstructionCount(
       batchSize: batchSize, queryLength: videoLength, keyLength: audioLength,
       queryInput: channels.0,
       keyValueInput: channels.1, attnHidden: channels.1, outputHidden: channels.0, heads: heads,
-      precomputedKV: false)
+      precomputedKV: false, useGatedAttention: useGatedAttention)
     total += LTX2CrossAttentionInstructionCount(
       batchSize: batchSize, queryLength: audioLength, keyLength: videoLength,
       queryInput: channels.1,
       keyValueInput: channels.0, attnHidden: channels.1, outputHidden: channels.1, heads: heads,
-      precomputedKV: false)
+      precomputedKV: false, useGatedAttention: useGatedAttention)
 
     // FFNs.
     total += LTX2FeedForwardInstructionCount(
@@ -110,6 +120,7 @@ public func LTX2InstructionCount(
   total += DenseInstructionCount(rows: batchSize * audioLength, input: channels.1, output: 128)
 
   _ = tokenModulation  // Modifies elementwise/reshape flow only.
+  _ = textCrossAttention
   return total
 }
 
@@ -127,6 +138,7 @@ private func LTX2AdaLNSingleInstructionCount(
 // No convolutions are present in the fixed builder.
 public func LTX2FixedInstructionCount(
   time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int,
+  contextProjection: Bool, textCrossAttention: (adaLN: Bool, rotaryEmbedding: Bool),
   textInputChannels: (Int, Int)? = nil
 ) -> Int {
   precondition(channels.0 % 32 == 0 && channels.1 % 32 == 0)
@@ -134,14 +146,21 @@ public func LTX2FixedInstructionCount(
   var total = 0
 
   // caption projections (video + audio).
-  total += DenseInstructionCount(rows: textLength, input: textInput.0, output: channels.0)
-  total += DenseInstructionCount(rows: textLength, input: channels.0, output: channels.0)
-  total += DenseInstructionCount(rows: textLength, input: textInput.1, output: channels.1)
-  total += DenseInstructionCount(rows: textLength, input: channels.1, output: channels.1)
+  if contextProjection {
+    total += DenseInstructionCount(rows: textLength, input: textInput.0, output: channels.0)
+    total += DenseInstructionCount(rows: textLength, input: channels.0, output: channels.0)
+    total += DenseInstructionCount(rows: textLength, input: textInput.1, output: channels.1)
+    total += DenseInstructionCount(rows: textLength, input: channels.1, output: channels.1)
+  }
 
-  // Six timestep-conditioned modulation emitters.
-  total += LTX2AdaLNSingleInstructionCount(timesteps: timesteps, channels: channels.0, count: 6)
-  total += LTX2AdaLNSingleInstructionCount(timesteps: timesteps, channels: channels.1, count: 6)
+  total += LTX2AdaLNSingleInstructionCount(
+    timesteps: timesteps, channels: channels.0, count: textCrossAttention.adaLN ? 9 : 6)
+  total += LTX2AdaLNSingleInstructionCount(
+    timesteps: timesteps, channels: channels.1, count: textCrossAttention.adaLN ? 9 : 6)
+  if textCrossAttention.adaLN {
+    total += LTX2AdaLNSingleInstructionCount(timesteps: timesteps, channels: channels.0, count: 2)
+    total += LTX2AdaLNSingleInstructionCount(timesteps: timesteps, channels: channels.1, count: 2)
+  }
   total += LTX2AdaLNSingleInstructionCount(timesteps: timesteps, channels: channels.0, count: 4)
   total += LTX2AdaLNSingleInstructionCount(timesteps: timesteps, channels: channels.1, count: 4)
   total += LTX2AdaLNSingleInstructionCount(timesteps: timesteps, channels: channels.0, count: 1)
@@ -155,5 +174,6 @@ public func LTX2FixedInstructionCount(
 
   _ = time
   _ = audioFrames
+  _ = textCrossAttention.rotaryEmbedding
   return total
 }
