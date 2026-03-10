@@ -2906,29 +2906,9 @@ extension TextEncoder {
       hiddenStates[0..<2, 0..<tokenLength, 0..<3840, i..<(i + 1)] = outputHiddenStates[i]
         .reshaped(.NHWC(2, tokenLength, 3840, 1))
     }
-    // Separately normalize unconditional / conditional branch.
-    var hiddenStatesUncond = hiddenStates[
-      0..<1, 0..<min(tokenLength, tokenLengthUncond), 0..<3840, 0..<49
-    ].contiguous()
-    let meanUncond = hiddenStatesUncond.reduced(.mean, axis: [1, 2])
-    let minUncond_ = hiddenStatesUncond.reduced(.min, axis: [1, 2])
-    let maxUncond_ = hiddenStatesUncond.reduced(.max, axis: [1, 2])
-    let rangeUncond_ = 8.0 * Functional.reciprocal(maxUncond_ - minUncond_)
-    hiddenStatesUncond = (hiddenStates[0..<1, 0..<tokenLength, 0..<3840, 0..<49] - meanUncond)
-      .* rangeUncond_
-    var hiddenStatesCond = hiddenStates[
-      1..<2, 0..<min(tokenLength, tokenLengthCond), 0..<3840, 0..<49
-    ].contiguous()
-    let meanCond = hiddenStatesCond.reduced(.mean, axis: [1, 2])
-    let minCond_ = hiddenStatesCond.reduced(.min, axis: [1, 2])
-    let maxCond_ = hiddenStatesCond.reduced(.max, axis: [1, 2])
-    let rangeCond_ = 8.0 * Functional.reciprocal(maxCond_ - minCond_)
-    hiddenStatesCond = (hiddenStates[1..<2, 0..<tokenLength, 0..<3840, 0..<49] - meanCond)
-      .* rangeCond_
-    let normedHiddenStates = DynamicGraph.Tensor<BFloat16>(
-      from: Functional.concat(axis: 0, hiddenStatesUncond, hiddenStatesCond)
-    ).reshaped(.WC(2 * tokenLength, 3840 * 49))
+    let normedHiddenStates: DynamicGraph.Tensor<BFloat16>
     let featureExtractorLinear: Model
+    let featureExtractorInput: DynamicGraph.AnyTensor
     let lora = Array(
       (OrderedDictionary<String, LoRAConfiguration>(
         lora.filter({ $0.version == version }).map {
@@ -2949,7 +2929,12 @@ extension TextEncoder {
     let shouldRunLoRASeparately =
       !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
     if version == .ltx2_3 {
-      let x = Input()
+      let norm = RMSNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+      normedHiddenStates = DynamicGraph.Tensor<BFloat16>(
+        from: DynamicGraph.Tensor<FloatType>(norm(inputs: hiddenStates)[0]).reshaped(
+          format: hiddenStates.format, shape: [2 * tokenLength, 3840 * 49]))
+      let videoProjectionScale = (Float(4096) / Float(3840)).squareRoot()
+      let audioProjectionScale = (Float(2048) / Float(3840)).squareRoot()
       let videoAggregateEmbed: Model
       let audioAggregateEmbed: Model
       if shouldRunLoRASeparately {
@@ -2965,9 +2950,38 @@ extension TextEncoder {
       }
       let concat = Concat(axis: 1)
       concat.flags = [.disableOpt]
+      let x = Input()
       featureExtractorLinear = Model(
-        [x], [concat([videoAggregateEmbed(x), audioAggregateEmbed(x)])])
+        [x],
+        [
+          concat([
+            videoAggregateEmbed(videoProjectionScale * x),
+            audioAggregateEmbed(audioProjectionScale * x),
+          ])
+        ])
     } else {
+      // Separately normalize unconditional / conditional branch.
+      var hiddenStatesUncond = hiddenStates[
+        0..<1, 0..<min(tokenLength, tokenLengthUncond), 0..<3840, 0..<49
+      ].contiguous()
+      let meanUncond = hiddenStatesUncond.reduced(.mean, axis: [1, 2])
+      let minUncond_ = hiddenStatesUncond.reduced(.min, axis: [1, 2])
+      let maxUncond_ = hiddenStatesUncond.reduced(.max, axis: [1, 2])
+      let rangeUncond_ = 8.0 * Functional.reciprocal(maxUncond_ - minUncond_)
+      hiddenStatesUncond = (hiddenStates[0..<1, 0..<tokenLength, 0..<3840, 0..<49] - meanUncond)
+        .* rangeUncond_
+      var hiddenStatesCond = hiddenStates[
+        1..<2, 0..<min(tokenLength, tokenLengthCond), 0..<3840, 0..<49
+      ].contiguous()
+      let meanCond = hiddenStatesCond.reduced(.mean, axis: [1, 2])
+      let minCond_ = hiddenStatesCond.reduced(.min, axis: [1, 2])
+      let maxCond_ = hiddenStatesCond.reduced(.max, axis: [1, 2])
+      let rangeCond_ = 8.0 * Functional.reciprocal(maxCond_ - minCond_)
+      hiddenStatesCond = (hiddenStates[1..<2, 0..<tokenLength, 0..<3840, 0..<49] - meanCond)
+        .* rangeCond_
+      normedHiddenStates = DynamicGraph.Tensor<BFloat16>(
+        from: Functional.concat(axis: 0, hiddenStatesUncond, hiddenStatesCond)
+      ).reshaped(.WC(2 * tokenLength, 3840 * 49))
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePaths[1])
         configuration.keys = keys

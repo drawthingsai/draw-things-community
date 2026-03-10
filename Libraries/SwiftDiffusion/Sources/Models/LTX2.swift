@@ -425,8 +425,9 @@ private func LTX2TransformerBlock(
     out =
       out
       + attn2(
-        normOutScaled.to(.Float16), (cvK .* modulations[29] + modulations[28]).to(.Float16),
-        (cvV .* modulations[29] + modulations[28]).to(.Float16)
+        normOutScaled.to(.Float16),
+        cvK .* modulations[29].reshaped([1, 1, h, k.0]) + modulations[28].reshaped([1, 1, h, k.0]),
+        cvV .* modulations[29].reshaped([1, 1, h, k.0]) + modulations[28].reshaped([1, 1, h, k.0])
       ).to(of: out) .* modulations[24]
   } else {
     out = out + attn2(normOut.to(.Float16), cvK, cvV).to(of: out)
@@ -448,8 +449,9 @@ private func LTX2TransformerBlock(
     aOut =
       aOut
       + audioAttn2(
-        normAOutScaled.to(.Float16), (caK .* modulations[31] + modulations[30]).to(.Float16),
-        (caV .* modulations[31] + modulations[30]).to(.Float16)
+        normAOutScaled.to(.Float16),
+        caK .* modulations[31].reshaped([1, 1, h, k.1]) + modulations[30].reshaped([1, 1, h, k.1]),
+        caV .* modulations[31].reshaped([1, 1, h, k.1]) + modulations[30].reshaped([1, 1, h, k.1])
       ).to(of: aOut) .* modulations[27]
   } else {
     aOut = aOut + audioAttn2(normAOut.to(.Float16), caK, caV).to(of: aOut)
@@ -774,10 +776,10 @@ private func LTX2TransformerBlockFixed(
     outs.append(audioAttn1Modulations[6] + audioTimesteps[6])
     outs.append(audioAttn1Modulations[7] + audioTimesteps[7])
     outs.append(audioAttn1Modulations[8] + audioTimesteps[8])
-    outs.append(promptScaleShiftModulations[0] + promptTimesteps[0])
-    outs.append(1 + promptScaleShiftModulations[1] + promptTimesteps[1])
-    outs.append(audioPromptScaleShiftModulations[0] + audioPromptTimesteps[0])
-    outs.append(1 + audioPromptScaleShiftModulations[1] + audioPromptTimesteps[1])
+    outs.append((promptScaleShiftModulations[0] + promptTimesteps[0]).to(.Float16))
+    outs.append((promptScaleShiftModulations[1] + promptTimesteps[1]).to(.Float16))
+    outs.append((audioPromptScaleShiftModulations[0] + audioPromptTimesteps[0]).to(.Float16))
+    outs.append((audioPromptScaleShiftModulations[1] + audioPromptTimesteps[1]).to(.Float16))
   }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -1419,8 +1421,9 @@ private func LoRALTX2TransformerBlock(
     out =
       out
       + attn2(
-        normOutScaled.to(.Float16), (cvK .* modulations[29] + modulations[28]).to(.Float16),
-        (cvV .* modulations[29] + modulations[28]).to(.Float16)
+        normOutScaled.to(.Float16),
+        cvK .* modulations[29].reshaped([1, 1, h, k.0]) + modulations[28].reshaped([1, 1, h, k.0]),
+        cvV .* modulations[29].reshaped([1, 1, h, k.0]) + modulations[28].reshaped([1, 1, h, k.0])
       ).to(of: out) .* modulations[24]
   } else {
     out = out + attn2(normOut.to(.Float16), cvK, cvV).to(of: out)
@@ -1442,8 +1445,9 @@ private func LoRALTX2TransformerBlock(
     aOut =
       aOut
       + audioAttn2(
-        normAOutScaled.to(.Float16), (caK .* modulations[31] + modulations[30]).to(.Float16),
-        (caV .* modulations[31] + modulations[30]).to(.Float16)
+        normAOutScaled.to(.Float16),
+        caK .* modulations[31].reshaped([1, 1, h, k.1]) + modulations[30].reshaped([1, 1, h, k.1]),
+        caV .* modulations[31].reshaped([1, 1, h, k.1]) + modulations[30].reshaped([1, 1, h, k.1])
       ).to(of: aOut) .* modulations[27]
   } else {
     aOut = aOut + audioAttn2(normAOut.to(.Float16), caK, caV).to(of: aOut)
@@ -1780,10 +1784,10 @@ private func LoRALTX2TransformerBlockFixed(
     outs.append(audioAttn1Modulations[6] + audioTimesteps[6])
     outs.append(audioAttn1Modulations[7] + audioTimesteps[7])
     outs.append(audioAttn1Modulations[8] + audioTimesteps[8])
-    outs.append(promptScaleShiftModulations[0] + promptTimesteps[0])
-    outs.append(1 + promptScaleShiftModulations[1] + promptTimesteps[1])
-    outs.append(audioPromptScaleShiftModulations[0] + audioPromptTimesteps[0])
-    outs.append(1 + audioPromptScaleShiftModulations[1] + audioPromptTimesteps[1])
+    outs.append((promptScaleShiftModulations[0] + promptTimesteps[0]).to(.Float16))
+    outs.append((promptScaleShiftModulations[1] + promptTimesteps[1]).to(.Float16))
+    outs.append((audioPromptScaleShiftModulations[0] + audioPromptTimesteps[0]).to(.Float16))
+    outs.append((audioPromptScaleShiftModulations[1] + audioPromptTimesteps[1]).to(.Float16))
   }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
