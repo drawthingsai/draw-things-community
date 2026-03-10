@@ -2908,7 +2908,6 @@ extension TextEncoder {
     }
     let normedHiddenStates: DynamicGraph.Tensor<BFloat16>
     let featureExtractorLinear: Model
-    let featureExtractorInput: DynamicGraph.AnyTensor
     let lora = Array(
       (OrderedDictionary<String, LoRAConfiguration>(
         lora.filter({ $0.version == version }).map {

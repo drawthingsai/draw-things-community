@@ -653,17 +653,32 @@ extension FirstStage {
         decodingTileSize.height = startHeight
         decodingTileSize.depth = startDepth
       }
+      let decoderLayers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))]
+      let decoderPaddingMode: LTX2VideoVAEPaddingMode
+      if version == .ltx2_3 {
+        decoderLayers = [
+          (channels: 1024, numRepeat: 2, stride: (1, 1, 1)),
+          (channels: 512, numRepeat: 2, stride: (2, 2, 2)),
+          (channels: 512, numRepeat: 4, stride: (2, 2, 2)),
+          (channels: 256, numRepeat: 6, stride: (2, 1, 1)),
+          (channels: 128, numRepeat: 4, stride: (1, 2, 2)),
+        ]
+        decoderPaddingMode = .zero
+      } else {
+        decoderLayers = [
+          (channels: 1024, numRepeat: 5, stride: (1, 1, 1)),
+          (channels: 512, numRepeat: 5, stride: (2, 2, 2)),
+          (channels: 256, numRepeat: 5, stride: (2, 2, 2)),
+          (channels: 128, numRepeat: 5, stride: (2, 2, 2)),
+        ]
+        decoderPaddingMode = .reflect
+      }
       decoder =
         existingDecoder
         ?? LTX2VideoDecoderCausal3D(
-          layers: [
-            (channels: 1024, numRepeat: 5, stride: (1, 1, 1)),
-            (channels: 512, numRepeat: 5, stride: (2, 2, 2)),
-            (channels: 256, numRepeat: 5, stride: (2, 2, 2)),
-            (channels: 128, numRepeat: 5, stride: (2, 2, 2)),
-          ], startWidth: startWidth,
-          startHeight: startHeight, startDepth: startDepth,
-          paddingMode: .reflect, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+          layers: decoderLayers, startWidth: startWidth, startHeight: startHeight,
+          startDepth: startDepth, paddingMode: decoderPaddingMode,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
@@ -1488,17 +1503,33 @@ extension FirstStage {
         encodingTileSize.height = startHeight
         encodingTileSize.depth = startDepth
       }
+      let encoderLayers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))]
+      let encoderPaddingMode: LTX2VideoVAEPaddingMode
+      if version == .ltx2_3 {
+        encoderLayers = [
+          (channels: 128, numRepeat: 4, stride: (1, 1, 1)),
+          (channels: 256, numRepeat: 6, stride: (1, 2, 2)),
+          (channels: 512, numRepeat: 4, stride: (2, 1, 1)),
+          (channels: 1024, numRepeat: 2, stride: (2, 2, 2)),
+          (channels: 1024, numRepeat: 2, stride: (2, 2, 2)),
+        ]
+        encoderPaddingMode = .zero
+      } else {
+        encoderLayers = [
+          (channels: 128, numRepeat: 4, stride: (1, 1, 1)),
+          (channels: 256, numRepeat: 6, stride: (1, 2, 2)),
+          (channels: 512, numRepeat: 6, stride: (2, 1, 1)),
+          (channels: 1024, numRepeat: 2, stride: (2, 2, 2)),
+          (channels: 2048, numRepeat: 2, stride: (2, 2, 2)),
+        ]
+        encoderPaddingMode = .reflect
+      }
       encoder =
         existingEncoder
         ?? LTX2VideoEncoderCausal3D(
-          layers: [
-            (channels: 128, numRepeat: 4, stride: (1, 1, 1)),
-            (channels: 256, numRepeat: 6, stride: (1, 2, 2)),
-            (channels: 512, numRepeat: 6, stride: (2, 1, 1)),
-            (channels: 1024, numRepeat: 2, stride: (2, 2, 2)),
-            (channels: 2048, numRepeat: 2, stride: (2, 2, 2)),
-          ], startWidth: startWidth, startHeight: startHeight, startDepth: startDepth,
-          paddingMode: .reflect, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+          layers: encoderLayers, startWidth: startWidth, startHeight: startHeight,
+          startDepth: startDepth, paddingMode: encoderPaddingMode,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       let batchSize = (startDepth - 1) * 8 + 1
       if existingEncoder == nil {
