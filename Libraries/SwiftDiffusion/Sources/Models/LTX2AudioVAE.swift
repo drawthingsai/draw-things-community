@@ -115,9 +115,9 @@ func LTX2AudioEncoderCausal2D(
   return (mapper, Model([x], [out]))
 }
 
-func LTX2AudioDecoderCausal2D(
-  channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int
-) -> (ModelWeightMapper, Model) {
+func LTX2AudioDecoderCausal2D(channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int)
+  -> (ModelWeightMapper, Model)
+{
   let x = Input()
   var previousChannel = channels[channels.count - 1]
   let convIn = Convolution(

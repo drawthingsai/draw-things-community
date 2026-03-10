@@ -316,8 +316,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         outputIndex >= 48 * 32
         ? outputIndex - 48 * 32 + 32 : (outputIndex % 32)
       guard tokenModulation,
-        [0, 1, 2, 6, 7, 10, 11, 12, 16, 17, 18, 22, 23, 24, 28, 29, 32, 33].contains(
-          modulationIndex)
+        [0, 1, 2, 6, 7, 10, 11, 12, 16, 17, 18, 22, 23, 24, 32, 33].contains(modulationIndex)
       else {
         return DynamicGraph.Tensor<Float>($0.1)[index..<(index + 1), 0..<shape[1], 0..<shape[2]]
           .copied()

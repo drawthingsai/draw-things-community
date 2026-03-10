@@ -2471,6 +2471,22 @@ public struct ModelZoo: DownloadZoo {
     }
   }
 
+  public static func audioSampleRateForModel(_ name: String) -> Int {
+    guard let specification = specificationForModel(name) else {
+      return 24_000
+    }
+    switch specification.version {
+    case .v1, .v2, .svdI2v, .ssd1b, .sdxlBase, .sdxlRefiner, .pixart, .auraflow, .kandinsky21,
+      .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .flux1, .hiDreamI1, .zImage,
+      .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .wan22_5b, .flux2, .flux2_9b, .flux2_4b:
+      return 24_000
+    case .ltx2:
+      return 24_000
+    case .ltx2_3:
+      return 48_000
+    }
+  }
+
   public static func stageModelsForModel(_ name: String) -> [String] {
     guard let specification = specificationForModel(name) else { return [] }
     return specification.stageModels ?? []

@@ -421,21 +421,38 @@ private func LTX2TransformerBlock(
     positionEmbedding: false, KV: KV, name: "cv", useGatedAttention: useGatedAttention)
   let normOut = norm(out)
   if textCrossAttentionAdaLN {
-    let normOutScaled = normOut .* modulations[23] + modulations[22]
+    let normOutScaled: Model.IO
+    if tokenModulation {
+      normOutScaled = (normOut.reshaped([time, hw, k.0 * h]) .* modulations[23] + modulations[22])
+        .reshaped([
+          1, time * hw, k.0 * h,
+        ])
+    } else {
+      normOutScaled = normOut .* modulations[23] + modulations[22]
+    }
+    let attn2Out: Model.IO
     if let cvK = cvK, let cvV = cvV {
-      out =
-        out
-        + attn2(
-          normOutScaled.to(.Float16),
-          cvK .* modulations[29].reshaped([1, 1, h, k.0])
-            + modulations[28].reshaped([1, 1, h, k.0]),
-          cvV .* modulations[29].reshaped([1, 1, h, k.0])
-            + modulations[28].reshaped([1, 1, h, k.0])
-        ).to(of: out) .* modulations[24]
+      attn2Out = attn2(
+        normOutScaled.to(.Float16),
+        cvK .* modulations[29].reshaped([1, 1, h, k.0])
+          + modulations[28].reshaped([1, 1, h, k.0]),
+        cvV .* modulations[29].reshaped([1, 1, h, k.0])
+          + modulations[28].reshaped([1, 1, h, k.0])
+      ).to(of: out)
     } else if let cv = cv {
       let cvScaled = cv .* modulations[29] + modulations[28]
-      out = out + attn2(normOutScaled.to(.Float16), cvScaled).to(of: out)
-        .* modulations[24]
+      attn2Out = attn2(normOutScaled.to(.Float16), cvScaled).to(of: out)
+    } else {
+      fatalError()
+    }
+    if tokenModulation {
+      out =
+        out
+        + (attn2Out.reshaped([time, hw, k.0 * h]) .* modulations[24]).reshaped([
+          1, time * hw, k.0 * h,
+        ])
+    } else {
+      out = out + attn2Out .* modulations[24]
     }
   } else {
     if let cvK = cvK, let cvV = cvV {
@@ -1501,21 +1518,36 @@ private func LoRALTX2TransformerBlock(
     name: "cv", useGatedAttention: useGatedAttention, configuration: configuration)
   let normOut = norm(out)
   if textCrossAttentionAdaLN {
-    let normOutScaled = normOut .* modulations[23] + modulations[22]
+    let normOutScaled: Model.IO
+    if tokenModulation {
+      normOutScaled = (normOut.reshaped([time, hw, k.0 * h]) .* modulations[23] + modulations[22])
+        .reshaped([1, time * hw, k.0 * h])
+    } else {
+      normOutScaled = normOut .* modulations[23] + modulations[22]
+    }
+    let attn2Out: Model.IO
     if let cvK = cvK, let cvV = cvV {
-      out =
-        out
-        + attn2(
-          normOutScaled.to(.Float16),
-          cvK .* modulations[29].reshaped([1, 1, h, k.0])
-            + modulations[28].reshaped([1, 1, h, k.0]),
-          cvV .* modulations[29].reshaped([1, 1, h, k.0])
-            + modulations[28].reshaped([1, 1, h, k.0])
-        ).to(of: out) .* modulations[24]
+      attn2Out = attn2(
+        normOutScaled.to(.Float16),
+        cvK .* modulations[29].reshaped([1, 1, h, k.0])
+          + modulations[28].reshaped([1, 1, h, k.0]),
+        cvV .* modulations[29].reshaped([1, 1, h, k.0])
+          + modulations[28].reshaped([1, 1, h, k.0])
+      ).to(of: out)
     } else if let cv = cv {
       let cvScaled = cv .* modulations[29] + modulations[28]
-      out = out + attn2(normOutScaled.to(.Float16), cvScaled).to(of: out)
-        .* modulations[24]
+      attn2Out = attn2(normOutScaled.to(.Float16), cvScaled).to(of: out)
+    } else {
+      fatalError()
+    }
+    if tokenModulation {
+      out =
+        out
+        + (attn2Out.reshaped([time, hw, k.0 * h]) .* modulations[24]).reshaped([
+          1, time * hw, k.0 * h,
+        ])
+    } else {
+      out = out + attn2Out .* modulations[24]
     }
   } else {
     if let cvK = cvK, let cvV = cvV {

@@ -612,27 +612,45 @@ extension FirstStage {
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       if let audioZ = audioZ {
         let shape = audioZ.shape
-        audioDecoder = [
-          LTX2AudioDecoderCausal2D(
-            channels: [128, 256, 512], numRepeat: 3, startWidth: 16, startHeight: shape[1]
-          ).1,
-          LTX2Vocoder(
-            width: (shape[1] - 1) * 4 + 1, initialChannels: 1024,
-            layers: [
-              (channels: 512, kernelSize: 16, stride: 6, padding: 5),
-              (channels: 256, kernelSize: 15, stride: 5, padding: 5),
-              (channels: 128, kernelSize: 8, stride: 2, padding: 3),
-              (channels: 64, kernelSize: 4, stride: 2, padding: 1),
-              (channels: 32, kernelSize: 4, stride: 2, padding: 1),
-            ], resblockKernelSizes: [3, 7, 11],
-            resblockDilations: [[1, 3, 5], [1, 3, 5], [1, 3, 5]], activation: .leakyReLU,
-            finalConvBias: true, finalActivation: .tanh
-          ).1,
-        ]
+        let decodedAudioWidth = (shape[1] - 1) * 4 + 1
+        let vocoderLoader: (() -> Void)?
+        if version == .ltx2_3 {
+          let (_, vocoder, vocoderLoaderLocal) = LTX2VocoderWithBWE(width: decodedAudioWidth)
+          audioDecoder = [
+            LTX2AudioDecoderCausal2D(
+              channels: [128, 256, 512], numRepeat: 3, startWidth: 16, startHeight: shape[1]
+            ).1,
+            vocoder,
+          ]
+          vocoderLoader = vocoderLoaderLocal
+        } else {
+          audioDecoder = [
+            LTX2AudioDecoderCausal2D(
+              channels: [128, 256, 512], numRepeat: 3, startWidth: 16, startHeight: shape[1]
+            ).1,
+            LTX2Vocoder(
+              width: decodedAudioWidth, initialChannels: 1024,
+              layers: [
+                (channels: 512, kernelSize: 16, stride: 6, padding: 5),
+                (channels: 256, kernelSize: 15, stride: 5, padding: 5),
+                (channels: 128, kernelSize: 8, stride: 2, padding: 3),
+                (channels: 64, kernelSize: 4, stride: 2, padding: 1),
+                (channels: 32, kernelSize: 4, stride: 2, padding: 1),
+              ], resblockKernelSizes: [3, 7, 11],
+              resblockDilations: [[1, 3, 5], [1, 3, 5], [1, 3, 5]], activation: .leakyReLU,
+              finalConvBias: true, finalActivation: .tanh
+            ).1,
+          ]
+          vocoderLoader = nil
+        }
         audioDecoder[0].compile(inputs: audioZ)
         let decodedAudio = graph.variable(
-          .GPU(0), .NCHW(1, 128, 1, (shape[1] - 1) * 4 + 1), of: Float.self)
+          .GPU(0),
+          format: .NCHW,
+          shape: [1, 128, 1, decodedAudioWidth],
+          of: Float.self)
         audioDecoder[1].compile(inputs: decodedAudio)
+        vocoderLoader?()
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
         ) {
