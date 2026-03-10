@@ -850,7 +850,7 @@ public enum ImageConverter {
         default:
           return []
         }
-      case .ltx2, .ltx2_3:
+      case .ltx2:
         let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight(shape)
         tensor = tensor[0..<shape[0], 0..<(shape[1] - audioHeight), 0..<shape[2], 0..<shape[3]]
           .copied()
@@ -876,6 +876,36 @@ public enum ImageConverter {
           imagePaddingSize = 1792
         case 1793...2048:
           taesd = LTX2TinyDecoderFor2048
+          imagePaddingSize = 2048
+        default:
+          return []
+        }
+      case .ltx2_3:
+        let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight(shape)
+        tensor = tensor[0..<shape[0], 0..<(shape[1] - audioHeight), 0..<shape[2], 0..<shape[3]]
+          .copied()
+        shape = tensor.shape
+        imageHeight = shape[1] * 32
+        imageWidth = shape[2] * 32
+        isVideo = true
+        switch max(imageWidth, imageHeight) {
+        case 0...768:
+          taesd = LTX2_3TinyDecoderFor768
+          imagePaddingSize = 768
+        case 769...1024:
+          taesd = LTX2_3TinyDecoderFor1024
+          imagePaddingSize = 1024
+        case 1025...1280:
+          taesd = LTX2_3TinyDecoderFor1280
+          imagePaddingSize = 1280
+        case 1281...1536:
+          taesd = LTX2_3TinyDecoderFor1536
+          imagePaddingSize = 1536
+        case 1537...1792:
+          taesd = LTX2_3TinyDecoderFor1792
+          imagePaddingSize = 1792
+        case 1793...2048:
+          taesd = LTX2_3TinyDecoderFor2048
           imagePaddingSize = 2048
         default:
           return []
