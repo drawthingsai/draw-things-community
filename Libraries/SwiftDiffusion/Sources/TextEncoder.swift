@@ -2948,13 +2948,34 @@ extension TextEncoder {
     let runLoRASeparatelyIsPreferred = true
     let shouldRunLoRASeparately =
       !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
-    if shouldRunLoRASeparately {
-      let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePaths[1])
-      configuration.keys = keys
-      featureExtractorLinear = LoRADense(
-        count: 3840, configuration: configuration, noBias: true, index: 0)
+    if version == .ltx2_3 {
+      let x = Input()
+      let videoAggregateEmbed: Model
+      let audioAggregateEmbed: Model
+      if shouldRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePaths[1])
+        configuration.keys = keys
+        videoAggregateEmbed = LoRADense(
+          count: 4096, configuration: configuration, name: "video_aggregate_embed")
+        audioAggregateEmbed = LoRADense(
+          count: 2048, configuration: configuration, name: "audio_aggregate_embed")
+      } else {
+        videoAggregateEmbed = Dense(count: 4096, name: "video_aggregate_embed")
+        audioAggregateEmbed = Dense(count: 2048, name: "audio_aggregate_embed")
+      }
+      let concat = Concat(axis: 1)
+      concat.flags = [.disableOpt]
+      featureExtractorLinear = Model(
+        [x], [concat([videoAggregateEmbed(x), audioAggregateEmbed(x)])])
     } else {
-      featureExtractorLinear = Dense(count: 3840, noBias: true)
+      if shouldRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePaths[1])
+        configuration.keys = keys
+        featureExtractorLinear = LoRADense(
+          count: 3840, configuration: configuration, noBias: true, index: 0)
+      } else {
+        featureExtractorLinear = Dense(count: 3840, noBias: true)
+      }
     }
     featureExtractorLinear.compile(inputs: normedHiddenStates)
     graph.openStore(
@@ -3000,7 +3021,8 @@ extension TextEncoder {
       }
     }
     let c = featureExtractorLinear(inputs: normedHiddenStates).map {
-      DynamicGraph.Tensor<FloatType>(from: $0).reshaped(.HWC(2, tokenLength, 3840))
+      DynamicGraph.Tensor<FloatType>(from: $0).reshaped(
+        .HWC(2, tokenLength, version == .ltx2_3 ? 6144 : 3840))
     }
     return (c, [textModel])
   }
