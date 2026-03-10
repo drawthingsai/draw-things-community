@@ -655,6 +655,7 @@ extension FirstStage {
       }
       let decoderLayers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))]
       let decoderPaddingMode: LTX2VideoVAEPaddingMode
+      let decoderResidual: Bool
       if version == .ltx2_3 {
         decoderLayers = [
           (channels: 1024, numRepeat: 2, stride: (1, 1, 1)),
@@ -664,6 +665,7 @@ extension FirstStage {
           (channels: 128, numRepeat: 4, stride: (1, 2, 2)),
         ]
         decoderPaddingMode = .zero
+        decoderResidual = false
       } else {
         decoderLayers = [
           (channels: 1024, numRepeat: 5, stride: (1, 1, 1)),
@@ -672,12 +674,13 @@ extension FirstStage {
           (channels: 128, numRepeat: 5, stride: (2, 2, 2)),
         ]
         decoderPaddingMode = .reflect
+        decoderResidual = true
       }
       decoder =
         existingDecoder
         ?? LTX2VideoDecoderCausal3D(
           layers: decoderLayers, startWidth: startWidth, startHeight: startHeight,
-          startDepth: startDepth, paddingMode: decoderPaddingMode,
+          startDepth: startDepth, paddingMode: decoderPaddingMode, residual: decoderResidual,
           format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
