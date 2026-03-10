@@ -303,17 +303,18 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
       return modulation
     }
   case .ltx2_3:
-    let offset = conditions.count - 1735
+    let offset = conditions.count - 1545
     let tokenModulation = referenceImageCount > 0
     let batchSize = isCfgEnabled ? batchSize / 2 : batchSize
     return conditions.enumerated().map {
-      guard ($0.0 - 3 - offset) % 36 >= 4 || $0.0 - 3 - offset >= 48 * 36 else {
+      let outputIndex = $0.0 - 3 - offset
+      guard outputIndex >= 0, outputIndex < 48 * 32 + 4 else {
         return $0.1
       }
       let shape = $0.1.shape
       let modulationIndex =
-        $0.0 - 3 - offset >= 48 * 36
-        ? $0.0 - 3 - offset - 48 * 36 + 32 : (($0.0 - 3 - offset) % 36) - 4
+        outputIndex >= 48 * 32
+        ? outputIndex - 48 * 32 + 32 : (outputIndex % 32)
       guard tokenModulation,
         [0, 1, 2, 6, 7, 10, 11, 12, 16, 17, 18, 22, 23, 24, 28, 29, 32, 33].contains(
           modulationIndex)
@@ -1493,7 +1494,7 @@ extension UNetFromNNC {
             return LoRALTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-              tokenModulation: tokenModulation, useGatedAttention: false,
+              tokenModulation: tokenModulation, KV: true, useGatedAttention: false,
               textCrossAttentionAdaLN: false,
               LoRAConfiguration: configuration
             ).1
@@ -1507,7 +1508,7 @@ extension UNetFromNNC {
             return LTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-              tokenModulation: tokenModulation, useGatedAttention: false,
+              tokenModulation: tokenModulation, KV: true, useGatedAttention: false,
               textCrossAttentionAdaLN: false
             ).1
           })
@@ -1534,11 +1535,11 @@ extension UNetFromNNC {
           ModelBuilder {
             let shape = $0[0].shape
             let audioFrames = $0[1].shape[1]
-            let textLength = $0[5].shape[1]
+            let textLength = $0[$0.count - 2].shape[1]
             return LoRALTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-              tokenModulation: tokenModulation, useGatedAttention: true,
+              tokenModulation: tokenModulation, KV: false, useGatedAttention: true,
               textCrossAttentionAdaLN: true,
               LoRAConfiguration: configuration
             ).1
@@ -1548,11 +1549,11 @@ extension UNetFromNNC {
           ModelBuilder {
             let shape = $0[0].shape
             let audioFrames = $0[1].shape[1]
-            let textLength = $0[5].shape[1]
+            let textLength = $0[$0.count - 2].shape[1]
             return LTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-              tokenModulation: tokenModulation, useGatedAttention: true,
+              tokenModulation: tokenModulation, KV: false, useGatedAttention: true,
               textCrossAttentionAdaLN: true
             ).1
           })
@@ -2512,7 +2513,7 @@ extension UNetFromNNC {
       let audioInput = firstInput[
         0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
       ].contiguous().reshaped(.HWC(1, audioFrames, shape[3]))
-      let restInputs = Array(inputs[(inputs.count - 1735)...])
+      let restInputs = Array(inputs[(inputs.count - 1545)...])
       guard isCfgEnabled else {
         unet.compile(inputs: [videoInput, audioInput] + restInputs)
         return
@@ -2520,10 +2521,17 @@ extension UNetFromNNC {
       unet.compile(
         inputs: [videoInput, audioInput]
           + restInputs.enumerated().map {
-            guard $0.0 >= 3, ($0.0 - 3) % 36 < 4, $0.0 - 3 < 48 * 36 else { return $0.1 }
+            guard $0.0 >= 3 + 48 * 32 + 4 else { return $0.1 }
             let shape = $0.1.shape
-            return DynamicGraph.Tensor<FloatType>($0.1)[
-              0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+            if shape.count == 3 {
+              return DynamicGraph.Tensor<FloatType>($0.1)[
+                0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2]
+              ].copied()
+            } else {
+              return DynamicGraph.Tensor<FloatType>($0.1)[
+                0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+              ]
+            }
           })
       return
     }
@@ -3413,7 +3421,7 @@ extension UNetFromNNC {
         let audioInput = firstInput[
           0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
         ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
-        if restInputs.count > 1735 {
+        if restInputs.count > 1545 {
           let firstFrame = DynamicGraph.Tensor<FloatType>(restInputs[0])
           let firstFrameShape = firstFrame.shape
           videoInput[
@@ -3424,7 +3432,7 @@ extension UNetFromNNC {
               0..<min(startWidth, firstFrameShape[2]), 0..<shape[3]]
         }
         let output = unet(
-          inputs: videoInput, [audioInput] + restInputs[(restInputs.count - 1735)...]
+          inputs: videoInput, [audioInput] + restInputs[(restInputs.count - 1545)...]
         )
         .map {
           $0.as(of: FloatType.self)
@@ -3446,7 +3454,7 @@ extension UNetFromNNC {
       let audioInputUncond = xUncond[
         0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
       ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
-      if restInputs.count > 1735 {
+      if restInputs.count > 1545 {
         let firstFrame = DynamicGraph.Tensor<FloatType>(restInputs[0])
         let firstFrameShape = firstFrame.shape
         videoInputUncond[
@@ -3456,11 +3464,18 @@ extension UNetFromNNC {
             0..<min(batchSize, firstFrameShape[0]), 0..<min(startHeight, firstFrameShape[1]),
             0..<min(startWidth, firstFrameShape[2]), 0..<shape[3]]
       }
-      let restInputsUncond = Array(restInputs[(restInputs.count - 1735)...]).enumerated().map {
-        guard $0.0 >= 3, ($0.0 - 3) % 36 < 4, $0.0 - 3 < 48 * 36 else { return $0.1 }
+      let restInputsUncond = Array(restInputs[(restInputs.count - 1545)...]).enumerated().map {
+        guard $0.0 >= 3 + 48 * 32 + 4 else { return $0.1 }
         let shape = $0.1.shape
-        return DynamicGraph.Tensor<FloatType>($0.1)[
-          0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+        if shape.count == 3 {
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2]
+          ].copied()
+        } else {
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+          ].copied()
+        }
       }
       let outputUncond = unet(inputs: videoInputUncond, [audioInputUncond] + restInputsUncond)
         .map {
@@ -3485,7 +3500,7 @@ extension UNetFromNNC {
       let audioInputCond = xCond[
         0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
       ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
-      if restInputs.count > 1735 {
+      if restInputs.count > 1545 {
         let firstFrame = DynamicGraph.Tensor<FloatType>(restInputs[0])
         let firstFrameShape = firstFrame.shape
         videoInputCond[
@@ -3495,12 +3510,18 @@ extension UNetFromNNC {
             0..<min(batchSize, firstFrameShape[0]), 0..<min(startHeight, firstFrameShape[1]),
             0..<min(startWidth, firstFrameShape[2]), 0..<shape[3]]
       }
-      let restInputsCond = Array(restInputs[(restInputs.count - 1735)...]).enumerated().map {
-        guard $0.0 >= 3, ($0.0 - 3) % 36 < 4, $0.0 - 3 < 48 * 36 else { return $0.1 }
+      let restInputsCond = Array(restInputs[(restInputs.count - 1545)...]).enumerated().map {
+        guard $0.0 >= 3 + 48 * 32 + 4 else { return $0.1 }
         let shape = $0.1.shape
-        return DynamicGraph.Tensor<FloatType>($0.1)[
-          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
-        ].copied()
+        if shape.count == 3 {
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2]
+          ].copied()
+        } else {
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+          ].copied()
+        }
       }
       let outputCond = unet(inputs: videoInputCond, [audioInputCond] + restInputsCond)
         .map {

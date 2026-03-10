@@ -2144,7 +2144,7 @@ extension UNetFixedEncoder {
           LoRALTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: false, textCrossAttentionAdaLN: true,
+            contextProjection: false, textCrossAttentionAdaLN: true, KV: false,
             LoRAConfiguration: configuration
           ).1
       } else {
@@ -2152,11 +2152,11 @@ extension UNetFixedEncoder {
           LTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: false, textCrossAttentionAdaLN: true
+            contextProjection: false, textCrossAttentionAdaLN: true, KV: false
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: videoContext, audioContext, timeEmbeds)
+      unetFixed.compile(inputs: timeEmbeds)
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
@@ -2204,14 +2204,14 @@ extension UNetFixedEncoder {
             codec: [.jit, .q6p, .q8p, .ezm7, externalData])
         }
       }
-      let contexts = unetFixed(inputs: videoContext, audioContext, timeEmbeds)
+      let contexts = unetFixed(inputs: timeEmbeds)
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       return (
         referenceImages + [
           graph.variable(Tensor<FloatType>(from: rotaryEmbedding).toGPU(0)),
           graph.variable(Tensor<FloatType>(from: rotaryEmbeddingAudio).toGPU(0)),
           graph.variable(Tensor<FloatType>(from: rotaryEmbeddingVideoToAudio).toGPU(0)),
-        ] + contexts, nil
+        ] + contexts + [videoContext, audioContext], nil
       )
     case .ltx2:
       let c0 = textEncoding[0]
@@ -2438,7 +2438,7 @@ extension UNetFixedEncoder {
           LoRALTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: true, textCrossAttentionAdaLN: false,
+            contextProjection: true, textCrossAttentionAdaLN: false, KV: true,
             LoRAConfiguration: configuration
           ).1
       } else {
@@ -2446,7 +2446,7 @@ extension UNetFixedEncoder {
           LTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: true, textCrossAttentionAdaLN: false
+            contextProjection: true, textCrossAttentionAdaLN: false, KV: true
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)

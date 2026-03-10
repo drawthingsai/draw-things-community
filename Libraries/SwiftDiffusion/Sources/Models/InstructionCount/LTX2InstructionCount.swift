@@ -19,13 +19,13 @@ private func LTX2SelfAttentionInstructionCount(
 
 private func LTX2CrossAttentionInstructionCount(
   batchSize: Int, queryLength: Int, keyLength: Int, queryInput: Int, keyValueInput: Int,
-  attnHidden: Int, outputHidden: Int, heads: Int, precomputedKV: Bool, useGatedAttention: Bool
+  attnHidden: Int, outputHidden: Int, heads: Int, KV: Bool, useGatedAttention: Bool
 ) -> Int {
   let headDimension = attnHidden / heads
   var total = 0
   total += DenseInstructionCount(
     rows: batchSize * queryLength, input: queryInput, output: attnHidden)  // q
-  if !precomputedKV {
+  if !KV {
     total += DenseInstructionCount(
       rows: batchSize * keyLength, input: keyValueInput, output: attnHidden)  // k
     total += DenseInstructionCount(
@@ -56,7 +56,7 @@ private func LTX2FeedForwardInstructionCount(
 // Extra input-channel params are needed because `LTX2(...)` builder does not expose them.
 public func LTX2InstructionCount(
   time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int, channels: (Int, Int), layers: Int,
-  tokenModulation: Bool, useGatedAttention: Bool, textCrossAttentionAdaLN: Bool,
+  tokenModulation: Bool, KV: Bool, useGatedAttention: Bool, textCrossAttentionAdaLN: Bool,
   videoInputChannels: Int = 128, audioInputChannels: Int = 128
 ) -> Int {
   precondition(channels.0 % 32 == 0 && channels.1 % 32 == 0)
@@ -82,7 +82,7 @@ public func LTX2InstructionCount(
     total += LTX2CrossAttentionInstructionCount(
       batchSize: batchSize, queryLength: videoLength, keyLength: textLength, queryInput: channels.0,
       keyValueInput: channels.0, attnHidden: channels.0, outputHidden: channels.0, heads: heads,
-      precomputedKV: true, useGatedAttention: useGatedAttention)
+      KV: KV, useGatedAttention: useGatedAttention)
 
     // Audio self-attn + text cross-attn.
     total += LTX2SelfAttentionInstructionCount(
@@ -91,19 +91,19 @@ public func LTX2InstructionCount(
     total += LTX2CrossAttentionInstructionCount(
       batchSize: batchSize, queryLength: audioLength, keyLength: textLength, queryInput: channels.1,
       keyValueInput: channels.1, attnHidden: channels.1, outputHidden: channels.1, heads: heads,
-      precomputedKV: true, useGatedAttention: useGatedAttention)
+      KV: KV, useGatedAttention: useGatedAttention)
 
     // Cross-modal attentions.
     total += LTX2CrossAttentionInstructionCount(
       batchSize: batchSize, queryLength: videoLength, keyLength: audioLength,
       queryInput: channels.0,
       keyValueInput: channels.1, attnHidden: channels.1, outputHidden: channels.0, heads: heads,
-      precomputedKV: false, useGatedAttention: useGatedAttention)
+      KV: false, useGatedAttention: useGatedAttention)
     total += LTX2CrossAttentionInstructionCount(
       batchSize: batchSize, queryLength: audioLength, keyLength: videoLength,
       queryInput: channels.1,
       keyValueInput: channels.0, attnHidden: channels.1, outputHidden: channels.1, heads: heads,
-      precomputedKV: false, useGatedAttention: useGatedAttention)
+      KV: false, useGatedAttention: useGatedAttention)
 
     // FFNs.
     total += LTX2FeedForwardInstructionCount(
@@ -137,7 +137,7 @@ private func LTX2AdaLNSingleInstructionCount(
 // No convolutions are present in the fixed builder.
 public func LTX2FixedInstructionCount(
   time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int,
-  contextProjection: Bool, textCrossAttentionAdaLN: Bool,
+  contextProjection: Bool, textCrossAttentionAdaLN: Bool, KV: Bool,
   textInputChannels: (Int, Int)? = nil
 ) -> Int {
   precondition(channels.0 % 32 == 0 && channels.1 % 32 == 0)
@@ -166,9 +166,11 @@ public func LTX2FixedInstructionCount(
   total += LTX2AdaLNSingleInstructionCount(timesteps: timesteps, channels: channels.1, count: 1)
 
   // Per-layer fixed K/V precomputation for text cross-attn (video and audio streams).
-  for _ in 0..<layers {
-    total += 2 * DenseInstructionCount(rows: textLength, input: channels.0, output: channels.0)  // cv k,v
-    total += 2 * DenseInstructionCount(rows: textLength, input: channels.1, output: channels.1)  // ca k,v
+  if KV {
+    for _ in 0..<layers {
+      total += 2 * DenseInstructionCount(rows: textLength, input: channels.0, output: channels.0)  // cv k,v
+      total += 2 * DenseInstructionCount(rows: textLength, input: channels.1, output: channels.1)  // ca k,v
+    }
   }
 
   _ = time

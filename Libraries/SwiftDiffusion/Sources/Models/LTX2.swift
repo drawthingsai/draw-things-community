@@ -26,7 +26,6 @@ public func LTX2VideoAudioRotaryPositionEmbedding(
   time: Int, height: Int, width: Int, audioTime: Int, channels: (Int, Int), numberOfHeads: Int
 ) -> (Tensor<Float>, Tensor<Float>, Tensor<Float>) {
   let tokenLength = time * height * width
-  let audioLength = (time - 1) * 8 + 1
   var rotVideoTensor = Tensor<Float>(.CPU, .HWC(1, tokenLength, channels.0))
   let dim0 = channels.0 / 3 / 2
   let thetas0: [Double] = (0..<dim0).map { pow(10_000, Double($0) / Double(dim0 - 1)) * .pi * 0.5 }
@@ -60,12 +59,12 @@ public func LTX2VideoAudioRotaryPositionEmbedding(
       }
     }
   }
-  var rotAudioTensor = Tensor<Float>(.CPU, .HWC(1, audioLength, channels.1))
+  var rotAudioTensor = Tensor<Float>(.CPU, .HWC(1, audioTime, channels.1))
   let dim1 = channels.1 / 2
   let thetas1: [Double] = (0..<dim1).map { pow(10_000, Double($0) / Double(dim1 - 1)) * .pi * 0.5 }
   rotAudioTensor.withUnsafeMutableBytes {
     guard let fp32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
-    DispatchQueue.concurrentPerform(iterations: audioLength) { i in
+    DispatchQueue.concurrentPerform(iterations: audioTime) { i in
       let fractionPosition: Double = Double(max(i * 4 - 3, 0) + i * 4 + 1) / 2000 - 1
       let fp = fp32 + i * channels.1
       for j in 0..<dim1 {
@@ -95,7 +94,7 @@ public func LTX2VideoAudioRotaryPositionEmbedding(
   }
   return (
     rotVideoTensor.reshaped(.NHWC(1, tokenLength, numberOfHeads, channels.0 / numberOfHeads)),
-    rotAudioTensor.reshaped(.NHWC(1, audioLength, numberOfHeads, channels.1 / numberOfHeads)),
+    rotAudioTensor.reshaped(.NHWC(1, audioTime, numberOfHeads, channels.1 / numberOfHeads)),
     rotVideoToAudioTensor.reshaped(.NHWC(1, tokenLength, numberOfHeads, channels.1 / numberOfHeads))
   )
 }
@@ -382,15 +381,17 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -
 
 private func LTX2TransformerBlock(
   prefix: String, k: (Int, Int), h: Int, b: Int, t: Int, time: Int, hw: Int, a: Int,
-  tokenModulation: Bool, useGatedAttention: Bool,
+  tokenModulation: Bool, KV: Bool, useGatedAttention: Bool,
   textCrossAttentionAdaLN: Bool
 ) -> (ModelWeightMapper, Model) {
   let vx = Input()
   let ax = Input()
-  let cvK = Input()
-  let cvV = Input()
-  let caK = Input()
-  let caV = Input()
+  let cv = KV ? nil : Input()
+  let cvK = KV ? Input() : nil
+  let cvV = KV ? Input() : nil
+  let ca = KV ? nil : Input()
+  let caK = KV ? Input() : nil
+  let caV = KV ? Input() : nil
   let rot = Input()
   let rotA = Input()
   let rotCX = Input()
@@ -417,20 +418,31 @@ private func LTX2TransformerBlock(
   }
   let (attn2Mapper, attn2) = LTX2CrossAttention(
     prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, b: b, t: (time * hw, t),
-    positionEmbedding: false,
-    KV: true, name: "cv", useGatedAttention: useGatedAttention)
+    positionEmbedding: false, KV: KV, name: "cv", useGatedAttention: useGatedAttention)
   let normOut = norm(out)
   if textCrossAttentionAdaLN {
     let normOutScaled = normOut .* modulations[23] + modulations[22]
-    out =
-      out
-      + attn2(
-        normOutScaled.to(.Float16),
-        cvK .* modulations[29].reshaped([1, 1, h, k.0]) + modulations[28].reshaped([1, 1, h, k.0]),
-        cvV .* modulations[29].reshaped([1, 1, h, k.0]) + modulations[28].reshaped([1, 1, h, k.0])
-      ).to(of: out) .* modulations[24]
+    if let cvK = cvK, let cvV = cvV {
+      out =
+        out
+        + attn2(
+          normOutScaled.to(.Float16),
+          cvK .* modulations[29].reshaped([1, 1, h, k.0])
+            + modulations[28].reshaped([1, 1, h, k.0]),
+          cvV .* modulations[29].reshaped([1, 1, h, k.0])
+            + modulations[28].reshaped([1, 1, h, k.0])
+        ).to(of: out) .* modulations[24]
+    } else if let cv = cv {
+      let cvScaled = cv .* modulations[29] + modulations[28]
+      out = out + attn2(normOutScaled.to(.Float16), cvScaled).to(of: out)
+        .* modulations[24]
+    }
   } else {
-    out = out + attn2(normOut.to(.Float16), cvK, cvV).to(of: out)
+    if let cvK = cvK, let cvV = cvV {
+      out = out + attn2(normOut.to(.Float16), cvK, cvV).to(of: out)
+    } else if let cv = cv {
+      out = out + attn2(normOut.to(.Float16), cv).to(of: out)
+    }
   }
   let (audioAttn1Mapper, audioAttn1) = LTX2SelfAttention(
     prefix: "\(prefix).audio_attn1", k: k.1, h: h, b: b, t: a, name: "a",
@@ -441,20 +453,32 @@ private func LTX2TransformerBlock(
     .* modulations[5]
   let (audioAttn2Mapper, audioAttn2) = LTX2CrossAttention(
     prefix: "\(prefix).audio_attn2", k: (k.1, k.1, k.1), h: h, b: b, t: (a, t),
-    positionEmbedding: false, KV: true, name: "ca",
+    positionEmbedding: false, KV: KV, name: "ca",
     useGatedAttention: useGatedAttention)
   let normAOut = norm(aOut)
   if textCrossAttentionAdaLN {
     let normAOutScaled = normAOut .* modulations[26] + modulations[25]
-    aOut =
-      aOut
-      + audioAttn2(
-        normAOutScaled.to(.Float16),
-        caK .* modulations[31].reshaped([1, 1, h, k.1]) + modulations[30].reshaped([1, 1, h, k.1]),
-        caV .* modulations[31].reshaped([1, 1, h, k.1]) + modulations[30].reshaped([1, 1, h, k.1])
-      ).to(of: aOut) .* modulations[27]
+    if let caK = caK, let caV = caV {
+      aOut =
+        aOut
+        + audioAttn2(
+          normAOutScaled.to(.Float16),
+          caK .* modulations[31].reshaped([1, 1, h, k.1])
+            + modulations[30].reshaped([1, 1, h, k.1]),
+          caV .* modulations[31].reshaped([1, 1, h, k.1])
+            + modulations[30].reshaped([1, 1, h, k.1])
+        ).to(of: aOut) .* modulations[27]
+    } else if let ca = ca {
+      let caScaled = ca .* modulations[31] + modulations[30]
+      aOut = aOut + audioAttn2(normAOutScaled.to(.Float16), caScaled).to(of: aOut)
+        .* modulations[27]
+    }
   } else {
-    aOut = aOut + audioAttn2(normAOut.to(.Float16), caK, caV).to(of: aOut)
+    if let caK = caK, let caV = caV {
+      aOut = aOut + audioAttn2(normAOut.to(.Float16), caK, caV).to(of: aOut)
+    } else if let ca = ca {
+      aOut = aOut + audioAttn2(normAOut.to(.Float16), ca).to(of: aOut)
+    }
   }
   let vxNorm3 = norm(out)
   let axNorm3 = norm(aOut)
@@ -538,7 +562,14 @@ private func LTX2TransformerBlock(
     mapping["\(prefix).audio_ff.net.2.bias"] = [audioOutProjection.bias.name]
     return mapping
   }
-  var inputs: [Input] = [vx, rot, cvK, cvV, ax, rotA, caK, caV, rotCX]
+  var inputs: [Input]
+  if let cvK = cvK, let cvV = cvV, let caK = caK, let caV = caV {
+    inputs = [vx, rot, cvK, cvV, ax, rotA, caK, caV, rotCX]
+  } else if let cv = cv, let ca = ca {
+    inputs = [vx, rot, cv, ax, rotA, ca, rotCX]
+  } else {
+    fatalError()
+  }
   inputs.append(contentsOf: modulations)
   return (mapper, Model(inputs, [out, aOut]))
 }
@@ -587,7 +618,7 @@ private func LTX2AdaLNSingle(
 
 public func LTX2(
   time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int, channels: (Int, Int), layers: Int,
-  tokenModulation: Bool, useGatedAttention: Bool,
+  tokenModulation: Bool, KV: Bool, useGatedAttention: Bool,
   textCrossAttentionAdaLN: Bool
 ) -> (
   ModelWeightMapper, Model
@@ -605,27 +636,36 @@ public func LTX2(
   var aOut = aEmbedder(a).to(.Float32)
   var mappers = [ModelWeightMapper]()
   let hw = h * w
+  let cv = KV ? nil : Input()
+  let ca = KV ? nil : Input()
   var modulationsAndKVs = [Input]()
   for i in 0..<layers {
     let (mapper, block) = LTX2TransformerBlock(
       prefix: "transformer_blocks.\(i)", k: (channels.0 / 32, channels.1 / 32), h: 32, b: 1,
-      t: textLength, time: time, hw: hw, a: audioFrames, tokenModulation: tokenModulation,
+      t: textLength, time: time, hw: hw, a: audioFrames, tokenModulation: tokenModulation, KV: KV,
       useGatedAttention: useGatedAttention, textCrossAttentionAdaLN: textCrossAttentionAdaLN)
-    let cvK = Input()
-    let cvV = Input()
-    let caK = Input()
-    let caV = Input()
     let modulations = (0..<(textCrossAttentionAdaLN ? 32 : 22)).map { _ in Input() }
-    let blockInputs: [Model.IO] = [out, rot, cvK, cvV, aOut, rotA, caK, caV, rotCX]
+    let blockInputs: [Model.IO]
+    if KV {
+      let cvK = Input()
+      let cvV = Input()
+      let caK = Input()
+      let caV = Input()
+      blockInputs = [out, rot, cvK, cvV, aOut, rotA, caK, caV, rotCX]
+      modulationsAndKVs.append(contentsOf: [cvK, cvV, caK, caV])
+    } else if let cv = cv, let ca = ca {
+      blockInputs = [out, rot, cv, aOut, rotA, ca, rotCX]
+    } else {
+      fatalError()
+    }
     let blockOut = block(blockInputs + modulations)
     mappers.append(mapper)
     out = blockOut[0]
     aOut = blockOut[1]
-    modulationsAndKVs.append(contentsOf: [cvK, cvV, caK, caV])
     modulationsAndKVs.append(contentsOf: modulations)
   }
   let scaleShiftModulations = [Input(), Input()]
-  let normOut = RMSNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  let normOut = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   if tokenModulation {
     out = normOut(out).reshaped([time, hw, channels.0]) .* scaleShiftModulations[0]
       + scaleShiftModulations[1]
@@ -640,6 +680,9 @@ public func LTX2(
   modulationsAndKVs.append(contentsOf: audioScaleShiftModulations)
   let audioProjOut = Dense(count: 128, name: "audio_proj_out")
   aOut = audioProjOut(aOut.to(.Float16))
+  if let cv = cv, let ca = ca {
+    modulationsAndKVs.append(contentsOf: [cv, ca])
+  }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     for mapper in mappers {
@@ -689,10 +732,10 @@ private func LTX2CrossAttentionFixed(
 
 private func LTX2TransformerBlockFixed(
   prefix: String, k: (Int, Int), h: Int, b: Int, t: Int,
-  textCrossAttentionAdaLN: Bool
+  textCrossAttentionAdaLN: Bool, KV: Bool
 ) -> (ModelWeightMapper, Model) {
-  let cv = Input()
-  let ca = Input()
+  let cv = KV ? Input() : nil
+  let ca = KV ? Input() : nil
   let promptTimesteps = textCrossAttentionAdaLN ? (0..<2).map { _ in Input() } : []
   let promptScaleShiftModulations =
     textCrossAttentionAdaLN
@@ -705,15 +748,25 @@ private func LTX2TransformerBlockFixed(
     ? (0..<2).map {
       Parameter<Float>(.GPU(0), .HWC(1, 1, k.1 * h), name: "audio_prompt_scale_shift_ada_ln_\($0)")
     } : []
-  let (attn2Mapper, attn2) = LTX2CrossAttentionFixed(
-    prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, t: t, positionEmbedding: false,
-    name: "cv")
+  let attn2MapperAndModel =
+    KV
+    ? LTX2CrossAttentionFixed(
+      prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, t: t, positionEmbedding: false,
+      name: "cv")
+    : nil
   var outs = [Model.IO]()
-  let (audioAttn2Mapper, audioAttn2) = LTX2CrossAttentionFixed(
-    prefix: "\(prefix).audio_attn2", k: (k.1, k.1, k.1), h: h, t: t,
-    positionEmbedding: false, name: "ca")
-  outs.append(attn2(cv))
-  outs.append(audioAttn2(ca))
+  let audioAttn2MapperAndModel =
+    KV
+    ? LTX2CrossAttentionFixed(
+      prefix: "\(prefix).audio_attn2", k: (k.1, k.1, k.1), h: h, t: t,
+      positionEmbedding: false, name: "ca")
+    : nil
+  if let cv = cv, let attn2MapperAndModel = attn2MapperAndModel, let ca = ca,
+    let audioAttn2MapperAndModel = audioAttn2MapperAndModel
+  {
+    outs.append(attn2MapperAndModel.1(cv))
+    outs.append(audioAttn2MapperAndModel.1(ca))
+  }
   let timesteps = (0..<(textCrossAttentionAdaLN ? 9 : 6)).map { _ in Input() }
   let attn1Modulations = (0..<(textCrossAttentionAdaLN ? 9 : 6)).map {
     Parameter<Float>(.GPU(0), .HWC(1, 1, k.0 * h), name: "attn1_ada_ln_\($0)")
@@ -785,10 +838,14 @@ private func LTX2TransformerBlockFixed(
     var mapping = ModelWeightMapping()
     mapping["\(prefix).scale_shift_table"] = ModelWeightElement(
       (0..<(textCrossAttentionAdaLN ? 9 : 6)).map { attn1Modulations[$0].weight.name })
-    mapping.merge(attn2Mapper(format)) { v, _ in v }
+    if let attn2MapperAndModel = attn2MapperAndModel {
+      mapping.merge(attn2MapperAndModel.0(format)) { v, _ in v }
+    }
     mapping["\(prefix).audio_scale_shift_table"] = ModelWeightElement(
       (0..<(textCrossAttentionAdaLN ? 9 : 6)).map { audioAttn1Modulations[$0].weight.name })
-    mapping.merge(audioAttn2Mapper(format)) { v, _ in v }
+    if let audioAttn2MapperAndModel = audioAttn2MapperAndModel {
+      mapping.merge(audioAttn2MapperAndModel.0(format)) { v, _ in v }
+    }
     if textCrossAttentionAdaLN {
       mapping["\(prefix).prompt_scale_shift_table"] = ModelWeightElement(
         (0..<2).map { promptScaleShiftModulations[$0].weight.name })
@@ -807,7 +864,10 @@ private func LTX2TransformerBlockFixed(
     ]
     return mapping
   }
-  var inputs: [Input] = [cv, ca]
+  var inputs = [Input]()
+  if let cv = cv, let ca = ca {
+    inputs.append(contentsOf: [cv, ca])
+  }
   inputs.append(contentsOf: timesteps + audioTimesteps)
   if textCrossAttentionAdaLN {
     inputs.append(contentsOf: promptTimesteps + audioPromptTimesteps)
@@ -819,39 +879,48 @@ private func LTX2TransformerBlockFixed(
 
 public func LTX2Fixed(
   time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int,
-  contextProjection: Bool, textCrossAttentionAdaLN: Bool
+  contextProjection: Bool, textCrossAttentionAdaLN: Bool, KV: Bool
 ) -> (
   ModelWeightMapper, Model
 ) {
-  let txt = Input()
-  let aTxt = Input()
+  let txt = KV ? Input() : nil
+  let aTxt = KV ? Input() : nil
   let contextMlp0: Model?
   let contextMlp2: Model?
-  let txtOut: Model.IO
-  if contextProjection {
-    let (contextMlp0Local, contextMlp2Local, contextEmbedder) = GELUMLPEmbedder(
-      channels: channels.0, name: "context")
-    contextMlp0 = contextMlp0Local
-    contextMlp2 = contextMlp2Local
-    txtOut = contextEmbedder(txt)
-  } else {
-    contextMlp0 = nil
-    contextMlp2 = nil
-    txtOut = txt
-  }
+  let txtOut: Model.IO?
   let aContextMlp0: Model?
   let aContextMlp2: Model?
-  let aTxtOut: Model.IO
-  if contextProjection {
-    let (aContextMlp0Local, aContextMlp2Local, aContextEmbedder) = GELUMLPEmbedder(
-      channels: channels.1, name: "a_context")
-    aContextMlp0 = aContextMlp0Local
-    aContextMlp2 = aContextMlp2Local
-    aTxtOut = aContextEmbedder(aTxt)
+  let aTxtOut: Model.IO?
+  if let txt = txt, let aTxt = aTxt {
+    if contextProjection {
+      let (contextMlp0Local, contextMlp2Local, contextEmbedder) = GELUMLPEmbedder(
+        channels: channels.0, name: "context")
+      contextMlp0 = contextMlp0Local
+      contextMlp2 = contextMlp2Local
+      txtOut = contextEmbedder(txt)
+    } else {
+      contextMlp0 = nil
+      contextMlp2 = nil
+      txtOut = txt
+    }
+    if contextProjection {
+      let (aContextMlp0Local, aContextMlp2Local, aContextEmbedder) = GELUMLPEmbedder(
+        channels: channels.1, name: "a_context")
+      aContextMlp0 = aContextMlp0Local
+      aContextMlp2 = aContextMlp2Local
+      aTxtOut = aContextEmbedder(aTxt)
+    } else {
+      aContextMlp0 = nil
+      aContextMlp2 = nil
+      aTxtOut = aTxt
+    }
   } else {
+    txtOut = nil
+    aTxtOut = nil
+    contextMlp0 = nil
+    contextMlp2 = nil
     aContextMlp0 = nil
     aContextMlp2 = nil
-    aTxtOut = aTxt
   }
   let t = Input()
   let (txMapper, txEmb, txEmbChunks) = LTX2AdaLNSingle(
@@ -913,8 +982,11 @@ public func LTX2Fixed(
   for i in 0..<layers {
     let (mapper, block) = LTX2TransformerBlockFixed(
       prefix: "transformer_blocks.\(i)", k: (channels.0 / 32, channels.1 / 32), h: 32, b: 1,
-      t: textLength, textCrossAttentionAdaLN: textCrossAttentionAdaLN)
-    var blockInputs: [Model.IO] = [txtOut, aTxtOut]
+      t: textLength, textCrossAttentionAdaLN: textCrossAttentionAdaLN, KV: KV)
+    var blockInputs = [Model.IO]()
+    if let txtOut = txtOut, let aTxtOut = aTxtOut {
+      blockInputs.append(contentsOf: [txtOut, aTxtOut])
+    }
     if let timesteps_7 = timesteps_7, let audioTimesteps_7 = audioTimesteps_7 {
       blockInputs.append(contentsOf: [
         txEmbChunks[0], timesteps_1, txEmbChunks[2], txEmbChunks[3], timesteps_4,
@@ -988,7 +1060,11 @@ public func LTX2Fixed(
       (0..<2).map { audioScaleShiftModulations[$0].weight.name })
     return mapping
   }
-  return (mapper, Model([txt, aTxt, t], outs))
+  if let txt = txt, let aTxt = aTxt {
+    return (mapper, Model([txt, aTxt, t], outs))
+  } else {
+    return (mapper, Model([t], outs))
+  }
 }
 
 private func LTX2CrossAttentionFixedOutputShapes(
@@ -1000,15 +1076,17 @@ private func LTX2CrossAttentionFixedOutputShapes(
 
 private func LTX2TransformerBlockFixedOutputShapes(
   time: Int, k: (Int, Int), h: Int, b: Int, t: Int,
-  textCrossAttentionAdaLN: Bool
+  textCrossAttentionAdaLN: Bool, KV: Bool
 ) -> [TensorShape] {
   var outs = [TensorShape]()
-  outs.append(
-    contentsOf: LTX2CrossAttentionFixedOutputShapes(
-      time: time, k: (k.0, k.0, k.0), h: h, t: t, positionEmbedding: false, name: "cv"))
-  outs.append(
-    contentsOf: LTX2CrossAttentionFixedOutputShapes(
-      time: time, k: (k.1, k.1, k.1), h: h, t: t, positionEmbedding: false, name: "ca"))
+  if KV {
+    outs.append(
+      contentsOf: LTX2CrossAttentionFixedOutputShapes(
+        time: time, k: (k.0, k.0, k.0), h: h, t: t, positionEmbedding: false, name: "cv"))
+    outs.append(
+      contentsOf: LTX2CrossAttentionFixedOutputShapes(
+        time: time, k: (k.1, k.1, k.1), h: h, t: t, positionEmbedding: false, name: "ca"))
+  }
   outs.append(TensorShape([1, 1, k.0 * h]))
   outs.append(TensorShape([1, 1, k.0 * h]))
   outs.append(TensorShape([1, 1, k.0 * h]))
@@ -1055,25 +1133,29 @@ private func LTX2TransformerBlockFixedOutputShapes(
 
 public func LTX2FixedOutputShapes(
   time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int,
-  textCrossAttentionAdaLN: Bool
+  textCrossAttentionAdaLN: Bool, KV: Bool
 ) -> [TensorShape] {
   var outs = [TensorShape]()
   for _ in 0..<layers {
     let outputShapes = LTX2TransformerBlockFixedOutputShapes(
       time: time, k: (channels.0 / 32, channels.1 / 32), h: 32, b: 1, t: textLength,
-      textCrossAttentionAdaLN: textCrossAttentionAdaLN)
+      textCrossAttentionAdaLN: textCrossAttentionAdaLN, KV: KV)
     outs.append(contentsOf: outputShapes)
   }
   outs.append(TensorShape([1, 1, channels.0]))
   outs.append(TensorShape([1, 1, channels.0]))
   outs.append(TensorShape([1, 1, channels.1]))
   outs.append(TensorShape([1, 1, channels.1]))
+  if !KV {
+    outs.append(TensorShape([time, textLength, channels.0]))
+    outs.append(TensorShape([time, textLength, channels.1]))
+  }
   return outs
 }
 
 private func LoRABasicTransformerBlock1D(
   prefix: String, k: Int, h: Int, b: Int, t: Int, layerIndex: Int,
-  configuration: LoRANetworkConfiguration, useGatedAttention: Bool
+  useGatedAttention: Bool, configuration: LoRANetworkConfiguration
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -1159,8 +1241,8 @@ public func LoRAEmbedding1DConnector(
   for i in 0..<layers {
     let (mapper, block) = LoRABasicTransformerBlock1D(
       prefix: "\(prefix).transformer_1d_blocks.\(i)", k: headDimension, h: numberOfHeads,
-      b: batchSize, t: tokenLength, layerIndex: i, configuration: LoRAConfiguration,
-      useGatedAttention: useGatedAttention)
+      b: batchSize, t: tokenLength, layerIndex: i, useGatedAttention: useGatedAttention,
+      configuration: LoRAConfiguration)
     out = block(out, rot)
     mappers.append(mapper)
   }
@@ -1177,7 +1259,7 @@ public func LoRAEmbedding1DConnector(
 }
 
 private func LoRAGELUMLPEmbedder(
-  channels: Int, configuration: LoRANetworkConfiguration, name: String
+  channels: Int, name: String, configuration: LoRANetworkConfiguration
 ) -> (Model, Model, Model) {
   let x = Input()
   let fc0 = LoRADense(count: channels, configuration: configuration, name: "\(name)_embedder_0")
@@ -1187,7 +1269,7 @@ private func LoRAGELUMLPEmbedder(
   return (fc0, fc2, Model([x], [out]))
 }
 
-private func LoRAMLPEmbedder(channels: Int, configuration: LoRANetworkConfiguration, name: String)
+private func LoRAMLPEmbedder(channels: Int, name: String, configuration: LoRANetworkConfiguration)
   -> (Model, Model, Model)
 {
   let x = Input()
@@ -1200,7 +1282,7 @@ private func LoRAMLPEmbedder(channels: Int, configuration: LoRANetworkConfigurat
 
 private func LoRALTX2SelfAttention(
   prefix: String, k: Int, h: Int, b: Int, t: Int, layerIndex: Int, name: String,
-  configuration: LoRANetworkConfiguration, useGatedAttention: Bool
+  useGatedAttention: Bool, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
@@ -1260,8 +1342,8 @@ private func LoRALTX2SelfAttention(
 
 private func LoRALTX2CrossAttention(
   prefix: String, k: (Int, Int, Int), h: Int, b: Int, t: (Int, Int), positionEmbedding: Bool,
-  KV: Bool, layerIndex: Int, name: String, configuration: LoRANetworkConfiguration,
-  useGatedAttention: Bool
+  KV: Bool, layerIndex: Int, name: String, useGatedAttention: Bool,
+  configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   var context = [Input()]
@@ -1378,15 +1460,17 @@ private func LoRAFeedForward(
 
 private func LoRALTX2TransformerBlock(
   prefix: String, k: (Int, Int), h: Int, b: Int, t: Int, time: Int, hw: Int, a: Int,
-  tokenModulation: Bool, layerIndex: Int, configuration: LoRANetworkConfiguration,
-  useGatedAttention: Bool, textCrossAttentionAdaLN: Bool
+  tokenModulation: Bool, layerIndex: Int, KV: Bool, useGatedAttention: Bool,
+  textCrossAttentionAdaLN: Bool, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let vx = Input()
   let ax = Input()
-  let cvK = Input()
-  let cvV = Input()
-  let caK = Input()
-  let caV = Input()
+  let cv = KV ? nil : Input()
+  let cvK = KV ? Input() : nil
+  let cvV = KV ? Input() : nil
+  let ca = KV ? nil : Input()
+  let caK = KV ? Input() : nil
+  let caV = KV ? Input() : nil
   let rot = Input()
   let rotA = Input()
   let rotCX = Input()
@@ -1402,7 +1486,7 @@ private func LoRALTX2TransformerBlock(
   }
   let (attn1Mapper, attn1) = LoRALTX2SelfAttention(
     prefix: "\(prefix).attn1", k: k.0, h: h, b: b, t: time * hw, layerIndex: layerIndex,
-    name: "x", configuration: configuration, useGatedAttention: useGatedAttention)
+    name: "x", useGatedAttention: useGatedAttention, configuration: configuration)
   if tokenModulation {
     out =
       vx
@@ -1413,51 +1497,75 @@ private func LoRALTX2TransformerBlock(
   }
   let (attn2Mapper, attn2) = LoRALTX2CrossAttention(
     prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, b: b, t: (time * hw, t),
-    positionEmbedding: false, KV: true, layerIndex: layerIndex,
-    name: "cv", configuration: configuration, useGatedAttention: useGatedAttention)
+    positionEmbedding: false, KV: KV, layerIndex: layerIndex,
+    name: "cv", useGatedAttention: useGatedAttention, configuration: configuration)
   let normOut = norm(out)
   if textCrossAttentionAdaLN {
     let normOutScaled = normOut .* modulations[23] + modulations[22]
-    out =
-      out
-      + attn2(
-        normOutScaled.to(.Float16),
-        cvK .* modulations[29].reshaped([1, 1, h, k.0]) + modulations[28].reshaped([1, 1, h, k.0]),
-        cvV .* modulations[29].reshaped([1, 1, h, k.0]) + modulations[28].reshaped([1, 1, h, k.0])
-      ).to(of: out) .* modulations[24]
+    if let cvK = cvK, let cvV = cvV {
+      out =
+        out
+        + attn2(
+          normOutScaled.to(.Float16),
+          cvK .* modulations[29].reshaped([1, 1, h, k.0])
+            + modulations[28].reshaped([1, 1, h, k.0]),
+          cvV .* modulations[29].reshaped([1, 1, h, k.0])
+            + modulations[28].reshaped([1, 1, h, k.0])
+        ).to(of: out) .* modulations[24]
+    } else if let cv = cv {
+      let cvScaled = cv .* modulations[29] + modulations[28]
+      out = out + attn2(normOutScaled.to(.Float16), cvScaled).to(of: out)
+        .* modulations[24]
+    }
   } else {
-    out = out + attn2(normOut.to(.Float16), cvK, cvV).to(of: out)
+    if let cvK = cvK, let cvV = cvV {
+      out = out + attn2(normOut.to(.Float16), cvK, cvV).to(of: out)
+    } else if let cv = cv {
+      out = out + attn2(normOut.to(.Float16), cv).to(of: out)
+    }
   }
   let (audioAttn1Mapper, audioAttn1) = LoRALTX2SelfAttention(
     prefix: "\(prefix).audio_attn1", k: k.1, h: h, b: b, t: a, layerIndex: layerIndex,
-    name: "a", configuration: configuration, useGatedAttention: useGatedAttention)
+    name: "a", useGatedAttention: useGatedAttention, configuration: configuration)
   var aOut =
     norm(ax) .* modulations[3] + modulations[4]
   aOut = ax + audioAttn1(aOut.to(.Float16), rotA).to(of: ax)
     .* modulations[5]
   let (audioAttn2Mapper, audioAttn2) = LoRALTX2CrossAttention(
     prefix: "\(prefix).audio_attn2", k: (k.1, k.1, k.1), h: h, b: b, t: (a, t),
-    positionEmbedding: false, KV: true, layerIndex: layerIndex,
-    name: "ca", configuration: configuration, useGatedAttention: useGatedAttention)
+    positionEmbedding: false, KV: KV, layerIndex: layerIndex,
+    name: "ca", useGatedAttention: useGatedAttention, configuration: configuration)
   let normAOut = norm(aOut)
   if textCrossAttentionAdaLN {
     let normAOutScaled = normAOut .* modulations[26] + modulations[25]
-    aOut =
-      aOut
-      + audioAttn2(
-        normAOutScaled.to(.Float16),
-        caK .* modulations[31].reshaped([1, 1, h, k.1]) + modulations[30].reshaped([1, 1, h, k.1]),
-        caV .* modulations[31].reshaped([1, 1, h, k.1]) + modulations[30].reshaped([1, 1, h, k.1])
-      ).to(of: aOut) .* modulations[27]
+    if let caK = caK, let caV = caV {
+      aOut =
+        aOut
+        + audioAttn2(
+          normAOutScaled.to(.Float16),
+          caK .* modulations[31].reshaped([1, 1, h, k.1])
+            + modulations[30].reshaped([1, 1, h, k.1]),
+          caV .* modulations[31].reshaped([1, 1, h, k.1])
+            + modulations[30].reshaped([1, 1, h, k.1])
+        ).to(of: aOut) .* modulations[27]
+    } else if let ca = ca {
+      let caScaled = ca .* modulations[31] + modulations[30]
+      aOut = aOut + audioAttn2(normAOutScaled.to(.Float16), caScaled).to(of: aOut)
+        .* modulations[27]
+    }
   } else {
-    aOut = aOut + audioAttn2(normAOut.to(.Float16), caK, caV).to(of: aOut)
+    if let caK = caK, let caV = caV {
+      aOut = aOut + audioAttn2(normAOut.to(.Float16), caK, caV).to(of: aOut)
+    } else if let ca = ca {
+      aOut = aOut + audioAttn2(normAOut.to(.Float16), ca).to(of: aOut)
+    }
   }
   let vxNorm3 = norm(out)
   let axNorm3 = norm(aOut)
   let (audioToVideoAttnMapper, audioToVideoAttn) = LoRALTX2CrossAttention(
     prefix: "\(prefix).audio_to_video_attn", k: (k.0, k.1, k.1), h: h, b: b, t: (time * hw, a),
     positionEmbedding: true, KV: false, layerIndex: layerIndex, name: "ax",
-    configuration: configuration, useGatedAttention: useGatedAttention)
+    useGatedAttention: useGatedAttention, configuration: configuration)
   let vxScaled: Model.IO
   if tokenModulation {
     vxScaled = (vxNorm3.reshaped([time, hw, k.0 * h]) .* modulations[6] + modulations[7]).reshaped([
@@ -1482,7 +1590,7 @@ private func LoRALTX2TransformerBlock(
   let (videoToAudioAttnMapper, videoToAudioAttn) = LoRALTX2CrossAttention(
     prefix: "\(prefix).video_to_audio_attn", k: (k.1, k.1, k.0), h: h, b: b, t: (a, time * hw),
     positionEmbedding: true, KV: false, layerIndex: layerIndex, name: "xa",
-    configuration: configuration, useGatedAttention: useGatedAttention)
+    useGatedAttention: useGatedAttention, configuration: configuration)
   let audioVxScaled: Model.IO
   if tokenModulation {
     audioVxScaled = (vxNorm3.reshaped([time, hw, k.0 * h]) .* modulations[11] + modulations[12])
@@ -1538,7 +1646,14 @@ private func LoRALTX2TransformerBlock(
     mapping["\(prefix).audio_ff.net.2.bias"] = [audioOutProjection.bias.name]
     return mapping
   }
-  var inputs: [Input] = [vx, rot, cvK, cvV, ax, rotA, caK, caV, rotCX]
+  var inputs: [Input]
+  if let cvK = cvK, let cvV = cvV, let caK = caK, let caV = caV {
+    inputs = [vx, rot, cvK, cvV, ax, rotA, caK, caV, rotCX]
+  } else if let cv = cv, let ca = ca {
+    inputs = [vx, rot, cv, ax, rotA, ca, rotCX]
+  } else {
+    fatalError()
+  }
   inputs.append(contentsOf: modulations)
   return (mapper, Model(inputs, [out, aOut]))
 }
@@ -1550,7 +1665,7 @@ private func LoRALTX2AdaLNSingle(
   ModelWeightMapper, Model.IO?, [Model.IO]
 ) {
   let (tMlp0, tMlp2, tEmbedder) = LoRAMLPEmbedder(
-    channels: channels, configuration: configuration, name: name)
+    channels: channels, name: name, configuration: configuration)
   let adaLNSingles = (0..<count).map {
     LoRADense(count: channels, configuration: configuration, name: "\(name)_adaln_single_\($0)")
   }
@@ -1590,7 +1705,7 @@ private func LoRALTX2AdaLNSingle(
 
 public func LoRALTX2(
   time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int, channels: (Int, Int), layers: Int,
-  tokenModulation: Bool, useGatedAttention: Bool,
+  tokenModulation: Bool, KV: Bool, useGatedAttention: Bool,
   textCrossAttentionAdaLN: Bool,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
@@ -1609,28 +1724,37 @@ public func LoRALTX2(
   var aOut = aEmbedder(a).to(.Float32)
   var mappers = [ModelWeightMapper]()
   let hw = h * w
+  let cv = KV ? nil : Input()
+  let ca = KV ? nil : Input()
   var modulationsAndKVs = [Input]()
   for i in 0..<layers {
     let (mapper, block) = LoRALTX2TransformerBlock(
       prefix: "transformer_blocks.\(i)", k: (channels.0 / 32, channels.1 / 32), h: 32, b: 1,
       t: textLength, time: time, hw: hw, a: audioFrames, tokenModulation: tokenModulation,
-      layerIndex: i, configuration: LoRAConfiguration, useGatedAttention: useGatedAttention,
-      textCrossAttentionAdaLN: textCrossAttentionAdaLN)
-    let cvK = Input()
-    let cvV = Input()
-    let caK = Input()
-    let caV = Input()
+      layerIndex: i, KV: KV, useGatedAttention: useGatedAttention,
+      textCrossAttentionAdaLN: textCrossAttentionAdaLN, configuration: LoRAConfiguration)
     let modulations = (0..<(textCrossAttentionAdaLN ? 32 : 22)).map { _ in Input() }
-    let blockInputs: [Model.IO] = [out, rot, cvK, cvV, aOut, rotA, caK, caV, rotCX]
+    let blockInputs: [Model.IO]
+    if KV {
+      let cvK = Input()
+      let cvV = Input()
+      let caK = Input()
+      let caV = Input()
+      blockInputs = [out, rot, cvK, cvV, aOut, rotA, caK, caV, rotCX]
+      modulationsAndKVs.append(contentsOf: [cvK, cvV, caK, caV])
+    } else if let cv = cv, let ca = ca {
+      blockInputs = [out, rot, cv, aOut, rotA, ca, rotCX]
+    } else {
+      fatalError()
+    }
     let blockOut = block(blockInputs + modulations)
     mappers.append(mapper)
     out = blockOut[0]
     aOut = blockOut[1]
-    modulationsAndKVs.append(contentsOf: [cvK, cvV, caK, caV])
     modulationsAndKVs.append(contentsOf: modulations)
   }
   let scaleShiftModulations = [Input(), Input()]
-  let normOut = RMSNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  let normOut = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   if tokenModulation {
     out = normOut(out).reshaped([time, hw, channels.0]) .* scaleShiftModulations[0]
       + scaleShiftModulations[1]
@@ -1645,6 +1769,9 @@ public func LoRALTX2(
   modulationsAndKVs.append(contentsOf: audioScaleShiftModulations)
   let audioProjOut = LoRADense(count: 128, configuration: LoRAConfiguration, name: "audio_proj_out")
   aOut = audioProjOut(aOut.to(.Float16))
+  if let cv = cv, let ca = ca {
+    modulationsAndKVs.append(contentsOf: [cv, ca])
+  }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     for mapper in mappers {
@@ -1696,20 +1823,22 @@ private func LoRALTX2CrossAttentionFixed(
 
 private func LoRALTX2TransformerBlockFixed(
   prefix: String, k: (Int, Int), h: Int, b: Int, t: Int, layerIndex: Int,
-  configuration: LoRANetworkConfiguration,
-  textCrossAttentionAdaLN: Bool
+  textCrossAttentionAdaLN: Bool, KV: Bool, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
-  let cv = Input()
-  let ca = Input()
+  let cv = KV ? Input() : nil
+  let ca = KV ? Input() : nil
   let promptTimesteps = textCrossAttentionAdaLN ? (0..<2).map { _ in Input() } : []
   let promptScaleShiftModulations =
     textCrossAttentionAdaLN
     ? (0..<2).map {
       Parameter<Float>(.GPU(0), .HWC(1, 1, k.0 * h), name: "prompt_scale_shift_ada_ln_\($0)")
     } : []
-  let (attn2Mapper, attn2) = LoRALTX2CrossAttentionFixed(
-    prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, t: t, positionEmbedding: false,
-    layerIndex: layerIndex, name: "cv", configuration: configuration)
+  let attn2MapperAndModel =
+    KV
+    ? LoRALTX2CrossAttentionFixed(
+      prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, t: t, positionEmbedding: false,
+      layerIndex: layerIndex, name: "cv", configuration: configuration)
+    : nil
   var outs = [Model.IO]()
   let audioPromptTimesteps = textCrossAttentionAdaLN ? (0..<2).map { _ in Input() } : []
   let audioPromptScaleShiftModulations =
@@ -1717,11 +1846,18 @@ private func LoRALTX2TransformerBlockFixed(
     ? (0..<2).map {
       Parameter<Float>(.GPU(0), .HWC(1, 1, k.1 * h), name: "audio_prompt_scale_shift_ada_ln_\($0)")
     } : []
-  let (audioAttn2Mapper, audioAttn2) = LoRALTX2CrossAttentionFixed(
-    prefix: "\(prefix).audio_attn2", k: (k.1, k.1, k.1), h: h, t: t,
-    positionEmbedding: false, layerIndex: layerIndex, name: "ca", configuration: configuration)
-  outs.append(attn2(cv))
-  outs.append(audioAttn2(ca))
+  let audioAttn2MapperAndModel =
+    KV
+    ? LoRALTX2CrossAttentionFixed(
+      prefix: "\(prefix).audio_attn2", k: (k.1, k.1, k.1), h: h, t: t,
+      positionEmbedding: false, layerIndex: layerIndex, name: "ca", configuration: configuration)
+    : nil
+  if let cv = cv, let attn2MapperAndModel = attn2MapperAndModel, let ca = ca,
+    let audioAttn2MapperAndModel = audioAttn2MapperAndModel
+  {
+    outs.append(attn2MapperAndModel.1(cv))
+    outs.append(audioAttn2MapperAndModel.1(ca))
+  }
   let timesteps = (0..<(textCrossAttentionAdaLN ? 9 : 6)).map { _ in Input() }
   let attn1Modulations = (0..<(textCrossAttentionAdaLN ? 9 : 6)).map {
     Parameter<Float>(.GPU(0), .HWC(1, 1, k.0 * h), name: "attn1_ada_ln_\($0)")
@@ -1793,10 +1929,14 @@ private func LoRALTX2TransformerBlockFixed(
     var mapping = ModelWeightMapping()
     mapping["\(prefix).scale_shift_table"] = ModelWeightElement(
       (0..<(textCrossAttentionAdaLN ? 9 : 6)).map { attn1Modulations[$0].weight.name })
-    mapping.merge(attn2Mapper(format)) { v, _ in v }
+    if let attn2MapperAndModel = attn2MapperAndModel {
+      mapping.merge(attn2MapperAndModel.0(format)) { v, _ in v }
+    }
     mapping["\(prefix).audio_scale_shift_table"] = ModelWeightElement(
       (0..<(textCrossAttentionAdaLN ? 9 : 6)).map { audioAttn1Modulations[$0].weight.name })
-    mapping.merge(audioAttn2Mapper(format)) { v, _ in v }
+    if let audioAttn2MapperAndModel = audioAttn2MapperAndModel {
+      mapping.merge(audioAttn2MapperAndModel.0(format)) { v, _ in v }
+    }
     if textCrossAttentionAdaLN {
       mapping["\(prefix).prompt_scale_shift_table"] = ModelWeightElement(
         (0..<2).map { promptScaleShiftModulations[$0].weight.name })
@@ -1815,7 +1955,10 @@ private func LoRALTX2TransformerBlockFixed(
     ]
     return mapping
   }
-  var inputs: [Input] = [cv, ca]
+  var inputs = [Input]()
+  if let cv = cv, let ca = ca {
+    inputs.append(contentsOf: [cv, ca])
+  }
   inputs.append(contentsOf: timesteps + audioTimesteps)
   if textCrossAttentionAdaLN {
     inputs.append(contentsOf: promptTimesteps + audioPromptTimesteps)
@@ -1827,40 +1970,49 @@ private func LoRALTX2TransformerBlockFixed(
 
 public func LoRALTX2Fixed(
   time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int,
-  contextProjection: Bool, textCrossAttentionAdaLN: Bool,
+  contextProjection: Bool, textCrossAttentionAdaLN: Bool, KV: Bool,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   ModelWeightMapper, Model
 ) {
-  let txt = Input()
-  let aTxt = Input()
+  let txt = KV ? Input() : nil
+  let aTxt = KV ? Input() : nil
   let contextMlp0: Model?
   let contextMlp2: Model?
-  let txtOut: Model.IO
-  if contextProjection {
-    let (contextMlp0Local, contextMlp2Local, contextEmbedder) = LoRAGELUMLPEmbedder(
-      channels: channels.0, configuration: LoRAConfiguration, name: "context")
-    contextMlp0 = contextMlp0Local
-    contextMlp2 = contextMlp2Local
-    txtOut = contextEmbedder(txt)
-  } else {
-    contextMlp0 = nil
-    contextMlp2 = nil
-    txtOut = txt
-  }
+  let txtOut: Model.IO?
   let aContextMlp0: Model?
   let aContextMlp2: Model?
-  let aTxtOut: Model.IO
-  if contextProjection {
-    let (aContextMlp0Local, aContextMlp2Local, aContextEmbedder) = LoRAGELUMLPEmbedder(
-      channels: channels.1, configuration: LoRAConfiguration, name: "a_context")
-    aContextMlp0 = aContextMlp0Local
-    aContextMlp2 = aContextMlp2Local
-    aTxtOut = aContextEmbedder(aTxt)
+  let aTxtOut: Model.IO?
+  if let txt = txt, let aTxt = aTxt {
+    if contextProjection {
+      let (contextMlp0Local, contextMlp2Local, contextEmbedder) = LoRAGELUMLPEmbedder(
+        channels: channels.0, name: "context", configuration: LoRAConfiguration)
+      contextMlp0 = contextMlp0Local
+      contextMlp2 = contextMlp2Local
+      txtOut = contextEmbedder(txt)
+    } else {
+      contextMlp0 = nil
+      contextMlp2 = nil
+      txtOut = txt
+    }
+    if contextProjection {
+      let (aContextMlp0Local, aContextMlp2Local, aContextEmbedder) = LoRAGELUMLPEmbedder(
+        channels: channels.1, name: "a_context", configuration: LoRAConfiguration)
+      aContextMlp0 = aContextMlp0Local
+      aContextMlp2 = aContextMlp2Local
+      aTxtOut = aContextEmbedder(aTxt)
+    } else {
+      aContextMlp0 = nil
+      aContextMlp2 = nil
+      aTxtOut = aTxt
+    }
   } else {
+    txtOut = nil
+    aTxtOut = nil
+    contextMlp0 = nil
+    contextMlp2 = nil
     aContextMlp0 = nil
     aContextMlp2 = nil
-    aTxtOut = aTxt
   }
   let t = Input()
   let (txMapper, txEmb, txEmbChunks) = LoRALTX2AdaLNSingle(
@@ -1919,9 +2071,12 @@ public func LoRALTX2Fixed(
   for i in 0..<layers {
     let (mapper, block) = LoRALTX2TransformerBlockFixed(
       prefix: "transformer_blocks.\(i)", k: (channels.0 / 32, channels.1 / 32), h: 32, b: 1,
-      t: textLength, layerIndex: i, configuration: LoRAConfiguration,
-      textCrossAttentionAdaLN: textCrossAttentionAdaLN)
-    var blockInputs: [Model.IO] = [txtOut, aTxtOut]
+      t: textLength, layerIndex: i, textCrossAttentionAdaLN: textCrossAttentionAdaLN, KV: KV,
+      configuration: LoRAConfiguration)
+    var blockInputs = [Model.IO]()
+    if let txtOut = txtOut, let aTxtOut = aTxtOut {
+      blockInputs.append(contentsOf: [txtOut, aTxtOut])
+    }
     if let timesteps_7 = timesteps_7, let audioTimesteps_7 = audioTimesteps_7 {
       blockInputs.append(contentsOf: [
         txEmbChunks[0], timesteps_1, txEmbChunks[2], txEmbChunks[3], timesteps_4,
@@ -1995,5 +2150,9 @@ public func LoRALTX2Fixed(
       (0..<2).map { audioScaleShiftModulations[$0].weight.name })
     return mapping
   }
-  return (mapper, Model([txt, aTxt, t], outs))
+  if let txt = txt, let aTxt = aTxt {
+    return (mapper, Model([txt, aTxt, t], outs))
+  } else {
+    return (mapper, Model([t], outs))
+  }
 }
