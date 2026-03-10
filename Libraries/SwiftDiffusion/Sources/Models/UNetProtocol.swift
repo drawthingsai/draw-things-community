@@ -1446,7 +1446,7 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 2, startHeight - audioHeight)
         : startHeight - audioHeight
       startHeight = startHeight - audioHeight
-      tiledAudioHeight = LTX2ExtractAudioFramesAndHeight([batchSize, 1, tiledWidth]).1  // Adding back the audio height.
+      tiledAudioHeight = LTX2ExtractAudioFramesAndHeight([batchSize, 1, tiledWidth]).1
       tileScaleFactor = 2
       let tokenModulation = referenceImageCount > 0
       didRunLoRASeparately =
@@ -1464,7 +1464,7 @@ extension UNetFromNNC {
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
               tokenModulation: tokenModulation, useGatedAttention: false,
-              textCrossAttention: (adaLN: false, rotaryEmbedding: false),
+              textCrossAttentionAdaLN: false,
               LoRAConfiguration: configuration
             ).1
           })
@@ -1478,7 +1478,7 @@ extension UNetFromNNC {
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
               tokenModulation: tokenModulation, useGatedAttention: false,
-              textCrossAttention: (adaLN: false, rotaryEmbedding: false)
+              textCrossAttentionAdaLN: false
             ).1
           })
       }

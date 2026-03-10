@@ -56,8 +56,7 @@ private func LTX2FeedForwardInstructionCount(
 // Extra input-channel params are needed because `LTX2(...)` builder does not expose them.
 public func LTX2InstructionCount(
   time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int, channels: (Int, Int), layers: Int,
-  tokenModulation: Bool, useGatedAttention: Bool,
-  textCrossAttention: (adaLN: Bool, rotaryEmbedding: Bool),
+  tokenModulation: Bool, useGatedAttention: Bool, textCrossAttentionAdaLN: Bool,
   videoInputChannels: Int = 128, audioInputChannels: Int = 128
 ) -> Int {
   precondition(channels.0 % 32 == 0 && channels.1 % 32 == 0)
@@ -120,7 +119,7 @@ public func LTX2InstructionCount(
   total += DenseInstructionCount(rows: batchSize * audioLength, input: channels.1, output: 128)
 
   _ = tokenModulation  // Modifies elementwise/reshape flow only.
-  _ = textCrossAttention
+  _ = textCrossAttentionAdaLN
   return total
 }
 
@@ -138,7 +137,7 @@ private func LTX2AdaLNSingleInstructionCount(
 // No convolutions are present in the fixed builder.
 public func LTX2FixedInstructionCount(
   time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int,
-  contextProjection: Bool, textCrossAttention: (adaLN: Bool, rotaryEmbedding: Bool),
+  contextProjection: Bool, textCrossAttentionAdaLN: Bool,
   textInputChannels: (Int, Int)? = nil
 ) -> Int {
   precondition(channels.0 % 32 == 0 && channels.1 % 32 == 0)
@@ -154,10 +153,10 @@ public func LTX2FixedInstructionCount(
   }
 
   total += LTX2AdaLNSingleInstructionCount(
-    timesteps: timesteps, channels: channels.0, count: textCrossAttention.adaLN ? 9 : 6)
+    timesteps: timesteps, channels: channels.0, count: textCrossAttentionAdaLN ? 9 : 6)
   total += LTX2AdaLNSingleInstructionCount(
-    timesteps: timesteps, channels: channels.1, count: textCrossAttention.adaLN ? 9 : 6)
-  if textCrossAttention.adaLN {
+    timesteps: timesteps, channels: channels.1, count: textCrossAttentionAdaLN ? 9 : 6)
+  if textCrossAttentionAdaLN {
     total += LTX2AdaLNSingleInstructionCount(timesteps: timesteps, channels: channels.0, count: 2)
     total += LTX2AdaLNSingleInstructionCount(timesteps: timesteps, channels: channels.1, count: 2)
   }
@@ -174,6 +173,5 @@ public func LTX2FixedInstructionCount(
 
   _ = time
   _ = audioFrames
-  _ = textCrossAttention.rotaryEmbedding
   return total
 }

@@ -1914,7 +1914,306 @@ extension UNetFixedEncoder {
           channels: 128)
       ).toGPU(0)
       return ([graph.variable(rotaryEmbedding)] + conditions, nil)
-    case .ltx2, .ltx2_3:
+    case .ltx2_3:
+      let c0 = textEncoding[0]
+      let cBatchSize = isCfgEnabled ? 2 : 1
+      let textLength = c0.shape[1]
+      let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight([
+        batchSize, startHeight, startWidth,
+      ])
+      let h = startHeight - audioHeight
+      let w = startWidth
+      let paddedTextLength = max(textLength, 1024)
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        && canRunLoRASeparately
+      if shouldRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+      }
+      let videoConnector: Model
+      let audioConnector: Model
+      if shouldRunLoRASeparately {
+        videoConnector =
+          LoRAEmbedding1DConnector(
+            prefix: "model.diffusion_model.video_embeddings_connector", layers: 8,
+            batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 128,
+            numberOfHeads: 32, useGatedAttention: true, LoRAConfiguration: configuration
+          ).0
+        audioConnector =
+          LoRAEmbedding1DConnector(
+            prefix: "model.diffusion_model.audio_embeddings_connector", layers: 8,
+            batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 64,
+            numberOfHeads: 32, useGatedAttention: true, LoRAConfiguration: configuration
+          ).0
+      } else {
+        videoConnector =
+          Embedding1DConnector(
+            prefix: "model.diffusion_model.video_embeddings_connector", layers: 8,
+            batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 128,
+            numberOfHeads: 32, useGatedAttention: true
+          ).0
+        audioConnector =
+          Embedding1DConnector(
+            prefix: "model.diffusion_model.audio_embeddings_connector", layers: 8,
+            batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 64,
+            numberOfHeads: 32, useGatedAttention: true
+          ).0
+      }
+      var videoHiddenStates = graph.variable(
+        .GPU(0), .HWC(cBatchSize, paddedTextLength, 4096), of: FloatType.self)
+      var audioHiddenStates = graph.variable(
+        .GPU(0), .HWC(cBatchSize, paddedTextLength, 2048), of: FloatType.self)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if let videoConnectorLearnableRegisters =
+          (store.read(
+            "text_video_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .ezm7]
+          ).map { Tensor<FloatType>(from: $0).toGPU(0) })
+        {
+          let registers = graph.variable(videoConnectorLearnableRegisters).reshaped(
+            .HWC(1, 128, 4096))
+          for i in 0..<cBatchSize {
+            for j in stride(from: 0, to: paddedTextLength, by: 128) {
+              videoHiddenStates[i..<(i + 1), j..<min(paddedTextLength, j + 128), 0..<4096] =
+                registers[0..<1, 0..<(min(paddedTextLength, j + 128) - j), 0..<4096]
+            }
+          }
+        }
+        if let audioConnectorLearnableRegisters =
+          (store.read(
+            "text_audio_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .ezm7]
+          ).map { Tensor<FloatType>(from: $0).toGPU(0) })
+        {
+          let registers = graph.variable(audioConnectorLearnableRegisters).reshaped(
+            .HWC(1, 128, 2048))
+          for i in 0..<cBatchSize {
+            for j in stride(from: 0, to: paddedTextLength, by: 128) {
+              audioHiddenStates[i..<(i + 1), j..<min(paddedTextLength, j + 128), 0..<2048] =
+                registers[0..<1, 0..<(min(paddedTextLength, j + 128) - j), 0..<2048]
+            }
+          }
+        }
+      }
+      if cBatchSize > 1 {
+        videoHiddenStates[0..<1, 0..<min(textLength, tokenLengthUncond), 0..<4096] =
+          c0[0..<1, 0..<min(textLength, tokenLengthUncond), 0..<4096]
+        audioHiddenStates[0..<1, 0..<min(textLength, tokenLengthUncond), 0..<2048] =
+          c0[0..<1, 0..<min(textLength, tokenLengthUncond), 4096..<6144]
+        videoHiddenStates[1..<2, 0..<min(textLength, tokenLengthCond), 0..<4096] =
+          c0[1..<2, 0..<min(textLength, tokenLengthCond), 0..<4096]
+        audioHiddenStates[1..<2, 0..<min(textLength, tokenLengthCond), 0..<2048] =
+          c0[1..<2, 0..<min(textLength, tokenLengthCond), 4096..<6144]
+      } else {
+        videoHiddenStates[0..<1, 0..<min(textLength, tokenLengthCond), 0..<4096] =
+          c0[(c0.shape[0] - 1)..<c0.shape[0], 0..<min(textLength, tokenLengthCond), 0..<4096]
+        audioHiddenStates[0..<1, 0..<min(textLength, tokenLengthCond), 0..<2048] =
+          c0[(c0.shape[0] - 1)..<c0.shape[0], 0..<min(textLength, tokenLengthCond), 4096..<6144]
+      }
+      let videoRotaryEmbedding1D = graph.variable(
+        Tensor<FloatType>(
+          from: LTX2RotaryPositionEmbedding1D(
+            tokenLength: paddedTextLength, maxLength: 4096, channels: 4096, headDimension: 128
+          ).toGPU(0)))
+      let audioRotaryEmbedding1D = graph.variable(
+        Tensor<FloatType>(
+          from: LTX2RotaryPositionEmbedding1D(
+            tokenLength: paddedTextLength, maxLength: 4096, channels: 2048, headDimension: 64
+          ).toGPU(0)))
+      videoConnector.compile(inputs: videoHiddenStates, videoRotaryEmbedding1D)
+      let loadedVideoConnectorFromWeightsCache = weightsCache.detach(
+        "\(filePath):[video_connector]", to: videoConnector.parameters)
+      audioConnector.compile(inputs: audioHiddenStates, audioRotaryEmbedding1D)
+      let loadedAudioConnectorFromWeightsCache = weightsCache.detach(
+        "\(filePath):[audio_connector]", to: audioConnector.parameters)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !lora.isEmpty {
+          if shouldRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<8).map { ($0, $0) })
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read(
+                "text_video_connector", model: videoConnector,
+                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+              ) { name, dataType, format, shape in
+                let result = loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge,
+                  name: name, store: store, dataType: dataType, format: format, shape: shape,
+                  of: FloatType.self)
+                switch result {
+                case .continue(let updatedName, _, _):
+                  guard updatedName == name else { return result }
+                  if !loadedVideoConnectorFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail
+                  }
+                case .fail, .final(_):
+                  return result
+                }
+              }
+              store.read(
+                "text_audio_connector", model: audioConnector,
+                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+              ) { name, dataType, format, shape in
+                let result = loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge,
+                  name: name, store: store, dataType: dataType, format: format, shape: shape,
+                  of: FloatType.self)
+                switch result {
+                case .continue(let updatedName, _, _):
+                  guard updatedName == name else { return result }
+                  if !loadedAudioConnectorFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail
+                  }
+                case .fail, .final(_):
+                  return result
+                }
+              }
+            }
+          } else {
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read(
+                "text_video_connector", model: videoConnector,
+                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+              ) { name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
+              }
+              store.read(
+                "text_audio_connector", model: audioConnector,
+                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+              ) { name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
+              }
+            }
+          }
+        } else {
+          if !loadedVideoConnectorFromWeightsCache {
+            store.read(
+              "text_video_connector", model: videoConnector,
+              codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          }
+          if !loadedAudioConnectorFromWeightsCache {
+            store.read(
+              "text_audio_connector", model: audioConnector,
+              codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          }
+        }
+      }
+      let videoContext = videoConnector(inputs: videoHiddenStates, videoRotaryEmbedding1D)[0].as(
+        of: FloatType.self)
+      let audioContext = audioConnector(inputs: audioHiddenStates, audioRotaryEmbedding1D)[0].as(
+        of: FloatType.self)
+      weightsCache.attach("\(filePath):[video_connector]", from: videoConnector.parameters)
+      weightsCache.attach("\(filePath):[audio_connector]", from: audioConnector.parameters)
+      let (rotaryEmbedding, rotaryEmbeddingAudio, rotaryEmbeddingVideoToAudio) =
+        LTX2VideoAudioRotaryPositionEmbedding(
+          time: batchSize, height: h, width: w, audioTime: (batchSize - 1) * 8 + 1,
+          channels: (4096, 2048), numberOfHeads: 32)
+      var timesteps = timesteps
+      if !referenceImages.isEmpty {  // Need condition on 0 timestep.
+        timesteps.append(0)
+      }
+      var timeEmbeds = graph.variable(.GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: 1, embeddingSize: 256,
+              maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<1, 0..<256] = timeEmbed.reshaped(.HWC(1, 1, 256))
+      }
+      let unetFixed: Model
+      if shouldRunLoRASeparately {
+        unetFixed =
+          LoRALTX2Fixed(
+            time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
+            timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
+            contextProjection: false, textCrossAttentionAdaLN: true,
+            LoRAConfiguration: configuration
+          ).1
+      } else {
+        unetFixed =
+          LTX2Fixed(
+            time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
+            timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
+            contextProjection: false, textCrossAttentionAdaLN: true
+          ).1
+      }
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: videoContext, audioContext, timeEmbeds)
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !lora.isEmpty {
+          if shouldRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<48).map { ($0, $0) })
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read(
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+              ) { name, dataType, format, shape in
+                let result = loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge,
+                  name: name, store: store, dataType: dataType, format: format, shape: shape,
+                  of: FloatType.self)
+                switch result {
+                case .continue(let updatedName, _, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail
+                  }
+                case .fail, .final(_):
+                  return result
+                }
+              }
+            }
+          } else {
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read(
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+              ) { name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
+              }
+            }
+          }
+        } else if !loadedFromWeightsCache {
+          store.read(
+            "dit", model: unetFixed,
+            codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        }
+      }
+      let contexts = unetFixed(inputs: videoContext, audioContext, timeEmbeds)
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      return (
+        referenceImages + [
+          graph.variable(Tensor<FloatType>(from: rotaryEmbedding).toGPU(0)),
+          graph.variable(Tensor<FloatType>(from: rotaryEmbeddingAudio).toGPU(0)),
+          graph.variable(Tensor<FloatType>(from: rotaryEmbeddingVideoToAudio).toGPU(0)),
+        ] + contexts, nil
+      )
+    case .ltx2:
       let c0 = textEncoding[0]
       let cBatchSize = isCfgEnabled ? 2 : 1
       let textLength = c0.shape[1]
@@ -2139,8 +2438,7 @@ extension UNetFixedEncoder {
           LoRALTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: true,
-            textCrossAttention: (adaLN: false, rotaryEmbedding: false),
+            contextProjection: true, textCrossAttentionAdaLN: false,
             LoRAConfiguration: configuration
           ).1
       } else {
@@ -2148,8 +2446,7 @@ extension UNetFixedEncoder {
           LTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: true,
-            textCrossAttention: (adaLN: false, rotaryEmbedding: false)
+            contextProjection: true, textCrossAttentionAdaLN: false
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)

@@ -198,11 +198,10 @@ public enum LoRAImporter {
       (unetMapper, unet) = LTX2(
         time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
         layers: 48, tokenModulation: false, useGatedAttention: false,
-        textCrossAttention: (adaLN: false, rotaryEmbedding: false))
+        textCrossAttentionAdaLN: false)
       (unetFixedMapper, unetFixed) = LTX2Fixed(
         time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
-        layers: 48, contextProjection: true,
-        textCrossAttention: (adaLN: false, rotaryEmbedding: false))
+        layers: 48, contextProjection: true, textCrossAttentionAdaLN: false)
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -688,7 +687,7 @@ public enum LoRAImporter {
           ]
           + LTX2FixedOutputShapes(
             time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
-            layers: 48, textCrossAttention: (adaLN: false, rotaryEmbedding: false)
+            layers: 48, textCrossAttentionAdaLN: false
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
