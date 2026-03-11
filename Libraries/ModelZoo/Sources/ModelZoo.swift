@@ -278,6 +278,14 @@ public struct ModelZoo: DownloadZoo {
         self.downloadUrlSuffix = downloadUrlSuffix
       }
     }
+    public struct LatentsUpScaler: Codable {
+      public enum Scale: String, Codable {
+        case x1_5 = "1.5"
+        case x2 = "2"
+      }
+      public var file: String
+      public var scale: Scale
+    }
     public var name: String
     public var file: String
     public var prefix: String
@@ -318,6 +326,7 @@ public struct ModelZoo: DownloadZoo {
     public var note: String?
     public var copyright: String?
     public var huggingFaceLink: String?
+    public var latentsUpscalers: [LatentsUpScaler]?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -335,7 +344,8 @@ public struct ModelZoo: DownloadZoo {
       builtinLora: Bool? = nil, teaCacheCoefficients: [Float]? = nil,
       framesPerSecond: Double? = nil, isBf16: Bool? = nil,
       remoteApiModelConfig: RemoteApiModelConfig? = nil, note: String? = nil,
-      copyright: String? = nil, huggingFaceLink: String? = nil
+      copyright: String? = nil, huggingFaceLink: String? = nil,
+      latentsUpscalers: [LatentsUpScaler]? = nil
     ) {
       self.name = name
       self.file = file
@@ -377,6 +387,7 @@ public struct ModelZoo: DownloadZoo {
       self.note = note
       self.copyright = copyright
       self.huggingFaceLink = huggingFaceLink
+      self.latentsUpscalers = latentsUpscalers
     }
     fileprivate var predictV: Bool? = nil
   }
@@ -723,11 +734,37 @@ public struct ModelZoo: DownloadZoo {
       "74dba3b854b61f422fa40851c046aa69c6f9b2659a671ae3938062cdfb235d70",
     "z_image_1.0_q8p.ckpt":
       "4233ac5ce386e824fce8628070ee985e070de55925c63bb0d6bf7890d523631e",
+    "ltx_2.3_22b_distilled_q6p.ckpt":
+      "66f952d338213a0f472a25bcc8fc38fc4176ce3080683891c72ae2f40dcdcff9",
+    "ltx_2.3_22b_distilled_q8p.ckpt":
+      "5736128a9cea4a3ff1f1dca6b991936920916a248b7c96aa8a8cd831e294c21a",
+    "ltx_2.3_audio_video_vae_f16.ckpt":
+      "72e4c23b34e631599773b05beb7e355c00d36feb983fe9746d351b58a4be4f02",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
 
   public static let builtinSpecifications: [Specification] = [
+    Specification(
+      name: "LTX-2.3 22B [dev]", file: "ltx_2.3_22b_dev_q8p.ckpt", prefix: "",
+      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      clipEncoder: "ltx_2.3_22b_dev_q8p.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [distilled] checkpoint is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
+      copyright: "© 2026 Lightricks"
+    ),
+    Specification(
+      name: "LTX-2.3 22B [dev] (6-bit)", file: "ltx_2.3_22b_dev_q6p.ckpt", prefix: "",
+      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      clipEncoder: "ltx_2.3_22b_dev_q6p.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [distilled] checkpoint is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
+      copyright: "© 2026 Lightricks"
+    ),
     Specification(
       name: "LTX-2.3 22B [distilled]", file: "ltx_2.3_22b_distilled_q8p.ckpt", prefix: "",
       version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
