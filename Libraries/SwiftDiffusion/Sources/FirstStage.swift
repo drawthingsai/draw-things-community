@@ -52,6 +52,11 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
   }
 }
 
+private struct TemporalTiledDecodingConfiguration {
+  let overlap: Int
+  let lookback: Int
+}
+
 extension FirstStage {
   public func upsample(
     _ x: DynamicGraph.Tensor<FloatType>,
@@ -195,15 +200,17 @@ extension FirstStage {
       scaleFactor = 4
       scaleFactorZ = 1
     }
+    let tiledDecodingConfiguration = self.tiledDecoding
+    var temporalTiledDecodingConfiguration: TemporalTiledDecodingConfiguration? = nil
     var decodingTileSize = (
       depth: 0,
-      width: min(tiledDecoding.tileSize.width * (64 / scaleFactor), startWidth),
-      height: min(tiledDecoding.tileSize.height * (64 / scaleFactor), startHeight)
+      width: min(tiledDecodingConfiguration.tileSize.width * (64 / scaleFactor), startWidth),
+      height: min(tiledDecodingConfiguration.tileSize.height * (64 / scaleFactor), startHeight)
     )
     // Cut by half because we will * 2 later.
-    var decodingTileOverlap = (tiledDecoding.tileOverlap * (64 / scaleFactor) + 1) / 2
+    var decodingTileOverlap = (tiledDecodingConfiguration.tileOverlap * (64 / scaleFactor) + 1) / 2
     var tiledDecoding =
-      tiledDecoding.isEnabled
+      tiledDecodingConfiguration.isEnabled
       && (startWidth > decodingTileSize.width || startHeight > decodingTileSize.height)
     let externalData: DynamicGraph.Store.Codec =
       externalOnDemand ? .externalOnDemand : .externalData
@@ -401,11 +408,14 @@ extension FirstStage {
       }
       causalAttentionMask = nil
     case .hunyuanVideo:
+      temporalTiledDecodingConfiguration = TemporalTiledDecodingConfiguration(
+        overlap: 5, lookback: 0)
       var startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       let sizeLimit = deviceProperties.memoryCapacity == .high ? 32 : 20
-      if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > 15 {
+      decodingTileSize.depth = 15
+      if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > decodingTileSize.depth {
         // We turn on tiled decoding forcefully.
         if !tiledDecoding {
           decodingTileOverlap = 4
@@ -415,7 +425,7 @@ extension FirstStage {
         startHeight = min(startHeight, sizeLimit)
         decodingTileSize.width = startWidth
         decodingTileSize.height = startHeight
-        startDepth = min(startDepth, 15)
+        startDepth = min(startDepth, decodingTileSize.depth)
         decodingTileSize.depth = startDepth
       }
       decoder =
@@ -650,7 +660,9 @@ extension FirstStage {
       outputChannels = 3
       causalAttentionMask = nil
     case .ltx2, .ltx2_3:
-      let startDepth = shape[0]
+      temporalTiledDecodingConfiguration = TemporalTiledDecodingConfiguration(
+        overlap: 3, lookback: 1)
+      var startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       if let audioZ = audioZ {
@@ -701,8 +713,19 @@ extension FirstStage {
           $0.read("vocoder", model: audioDecoder[1], codec: [.jit, externalData])
         }
       }
-      let sizeLimit = deviceProperties.memoryCapacity == .high ? 16 : 10
-      if startWidth > sizeLimit || startHeight > sizeLimit {
+      let sizeLimit: Int
+      switch deviceProperties.memoryCapacity {
+      case .high:
+        sizeLimit = 24
+        decodingTileSize.depth = 11
+      case .medium:
+        sizeLimit = 16
+        decodingTileSize.depth = 11
+      case .low:
+        sizeLimit = 12
+        decodingTileSize.depth = 9
+      }
+      if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > decodingTileSize.depth {
         // We turn on tiled decoding forcefully.
         if !tiledDecoding {
           decodingTileOverlap = 4
@@ -710,6 +733,7 @@ extension FirstStage {
         tiledDecoding = true
         startWidth = min(startWidth, sizeLimit)
         startHeight = min(startHeight, sizeLimit)
+        startDepth = min(startDepth, decodingTileSize.depth)
         decodingTileSize.width = startWidth
         decodingTileSize.height = startHeight
         decodingTileSize.depth = startDepth
@@ -839,7 +863,8 @@ extension FirstStage {
             decoder: decoder,
             transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
             tileOverlap: decodingTileOverlap, outputChannels: outputChannels,
-            scaleFactor: (scaleFactor, scaleFactorZ)
+            scaleFactor: (scaleFactor, scaleFactorZ),
+            temporalTiledDecodingConfiguration: temporalTiledDecodingConfiguration
           )
         } else {
           result = internalDecode(
@@ -862,7 +887,8 @@ extension FirstStage {
               DynamicGraph.Tensor<FloatType>(from: $0)
             }, decoder: decoder, transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
             tileOverlap: decodingTileOverlap, outputChannels: outputChannels,
-            scaleFactor: (scaleFactor, scaleFactorZ)
+            scaleFactor: (scaleFactor, scaleFactorZ),
+            temporalTiledDecodingConfiguration: temporalTiledDecodingConfiguration
           )
         } else {
           result = internalDecode(
@@ -892,7 +918,8 @@ extension FirstStage {
             decoder: decoder,
             transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
             tileOverlap: decodingTileOverlap, outputChannels: outputChannels,
-            scaleFactor: (scaleFactor, scaleFactorZ)
+            scaleFactor: (scaleFactor, scaleFactorZ),
+            temporalTiledDecodingConfiguration: temporalTiledDecodingConfiguration
           )
         } else {
           partial = internalDecode(
@@ -916,7 +943,8 @@ extension FirstStage {
               DynamicGraph.Tensor<FloatType>(from: $0)
             }, decoder: decoder, transparentDecoder: transparentDecoder,
             tileSize: decodingTileSize, tileOverlap: decodingTileOverlap,
-            outputChannels: outputChannels, scaleFactor: (scaleFactor, scaleFactorZ))
+            outputChannels: outputChannels, scaleFactor: (scaleFactor, scaleFactorZ),
+            temporalTiledDecodingConfiguration: temporalTiledDecodingConfiguration)
         } else {
           partial = internalDecode(
             zEnc,
@@ -1923,7 +1951,8 @@ extension FirstStage {
     _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, decoder: Model,
     transparentDecoder: Model?,
     tileSize: (depth: Int, width: Int, height: Int), tileOverlap: Int, outputChannels: Int,
-    scaleFactor: (spatial: Int, temporal: Int)
+    scaleFactor: (spatial: Int, temporal: Int),
+    temporalTiledDecodingConfiguration: TemporalTiledDecodingConfiguration?
   ) -> DynamicGraph.Tensor<T> {
     guard tileSize.depth > 1 && tileSize.depth < z.shape[0] else {
       return tiledDecode(
@@ -1966,22 +1995,47 @@ extension FirstStage {
     guard !isCancelled.load(ordering: .acquiring) else {
       return graph.variable(result.toGPU(0))
     }
-    // Hard-code overlapping 16 frames in time.
-    for t in stride(from: 0, to: batchSize, by: max(1, tileSize.depth - 5)) {
+    let temporalOverlap = temporalTiledDecodingConfiguration?.overlap ?? 5
+    let temporalLookback = temporalTiledDecodingConfiguration?.lookback ?? 0
+    let tileStep = max(1, tileSize.depth - temporalOverlap - temporalLookback)
+    let nominalDepth = max(1, tileSize.depth - temporalLookback)
+    let temporalOverlapFrames = max(0, ((temporalOverlap - 1) * scaleFactor.temporal) + 1)
+    let leftFadeFrames: Int
+    let rightFadeFrames: Int
+    let firstTileValidFrames: Int
+    if temporalLookback > 0 {
+      leftFadeFrames = max(0, ((temporalOverlap + temporalLookback - 1) * scaleFactor.temporal) + 1)
+      rightFadeFrames = temporalOverlap * scaleFactor.temporal
+      firstTileValidFrames = max(
+        1, ((tileSize.depth - temporalLookback - 1) * scaleFactor.temporal) + 1)
+    } else {
+      leftFadeFrames = temporalOverlapFrames / 2
+      rightFadeFrames = temporalOverlapFrames / 2
+      firstTileValidFrames = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
+    }
+    let temporalTileCount =
+      batchSize <= nominalDepth ? 1 : ((batchSize - nominalDepth) + tileStep - 1) / tileStep + 1
+    for tileIndex in 0..<temporalTileCount {
+      let anchor = tileIndex * tileStep
       var decodedRawValues = [Tensor<T>]()
-      let tStart = min(t, batchSize - tileSize.depth)
-      // Due to hard-code and causal convolution, we skip the first 8 frames and only mix the rest 8 frames.
+      let unclampedStart = max(0, anchor - temporalLookback)
+      let tStart = min(unclampedStart, batchSize - tileSize.depth)
       let tDecodedStart: Int
-      let isLast = t + tileSize.depth >= batchSize
-      if t == 0 {
+      let isLast = tileIndex + 1 >= temporalTileCount
+      if temporalLookback > 0 {
+        tDecodedStart = (unclampedStart - tStart) * scaleFactor.temporal
+      } else if anchor == 0 {
         tDecodedStart = 0
-      } else if t + tileSize.depth > batchSize {
-        tDecodedStart = (t - (batchSize - tileSize.depth)) * scaleFactor.temporal + 9
       } else {
-        tDecodedStart = 9
+        tDecodedStart =
+          (unclampedStart - tStart) * scaleFactor.temporal + (temporalOverlapFrames + 1) / 2
       }
       let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
-      guard tDecodedStart < tileDecodedDepth else { break }  // Nothing to copy, break.
+      var tileDecodedEnd = min(tileDecodedDepth, resultBatchSize - tStart * scaleFactor.temporal)
+      if tileIndex == 0 {
+        tileDecodedEnd = min(tileDecodedEnd, firstTileValidFrames)
+      }
+      guard tDecodedStart < tileDecodedEnd else { break }  // Nothing to copy, break.
       for y in 0..<yTiles {
         let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
         let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
@@ -2007,15 +2061,15 @@ extension FirstStage {
       let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
       result.withUnsafeMutableBytes {
         guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
-        for tDecoded in tDecodedStart..<tileDecodedDepth {
+        for tDecoded in tDecodedStart..<tileDecodedEnd {
           var fp =
             rfp + (tDecoded + tStart * scaleFactor.temporal) * shape[1] * scaleFactor.spatial
             * shape[2] * scaleFactor.spatial * outputChannels
           let tWeight: Float
-          if tDecoded - tDecodedStart < 8 && tDecodedStart != 0 {
-            tWeight = min((Float(tDecoded - tDecodedStart) + 0.5) / 8, 1)
-          } else if tileDecodedDepth - tDecoded <= 8 && !isLast {
-            tWeight = min((Float(tileDecodedDepth - tDecoded) - 0.5) / 8, 1)
+          if tileIndex > 0 && tDecoded - tDecodedStart < leftFadeFrames && leftFadeFrames > 0 {
+            tWeight = min((Float(tDecoded - tDecodedStart) + 0.5) / Float(leftFadeFrames), 1)
+          } else if tileDecodedEnd - tDecoded <= rightFadeFrames && !isLast && rightFadeFrames > 0 {
+            tWeight = min((Float(tileDecodedEnd - tDecoded) - 0.5) / Float(rightFadeFrames), 1)
           } else {
             tWeight = 1
           }
