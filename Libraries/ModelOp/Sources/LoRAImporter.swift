@@ -194,7 +194,7 @@ public enum LoRAImporter {
         channels: 3072, layers: (5, 20), usesFlashAttention: .scale1)
       (unetFixedMapper, unetFixed) = Flux2Fixed(
         channels: 3072, numberOfReferenceImages: 0, guidanceEmbed: true)
-    case .ltx2, .ltx2_3:
+    case .ltx2:
       (unetMapper, unet) = LTX2(
         time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
         layers: 48, tokenModulation: false, KV: true, useGatedAttention: false,
@@ -202,6 +202,14 @@ public enum LoRAImporter {
       (unetFixedMapper, unetFixed) = LTX2Fixed(
         time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
         layers: 48, contextProjection: true, textCrossAttentionAdaLN: false, KV: true)
+    case .ltx2_3:
+      (unetMapper, unet) = LTX2(
+        time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
+        layers: 48, tokenModulation: false, KV: false, useGatedAttention: true,
+        textCrossAttentionAdaLN: true)
+      (unetFixedMapper, unetFixed) = LTX2Fixed(
+        time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
+        layers: 48, contextProjection: false, textCrossAttentionAdaLN: true, KV: false)
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -273,9 +281,12 @@ public enum LoRAImporter {
       case .flux2_4b:
         inputDim = 32
         conditionalLength = 7680
-      case .ltx2, .ltx2_3:
+      case .ltx2:
         inputDim = 128
         conditionalLength = 3840
+      case .ltx2_3:
+        inputDim = 128
+        conditionalLength = 6144
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
@@ -419,7 +430,7 @@ public enum LoRAImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .ltx2, .ltx2_3:
+      case .ltx2:
         isCfgEnabled = false
         isGuidanceEmbedEnabled = false
         crossattn = [
@@ -453,6 +464,69 @@ public enum LoRAImporter {
         }
         var textFeatureExtractorMapping = ModelWeightMapping()
         textFeatureExtractorMapping["text_embedding_projection.aggregate_embed.weight"] = ["t-0-0"]
+        otherMappings.append(("text_feature_extractor", textFeatureExtractorMapping))
+      case .ltx2_3:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        crossattn = [graph.variable(.CPU, .HWC(1, 1, 256), of: FloatType.self)]
+        tEmb = nil
+        let (videoConnector, videoConnectorMapper) = Embedding1DConnector(
+          prefix: "model.diffusion_model.video_embeddings_connector", layers: 8, batchSize: 1,
+          tokenLength: 1024, headDimension: 128, numberOfHeads: 32, useGatedAttention: true
+        )
+        let (audioConnector, audioConnectorMapper) = Embedding1DConnector(
+          prefix: "model.diffusion_model.audio_embeddings_connector", layers: 8, batchSize: 1,
+          tokenLength: 1024, headDimension: 64, numberOfHeads: 32, useGatedAttention: true
+        )
+        let videoRotaryEmbedding1D = graph.variable(
+          Tensor<FloatType>(
+            from: LTX2RotaryPositionEmbedding1D(
+              tokenLength: 1024, maxLength: 4096, channels: 4096, headDimension: 128
+            )))
+        let audioRotaryEmbedding1D = graph.variable(
+          Tensor<FloatType>(
+            from: LTX2RotaryPositionEmbedding1D(
+              tokenLength: 1024, maxLength: 4096, channels: 2048, headDimension: 64
+            )))
+        let videoHiddenStates = graph.variable(.CPU, .HWC(1, 1024, 4096), of: FloatType.self)
+        let audioHiddenStates = graph.variable(.CPU, .HWC(1, 1024, 2048), of: FloatType.self)
+        videoConnector.compile(inputs: videoHiddenStates, videoRotaryEmbedding1D)
+        audioConnector.compile(inputs: audioHiddenStates, audioRotaryEmbedding1D)
+        if format.contains(.diffusers) {
+          otherMappings.append(("text_video_connector", videoConnectorMapper(.diffusers)))
+          otherMappings.append(("text_audio_connector", audioConnectorMapper(.diffusers)))
+        } else {
+          otherMappings.append(("text_video_connector", videoConnectorMapper(.generativeModels)))
+          otherMappings.append(("text_audio_connector", audioConnectorMapper(.generativeModels)))
+        }
+        let textFeatureInput = Input()
+        let textVideoAggregateEmbed = Dense(count: 4096, name: "video_aggregate_embed")
+        let textAudioAggregateEmbed = Dense(count: 2048, name: "audio_aggregate_embed")
+        let concat = Concat(axis: 1)
+        concat.flags = [.disableOpt]
+        let textFeatureExtractor = Model(
+          [textFeatureInput],
+          [
+            concat([
+              textVideoAggregateEmbed(textFeatureInput), textAudioAggregateEmbed(textFeatureInput),
+            ])
+          ]
+        )
+        let textFeatureExtractorInput = graph.variable(.CPU, .WC(1, 3840 * 49), of: FloatType.self)
+        textFeatureExtractor.compile(inputs: textFeatureExtractorInput)
+        var textFeatureExtractorMapping = ModelWeightMapping()
+        textFeatureExtractorMapping["text_embedding_projection.video_aggregate_embed.weight"] = [
+          textVideoAggregateEmbed.weight.name
+        ]
+        textFeatureExtractorMapping["text_embedding_projection.video_aggregate_embed.bias"] = [
+          textVideoAggregateEmbed.bias.name
+        ]
+        textFeatureExtractorMapping["text_embedding_projection.audio_aggregate_embed.weight"] = [
+          textAudioAggregateEmbed.weight.name
+        ]
+        textFeatureExtractorMapping["text_embedding_projection.audio_aggregate_embed.bias"] = [
+          textAudioAggregateEmbed.bias.name
+        ]
         otherMappings.append(("text_feature_extractor", textFeatureExtractorMapping))
       case .auraflow:
         fatalError()
@@ -673,7 +747,7 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .ltx2, .ltx2_3:
+      case .ltx2:
         let (rotaryEmbedding, rotaryEmbeddingAudio, rotaryEmbeddingVideoToAudio) =
           LTX2VideoAudioRotaryPositionEmbedding(
             time: 16, height: 16, width: 16, audioTime: 121,
@@ -688,6 +762,24 @@ public enum LoRAImporter {
           + LTX2FixedOutputShapes(
             time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
             layers: 48, textCrossAttentionAdaLN: false, KV: true
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
+      case .ltx2_3:
+        let (rotaryEmbedding, rotaryEmbeddingAudio, rotaryEmbeddingVideoToAudio) =
+          LTX2VideoAudioRotaryPositionEmbedding(
+            time: 16, height: 16, width: 16, audioTime: 121,
+            channels: (4096, 2048), numberOfHeads: 32)
+        cArr =
+          [
+            graph.variable(.CPU, format: .NHWC, shape: [1, 121, 128], of: FloatType.self),  // audio
+            graph.variable(Tensor<FloatType>(from: rotaryEmbedding)),
+            graph.variable(Tensor<FloatType>(from: rotaryEmbeddingAudio)),
+            graph.variable(Tensor<FloatType>(from: rotaryEmbeddingVideoToAudio)),
+          ]
+          + LTX2FixedOutputShapes(
+            time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
+            layers: 48, textCrossAttentionAdaLN: true, KV: false
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }

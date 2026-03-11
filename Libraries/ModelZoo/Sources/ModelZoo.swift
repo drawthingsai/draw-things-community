@@ -59,8 +59,10 @@ public struct ModelZoo: DownloadZoo {
       return "FLUX.2 9B"
     case .flux2_4b:
       return "FLUX.2 4B"
-    case .ltx2, .ltx2_3:
+    case .ltx2:
       return "LTX-2"
+    case .ltx2_3:
+      return "LTX-2.3"
     }
   }
 
@@ -740,31 +742,15 @@ public struct ModelZoo: DownloadZoo {
       "5736128a9cea4a3ff1f1dca6b991936920916a248b7c96aa8a8cd831e294c21a",
     "ltx_2.3_audio_video_vae_f16.ckpt":
       "72e4c23b34e631599773b05beb7e355c00d36feb983fe9746d351b58a4be4f02",
+    "ltx_2.3_22b_dev_q6p.ckpt":
+      "676fc93063045e107dc642563c475e25306969b0791ab933eaeba634d673fe04",
+    "ltx_2.3_22b_dev_q8p.ckpt":
+      "dcf1fe7b365da89ef9bcacaf488682addbef2d255a31d7f0a580d5c6841d6e2a",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
 
   public static let builtinSpecifications: [Specification] = [
-    Specification(
-      name: "LTX-2.3 22B [dev]", file: "ltx_2.3_22b_dev_q8p.ckpt", prefix: "",
-      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
-      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
-      clipEncoder: "ltx_2.3_22b_dev_q8p.ckpt", objective: .u(conditionScale: 1000),
-      hiresFixScale: 24,
-      note:
-        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [distilled] checkpoint is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
-      copyright: "© 2026 Lightricks"
-    ),
-    Specification(
-      name: "LTX-2.3 22B [dev] (6-bit)", file: "ltx_2.3_22b_dev_q6p.ckpt", prefix: "",
-      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
-      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
-      clipEncoder: "ltx_2.3_22b_dev_q6p.ckpt", objective: .u(conditionScale: 1000),
-      hiresFixScale: 24,
-      note:
-        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [distilled] checkpoint is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
-      copyright: "© 2026 Lightricks"
-    ),
     Specification(
       name: "LTX-2.3 22B [distilled]", file: "ltx_2.3_22b_distilled_q8p.ckpt", prefix: "",
       version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
@@ -783,6 +769,26 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       note:
         "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [distilled] checkpoint is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
+      copyright: "© 2026 Lightricks"
+    ),
+    Specification(
+      name: "LTX-2.3 22B [dev]", file: "ltx_2.3_22b_dev_q8p.ckpt", prefix: "",
+      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      clipEncoder: "ltx_2.3_22b_dev_q8p.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [dev] checkpoint is the full model variant. For best results, set Text Guidance to 3.5 and use 20–30 sampling steps.",
+      copyright: "© 2026 Lightricks"
+    ),
+    Specification(
+      name: "LTX-2.3 22B [dev] (6-bit)", file: "ltx_2.3_22b_dev_q6p.ckpt", prefix: "",
+      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      clipEncoder: "ltx_2.3_22b_dev_q6p.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [dev] checkpoint is the full model variant. For best results, set Text Guidance to 3.5 and use 20–30 sampling steps.",
       copyright: "© 2026 Lightricks"
     ),
     Specification(

@@ -38,6 +38,7 @@ final class ComputeUnitsTests: XCTestCase {
     .init(version: .flux2_4b, width: 8, height: 8, frames: 1),
     .init(version: .hiDreamI1, width: 8, height: 8, frames: 1),
     .init(version: .ltx2, width: 8, height: 8, frames: 121),
+    .init(version: .ltx2_3, width: 8, height: 8, frames: 121),
   ]
 
   private func configuration(
@@ -144,9 +145,12 @@ final class ComputeUnitsTests: XCTestCase {
     case .hunyuanVideo:
       batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
-    case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b:
       batchSize = cfgChannels
       numFrames = (Int(configuration.numFrames) - 1) / 4 + 1
+    case .ltx2, .ltx2_3:
+      batchSize = cfgChannels
+      numFrames = (Int(configuration.numFrames) - 1) / 8 + 1
       if configuration.causalInferenceEnabled && configuration.causalInference > 0
         && configuration.causalInference + max(0, configuration.causalInferencePad) < numFrames
       {
@@ -249,13 +253,23 @@ final class ComputeUnitsTests: XCTestCase {
         batchSize: 1, tokenLength: tokenLength, referenceSequenceLength: 0,
         height: startHeight, width: startWidth, channels: 4096, layers: (8, 24))
       return count * imageBatch
-    case .ltx2, .ltx2_3:
+    case .ltx2:
       let ltx2VideoFrames = max(1, (numFrames - 1) / 8 + 1)
       let audioFrames = (ltx2VideoFrames - 1) * 8 + 1
+      let paddedTokenLength = max(tokenLength, 1024)
       let count = LTX2InstructionCount(
-        time: ltx2VideoFrames, h: startHeight, w: startWidth, textLength: tokenLength,
+        time: ltx2VideoFrames, h: startHeight, w: startWidth, textLength: paddedTokenLength,
         audioFrames: audioFrames, channels: (4096, 2048), layers: 48, tokenModulation: false,
         KV: true, useGatedAttention: false, textCrossAttentionAdaLN: false)
+      return count * imageBatch
+    case .ltx2_3:
+      let ltx2VideoFrames = max(1, (numFrames - 1) / 8 + 1)
+      let audioFrames = (ltx2VideoFrames - 1) * 8 + 1
+      let paddedTokenLength = max(tokenLength, 1024)
+      let count = LTX2InstructionCount(
+        time: ltx2VideoFrames, h: startHeight, w: startWidth, textLength: paddedTokenLength,
+        audioFrames: audioFrames, channels: (4096, 2048), layers: 48, tokenModulation: false,
+        KV: false, useGatedAttention: true, textCrossAttentionAdaLN: true)
       return count * imageBatch
     default:
       fatalError("unsupported version")
@@ -271,7 +285,8 @@ final class ComputeUnitsTests: XCTestCase {
     let startHeight = (rawStartHeight + 1) / 2 * 2
     let cfg = cfgChannels(configuration, version: .ltx2)
     let imageBatch = max(1, Int(configuration.batchSize)) * cfg
-    let tokenLength = max(1, computeUnitsTokenLength(modelName: modelName, version: .ltx2))
+    let tokenLength = max(
+      1, max(computeUnitsTokenLength(modelName: modelName, version: .ltx2), 1024))
     let numFrames = max(1, Int(configuration.numFrames))
     let chunkedVideoFrames = max(1, (numFrames - 1) / 4 + 1)
     let audioFrames = (chunkedVideoFrames - 1) * 8 + 1
@@ -373,7 +388,7 @@ final class ComputeUnitsTests: XCTestCase {
     let resolutions: [(pixel: Int, latent: UInt16)] = [(768, 12), (1024, 16), (1280, 20)]
     let versions = Self.testCases.map(\.version)
     let videoVersions: Set<ModelVersion> = [
-      .svdI2v, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2,
+      .svdI2v, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3,
     ]
 
     print("==== Full Model Comparison (legacy vs instruction-estimate) ====")

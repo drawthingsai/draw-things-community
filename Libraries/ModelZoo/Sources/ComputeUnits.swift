@@ -101,8 +101,10 @@ public enum ComputeUnits {
       return (cfgChannels, max(1, Int(configuration.numFrames)))
     case .hunyuanVideo:
       return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 4 + 1))
-    case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b:
       return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 4 + 1))
+    case .ltx2, .ltx2_3:
+      return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 8 + 1))
     }
   }
 
@@ -435,18 +437,33 @@ public enum ComputeUnits {
         timesteps: 1, layers: (16, 32), t5TextLength: baseTokenLength,
         llamaTextLength: baseTokenLength)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
-    case .ltx2, .ltx2_3:
+    case .ltx2:
       let videoFrames = numFrames
       let audioFrames = (videoFrames - 1) * 8 + 1
+      let paddedTextLength = max(baseTokenLength, 1024)
       let mainCount = LTX2InstructionCount(
-        time: videoFrames, h: startHeight, w: startWidth, textLength: baseTokenLength,
+        time: videoFrames, h: startHeight, w: startWidth, textLength: paddedTextLength,
         audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
         tokenModulation: hasImage, KV: true, useGatedAttention: false,
         textCrossAttentionAdaLN: false)
       let fixedCount = LTX2FixedInstructionCount(
-        time: videoFrames, textLength: baseTokenLength, audioFrames: audioFrames, timesteps: 1,
+        time: videoFrames, textLength: paddedTextLength, audioFrames: audioFrames, timesteps: 1,
         channels: (4096, 2048), layers: 48, contextProjection: true,
         textCrossAttentionAdaLN: false, KV: true)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .ltx2_3:
+      let videoFrames = numFrames
+      let audioFrames = (videoFrames - 1) * 8 + 1
+      let paddedTextLength = max(baseTokenLength, 1024)
+      let mainCount = LTX2InstructionCount(
+        time: videoFrames, h: startHeight, w: startWidth, textLength: paddedTextLength,
+        audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
+        tokenModulation: hasImage, KV: false, useGatedAttention: true,
+        textCrossAttentionAdaLN: true)
+      let fixedCount = LTX2FixedInstructionCount(
+        time: videoFrames, textLength: paddedTextLength, audioFrames: audioFrames, timesteps: 1,
+        channels: (4096, 2048), layers: 48, contextProjection: false,
+        textCrossAttentionAdaLN: true, KV: false)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     }
   }
