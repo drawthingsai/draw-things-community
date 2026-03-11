@@ -53,6 +53,49 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
 }
 
 extension FirstStage {
+  public func upsample(
+    _ x: DynamicGraph.Tensor<FloatType>,
+    latentsUpscaler: (filePath: String, mode: LTX2SpatialUpscalerMode)
+  ) -> DynamicGraph.Tensor<FloatType> {
+    precondition(version == .ltx2 || version == .ltx2_3)
+    let graph = x.graph
+    let shape = x.shape
+    let (_, audioHeight) = LTX2ExtractAudioFramesAndHeight(shape)
+    let startHeight = shape[1] - audioHeight
+    var z = x[0..<shape[0], 0..<startHeight, 0..<shape[2], 0..<shape[3]].contiguous()
+    let scalingFactor = latentsScaling.scalingFactor
+    if let latentsMean = latentsScaling.mean, let latentsStd = latentsScaling.std,
+      latentsMean.count >= 4, latentsStd.count >= 4
+    {
+      let mean = graph.variable(
+        Tensor<FloatType>(
+          latentsMean.map { FloatType($0) }, .GPU(0), .NHWC(1, 1, 1, latentsMean.count)))
+      let std = graph.variable(
+        Tensor<FloatType>(
+          latentsStd.map { FloatType($0 / scalingFactor) }, .GPU(0),
+          .NHWC(1, 1, 1, latentsStd.count)))
+      z = std .* z + mean
+    } else if let shiftFactor = latentsScaling.shiftFactor {
+      z = z / scalingFactor + shiftFactor
+    } else {
+      z = z / scalingFactor
+    }
+    let spatialUpscaler = LTX2SpatialUpscaler3D(
+      inChannels: z.shape[3], midChannels: 1024, numBlocks: 4,
+      depth: shape[0], height: startHeight, width: shape[2], mode: latentsUpscaler.mode,
+      format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+    ).1
+    spatialUpscaler.compile(inputs: z)
+    graph.openStore(
+      latentsUpscaler.filePath, flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: latentsUpscaler.filePath)
+    ) { store in
+      store.read(
+        "spatial_upsampler", model: spatialUpscaler, codec: [.jit, .externalData])
+    }
+    return scale(spatialUpscaler(inputs: z)[0].as(of: FloatType.self))
+  }
+
   private func decode(
     _ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?, highPrecision: Bool,
     cancellation: (@escaping () -> Void) -> Void

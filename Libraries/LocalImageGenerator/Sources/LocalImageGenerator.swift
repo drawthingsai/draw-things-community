@@ -4283,8 +4283,62 @@ extension LocalImageGenerator {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
       }
+      let startWidth: Int
+      let startHeight: Int
+      let startScaleFactor: Int
+      let audioHeight: Int
+      if modelVersion == .wurstchenStageC {
+        startWidth = Int(configuration.startWidth) * 16
+        startHeight = Int(configuration.startHeight) * 16
+        startScaleFactor = 8
+        audioHeight = 0
+      } else if modelVersion == .wan22_5b {
+        startWidth = Int(configuration.startWidth) * 4
+        startHeight = Int(configuration.startHeight) * 4
+        startScaleFactor = 16
+        audioHeight = 0
+      } else if modelVersion == .ltx2 || modelVersion == .ltx2_3 {
+        startWidth = Int(configuration.startWidth) * 2
+        startHeight = Int(configuration.startHeight) * 2
+        startScaleFactor = 32
+        let latentFrames = ((Int(configuration.numFrames) - 1) / 8) + 1
+        audioHeight =
+          LTX2ExtractAudioFramesAndHeight([latentFrames, 1, startWidth]).1
+      } else {
+        startWidth = Int(configuration.startWidth) * 8
+        startHeight = Int(configuration.startHeight) * 8
+        startScaleFactor = 8
+        audioHeight = 0
+      }
+      let latentsUpscaler: (filePath: String, mode: LTX2SpatialUpscalerMode)?
+      if hiresFixEnabled && (modelVersion == .ltx2 || modelVersion == .ltx2_3) {
+        if firstPassStartWidth * 2 == startWidth && firstPassStartHeight * 2 == startHeight,
+          let latentsUpscalerFile = ModelZoo.latentsUpscalersForModel(file).first(where: {
+            $0.scale == .x2 && ModelZoo.isModelDownloaded($0.file)
+          })
+        {
+          latentsUpscaler = (
+            ModelZoo.filePathForModelDownloaded(latentsUpscalerFile.file), .x2
+          )
+        } else if firstPassStartWidth * 3 == startWidth * 2
+          && firstPassStartHeight * 3 == startHeight * 2,
+          let latentsUpscalerFile = ModelZoo.latentsUpscalersForModel(file).first(where: {
+            $0.scale == .x1_5 && ModelZoo.isModelDownloaded($0.file)
+          })
+        {
+          latentsUpscaler = (
+            ModelZoo.filePathForModelDownloaded(latentsUpscalerFile.file), .x1_5
+          )
+        } else {
+          latentsUpscaler = nil
+        }
+      } else {
+        latentsUpscaler = nil
+      }
       var firstStageResult: (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?)
       if modelVersion == .wurstchenStageC {
+        firstStageResult = (x, nil)
+      } else if latentsUpscaler != nil {
         firstStageResult = (x, nil)
       } else {
         // For Wurstchen model, we don't need to run decode.
@@ -4296,7 +4350,9 @@ extension LocalImageGenerator {
                 firstStage: firstStage, scale: firstPassScale), cancellation: cancellation),
             firstStage: firstStage, scale: firstPassScale
           )
-        guard !isNaN(firstStageResult.0.rawValue.toCPU()) else { return (nil, nil, 1) }
+        guard !isNaN(firstStageResult.0.rawValue.toCPU()) else {
+          return (nil, nil, 1)
+        }
       }
       guard feedback(.imageDecoded, signposts, nil) else { return (nil, nil, 1) }
       // We go through second image sampling with Wurstchen.
@@ -4325,39 +4381,15 @@ extension LocalImageGenerator {
         }
         return (batch, audio.map { [$0] }, scaleFactor)
       }
-      let startWidth: Int
-      let startHeight: Int
-      let startScaleFactor: Int
-      let audioHeight: Int
-      if modelVersion == .wurstchenStageC {
-        startWidth = Int(configuration.startWidth) * 16
-        startHeight = Int(configuration.startHeight) * 16
-        startScaleFactor = 8
-        audioHeight = 0
-      } else if modelVersion == .wan22_5b {
-        startWidth = Int(configuration.startWidth) * 4
-        startHeight = Int(configuration.startHeight) * 4
-        startScaleFactor = 16
-        audioHeight = 0
-      } else if modelVersion == .ltx2 || modelVersion == .ltx2_3 {
-        startWidth = Int(configuration.startWidth) * 2
-        startHeight = Int(configuration.startHeight) * 2
-        startScaleFactor = 32
-        let latentFrames = ((Int(configuration.numFrames) - 1) / 8) + 1
-        audioHeight =
-          LTX2ExtractAudioFramesAndHeight([latentFrames, 1, startWidth]).1
-      } else {
-        startWidth = Int(configuration.startWidth) * 8
-        startHeight = Int(configuration.startHeight) * 8
-        startScaleFactor = 8
-        audioHeight = 0
-      }
       let firstStageImage: DynamicGraph.Tensor<FloatType>
       var sample: DynamicGraph.Tensor<FloatType>
       // Bypass decode / scale / encode for Wurstchen model.
       if modelVersion == .wurstchenStageC {
         firstStageImage = firstStageResult.0
         sample = firstStageResult.0
+      } else if let latentsUpscaler {
+        sample = firstStage.upsample(x, latentsUpscaler: latentsUpscaler)
+        firstStageImage = x  // TODO: This will cause issues in generateInjectedControls.
       } else {
         let shape = firstStageResult.0.shape
         if shape[3] > 3 {

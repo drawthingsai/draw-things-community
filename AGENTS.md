@@ -315,3 +315,36 @@
 - Expansion animation pitfall:
   - driving `configuration.title` inside `configurationUpdateHandler` can prevent the enable (expand) animation from animating as expected.
   - set button title outside the update handler (from `is{HIDDEN}Enabled`), then animate `view.layoutIfNeeded()`.
+
+## LTX Hires Fix + Latent Upscaler
+- `ModelZoo` latent-upscaler plumbing has to cover all download-status surfaces, not just `filesToDownload(...)`:
+  - include `latentsUpscalers` in `isModelDownloaded(_ specification:)`
+  - include them in `availableFiles(excluding:)`
+  - include them in app-side manual model dependency lists that do not already go through `ModelZoo.filesToDownload(...)`
+- In `LocalImageGenerator.generateTextOnly(...)`, keep the LTX hires-fix latent-upscaler integration narrowly scoped:
+  - change only `generateTextOnly`
+  - preserve the non-LTX and non-hires-fix paths unchanged
+- For the LTX hires-fix shortcut, compute second-pass latent geometry once before branching:
+  - `startWidth`
+  - `startHeight`
+  - `startScaleFactor`
+  - `audioHeight`
+  - this keeps the latent-upscaler condition and the fallback decode/encode path aligned
+- Only consider the latent-upscaler path when `hiresFixEnabled` is true for `.ltx2` / `.ltx2_3`.
+- The LTX latent-upscaler mode selection in `generateTextOnly(...)` is geometry-based:
+  - `x2` when `firstPassStartWidth * 2 == startWidth` and `firstPassStartHeight * 2 == startHeight`
+  - `x1.5` when `firstPassStartWidth * 3 == startWidth * 2` and `firstPassStartHeight * 3 == startHeight * 2`
+- LTX latent-upscaler checkpoints are stored under the top-level model name `spatial_upsampler`.
+- For the current LTX spatial-upscaler runtime path, prefer the known architecture over runtime tensor introspection:
+  - `inChannels = 128`
+  - `midChannels = 1024`
+  - `numBlocks = 4`
+  - load with `store.read("spatial_upsampler", model: spatialUpscaler, codec: [.jit, .externalData])`
+- In the LTX hires-fix shortcut, keep the existing audio-latent retention path intact:
+  - use the existing `audioHeight` / retained-audio logic in `generateTextOnly(...)`
+  - only replace the video latent upsample part
+  - do not run the spatial upscaler over the packed audio rows
+- When bypassing the first-stage decode for a narrow optimization, it is acceptable to preserve the old control-flow shape with a placeholder value like `firstStageResult = (x, nil)` if that keeps the change local and avoids a wider refactor.
+- Validation checklist for this path:
+  - `bazel build //Libraries/LocalImageGenerator:LocalImageGenerator --ios_multi_cpus=arm64`
+  - `bazel build //Apps/DrawThings:DrawThings --ios_multi_cpus=arm64` when the surrounding app integration changes
