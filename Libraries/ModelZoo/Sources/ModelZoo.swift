@@ -280,7 +280,7 @@ public struct ModelZoo: DownloadZoo {
         self.downloadUrlSuffix = downloadUrlSuffix
       }
     }
-    public struct LatentsUpScaler: Codable {
+    public struct LatentsUpscaler: Codable {
       public enum Scale: String, Codable {
         case x1_5 = "1.5"
         case x2 = "2"
@@ -345,9 +345,9 @@ public struct ModelZoo: DownloadZoo {
       paddedTextEncodingLength: Int? = nil, hiresFixScale: UInt16? = nil, mmdit: MMDiT? = nil,
       builtinLora: Bool? = nil, teaCacheCoefficients: [Float]? = nil,
       framesPerSecond: Double? = nil, isBf16: Bool? = nil,
+      latentsUpscalers: [LatentsUpscaler]? = nil,
       remoteApiModelConfig: RemoteApiModelConfig? = nil, note: String? = nil,
-      copyright: String? = nil, huggingFaceLink: String? = nil,
-      latentsUpscalers: [LatentsUpScaler]? = nil
+      copyright: String? = nil, huggingFaceLink: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -386,10 +386,10 @@ public struct ModelZoo: DownloadZoo {
       self.remoteApiModelConfig = remoteApiModelConfig
       self.framesPerSecond = framesPerSecond
       self.isBf16 = isBf16
+      self.latentsUpscalers = latentsUpscalers
       self.note = note
       self.copyright = copyright
       self.huggingFaceLink = huggingFaceLink
-      self.latentsUpscalers = latentsUpscalers
     }
     fileprivate var predictV: Bool? = nil
   }
@@ -746,6 +746,10 @@ public struct ModelZoo: DownloadZoo {
       "676fc93063045e107dc642563c475e25306969b0791ab933eaeba634d673fe04",
     "ltx_2.3_22b_dev_q8p.ckpt":
       "dcf1fe7b365da89ef9bcacaf488682addbef2d255a31d7f0a580d5c6841d6e2a",
+    "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt":
+      "249f5bd521472a952775e0cb9729836d2fc9ab488ca64e08329e19dd07060157",
+    "ltx_2.3_spatial_upscaler_x2_f16.ckpt":
+      "ff1c1e36b3f3c354feacbcf37057eeeec363aa98368e832dd99313e8c09b3e86",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -757,6 +761,10 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2.3_22b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
+      latentsUpscalers: [
+        .init(file: "ltx_2.3_spatial_upscaler_x2_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
+      ],
       note:
         "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [distilled] checkpoint is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
       copyright: "© 2026 Lightricks"
@@ -767,6 +775,10 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2.3_22b_distilled_q6p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
+      latentsUpscalers: [
+        .init(file: "ltx_2.3_spatial_upscaler_x2_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
+      ],
       note:
         "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [distilled] checkpoint is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
       copyright: "© 2026 Lightricks"
@@ -777,6 +789,10 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2.3_22b_dev_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
+      latentsUpscalers: [
+        .init(file: "ltx_2.3_spatial_upscaler_x2_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
+      ],
       note:
         "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [dev] checkpoint is the full model variant. For best results, set Text Guidance to 3.5 and use 20–30 sampling steps.",
       copyright: "© 2026 Lightricks"
@@ -787,6 +803,10 @@ public struct ModelZoo: DownloadZoo {
       autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2.3_22b_dev_q6p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
+      latentsUpscalers: [
+        .init(file: "ltx_2.3_spatial_upscaler_x2_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
+      ],
       note:
         "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [dev] checkpoint is the full model variant. For best results, set Text Guidance to 3.5 and use 20–30 sampling steps.",
       copyright: "© 2026 Lightricks"

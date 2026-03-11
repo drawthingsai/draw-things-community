@@ -14,21 +14,21 @@ private func NCHWLTX2SpatialResBlock3D(
     groups: 1, filters: channels, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [1, 1, 1], end: [1, 1, 1])),
     name: "conv1")
-  var out = conv1(x)
-  let norm1 = GroupNorm(axis: 0, groups: 32, epsilon: 1e-5, reduce: [1, 2, 3], name: "norm1")
-  out = norm1(out.reshaped([channels, depth, height, width])).reshaped([
-    1, channels, depth, height, width,
+  var out = conv1(x.reshaped([1, channels, depth, height, width])).reshaped([
+    channels, depth, height, width,
   ])
+  let norm1 = GroupNorm(axis: 0, groups: 32, epsilon: 1e-5, reduce: [1, 2, 3], name: "norm1")
+  out = norm1(out)
   out = out.swish()
   let conv2 = Convolution(
     groups: 1, filters: channels, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [1, 1, 1], end: [1, 1, 1])),
     name: "conv2")
-  out = conv2(out)
-  let norm2 = GroupNorm(axis: 0, groups: 32, epsilon: 1e-5, reduce: [1, 2, 3], name: "norm2")
-  out = norm2(out.reshaped([channels, depth, height, width])).reshaped([
-    1, channels, depth, height, width,
+  out = conv2(out.reshaped([1, channels, depth, height, width])).reshaped([
+    channels, depth, height, width,
   ])
+  let norm2 = GroupNorm(axis: 0, groups: 32, epsilon: 1e-5, reduce: [1, 2, 3], name: "norm2")
+  out = norm2(out)
   out = (out + x).swish()
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -46,23 +46,27 @@ private func NCHWLTX2SpatialResBlock3D(
 }
 
 private func NHWCLTX2SpatialResBlock3D(
-  prefix: String, channels: Int
+  prefix: String, channels: Int, depth: Int, height: Int, width: Int
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let conv1 = Convolution(
     groups: 1, filters: channels, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [1, 1, 1], end: [1, 1, 1])),
     format: .OIHW, name: "conv1")
-  var out = conv1(x)
-  let norm1 = GroupNorm(axis: 4, groups: 32, epsilon: 1e-5, reduce: [1, 2, 3], name: "norm1")
+  var out = conv1(x.reshaped([1, depth, height, width, channels])).reshaped([
+    depth, height, width, channels,
+  ])
+  let norm1 = GroupNorm(axis: 3, groups: 32, epsilon: 1e-5, reduce: [0, 1, 2], name: "norm1")
   out = norm1(out)
   out = out.swish()
   let conv2 = Convolution(
     groups: 1, filters: channels, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [1, 1, 1], end: [1, 1, 1])),
     format: .OIHW, name: "conv2")
-  out = conv2(out)
-  let norm2 = GroupNorm(axis: 4, groups: 32, epsilon: 1e-5, reduce: [1, 2, 3], name: "norm2")
+  out = conv2(out.reshaped([1, depth, height, width, channels])).reshaped([
+    depth, height, width, channels,
+  ])
+  let norm2 = GroupNorm(axis: 3, groups: 32, epsilon: 1e-5, reduce: [0, 1, 2], name: "norm2")
   out = (norm2(out) + x).swish()
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -88,12 +92,15 @@ private func NCHWLTX2SpatialUpscaler3D(
     groups: 1, filters: midChannels, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [1, 1, 1], end: [1, 1, 1])),
     name: "initial_conv")
-  var out = initialConv(x)
+  var out = initialConv(
+    x.permuted(3, 0, 1, 2).contiguous().reshaped(
+      [1, inChannels, depth, height, width], format: .NCHW)
+  ).reshaped([
+    midChannels, depth, height, width,
+  ])
   let initialNorm = GroupNorm(
     axis: 0, groups: 32, epsilon: 1e-5, reduce: [1, 2, 3], name: "initial_norm")
-  out = initialNorm(out.reshaped([midChannels, depth, height, width])).reshaped([
-    1, midChannels, depth, height, width,
-  ])
+  out = initialNorm(out)
   out = out.swish()
   var mappers = [ModelWeightMapper]()
   for i in 0..<numBlocks {
@@ -116,11 +123,13 @@ private func NCHWLTX2SpatialUpscaler3D(
       groups: 1, filters: midChannels * 4, filterSize: [1, 3, 3],
       hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
       name: "upsampler_conv")
-    out = upsampleConv(out)
-    out = out.reshaped([1, midChannels, 2, 2, depth, height, width]).permuted(
-      0, 1, 4, 5, 2, 6, 3
+    out = upsampleConv(out.reshaped([1, midChannels, depth, height, width])).reshaped([
+      midChannels * 4, depth, height, width,
+    ])
+    out = out.reshaped([midChannels, 2, 2, depth, height, width]).permuted(
+      0, 3, 4, 1, 5, 2
     ).contiguous()
-    out = out.reshaped([1, midChannels, depth, height * 2, width * 2])
+    out = out.reshaped([midChannels, depth, height * 2, width * 2])
     upsampleWeightKey = "upsampler.0.weight"
     upsampleBiasKey = "upsampler.0.bias"
     postHeight = height * 2
@@ -132,16 +141,20 @@ private func NCHWLTX2SpatialUpscaler3D(
       groups: 1, filters: midChannels * 9, filterSize: [1, 3, 3],
       hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
       name: "upsampler_conv")
-    out = upsampleConv(out)
-    out = out.reshaped([1, midChannels, 3, 3, depth, height, width]).permuted(
-      0, 1, 4, 5, 2, 6, 3
+    out = upsampleConv(out.reshaped([1, midChannels, depth, height, width])).reshaped([
+      midChannels * 9, depth, height, width,
+    ])
+    out = out.reshaped([midChannels, 3, 3, depth, height, width]).permuted(
+      0, 3, 4, 1, 5, 2
     ).contiguous()
-    out = out.reshaped([1, midChannels, depth, height * 3, width * 3])
+    out = out.reshaped([midChannels, depth, height * 3, width * 3])
     let blur = Convolution(
       groups: midChannels, filters: midChannels, filterSize: [1, 5, 5], noBias: true,
       hint: Hint(stride: [1, 2, 2], border: Hint.Border(begin: [0, 2, 2], end: [0, 2, 2])),
       name: "upsampler_blur_down")
-    out = blur(out)
+    out = blur(out.reshaped([1, midChannels, depth, height * 3, width * 3])).reshaped([
+      midChannels, depth, height * 3 / 2, width * 3 / 2,
+    ])
     upsampleWeightKey = "upsampler.conv.weight"
     upsampleBiasKey = "upsampler.conv.bias"
     postHeight = height * 3 / 2
@@ -160,7 +173,9 @@ private func NCHWLTX2SpatialUpscaler3D(
     groups: 1, filters: inChannels, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [1, 1, 1], end: [1, 1, 1])),
     name: "final_conv")
-  out = finalConv(out)
+  out = finalConv(out.reshaped([1, midChannels, depth, postHeight, postWidth])).reshaped([
+    inChannels, depth, postHeight, postWidth,
+  ]).permuted(1, 2, 3, 0).contiguous().reshaped(.NHWC(depth, postHeight, postWidth, inChannels))
 
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -192,15 +207,18 @@ private func NHWCLTX2SpatialUpscaler3D(
     groups: 1, filters: midChannels, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [1, 1, 1], end: [1, 1, 1])),
     format: .OIHW, name: "initial_conv")
-  var out = initialConv(x)
+  var out = initialConv(x.reshaped([1, depth, height, width, inChannels])).reshaped([
+    depth, height, width, midChannels,
+  ])
   let initialNorm = GroupNorm(
-    axis: 4, groups: 32, epsilon: 1e-5, reduce: [1, 2, 3], name: "initial_norm")
+    axis: 3, groups: 32, epsilon: 1e-5, reduce: [0, 1, 2], name: "initial_norm")
   out = initialNorm(out)
   out = out.swish()
   var mappers = [ModelWeightMapper]()
   for i in 0..<numBlocks {
     let (mapper, block) = NHWCLTX2SpatialResBlock3D(
-      prefix: "res_blocks.\(i)", channels: midChannels)
+      prefix: "res_blocks.\(i)", channels: midChannels, depth: depth, height: height,
+      width: width)
     out = block(out)
     mappers.append(mapper)
   }
@@ -208,6 +226,8 @@ private func NHWCLTX2SpatialUpscaler3D(
   let upsampleConv: Convolution
   let upsampleWeightKey: String
   let upsampleBiasKey: String
+  let postHeight: Int
+  let postWidth: Int
   let blurDown: Convolution?
   switch mode {
   case .x2:
@@ -215,13 +235,16 @@ private func NHWCLTX2SpatialUpscaler3D(
       groups: 1, filters: midChannels * 4, filterSize: [1, 3, 3],
       hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
       format: .OIHW, name: "upsampler_conv")
-    out = upsampleConv(out)
-    out = out.reshaped([1, depth, height, width, 2, 2, midChannels]).permuted(
-      0, 1, 2, 4, 3, 5, 6
+    out = upsampleConv(out.reshaped([1, depth, height, width, midChannels])).reshaped([
+      depth, height, width, 2, 2, midChannels,
+    ]).permuted(
+      0, 1, 3, 2, 4, 5
     ).contiguous()
-    out = out.reshaped([1, depth, height * 2, width * 2, midChannels])
+    out = out.reshaped([depth, height * 2, width * 2, midChannels])
     upsampleWeightKey = "upsampler.0.weight"
     upsampleBiasKey = "upsampler.0.bias"
+    postHeight = height * 2
+    postWidth = width * 2
     blurDown = nil
   case .x1_5:
     precondition(height % 2 == 0 && width % 2 == 0)
@@ -229,24 +252,30 @@ private func NHWCLTX2SpatialUpscaler3D(
       groups: 1, filters: midChannels * 9, filterSize: [1, 3, 3],
       hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
       format: .OIHW, name: "upsampler_conv")
-    out = upsampleConv(out)
-    out = out.reshaped([1, depth, height, width, 3, 3, midChannels]).permuted(
-      0, 1, 2, 4, 3, 5, 6
+    out = upsampleConv(out.reshaped([1, depth, height, width, midChannels])).reshaped([
+      depth, height, width, 3, 3, midChannels,
+    ]).permuted(
+      0, 1, 3, 2, 4, 5
     ).contiguous()
-    out = out.reshaped([1, depth, height * 3, width * 3, midChannels])
+    out = out.reshaped([depth, height * 3, width * 3, midChannels])
     let blur = Convolution(
       groups: midChannels, filters: midChannels, filterSize: [1, 5, 5], noBias: true,
       hint: Hint(stride: [1, 2, 2], border: Hint.Border(begin: [0, 2, 2], end: [0, 2, 2])),
       format: .OIHW, name: "upsampler_blur_down")
-    out = blur(out)
+    out = blur(out.reshaped([1, depth, height * 3, width * 3, midChannels])).reshaped([
+      depth, height * 3 / 2, width * 3 / 2, midChannels,
+    ])
     upsampleWeightKey = "upsampler.conv.weight"
     upsampleBiasKey = "upsampler.conv.bias"
+    postHeight = height * 3 / 2
+    postWidth = width * 3 / 2
     blurDown = blur
   }
 
   for i in 0..<numBlocks {
     let (mapper, block) = NHWCLTX2SpatialResBlock3D(
-      prefix: "post_upsample_res_blocks.\(i)", channels: midChannels)
+      prefix: "post_upsample_res_blocks.\(i)", channels: midChannels, depth: depth,
+      height: postHeight, width: postWidth)
     out = block(out)
     mappers.append(mapper)
   }
@@ -254,7 +283,9 @@ private func NHWCLTX2SpatialUpscaler3D(
     groups: 1, filters: inChannels, filterSize: [3, 3, 3],
     hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [1, 1, 1], end: [1, 1, 1])),
     format: .OIHW, name: "final_conv")
-  out = finalConv(out)
+  out = finalConv(out.reshaped([1, depth, postHeight, postWidth, midChannels])).reshaped([
+    depth, postHeight, postWidth, inChannels,
+  ])
 
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
