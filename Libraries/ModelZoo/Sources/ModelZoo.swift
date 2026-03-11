@@ -328,7 +328,7 @@ public struct ModelZoo: DownloadZoo {
     public var note: String?
     public var copyright: String?
     public var huggingFaceLink: String?
-    public var latentsUpscalers: [LatentsUpScaler]?
+    public var latentsUpscalers: [LatentsUpscaler]?
     public init(
       name: String, file: String, prefix: String, version: ModelVersion,
       upcastAttention: Bool = false, defaultScale: UInt16 = 8, textEncoder: String? = nil,
@@ -1928,6 +1928,9 @@ public struct ModelZoo: DownloadZoo {
     for stageModel in (specification.stageModels ?? []) {
       models.append((name: name, subtitle: version, file: stageModel, sha256: nil))
     }
+    specification.latentsUpscalers?.forEach {
+      models.append((name: name, subtitle: version, file: $0.file, sha256: nil))
+    }
     if let defaultRefiner = specification.defaultRefiner {
       let name = ModelZoo.humanReadableNameForModel(defaultRefiner)
       let version = ModelZoo.humanReadableNameForVersion(ModelZoo.versionForModel(defaultRefiner))
@@ -1952,6 +1955,9 @@ public struct ModelZoo: DownloadZoo {
       }
       for stageModel in ModelZoo.stageModelsForModel(defaultRefiner) {
         models.append((name: name, subtitle: version, file: stageModel, sha256: nil))
+      }
+      ModelZoo.latentsUpscalersForModel(defaultRefiner).forEach {
+        models.append((name: name, subtitle: version, file: $0.file, sha256: nil))
       }
     }
     return models
@@ -2014,6 +2020,11 @@ public struct ModelZoo: DownloadZoo {
     if let diffusionMapping = specification.diffusionMapping {
       result = result && isModelDownloaded(diffusionMapping, memorizedBy: memorizedBy)
     }
+    result =
+      result
+      && (specification.latentsUpscalers ?? []).allSatisfy {
+        isModelDownloaded($0.file, memorizedBy: memorizedBy)
+      }
     return result
   }
 
@@ -2118,6 +2129,11 @@ public struct ModelZoo: DownloadZoo {
   public static func autoencoderForModel(_ name: String) -> String? {
     guard let specification = specificationForModel(name) else { return nil }
     return specification.autoencoder
+  }
+
+  public static func latentsUpscalersForModel(_ name: String) -> [Specification.LatentsUpscaler] {
+    guard let specification = specificationForModel(name) else { return [] }
+    return specification.latentsUpscalers ?? []
   }
 
   public static func builtinLoRAForModel(_ name: String) -> Bool {
@@ -2876,6 +2892,9 @@ extension ModelZoo {
       }
       if let stageModels = specification.stageModels {
         files.formUnion(stageModels)
+      }
+      specification.latentsUpscalers?.forEach {
+        files.insert($0.file)
       }
     }
     return files
