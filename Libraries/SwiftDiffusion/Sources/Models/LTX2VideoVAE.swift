@@ -74,7 +74,7 @@ private func NHWCResnetBlockCausal3D(
 
 func NHWCLTX2VideoDecoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode, residual: Bool
+  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode, residual: Bool, paddingFinalConvLayer: Bool
 )
   -> (ModelWeightMapper, Model)
 {
@@ -297,7 +297,7 @@ func NHWCLTX2VideoDecoderCausal3D(
   let normOut = RMSNorm(epsilon: 1e-8, axis: [3], elementwiseAffine: false, name: "norm_out")
   out = normOut(out).swish()
   let convOut = Convolution(
-    groups: 1, filters: 48, filterSize: [3, 3, 3],
+    groups: 1, filters: paddingFinalConvLayer ? 64 : 48, filterSize: [3, 3, 3],
     hint: Hint(
       stride: [1, 1, 1],
       border: Hint.Border(
@@ -317,8 +317,8 @@ func NHWCLTX2VideoDecoderCausal3D(
   }
   out = convOut(out)
   // LTXV weirdly, did "b (c p r q) f h w -> b c (f p) (h q) (w r)"
-  out = out.reshaped([depth, height, width, 3, 4, 4]).permuted(0, 1, 5, 2, 4, 3).contiguous()
-    .reshaped([depth, height * 4, width * 4, 3])
+  out = out.reshaped([depth, height, width, paddingFinalConvLayer ? 4 : 3, 4, 4]).permuted(0, 1, 5, 2, 4, 3).contiguous()
+    .reshaped([depth, height * 4, width * 4, paddingFinalConvLayer ? 4 : 3])
 
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -561,7 +561,7 @@ private func NCHWResnetBlockCausal3D(
 
 func NCHWLTX2VideoDecoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode, residual: Bool
+  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode, residual: Bool, paddingFinalConvLayer: Bool
 )
   -> (ModelWeightMapper, Model)
 {
@@ -775,7 +775,7 @@ func NCHWLTX2VideoDecoderCausal3D(
   let normOut = RMSNorm(epsilon: 1e-8, axis: [0], elementwiseAffine: false, name: "norm_out")
   out = normOut(out.reshaped([previousChannel, depth, height, width])).swish()
   let convOut = Convolution(
-    groups: 1, filters: 48, filterSize: [3, 3, 3],
+    groups: 1, filters: paddingFinalConvLayer ? 64 : 48, filterSize: [3, 3, 3],
     hint: Hint(
       stride: [1, 1, 1],
       border: Hint.Border(
@@ -793,8 +793,8 @@ func NCHWLTX2VideoDecoderCausal3D(
   }
   out = convOut(out)
   // LTXV weirdly, did "b (c p r q) f h w -> b c (f p) (h q) (w r)"
-  out = out.reshaped([3, 4, 4, depth, height, width]).permuted(3, 4, 2, 5, 1, 0).contiguous()
-    .reshaped(.NHWC(depth, height * 4, width * 4, 3))
+  out = out.reshaped([paddingFinalConvLayer ? 4 : 3, 4, 4, depth, height, width]).permuted(3, 4, 2, 5, 1, 0).contiguous()
+    .reshaped(.NHWC(depth, height * 4, width * 4, paddingFinalConvLayer ? 4 : 3))
 
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -982,18 +982,17 @@ func NCHWLTX2VideoEncoderCausal3D(
 
 public func LTX2VideoDecoderCausal3D(
   layers: [(channels: Int, numRepeat: Int, stride: (Int, Int, Int))], startWidth: Int,
-  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode, residual: Bool,
-  format: TensorFormat
+  startHeight: Int, startDepth: Int, paddingMode: LTX2VideoVAEPaddingMode, residual: Bool, paddingFinalConvLayer: Bool, format: TensorFormat
 ) -> (ModelWeightMapper, Model) {
   switch format {
   case .NHWC:
     return NHWCLTX2VideoDecoderCausal3D(
       layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth,
-      paddingMode: paddingMode, residual: residual)
+      paddingMode: paddingMode, residual: residual, paddingFinalConvLayer: paddingFinalConvLayer)
   case .NCHW:
     return NCHWLTX2VideoDecoderCausal3D(
       layers: layers, startWidth: startWidth, startHeight: startHeight, startDepth: startDepth,
-      paddingMode: paddingMode, residual: residual)
+      paddingMode: paddingMode, residual: residual, paddingFinalConvLayer: paddingFinalConvLayer)
   case .CHWN:
     fatalError()
   }

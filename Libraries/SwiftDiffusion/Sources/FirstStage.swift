@@ -768,7 +768,7 @@ extension FirstStage {
         ?? LTX2VideoDecoderCausal3D(
           layers: decoderLayers, startWidth: startWidth, startHeight: startHeight,
           startDepth: startDepth, paddingMode: decoderPaddingMode, residual: decoderResidual,
-          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+          paddingFinalConvLayer: true, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(4)
