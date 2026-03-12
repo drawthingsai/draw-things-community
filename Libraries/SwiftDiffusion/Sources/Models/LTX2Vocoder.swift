@@ -256,17 +256,19 @@ private func LTX23HannUpSample1dFilterWeight(ratio: Int, kernelSize: Int) -> Ten
   let lowpassFilterWidth: Float = 6
   let width = Int((lowpassFilterWidth / rolloff).rounded(.up))
   precondition(2 * width * ratio + 1 == kernelSize)
-  var values = [Float]()
-  values.reserveCapacity(kernelSize)
-  for i in 0..<kernelSize {
-    let t = (Float(i) / Float(ratio) - Float(width)) * rolloff
-    let clamped = min(max(t, -lowpassFilterWidth), lowpassFilterWidth)
-    let window = Float(cos(Double(clamped * Float.pi / lowpassFilterWidth / 2)))
-    let sinc =
-      abs(t) < 1e-8 ? Float(1) : Float(sin(Double(Float.pi * t)) / (Double(Float.pi * t)))
-    values.append(sinc * window * window * rolloff / Float(ratio))
+  var kernel = Tensor<Float>(.CPU, .NCHW(1, 1, 1, kernelSize))
+  kernel.withUnsafeMutableBytes {
+    guard let fp32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
+    for i in 0..<kernelSize {
+      let t = (Float(i) / Float(ratio) - Float(width)) * rolloff
+      let clamped = min(max(t, -lowpassFilterWidth), lowpassFilterWidth)
+      let window = Float(cos(Double(clamped * Float.pi / lowpassFilterWidth / 2)))
+      let sinc =
+        abs(t) < 1e-8 ? Float(1) : Float(sin(Double(Float.pi * t)) / (Double(Float.pi * t)))
+      fp32[i] = sinc * window * window * rolloff / Float(ratio)
+    }
   }
-  return Tensor<Float>(values, .CPU, .NCHW(1, 1, 1, kernelSize))
+  return kernel
 }
 
 func LTX2VocoderWithBWE(width: Int) -> (ModelWeightMapper, Model, () -> Void) {

@@ -120,10 +120,12 @@ private func NCHWLTX2SpatialUpscaler3D(
   switch mode {
   case .x2:
     upsampleConv = Convolution(
-      groups: 1, filters: midChannels * 4, filterSize: [3, 3],
-      hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
+      groups: 1, filters: midChannels * 4, filterSize: [1, 3, 3],
+      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
       name: "upsampler_conv")
-    out = upsampleConv(out).reshaped([
+    out = upsampleConv(out.reshaped([
+      1, midChannels, depth, height, width,
+    ])).reshaped([
       midChannels * 4, depth, height, width,
     ])
     out = out.reshaped([midChannels, 2, 2, depth, height, width]).permuted(
@@ -138,10 +140,12 @@ private func NCHWLTX2SpatialUpscaler3D(
   case .x1_5:
     precondition(height % 2 == 0 && width % 2 == 0)
     upsampleConv = Convolution(
-      groups: 1, filters: midChannels * 9, filterSize: [3, 3],
-      hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
+      groups: 1, filters: midChannels * 9, filterSize: [1, 3, 3],
+      hint: Hint(stride: [1, 1, 1], border: Hint.Border(begin: [0, 1, 1], end: [0, 1, 1])),
       name: "upsampler_conv")
-    out = upsampleConv(out).reshaped([
+    out = upsampleConv(out.reshaped([
+      1, midChannels, depth, height, width,
+    ])).reshaped([
       midChannels * 9, depth, height, width,
     ])
     out = out.reshaped([midChannels, 3, 3, depth, height, width]).permuted(
@@ -149,10 +153,12 @@ private func NCHWLTX2SpatialUpscaler3D(
     ).contiguous()
     out = out.reshaped([midChannels, depth, height * 3, width * 3])
     let blur = Convolution(
-      groups: midChannels, filters: midChannels, filterSize: [5, 5], noBias: true,
-      hint: Hint(stride: [2, 2], border: Hint.Border(begin: [2, 2], end: [2, 2])),
+      groups: midChannels, filters: midChannels, filterSize: [1, 5, 5], noBias: true,
+      hint: Hint(stride: [1, 2, 2], border: Hint.Border(begin: [0, 2, 2], end: [0, 2, 2])),
       name: "upsampler_blur_down")
-    out = blur(out).reshaped([
+    out = blur(out.reshaped([
+      1, midChannels, depth, height * 3, width * 3,
+    ])).reshaped([
       midChannels, depth, height * 3 / 2, width * 3 / 2,
     ])
     upsampleWeightKey = "upsampler.conv.weight"

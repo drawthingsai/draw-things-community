@@ -121,8 +121,8 @@ extension FirstStage {
       startHeight = startHeight - audioHeight
       z = x[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]].contiguous()
       audioZ = DynamicGraph.Tensor<Float>(
-        from: x[0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]].contiguous()
-          .reshaped(.HWC(1, audioFrames, shape[3])).contiguous())
+        from: x[0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]].copied()
+          .reshaped(.HWC(1, audioFrames, shape[3])))
     } else {
       z = x
       audioZ = nil
@@ -698,12 +698,14 @@ extension FirstStage {
           ]
           vocoderLoader = nil
         }
+        audioDecoder[0].maxConcurrency = .limit(4)
         audioDecoder[0].compile(inputs: audioZ)
         let decodedAudio = graph.variable(
           .GPU(0),
           format: .NCHW,
           shape: [1, 128, 1, decodedAudioWidth],
           of: Float.self)
+        audioDecoder[1].maxConcurrency = .limit(4)
         audioDecoder[1].compile(inputs: decodedAudio)
         vocoderLoader?()
         graph.openStore(

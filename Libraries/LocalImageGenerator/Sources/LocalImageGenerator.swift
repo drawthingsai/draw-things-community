@@ -4609,7 +4609,7 @@ extension LocalImageGenerator {
             let firstPassAudioLatents = x[
               0..<shape[0], firstPassStartHeight..<(firstPassStartHeight + firstPassAudioHeight),
               0..<firstPassStartWidth, 0..<shape[3]
-            ].contiguous().reshaped(.HWC(1, audioFrames, shape[3]))
+            ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
             audioLatents[0..<1, 0..<audioFrames, 0..<shape[3]] = firstPassAudioLatents
           }
           sample = Functional.concat(
