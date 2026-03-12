@@ -125,9 +125,7 @@ private func NCHWLTX2SpatialUpscaler3D(
       name: "upsampler_conv")
     out = upsampleConv(out.reshaped([
       1, midChannels, depth, height, width,
-    ])).reshaped([
-      midChannels * 4, depth, height, width,
-    ])
+    ]))
     out = out.reshaped([midChannels, 2, 2, depth, height, width]).permuted(
       0, 3, 4, 1, 5, 2
     ).contiguous()
@@ -145,9 +143,7 @@ private func NCHWLTX2SpatialUpscaler3D(
       name: "upsampler_conv")
     out = upsampleConv(out.reshaped([
       1, midChannels, depth, height, width,
-    ])).reshaped([
-      midChannels * 9, depth, height, width,
-    ])
+    ]))
     out = out.reshaped([midChannels, 3, 3, depth, height, width]).permuted(
       0, 3, 4, 1, 5, 2
     ).contiguous()
