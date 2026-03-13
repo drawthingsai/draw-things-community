@@ -1898,6 +1898,7 @@ extension FirstStage {
         }
       }
     }
+    graph.joined()
     let (xWeightsAndIndexes, yWeightsAndIndexes) = xyTileWeightsAndIndexes(
       width: shape[2] * scaleFactor.spatial, height: shape[1] * scaleFactor.spatial, xTiles: xTiles,
       yTiles: yTiles,
@@ -2060,6 +2061,7 @@ extension FirstStage {
           }
         }
       }
+      graph.joined()
       let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
       result.withUnsafeMutableBytes {
         guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
