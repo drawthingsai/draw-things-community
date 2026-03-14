@@ -57,6 +57,7 @@ public enum SamplerModifier: String, Codable {
   case qwenimageEditPlus = "qwenimage_edit_plus"
   case qwenimageLayered = "qwenimage_layered"
   case qwenimageEdit2511 = "qwenimage_edit_2511"
+  case kontextKv = "kontext_kv"  // KV cache enabled.
 }
 
 public struct LoRAConfiguration: Equatable, Codable {
@@ -327,7 +328,8 @@ public func cfgChannelsAndInputChannels(
     case .double:
       cfgChannels = isCfgEnabled ? 2 : 1
       inChannels = channels * 2
-    case .none, .kontext, .qwenimageEditPlus, .qwenimageEdit2511, .qwenimageLayered:
+    case .none, .kontext, .kontextKv, .qwenimageEditPlus, .qwenimageEdit2511,
+      .qwenimageLayered:
       cfgChannels = isCfgEnabled ? 2 : 1
       inChannels = channels
     }
@@ -420,7 +422,8 @@ func updateCfgInputAndConditions<FloatType: TensorNumeric & BinaryFloatingPoint>
           maskedImage
       }
     }
-  case .none, .kontext, .qwenimageEditPlus, .qwenimageEdit2511, .qwenimageLayered:
+  case .none, .kontext, .kontextKv, .qwenimageEditPlus, .qwenimageEdit2511,
+    .qwenimageLayered:
     break
   }
 }

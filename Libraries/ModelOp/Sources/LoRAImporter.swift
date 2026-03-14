@@ -179,21 +179,27 @@ public enum LoRAImporter {
     case .flux2:
       (unetMapper, unet) = Flux2(
         batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
-        channels: 6144, layers: (8, 48), usesFlashAttention: .scale1)
+        channels: 6144, layers: (8, 48), usesFlashAttention: .scale1, kvCache: false)
       (unetFixedMapper, unetFixed) = Flux2Fixed(
-        channels: 6144, numberOfReferenceImages: 0, guidanceEmbed: true)
+        timesteps: 1,
+        channels: 6144, layers: (8, 48), numberOfReferenceImages: 0, guidanceEmbed: true,
+        usesFlashAttention: .scale1, kvCache: false)
     case .flux2_9b:
       (unetMapper, unet) = Flux2(
         batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
-        channels: 4096, layers: (8, 24), usesFlashAttention: .scale1)
+        channels: 4096, layers: (8, 24), usesFlashAttention: .scale1, kvCache: false)
       (unetFixedMapper, unetFixed) = Flux2Fixed(
-        channels: 4096, numberOfReferenceImages: 0, guidanceEmbed: true)
+        timesteps: 1,
+        channels: 4096, layers: (8, 24), numberOfReferenceImages: 0, guidanceEmbed: true,
+        usesFlashAttention: .scale1, kvCache: false)
     case .flux2_4b:
       (unetMapper, unet) = Flux2(
         batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
-        channels: 3072, layers: (5, 20), usesFlashAttention: .scale1)
+        channels: 3072, layers: (5, 20), usesFlashAttention: .scale1, kvCache: false)
       (unetFixedMapper, unetFixed) = Flux2Fixed(
-        channels: 3072, numberOfReferenceImages: 0, guidanceEmbed: true)
+        timesteps: 1,
+        channels: 3072, layers: (5, 20), numberOfReferenceImages: 0, guidanceEmbed: true,
+        usesFlashAttention: .scale1, kvCache: false)
     case .ltx2:
       (unetMapper, unet) = LTX2(
         time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),

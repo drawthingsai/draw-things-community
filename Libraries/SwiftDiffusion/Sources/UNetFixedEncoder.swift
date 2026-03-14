@@ -674,7 +674,8 @@ extension UNetFixedEncoder {
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
-        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        modifier != .kontextKv && !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred
+        && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
@@ -946,7 +947,8 @@ extension UNetFixedEncoder {
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
-        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        modifier != .kontextKv && !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred
+        && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
@@ -1329,7 +1331,8 @@ extension UNetFixedEncoder {
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
-        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        modifier != .kontextKv && !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred
+        && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
@@ -1750,6 +1753,11 @@ extension UNetFixedEncoder {
       let textLength = c0.shape[1]
       let h = startHeight / 2
       let w = startWidth / 2
+      var timesteps = timesteps
+      let kvCache = modifier == .kontextKv && referenceImages.count > 0
+      if kvCache {
+        timesteps.append(0)
+      }
       var timeEmbeds = graph.variable(.GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
       let isGuidanceEmbedSupported =
         (try?
@@ -1785,12 +1793,16 @@ extension UNetFixedEncoder {
         }
       }
       let channels: Int
+      let layers: (Int, Int)
       if version == .flux2_9b {
         channels = 4_096
+        layers = (8, 24)
       } else if version == .flux2_4b {
         channels = 3_072
+        layers = (5, 20)
       } else {
         channels = 6_144
+        layers = (8, 48)
       }
       precondition(timesteps.count > 0)
       let unetFixed: Model
@@ -1800,7 +1812,8 @@ extension UNetFixedEncoder {
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
-        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        modifier != .kontextKv && !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred
+        && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
@@ -1810,13 +1823,34 @@ extension UNetFixedEncoder {
           guidanceEmbed: isGuidanceEmbedSupported, LoRAConfiguration: configuration)
       } else {
         (_, unetFixed) = Flux2Fixed(
-          channels: channels, numberOfReferenceImages: referenceImages.count,
-          guidanceEmbed: isGuidanceEmbedSupported)
+          timesteps: timesteps.count,
+          channels: channels, layers: layers, numberOfReferenceImages: referenceImages.count,
+          guidanceEmbed: isGuidanceEmbedSupported,
+          usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+          kvCache: modifier == .kontextKv && referenceImages.count > 0)
       }
       unetFixed.maxConcurrency = .limit(4)
+      let referenceRotaryEmbedding: DynamicGraph.Tensor<FloatType>?
+      if kvCache {
+        let referenceSizes = referenceImages.map {
+          let shape = $0.shape
+          return (height: shape[1] / 2, width: shape[2] / 2)
+        }
+        referenceRotaryEmbedding = graph.variable(
+          Tensor<FloatType>(
+            from: Flux2RotaryPositionEmbedding(
+              height: 0, width: 0, tokenLength: 0, referenceSizes: referenceSizes,
+              channels: 128)
+          ).toGPU(0))
+      } else {
+        referenceRotaryEmbedding = nil
+      }
       var inputs: [DynamicGraph.Tensor<FloatType>] = [c0] + referenceImages + [timeEmbeds]
       if let guidanceEmbeds = guidanceEmbeds {
         inputs.append(guidanceEmbeds)
+      }
+      if let referenceRotaryEmbedding = referenceRotaryEmbedding {
+        inputs.append(referenceRotaryEmbedding)
       }
       unetFixed.compile(inputs: inputs)
       var suffix = ""
@@ -1870,41 +1904,47 @@ extension UNetFixedEncoder {
         }
       }
       var conditions = unetFixed(
-        inputs: c0, referenceImages + [timeEmbeds] + (guidanceEmbeds.map { [$0] } ?? [])
+        inputs: c0,
+        referenceImages + [timeEmbeds] + (guidanceEmbeds.map { [$0] } ?? [])
+          + (referenceRotaryEmbedding.map { [$0] } ?? [])
       ).map {
         $0.as(of: FloatType.self)
       }
       weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
       var referenceSizes: [(height: Int, width: Int)]
       if referenceImages.count > 0 {
-        referenceSizes = conditions[0..<referenceImages.count].map {
-          let shape = $0.shape
-          return (height: shape[1], width: shape[2])
-        }
-        let refLatents = conditions[0..<referenceImages.count].map {
-          let shape = $0.shape
-          return $0.reshaped(.HWC(shape[0], shape[1] * shape[2], shape[3]))
-        }
-        let sequenceLength = refLatents.reduce(0) { $0 + $1.shape[1] }
-        let shape = refLatents[0].shape
-        var reference = graph.variable(
-          .GPU(0), .HWC(shape[0], sequenceLength, shape[2]), of: FloatType.self)
-        var index = 0
-        for refLatent in refLatents {
-          let shape = refLatent.shape
-          reference[0..<shape[0], index..<(index + shape[1]), 0..<shape[2]] = refLatent
-          index += shape[1]
-        }
-        if shape[0] < cBatchSize {
-          let oldReference = reference
-          reference = graph.variable(
-            .GPU(0), .HWC(cBatchSize, sequenceLength, shape[2]), of: FloatType.self)
-          for i in 0..<cBatchSize {
-            reference[i..<(i + 1), 0..<sequenceLength, 0..<shape[2]] =
-              oldReference[0..<1, 0..<sequenceLength, 0..<shape[2]]
+        if kvCache {
+          referenceSizes = []
+        } else {
+          referenceSizes = conditions[0..<referenceImages.count].map {
+            let shape = $0.shape
+            return (height: shape[1], width: shape[2])
           }
+          let refLatents = conditions[0..<referenceImages.count].map {
+            let shape = $0.shape
+            return $0.reshaped(.HWC(shape[0], shape[1] * shape[2], shape[3]))
+          }
+          let sequenceLength = refLatents.reduce(0) { $0 + $1.shape[1] }
+          let shape = refLatents[0].shape
+          var reference = graph.variable(
+            .GPU(0), .HWC(shape[0], sequenceLength, shape[2]), of: FloatType.self)
+          var index = 0
+          for refLatent in refLatents {
+            let shape = refLatent.shape
+            reference[0..<shape[0], index..<(index + shape[1]), 0..<shape[2]] = refLatent
+            index += shape[1]
+          }
+          if shape[0] < cBatchSize {
+            let oldReference = reference
+            reference = graph.variable(
+              .GPU(0), .HWC(cBatchSize, sequenceLength, shape[2]), of: FloatType.self)
+            for i in 0..<cBatchSize {
+              reference[i..<(i + 1), 0..<sequenceLength, 0..<shape[2]] =
+                oldReference[0..<1, 0..<sequenceLength, 0..<shape[2]]
+            }
+          }
+          conditions = [reference] + conditions[referenceImages.count...]
         }
-        conditions = [reference] + conditions[referenceImages.count...]
       } else {
         referenceSizes = []
       }

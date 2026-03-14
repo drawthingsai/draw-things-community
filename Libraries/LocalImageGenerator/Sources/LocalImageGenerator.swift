@@ -1518,7 +1518,7 @@ extension LocalImageGenerator {
         paddingToken: 0, addSpecialTokens: true, conditionalLength: 4096, modifier: .t5xxl,
         potentials: potentials, startLength: 0, maxLength: 0, paddingLength: 0)
     case .qwenImage:
-      if modifier == .kontext {
+      if modifier == .kontext || modifier == .kontextKv {
         let promptWithTemplate =
           "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>\(text)<|im_end|>\n<|im_start|>assistant\n"
         let negativePromptWithTemplate =
@@ -3237,7 +3237,7 @@ extension LocalImageGenerator {
             encodedCanny[0..<1, 0..<encodedShape[1], 0..<encodedShape[2], 0..<16].copied()), []
         )
       }
-    case .kontext, .qwenimageEditPlus, .qwenimageLayered, .qwenimageEdit2511:
+    case .kontext, .kontextKv, .qwenimageEditPlus, .qwenimageLayered, .qwenimageEdit2511:
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
@@ -3307,7 +3307,7 @@ extension LocalImageGenerator {
     case .depth, .canny, .qwenimageEditPlus, .qwenimageLayered, .qwenimageEdit2511, .double,
       .editing, .inpainting, .none:
       return x
-    case .kontext:
+    case .kontext, .kontextKv:
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
@@ -3998,7 +3998,9 @@ extension LocalImageGenerator {
         downscaleImageAndToGPU(graph.variable($0), scaleFactor: imageScaleFactor)
       }
       let textImages: [DynamicGraph.Tensor<FloatType>]
-      if modifier == .kontext || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511 {
+      if modifier == .kontext || modifier == .kontextKv || modifier == .qwenimageEditPlus
+        || modifier == .qwenimageEdit2511
+      {
         textImages = (image.map { [$0] } ?? []) + shuffles.map { graph.variable($0.0) }
       } else {
         textImages = image.map { [$0] } ?? []
@@ -4045,6 +4047,7 @@ extension LocalImageGenerator {
       var firstPassImage: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modifier == .double
         || modifier == .depth || modifier == .canny || modifier == .kontext
+        || modifier == .kontextKv
         || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511
         || modifier == .qwenimageLayered || canInjectControls
         || canInjectT2IAdapters || !injectIPAdapterLengths.isEmpty
@@ -5190,7 +5193,9 @@ extension LocalImageGenerator {
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textImages: [DynamicGraph.Tensor<FloatType>]
-      if modifier == .kontext || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511 {
+      if modifier == .kontext || modifier == .kontextKv || modifier == .qwenimageEditPlus
+        || modifier == .qwenimageEdit2511
+      {
         textImages = [image] + shuffles.map { graph.variable($0.0) }
       } else {
         textImages = [image]
@@ -6580,7 +6585,9 @@ extension LocalImageGenerator {
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textImages: [DynamicGraph.Tensor<FloatType>]
-      if modifier == .kontext || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511 {
+      if modifier == .kontext || modifier == .kontextKv || modifier == .qwenimageEditPlus
+        || modifier == .qwenimageEdit2511
+      {
         textImages = [image] + shuffles.map { graph.variable($0.0) }
       } else {
         textImages = [image]
@@ -7454,7 +7461,9 @@ extension LocalImageGenerator {
       let image = downscaleImageAndToGPU(
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textImages: [DynamicGraph.Tensor<FloatType>]
-      if modifier == .kontext || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511 {
+      if modifier == .kontext || modifier == .kontextKv || modifier == .qwenimageEditPlus
+        || modifier == .qwenimageEdit2511
+      {
         textImages = [image] + shuffles.map { graph.variable($0.0) }
       } else {
         textImages = [image]

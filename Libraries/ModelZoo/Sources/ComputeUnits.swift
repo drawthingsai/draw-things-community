@@ -118,7 +118,7 @@ public enum ComputeUnits {
     switch context.samplerModifier {
     case .qwenimageLayered:
       return baseReferenceCount
-    case .kontext, .qwenimageEditPlus, .qwenimageEdit2511:
+    case .kontext, .kontextKv, .qwenimageEditPlus, .qwenimageEdit2511:
       return baseReferenceCount + extraReferenceCount
     default:
       return 0

@@ -258,6 +258,31 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         }
       }
   case .flux2, .flux2_9b, .flux2_4b:
+    if modifier == .kontextKv && referenceImageCount > 0 {
+      let cachedKVCount: Int
+      if version == .flux2_9b {
+        cachedKVCount = (8 + 24) * 2
+      } else if version == .flux2_4b {
+        cachedKVCount = (5 + 20) * 2
+      } else {
+        cachedKVCount = (8 + 48) * 2
+      }
+      let dynamicEndIndex = conditions.count - cachedKVCount
+      return conditions[0..<2]
+        + conditions[2..<dynamicEndIndex].map {
+          let shape = $0.shape
+          if shape.count == 2 {
+            return DynamicGraph.Tensor<Float>($0)[
+              index..<(index + 1), 0..<shape[1]
+            ].copied()
+          } else {
+            return DynamicGraph.Tensor<Float>($0)[
+              index..<(index + 1), 0..<shape[1], 0..<shape[2]
+            ].copied()
+          }
+        }
+        + Array(conditions[dynamicEndIndex..<conditions.count])
+    }
     let endIndex = referenceImageCount > 0 ? 3 : 2
     return conditions[0..<endIndex]
       + conditions[endIndex..<conditions.count].map {
@@ -548,7 +573,8 @@ extension UNetFromNNC {
       tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
-        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        modifier != .kontextKv && !lora.isEmpty && rankOfLoRA > 0 && !isLoHa
+        && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       if didRunLoRASeparately {
         unet =
@@ -1352,7 +1378,8 @@ extension UNetFromNNC {
       tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
-        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        modifier != .kontextKv && !lora.isEmpty && rankOfLoRA > 0 && !isLoHa
+        && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       let channels: Int
       let layers: (Int, Int)
@@ -1393,7 +1420,10 @@ extension UNetFromNNC {
           ModelBuilder {
             let referenceSequenceLength: Int
             let tokenLength: Int
-            if referenceImageCount > 0 {
+            if modifier == .kontextKv && referenceImageCount > 0 {
+              referenceSequenceLength = $0[$0.count - 1].shape[1]
+              tokenLength = $0[2].shape[1]
+            } else if referenceImageCount > 0 {
               referenceSequenceLength = $0[2].shape[1]
               tokenLength = $0[3].shape[1]
             } else {
@@ -1404,7 +1434,8 @@ extension UNetFromNNC {
               batchSize: $0[0].shape[0], tokenLength: tokenLength,
               referenceSequenceLength: referenceSequenceLength,
               height: tiledHeight, width: tiledWidth, channels: channels, layers: layers,
-              usesFlashAttention: usesFlashAttention ? .scale1 : .none
+              usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+              kvCache: modifier == .kontextKv && referenceImageCount > 0
             ).1
           })
       }
