@@ -767,7 +767,7 @@ public struct ModelZoo: DownloadZoo {
       ],
       note:
         "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a significant update to LTX-2 with improved audio and visual quality and enhanced prompt adherence. It is a state-of-the-art open-source audio-video foundation model developed by Lightricks and can generate synchronized video and audio within a single model. The [distilled] checkpoint is the distilled version of the full model and is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
-      copyright: "© 2026 Lightricks"
+      copyright: "© 2026 Lightricks", huggingFaceLink: "Lightricks/LTX-2.3"
     ),
     Specification(
       name: "LTX-2.3 22B [distilled] (6-bit)", file: "ltx_2.3_22b_distilled_q6p.ckpt", prefix: "",
@@ -819,7 +819,7 @@ public struct ModelZoo: DownloadZoo {
       hiresFixScale: 24,
       note:
         "[LTX-2](https://huggingface.co/Lightricks/LTX-2) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [distilled] checkpoint is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
-      copyright: "© 2026 Lightricks"
+      copyright: "© 2026 Lightricks", huggingFaceLink: "Lightricks/LTX-2"
     ),
     Specification(
       name: "LTX-2 19B [distilled] (6-bit)", file: "ltx_2_19b_distilled_q6p.ckpt", prefix: "",
