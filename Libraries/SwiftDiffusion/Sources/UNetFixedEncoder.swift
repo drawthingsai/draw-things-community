@@ -674,8 +674,7 @@ extension UNetFixedEncoder {
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
-        modifier != .kontextKv && !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred
-        && rankOfLoRA > 0
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
@@ -947,8 +946,7 @@ extension UNetFixedEncoder {
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
-        modifier != .kontextKv && !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred
-        && rankOfLoRA > 0
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
@@ -1331,8 +1329,7 @@ extension UNetFixedEncoder {
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
-        modifier != .kontextKv && !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred
-        && rankOfLoRA > 0
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
@@ -1812,15 +1809,17 @@ extension UNetFixedEncoder {
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
       let shouldRunLoRASeparately =
-        modifier != .kontextKv && !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred
-        && rankOfLoRA > 0
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         (_, unetFixed) = LoRAFlux2Fixed(
-          channels: channels, numberOfReferenceImages: referenceImages.count,
-          guidanceEmbed: isGuidanceEmbedSupported, LoRAConfiguration: configuration)
+          timesteps: timesteps.count,
+          channels: channels, layers: layers, numberOfReferenceImages: referenceImages.count,
+          guidanceEmbed: isGuidanceEmbedSupported,
+          usesFlashAttention: usesFlashAttention ? .scale1 : .none, kvCache: kvCache,
+          LoRAConfiguration: configuration)
       } else {
         (_, unetFixed) = Flux2Fixed(
           timesteps: timesteps.count,

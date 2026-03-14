@@ -573,8 +573,7 @@ extension UNetFromNNC {
       tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
-        modifier != .kontextKv && !lora.isEmpty && rankOfLoRA > 0 && !isLoHa
-        && runLoRASeparatelyIsPreferred
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       if didRunLoRASeparately {
         unet =
@@ -1378,8 +1377,7 @@ extension UNetFromNNC {
       tiledAudioHeight = 0
       tileScaleFactor = 8
       didRunLoRASeparately =
-        modifier != .kontextKv && !lora.isEmpty && rankOfLoRA > 0 && !isLoHa
-        && runLoRASeparatelyIsPreferred
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
         && canRunLoRASeparately
       let channels: Int
       let layers: (Int, Int)
@@ -1400,7 +1398,10 @@ extension UNetFromNNC {
           ModelBuilder {
             let referenceSequenceLength: Int
             let tokenLength: Int
-            if referenceImageCount > 0 {
+            if modifier == .kontextKv && referenceImageCount > 0 {
+              referenceSequenceLength = $0[$0.count - 1].shape[1]
+              tokenLength = $0[2].shape[1]
+            } else if referenceImageCount > 0 {
               referenceSequenceLength = $0[2].shape[1]
               tokenLength = $0[3].shape[1]
             } else {
@@ -1412,6 +1413,7 @@ extension UNetFromNNC {
               referenceSequenceLength: referenceSequenceLength,
               height: tiledHeight, width: tiledWidth, channels: channels, layers: layers,
               usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+              kvCache: modifier == .kontextKv && referenceImageCount > 0,
               LoRAConfiguration: configuration
             ).1
           })

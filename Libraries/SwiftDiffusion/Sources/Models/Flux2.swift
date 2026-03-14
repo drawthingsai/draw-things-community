@@ -1062,12 +1062,14 @@ private func LoRAFeedForward(
 
 private func LoRAJointTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, contextBlockPreOnly: Bool,
-  scaleFactor: Float?, usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
-  configuration: LoRANetworkConfiguration
+  scaleFactor: Float?, usesFlashAttention: FlashAttentionLevel, cachedSequenceLength: Int = 0,
+  kvCache: Bool = false, layerIndex: Int, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
   let rot = Input()
+  let cachedKeys = kvCache ? Input() : nil
+  let cachedValues = kvCache ? Input() : nil
   let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
   let contextNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var contextOut = contextNorm1(context).to(.Float16) .* contextChunks[1] + contextChunks[0]
@@ -1107,6 +1109,12 @@ private func LoRAJointTransformerBlock(
   var queries = Functional.concat(axis: 1, xQ, contextQ)
   queries = Functional.cmul(left: queries, right: rot)
   keys = Functional.cmul(left: keys, right: rot)
+  if let cachedKeys = cachedKeys, let cachedValues = cachedValues {
+    keys = Functional.concat(axis: 1, keys, cachedKeys, flags: [.disableOpt])
+    values = Functional.concat(axis: 1, values, cachedValues, flags: [.disableOpt])
+  }
+  let querySequenceLength = t + hw
+  let keyValueSequenceLength = querySequenceLength + cachedSequenceLength
   // Now run attention.
   var out: Model.IO
   switch usesFlashAttention {
@@ -1118,43 +1126,51 @@ private func LoRAJointTransformerBlock(
     if b * h <= 256 {
       var outs = [Model.IO]()
       for i in 0..<(b * h) {
-        let key = keys.reshaped([1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let key = keys.reshaped(
+          [1, keyValueSequenceLength, k], offset: [i, 0, 0],
+          strides: [keyValueSequenceLength * k, k, 1])
         let query = queries.reshaped(
-          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+          [1, querySequenceLength, k], offset: [i, 0, 0],
+          strides: [querySequenceLength * k, k, 1])
         let value = values.reshaped(
-          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+          [1, keyValueSequenceLength, k], offset: [i, 0, 0],
+          strides: [keyValueSequenceLength * k, k, 1])
         var dot = Matmul(transposeB: (1, 2))(query, key)
         if let last = outs.last {
           dot.add(dependencies: [last])
         }
-        dot = dot.reshaped([t + hw, t + hw])
+        dot = dot.reshaped([querySequenceLength, keyValueSequenceLength])
         dot = dot.softmax()
-        dot = dot.reshaped([1, t + hw, t + hw])
+        dot = dot.reshaped([1, querySequenceLength, keyValueSequenceLength])
         outs.append(dot * value)
       }
       out = Concat(axis: 0)(outs)
-      out = out.reshaped([b, h, t + hw, k]).transposed(1, 2).reshaped([b, t + hw, h * k])
+      out = out.reshaped([b, h, querySequenceLength, k]).transposed(1, 2).reshaped([
+        b, querySequenceLength, h * k,
+      ])
     } else {
       var dot = Matmul(transposeB: (2, 3))(queries, keys)
-      dot = dot.reshaped([b * h * (t + hw), t + hw])
+      dot = dot.reshaped([b * h * querySequenceLength, keyValueSequenceLength])
       dot = dot.softmax()
-      dot = dot.reshaped([b, h, (t + hw), t + hw])
+      dot = dot.reshaped([b, h, querySequenceLength, keyValueSequenceLength])
       out = dot * values
-      out = out.reshaped([b, h, (t + hw), k]).transposed(1, 2).reshaped([b, (t + hw), h * k])
+      out = out.reshaped([b, h, querySequenceLength, k]).transposed(1, 2).reshaped([
+        b, querySequenceLength, h * k,
+      ])
     }
   case .scale1:
     queries = (1.0 / Float(k).squareRoot()) * queries
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   case .scaleMerged:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
-    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
     contextOut = out.reshaped(
-      [b, t, h * k], offset: [0, hw, 0], strides: [(t + hw) * h * k, h * k, 1]
+      [b, t, h * k], offset: [0, hw, 0], strides: [querySequenceLength * h * k, h * k, 1]
     ).contiguous()
     let unifyheads = LoRADense(
       count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "c_o")
@@ -1163,7 +1179,7 @@ private func LoRAJointTransformerBlock(
   } else {
     contextUnifyheads = nil
   }
-  xOut = out.reshaped([b, hw, h * k], strides: [(t + hw) * h * k, h * k, 1])
+  xOut = out.reshaped([b, hw, h * k], strides: [querySequenceLength * h * k, h * k, 1])
     .contiguous()
   let xUnifyheads = LoRADense(
     count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_o")
@@ -1262,20 +1278,32 @@ private func LoRAJointTransformerBlock(
     return mapping
   }
   if !contextBlockPreOnly {
-    return (mapper, Model([context, x, rot] + contextChunks + xChunks, [contextOut, xOut]))
+    return (
+      mapper,
+      Model(
+        [context, x, rot] + (cachedKeys.map { [$0] } ?? []) + (cachedValues.map { [$0] } ?? [])
+          + contextChunks + xChunks, [contextOut, xOut])
+    )
   } else {
-    return (mapper, Model([context, x, rot] + contextChunks + xChunks, [xOut]))
+    return (
+      mapper,
+      Model(
+        [context, x, rot] + (cachedKeys.map { [$0] } ?? []) + (cachedValues.map { [$0] } ?? [])
+          + contextChunks + xChunks, [xOut])
+    )
   }
 }
 
 private func LoRASingleTransformerBlock(
   prefix: (String, String), k: Int, h: Int, b: Int, t: Int, hw: Int, referenceSequenceLength: Int,
-  contextBlockPreOnly: Bool, usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
-  MLPLayerIndex: Int,
+  contextBlockPreOnly: Bool, usesFlashAttention: FlashAttentionLevel,
+  cachedSequenceLength: Int = 0, kvCache: Bool = false, layerIndex: Int, MLPLayerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
+  let cachedKeys = kvCache ? Input() : nil
+  let cachedValues = kvCache ? Input() : nil
   let xChunks = (0..<3).map { _ in Input() }
   let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   var xOut = xNorm1(x).to(.Float16) .* xChunks[1] + xChunks[0]
@@ -1298,6 +1326,12 @@ private func LoRASingleTransformerBlock(
   var queries = xQ
   queries = Functional.cmul(left: queries, right: rot)
   keys = Functional.cmul(left: keys, right: rot)
+  if let cachedKeys = cachedKeys, let cachedValues = cachedValues {
+    keys = Functional.concat(axis: 1, keys, cachedKeys, flags: [.disableOpt])
+    values = Functional.concat(axis: 1, values, cachedValues, flags: [.disableOpt])
+  }
+  let querySequenceLength = t + hw
+  let keyValueSequenceLength = querySequenceLength + cachedSequenceLength
   // Now run attention.
   var out: Model.IO
   switch usesFlashAttention {
@@ -1309,51 +1343,59 @@ private func LoRASingleTransformerBlock(
     if b * h <= 256 {
       var outs = [Model.IO]()
       for i in 0..<(b * h) {
-        let key = keys.reshaped([1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+        let key = keys.reshaped(
+          [1, keyValueSequenceLength, k], offset: [i, 0, 0],
+          strides: [keyValueSequenceLength * k, k, 1])
         let query = queries.reshaped(
-          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+          [1, querySequenceLength, k], offset: [i, 0, 0],
+          strides: [querySequenceLength * k, k, 1])
         let value = values.reshaped(
-          [1, t + hw, k], offset: [i, 0, 0], strides: [(t + hw) * k, k, 1])
+          [1, keyValueSequenceLength, k], offset: [i, 0, 0],
+          strides: [keyValueSequenceLength * k, k, 1])
         var dot = Matmul(transposeB: (1, 2))(query, key)
         if let last = outs.last {
           dot.add(dependencies: [last])
         }
-        dot = dot.reshaped([t + hw, t + hw])
+        dot = dot.reshaped([querySequenceLength, keyValueSequenceLength])
         dot = dot.softmax()
-        dot = dot.reshaped([1, t + hw, t + hw])
+        dot = dot.reshaped([1, querySequenceLength, keyValueSequenceLength])
         outs.append(dot * value)
       }
       out = Concat(axis: 0)(outs)
-      out = out.reshaped([b, h, t + hw, k]).transposed(1, 2).reshaped([b, t + hw, h * k])
+      out = out.reshaped([b, h, querySequenceLength, k]).transposed(1, 2).reshaped([
+        b, querySequenceLength, h * k,
+      ])
     } else {
       var dot = Matmul(transposeB: (2, 3))(queries, keys)
-      dot = dot.reshaped([b * h * (t + hw), t + hw])
+      dot = dot.reshaped([b * h * querySequenceLength, keyValueSequenceLength])
       dot = dot.softmax()
-      dot = dot.reshaped([b, h, (t + hw), t + hw])
+      dot = dot.reshaped([b, h, querySequenceLength, keyValueSequenceLength])
       out = dot * values
-      out = out.reshaped([b, h, (t + hw), k]).transposed(1, 2).reshaped([b, (t + hw), h * k])
+      out = out.reshaped([b, h, querySequenceLength, k]).transposed(1, 2).reshaped([
+        b, querySequenceLength, h * k,
+      ])
     }
   case .scale1:
     queries = (1.0 / Float(k).squareRoot()) * queries
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   case .scaleMerged:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
-    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   }
   var xIn: Model.IO = x
   if contextBlockPreOnly {
     out = out.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [(t + hw) * h * k, h * k, 1]
+      [b, hw - referenceSequenceLength, h * k], strides: [querySequenceLength * h * k, h * k, 1]
     )
     .contiguous()
     xIn = x.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [(t + hw) * h * k, h * k, 1]
+      [b, hw - referenceSequenceLength, h * k], strides: [querySequenceLength * h * k, h * k, 1]
     )
     .contiguous()
     xOut = xOut.reshaped(
-      [b, hw - referenceSequenceLength, h * k], strides: [(t + hw) * h * k, h * k, 1]
+      [b, hw - referenceSequenceLength, h * k], strides: [querySequenceLength * h * k, h * k, 1]
     )
     .contiguous()
   }
@@ -1395,12 +1437,223 @@ private func LoRASingleTransformerBlock(
     }
     return mapping
   }
-  return (mapper, Model([x, rot] + xChunks, [out]))
+  return (
+    mapper,
+    Model(
+      [x, rot] + (cachedKeys.map { [$0] } ?? []) + (cachedValues.map { [$0] } ?? []) + xChunks,
+      [out])
+  )
+}
+
+private func LoRAJointTransformerBlockImageOnly(
+  prefix: (String, String), k: Int, h: Int, b: Int, scaleFactor: Float?,
+  usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
+  configuration: LoRANetworkConfiguration
+) -> (ModelWeightMapper, Model) {
+  let x = Input()
+  let rot = Input()
+  let xChunks = (0..<6).map { _ in Input() }
+  let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  var xOut = xNorm1(x).to(.Float16) .* xChunks[1] + xChunks[0]
+  let xToKeys = LoRADense(
+    count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_k")
+  let xToQueries = LoRADense(
+    count: k * h, configuration: configuration, noBias: true, flags: [.Float16], index: layerIndex,
+    name: "x_q")
+  let xToValues = LoRADense(
+    count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_v")
+  var keys = xToKeys(xOut).reshaped([b, -1, h, k])
+  let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
+  keys = normK(keys)
+  var queries = xToQueries(xOut).reshaped([b, -1, h, k])
+  let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_q")
+  queries = normQ(queries)
+  let values = xToValues(xOut).reshaped([b, -1, h, k])
+  let rotatedKeys = Functional.cmul(left: keys, right: rot)
+  queries = Functional.cmul(left: queries, right: rot)
+  var out: Model.IO
+  switch usesFlashAttention {
+  case .none:
+    let transposedKeys = rotatedKeys.transposed(1, 2)
+    let transposedQueries = ((1.0 / Float(k).squareRoot()) * queries).transposed(1, 2)
+    let transposedValues = values.transposed(1, 2)
+    var dot = Matmul(transposeB: (2, 3))(transposedQueries, transposedKeys)
+    dot = dot.softmax()
+    out = dot * transposedValues
+    out = out.transposed(1, 2).reshaped([b, -1, h * k])
+  case .scale1:
+    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+    out = scaledDotProductAttention((1.0 / Float(k).squareRoot()) * queries, rotatedKeys, values)
+      .reshaped([b, -1, k * h])
+  case .scaleMerged:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+    out = scaledDotProductAttention(queries, rotatedKeys, values).reshaped([b, -1, k * h])
+  }
+  let xUnifyheads = LoRADense(
+    count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_o")
+  xOut = x + (xUnifyheads(out) .* xChunks[2]).to(of: x)
+  let (xW1, xW2, xW3, xFF) = LoRAFeedForward(
+    hiddenSize: k * h, intermediateSize: k * h * 3, scaleFactor: scaleFactor,
+    configuration: configuration, index: layerIndex, name: "x")
+  let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  if let scaleFactor = scaleFactor {
+    xOut = Add(rightScalar: scaleFactor)(
+      xOut, xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]) .* xChunks[5].to(of: xOut))
+  } else {
+    xOut =
+      xOut + (xFF(xNorm2(xOut).to(.Float16) .* xChunks[4] + xChunks[3]) .* xChunks[5]).to(of: xOut)
+  }
+  let mapper: ModelWeightMapper = { format in
+    var mapping: [String: ModelWeightElement] = [:]
+    switch format {
+    case .generativeModels:
+      mapping["\(prefix.0).img_attn.qkv.weight"] = [
+        xToQueries.weight.name, xToKeys.weight.name, xToValues.weight.name,
+      ]
+      mapping["\(prefix.0).img_attn.norm.key_norm.scale"] = [normK.weight.name]
+      mapping["\(prefix.0).img_attn.norm.query_norm.scale"] = [normQ.weight.name]
+      mapping["\(prefix.0).img_attn.proj.weight"] = [xUnifyheads.weight.name]
+      mapping["\(prefix.0).img_mlp.0.weight"] = [xW1.weight.name, xW3.weight.name]
+      mapping["\(prefix.0).img_mlp.2.weight"] = [xW2.weight.name]
+    case .diffusers:
+      mapping["\(prefix.1).attn.to_q.weight"] = [xToQueries.weight.name]
+      mapping["\(prefix.1).attn.to_k.weight"] = [xToKeys.weight.name]
+      mapping["\(prefix.1).attn.to_v.weight"] = [xToValues.weight.name]
+      mapping["\(prefix.1).attn.norm_k.weight"] = [normK.weight.name]
+      mapping["\(prefix.1).attn.norm_q.weight"] = [normQ.weight.name]
+      mapping["\(prefix.1).attn.to_out.0.weight"] = [xUnifyheads.weight.name]
+      mapping["\(prefix.1).ff.linear_in.weight"] = [xW1.weight.name, xW3.weight.name]
+      mapping["\(prefix.1).ff.linear_out.weight"] = [xW2.weight.name]
+    }
+    return mapping
+  }
+  return (mapper, Model([x, rot] + xChunks, [xOut, rotatedKeys, values]))
+}
+
+private func LoRASingleTransformerBlockImageOnly(
+  prefix: (String, String), k: Int, h: Int, b: Int, contextBlockPreOnly: Bool,
+  usesFlashAttention: FlashAttentionLevel, layerIndex: Int, MLPLayerIndex: Int,
+  configuration: LoRANetworkConfiguration
+) -> (ModelWeightMapper, Model) {
+  let x = Input()
+  let rot = Input()
+  var xChunks = (0..<2).map { _ in Input() }
+  let xNorm1 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
+  let xOut = xNorm1(x).to(.Float16) .* xChunks[1] + xChunks[0]
+  let xToKeys = LoRADense(
+    count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_k")
+  let xToValues = LoRADense(
+    count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_v")
+  var keys = xToKeys(xOut).reshaped([b, -1, h, k])
+  let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
+  keys = normK(keys)
+  let values = xToValues(xOut).reshaped([b, -1, h, k])
+  let rotatedKeys = Functional.cmul(left: keys, right: rot)
+  let xToQueries: Model?
+  let normQ: Model?
+  let xUnifyheads: Model?
+  let xW1: Model?
+  let xW3: Model?
+  let xW2: Model?
+  let refOut: Model.IO?
+  if !contextBlockPreOnly {
+    xChunks.append(Input())
+    let xToQueriesLocal = LoRADense(
+      count: k * h, configuration: configuration, noBias: true, flags: [.Float16],
+      index: layerIndex, name: "x_q")
+    var queries = xToQueriesLocal(xOut).reshaped([b, -1, h, k])
+    let normQLocal = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_q")
+    queries = normQLocal(queries)
+    queries = Functional.cmul(left: queries, right: rot)
+    var out: Model.IO
+    switch usesFlashAttention {
+    case .none:
+      let transposedKeys = rotatedKeys.transposed(1, 2)
+      let transposedQueries = ((1.0 / Float(k).squareRoot()) * queries).transposed(1, 2)
+      let transposedValues = values.transposed(1, 2)
+      var dot = Matmul(transposeB: (2, 3))(transposedQueries, transposedKeys)
+      dot = dot.softmax()
+      out = dot * transposedValues
+      out = out.transposed(1, 2).reshaped([b, -1, h * k])
+    case .scale1:
+      let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+      out = scaledDotProductAttention((1.0 / Float(k).squareRoot()) * queries, rotatedKeys, values)
+        .reshaped([b, -1, k * h])
+    case .scaleMerged:
+      let scaledDotProductAttention = ScaledDotProductAttention(
+        scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+      out = scaledDotProductAttention(queries, rotatedKeys, values).reshaped([b, -1, k * h])
+    }
+    let xUnifyheadsLocal = LoRADense(
+      count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_o")
+    let xW1Local = LoRADense(
+      count: k * h * 3, configuration: configuration, noBias: true, flags: [.Float16],
+      index: MLPLayerIndex, name: "x_w1")
+    let xW3Local = LoRADense(
+      count: k * h * 3, configuration: configuration, noBias: true, index: MLPLayerIndex,
+      name: "x_w3")
+    let xW2Local = LoRADense(
+      count: k * h, configuration: configuration, noBias: true, index: MLPLayerIndex, name: "x_w2")
+    out = xUnifyheadsLocal(out) + xW2Local(xW3Local(xOut) .* xW1Local(xOut).swish())
+    out = x + (out .* xChunks[2]).to(of: x)
+    xToQueries = xToQueriesLocal
+    normQ = normQLocal
+    xUnifyheads = xUnifyheadsLocal
+    xW1 = xW1Local
+    xW3 = xW3Local
+    xW2 = xW2Local
+    refOut = out
+  } else {
+    xToQueries = nil
+    normQ = nil
+    xUnifyheads = nil
+    xW1 = nil
+    xW3 = nil
+    xW2 = nil
+    refOut = nil
+  }
+  let mapper: ModelWeightMapper = { format in
+    var mapping: ModelWeightMapping = [:]
+    guard let xToQueries = xToQueries, let normQ = normQ, let xUnifyheads = xUnifyheads,
+      let xW1 = xW1, let xW3 = xW3, let xW2 = xW2
+    else {
+      return mapping
+    }
+    switch format {
+    case .generativeModels:
+      mapping["\(prefix.0).linear1.weight"] = ModelWeightElement(
+        [
+          xToQueries.weight.name, xToKeys.weight.name, xToValues.weight.name, xW1.weight.name,
+          xW3.weight.name,
+        ], offsets: [0, k * h, k * h * 2, k * h * 3, k * h * 6])
+      mapping["\(prefix.0).norm.key_norm.scale"] = [normK.weight.name]
+      mapping["\(prefix.0).norm.query_norm.scale"] = [normQ.weight.name]
+      mapping["\(prefix.0).linear2.weight"] = ModelWeightElement(
+        [xUnifyheads.weight.name, xW2.weight.name], format: .I, offsets: [0, k * h])
+    case .diffusers:
+      mapping["\(prefix.1).attn.to_qkv_mlp_proj.weight"] = ModelWeightElement(
+        [
+          xToQueries.weight.name, xToKeys.weight.name, xToValues.weight.name, xW1.weight.name,
+          xW3.weight.name,
+        ], offsets: [0, k * h, k * h * 2, k * h * 3, k * h * 6])
+      mapping["\(prefix.1).attn.norm_k.weight"] = [normK.weight.name]
+      mapping["\(prefix.1).attn.norm_q.weight"] = [normQ.weight.name]
+      mapping["\(prefix.1).attn.to_out.weight"] = ModelWeightElement(
+        [xUnifyheads.weight.name, xW2.weight.name], format: .I, offsets: [0, k * h])
+    }
+    return mapping
+  }
+  if let refOut = refOut {
+    return (mapper, Model([x, rot] + xChunks, [refOut, rotatedKeys, values]))
+  } else {
+    return (mapper, Model([x, rot] + xChunks, [rotatedKeys, values]))
+  }
 }
 
 public func LoRAFlux2(
   batchSize: Int, tokenLength: Int, referenceSequenceLength: Int, height: Int, width: Int,
-  channels: Int, layers: (Int, Int), usesFlashAttention: FlashAttentionLevel,
+  channels: Int, layers: (Int, Int), usesFlashAttention: FlashAttentionLevel, kvCache: Bool,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -1408,12 +1661,16 @@ public func LoRAFlux2(
   let rot = Input()
   let h = height / 2
   let w = width / 2
+  let kvCache = kvCache && referenceSequenceLength > 0
   let xEmbedder = LoRAConvolution(
     groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
     noBias: true, hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
   var out: Model.IO
   let referenceLatents: Input?
-  if referenceSequenceLength > 0 && (layers.0 > 0 || layers.1 > 0) {
+  if kvCache {
+    out = xEmbedder(x).reshaped([batchSize, h * w, channels]).to(.Float32)
+    referenceLatents = nil
+  } else if referenceSequenceLength > 0 && (layers.0 > 0 || layers.1 > 0) {
     let latents = Input()
     let imgIn = xEmbedder(x).reshaped([batchSize, h * w, channels])
     out = Functional.concat(axis: 1, imgIn, latents, flags: [.disableOpt]).to(.Float32)
@@ -1425,16 +1682,26 @@ public func LoRAFlux2(
   var context = contextIn.to(.Float32)
   let xChunks = (0..<6).map { _ in Input() }
   let contextChunks = (0..<6).map { _ in Input() }
-  let rotResized = rot.reshaped(.NHWC(1, h * w + referenceSequenceLength + tokenLength, 1, 128))
+  let cachedAttentionKVs =
+    kvCache ? (0..<(layers.0 + layers.1)).map { _ in (Input(), Input()) } : []
+  let sequenceLength = h * w + tokenLength + (kvCache ? 0 : referenceSequenceLength)
+  let rotResized = rot.reshaped(.NHWC(1, sequenceLength, 1, 128))
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
     let (mapper, block) = LoRAJointTransformerBlock(
       prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize,
-      t: tokenLength, hw: h * w + referenceSequenceLength, contextBlockPreOnly: false,
+      t: tokenLength, hw: h * w + (kvCache ? 0 : referenceSequenceLength),
+      contextBlockPreOnly: false,
       scaleFactor: i > layers.0 - 3 ? 8 : nil, usesFlashAttention: usesFlashAttention,
-      layerIndex: i, configuration: LoRAConfiguration)
-    let blockOut = block([context, out, rotResized] + contextChunks + xChunks)
+      cachedSequenceLength: kvCache ? referenceSequenceLength : 0, kvCache: kvCache, layerIndex: i,
+      configuration: LoRAConfiguration)
+    var blockInputs: [Model.IO] = [context, out, rotResized]
+    if kvCache {
+      blockInputs.append(cachedAttentionKVs[i].0)
+      blockInputs.append(cachedAttentionKVs[i].1)
+    }
+    let blockOut = block(blockInputs + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
     mappers.append(mapper)
@@ -1445,11 +1712,18 @@ public func LoRAFlux2(
     let (mapper, block) = LoRASingleTransformerBlock(
       prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128, h: channels / 128,
       b: batchSize,
-      t: tokenLength, hw: h * w + referenceSequenceLength,
-      referenceSequenceLength: referenceSequenceLength,
+      t: tokenLength, hw: h * w + (kvCache ? 0 : referenceSequenceLength),
+      referenceSequenceLength: kvCache ? 0 : referenceSequenceLength,
       contextBlockPreOnly: i == layers.1 - 1, usesFlashAttention: usesFlashAttention,
+      cachedSequenceLength: kvCache ? referenceSequenceLength : 0, kvCache: kvCache,
       layerIndex: i + layers.0, MLPLayerIndex: i, configuration: LoRAConfiguration)
-    out = block([out, rotResized] + singleChunks)
+    var blockInputs: [Model.IO] = [out, rotResized]
+    if kvCache {
+      let cachedAttentionKV = cachedAttentionKVs[layers.0 + i]
+      blockInputs.append(cachedAttentionKV.0)
+      blockInputs.append(cachedAttentionKV.1)
+    }
+    out = block(blockInputs + singleChunks)
     mappers.append(mapper)
   }
   let scale = Input()
@@ -1481,28 +1755,35 @@ public func LoRAFlux2(
   var inputs: [Input] = [x, rot] + (referenceLatents.map { [$0] } ?? []) + [contextIn]
   inputs.append(contentsOf: xChunks + contextChunks + singleChunks)
   inputs.append(contentsOf: [scale, shift])
+  inputs.append(contentsOf: cachedAttentionKVs.flatMap { [$0.0, $0.1] })
   return (mapper, Model(inputs, [out]))
 }
 
 public func LoRAFlux2Fixed(
-  channels: Int, numberOfReferenceImages: Int, guidanceEmbed: Bool,
+  timesteps: Int, channels: Int, layers: (Int, Int), numberOfReferenceImages: Int,
+  guidanceEmbed: Bool, usesFlashAttention: FlashAttentionLevel, kvCache: Bool,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
+  let kvCache = kvCache && numberOfReferenceImages > 0
   let contextIn = Input()
   let t = Input()
+  let referenceRot = kvCache ? Input() : nil
   var referenceImages = [Input]()
-  var outs = [Model.IO]()
+  var referenceOutputs = [Model.IO]()
+  let xEmbedder: Model?
   if numberOfReferenceImages > 0 {
-    let xEmbedder = LoRAConvolution(
+    let embedder = LoRAConvolution(
       groups: 1, filters: channels, filterSize: [2, 2], configuration: LoRAConfiguration,
-      noBias: true,
-      hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+      noBias: true, hint: Hint(stride: [2, 2]), format: .OIHW, name: "x_embedder")
+    xEmbedder = embedder
     for _ in 0..<numberOfReferenceImages {
       let x = Input()
-      let out = xEmbedder(x)
+      let out = embedder(x)
       referenceImages.append(x)
-      outs.append(out)
+      referenceOutputs.append(out)
     }
+  } else {
+    xEmbedder = nil
   }
   let contextEmbedder = LoRADense(
     count: channels, configuration: LoRAConfiguration, noBias: true, index: 0,
@@ -1556,10 +1837,67 @@ public func LoRAFlux2Fixed(
   let shift = LoRADense(
     count: channels, configuration: LoRAConfiguration, noBias: true, index: 0, name: "ada_ln_1")
   let finalChunks = [(1 + scale(vec)), shift(vec)]
+  var cachedReferenceKVs = [Model.IO]()
+  var mappers = [ModelWeightMapper]()
+  if let referenceRot = referenceRot {
+    let fixedXChunks = xChunks.map {
+      $0.reshaped(
+        [1, 1, channels], offset: [timesteps - 1, 0, 0], strides: [channels, channels, 1]
+      ).contiguous()
+    }
+    let fixedSingleChunks = singleChunks.map {
+      $0.reshaped(
+        [1, 1, channels], offset: [timesteps - 1, 0, 0], strides: [channels, channels, 1]
+      ).contiguous()
+    }
+    let referenceLatents = referenceOutputs.map { $0.reshaped([1, -1, channels]).to(.Float32) }
+    var referenceOut = referenceLatents[0]
+    if referenceLatents.count > 1 {
+      referenceOut = Concat(axis: 1)(referenceLatents)
+    }
+    let referenceRotResized = referenceRot.reshaped([1, -1, 1, 128])
+    for i in 0..<layers.0 {
+      let (mapper, block) = LoRAJointTransformerBlockImageOnly(
+        prefix: ("double_blocks.\(i)", "transformer_blocks.\(i)"), k: 128, h: channels / 128,
+        b: 1, scaleFactor: i > layers.0 - 3 ? 8 : nil, usesFlashAttention: usesFlashAttention,
+        layerIndex: i, configuration: LoRAConfiguration)
+      let blockOut = block([referenceOut, referenceRotResized] + fixedXChunks)
+      referenceOut = blockOut[0]
+      cachedReferenceKVs.append(blockOut[1])
+      cachedReferenceKVs.append(blockOut[2])
+      mappers.append(mapper)
+    }
+    for i in 0..<layers.1 {
+      let (mapper, block) = LoRASingleTransformerBlockImageOnly(
+        prefix: ("single_blocks.\(i)", "single_transformer_blocks.\(i)"), k: 128,
+        h: channels / 128, b: 1, contextBlockPreOnly: i == layers.1 - 1,
+        usesFlashAttention: usesFlashAttention, layerIndex: i + layers.0, MLPLayerIndex: i,
+        configuration: LoRAConfiguration)
+      if i == layers.1 - 1 {
+        let blockOut = block([
+          referenceOut, referenceRotResized, fixedSingleChunks[0], fixedSingleChunks[1],
+        ])
+        cachedReferenceKVs.append(blockOut[0])
+        cachedReferenceKVs.append(blockOut[1])
+      } else {
+        let blockOut = block([referenceOut, referenceRotResized] + fixedSingleChunks)
+        referenceOut = blockOut[0]
+        cachedReferenceKVs.append(blockOut[1])
+        cachedReferenceKVs.append(blockOut[2])
+        mappers.append(mapper)
+      }
+    }
+  }
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
     switch format {
     case .generativeModels:
+      if let xEmbedder = xEmbedder {
+        mapping["img_in.weight"] = [xEmbedder.weight.name]
+      }
       mapping["txt_in.weight"] = [contextEmbedder.weight.name]
       mapping["time_in.in_layer.weight"] = [tMlp0.weight.name]
       mapping["time_in.out_layer.weight"] = [tMlp2.weight.name]
@@ -1578,6 +1916,9 @@ public func LoRAFlux2Fixed(
       ] = ModelWeightElement(singleAdaLNs.map { $0.weight.name })
       mapping["final_layer.adaLN_modulation.1.weight"] = [shift.weight.name, scale.weight.name]
     case .diffusers:
+      if let xEmbedder = xEmbedder {
+        mapping["x_embedder.weight"] = [xEmbedder.weight.name]
+      }
       mapping["context_embedder.weight"] = [contextEmbedder.weight.name]
       mapping["time_guidance_embed.timestep_embedder.linear_1.weight"] = [tMlp0.weight.name]
       mapping["time_guidance_embed.timestep_embedder.linear_2.weight"] = [tMlp2.weight.name]
@@ -1598,10 +1939,18 @@ public func LoRAFlux2Fixed(
     }
     return mapping
   }
-  return (
-    mapper,
-    Model(
-      [contextIn] + referenceImages + [t] + (g.map { [$0] } ?? []),
-      outs + [context] + xChunks + contextChunks + singleChunks + finalChunks)
-  )
+  var inputs: [Input] = [contextIn] + referenceImages + [t]
+  inputs.append(contentsOf: g.map { [$0] } ?? [])
+  inputs.append(contentsOf: referenceRot.map { [$0] } ?? [])
+  var outputs = [Model.IO]()
+  if !kvCache {
+    outputs.append(contentsOf: referenceOutputs)
+  }
+  outputs.append(context)
+  outputs.append(contentsOf: xChunks)
+  outputs.append(contentsOf: contextChunks)
+  outputs.append(contentsOf: singleChunks)
+  outputs.append(contentsOf: finalChunks)
+  outputs.append(contentsOf: cachedReferenceKVs)
+  return (mapper, Model(inputs, outputs))
 }
