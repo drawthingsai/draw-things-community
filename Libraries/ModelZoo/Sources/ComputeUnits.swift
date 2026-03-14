@@ -416,14 +416,16 @@ public enum ComputeUnits {
         channels = 6144
         layers = (8, 48)
       }
+      let kvCache = context.samplerModifier == .kontextKv && referenceSequenceLength > 0
       let mainCount = Flux2InstructionCount(
         batchSize: 1, tokenLength: baseTokenLength,
-        referenceSequenceLength: referenceSequenceLength, height: startHeight, width: startWidth,
-        channels: channels, layers: layers)
+        referenceSequenceLength: kvCache ? 0 : referenceSequenceLength,
+        cachedReferenceSequenceLength: kvCache ? referenceSequenceLength : 0,
+        height: startHeight, width: startWidth, channels: channels, layers: layers)
       let fixedCount = Flux2FixedInstructionCount(
-        contextBatchSize: 1, tokenLength: baseTokenLength, timestepCount: 1,
-        referenceSequenceLength: referenceSequenceLength, channels: channels,
-        guidanceEmbed: context.isGuidanceEmbedEnabled)
+        contextBatchSize: 1, tokenLength: baseTokenLength, timestepCount: kvCache ? 2 : 1,
+        referenceSequenceLength: referenceSequenceLength, channels: channels, layers: layers,
+        guidanceEmbed: context.isGuidanceEmbedEnabled, kvCache: kvCache)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     case .hiDreamI1:
       let hiDreamWidth =

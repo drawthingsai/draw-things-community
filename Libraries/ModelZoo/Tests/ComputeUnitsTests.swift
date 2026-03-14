@@ -342,6 +342,25 @@ final class ComputeUnitsTests: XCTestCase {
     }
   }
 
+  func testFlux2KVCacheInstructionCountMovesReferenceWorkToFixedPath() throws {
+    let legacyMain = Flux2InstructionCount(
+      batchSize: 1, tokenLength: 512, referenceSequenceLength: 1024, height: 64, width: 64,
+      channels: 4096, layers: (8, 24))
+    let kvMain = Flux2InstructionCount(
+      batchSize: 1, tokenLength: 512, referenceSequenceLength: 0,
+      cachedReferenceSequenceLength: 1024, height: 64, width: 64, channels: 4096,
+      layers: (8, 24))
+    XCTAssertLessThan(kvMain, legacyMain)
+
+    let legacyFixed = Flux2FixedInstructionCount(
+      contextBatchSize: 1, tokenLength: 512, timestepCount: 1, referenceSequenceLength: 1024,
+      channels: 4096, layers: (8, 24), guidanceEmbed: false)
+    let kvFixed = Flux2FixedInstructionCount(
+      contextBatchSize: 1, tokenLength: 512, timestepCount: 2, referenceSequenceLength: 1024,
+      channels: 4096, layers: (8, 24), guidanceEmbed: false, kvCache: true)
+    XCTAssertGreaterThan(kvFixed, legacyFixed)
+  }
+
   func testDiagnosticsFlux2_9BVsFlux1AndLTX2Shape() throws {
     let sizes: [(pixel: Int, latent: UInt16)] = [(768, 12), (1024, 16), (1280, 20)]
 

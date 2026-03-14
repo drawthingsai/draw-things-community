@@ -3,8 +3,9 @@ import Foundation
 // Counts only Dense (GEMM), SDPA-equivalent attention, and Convolution instructions.
 // Ignores LoRA, norms, elementwise ops, reshapes, concat/slice, and adapter/control injections.
 public func Flux2InstructionCount(
-  batchSize: Int, tokenLength: Int, referenceSequenceLength: Int, height: Int, width: Int,
-  channels: Int, layers: (Int, Int)
+  batchSize: Int, tokenLength: Int, referenceSequenceLength: Int,
+  cachedReferenceSequenceLength: Int = 0, height: Int, width: Int, channels: Int,
+  layers: (Int, Int)
 ) -> Int {
   precondition(height % 2 == 0 && width % 2 == 0)
   precondition(channels % 128 == 0)
@@ -13,7 +14,8 @@ public func Flux2InstructionCount(
   let imageWidth = width / 2
   let imageSequenceLength = imageHeight * imageWidth
   let imageAndReferenceSequenceLength = imageSequenceLength + referenceSequenceLength
-  let totalSequenceLength = tokenLength + imageAndReferenceSequenceLength
+  let querySequenceLength = tokenLength + imageAndReferenceSequenceLength
+  let keyValueSequenceLength = querySequenceLength + cachedReferenceSequenceLength
   let heads = channels / 128
   let headDimension = 128
   var total = 0
@@ -38,14 +40,14 @@ public func Flux2InstructionCount(
 
     total += ScaledDotProductAttentionInstructionCount(
       batchSize: batchSize, heads: heads, headDimension: headDimension,
-      sequenceDimensionA: totalSequenceLength, sequenceDimensionB: totalSequenceLength)
+      sequenceDimensionA: querySequenceLength, sequenceDimensionB: keyValueSequenceLength)
   }
 
   for i in 0..<layers.1 {
     let isLast = (i == layers.1 - 1)
-    let projectedSequenceLength = isLast ? imageSequenceLength : totalSequenceLength
+    let projectedSequenceLength = isLast ? imageSequenceLength : querySequenceLength
     let rowsProjected = batchSize * projectedSequenceLength
-    let rowsTotal = batchSize * totalSequenceLength
+    let rowsTotal = batchSize * querySequenceLength
 
     total += 3 * DenseInstructionCount(rows: rowsTotal, input: channels, output: channels)  // qkv
     total += DenseInstructionCount(rows: rowsProjected, input: channels, output: channels)  // x_o
@@ -53,7 +55,7 @@ public func Flux2InstructionCount(
     total += DenseInstructionCount(rows: rowsProjected, input: channels * 3, output: channels)  // x_w2
     total += ScaledDotProductAttentionInstructionCount(
       batchSize: batchSize, heads: heads, headDimension: headDimension,
-      sequenceDimensionA: totalSequenceLength, sequenceDimensionB: totalSequenceLength)
+      sequenceDimensionA: querySequenceLength, sequenceDimensionB: keyValueSequenceLength)
   }
 
   total += DenseInstructionCount(
@@ -66,7 +68,7 @@ public func Flux2InstructionCount(
 // so those compile-shape inputs are passed explicitly here.
 public func Flux2FixedInstructionCount(
   contextBatchSize: Int, tokenLength: Int, timestepCount: Int, referenceSequenceLength: Int,
-  channels: Int, guidanceEmbed: Bool
+  channels: Int, layers: (Int, Int), guidanceEmbed: Bool, kvCache: Bool = false
 ) -> Int {
   precondition(channels % 128 == 0)
   precondition(contextBatchSize >= 0 && tokenLength >= 0 && timestepCount >= 0)
@@ -93,6 +95,38 @@ public func Flux2FixedInstructionCount(
   // Modulation heads from `vec` (timestepCount rows).
   // xAdaLNs (6) + contextAdaLNs (6) + singleAdaLNs (3) + final (scale,shift) = 17 Dense.
   total += 17 * DenseInstructionCount(rows: timestepCount, input: channels, output: channels)
+
+  if kvCache && referenceSequenceLength > 0 {
+    let heads = channels / 128
+    let headDimension = 128
+    let rowsReference = referenceSequenceLength
+
+    for _ in 0..<layers.0 {
+      total += 4 * DenseInstructionCount(rows: rowsReference, input: channels, output: channels)
+      total += 2 * DenseInstructionCount(rows: rowsReference, input: channels, output: channels * 3)
+      total += DenseInstructionCount(rows: rowsReference, input: channels * 3, output: channels)
+      total += ScaledDotProductAttentionInstructionCount(
+        batchSize: 1, heads: heads, headDimension: headDimension,
+        sequenceDimensionA: referenceSequenceLength, sequenceDimensionB: referenceSequenceLength)
+    }
+
+    for i in 0..<layers.1 {
+      let isLast = (i == layers.1 - 1)
+      total += 2 * DenseInstructionCount(rows: rowsReference, input: channels, output: channels)
+      if !isLast {
+        total += DenseInstructionCount(rows: rowsReference, input: channels, output: channels)
+        total += DenseInstructionCount(rows: rowsReference, input: channels, output: channels)
+        total +=
+          2
+          * DenseInstructionCount(
+            rows: rowsReference, input: channels, output: channels * 3)
+        total += DenseInstructionCount(rows: rowsReference, input: channels * 3, output: channels)
+        total += ScaledDotProductAttentionInstructionCount(
+          batchSize: 1, heads: heads, headDimension: headDimension,
+          sequenceDimensionA: referenceSequenceLength, sequenceDimensionB: referenceSequenceLength)
+      }
+    }
+  }
 
   return total
 }
