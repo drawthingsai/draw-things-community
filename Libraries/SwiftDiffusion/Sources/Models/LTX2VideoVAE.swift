@@ -125,7 +125,7 @@ func NHWCLTX2VideoDecoderCausal3D(
         if residual {
           precondition(previousChannel % (layer.stride.1 * layer.stride.2) == 0)
           precondition(channels * layer.stride.1 * layer.stride.2 % previousChannel == 0)
-          residualOut = out.reshaped([
+          var residualOutLocal = out.reshaped([
             depth, height, width, previousChannel / (layer.stride.1 * layer.stride.2),
             layer.stride.1, layer.stride.2,
           ]).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([
@@ -135,11 +135,12 @@ func NHWCLTX2VideoDecoderCausal3D(
           if channels * layer.stride.1 * layer.stride.2 / previousChannel > 1 {
             let concat = Concat(axis: 3)
             concat.flags = [.disableOpt]
-            residualOut = concat(
+            residualOutLocal = concat(
               Array(
-                repeating: residualOut!,
+                repeating: residualOutLocal,
                 count: channels * layer.stride.1 * layer.stride.2 / previousChannel))
           }
+          residualOut = residualOutLocal
         }
         out = out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0])
         if paddingMode == .reflect {
@@ -168,7 +169,7 @@ func NHWCLTX2VideoDecoderCausal3D(
         if residual {
           precondition(previousChannel % layer.stride.0 == 0)
           precondition(channels * layer.stride.0 % previousChannel == 0)
-          residualOut = out.reshaped([
+          var residualOutLocal = out.reshaped([
             depth, height, width, previousChannel / layer.stride.0, layer.stride.0,
           ]).permuted(0, 4, 1, 2, 3).contiguous().reshaped(
             [depth * layer.stride.0 - 1, height, width, previousChannel / layer.stride.0],
@@ -179,14 +180,15 @@ func NHWCLTX2VideoDecoderCausal3D(
             ]
           )
           if channels * layer.stride.0 / previousChannel > 1 {
-            residualOut = residualOut!.contiguous()
+            residualOutLocal = residualOutLocal.contiguous()
             let concat = Concat(axis: 3)
             concat.flags = [.disableOpt]
-            residualOut = concat(
-              Array(repeating: residualOut!, count: channels * layer.stride.0 / previousChannel))
+            residualOutLocal = concat(
+              Array(repeating: residualOutLocal, count: channels * layer.stride.0 / previousChannel))
           } else {
-            residualOut = residualOut!.copied()
+            residualOutLocal = residualOutLocal.copied()
           }
+          residualOut = residualOutLocal
         }
         out = out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0])
         if paddingMode == .reflect {
@@ -216,7 +218,7 @@ func NHWCLTX2VideoDecoderCausal3D(
           precondition(previousChannel % (layer.stride.0 * layer.stride.1 * layer.stride.2) == 0)
           precondition(
             channels * layer.stride.0 * layer.stride.1 * layer.stride.2 % previousChannel == 0)
-          residualOut = out.reshaped([
+          var residualOutLocal = out.reshaped([
             depth, height, width,
             previousChannel / (layer.stride.0 * layer.stride.1 * layer.stride.2), layer.stride.0,
             layer.stride.1, layer.stride.2,
@@ -232,17 +234,18 @@ func NHWCLTX2VideoDecoderCausal3D(
             ]
           )
           if channels * layer.stride.0 * layer.stride.1 * layer.stride.2 / previousChannel > 1 {
-            residualOut = residualOut!.contiguous()
+            residualOutLocal = residualOutLocal.contiguous()
             let concat = Concat(axis: 3)
             concat.flags = [.disableOpt]
-            residualOut = concat(
+            residualOutLocal = concat(
               Array(
-                repeating: residualOut!,
+                repeating: residualOutLocal,
                 count: channels * layer.stride.0 * layer.stride.1 * layer.stride.2 / previousChannel
               ))
           } else {
-            residualOut = residualOut!.copied()
+            residualOutLocal = residualOutLocal.copied()
           }
+          residualOut = residualOutLocal
         }
         out = out.padded(.replicate, begin: [1, 0, 0, 0], end: [1, 0, 0, 0])
         if paddingMode == .reflect {
