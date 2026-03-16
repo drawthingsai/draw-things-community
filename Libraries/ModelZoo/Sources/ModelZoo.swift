@@ -748,8 +748,8 @@ public struct ModelZoo: DownloadZoo {
       "dcf1fe7b365da89ef9bcacaf488682addbef2d255a31d7f0a580d5c6841d6e2a",
     "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt":
       "249f5bd521472a952775e0cb9729836d2fc9ab488ca64e08329e19dd07060157",
-    "ltx_2.3_spatial_upscaler_x2_f16.ckpt":
-      "ff1c1e36b3f3c354feacbcf37057eeeec363aa98368e832dd99313e8c09b3e86",
+    "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt":
+      "30f695c0b24a59a6490f1552c025124d713f61d4e6a90da6b0def038c8caa845",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -762,7 +762,7 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "ltx_2.3_22b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       latentsUpscalers: [
-        .init(file: "ltx_2.3_spatial_upscaler_x2_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
         .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
       ],
       note:
@@ -776,7 +776,7 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "ltx_2.3_22b_distilled_q6p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       latentsUpscalers: [
-        .init(file: "ltx_2.3_spatial_upscaler_x2_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
         .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
       ],
       note:
@@ -790,7 +790,7 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "ltx_2.3_22b_dev_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       latentsUpscalers: [
-        .init(file: "ltx_2.3_spatial_upscaler_x2_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
         .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
       ],
       note:
@@ -804,7 +804,7 @@ public struct ModelZoo: DownloadZoo {
       clipEncoder: "ltx_2.3_22b_dev_q6p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       latentsUpscalers: [
-        .init(file: "ltx_2.3_spatial_upscaler_x2_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
         .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
       ],
       note:
