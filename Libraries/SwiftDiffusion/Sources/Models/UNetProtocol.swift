@@ -1664,13 +1664,13 @@ extension UNetFromNNC {
         referenceImageCount: referenceImageCount)
       compile(
         unet, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-        isCfgEnabled: isCfgEnabled,
+        isCfgEnabled: isCfgEnabled, referenceImageCount: referenceImageCount,
         inputs: [xT.reshaped(.NHWC(shape[0], tiledHeight + tiledAudioHeight, tiledWidth, shape[3]))]
           + inputs)
     } else {
       compile(
         unet, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-        isCfgEnabled: isCfgEnabled, inputs: [xT] + inputs)
+        isCfgEnabled: isCfgEnabled, referenceImageCount: referenceImageCount, inputs: [xT] + inputs)
     }
     if let timeEmbed = timeEmbed, let timestep = timestep {
       timeEmbed.compile(inputs: timestep)
@@ -2295,7 +2295,7 @@ extension UNetFromNNC {
 
   private func compile(
     _ unet: ModelBuilderOrModel, tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
-    inputs: [DynamicGraph.AnyTensor]
+    referenceImageCount: Int, inputs: [DynamicGraph.AnyTensor]
   ) {
     switch version {
     case .hunyuanVideo:
@@ -2482,14 +2482,26 @@ extension UNetFromNNC {
         // TODO: TeaCache insert here.
         return
       }
-      let count = inputs.count
+      let cachedKVCount: Int
+      if modifier == .kontextKv && referenceImageCount > 0 {
+        if version == .flux2_9b {
+          cachedKVCount = (8 + 24) * 2
+        } else if version == .flux2_4b {
+          cachedKVCount = (5 + 20) * 2
+        } else {
+          cachedKVCount = (8 + 48) * 2
+        }
+      } else {
+        cachedKVCount = 0
+      }
+      let dynamicEndIndex = inputs.count - cachedKVCount
       let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().map {
         let shape = $0.1.shape
         switch $0.0 {
         case 0:
           return DynamicGraph.Tensor<FloatType>($0.1)[
             0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-        case count - 18:
+        case dynamicEndIndex - 18:
           return DynamicGraph.Tensor<Float>($0.1)[
             0..<(shape[0] / 2), 0..<max(tokenLengthUncond, tokenLengthCond), 0..<shape[2]]
         default:
@@ -3243,7 +3255,19 @@ extension UNetFromNNC {
       let shape = firstInput.shape
       let etUncond: DynamicGraph.Tensor<FloatType>
       let etCond: DynamicGraph.Tensor<FloatType>
-      let count = restInputs.count
+      let cachedKVCount: Int
+      if modifier == .kontextKv && referenceImageCount > 0 {
+        if version == .flux2_9b {
+          cachedKVCount = (8 + 24) * 2
+        } else if version == .flux2_4b {
+          cachedKVCount = (5 + 20) * 2
+        } else {
+          cachedKVCount = (8 + 48) * 2
+        }
+      } else {
+        cachedKVCount = 0
+      }
+      let dynamicEndIndex = restInputs.count - cachedKVCount
       if tokenLengthCond > tokenLengthUncond {
         // This if-clause is useful because we compiled the graph with longest token, so later we don't need to trigger the automatic re-compilation.
         let xCond = firstInput[
@@ -3253,7 +3277,7 @@ extension UNetFromNNC {
         let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case count - 18:  // Offset for text condition.
+          case dynamicEndIndex - 18:  // Offset for text condition.
             return DynamicGraph.Tensor<Float>($0.1)[
               (shape[0] / 2)..<shape[0], 0..<tokenLengthCond, 0..<shape[2]
             ].copied()
@@ -3271,7 +3295,7 @@ extension UNetFromNNC {
         let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case count - 18:  // Offset for text condition.
+          case dynamicEndIndex - 18:  // Offset for text condition.
             return DynamicGraph.Tensor<Float>($0.1)[
               0..<(shape[0] / 2), 0..<tokenLengthUncond, 0..<shape[2]
             ].copied()
@@ -3286,7 +3310,7 @@ extension UNetFromNNC {
         let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case count - 18:  // Offset for text condition.
+          case dynamicEndIndex - 18:  // Offset for text condition.
             return DynamicGraph.Tensor<Float>($0.1)[
               0..<(shape[0] / 2), 0..<tokenLengthUncond, 0..<shape[2]
             ].copied()
@@ -3306,7 +3330,7 @@ extension UNetFromNNC {
         let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().map {
           let shape = $0.1.shape
           switch $0.0 {
-          case count - 18:  // Offset for text condition.
+          case dynamicEndIndex - 18:  // Offset for text condition.
             return DynamicGraph.Tensor<Float>($0.1)[
               (shape[0] / 2)..<shape[0], 0..<tokenLengthCond, 0..<shape[2]
             ].copied()
