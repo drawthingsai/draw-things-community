@@ -145,53 +145,11 @@ private enum ModelsDirectoryResolver {
 
 private enum ModelResolver {
   static func resolve(_ input: String) -> ModelZoo.Specification? {
-    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return nil }
-    if let spec = ModelZoo.specificationForModel(trimmed) {
-      return spec
-    }
-    if let spec = ModelZoo.specificationForHumanReadableModel(trimmed) {
-      return spec
-    }
-    if let repo = normalizeHuggingFaceRepo(trimmed),
-      let spec = ModelZoo.specificationForHuggingFaceRepo(repo)
-    {
-      return spec
-    }
-    return nil
+    return ModelZoo.resolveModelReference(input)?.specification
   }
 
-  private static func normalizeHuggingFaceRepo(_ input: String) -> String? {
-    if input.hasPrefix("hf://") {
-      return sanitizeRepo(String(input.dropFirst("hf://".count)))
-    }
-    if let url = URL(string: input),
-      let host = url.host?.lowercased(),
-      host.contains("huggingface.co")
-    {
-      let parts = url.path.split(separator: "/").map(String.init)
-      let startIndex: Int
-      if let first = parts.first, ["models", "datasets", "spaces"].contains(first.lowercased()) {
-        startIndex = 1
-      } else {
-        startIndex = 0
-      }
-      guard parts.count >= startIndex + 2 else { return nil }
-      return sanitizeRepo("\(parts[startIndex])/\(parts[startIndex + 1])")
-    }
-    if input.contains("/"), !input.contains("://"), !input.contains(" ") {
-      return sanitizeRepo(input)
-    }
-    return nil
-  }
-
-  private static func sanitizeRepo(_ repo: String) -> String? {
-    var cleaned = repo.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    if cleaned.hasSuffix(".git") {
-      cleaned = String(cleaned.dropLast(4))
-    }
-    guard cleaned.split(separator: "/").count == 2 else { return nil }
-    return cleaned
+  static func suggestions(_ input: String, limit: Int = 5) -> [ModelZoo.Specification] {
+    return ModelZoo.candidateSpecifications(forModelReference: input, limit: limit)
   }
 }
 
@@ -798,6 +756,15 @@ private func printModelResolutionHelp(limit: Int = 20) {
   print("Tip: run `drawthings models list` for the full list.")
 }
 
+private func unresolvedModelValidationError(_ input: String) -> ValidationError {
+  let suggestions = ModelResolver.suggestions(input, limit: 5)
+  guard !suggestions.isEmpty else {
+    return ValidationError("Could not resolve --model '\(input)'.")
+  }
+  let lines = suggestions.map { "  - \($0.file) (\($0.name))" }.joined(separator: "\n")
+  return ValidationError("Could not resolve --model '\(input)'.\nClosest matches:\n\(lines)")
+}
+
 private func requiredFiles(for configuration: GenerationConfiguration) -> [String] {
   ImageGeneratorUtils.filesToDownload(configuration, keywords: []).map(\.file)
 }
@@ -927,7 +894,7 @@ extension DrawThingsCLI {
       }
       guard ModelResolver.resolve(model) != nil else {
         printModelResolutionHelp()
-        throw ValidationError("Could not resolve --model '\(model)'.")
+        throw unresolvedModelValidationError(model)
       }
 
       let configuration = try createConfiguration(
@@ -1010,7 +977,7 @@ extension DrawThingsCLI {
         }
         guard let modelSpecification = ModelResolver.resolve(model) else {
           printModelResolutionHelp()
-          throw ValidationError("Could not resolve --model '\(model)'.")
+          throw unresolvedModelValidationError(model)
         }
         let files =
           includeDependencies
@@ -1537,7 +1504,7 @@ extension DrawThingsCLI {
         }
         guard let modelSpecification = ModelResolver.resolve(modelInput) else {
           printModelResolutionHelp()
-          throw ValidationError("Could not resolve --model '\(modelInput)'.")
+          throw unresolvedModelValidationError(modelInput)
         }
 
         let datasetDirectory = dataset

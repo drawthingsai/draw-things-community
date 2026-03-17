@@ -1875,8 +1875,186 @@ public struct ModelZoo: DownloadZoo {
     return availableSpecifications.first { $0.name == name }
   }
 
+  public enum ModelReferenceMatchKind: String, Codable {
+    case file
+    case humanReadableName
+    case huggingFaceRepo
+    case huggingFaceURL
+  }
+
+  public struct ModelReferenceResolution {
+    public var specification: Specification
+    public var normalizedInput: String
+    public var kind: ModelReferenceMatchKind
+    public var normalizedHuggingFaceRepo: String?
+    public init(
+      specification: Specification, normalizedInput: String, kind: ModelReferenceMatchKind,
+      normalizedHuggingFaceRepo: String? = nil
+    ) {
+      self.specification = specification
+      self.normalizedInput = normalizedInput
+      self.kind = kind
+      self.normalizedHuggingFaceRepo = normalizedHuggingFaceRepo
+    }
+  }
+
+  // Repo aliases for rename / organization migration cases.
+  // Key and value are both expected as "owner/repo" format.
+  public static var huggingFaceRepoAliases: [String: String] = [:]
+
+  // Highest-priority explicit mapping for HF repo to model spec.
+  public static var huggingFaceRepoOverrideMapping: [String: Specification] = [:]
+
+  // Last-chance explicit mapping for HF repo to model spec.
+  public static var huggingFaceRepoFallbackMapping: [String: Specification] = [:]
+
+  public static func normalizeHuggingFaceRepo(_ input: String) -> String? {
+    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    if trimmed.hasPrefix("hf://") {
+      return sanitizeHuggingFaceRepo(String(trimmed.dropFirst("hf://".count)))
+    }
+    if let url = URL(string: trimmed),
+      let host = url.host?.lowercased(),
+      host.contains("huggingface.co")
+    {
+      let parts = url.path.split(separator: "/").map(String.init)
+      let startIndex: Int
+      if let first = parts.first, ["models", "datasets", "spaces"].contains(first.lowercased()) {
+        startIndex = 1
+      } else {
+        startIndex = 0
+      }
+      guard parts.count >= startIndex + 2 else { return nil }
+      return sanitizeHuggingFaceRepo("\(parts[startIndex])/\(parts[startIndex + 1])")
+    }
+    if trimmed.contains("/"), !trimmed.contains("://"), !trimmed.contains(" ") {
+      return sanitizeHuggingFaceRepo(trimmed)
+    }
+    return nil
+  }
+
   public static func specificationForHuggingFaceRepo(_ repo: String) -> Specification? {
-    return builtinSpecifications.first { $0.huggingFaceLink == repo }
+    guard let canonicalRepo = canonicalizedRepoForLookup(repo) else { return nil }
+    if let override = valueForCanonicalizedRepoKey(huggingFaceRepoOverrideMapping, key: canonicalRepo)
+    {
+      return override
+    }
+    if let matched = availableSpecifications.first(where: {
+      guard let link = $0.huggingFaceLink, let canonicalLink = canonicalHuggingFaceRepo(link) else {
+        return false
+      }
+      return canonicalLink == canonicalRepo
+    }) {
+      return matched
+    }
+    return valueForCanonicalizedRepoKey(huggingFaceRepoFallbackMapping, key: canonicalRepo)
+  }
+
+  public static func resolveModelReference(_ input: String) -> ModelReferenceResolution? {
+    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    if let spec = specificationForModel(trimmed) {
+      return ModelReferenceResolution(
+        specification: spec, normalizedInput: trimmed, kind: .file)
+    }
+    if let spec = specificationForHumanReadableModel(trimmed) {
+      return ModelReferenceResolution(
+        specification: spec, normalizedInput: trimmed, kind: .humanReadableName)
+    }
+    if let repo = normalizeHuggingFaceRepo(trimmed),
+      let spec = specificationForHuggingFaceRepo(repo)
+    {
+      return ModelReferenceResolution(
+        specification: spec, normalizedInput: trimmed,
+        kind: huggingFaceURLLike(trimmed) ? .huggingFaceURL : .huggingFaceRepo,
+        normalizedHuggingFaceRepo: canonicalizedRepoForLookup(repo))
+    }
+    return nil
+  }
+
+  public static func candidateSpecifications(
+    forModelReference input: String, limit: Int = 5
+  ) -> [Specification] {
+    let query = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !query.isEmpty else { return [] }
+    let normalizedRepo = normalizeHuggingFaceRepo(input)?.lowercased()
+    var scored = [(score: Int, specification: Specification)]()
+    for specification in availableSpecifications where specification.remoteApiModelConfig == nil {
+      let file = specification.file.lowercased()
+      let name = specification.name.lowercased()
+      let huggingFace = specification.huggingFaceLink?.lowercased() ?? ""
+      var score = 0
+      if file == query || name == query || huggingFace == query {
+        score = 1000
+      } else if file.hasPrefix(query) || name.hasPrefix(query) || huggingFace.hasPrefix(query) {
+        score = 700
+      } else if file.contains(query) || name.contains(query) || huggingFace.contains(query) {
+        score = 500
+      }
+      if let normalizedRepo {
+        if huggingFace == normalizedRepo {
+          score = max(score, 950)
+        } else if !huggingFace.isEmpty,
+          (huggingFace.contains(normalizedRepo) || normalizedRepo.contains(huggingFace))
+        {
+          score = max(score, 650)
+        }
+      }
+      if score > 0 {
+        scored.append((score, specification))
+      }
+    }
+    return scored
+      .sorted {
+        if $0.score != $1.score {
+          return $0.score > $1.score
+        }
+        let nameOrder = $0.specification.name.localizedCaseInsensitiveCompare($1.specification.name)
+        if nameOrder != .orderedSame {
+          return nameOrder == .orderedAscending
+        }
+        return $0.specification.file.localizedCaseInsensitiveCompare($1.specification.file)
+          == .orderedAscending
+      }
+      .prefix(max(0, limit))
+      .map(\.specification)
+  }
+
+  private static func sanitizeHuggingFaceRepo(_ repo: String) -> String? {
+    var cleaned = repo.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    if cleaned.hasSuffix(".git") {
+      cleaned = String(cleaned.dropLast(4))
+    }
+    let parts = cleaned.split(separator: "/").map(String.init)
+    guard parts.count >= 2 else { return nil }
+    return "\(parts[0])/\(parts[1])"
+  }
+
+  private static func canonicalHuggingFaceRepo(_ input: String) -> String? {
+    return normalizeHuggingFaceRepo(input)?.lowercased()
+  }
+
+  private static func huggingFaceURLLike(_ input: String) -> Bool {
+    guard let url = URL(string: input), let host = url.host?.lowercased() else { return false }
+    return host.contains("huggingface.co")
+  }
+
+  private static func valueForCanonicalizedRepoKey<T>(_ mapping: [String: T], key: String) -> T? {
+    if let value = mapping[key] {
+      return value
+    }
+    return mapping.first { canonicalHuggingFaceRepo($0.key) == key }?.value
+  }
+
+  private static func canonicalizedRepoForLookup(_ repo: String) -> String? {
+    guard let canonicalRepo = canonicalHuggingFaceRepo(repo) else { return nil }
+    if let alias = valueForCanonicalizedRepoKey(huggingFaceRepoAliases, key: canonicalRepo),
+      let canonicalAlias = canonicalHuggingFaceRepo(alias)
+    {
+      return canonicalAlias
+    }
+    return canonicalRepo
   }
 
   // We prefer these if it is a hit.

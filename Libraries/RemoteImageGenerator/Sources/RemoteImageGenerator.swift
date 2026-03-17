@@ -34,6 +34,7 @@ extension DeviceType {
 
 public struct RemoteImageGenerator: ImageGenerator {
   private let logger = Logger(label: "com.draw-things.remote-image-generator")
+  public static var suppressLogs: Bool = false
   public let client: ImageGenerationClientWrapper
   public let serverIdentifier: UInt64
   public let name: String
@@ -74,6 +75,11 @@ public struct RemoteImageGenerator: ImageGenerator {
   }
 
   public var transferDataCallback: TransferDataCallback? = nil
+
+  private func info(_ message: @autoclosure () -> Logger.Message) {
+    guard !Self.suppressLogs else { return }
+    logger.info(message())
+  }
 
   public func generate(
     trace: ImageGeneratorTrace,
@@ -260,7 +266,7 @@ public struct RemoteImageGenerator: ImageGenerator {
         case .UNRECOGNIZED(_):
           imageTensors = []
         }
-        logger.info("Received generated image data")
+        info("Received generated image data")
         tensors.append(contentsOf: imageTensors)
       }
       if !response.generatedAudio.isEmpty {
@@ -290,7 +296,7 @@ public struct RemoteImageGenerator: ImageGenerator {
         case .UNRECOGNIZED(_):
           audioTensors = []
         }
-        logger.info("Received generated image data")
+        info("Received generated image data")
         audios.append(contentsOf: audioTensors)
       }
       if response.hasDownloadSize && response.downloadSize > 0 {
@@ -312,7 +318,7 @@ public struct RemoteImageGenerator: ImageGenerator {
         }
         let isGenerating = feedback(currentSignpost, signpostsSet, previewTensor)
         if !isGenerating {
-          logger.info("Stream cancel image generating")
+          info("Stream cancel image generating")
           call?.cancel(promise: nil)
         }
       }
@@ -332,11 +338,11 @@ public struct RemoteImageGenerator: ImageGenerator {
       case .success(let status):
         switch status.code {
         case .ok:
-          logger.info("Stream completed with status: \(status)")
+          info("Stream completed with status: \(status)")
         case .cancelled:
-          logger.info("Stream cancelled with status: \(status)")
+          info("Stream cancelled with status: \(status)")
         default:
-          logger.info("Stream failed with status: \(status)")
+          info("Stream failed with status: \(status)")
           if status.code == GRPCStatus.Code.permissionDenied, let message = status.message,
             message.contains("throttlePolicy"),
             let requestExceedLimitHandler = requestExceedLimitHandler
