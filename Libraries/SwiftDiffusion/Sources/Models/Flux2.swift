@@ -206,9 +206,18 @@ private func JointTransformerBlock(
   var queries = Functional.concat(axis: 1, xQ, contextQ)
   queries = Functional.cmul(left: queries, right: rot)
   keys = Functional.cmul(left: keys, right: rot)
-  if let cachedKeys = cachedKeys, let cachedValues = cachedValues {
-    keys = Functional.concat(axis: 1, keys, cachedKeys, flags: [.disableOpt])
-    values = Functional.concat(axis: 1, values, cachedValues, flags: [.disableOpt])
+  if var cachedKeys: Model.IO = cachedKeys, var cachedValues: Model.IO = cachedValues {
+    if b > 1 {
+      cachedKeys = Concat(axis: 0)(Array(repeating: cachedKeys, count: b))
+      cachedKeys.add(dependencies: [xOut])
+      cachedValues = Concat(axis: 0)(Array(repeating: cachedValues, count: b))
+      cachedValues.add(dependencies: [xOut])
+      keys = Functional.concat(axis: 1, keys, cachedKeys, flags: [.disableOpt])
+      values = Functional.concat(axis: 1, values, cachedValues, flags: [.disableOpt])
+    } else {
+      keys = Functional.concat(axis: 1, keys, cachedKeys)
+      values = Functional.concat(axis: 1, values, cachedValues)
+    }
   }
   let querySequenceLength = t + hw
   let keyValueSequenceLength = querySequenceLength + cachedSequenceLength
@@ -413,9 +422,18 @@ private func SingleTransformerBlock(
   var queries = xQ
   queries = Functional.cmul(left: queries, right: rot)
   keys = Functional.cmul(left: keys, right: rot)
-  if let cachedKeys = cachedKeys, let cachedValues = cachedValues {
-    keys = Functional.concat(axis: 1, keys, cachedKeys, flags: [.disableOpt])
-    values = Functional.concat(axis: 1, values, cachedValues, flags: [.disableOpt])
+  if var cachedKeys: Model.IO = cachedKeys, var cachedValues: Model.IO = cachedValues {
+    if b > 1 {
+      cachedKeys = Concat(axis: 0)(Array(repeating: cachedKeys, count: b))
+      cachedKeys.add(dependencies: [xOut])
+      cachedValues = Concat(axis: 0)(Array(repeating: cachedValues, count: b))
+      cachedValues.add(dependencies: [xOut])
+      keys = Functional.concat(axis: 1, keys, cachedKeys, flags: [.disableOpt])
+      values = Functional.concat(axis: 1, values, cachedValues, flags: [.disableOpt])
+    } else {
+      keys = Functional.concat(axis: 1, keys, cachedKeys)
+      values = Functional.concat(axis: 1, values, cachedValues)
+    }
   }
   let querySequenceLength = t + hw
   let keyValueSequenceLength = querySequenceLength + cachedSequenceLength
@@ -1109,9 +1127,18 @@ private func LoRAJointTransformerBlock(
   var queries = Functional.concat(axis: 1, xQ, contextQ)
   queries = Functional.cmul(left: queries, right: rot)
   keys = Functional.cmul(left: keys, right: rot)
-  if let cachedKeys = cachedKeys, let cachedValues = cachedValues {
-    keys = Functional.concat(axis: 1, keys, cachedKeys, flags: [.disableOpt])
-    values = Functional.concat(axis: 1, values, cachedValues, flags: [.disableOpt])
+  if var cachedKeys: Model.IO = cachedKeys, var cachedValues: Model.IO = cachedValues {
+    if b > 1 {
+      cachedKeys = Concat(axis: 0)(Array(repeating: cachedKeys, count: b))
+      cachedKeys.add(dependencies: [xOut])
+      cachedValues = Concat(axis: 0)(Array(repeating: cachedValues, count: b))
+      cachedValues.add(dependencies: [xOut])
+      keys = Functional.concat(axis: 1, keys, cachedKeys, flags: [.disableOpt])
+      values = Functional.concat(axis: 1, values, cachedValues, flags: [.disableOpt])
+    } else {
+      keys = Functional.concat(axis: 1, keys, cachedKeys)
+      values = Functional.concat(axis: 1, values, cachedValues)
+    }
   }
   let querySequenceLength = t + hw
   let keyValueSequenceLength = querySequenceLength + cachedSequenceLength
@@ -1326,9 +1353,18 @@ private func LoRASingleTransformerBlock(
   var queries = xQ
   queries = Functional.cmul(left: queries, right: rot)
   keys = Functional.cmul(left: keys, right: rot)
-  if let cachedKeys = cachedKeys, let cachedValues = cachedValues {
-    keys = Functional.concat(axis: 1, keys, cachedKeys, flags: [.disableOpt])
-    values = Functional.concat(axis: 1, values, cachedValues, flags: [.disableOpt])
+  if var cachedKeys: Model.IO = cachedKeys, var cachedValues: Model.IO = cachedValues {
+    if b > 1 {
+      cachedKeys = Concat(axis: 0)(Array(repeating: cachedKeys, count: b))
+      cachedKeys.add(dependencies: [xOut])
+      cachedValues = Concat(axis: 0)(Array(repeating: cachedValues, count: b))
+      cachedValues.add(dependencies: [xOut])
+      keys = Functional.concat(axis: 1, keys, cachedKeys, flags: [.disableOpt])
+      values = Functional.concat(axis: 1, values, cachedValues, flags: [.disableOpt])
+    } else {
+      keys = Functional.concat(axis: 1, keys, cachedKeys)
+      values = Functional.concat(axis: 1, values, cachedValues)
+    }
   }
   let querySequenceLength = t + hw
   let keyValueSequenceLength = querySequenceLength + cachedSequenceLength

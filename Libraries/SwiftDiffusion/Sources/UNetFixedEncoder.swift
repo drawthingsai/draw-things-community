@@ -1914,22 +1914,6 @@ extension UNetFixedEncoder {
       if referenceImages.count > 0 {
         if kvCache {
           referenceSizes = []
-          if batchSize > 1 {
-            let cachedKVCount = (layers.0 + layers.1) * 2
-            let count = conditions.count
-            conditions = conditions.enumerated().map {
-              guard $0 >= count - cachedKVCount else { return $1 }
-              var shape = $1.shape
-              guard shape.count == 4 else { return $1 }
-              shape[0] = batchSize
-              var kv = graph.variable(.GPU(0), format: $1.format, shape: shape, of: FloatType.self)
-              let oldKv = DynamicGraph.Tensor<FloatType>($1)
-              for i in 0..<batchSize {
-                kv[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]] = oldKv
-              }
-              return kv
-            }
-          }
         } else {
           referenceSizes = conditions[0..<referenceImages.count].map {
             let shape = $0.shape
