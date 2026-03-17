@@ -1526,7 +1526,8 @@ extension UNetFromNNC {
             return LoRALTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-              tokenModulation: tokenModulation, KV: true, useGatedAttention: false,
+              tokenModulation: tokenModulation, KV: true,
+              usesFlashAttention: usesFlashAttention, useGatedAttention: false,
               textCrossAttentionAdaLN: false,
               LoRAConfiguration: configuration
             ).1
@@ -1540,7 +1541,8 @@ extension UNetFromNNC {
             return LTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-              tokenModulation: tokenModulation, KV: true, useGatedAttention: false,
+              tokenModulation: tokenModulation, KV: true,
+              usesFlashAttention: usesFlashAttention, useGatedAttention: false,
               textCrossAttentionAdaLN: false
             ).1
           })
@@ -1571,7 +1573,8 @@ extension UNetFromNNC {
             return LoRALTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-              tokenModulation: tokenModulation, KV: false, useGatedAttention: true,
+              tokenModulation: tokenModulation, KV: false,
+              usesFlashAttention: usesFlashAttention, useGatedAttention: true,
               textCrossAttentionAdaLN: true,
               LoRAConfiguration: configuration
             ).1
@@ -1585,7 +1588,8 @@ extension UNetFromNNC {
             return LTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
-              tokenModulation: tokenModulation, KV: false, useGatedAttention: true,
+              tokenModulation: tokenModulation, KV: false,
+              usesFlashAttention: usesFlashAttention, useGatedAttention: true,
               textCrossAttentionAdaLN: true
             ).1
           })

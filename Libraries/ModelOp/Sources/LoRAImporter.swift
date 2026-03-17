@@ -203,7 +203,8 @@ public enum LoRAImporter {
     case .ltx2:
       (unetMapper, unet) = LTX2(
         time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
-        layers: 48, tokenModulation: false, KV: true, useGatedAttention: false,
+        layers: 48, tokenModulation: false, KV: true, usesFlashAttention: true,
+        useGatedAttention: false,
         textCrossAttentionAdaLN: false)
       (unetFixedMapper, unetFixed) = LTX2Fixed(
         time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
@@ -211,7 +212,8 @@ public enum LoRAImporter {
     case .ltx2_3:
       (unetMapper, unet) = LTX2(
         time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
-        layers: 48, tokenModulation: false, KV: false, useGatedAttention: true,
+        layers: 48, tokenModulation: false, KV: false, usesFlashAttention: true,
+        useGatedAttention: true,
         textCrossAttentionAdaLN: true)
       (unetFixedMapper, unetFixed) = LTX2Fixed(
         time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
@@ -447,11 +449,13 @@ public enum LoRAImporter {
         tEmb = nil
         let (videoConnector, videoConnectorMapper) = Embedding1DConnector(
           prefix: "embeddings_connector", layers: 2, batchSize: 1,
-          tokenLength: 1024, headDimension: 128, numberOfHeads: 30, useGatedAttention: false
+          tokenLength: 1024, headDimension: 128, numberOfHeads: 30, usesFlashAttention: true,
+          useGatedAttention: false
         )
         let (audioConnector, audioConnectorMapper) = Embedding1DConnector(
           prefix: "audio_embeddings_connector", layers: 2, batchSize: 1,
-          tokenLength: 1024, headDimension: 128, numberOfHeads: 30, useGatedAttention: false
+          tokenLength: 1024, headDimension: 128, numberOfHeads: 30, usesFlashAttention: true,
+          useGatedAttention: false
         )
         let rotaryEmbedding1D = graph.variable(
           Tensor<FloatType>(
@@ -478,11 +482,13 @@ public enum LoRAImporter {
         tEmb = nil
         let (videoConnector, videoConnectorMapper) = Embedding1DConnector(
           prefix: "model.diffusion_model.video_embeddings_connector", layers: 8, batchSize: 1,
-          tokenLength: 1024, headDimension: 128, numberOfHeads: 32, useGatedAttention: true
+          tokenLength: 1024, headDimension: 128, numberOfHeads: 32, usesFlashAttention: true,
+          useGatedAttention: true
         )
         let (audioConnector, audioConnectorMapper) = Embedding1DConnector(
           prefix: "model.diffusion_model.audio_embeddings_connector", layers: 8, batchSize: 1,
-          tokenLength: 1024, headDimension: 64, numberOfHeads: 32, useGatedAttention: true
+          tokenLength: 1024, headDimension: 64, numberOfHeads: 32, usesFlashAttention: true,
+          useGatedAttention: true
         )
         let videoRotaryEmbedding1D = graph.variable(
           Tensor<FloatType>(

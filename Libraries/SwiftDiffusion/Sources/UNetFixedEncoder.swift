@@ -1998,26 +1998,28 @@ extension UNetFixedEncoder {
           LoRAEmbedding1DConnector(
             prefix: "model.diffusion_model.video_embeddings_connector", layers: 8,
             batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 128,
-            numberOfHeads: 32, useGatedAttention: true, LoRAConfiguration: configuration
+            numberOfHeads: 32, usesFlashAttention: usesFlashAttention, useGatedAttention: true,
+            LoRAConfiguration: configuration
           ).0
         audioConnector =
           LoRAEmbedding1DConnector(
             prefix: "model.diffusion_model.audio_embeddings_connector", layers: 8,
             batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 64,
-            numberOfHeads: 32, useGatedAttention: true, LoRAConfiguration: configuration
+            numberOfHeads: 32, usesFlashAttention: usesFlashAttention, useGatedAttention: true,
+            LoRAConfiguration: configuration
           ).0
       } else {
         videoConnector =
           Embedding1DConnector(
             prefix: "model.diffusion_model.video_embeddings_connector", layers: 8,
             batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 128,
-            numberOfHeads: 32, useGatedAttention: true
+            numberOfHeads: 32, usesFlashAttention: usesFlashAttention, useGatedAttention: true
           ).0
         audioConnector =
           Embedding1DConnector(
             prefix: "model.diffusion_model.audio_embeddings_connector", layers: 8,
             batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 64,
-            numberOfHeads: 32, useGatedAttention: true
+            numberOfHeads: 32, usesFlashAttention: usesFlashAttention, useGatedAttention: true
           ).0
       }
       var videoHiddenStates = graph.variable(
@@ -2297,26 +2299,28 @@ extension UNetFixedEncoder {
           LoRAEmbedding1DConnector(
             prefix: "embeddings_connector", layers: 2, batchSize: cBatchSize,
             tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
-            useGatedAttention: false, LoRAConfiguration: configuration
+            usesFlashAttention: usesFlashAttention, useGatedAttention: false,
+            LoRAConfiguration: configuration
           ).0
         audioConnector =
           LoRAEmbedding1DConnector(
             prefix: "audio_embeddings_connector", layers: 2, batchSize: cBatchSize,
             tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
-            useGatedAttention: false, LoRAConfiguration: configuration
+            usesFlashAttention: usesFlashAttention, useGatedAttention: false,
+            LoRAConfiguration: configuration
           ).0
       } else {
         videoConnector =
           Embedding1DConnector(
             prefix: "embeddings_connector", layers: 2, batchSize: cBatchSize,
             tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
-            useGatedAttention: false
+            usesFlashAttention: usesFlashAttention, useGatedAttention: false
           ).0
         audioConnector =
           Embedding1DConnector(
             prefix: "audio_embeddings_connector", layers: 2, batchSize: cBatchSize,
             tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
-            useGatedAttention: false
+            usesFlashAttention: usesFlashAttention, useGatedAttention: false
           ).0
       }
       var videoHiddenStates = graph.variable(
