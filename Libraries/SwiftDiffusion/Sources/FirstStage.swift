@@ -732,10 +732,23 @@ extension FirstStage {
         // We turn on tiled decoding forcefully.
         if !tiledDecoding {
           decodingTileOverlap = 4
+          // Shrink each tile only until it would need an extra tile under the current overlap math.
+          func optimizedTileSize(_ length: Int) -> Int {
+            guard length > sizeLimit else { return length }
+            let coveredLength = max(1, length - decodingTileOverlap * 2)
+            let maxProgress = max(1, sizeLimit - decodingTileOverlap * 2)
+            let tileCount = (coveredLength + maxProgress - 1) / maxProgress
+            let minimumProgress = (coveredLength + tileCount - 1) / tileCount
+            let minimumTileSize = minimumProgress + decodingTileOverlap * 2
+            return min(sizeLimit, ((minimumTileSize + 1) / 2) * 2)
+          }
+          startWidth = optimizedTileSize(startWidth)
+          startHeight = optimizedTileSize(startHeight)
+        } else {
+          startWidth = min(startWidth, sizeLimit)
+          startHeight = min(startHeight, sizeLimit)
         }
         tiledDecoding = true
-        startWidth = min(startWidth, sizeLimit)
-        startHeight = min(startHeight, sizeLimit)
         startDepth = min(startDepth, decodingTileSize.depth)
         decodingTileSize.width = startWidth
         decodingTileSize.height = startHeight
