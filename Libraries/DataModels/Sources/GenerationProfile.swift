@@ -20,10 +20,12 @@ public struct GenerationProfile: Codable {
 public struct GenerationProfileBuilder {
   private let totalStartTime: Double
   private var lastStartTime: Double
+  private var skippedDuration: Double
   private var timings: OrderedDictionary<String, GenerationProfile.Timing>
   public init(_ currentTime: Double) {
     totalStartTime = currentTime
     lastStartTime = totalStartTime
+    skippedDuration = 0
     timings = [:]
   }
   public mutating func append(_ name: String, _ currentTime: Double) {
@@ -33,8 +35,13 @@ public struct GenerationProfileBuilder {
     timings[name] = timing
     lastStartTime = currentTime
   }
+  public mutating func skip(duration: Double) {
+    let duration = max(0, duration)
+    skippedDuration += duration
+    lastStartTime += duration
+  }
   public func build(_ currentTime: Double) -> GenerationProfile {
-    let duration = currentTime - totalStartTime
+    let duration = currentTime - totalStartTime - skippedDuration
     let timings = Array(timings.values)
     return GenerationProfile(timings: timings, duration: duration)
   }
