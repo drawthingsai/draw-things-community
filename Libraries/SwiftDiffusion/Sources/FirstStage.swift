@@ -2066,35 +2066,42 @@ extension FirstStage {
       let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
       result.withUnsafeMutableBytes {
         guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
-        DispatchQueue.concurrentPerform(iterations: tileDecodedEnd - tDecodedStart) {
-          let tDecoded = $0 + tDecodedStart
-          var fp =
-            rfp + (tDecoded + tStart * scaleFactor.temporal) * shape[1] * scaleFactor.spatial
-            * shape[2] * scaleFactor.spatial * outputChannels
-          let tWeight: Float
-          if tileIndex > 0 && tDecoded - tDecodedStart < leftFadeFrames && leftFadeFrames > 0 {
-            tWeight = min((Float(tDecoded - tDecodedStart) + 0.5) / Float(leftFadeFrames), 1)
-          } else if tileDecodedEnd - tDecoded <= rightFadeFrames && !isLast && rightFadeFrames > 0 {
-            tWeight = min((Float(tileDecodedEnd - tDecoded) - 0.5) / Float(rightFadeFrames), 1)
-          } else {
-            tWeight = 1
-          }
-          for j in 0..<(shape[1] * scaleFactor.spatial) {
-            let yWeightAndIndex = yWeightsAndIndexes[j]
-            for i in 0..<(shape[2] * scaleFactor.spatial) {
-              let xWeightAndIndex = xWeightsAndIndexes[i]
-              let tOffset =
-                tDecoded * tileSize.width * scaleFactor.spatial * inputChannels * tileSize.height
-                * scaleFactor.spatial
-              for y in yWeightAndIndex {
-                let yOffset =
-                  y.offset * tileSize.width * scaleFactor.spatial * inputChannels + tOffset
-                for x in xWeightAndIndex {
-                  let weight = T(x.weight * y.weight * tWeight)
-                  let index = y.index * xTiles + x.index
-                  let tensor = decodedRawValues[index]
-                  tensor.withUnsafeBytes {
-                    guard var v = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
+        withExtendedLifetime(decodedRawValues) {
+          DispatchQueue.concurrentPerform(iterations: tileDecodedEnd - tDecodedStart) {
+            let tDecoded = $0 + tDecodedStart
+            var fp =
+              rfp + (tDecoded + tStart * scaleFactor.temporal) * shape[1] * scaleFactor.spatial
+              * shape[2] * scaleFactor.spatial * outputChannels
+            let tOffset =
+              tDecoded * tileSize.width * scaleFactor.spatial * inputChannels * tileSize.height
+              * scaleFactor.spatial
+            let vmap = decodedRawValues.map {
+              let v: UnsafePointer<T> = $0.withUnsafeBytes {
+                let v = $0.baseAddress?.assumingMemoryBound(to: T.self)
+                return v! + tOffset
+              }
+              return v
+            }
+            let tWeight: Float
+            if tileIndex > 0 && tDecoded - tDecodedStart < leftFadeFrames && leftFadeFrames > 0 {
+              tWeight = min((Float(tDecoded - tDecodedStart) + 0.5) / Float(leftFadeFrames), 1)
+            } else if tileDecodedEnd - tDecoded <= rightFadeFrames && !isLast && rightFadeFrames > 0
+            {
+              tWeight = min((Float(tileDecodedEnd - tDecoded) - 0.5) / Float(rightFadeFrames), 1)
+            } else {
+              tWeight = 1
+            }
+            for j in 0..<(shape[1] * scaleFactor.spatial) {
+              let yWeightAndIndex = yWeightsAndIndexes[j]
+              for i in 0..<(shape[2] * scaleFactor.spatial) {
+                let xWeightAndIndex = xWeightsAndIndexes[i]
+                for y in yWeightAndIndex {
+                  let yOffset =
+                    y.offset * tileSize.width * scaleFactor.spatial * inputChannels
+                  for x in xWeightAndIndex {
+                    let weight = T(x.weight * y.weight * tWeight)
+                    let index = y.index * xTiles + x.index
+                    var v = vmap[index]
                     // Note that while result is outputChannels, this is padded to 4 i.e. channels.
                     v += x.offset * inputChannels + yOffset
                     for k in 0..<outputChannels {
@@ -2102,8 +2109,8 @@ extension FirstStage {
                     }
                   }
                 }
+                fp += outputChannels
               }
-              fp += outputChannels
             }
           }
         }
