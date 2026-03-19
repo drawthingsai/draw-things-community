@@ -1,4 +1,5 @@
 import Atomics
+import Dispatch
 import NNC
 
 public enum MemoryCapacity {
@@ -2065,7 +2066,8 @@ extension FirstStage {
       let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
       result.withUnsafeMutableBytes {
         guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
-        for tDecoded in tDecodedStart..<tileDecodedEnd {
+        DispatchQueue.concurrentPerform(iterations: tileDecodedEnd - tDecodedStart) {
+          let tDecoded = $0 + tDecodedStart
           var fp =
             rfp + (tDecoded + tStart * scaleFactor.temporal) * shape[1] * scaleFactor.spatial
             * shape[2] * scaleFactor.spatial * outputChannels
