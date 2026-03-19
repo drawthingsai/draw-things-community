@@ -316,6 +316,65 @@
   - driving `configuration.title` inside `configurationUpdateHandler` can prevent the enable (expand) animation from animating as expected.
   - set button title outside the update handler (from `is{HIDDEN}Enabled`), then animate `view.layoutIfNeeded()`.
 
+## {HIDDEN} Interactive Generation UI + State
+- For adjacent optional controls in this edit UI, prefer keeping views in the hierarchy and switching visibility / operability over inserting and removing subviews dynamically.
+  - this keeps Auto Layout stable and makes future transitions much easier.
+- For alternate layout paths, prefer one real stored constraint plus a fallback constraint at lower priority.
+  - use priority to let Auto Layout choose the right path instead of storing and toggling two competing constraints when only one needs explicit ownership.
+- Constraint creation order matters when a new view depends on an existing sibling:
+  - add the referenced sibling to a common ancestor first, then create constraints that point to it.
+  - otherwise runtime Auto Layout failures are easy to introduce.
+- For stateful buttons whose width/title animate on selection:
+  - keep one stored property as the source of truth (`is{HIDDEN}Enabled`, `isAudioMuted`, etc.).
+  - update `UIButton` visual state from that property.
+  - avoid mutating the button state directly inside tap handlers when the state is meant to come from controller/workflow logic.
+- If a button title participates in layout animation, do not rely on `configurationUpdateHandler` to change that title.
+  - set the title directly from the stored state, then animate `view.layoutIfNeeded()`.
+- When a custom mode needs a substantially different presentation, a dedicated view is cleaner than overloading an existing generation view with many hidden subviews.
+  - for `{HIDDEN}`, the dedicated interactive preview view made later cross-fades much simpler than trying to keep mutating `configurationFlyer` / `inGenerationController`.
+- If a view needs to fade, use `alpha`, not `isHidden`.
+  - `isHidden` is still fine as the end state after a transition, but alpha must drive the animation.
+- For sibling view swaps, use `UIView.transition(from:to:..., .showHideTransitionViews + .transitionCrossDissolve)` when both views share the same superview.
+  - do this immediately when the mode changes, not in some later deferred cleanup block.
+- For the interactive preview itself:
+  - make the preview image the source of truth for what is shown.
+  - do not fall back to `underImage`, `previousImage`, or other unrelated view-controller image state.
+  - if generation feedback has no new image, keep the current preview instead of clearing the canvas.
+- Keep the latest interactive preview state local to `InteractiveGenerationController`, not on `EditWorkflow`.
+  - all preview-session state is easier to reason about when owned by the controller that manages the interactive session.
+- If preview aspect ratio is tied to generation configuration and that configuration does not change during reruns, it is acceptable to only rebuild the aspect-ratio constraint on first preview image.
+  - document that assumption explicitly in code.
+- For busy / waiting visuals in mode-specific UI, copy the existing animation behavior instead of inventing a new one.
+  - the busy-canvas pie animation was best duplicated into `InteractiveGenerationController` and dismissed on the first real preview frame.
+- For settings / toolbar / project-bar “disabled” visuals, package the alpha/overlay ownership with the UI controller that owns the view.
+  - `EditWorkflow` should toggle high-level state, but the overlay view and opacity animation should live in `SettingsWorkflow`, `ToolsBarController`, `ProjectBarController`, etc.
+- If an overlay is only visual, keep it always present and animate `alpha`.
+  - no need to toggle `isHidden` if the view can simply stay at `alpha = 0`.
+- For interactive generation state, the most robust model was:
+  - `runningInteractionIdentifier`: the run that actually exists right now.
+  - `activeInteractionIdentifier`: the latest desired interaction.
+  - `active > running` means a rerun is queued.
+  - `active == running` means finish the current run and do not rerun.
+- This identifier model is enough to express:
+  - typing during a run: queue rerun by advancing `activeInteractionIdentifier`.
+  - typing back to the current text: collapse `activeInteractionIdentifier` back to `runningInteractionIdentifier`.
+  - exit custom mode while running: collapse `activeInteractionIdentifier` to `runningInteractionIdentifier` so the current run finishes but no rerun happens.
+  - stop after promoting the run to regular generation UI: advance `activeInteractionIdentifier` and cancel, so completion naturally launches the rerun.
+- Avoid introducing another persistent mode flag if existing identifiers already encode the behavior correctly.
+  - for `{HIDDEN}`, generate/stop semantics were expressible by manipulating interaction identifiers plus the existing UI visibility.
+- Keep the logic that owns interactive-session state in `InteractiveGenerationController`, and keep `EditWorkflow` focused on:
+  - existing generation orchestration,
+  - view transitions,
+  - and app-wide UI enable/disable state.
+- For the final-step hold, `block(interactionIdentifier:)` should return both:
+  - whether sampling should continue,
+  - and how long the hold lasted.
+  - returning the hold duration directly is cleaner than storing transient timing state elsewhere.
+- Generation profiling around interactive hold should subtract hold time explicitly.
+  - `GenerationProfileBuilder.skip(duration:)` is the clean place to do that so total duration and later timing segments stay correct.
+- Verify these UI/state changes with the full app target, not only local typechecks:
+  - `bazel build //Apps/DrawThings:DrawThings --ios_multi_cpus=arm64`
+
 ## LTX Hires Fix + Latent Upscaler
 - `ModelZoo` latent-upscaler plumbing has to cover all download-status surfaces, not just `filesToDownload(...)`:
   - include `latentsUpscalers` in `isModelDownloaded(_ specification:)`

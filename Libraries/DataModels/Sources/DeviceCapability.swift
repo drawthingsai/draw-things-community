@@ -98,6 +98,22 @@ public struct DeviceCapability {
       }
     #endif
   }()
+  public static let isInteractiveGenerationSupported: Bool = {
+    #if arch(i386) || arch(x86_64) || !canImport(Metal)
+      return false
+    #else
+      if #available(iOS 18, macOS 15, macCatalyst 18, *) {
+        let physicalMemory = ProcessInfo.processInfo.physicalMemory
+        guard physicalMemory >= 50_465_865_728 else {
+          return false
+        }
+        if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple10) {
+          return true
+        }
+      }
+      return false
+    #endif
+  }()
   public static let isMFASupported: Bool = {
     #if !canImport(Metal)
       return true
