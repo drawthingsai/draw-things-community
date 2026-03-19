@@ -1914,27 +1914,36 @@ extension FirstStage {
         outputChannels))
     let inputChannels = decodedRawValues.first?.shape[3] ?? outputChannels
     result.withUnsafeMutableBytes {
-      guard var fp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
-      for t in 0..<resultBatchSize {
-        for j in 0..<(shape[1] * scaleFactor.spatial) {
-          let yWeightAndIndex = yWeightsAndIndexes[j]
-          for i in 0..<(shape[2] * scaleFactor.spatial) {
-            let xWeightAndIndex = xWeightsAndIndexes[i]
-            for k in 0..<outputChannels {
-              fp[k] = 0
+      guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
+      withExtendedLifetime(decodedRawValues) {
+        DispatchQueue.concurrentPerform(iterations: resultBatchSize) { t in
+          var fp =
+            rfp + t * shape[1] * scaleFactor.spatial * shape[2] * scaleFactor.spatial
+            * outputChannels
+          let tOffset =
+            t * tileSize.width * scaleFactor.spatial * inputChannels * tileSize.height
+            * scaleFactor.spatial
+          let vmap = decodedRawValues.map {
+            let v: UnsafePointer<T> = $0.withUnsafeBytes {
+              let v = $0.baseAddress?.assumingMemoryBound(to: T.self)
+              return v! + tOffset
             }
-            let tOffset =
-              t * tileSize.width * scaleFactor.spatial * inputChannels * tileSize.height
-              * scaleFactor.spatial
-            for y in yWeightAndIndex {
-              let yOffset =
-                y.offset * tileSize.width * scaleFactor.spatial * inputChannels + tOffset
-              for x in xWeightAndIndex {
-                let weight = T(x.weight * y.weight)
-                let index = y.index * xTiles + x.index
-                let tensor = decodedRawValues[index]
-                tensor.withUnsafeBytes {
-                  guard var v = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
+            return v
+          }
+          for j in 0..<(shape[1] * scaleFactor.spatial) {
+            let yWeightAndIndex = yWeightsAndIndexes[j]
+            for i in 0..<(shape[2] * scaleFactor.spatial) {
+              let xWeightAndIndex = xWeightsAndIndexes[i]
+              for k in 0..<outputChannels {
+                fp[k] = 0
+              }
+              for y in yWeightAndIndex {
+                let yOffset =
+                  y.offset * tileSize.width * scaleFactor.spatial * inputChannels
+                for x in xWeightAndIndex {
+                  let weight = T(x.weight * y.weight)
+                  let index = y.index * xTiles + x.index
+                  var v = vmap[index]
                   // Note that while result is outputChannels, this is padded to 4 i.e. channels.
                   v += x.offset * inputChannels + yOffset
                   for k in 0..<outputChannels {
@@ -1942,8 +1951,8 @@ extension FirstStage {
                   }
                 }
               }
+              fp += outputChannels
             }
-            fp += outputChannels
           }
         }
       }
