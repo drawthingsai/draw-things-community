@@ -19,6 +19,13 @@ import UniformTypeIdentifiers
 #endif
 
 public enum ImageConverter {
+  public static func cgImage(from data: Data) -> CGImage? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+      return nil
+    }
+    return CGImageSourceCreateImageAtIndex(source, 0, nil)
+  }
+
   public static func bitmapContext(from cgImage: CGImage) -> CGContext? {
     guard
       let bitmapContext = CGContext(
@@ -32,6 +39,37 @@ public enum ImageConverter {
     bitmapContext.draw(
       cgImage,
       in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+    return bitmapContext
+  }
+
+  public static func resize(
+    from cgImage: CGImage, imageWidth: Int, imageHeight: Int,
+    interpolationQuality: CGInterpolationQuality = .high
+  ) -> CGContext? {
+    guard
+      let bitmapContext = CGContext(
+        data: nil, width: imageWidth, height: imageHeight, bitsPerComponent: 8,
+        bytesPerRow: imageWidth * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGBitmapInfo.byteOrderDefault.rawValue
+          | CGImageAlphaInfo.premultipliedLast.rawValue, releaseCallback: nil, releaseInfo: nil)
+    else {
+      return nil
+    }
+    bitmapContext.interpolationQuality = interpolationQuality
+    let scaledWidth: Int
+    let scaledHeight: Int
+    if cgImage.width * imageHeight > cgImage.height * imageWidth {
+      scaledHeight = imageHeight
+      scaledWidth = cgImage.width * imageHeight / cgImage.height
+    } else {
+      scaledWidth = imageWidth
+      scaledHeight = cgImage.height * imageWidth / cgImage.width
+    }
+    bitmapContext.draw(
+      cgImage,
+      in: CGRect(
+        x: (imageWidth - scaledWidth) / 2, y: (imageHeight - scaledHeight) / 2,
+        width: scaledWidth, height: scaledHeight))
     return bitmapContext
   }
   #if canImport(UIKit)
@@ -187,7 +225,7 @@ public enum ImageConverter {
       return grayscaleTensor(from: bitmapContext)
     }
   #endif
-  static func grayscaleTensor(from bitmapContext: CGContext) -> Tensor<UInt8>? {
+  public static func grayscaleTensor(from bitmapContext: CGContext) -> Tensor<UInt8>? {
     precondition(bitmapContext.bytesPerRow >= bitmapContext.width * 4)
     guard let data = bitmapContext.data else {
       return nil
@@ -459,7 +497,7 @@ public enum ImageConverter {
       return positiveRangeTensor(from: bitmapContext)
     }
   #endif
-  static func positiveRangeTensor(from bitmapContext: CGContext) -> Tensor<FloatType>? {
+  public static func positiveRangeTensor(from bitmapContext: CGContext) -> Tensor<FloatType>? {
     precondition(bitmapContext.bytesPerRow >= bitmapContext.width * 4)
     guard let data = bitmapContext.data else {
       return nil
