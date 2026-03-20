@@ -2,9 +2,9 @@
 import Foundation
 import PackageDescription
 
-let hasDrawThingsSDKSwiftPMTargets = [
+let hasMediaGenerationKitSDKSwiftPMTargets = [
   "Libraries/DeviceAttestation/Sources",
-  "Libraries/DrawThingsSDK/Sources",
+  "Libraries/MediaGenerationKitSDK/Sources",
   "Apps/SDKCLI",
 ].allSatisfy { FileManager.default.fileExists(atPath: $0) }
 
@@ -15,9 +15,9 @@ let package = Package(
     .executable(name: "gRPCServerCLI", targets: ["gRPCServerCLI"]),
     .executable(name: "draw-things-cli", targets: ["DrawThingsCLI"]),
   ]
-    + (hasDrawThingsSDKSwiftPMTargets
+    + (hasMediaGenerationKitSDKSwiftPMTargets
       ? [
-        .library(name: "DrawThingsSDK", targets: ["DrawThingsSDK"])
+        .library(name: "MediaGenerationKitSDK", targets: ["MediaGenerationKitSDK"])
       ] : []),
   dependencies: [
     .package(
@@ -479,14 +479,14 @@ let package = Package(
     ),
 
   ]
-    + (hasDrawThingsSDKSwiftPMTargets
+    + (hasMediaGenerationKitSDKSwiftPMTargets
       ? [
         .target(
           name: "DeviceAttestation",
           path: "Libraries/DeviceAttestation/Sources"
         ),
         .target(
-          name: "DrawThingsSDK",
+          name: "MediaGenerationKitSDK",
           dependencies: [
             "BinaryResources",
             "ConfigurationZoo",
@@ -506,12 +506,12 @@ let package = Package(
             .product(name: "SQLiteDflat", package: "dflat"),
             .product(name: "Crypto", package: "swift-crypto"),
           ],
-          path: "Libraries/DrawThingsSDK/Sources"
+          path: "Libraries/MediaGenerationKitSDK/Sources"
         ),
         .executableTarget(
           name: "SDKCLI",
           dependencies: [
-            "DrawThingsSDK",
+            "MediaGenerationKitSDK",
             "DataModels",
             "ImageGenerator",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
