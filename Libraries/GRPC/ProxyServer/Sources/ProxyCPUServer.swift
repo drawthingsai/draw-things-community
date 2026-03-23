@@ -998,7 +998,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   )
     -> ProxyTaskPriority
   {
-    if payload.consumableType == .boost {
+    if payload.consumableType == .boost || payload.consumableType == .payg {
       return .real
     }
 
