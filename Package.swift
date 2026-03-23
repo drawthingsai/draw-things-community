@@ -462,6 +462,7 @@ let package = Package(
       name: "DrawThingsCLI",
       dependencies: [
         "BinaryResources",
+        "ConfigurationZoo",
         "DataModels",
         "Downloader",
         "ImageGenerator",

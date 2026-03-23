@@ -1,8 +1,10 @@
 import ArgumentParser
 import BinaryResources
+import ConfigurationZoo
 import DataModels
 import Dflat
 import Diffusion
+import Dispatch
 import Downloader
 import Foundation
 import ImageGenerator
@@ -51,7 +53,7 @@ private enum DrawThingsCLIError: LocalizedError {
     case .invalidOutputPath(let path):
       return "Output path extension must be .png, .mov, or .mp4: \(path)"
     case .invalidConfigurationJSON:
-      return "Failed to parse JSON as JSGenerationConfiguration"
+      return "Failed to parse configuration override JSON"
     case .invalidLoRAConfigurationJSON:
       return "Failed to parse JSON as LoRATrainingConfiguration"
     case .missingModel:
@@ -80,6 +82,11 @@ private enum DrawThingsCLIError: LocalizedError {
       return "Failed to decode input image: \(path)"
     }
   }
+}
+
+private struct ResolvedGenerationConfiguration {
+  let configuration: GenerationConfiguration
+  let recommendedNegativePrompt: String?
 }
 
 struct ModelsDirectoryOptions: ParsableArguments {
@@ -154,19 +161,64 @@ private enum ModelResolver {
 }
 
 private enum ConfigurationLoader {
-  static func load(configJSON: String?, configFile: String?) throws -> GenerationConfiguration {
+  static func load(
+    model: String, configJSON: String?, configFile: String?, modelsDirectory: URL
+  ) throws -> ResolvedGenerationConfiguration {
     if configJSON != nil && configFile != nil {
       throw ValidationError("Use only one of --config-json or --config-file")
     }
+    let overrideDictionary = try loadOverrideDictionary(
+      configJSON: configJSON, configFile: configFile)
+    let (recommendedConfiguration, recommendedNegativePrompt) =
+      RecommendedSettingsResolver.resolve(
+        model: model, overrideDictionary: overrideDictionary, modelsDirectory: modelsDirectory)
+    let configuration = try mergeOverrides(
+      overrideDictionary, onto: recommendedConfiguration, forcingModel: model)
+    return ResolvedGenerationConfiguration(
+      configuration: configuration, recommendedNegativePrompt: recommendedNegativePrompt)
+  }
+
+  private static func loadOverrideDictionary(
+    configJSON: String?, configFile: String?
+  ) throws -> [String: Any]? {
     guard let rawString = try loadRawJSON(configJSON: configJSON, configFile: configFile) else {
-      return GenerationConfiguration.default
+      return nil
     }
     guard let data = rawString.data(using: .utf8),
-      let js = try? JSONDecoder().decode(JSGenerationConfiguration.self, from: data)
+      let dictionary = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else {
       throw DrawThingsCLIError.invalidConfigurationJSON
     }
-    return js.createGenerationConfiguration()
+    return dictionary
+  }
+
+  private static func mergeOverrides(
+    _ overrideDictionary: [String: Any]?, onto baseConfiguration: GenerationConfiguration,
+    forcingModel model: String
+  ) throws -> GenerationConfiguration {
+    guard
+      let baseData = try? JSONEncoder().encode(
+        JSGenerationConfiguration(configuration: baseConfiguration)),
+      var mergedDictionary = try? JSONSerialization.jsonObject(with: baseData) as? [String: Any]
+    else {
+      throw DrawThingsCLIError.invalidConfigurationJSON
+    }
+    if let overrideDictionary {
+      for (key, value) in overrideDictionary {
+        mergedDictionary[key] = value
+      }
+    }
+    mergedDictionary["model"] = model
+    guard
+      let mergedData = try? JSONSerialization.data(withJSONObject: mergedDictionary),
+      let configuration = try? JSONDecoder().decode(
+        JSGenerationConfiguration.self, from: mergedData
+      )
+      .createGenerationConfiguration()
+    else {
+      throw DrawThingsCLIError.invalidConfigurationJSON
+    }
+    return configuration
   }
 
   private static func loadRawJSON(configJSON: String?, configFile: String?) throws -> String? {
@@ -177,6 +229,245 @@ private enum ConfigurationLoader {
       return try String(contentsOfFile: configFile, encoding: .utf8)
     }
     return nil
+  }
+}
+
+private enum RecommendedSettingsResolver {
+  static func resolve(
+    model: String, overrideDictionary: [String: Any]?, modelsDirectory: URL
+  ) -> (GenerationConfiguration, String?) {
+    let defaultConfiguration = GenerationConfiguration.default
+    let loras = loras(from: overrideDictionary)
+    guard
+      let specification = findRecommendedSettings(
+        model: model, loras: loras, modelsDirectory: modelsDirectory)
+    else {
+      var builder = GenerationConfigurationBuilder(from: defaultConfiguration)
+      builder.model = model
+      return (builder.build(), nil)
+    }
+    guard
+      let defaultData = try? JSONEncoder().encode(
+        JSGenerationConfiguration(configuration: defaultConfiguration)),
+      var mergedDictionary = try? JSONSerialization.jsonObject(with: defaultData) as? [String: Any]
+    else {
+      var builder = GenerationConfigurationBuilder(from: defaultConfiguration)
+      builder.model = model
+      return (builder.build(), nil)
+    }
+    for (key, value) in specification.configuration {
+      mergedDictionary[key] = value
+    }
+    mergedDictionary["model"] = model
+    guard
+      let mergedData = try? JSONSerialization.data(withJSONObject: mergedDictionary),
+      let configuration = try? JSONDecoder().decode(
+        JSGenerationConfiguration.self, from: mergedData
+      )
+      .createGenerationConfiguration()
+    else {
+      var builder = GenerationConfigurationBuilder(from: defaultConfiguration)
+      builder.model = model
+      return (builder.build(), nil)
+    }
+    return (configuration, specification.negative?.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+
+  private static func loras(from overrideDictionary: [String: Any]?) -> Set<String> {
+    guard let loras = overrideDictionary?["loras"] as? [[String: Any]] else { return [] }
+    return Set(loras.compactMap { $0["file"] as? String })
+  }
+
+  private static func findRecommendedSettings(
+    model: String, loras: Set<String>, modelsDirectory: URL, timeout: TimeInterval = 10
+  ) -> ConfigurationZoo.Specification? {
+    let configurations = refreshedCommunityConfigurations(
+      timeout: timeout, modelsDirectory: modelsDirectory)
+    guard !configurations.isEmpty else { return nil }
+    let version = ModelZoo.versionForModel(model)
+    let prefix = prefix(for: model)
+    var bestMatch = matchWithLoRAs(
+      configurations: configurations, loras,
+      first: {
+        ($0.configuration["model"] as? String) == model
+      },
+      second: {
+        guard let configModel = $0.configuration["model"] as? String, !prefix.isEmpty else {
+          return false
+        }
+        return configModel.hasPrefix(prefix)
+      })
+    if bestMatch == nil {
+      bestMatch = matchWithLoRAs(configurations: configurations, loras) {
+        $0.version == version
+      }
+    }
+    return bestMatch
+  }
+
+  private static func refreshedCommunityConfigurations(
+    timeout: TimeInterval, modelsDirectory: URL
+  ) -> [ConfigurationZoo.Specification] {
+    if let fetched = try? fetchCommunityConfigurations(timeout: timeout), !fetched.isEmpty {
+      return fetched
+    }
+    let cached = cachedCommunityConfigurations(modelsDirectory: modelsDirectory)
+    if !cached.isEmpty {
+      return cached
+    }
+    return ConfigurationZoo.community
+  }
+
+  private static func prefix(for file: String) -> String {
+    let stem = file.components(separatedBy: ".")[0]
+    guard !stem.isEmpty else { return "" }
+    var components = stem.components(separatedBy: "_")
+    while let last = components.last, ["f16", "svd", "q5p", "q6p", "q8p"].contains(last) {
+      components.removeLast()
+    }
+    return components.joined(separator: "_")
+  }
+
+  private static func matchWithLoRAs(
+    configurations: [ConfigurationZoo.Specification], _ loras: Set<String>,
+    first: (ConfigurationZoo.Specification) -> Bool,
+    second: ((ConfigurationZoo.Specification) -> Bool)? = nil
+  ) -> ConfigurationZoo.Specification? {
+    guard !loras.isEmpty else {
+      guard let second = second else {
+        return configurations.first(where: first)
+      }
+      return configurations.first(where: first) ?? configurations.first(where: second)
+    }
+    guard let second = second else {
+      return configurations.first {
+        let isFirst = first($0)
+        guard isFirst else { return false }
+        guard let configLoras = $0.configuration["loras"] as? [[String: Any]] else { return false }
+        return loras.isSubset(of: configLoras.compactMap { $0["file"] as? String })
+      } ?? configurations.first(where: first)
+    }
+    return configurations.first {
+      let isFirst = first($0)
+      guard isFirst else { return false }
+      guard let configLoras = $0.configuration["loras"] as? [[String: Any]] else { return false }
+      return loras.isSubset(of: configLoras.compactMap { $0["file"] as? String })
+    } ?? configurations.first {
+      let isSecond = second($0)
+      guard isSecond else { return false }
+      guard let configLoras = $0.configuration["loras"] as? [[String: Any]] else { return false }
+      return loras.isSubset(of: configLoras.compactMap { $0["file"] as? String })
+    } ?? configurations.first(where: first) ?? configurations.first(where: second)
+  }
+
+  private static func fetchCommunityConfigurations(timeout: TimeInterval) throws
+    -> [ConfigurationZoo.Specification]
+  {
+    guard let url = URL(string: "https://models.drawthings.ai/configs.json") else {
+      return []
+    }
+    var request = URLRequest(url: url)
+    request.timeoutInterval = timeout
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: Result<Data, Error> = .failure(DrawThingsCLIError.invalidConfigurationJSON)
+    URLSession.shared.dataTask(with: request) { data, response, error in
+      defer { semaphore.signal() }
+      if let error {
+        result = .failure(error)
+        return
+      }
+      guard let response = response as? HTTPURLResponse, 200...299 ~= response.statusCode else {
+        result = .failure(DrawThingsCLIError.invalidConfigurationJSON)
+        return
+      }
+      guard let data else {
+        result = .failure(DrawThingsCLIError.invalidConfigurationJSON)
+        return
+      }
+      result = .success(data)
+    }.resume()
+    guard semaphore.wait(timeout: .now() + timeout) != .timedOut else {
+      return []
+    }
+    guard case .success(let data) = result else {
+      return []
+    }
+    let specifications = parseCommunityConfigurations(data: data)
+    guard !specifications.isEmpty else {
+      return []
+    }
+    try? persistCommunityConfigurations(data)
+    return specifications
+  }
+
+  private static func parseCommunityConfigurations(data: Data) -> [ConfigurationZoo.Specification] {
+    guard let jsonSpecifications = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+    else {
+      return []
+    }
+    return jsonSpecifications.compactMap { specification in
+      guard let name = specification["name"] as? String,
+        let configuration = specification["configuration"] as? [String: Any]
+      else {
+        return nil
+      }
+      return ConfigurationZoo.Specification(
+        name: name,
+        version: (specification["version"] as? String).flatMap { ModelVersion(rawValue: $0) },
+        negative: specification["negative"] as? String,
+        configuration: configuration)
+    }
+  }
+
+  private static func cachedCommunityConfigurations(modelsDirectory: URL)
+    -> [ConfigurationZoo.Specification]
+  {
+    for url in communityCacheURLs(modelsDirectory: modelsDirectory) {
+      guard let data = try? Data(contentsOf: url) else { continue }
+      let configurations = parseCommunityConfigurations(data: data)
+      if !configurations.isEmpty {
+        return configurations
+      }
+    }
+    return []
+  }
+
+  private static func persistCommunityConfigurations(_ data: Data) throws {
+    let cacheURL = try primaryCommunityCacheURL().deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: cacheURL, withIntermediateDirectories: true)
+    try data.write(to: cacheURL.appendingPathComponent("configs.json"), options: .atomic)
+  }
+
+  private static func primaryCommunityCacheURL() throws -> URL {
+    guard
+      let cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+        .first
+    else {
+      throw DrawThingsCLIError.invalidConfigurationJSON
+    }
+    return cacheDirectory.appendingPathComponent("net", isDirectory: true).appendingPathComponent(
+      "configs.json")
+  }
+
+  private static func communityCacheURLs(modelsDirectory: URL) -> [URL] {
+    var urls: [URL] = []
+    if let primary = try? primaryCommunityCacheURL() {
+      urls.append(primary)
+    }
+    let modelsDirectoryPath = modelsDirectory.standardizedFileURL.pathComponents
+    if modelsDirectoryPath.suffix(3) == ["Data", "Documents", "Models"] {
+      let dataDirectory =
+        modelsDirectory
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+      urls.append(
+        dataDirectory
+          .appendingPathComponent("Library", isDirectory: true)
+          .appendingPathComponent("Caches", isDirectory: true)
+          .appendingPathComponent("net", isDirectory: true)
+          .appendingPathComponent("configs.json"))
+    }
+    return urls
   }
 }
 
@@ -771,14 +1062,15 @@ private func requiredFiles(for configuration: GenerationConfiguration) -> [Strin
 
 private func createConfiguration(
   model: String, steps: Int?, cfg: Float?, width: Int?, height: Int?, frames: Int?, seed: UInt32?,
-  strength: Float?, configJSON: String?, configFile: String?
-) throws -> GenerationConfiguration {
-  let baseConfiguration = try ConfigurationLoader.load(
-    configJSON: configJSON, configFile: configFile)
-  var builder = GenerationConfigurationBuilder(from: baseConfiguration)
+  strength: Float?, configJSON: String?, configFile: String?, modelsDirectory: URL
+) throws -> ResolvedGenerationConfiguration {
   guard let modelSpec = ModelResolver.resolve(model) else {
     throw DrawThingsCLIError.unsupportedModelInput(model)
   }
+  let resolvedConfiguration = try ConfigurationLoader.load(
+    model: modelSpec.file, configJSON: configJSON, configFile: configFile,
+    modelsDirectory: modelsDirectory)
+  var builder = GenerationConfigurationBuilder(from: resolvedConfiguration.configuration)
   builder.model = modelSpec.file
   if let steps {
     guard steps >= 1 else { throw ValidationError("--steps must be >= 1") }
@@ -812,7 +1104,9 @@ private func createConfiguration(
     guard (0...1).contains(strength) else { throw ValidationError("--strength must be in [0, 1]") }
     builder.strength = strength
   }
-  return builder.build()
+  return ResolvedGenerationConfiguration(
+    configuration: builder.build(),
+    recommendedNegativePrompt: resolvedConfiguration.recommendedNegativePrompt)
 }
 
 @main
@@ -838,8 +1132,9 @@ extension DrawThingsCLI {
     @Option(name: .shortAndLong, help: "Prompt text.")
     var prompt: String = ""
 
-    @Option(name: .long, help: "Negative prompt text.")
-    var negativePrompt: String = ""
+    @Option(
+      name: .long, help: "Negative prompt text. If omitted, model recommendations may provide one.")
+    var negativePrompt: String?
 
     @Option(name: .long, help: "Sampling steps.")
     var steps: Int?
@@ -865,10 +1160,10 @@ extension DrawThingsCLI {
     @Option(name: .shortAndLong, help: "Output path (.png, .mov, or .mp4).")
     var output: String = "output.png"
 
-    @Option(name: .long, help: "Inline JSON string in JSGenerationConfiguration format.")
+    @Option(name: .long, help: "Inline JSON override in JSGenerationConfiguration format.")
     var configJSON: String?
 
-    @Option(name: .long, help: "Path to JSON file in JSGenerationConfiguration format.")
+    @Option(name: .long, help: "Path to JSON override file in JSGenerationConfiguration format.")
     var configFile: String?
 
     @Option(name: .long, help: "Input image path for img2img.")
@@ -897,9 +1192,13 @@ extension DrawThingsCLI {
         throw unresolvedModelValidationError(model)
       }
 
-      let configuration = try createConfiguration(
+      let resolvedConfiguration = try createConfiguration(
         model: model, steps: steps, cfg: cfg, width: width, height: height, frames: frames,
-        seed: seed, strength: strength, configJSON: configJSON, configFile: configFile)
+        seed: seed, strength: strength, configJSON: configJSON, configFile: configFile,
+        modelsDirectory: modelsDirectory)
+      let configuration = resolvedConfiguration.configuration
+      let resolvedNegativePrompt =
+        negativePrompt ?? resolvedConfiguration.recommendedNegativePrompt ?? ""
 
       let files = requiredFiles(for: configuration)
       try ModelDownloader.ensureFiles(
@@ -920,7 +1219,7 @@ extension DrawThingsCLI {
 
       let runner = try LocalGenerationRunner()
       let outputPaths = try runner.generate(
-        prompt: prompt, negativePrompt: negativePrompt, configuration: configuration,
+        prompt: prompt, negativePrompt: resolvedNegativePrompt, configuration: configuration,
         outputPath: output, inputImage: inputImageTensor)
       print("Models directory: \(modelsDirectory.path)")
       for path in outputPaths {
