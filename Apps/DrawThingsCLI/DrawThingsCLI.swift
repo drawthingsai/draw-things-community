@@ -93,6 +93,13 @@ private enum NetworkAccessPolicy {
   static var offline = false
 }
 
+enum VideoExportFormat: String, ExpressibleByArgument {
+  case prores4444
+  case prores422hq
+  case h264
+  case hevc
+}
+
 private enum CLIIdentity {
   static let commandName = "draw-things-cli"
 
@@ -254,6 +261,12 @@ private let generateImageHelp = ArgumentHelp(
     "The image is resized with aspect-preserving scale and center crop to match the requested output size."
 )
 
+private let videoFormatHelp = ArgumentHelp(
+  "Video export format for .mov/.mp4 outputs.",
+  discussion:
+    "Accepted values: prores4444, prores422hq, h264, hevc. ProRes formats require .mov output."
+)
+
 private let trainConfigJSONHelp = ArgumentHelp(
   "Inline JSON override in LoRATrainingConfiguration format.",
   discussion:
@@ -390,6 +403,9 @@ struct GenerateOutputOptions: ParsableArguments {
       "Output path (.png, .mov, or .mp4).",
       discussion: "Use .png for image output and .mov/.mp4 for video-capable models."))
   var output: String = "output.png"
+
+  @Option(name: .long, help: videoFormatHelp)
+  var videoFormat: VideoExportFormat?
 }
 
 struct GenerateExecutionOptions: ParsableArguments {
@@ -1295,7 +1311,7 @@ private final class LocalGenerationRunner {
   func generate(
     prompt: String, negativePrompt: String, configuration: GenerationConfiguration,
     outputPath: String,
-    inputImage: Tensor<FloatType>?
+    inputImage: Tensor<FloatType>?, videoFormat: VideoExportFormat?
   ) throws -> [String] {
     let trace = ImageGeneratorTrace(fromBridge: true)
     let progressPrinter = ProgressBarPrinter()
@@ -1319,15 +1335,20 @@ private final class LocalGenerationRunner {
     guard let images, !images.isEmpty else {
       throw DrawThingsCLIError.generationFailed
     }
-    return try saveOutputs(images, outputPath: outputPath, configuration: configuration)
+    return try saveOutputs(
+      images, outputPath: outputPath, configuration: configuration, videoFormat: videoFormat)
   }
 
   private func saveOutputs(
-    _ tensors: [Tensor<FloatType>], outputPath: String, configuration: GenerationConfiguration
+    _ tensors: [Tensor<FloatType>], outputPath: String, configuration: GenerationConfiguration,
+    videoFormat: VideoExportFormat?
   ) throws -> [String] {
     let destination = try normalizedOutputDestination(outputPath)
     switch destination {
     case .png(let outputURL):
+      if videoFormat != nil {
+        throw ValidationError("--video-format can only be used with .mov or .mp4 output")
+      }
       let outputPaths = imageOutputPaths(baseOutputURL: outputURL, count: tensors.count)
       for (tensor, path) in zip(tensors, outputPaths) {
         try writePNG(tensor: tensor, to: path)
@@ -1337,7 +1358,7 @@ private final class LocalGenerationRunner {
       let framesPerSecond = ModelZoo.framesPerSecondForModel(configuration.model ?? "")
       let path = try writeVideo(
         tensors: tensors, to: outputURL, containerExtension: containerExtension,
-        framesPerSecond: framesPerSecond)
+        framesPerSecond: framesPerSecond, videoFormat: videoFormat ?? .h264)
       return [path]
     }
   }
@@ -1422,7 +1443,7 @@ private final class LocalGenerationRunner {
 
   private func writeVideo(
     tensors: [Tensor<FloatType>], to outputURL: URL, containerExtension: String,
-    framesPerSecond: Double
+    framesPerSecond: Double, videoFormat: VideoExportFormat
   ) throws -> String {
     #if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo)
       guard let first = tensors.first else {
@@ -1446,12 +1467,14 @@ private final class LocalGenerationRunner {
       if FileManager.default.fileExists(atPath: outputURL.path) {
         try? FileManager.default.removeItem(at: outputURL)
       }
+      if containerExtension == "mp4",
+        videoFormat == .prores4444 || videoFormat == .prores422hq
+      {
+        throw ValidationError("ProRes video formats require .mov output")
+      }
       let fileType: AVFileType = containerExtension == "mp4" ? .mp4 : .mov
-      let videoSettings: [String: Any] = [
-        AVVideoCodecKey: AVVideoCodecType.h264.rawValue,
-        AVVideoWidthKey: NSNumber(value: firstShape.width),
-        AVVideoHeightKey: NSNumber(value: firstShape.height),
-      ]
+      let videoSettings = videoSettings(
+        for: videoFormat, width: firstShape.width, height: firstShape.height)
       let writer = try AVAssetWriter(outputURL: outputURL, fileType: fileType)
       let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
       writerInput.expectsMediaDataInRealTime = false
@@ -1511,6 +1534,50 @@ private final class LocalGenerationRunner {
       throw DrawThingsCLIError.unsupportedVideoOutput(outputURL.path)
     #endif
   }
+
+  #if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo)
+    private func videoSettings(
+      for format: VideoExportFormat, width: Int, height: Int
+    ) -> [String: Any] {
+      switch format {
+      case .prores4444:
+        return [
+          AVVideoCodecKey: AVVideoCodecType.proRes4444.rawValue,
+          AVVideoWidthKey: NSNumber(value: width),
+          AVVideoHeightKey: NSNumber(value: height),
+        ]
+      case .prores422hq:
+        return [
+          AVVideoCodecKey: AVVideoCodecType.proRes422HQ.rawValue,
+          AVVideoWidthKey: NSNumber(value: width),
+          AVVideoHeightKey: NSNumber(value: height),
+        ]
+      case .h264:
+        return [
+          AVVideoCodecKey: AVVideoCodecType.h264.rawValue,
+          AVVideoWidthKey: NSNumber(value: width),
+          AVVideoHeightKey: NSNumber(value: height),
+          AVVideoCompressionPropertiesKey: [
+            AVVideoAverageBitRateKey: max(9_500_000, Int((Double(width * height) * 5).rounded())),
+            AVVideoProfileLevelKey: AVVideoProfileLevelH264High41,
+            AVVideoMaxKeyFrameIntervalKey: 30,
+            AVVideoAllowFrameReorderingKey: true,
+          ],
+        ]
+      case .hevc:
+        return [
+          AVVideoCodecKey: AVVideoCodecType.hevc.rawValue,
+          AVVideoWidthKey: NSNumber(value: width),
+          AVVideoHeightKey: NSNumber(value: height),
+          AVVideoCompressionPropertiesKey: [
+            AVVideoAverageBitRateKey: max(7_500_000, Int((Double(width * height) * 4).rounded())),
+            AVVideoMaxKeyFrameIntervalKey: 30,
+            AVVideoAllowFrameReorderingKey: true,
+          ],
+        ]
+      }
+    }
+  #endif
 
   #if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo)
     private func frameDurationForVideo(frameRate: Double) -> CMTime {
@@ -1977,6 +2044,7 @@ extension DrawThingsCLI {
       let modelsDirectory = try ModelsDirectoryResolver.resolve(
         path: modelResolution.modelsDirectoryOptions.modelsDir)
       ModelZoo.externalUrls = [modelsDirectory]
+      try validateVideoOutputOptions(outputPath: output.output, videoFormat: output.videoFormat)
 
       guard let model = modelResolution.model else {
         printModelResolutionHelp(modelsDirectory: modelsDirectory)
@@ -2020,7 +2088,8 @@ extension DrawThingsCLI {
       let runner = try LocalGenerationRunner()
       let outputPaths = try runner.generate(
         prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
-        configuration: configuration, outputPath: output.output, inputImage: inputImageTensor)
+        configuration: configuration, outputPath: output.output, inputImage: inputImageTensor,
+        videoFormat: output.videoFormat)
       print("Models directory: \(modelsDirectory.path)")
       for path in outputPaths {
         print("Wrote: \(path)")
@@ -2221,6 +2290,27 @@ private func resolvedPrompts(_ options: GeneratePromptOptions) throws -> (
       inline: options.negativePrompt, filePath: options.negativePromptFile,
       inlineFlag: "--negative-prompt", fileFlag: "--negative-prompt-file")
   return (prompt, negative)
+}
+
+private func validateVideoOutputOptions(outputPath: String, videoFormat: VideoExportFormat?) throws
+{
+  guard let videoFormat else { return }
+  var url = URL(fileURLWithPath: outputPath)
+  if url.pathExtension.isEmpty {
+    url = url.appendingPathExtension("png")
+  }
+  switch url.pathExtension.lowercased() {
+  case "mov":
+    return
+  case "mp4":
+    if videoFormat == .prores4444 || videoFormat == .prores422hq {
+      throw ValidationError("ProRes video formats require .mov output")
+    }
+  case "png":
+    throw ValidationError("--video-format can only be used with .mov or .mp4 output")
+  default:
+    return
+  }
 }
 
 private func loadInputImageTensor(path: String, imageWidth: Int, imageHeight: Int) throws
