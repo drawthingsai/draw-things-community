@@ -9,6 +9,7 @@ import Downloader
 import Foundation
 import ImageGenerator
 import LocalImageGenerator
+import ModelOp
 import ModelZoo
 import NNC
 import PNG
@@ -187,6 +188,21 @@ private enum CLIHelpText {
       \(CLIIdentity.command("models ensure --model flux_2_dev_q8p.ckpt"))
     """
 
+  static let modelImport = """
+    DESCRIPTION:
+      Import a local checkpoint or safetensors artifact into Draw Things format, infer a
+      custom model specification, and optionally download missing companion models.
+
+    INPUTS:
+      Local files only for now. Supported source formats depend on ModelImporter and
+      commonly include .safetensors, .ckpt, .pth, .pt, .bin, and .zip.
+
+    EXAMPLES:
+      \(CLIIdentity.command("models import ./flux-2-klein-4b.safetensors"))
+      \(CLIIdentity.command("models import ./model.safetensors --name \"My Model\" --trigger-word mytoken"))
+      \(CLIIdentity.command("models import ./model.safetensors --dry-run"))
+    """
+
   static let train = """
     DESCRIPTION:
       Training commands for local fine-tuning workflows.
@@ -265,6 +281,18 @@ private let videoFormatHelp = ArgumentHelp(
   "Video export format for .mov/.mp4 outputs.",
   discussion:
     "Accepted values: prores4444, prores422hq, h264, hevc. ProRes formats require .mov output."
+)
+
+private let modelImportArtifactHelp = ArgumentHelp(
+  "Local model artifact to import.",
+  discussion:
+    "Typically a .safetensors, .ckpt, .pth, .pt, .bin, or .zip file. Remote URLs are not supported by this command yet."
+)
+
+private let modelImportScaleHelp = ArgumentHelp(
+  "Default finetune scale in 64px units.",
+  discussion:
+    "For example, 16 means a default 1024px base resolution. If omitted, the CLI mirrors the app's import defaults for the detected model family."
 )
 
 private let trainConfigJSONHelp = ArgumentHelp(
@@ -1190,6 +1218,155 @@ private enum ModelDownloader {
   }
 }
 
+private func resolvedLocalFileURL(_ path: String) throws -> URL {
+  let expanded = (path as NSString).expandingTildeInPath
+  let url = URL(fileURLWithPath: expanded)
+  guard FileManager.default.fileExists(atPath: url.path) else {
+    throw ValidationError("File does not exist: \(path)")
+  }
+  return url.standardizedFileURL
+}
+
+private func resolvedOptionalLocalFileURL(_ path: String?) throws -> URL? {
+  guard let path, !path.isEmpty else { return nil }
+  return try resolvedLocalFileURL(path)
+}
+
+private func defaultImportedModelDisplayName(for artifactURL: URL) -> String {
+  artifactURL.deletingPathExtension().lastPathComponent
+}
+
+private func defaultImportScale(for version: ModelVersion, artifactFileName: String) -> UInt16 {
+  switch version {
+  case .hunyuanVideo, .wan21_14b, .wan22_5b:
+    return 12
+  case .wan21_1_3b:
+    return 8
+  case .sdxlBase, .sdxlRefiner, .ssd1b, .hiDreamI1, .qwenImage, .zImage, .wurstchenStageC,
+    .wurstchenStageB, .sd3, .sd3Large, .auraflow, .flux1, .flux2, .flux2_9b, .flux2_4b,
+    .ltx2, .ltx2_3:
+    return 16
+  case .pixart:
+    return artifactFileName.contains("512") ? 8 : 16
+  case .v1, .v2, .kandinsky21, .svdI2v:
+    return 8
+  }
+}
+
+private func validateCustomTextEncoderSupport(
+  version: ModelVersion, textEncoderURL: URL?, textEncoder2URL: URL?
+) throws {
+  if let textEncoder2URL, version != .sdxlBase {
+    throw ValidationError(
+      "--text-encoder-2 is only supported for Stable Diffusion XL Base imports, got \(textEncoder2URL.lastPathComponent)."
+    )
+  }
+  guard textEncoderURL != nil || textEncoder2URL != nil else { return }
+  switch version {
+  case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner:
+    return
+  case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
+    .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
+    .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+    throw ValidationError(
+      "Custom text encoder import is not supported for \(ModelZoo.humanReadableNameForVersion(version))."
+    )
+  }
+}
+
+private func projectedImportedOutputFiles(
+  modelName: String, version: ModelVersion, includeAutoencoder: Bool, includeTextEncoder: Bool,
+  includeTextEncoder2: Bool
+) throws -> [String] {
+  var files = ["\(modelName)_f16.ckpt"]
+  if includeTextEncoder {
+    switch version {
+    case .v1:
+      files.append("\(modelName)_clip_vit_l14_f16.ckpt")
+    case .v2:
+      files.append("\(modelName)_open_clip_vit_h14_f16.ckpt")
+    case .sdxlBase, .ssd1b:
+      files.append("\(modelName)_clip_vit_l14_f16.ckpt")
+      files.append("\(modelName)_open_clip_vit_bigg14_f16.ckpt")
+    case .sdxlRefiner:
+      files.append("\(modelName)_open_clip_vit_bigg14_f16.ckpt")
+    case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
+      .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
+      .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+      break
+    }
+  }
+  if includeTextEncoder2 && version == .sdxlBase {
+    let secondEncoder = "\(modelName)_open_clip_vit_bigg14_f16.ckpt"
+    if !files.contains(secondEncoder) {
+      files.append(secondEncoder)
+    }
+  }
+  if includeAutoencoder {
+    files.append("\(modelName)_vae_f16.ckpt")
+  }
+  return files
+}
+
+private func existingImportedOutputs(for files: [String]) -> [String] {
+  files.filter { FileManager.default.fileExists(atPath: ModelZoo.filePathForModelDownloaded($0)) }
+}
+
+private func importPrefix(triggerWord: String?) -> String {
+  let trimmed = triggerWord?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  return trimmed.isEmpty ? "" : "\(trimmed) "
+}
+
+private func importedDependencyFiles(
+  specification: ModelZoo.Specification,
+  additionalModels: [(name: String, subtitle: String, file: String)],
+  importedFiles: [String]
+) -> [String] {
+  let imported = Set(importedFiles)
+  let files =
+    additionalModels.map(\.file)
+    + ModelZoo.filesToDownload(specification).map(\.file).filter { !imported.contains($0) }
+  var seen = Set<String>()
+  return files.filter { seen.insert($0).inserted }
+}
+
+private func printImportedModelSummary(
+  specification: ModelZoo.Specification, version: ModelVersion, modifier: SamplerModifier,
+  importedFiles: [String], dependencyFiles: [String]
+) {
+  let rows = [
+    ["MODEL", specification.file],
+    ["NAME", specification.name],
+    [
+      "VERSION",
+      "\(ModelZoo.humanReadableNameForVersion(version)) (\(String(describing: version)))",
+    ],
+    ["MODIFIER", String(describing: modifier)],
+    ["TEXT_ENCODER", specification.textEncoder ?? "-"],
+    ["AUTOENCODER", specification.autoencoder ?? "-"],
+    [
+      "DEFAULT_SCALE",
+      "\(specification.defaultScale) (\(Int(specification.defaultScale) * 64)x\(Int(specification.defaultScale) * 64))",
+    ],
+    ["PREFIX", specification.prefix.isEmpty ? "-" : specification.prefix],
+  ]
+  printTable(headers: ["FIELD", "VALUE"], rows: rows, maxWidths: [18, 88])
+  if !importedFiles.isEmpty {
+    print("")
+    printTable(
+      headers: ["IMPORTED_FILE"],
+      rows: importedFiles.map { [$0] },
+      maxWidths: [88])
+  }
+  if !dependencyFiles.isEmpty {
+    print("")
+    printTable(
+      headers: ["COMPANION_FILE"],
+      rows: dependencyFiles.map { [$0] },
+      maxWidths: [88])
+  }
+}
+
 private func createTemporaryDirectory() throws -> String {
   let path = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
   try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
@@ -1772,6 +1949,7 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
 
   let modelsDirectory = try ModelsDirectoryResolver.resolve(
     path: options.modelAndDataset.modelsDirectoryOptions.modelsDir)
+  ModelZoo.isExternalUrlsPreferred = true
   ModelZoo.externalUrls = [modelsDirectory]
 
   let modelInput = options.modelAndDataset.model ?? config.baseModel
@@ -2043,6 +2221,7 @@ extension DrawThingsCLI {
       NetworkAccessPolicy.offline = execution.offline
       let modelsDirectory = try ModelsDirectoryResolver.resolve(
         path: modelResolution.modelsDirectoryOptions.modelsDir)
+      ModelZoo.isExternalUrlsPreferred = true
       ModelZoo.externalUrls = [modelsDirectory]
       try validateVideoOutputOptions(outputPath: output.output, videoFormat: output.videoFormat)
 
@@ -2101,7 +2280,7 @@ extension DrawThingsCLI {
     static let configuration = CommandConfiguration(
       abstract: "Model utilities.",
       discussion: CLIHelpText.models,
-      subcommands: [List.self, Ensure.self]
+      subcommands: [List.self, Ensure.self, Import.self]
     )
 
     struct List: ParsableCommand {
@@ -2123,6 +2302,7 @@ extension DrawThingsCLI {
         NetworkAccessPolicy.offline = offline
         let modelsDirectory = try ModelsDirectoryResolver.resolve(
           path: modelsDirectoryOptions.modelsDir)
+        ModelZoo.isExternalUrlsPreferred = true
         ModelZoo.externalUrls = [modelsDirectory]
         print("Models directory: \(modelsDirectory.path)")
         printModelList(
@@ -2155,6 +2335,7 @@ extension DrawThingsCLI {
         NetworkAccessPolicy.offline = offline
         let modelsDirectory = try ModelsDirectoryResolver.resolve(
           path: modelsDirectoryOptions.modelsDir)
+        ModelZoo.isExternalUrlsPreferred = true
         ModelZoo.externalUrls = [modelsDirectory]
 
         guard let model else {
@@ -2178,6 +2359,196 @@ extension DrawThingsCLI {
         try ModelDownloader.ensureFiles(
           files, modelsDirectory: modelsDirectory, downloadMissing: true)
         print("Model ready: \(modelSpecification.file)")
+      }
+    }
+
+    struct Import: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Import a local checkpoint or safetensors artifact.",
+        discussion: CLIHelpText.modelImport)
+
+      @OptionGroup var modelsDirectoryOptions: ModelsDirectoryOptions
+
+      @Argument(help: modelImportArtifactHelp)
+      var artifact: String
+
+      @Option(name: .long, help: "Display name for the imported model.")
+      var name: String?
+
+      @Option(
+        name: .long, help: "Optional trigger word / prefix stored in the model specification.")
+      var triggerWord: String?
+
+      @Option(
+        name: .long, help: "Optional autoencoder artifact to import alongside the main model.")
+      var autoencoder: String?
+
+      @Option(
+        name: .long,
+        help:
+          "Optional text encoder artifact to import when the detected model family supports it.")
+      var textEncoder: String?
+
+      @Option(
+        name: .customLong("text-encoder-2"),
+        help:
+          "Optional second text encoder artifact for SDXL Base imports.")
+      var textEncoder2: String?
+
+      @Option(name: .long, help: modelImportScaleHelp)
+      var scale: Int?
+
+      @Flag(
+        name: .long, help: "Inspect and infer the custom model specification without writing files."
+      )
+      var dryRun: Bool = false
+
+      @Flag(
+        name: .long, inversion: .prefixedNo, help: "Auto-download missing companion model files.")
+      var downloadMissing: Bool = true
+
+      @Flag(name: .long, help: "Replace existing imported files with the same internal model id.")
+      var replace: Bool = false
+
+      @Flag(
+        name: .long,
+        help:
+          "Disable network access. Imports the local artifact only and skips any remote companion downloads."
+      )
+      var offline: Bool = false
+
+      mutating func run() throws {
+        NetworkAccessPolicy.offline = offline
+        let modelsDirectory = try ModelsDirectoryResolver.resolve(
+          path: modelsDirectoryOptions.modelsDir)
+        ModelZoo.isExternalUrlsPreferred = true
+        ModelZoo.externalUrls = [modelsDirectory]
+
+        let artifactURL = try resolvedLocalFileURL(artifact)
+        let autoencoderURL = try resolvedOptionalLocalFileURL(autoencoder)
+        let textEncoderURL = try resolvedOptionalLocalFileURL(textEncoder)
+        let textEncoder2URL = try resolvedOptionalLocalFileURL(textEncoder2)
+
+        let displayName =
+          name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+          ? name!.trimmingCharacters(in: .whitespacesAndNewlines)
+          : defaultImportedModelDisplayName(for: artifactURL)
+        let internalName = Importer.cleanup(
+          filename: artifactURL.deletingPathExtension().lastPathComponent)
+        guard !internalName.isEmpty else {
+          throw ValidationError(
+            "Unable to derive a valid internal model id from '\(artifactURL.lastPathComponent)'.")
+        }
+
+        let isTextEncoderCustomized = textEncoderURL != nil || textEncoder2URL != nil
+        let importer = ModelImporter(
+          filePath: artifactURL.path, modelName: internalName,
+          isTextEncoderCustomized: isTextEncoderCustomized,
+          autoencoderFilePath: autoencoderURL?.path, textEncoderFilePath: textEncoderURL?.path,
+          textEncoder2FilePath: textEncoder2URL?.path)
+
+        guard scale == nil || scale! > 0 else {
+          throw ValidationError("--scale must be > 0")
+        }
+        let inspection = try importer.inspect()
+        try validateCustomTextEncoderSupport(
+          version: inspection.version, textEncoderURL: textEncoderURL,
+          textEncoder2URL: textEncoder2URL)
+        let expectedFiles = try projectedImportedOutputFiles(
+          modelName: internalName, version: inspection.version,
+          includeAutoencoder: autoencoderURL != nil,
+          includeTextEncoder: textEncoderURL != nil, includeTextEncoder2: textEncoder2URL != nil)
+        let existing = existingImportedOutputs(for: expectedFiles)
+        if !replace && !existing.isEmpty {
+          let lines = existing.map { "  - \($0)" }.joined(separator: "\n")
+          throw ValidationError(
+            "Refusing to overwrite existing imported files:\n\(lines)\nRe-run with --replace to overwrite them."
+          )
+        }
+        let finetuneScale = UInt16(
+          scale
+            ?? Int(
+              defaultImportScale(
+                for: inspection.version, artifactFileName: artifactURL.lastPathComponent)))
+
+        if dryRun {
+          let (specification, additionalModels, _) = ModelImporter.inferModelSpecification(
+            modelName: displayName,
+            fileName: internalName,
+            fileNames: expectedFiles,
+            modelVersion: inspection.version,
+            modifier: inspection.modifier,
+            inspectionResult: inspection,
+            prefix: importPrefix(triggerWord: triggerWord),
+            objective: nil,
+            conditioning: nil,
+            noiseDiscretization: nil,
+            upcastAttention: false,
+            finetuneScale: finetuneScale
+          )
+          print("Dry run: no files written.")
+          printImportedModelSummary(
+            specification: specification, version: inspection.version,
+            modifier: inspection.modifier, importedFiles: expectedFiles,
+            dependencyFiles: importedDependencyFiles(
+              specification: specification, additionalModels: additionalModels,
+              importedFiles: expectedFiles))
+          return
+        }
+
+        var lastPrintedPercent = -1
+        let result = try importer.import { version in
+          print(
+            "Detected: \(ModelZoo.humanReadableNameForVersion(version)) (\(String(describing: version)))"
+          )
+        } progress: { progress in
+          let percent = min(100, max(0, Int((progress * 100).rounded(.down))))
+          if percent >= lastPrintedPercent + 5 || percent == 100 {
+            print("Importing: \(percent)%")
+            lastPrintedPercent = percent
+          }
+        }
+
+        let fileNames = result.0.map { URL(fileURLWithPath: $0).lastPathComponent }
+        let (specification, additionalModels, _) = ModelImporter.inferModelSpecification(
+          modelName: displayName,
+          fileName: internalName,
+          fileNames: fileNames,
+          modelVersion: result.1,
+          modifier: result.2,
+          inspectionResult: result.3,
+          prefix: importPrefix(triggerWord: triggerWord),
+          objective: nil,
+          conditioning: nil,
+          noiseDiscretization: nil,
+          upcastAttention: false,
+          finetuneScale: finetuneScale
+        )
+        let dependencyFiles = importedDependencyFiles(
+          specification: specification, additionalModels: additionalModels,
+          importedFiles: fileNames)
+
+        var dependencyWarning: String?
+        do {
+          try ModelDownloader.ensureFiles(
+            dependencyFiles, modelsDirectory: modelsDirectory, downloadMissing: downloadMissing)
+        } catch {
+          dependencyWarning = error.localizedDescription
+        }
+
+        ModelZoo.appendCustomSpecification(specification)
+
+        printImportedModelSummary(
+          specification: specification, version: result.1, modifier: result.2,
+          importedFiles: fileNames, dependencyFiles: dependencyFiles)
+        if let dependencyWarning {
+          print("")
+          print("Dependency download warning:")
+          print(dependencyWarning)
+        } else {
+          print("")
+          print("Model imported: \(specification.file)")
+        }
       }
     }
   }

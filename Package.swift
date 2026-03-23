@@ -467,6 +467,7 @@ let package = Package(
         "Downloader",
         "ImageGenerator",
         "LocalImageGenerator",
+        "ModelOp",
         "ModelZoo",
         "ScriptDataModels",
         "Diffusion",

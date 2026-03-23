@@ -1854,8 +1854,13 @@ public struct ModelZoo: DownloadZoo {
     let urls = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
     let modelZooUrl = urls.first!.appendingPathComponent("Models")
     try? FileManager.default.createDirectory(at: modelZooUrl, withIntermediateDirectories: true)
+    if isExternalUrlsPreferred, let externalUrl = externalUrls.first {
+      return externalUrl.appendingPathComponent(name).path
+    }
     return modelZooUrl.appendingPathComponent(name).path
   }
+
+  public static var isExternalUrlsPreferred: Bool = false
 
   public static var externalUrls: [URL] = [URL]() {
     didSet {
@@ -1936,7 +1941,8 @@ public struct ModelZoo: DownloadZoo {
 
   public static func specificationForHuggingFaceRepo(_ repo: String) -> Specification? {
     guard let canonicalRepo = canonicalizedRepoForLookup(repo) else { return nil }
-    if let override = valueForCanonicalizedRepoKey(huggingFaceRepoOverrideMapping, key: canonicalRepo)
+    if let override = valueForCanonicalizedRepoKey(
+      huggingFaceRepoOverrideMapping, key: canonicalRepo)
     {
       return override
     }
@@ -1996,7 +2002,7 @@ public struct ModelZoo: DownloadZoo {
         if huggingFace == normalizedRepo {
           score = max(score, 950)
         } else if !huggingFace.isEmpty,
-          (huggingFace.contains(normalizedRepo) || normalizedRepo.contains(huggingFace))
+          huggingFace.contains(normalizedRepo) || normalizedRepo.contains(huggingFace)
         {
           score = max(score, 650)
         }
@@ -2005,7 +2011,8 @@ public struct ModelZoo: DownloadZoo {
         scored.append((score, specification))
       }
     }
-    return scored
+    return
+      scored
       .sorted {
         if $0.score != $1.score {
           return $0.score > $1.score
@@ -2142,27 +2149,31 @@ public struct ModelZoo: DownloadZoo {
   }
 
   public static func internalFilePathForModelDownloaded(_ name: String) -> String {
-    return filePathForOtherModelDownloaded(name)
+    let urls = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+    let modelZooUrl = urls.first!.appendingPathComponent("Models")
+    try? FileManager.default.createDirectory(at: modelZooUrl, withIntermediateDirectories: true)
+    return modelZooUrl.appendingPathComponent(name).path
   }
 
   public static func filePathForModelDownloaded(_ name: String) -> String {
     guard let externalUrl = externalUrls.first else {
-      return filePathForOtherModelDownloaded(name)
+      return internalFilePathForModelDownloaded(name)
     }
-    // If it exists at internal storage, prefer that.
-    let otherFilePath = filePathForOtherModelDownloaded(name)
+    let otherFilePath = internalFilePathForModelDownloaded(name)
     let fileManager = FileManager.default
-    guard !fileManager.fileExists(atPath: otherFilePath) else {
+    if !isExternalUrlsPreferred && fileManager.fileExists(atPath: otherFilePath) {
       return otherFilePath
     }
     for externalUrl in externalUrls {
-      if FileManager.default.fileExists(atPath: externalUrl.appendingPathComponent(name).path) {
-        return externalUrl.appendingPathComponent(name).path
+      let filePath = externalUrl.appendingPathComponent(name).path
+      if fileManager.fileExists(atPath: filePath) {
+        return filePath
       }
     }
-    // Check external storage, return path at external storage regardless.
-    let filePath = externalUrl.appendingPathComponent(name).path
-    return filePath
+    if fileManager.fileExists(atPath: otherFilePath) {
+      return otherFilePath
+    }
+    return isExternalUrlsPreferred ? externalUrl.appendingPathComponent(name).path : otherFilePath
   }
 
   public static func isModelDownloaded(
@@ -2237,7 +2248,7 @@ public struct ModelZoo: DownloadZoo {
         return true
       }
     }
-    let otherModelPath = filePathForOtherModelDownloaded(name)
+    let otherModelPath = internalFilePathForModelDownloaded(name)
     if fileManager.fileExists(atPath: otherModelPath) {
       return true
     }
