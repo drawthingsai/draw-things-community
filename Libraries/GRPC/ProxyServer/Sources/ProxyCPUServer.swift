@@ -852,10 +852,15 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   func getEffectiveThrottlePolicy(
     for key: String, payload: JWTPayload, throttlePolicies: [String: Int]
   ) -> Int? {
-    // API users without boost get special API limits
+    // Payg users get their own throttle limits
+    if payload.consumableType == .payg {
+      return throttlePolicies["\(key)_payg"] ?? throttlePolicies[key]
+    }
+    // Bridge users (SDK/API/HTTP) without boost get separate limits
     if payload.fromBridge == true && payload.consumableType != .boost {
-      let apiThrottlePolicyKey = payload.userClass == .plus ? "\(key)_api_plus" : "\(key)_api"
-      return throttlePolicies[apiThrottlePolicyKey] ?? throttlePolicies[key]
+      let bridgeKey =
+        payload.userClass == .plus ? "\(key)_from_bridge_plus" : "\(key)_from_bridge"
+      return throttlePolicies[bridgeKey] ?? throttlePolicies[key]
     }
 
     let priorityKey = payload.userClass == .plus ? "\(key)_plus" : key
@@ -1165,7 +1170,10 @@ public class ProxyCPUServer {
         "community_free_worker_threshold": 0,
         "throttle_queue_timeout_seconds": 3600,
         "task_loop_breakout_seconds": 30,
-        "24_hour_api_plus": 500, "24_hour_api": 100,
+        "24_hour_from_bridge_plus": 500, "24_hour_from_bridge": 100,
+        "24_hour_payg": 50000,
+        "15_min_payg": 3000, "10_min_payg": 2000, "5_min_payg": 1000,
+        "1_hour_payg": 10000, "1_min_payg": 300,
       ], publicKeyPEM: publicKeyPEM, logger: logger, modelListPath: modelListPath,
       nonceSizeLimit: nonceSizeLimit)
     self.proxyMessageSigner = ProxyMessageSigner()
