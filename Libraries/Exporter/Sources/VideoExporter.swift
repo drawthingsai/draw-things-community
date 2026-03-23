@@ -19,6 +19,7 @@ public final class VideoExporter {
     case proRes4444 = 0
     case proRes422HQ
     case h264
+    case hevc
   }
 
   public weak var delegate: VideoExporterDelegate? = nil
@@ -175,6 +176,17 @@ public final class VideoExporter {
         AVVideoCompressionPropertiesKey: [
           AVVideoAverageBitRateKey: max(9_500_000, Int((imageWidth * imageHeight * 5).rounded())),  // 9.5 Mbps, or 5-bit per pixel, whichever is higher.
           AVVideoProfileLevelKey: AVVideoProfileLevelH264High41,
+          AVVideoMaxKeyFrameIntervalKey: 30,
+          AVVideoAllowFrameReorderingKey: true,
+        ],
+      ]
+    case .hevc:
+      videoSettings = [
+        AVVideoCodecKey: AVVideoCodecType.hevc.rawValue,
+        AVVideoWidthKey: NSNumber(value: Float(imageWidth)),
+        AVVideoHeightKey: NSNumber(value: Float(imageHeight)),
+        AVVideoCompressionPropertiesKey: [
+          AVVideoAverageBitRateKey: max(7_500_000, Int((imageWidth * imageHeight * 4).rounded())),  // 7.5 Mbps, or 4-bit per pixel, whichever is higher.
           AVVideoMaxKeyFrameIntervalKey: 30,
           AVVideoAllowFrameReorderingKey: true,
         ],
