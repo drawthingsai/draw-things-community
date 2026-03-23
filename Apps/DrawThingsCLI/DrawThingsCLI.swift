@@ -89,6 +89,47 @@ private struct ResolvedGenerationConfiguration {
   let recommendedNegativePrompt: String?
 }
 
+private enum NetworkCacheResolver {
+  static func primaryURL(fileName: String) throws -> URL {
+    guard
+      let cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+        .first
+    else {
+      throw DrawThingsCLIError.invalidConfigurationJSON
+    }
+    return cacheDirectory.appendingPathComponent("net", isDirectory: true).appendingPathComponent(
+      fileName)
+  }
+
+  static func candidateURLs(fileName: String, modelsDirectory: URL) -> [URL] {
+    var urls: [URL] = []
+    if let primary = try? primaryURL(fileName: fileName) {
+      urls.append(primary)
+    }
+    let modelsDirectoryPath = modelsDirectory.standardizedFileURL.pathComponents
+    if modelsDirectoryPath.suffix(3) == ["Data", "Documents", "Models"] {
+      let dataDirectory =
+        modelsDirectory
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+      urls.append(
+        dataDirectory
+          .appendingPathComponent("Library", isDirectory: true)
+          .appendingPathComponent("Caches", isDirectory: true)
+          .appendingPathComponent("net", isDirectory: true)
+          .appendingPathComponent(fileName))
+    }
+    return urls
+  }
+
+  static func persist(_ data: Data, fileName: String) throws {
+    let fileURL = try primaryURL(fileName: fileName)
+    try FileManager.default.createDirectory(
+      at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try data.write(to: fileURL, options: .atomic)
+  }
+}
+
 struct ModelsDirectoryOptions: ParsableArguments {
   @Option(
     name: .long,
@@ -151,8 +192,12 @@ private enum ModelsDirectoryResolver {
 }
 
 private enum ModelResolver {
-  static func resolve(_ input: String) -> ModelZoo.Specification? {
-    return ModelZoo.resolveModelReference(input)?.specification
+  static func resolve(_ input: String, modelsDirectory: URL? = nil) -> ModelZoo.Specification? {
+    if let specification = ModelZoo.resolveModelReference(input)?.specification {
+      return specification
+    }
+    guard let modelsDirectory else { return nil }
+    return CommunityModelResolver.resolve(input, modelsDirectory: modelsDirectory)
   }
 
   static func suggestions(_ input: String, limit: Int = 5) -> [ModelZoo.Specification] {
@@ -422,7 +467,9 @@ private enum RecommendedSettingsResolver {
   private static func cachedCommunityConfigurations(modelsDirectory: URL)
     -> [ConfigurationZoo.Specification]
   {
-    for url in communityCacheURLs(modelsDirectory: modelsDirectory) {
+    for url in NetworkCacheResolver.candidateURLs(
+      fileName: "configs.json", modelsDirectory: modelsDirectory)
+    {
       guard let data = try? Data(contentsOf: url) else { continue }
       let configurations = parseCommunityConfigurations(data: data)
       if !configurations.isEmpty {
@@ -433,41 +480,168 @@ private enum RecommendedSettingsResolver {
   }
 
   private static func persistCommunityConfigurations(_ data: Data) throws {
-    let cacheURL = try primaryCommunityCacheURL().deletingLastPathComponent()
-    try FileManager.default.createDirectory(at: cacheURL, withIntermediateDirectories: true)
-    try data.write(to: cacheURL.appendingPathComponent("configs.json"), options: .atomic)
+    try NetworkCacheResolver.persist(data, fileName: "configs.json")
+  }
+}
+
+private enum CommunityModelResolver {
+  static func resolve(_ input: String, modelsDirectory: URL, timeout: TimeInterval = 10)
+    -> ModelZoo.Specification?
+  {
+    let local = localCommunitySpecifications(
+      modelsDirectory: modelsDirectory, allowNetwork: false)
+    if let specification = matchingSpecification(for: input, in: local) {
+      primeOverrideMapping(with: specification)
+      return specification
+    }
+    guard !isDownloadedFileReference(input) else {
+      return nil
+    }
+    let fetched = (try? fetchCommunitySpecifications(timeout: timeout)) ?? []
+    if let specification = matchingSpecification(for: input, in: fetched) {
+      primeOverrideMapping(with: specification)
+      return specification
+    }
+    return nil
   }
 
-  private static func primaryCommunityCacheURL() throws -> URL {
+  static func allSpecifications(
+    modelsDirectory: URL, allowNetwork: Bool = true, timeout: TimeInterval = 10
+  )
+    -> [ModelZoo.Specification]
+  {
+    let official = ModelZoo.availableSpecifications.filter { $0.remoteApiModelConfig == nil }
+    let community = localCommunitySpecifications(
+      modelsDirectory: modelsDirectory, allowNetwork: allowNetwork, timeout: timeout)
+    var seen = Set<String>()
+    var combined = [ModelZoo.Specification]()
+    for specification in official + community where !seen.contains(specification.file) {
+      seen.insert(specification.file)
+      combined.append(specification)
+    }
+    return combined
+  }
+
+  private static func localCommunitySpecifications(
+    modelsDirectory: URL, allowNetwork: Bool, timeout: TimeInterval = 10
+  )
+    -> [ModelZoo.Specification]
+  {
+    let cached = cachedCommunitySpecifications(modelsDirectory: modelsDirectory)
+    if !cached.isEmpty {
+      return cached.filter { $0.remoteApiModelConfig == nil }
+    }
+    guard allowNetwork else {
+      return []
+    }
+    return ((try? fetchCommunitySpecifications(timeout: timeout)) ?? []).filter {
+      $0.remoteApiModelConfig == nil
+    }
+  }
+
+  private static func cachedCommunitySpecifications(modelsDirectory: URL)
+    -> [ModelZoo.Specification]
+  {
+    for url in NetworkCacheResolver.candidateURLs(
+      fileName: "models.json", modelsDirectory: modelsDirectory)
+    {
+      guard let data = try? Data(contentsOf: url) else { continue }
+      let specifications = parseCommunitySpecifications(data: data)
+      if !specifications.isEmpty {
+        return specifications
+      }
+    }
+    return []
+  }
+
+  private static func fetchCommunitySpecifications(timeout: TimeInterval) throws
+    -> [ModelZoo.Specification]
+  {
+    guard let url = URL(string: "https://models.drawthings.ai/models.json") else {
+      return []
+    }
+    var request = URLRequest(url: url)
+    request.timeoutInterval = timeout
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: Result<Data, Error> = .failure(DrawThingsCLIError.invalidConfigurationJSON)
+    URLSession.shared.dataTask(with: request) { data, response, error in
+      defer { semaphore.signal() }
+      if let error {
+        result = .failure(error)
+        return
+      }
+      guard let response = response as? HTTPURLResponse, 200...299 ~= response.statusCode else {
+        result = .failure(DrawThingsCLIError.invalidConfigurationJSON)
+        return
+      }
+      guard let data else {
+        result = .failure(DrawThingsCLIError.invalidConfigurationJSON)
+        return
+      }
+      result = .success(data)
+    }.resume()
+    guard semaphore.wait(timeout: .now() + timeout) != .timedOut else {
+      return []
+    }
+    guard case .success(let data) = result else {
+      return []
+    }
+    let specifications = parseCommunitySpecifications(data: data)
+    guard !specifications.isEmpty else {
+      return []
+    }
+    try? NetworkCacheResolver.persist(data, fileName: "models.json")
+    return specifications
+  }
+
+  private static func parseCommunitySpecifications(data: Data) -> [ModelZoo.Specification] {
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
     guard
-      let cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
-        .first
+      let specifications = try? decoder.decode(
+        [FailableDecodable<ModelZoo.Specification>].self, from: data
+      ).compactMap({ $0.value })
     else {
-      throw DrawThingsCLIError.invalidConfigurationJSON
+      return []
     }
-    return cacheDirectory.appendingPathComponent("net", isDirectory: true).appendingPathComponent(
-      "configs.json")
+    return specifications
   }
 
-  private static func communityCacheURLs(modelsDirectory: URL) -> [URL] {
-    var urls: [URL] = []
-    if let primary = try? primaryCommunityCacheURL() {
-      urls.append(primary)
+  private static func primeOverrideMapping(with specification: ModelZoo.Specification) {
+    ModelZoo.overrideMapping[specification.file] = specification
+    if let huggingFaceLink = specification.huggingFaceLink,
+      let repo = ModelZoo.normalizeHuggingFaceRepo(huggingFaceLink)
+    {
+      ModelZoo.huggingFaceRepoOverrideMapping[repo] = specification
     }
-    let modelsDirectoryPath = modelsDirectory.standardizedFileURL.pathComponents
-    if modelsDirectoryPath.suffix(3) == ["Data", "Documents", "Models"] {
-      let dataDirectory =
-        modelsDirectory
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-      urls.append(
-        dataDirectory
-          .appendingPathComponent("Library", isDirectory: true)
-          .appendingPathComponent("Caches", isDirectory: true)
-          .appendingPathComponent("net", isDirectory: true)
-          .appendingPathComponent("configs.json"))
+  }
+
+  private static func matchingSpecification(
+    for input: String, in specifications: [ModelZoo.Specification]
+  ) -> ModelZoo.Specification? {
+    if let exactFileMatch = specifications.first(where: { $0.file == input }) {
+      return exactFileMatch
     }
-    return urls
+    if let exactNameMatch = specifications.first(where: { $0.name == input }) {
+      return exactNameMatch
+    }
+    guard let canonicalRepo = ModelZoo.normalizeHuggingFaceRepo(input) else {
+      return nil
+    }
+    return specifications.first { specification in
+      guard let huggingFaceLink = specification.huggingFaceLink,
+        let specificationRepo = ModelZoo.normalizeHuggingFaceRepo(huggingFaceLink)
+      else {
+        return false
+      }
+      return specificationRepo == canonicalRepo
+    }
+  }
+
+  private static func isDownloadedFileReference(_ input: String) -> Bool {
+    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+    return ModelZoo.isModelDownloaded(trimmed)
   }
 }
 
@@ -1012,20 +1186,16 @@ private func printTable(headers: [String], rows: [[String]], maxWidths: [Int]? =
   }
 }
 
-private func printModelList(limit: Int? = nil, downloadedOnly: Bool = false) {
-  let specs = ModelZoo.availableSpecifications
-    .filter { $0.remoteApiModelConfig == nil }
-    .sorted { lhs, rhs in
-      let byName = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
-      if byName == .orderedSame {
-        return lhs.file.localizedCaseInsensitiveCompare(rhs.file) == .orderedAscending
-      }
-      return byName == .orderedAscending
-    }
-  let filtered =
-    downloadedOnly
-    ? specs.filter { ModelZoo.isModelDownloaded($0) }
-    : specs
+private func printModelList(
+  limit: Int? = nil, downloadedOnly: Bool = false, modelsDirectory: URL
+) {
+  let officialFiles = Set(
+    ModelZoo.availableSpecifications
+      .filter { $0.remoteApiModelConfig == nil }
+      .map(\.file))
+  let specs = CommunityModelResolver.allSpecifications(
+    modelsDirectory: modelsDirectory, allowNetwork: !downloadedOnly)
+  let filtered = downloadedOnly ? specs.filter { ModelZoo.isModelDownloaded($0) } : specs
   let output = limit.map { Array(filtered.prefix($0)) } ?? filtered
   if output.isEmpty {
     print("No models found.")
@@ -1033,17 +1203,18 @@ private func printModelList(limit: Int? = nil, downloadedOnly: Bool = false) {
   }
   let rows = output.map { spec in
     let downloaded = ModelZoo.isModelDownloaded(spec) ? "yes" : "no"
+    let source = officialFiles.contains(spec.file) ? "official" : "community"
     let hf = (spec.huggingFaceLink?.isEmpty == false) ? (spec.huggingFaceLink ?? "") : "-"
-    return [spec.file, spec.name, downloaded, hf]
+    return [spec.file, spec.name, source, downloaded, hf]
   }
   printTable(
-    headers: ["MODEL", "NAME", "DOWNLOADED", "HUGGING_FACE"],
+    headers: ["MODEL", "NAME", "SOURCE", "DOWNLOADED", "HUGGING_FACE"],
     rows: rows,
-    maxWidths: [42, 42, 10, 52])
+    maxWidths: [42, 42, 10, 10, 52])
 }
 
-private func printModelResolutionHelp(limit: Int = 20) {
-  printModelList(limit: limit)
+private func printModelResolutionHelp(limit: Int = 20, modelsDirectory: URL) {
+  printModelList(limit: limit, modelsDirectory: modelsDirectory)
   print("Tip: run `drawthings models list` for the full list.")
 }
 
@@ -1064,7 +1235,7 @@ private func createConfiguration(
   model: String, steps: Int?, cfg: Float?, width: Int?, height: Int?, frames: Int?, seed: UInt32?,
   strength: Float?, configJSON: String?, configFile: String?, modelsDirectory: URL
 ) throws -> ResolvedGenerationConfiguration {
-  guard let modelSpec = ModelResolver.resolve(model) else {
+  guard let modelSpec = ModelResolver.resolve(model, modelsDirectory: modelsDirectory) else {
     throw DrawThingsCLIError.unsupportedModelInput(model)
   }
   let resolvedConfiguration = try ConfigurationLoader.load(
@@ -1184,11 +1355,11 @@ extension DrawThingsCLI {
       ModelZoo.externalUrls = [modelsDirectory]
 
       guard let model else {
-        printModelResolutionHelp()
+        printModelResolutionHelp(modelsDirectory: modelsDirectory)
         throw ValidationError("--model is required.")
       }
-      guard ModelResolver.resolve(model) != nil else {
-        printModelResolutionHelp()
+      guard ModelResolver.resolve(model, modelsDirectory: modelsDirectory) != nil else {
+        printModelResolutionHelp(modelsDirectory: modelsDirectory)
         throw unresolvedModelValidationError(model)
       }
 
@@ -1249,7 +1420,7 @@ extension DrawThingsCLI {
           path: modelsDirectoryOptions.modelsDir)
         ModelZoo.externalUrls = [modelsDirectory]
         print("Models directory: \(modelsDirectory.path)")
-        printModelList(downloadedOnly: downloadedOnly)
+        printModelList(downloadedOnly: downloadedOnly, modelsDirectory: modelsDirectory)
       }
     }
 
@@ -1271,11 +1442,13 @@ extension DrawThingsCLI {
         ModelZoo.externalUrls = [modelsDirectory]
 
         guard let model else {
-          printModelResolutionHelp()
+          printModelResolutionHelp(modelsDirectory: modelsDirectory)
           throw ValidationError("--model is required.")
         }
-        guard let modelSpecification = ModelResolver.resolve(model) else {
-          printModelResolutionHelp()
+        guard
+          let modelSpecification = ModelResolver.resolve(model, modelsDirectory: modelsDirectory)
+        else {
+          printModelResolutionHelp(modelsDirectory: modelsDirectory)
           throw unresolvedModelValidationError(model)
         }
         let files =
@@ -1798,11 +1971,14 @@ extension DrawThingsCLI {
 
         let modelInput = model ?? config.baseModel
         guard let modelInput else {
-          printModelResolutionHelp()
+          printModelResolutionHelp(modelsDirectory: modelsDirectory)
           throw ValidationError("--model is required.")
         }
-        guard let modelSpecification = ModelResolver.resolve(modelInput) else {
-          printModelResolutionHelp()
+        guard
+          let modelSpecification = ModelResolver.resolve(
+            modelInput, modelsDirectory: modelsDirectory)
+        else {
+          printModelResolutionHelp(modelsDirectory: modelsDirectory)
           throw unresolvedModelValidationError(modelInput)
         }
 
