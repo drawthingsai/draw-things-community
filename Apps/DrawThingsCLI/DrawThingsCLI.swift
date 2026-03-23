@@ -62,7 +62,7 @@ private enum DrawThingsCLIError: LocalizedError {
       return "Unable to resolve model from input: \(model)"
     case .missingModelFiles(let files):
       return
-        "Missing model files:\n\(files.map { "  - \($0)" }.joined(separator: "\n"))\nUse --download-missing or run `drawthings models ensure --model ...`."
+        "Missing model files:\n\(files.map { "  - \($0)" }.joined(separator: "\n"))\nUse --download-missing or run `\(CLIIdentity.command("models ensure --model ..."))`."
     case .generationFailed:
       return "Generation failed (no tensors returned)"
     case .unsupportedTensorShape(let shape):
@@ -88,6 +88,183 @@ private struct ResolvedGenerationConfiguration {
   let configuration: GenerationConfiguration
   let recommendedNegativePrompt: String?
 }
+
+private enum NetworkAccessPolicy {
+  static var offline = false
+}
+
+private enum CLIIdentity {
+  static let commandName = "draw-things-cli"
+
+  static let version: String = {
+    if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+      !version.isEmpty
+    {
+      return version
+    }
+    let fallbackInfoPlist = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      .appendingPathComponent("Apps/DrawThings/SupportingFiles/Info.plist")
+    if let info = NSDictionary(contentsOf: fallbackInfoPlist),
+      let version = info["CFBundleShortVersionString"] as? String,
+      !version.isEmpty
+    {
+      return version
+    }
+    return "dev"
+  }()
+
+  static func command(_ arguments: String) -> String {
+    return "\(commandName) \(arguments)"
+  }
+}
+
+private enum CLIHelpText {
+  static let root = """
+    DESCRIPTION:
+      Run local Draw Things inference and local LoRA training from the command line.
+
+    COMMON COMMANDS:
+      \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\""))
+      \(CLIIdentity.command("models list --downloaded-only"))
+      \(CLIIdentity.command("models ensure --model flux_2_dev_q8p.ckpt"))
+      \(CLIIdentity.command("train lora --model flux_2_klein_4b_q6p.ckpt --dataset ./dataset"))
+      \(CLIIdentity.command("completion zsh"))
+
+    HELP:
+      Use `\(CLIIdentity.command("<command> --help"))` for command-specific help.
+
+    ENVIRONMENT:
+      DRAWTHINGS_MODELS_DIR
+        Default models directory when --models-dir is not provided.
+    """
+
+  static let generate = """
+    DESCRIPTION:
+      Resolve a local inference model, load recommended settings, apply JSON overrides,
+      then apply explicit command-line overrides before generation.
+
+    MODEL REFERENCES:
+      --model accepts a model file id, a human-readable model name, an hf://owner/repo
+      reference, an owner/repo reference, or a Hugging Face model URL.
+
+    CONFIGURATION PRECEDENCE:
+      1. Recommended settings for the resolved model.
+      2. Overrides from --config-json or --config-file.
+      3. Explicit command-line flags such as --steps, --cfg, --width, --height,
+         --frames, --seed, and --strength.
+      4. --negative-prompt overrides any recommended negative prompt.
+
+    EXAMPLES:
+      \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\""))
+      \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt-file prompt.txt"))
+      \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"studio portrait\" --image input.png --strength 0.35"))
+      \(CLIIdentity.command("generate --model ltx_2.3_22b_distilled_q6p.ckpt --prompt \"ocean waves at sunset\" --frames 49 --output clip.mov"))
+    """
+
+  static let models = """
+    DESCRIPTION:
+      Inspect model mappings and ensure local model files exist before generation or training.
+    """
+
+  static let modelList = """
+    DESCRIPTION:
+      List official models in ModelZoo order, then append community models from cached or
+      fetched catalog data.
+    """
+
+  static let modelEnsure = """
+    DESCRIPTION:
+      Resolve a model reference and download the model file, plus dependencies by default.
+
+    EXAMPLE:
+      \(CLIIdentity.command("models ensure --model flux_2_dev_q8p.ckpt"))
+    """
+
+  static let train = """
+    DESCRIPTION:
+      Training commands for local fine-tuning workflows.
+    """
+
+  static let completion = """
+    DESCRIPTION:
+      Generate a shell completion script for bash, zsh, or fish.
+
+    EXAMPLES:
+      \(CLIIdentity.command("completion zsh > ~/.zsh/completions/_draw-things-cli"))
+      \(CLIIdentity.command("completion bash > /etc/bash_completion.d/draw-things-cli"))
+      \(CLIIdentity.command("completion fish > ~/.config/fish/completions/draw-things-cli.fish"))
+    """
+
+  static let loraTrain = """
+    DESCRIPTION:
+      Train a LoRA adapter using a local dataset and a local base model.
+
+    CONFIGURATION PRECEDENCE:
+      1. LoRATrainingConfiguration.default.
+      2. Partial overrides from --config-json.
+      3. Explicit command-line flags such as --steps, --rank, --scale, --learning-rate,
+         --width, --height, and execution flags.
+
+    DATASET:
+      --dataset should point to a directory of images. Matching .txt files are treated as captions.
+
+    EXAMPLES:
+      \(CLIIdentity.command("train lora --model flux_2_klein_4b_q6p.ckpt --dataset ./dataset --steps 200"))
+      \(CLIIdentity.command("train lora --config-json '{\"base_model\":\"flux_2_klein_4b_q6p.ckpt\"}' --dataset ./dataset --dry-run"))
+    """
+}
+
+private let modelsDirectoryHelp = ArgumentHelp(
+  "Models directory.",
+  discussion:
+    "Resolution order: --models-dir, DRAWTHINGS_MODELS_DIR, <binary-dir>/Models (if it exists), then ~/Documents/Models."
+)
+
+private let modelReferenceHelp = ArgumentHelp(
+  "Model file, model name, or Hugging Face repo/URL.",
+  discussion:
+    "Accepted forms: flux_2_klein_4b_q6p.ckpt, \"FLUX.2 [klein] 4B (6-bit)\", hf://owner/repo, owner/repo, or https://huggingface.co/owner/repo."
+)
+
+private let generateConfigJSONHelp = ArgumentHelp(
+  "Inline JSON override in JSGenerationConfiguration format.",
+  discussion:
+    "This is merged onto the model's recommended settings. It is not treated as a complete configuration by itself."
+)
+
+private let generateConfigFileHelp = ArgumentHelp(
+  "Path to a JSON override file in JSGenerationConfiguration format.",
+  discussion:
+    "The file is parsed as a partial override and merged onto the model's recommended settings.")
+
+private let promptFileHelp = ArgumentHelp(
+  "Read prompt text from a file, or `-` for stdin.",
+  discussion:
+    "Use this for long or multiline prompts. Mutually exclusive with the inline prompt flag.")
+
+private let negativePromptFileHelp = ArgumentHelp(
+  "Read negative prompt text from a file, or `-` for stdin.",
+  discussion:
+    "Use this for long or multiline negative prompts. Mutually exclusive with the inline negative prompt flag."
+)
+
+private let generateImageHelp = ArgumentHelp(
+  "Input image path for img2img.",
+  discussion:
+    "The image is resized with aspect-preserving scale and center crop to match the requested output size."
+)
+
+private let trainConfigJSONHelp = ArgumentHelp(
+  "Inline JSON override in LoRATrainingConfiguration format.",
+  discussion:
+    "This is merged onto LoRATrainingConfiguration.default. It is not treated as a complete training configuration by itself."
+)
+
+private let trainDatasetHelp = ArgumentHelp(
+  "Dataset directory containing images and optional .txt captions.",
+  discussion:
+    "Images are loaded from the directory and matching .txt files are treated as captions when present."
+)
 
 private enum NetworkCacheResolver {
   static func primaryURL(fileName: String) throws -> URL {
@@ -131,12 +308,236 @@ private enum NetworkCacheResolver {
 }
 
 struct ModelsDirectoryOptions: ParsableArguments {
+  @Option(name: .long, help: modelsDirectoryHelp)
+  var modelsDir: String?
+}
+
+struct GenerateModelResolutionOptions: ParsableArguments {
+  @OptionGroup var modelsDirectoryOptions: ModelsDirectoryOptions
+
+  @Option(name: .shortAndLong, help: modelReferenceHelp)
+  var model: String?
+}
+
+struct GeneratePromptOptions: ParsableArguments {
+  @Option(name: .shortAndLong, help: "Prompt text.")
+  var prompt: String?
+
+  @Option(name: .long, help: promptFileHelp)
+  var promptFile: String?
+
+  @Option(
+    name: .long,
+    help: ArgumentHelp(
+      "Negative prompt text.",
+      discussion: "If omitted, recommended settings may provide one."))
+  var negativePrompt: String?
+
+  @Option(name: .long, help: negativePromptFileHelp)
+  var negativePromptFile: String?
+}
+
+struct GenerateSamplingOptions: ParsableArguments {
+  @Option(name: .long, help: "Sampling steps.")
+  var steps: Int?
+
+  @Option(name: .long, help: "CFG guidance scale.")
+  var cfg: Float?
+
+  @Option(name: .long, help: "Output width in pixels (multiple of 64).")
+  var width: Int?
+
+  @Option(name: .long, help: "Output height in pixels (multiple of 64).")
+  var height: Int?
+
+  @Option(name: .long, help: "Number of frames for video-capable models.")
+  var frames: Int?
+
+  @Option(name: .long, help: "Denoising strength for img2img (0...1).")
+  var strength: Float?
+
+  @Option(name: .shortAndLong, help: "Random seed.")
+  var seed: UInt32?
+}
+
+struct GenerateConfigurationOverrideOptions: ParsableArguments {
+  @Option(name: .long, help: generateConfigJSONHelp)
+  var configJSON: String?
+
+  @Option(name: .long, help: generateConfigFileHelp)
+  var configFile: String?
+}
+
+struct GenerateImageInputOptions: ParsableArguments {
+  @Option(name: .long, help: generateImageHelp)
+  var image: String?
+
+  @Option(
+    name: .customLong("init-image"),
+    help: ArgumentHelp("Alias of --image.", visibility: .hidden))
+  var initImage: String?
+
+  @Option(
+    name: .customLong("input-image"),
+    help: ArgumentHelp("Alias of --image.", visibility: .hidden))
+  var inputImage: String?
+}
+
+struct GenerateOutputOptions: ParsableArguments {
+  @Option(
+    name: .shortAndLong,
+    help: ArgumentHelp(
+      "Output path (.png, .mov, or .mp4).",
+      discussion: "Use .png for image output and .mov/.mp4 for video-capable models."))
+  var output: String = "output.png"
+}
+
+struct GenerateExecutionOptions: ParsableArguments {
+  @Flag(name: .long, inversion: .prefixedNo, help: "Auto-download missing model files.")
+  var downloadMissing: Bool = true
+
+  @Flag(
+    name: .long,
+    help:
+      "Disable network access. Uses cached community catalogs and recommended settings only, and never downloads models."
+  )
+  var offline: Bool = false
+}
+
+struct LoRATrainModelAndDatasetOptions: ParsableArguments {
+  @OptionGroup var modelsDirectoryOptions: ModelsDirectoryOptions
+
+  @Option(name: .shortAndLong, help: modelReferenceHelp)
+  var model: String?
+
+  @Option(name: .long, help: trainDatasetHelp)
+  var dataset: String?
+}
+
+struct LoRATrainConfigurationOverrideOptions: ParsableArguments {
+  @Option(name: .long, help: trainConfigJSONHelp)
+  var configJSON: String?
+
+  @Option(
+    name: .long,
+    help: ArgumentHelp(
+      "Memory saver mode.",
+      discussion: "Accepted values: minimal, balanced, speed, turbo."))
+  var memorySaver: String?
+
+  @Option(
+    name: .long,
+    help: ArgumentHelp(
+      "Weights memory mode.",
+      discussion: "Accepted values: cached or justInTime."))
+  var weightsMemory: String?
+}
+
+struct LoRATrainOutputOptions: ParsableArguments {
+  @Option(name: .shortAndLong, help: "Output LoRA filename prefix (without extension).")
+  var output: String?
+
+  @Option(name: .long, help: "Display name for LoRA metadata.")
+  var name: String?
+
+  @Option(name: .long, help: "Resume from a saved checkpoint filename/path.")
+  var resume: String?
+
+  @Option(
+    name: .customLong("train-checkpoint"),
+    help: ArgumentHelp("Alias of --resume.", visibility: .hidden))
+  var trainCheckpoint: String?
+}
+
+struct LoRATrainTrainingOptions: ParsableArguments {
+  @Option(name: .long, help: "Training steps.")
+  var steps: Int?
+
+  @Option(name: .long, help: "LoRA rank.")
+  var rank: Int?
+
+  @Option(name: .long, help: "LoRA scale.")
+  var scale: Float?
+
   @Option(
     name: .long,
     help:
-      "Models directory. Optional. Resolution order: --models-dir, DRAWTHINGS_MODELS_DIR, <binary-dir>/Models (if exists), ~/Documents/Models."
-  )
-  var modelsDir: String?
+      "UNet learning rate as a float or range. Examples: 1e-4, [5e-5,1e-4], 5e-5:1e-4.")
+  var learningRate: String?
+
+  @Option(name: .long, help: "Gradient accumulation steps.")
+  var gradientAccumulation: Int?
+
+  @Option(name: .long, help: "Warmup steps.")
+  var warmupSteps: Int?
+
+  @Option(name: .long, help: "Save checkpoint every N steps (0 means only final).")
+  var saveEvery: Int?
+
+  @Option(name: .long, help: "Random seed.")
+  var seed: UInt32?
+}
+
+struct LoRATrainDataAndModelOptions: ParsableArguments {
+  @Option(name: .long, help: "CLIP skip layers.")
+  var clipSkip: Int?
+
+  @Option(name: .long, help: "Noise offset.")
+  var noiseOffset: Float?
+
+  @Option(name: .long, help: "Caption dropout rate.")
+  var captionDropout: Float?
+
+  @Option(name: .long, help: "Output resolution in pixels (square).")
+  var resolution: Int?
+
+  @Option(name: .long, help: "Output width in pixels (multiple of 64).")
+  var width: Int?
+
+  @Option(name: .long, help: "Output height in pixels (multiple of 64).")
+  var height: Int?
+
+  @Flag(
+    name: .long,
+    inversion: .prefixedNo,
+    help: "Use image aspect ratio bucket training.")
+  var useAspectRatio: Bool?
+
+  @Flag(
+    name: .long,
+    inversion: .prefixedNo,
+    help: "Use orthonormal LoRA down initialization.")
+  var orthonormalDown: Bool?
+
+  @Flag(
+    name: .long,
+    inversion: .prefixedNo,
+    help: "Co-train the text model.")
+  var cotrainTextModel: Bool?
+}
+
+struct LoRATrainExecutionOptions: ParsableArguments {
+  @Flag(name: .long, help: "Validate and print resolved training config without training.")
+  var dryRun: Bool = false
+
+  @Flag(name: .long, inversion: .prefixedNo, help: "Auto-download missing model files.")
+  var downloadMissing: Bool = true
+
+  @Flag(
+    name: .long,
+    help:
+      "Disable network access. Uses cached community catalogs only, and never downloads models.")
+  var offline: Bool = false
+}
+
+struct LoRATrainCommandOptions: ParsableArguments {
+  @OptionGroup(title: "Model And Dataset") var modelAndDataset: LoRATrainModelAndDatasetOptions
+  @OptionGroup(title: "Configuration Overrides")
+  var configurationOverrides: LoRATrainConfigurationOverrideOptions
+  @OptionGroup(title: "Output And Resume") var output: LoRATrainOutputOptions
+  @OptionGroup(title: "Training") var training: LoRATrainTrainingOptions
+  @OptionGroup(title: "Data And Model") var dataAndModel: LoRATrainDataAndModelOptions
+  @OptionGroup(title: "Execution") var execution: LoRATrainExecutionOptions
 }
 
 private enum ModelsDirectoryResolver {
@@ -197,7 +598,8 @@ private enum ModelResolver {
       return specification
     }
     guard let modelsDirectory else { return nil }
-    return CommunityModelResolver.resolve(input, modelsDirectory: modelsDirectory)
+    return CommunityModelResolver.resolve(
+      input, modelsDirectory: modelsDirectory, allowNetwork: !NetworkAccessPolicy.offline)
   }
 
   static func suggestions(_ input: String, limit: Int = 5) -> [ModelZoo.Specification] {
@@ -216,7 +618,8 @@ private enum ConfigurationLoader {
       configJSON: configJSON, configFile: configFile)
     let (recommendedConfiguration, recommendedNegativePrompt) =
       RecommendedSettingsResolver.resolve(
-        model: model, overrideDictionary: overrideDictionary, modelsDirectory: modelsDirectory)
+        model: model, overrideDictionary: overrideDictionary, modelsDirectory: modelsDirectory,
+        allowNetwork: !NetworkAccessPolicy.offline)
     let configuration = try mergeOverrides(
       overrideDictionary, onto: recommendedConfiguration, forcingModel: model)
     return ResolvedGenerationConfiguration(
@@ -279,13 +682,13 @@ private enum ConfigurationLoader {
 
 private enum RecommendedSettingsResolver {
   static func resolve(
-    model: String, overrideDictionary: [String: Any]?, modelsDirectory: URL
+    model: String, overrideDictionary: [String: Any]?, modelsDirectory: URL, allowNetwork: Bool
   ) -> (GenerationConfiguration, String?) {
     let defaultConfiguration = GenerationConfiguration.default
     let loras = loras(from: overrideDictionary)
     guard
       let specification = findRecommendedSettings(
-        model: model, loras: loras, modelsDirectory: modelsDirectory)
+        model: model, loras: loras, modelsDirectory: modelsDirectory, allowNetwork: allowNetwork)
     else {
       var builder = GenerationConfigurationBuilder(from: defaultConfiguration)
       builder.model = model
@@ -324,10 +727,11 @@ private enum RecommendedSettingsResolver {
   }
 
   private static func findRecommendedSettings(
-    model: String, loras: Set<String>, modelsDirectory: URL, timeout: TimeInterval = 10
+    model: String, loras: Set<String>, modelsDirectory: URL, allowNetwork: Bool,
+    timeout: TimeInterval = 10
   ) -> ConfigurationZoo.Specification? {
     let configurations = refreshedCommunityConfigurations(
-      timeout: timeout, modelsDirectory: modelsDirectory)
+      timeout: timeout, modelsDirectory: modelsDirectory, allowNetwork: allowNetwork)
     guard !configurations.isEmpty else { return nil }
     let version = ModelZoo.versionForModel(model)
     let prefix = prefix(for: model)
@@ -351,9 +755,11 @@ private enum RecommendedSettingsResolver {
   }
 
   private static func refreshedCommunityConfigurations(
-    timeout: TimeInterval, modelsDirectory: URL
+    timeout: TimeInterval, modelsDirectory: URL, allowNetwork: Bool
   ) -> [ConfigurationZoo.Specification] {
-    if let fetched = try? fetchCommunityConfigurations(timeout: timeout), !fetched.isEmpty {
+    if allowNetwork,
+      let fetched = try? fetchCommunityConfigurations(timeout: timeout), !fetched.isEmpty
+    {
       return fetched
     }
     let cached = cachedCommunityConfigurations(modelsDirectory: modelsDirectory)
@@ -485,9 +891,9 @@ private enum RecommendedSettingsResolver {
 }
 
 private enum CommunityModelResolver {
-  static func resolve(_ input: String, modelsDirectory: URL, timeout: TimeInterval = 10)
-    -> ModelZoo.Specification?
-  {
+  static func resolve(
+    _ input: String, modelsDirectory: URL, allowNetwork: Bool = true, timeout: TimeInterval = 10
+  ) -> ModelZoo.Specification? {
     let local = localCommunitySpecifications(
       modelsDirectory: modelsDirectory, allowNetwork: false)
     if let specification = matchingSpecification(for: input, in: local) {
@@ -495,6 +901,9 @@ private enum CommunityModelResolver {
       return specification
     }
     guard !isDownloadedFileReference(input) else {
+      return nil
+    }
+    guard allowNetwork else {
       return nil
     }
     let fetched = (try? fetchCommunitySpecifications(timeout: timeout)) ?? []
@@ -647,6 +1056,7 @@ private enum CommunityModelResolver {
 
 private enum SHARefresh {
   static func refresh(timeout: TimeInterval = 15) {
+    guard !NetworkAccessPolicy.offline else { return }
     let endpoints = [
       "https://models.drawthings.ai/models_sha256.json",
       "https://models.drawthings.ai/uncurated_models_sha256.json",
@@ -698,6 +1108,11 @@ private enum ModelDownloader {
 
     if !downloadMissing {
       throw DrawThingsCLIError.missingModelFiles(missing)
+    }
+    if NetworkAccessPolicy.offline {
+      throw ValidationError(
+        "Offline mode is enabled and model files are missing:\n\(missing.map { "  - \($0)" }.joined(separator: "\n"))"
+      )
     }
 
     SHARefresh.refresh()
@@ -1187,14 +1602,14 @@ private func printTable(headers: [String], rows: [[String]], maxWidths: [Int]? =
 }
 
 private func printModelList(
-  limit: Int? = nil, downloadedOnly: Bool = false, modelsDirectory: URL
+  limit: Int? = nil, downloadedOnly: Bool = false, modelsDirectory: URL, allowNetwork: Bool = true
 ) {
   let officialFiles = Set(
     ModelZoo.availableSpecifications
       .filter { $0.remoteApiModelConfig == nil }
       .map(\.file))
   let specs = CommunityModelResolver.allSpecifications(
-    modelsDirectory: modelsDirectory, allowNetwork: !downloadedOnly)
+    modelsDirectory: modelsDirectory, allowNetwork: allowNetwork && !downloadedOnly)
   let filtered = downloadedOnly ? specs.filter { ModelZoo.isModelDownloaded($0) } : specs
   let output = limit.map { Array(filtered.prefix($0)) } ?? filtered
   if output.isEmpty {
@@ -1214,8 +1629,9 @@ private func printModelList(
 }
 
 private func printModelResolutionHelp(limit: Int = 20, modelsDirectory: URL) {
-  printModelList(limit: limit, modelsDirectory: modelsDirectory)
-  print("Tip: run `drawthings models list` for the full list.")
+  printModelList(
+    limit: limit, modelsDirectory: modelsDirectory, allowNetwork: !NetworkAccessPolicy.offline)
+  print("Tip: run `\(CLIIdentity.command("models list"))` for the full list.")
 }
 
 private func unresolvedModelValidationError(_ input: String) -> ValidationError {
@@ -1280,81 +1696,289 @@ private func createConfiguration(
     recommendedNegativePrompt: resolvedConfiguration.recommendedNegativePrompt)
 }
 
+private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
+  let configJSON = options.configurationOverrides.configJSON
+  let (config, configJSONDictionary) = try LoRATrainConfigLoader.load(configJSON: configJSON)
+  let resumeCheckpoint = try mergedAlias(
+    primary: options.output.resume, alias: options.output.trainCheckpoint, primaryFlag: "--resume",
+    aliasFlag: "--train-checkpoint")
+
+  let modelsDirectory = try ModelsDirectoryResolver.resolve(
+    path: options.modelAndDataset.modelsDirectoryOptions.modelsDir)
+  ModelZoo.externalUrls = [modelsDirectory]
+
+  let modelInput = options.modelAndDataset.model ?? config.baseModel
+  guard let modelInput else {
+    printModelResolutionHelp(modelsDirectory: modelsDirectory)
+    throw ValidationError("--model is required.")
+  }
+  guard
+    let modelSpecification = ModelResolver.resolve(
+      modelInput, modelsDirectory: modelsDirectory)
+  else {
+    printModelResolutionHelp(modelsDirectory: modelsDirectory)
+    throw unresolvedModelValidationError(modelInput)
+  }
+
+  let datasetDirectory = options.modelAndDataset.dataset
+  guard let datasetDirectory, !datasetDirectory.isEmpty else {
+    throw ValidationError("--dataset is required.")
+  }
+
+  let output = options.output.output ?? config.name ?? "lora_output"
+  let name = options.output.name ?? config.name ?? output
+  let trainingSteps = options.training.steps ?? Int(config.trainingSteps)
+  guard trainingSteps > 0 else { throw ValidationError("--steps must be > 0") }
+  let rank = options.training.rank ?? Int(config.networkDim)
+  guard rank > 0 else { throw ValidationError("--rank must be > 0") }
+  let loraScale = options.training.scale ?? config.networkScale
+  guard loraScale > 0 else { throw ValidationError("--scale must be > 0") }
+  let unetLearningRate: ClosedRange<Float> =
+    if let learningRate = options.training.learningRate {
+      try parseLearningRateRange(learningRate)
+    } else {
+      min(
+        config.unetLearningRate, config.unetLearningRateLowerBound)...max(
+          config.unetLearningRate, config.unetLearningRateLowerBound)
+    }
+  let textModelLearningRate = config.textModelLearningRate
+  let gradientAccumulation =
+    options.training.gradientAccumulation ?? Int(config.gradientAccumulationSteps)
+  guard gradientAccumulation > 0 else {
+    throw ValidationError("--gradient-accumulation must be > 0")
+  }
+  let warmupSteps = options.training.warmupSteps ?? Int(config.warmupSteps)
+  let saveEvery = options.training.saveEvery ?? Int(config.saveEveryNSteps)
+  let seed = options.training.seed ?? config.seed
+  let clipSkip = options.dataAndModel.clipSkip ?? Int(config.clipSkip)
+  let noiseOffset = options.dataAndModel.noiseOffset ?? config.noiseOffset
+  let captionDropout = options.dataAndModel.captionDropout ?? config.captionDropoutRate
+  let maxTextLength = Int(config.maxTextLength)
+  let useAspectRatio = options.dataAndModel.useAspectRatio ?? config.useImageAspectRatio
+  let guidanceEmbedLowerBound = min(config.guidanceEmbedLowerBound, config.guidanceEmbedUpperBound)
+  let guidanceEmbedUpperBound = max(config.guidanceEmbedLowerBound, config.guidanceEmbedUpperBound)
+  let guidanceEmbed = guidanceEmbedLowerBound...guidanceEmbedUpperBound
+  let denoisingLowerBound = min(max(config.denoisingStart, 0), 1)
+  let denoisingUpperBound = min(max(config.denoisingEnd, 0), 1)
+  let denoisingTimesteps =
+    Int(
+      (min(denoisingLowerBound, denoisingUpperBound) * 999).rounded())...Int(
+      (max(denoisingLowerBound, denoisingUpperBound) * 999).rounded())
+  let orthonormalDown = options.dataAndModel.orthonormalDown ?? config.orthonormalLoraDown
+  let cotrainTextModel = options.dataAndModel.cotrainTextModel ?? config.cotrainTextModel
+  let cotrainCustomEmbedding = config.cotrainCustomEmbedding
+  let customEmbeddingLength = Int(config.customEmbeddingLength)
+  let customEmbeddingLearningRate = config.customEmbeddingLearningRate
+  let stopEmbeddingTrainingAtStep = Int(config.stopEmbeddingTrainingAtStep)
+  let memorySaverFromConfig = try parseMemorySaverValue(
+    LoRATrainConfigLoader.memorySaverValue(from: configJSONDictionary))
+  let weightsMemoryFromConfig = try parseWeightsMemoryValue(
+    LoRATrainConfigLoader.weightsMemoryValue(from: configJSONDictionary))
+  let memorySaver =
+    try options.configurationOverrides.memorySaver.map { try parseMemorySaver($0) }
+    ?? memorySaverFromConfig ?? .balanced
+  let weightsMemory =
+    try options.configurationOverrides.weightsMemory.map { try parseWeightsMemory($0) }
+    ?? weightsMemoryFromConfig ?? .cached
+  let shouldDryRun = options.execution.dryRun
+
+  let widthPx =
+    options.dataAndModel.width ?? options.dataAndModel.resolution
+    ?? Int(config.startWidth) * 64
+  let heightPx =
+    options.dataAndModel.height ?? options.dataAndModel.resolution
+    ?? Int(config.startHeight) * 64
+  guard widthPx > 0 && widthPx % 64 == 0 else {
+    throw ValidationError("--width must be a positive multiple of 64")
+  }
+  guard heightPx > 0 && heightPx % 64 == 0 else {
+    throw ValidationError("--height must be a positive multiple of 64")
+  }
+  let imageScale = DeviceCapability.Scale(
+    widthScale: UInt16(widthPx / 64), heightScale: UInt16(heightPx / 64))
+  let additionalScales: [DeviceCapability.Scale] =
+    useAspectRatio
+    ? config.additionalScales.map {
+      DeviceCapability.Scale(widthScale: $0, heightScale: $0)
+    } : []
+  let resolvedShift: Float =
+    config.resolutionDependentShift
+    ? Float(ModelZoo.shiftFor((width: imageScale.widthScale, height: imageScale.heightScale)))
+    : config.shift
+  let powerEMA: ClosedRange<Float>? =
+    config.powerEmaLowerBound > 0 && config.powerEmaUpperBound > 0
+    ? min(
+      config.powerEmaLowerBound, config.powerEmaUpperBound)...max(
+        config.powerEmaLowerBound, config.powerEmaUpperBound) : nil
+  let stepsBetweenRestarts = Int(config.stepsBetweenRestarts)
+
+  let datasetInputs = try loadTrainingDataset(from: datasetDirectory)
+  guard !datasetInputs.isEmpty else {
+    throw ValidationError("No dataset images found in '\(datasetDirectory)'.")
+  }
+
+  print("Models directory: \(modelsDirectory.path)")
+  print("Model: \(modelSpecification.file)")
+  print("Dataset: \(datasetDirectory)")
+  print("Name: \(name)")
+  print("Training steps: \(trainingSteps)")
+  print("Rank: \(rank), scale: \(loraScale)")
+  print("Resolution: \(widthPx)x\(heightPx)")
+  print("Dataset size: \(datasetInputs.count) sample(s)")
+  if shouldDryRun {
+    print("Dry run completed. Use the same command without --dry-run to start training.")
+    return
+  }
+
+  let files = ModelZoo.filesToDownload(modelSpecification).map(\.file)
+  try ModelDownloader.ensureFiles(
+    files, modelsDirectory: modelsDirectory, downloadMissing: options.execution.downloadMissing)
+
+  let tokenizers = createLoRATrainerTokenizers()
+  let session = UUID().uuidString
+  let trainer = LoRATrainer(
+    tensorBoard: nil, comment: "\(output)-",
+    model: modelSpecification.file, scale: imageScale, additionalScales: additionalScales,
+    useImageAspectRatio: useAspectRatio, cotrainTextModel: cotrainTextModel,
+    cotrainCustomEmbedding: cotrainCustomEmbedding, clipSkip: clipSkip,
+    maxTextLength: maxTextLength, session: session, resumeIfPossible: false,
+    imageInspector: inspectTrainingImage, imageLoader: loadTrainingTensor)
+
+  let tokenizerStack: [TextualInversionPoweredTokenizer & Tokenizer]
+  switch trainer.version {
+  case .v1:
+    tokenizerStack = [tokenizers.tokenizerV1]
+  case .v2:
+    tokenizerStack = [tokenizers.tokenizerV2]
+  case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b:
+    switch trainer.textEncoderVersion {
+    case .chatglm3_6b:
+      tokenizerStack = [tokenizers.tokenizerChatGLM3]
+    case nil:
+      tokenizerStack = [tokenizers.tokenizerV2]
+    }
+  case .flux1:
+    tokenizerStack = [tokenizers.tokenizerV2, tokenizers.tokenizerT5]
+  case .qwenImage:
+    tokenizerStack = [tokenizers.tokenizerQwen25]
+  default:
+    throw ValidationError("Unsupported LoRA trainer model version: \(trainer.version)")
+  }
+
+  guard
+    let (dataFrame, zeroCaption) = trainer.prepareDataset(
+      inputs: datasetInputs, tokenizers: tokenizerStack,
+      customEmbeddingLength: customEmbeddingLength,
+      progressHandler: { state, index in
+        switch state {
+        case .imageEncoding:
+          print("\rEncoding images: \(index)/\(datasetInputs.count)", terminator: "")
+        case .conditionalEncoding:
+          print("\rEncoding captions: \(index)/\(datasetInputs.count)", terminator: "")
+        }
+        fflush(stdout)
+        return true
+      })
+  else {
+    throw ValidationError("Failed to prepare training dataset.")
+  }
+  print("")
+
+  let trainableKeys: [String] = trainer.version == .flux1 ? flux1TrainableKeys() : []
+  let startTime = Date()
+  var lastStep = 0
+
+  let resumingLoRAFile: (String, Int)? = {
+    guard let resumeCheckpoint, !resumeCheckpoint.isEmpty else { return nil }
+    let fileName = URL(fileURLWithPath: resumeCheckpoint).lastPathComponent
+    let nameWithoutSuffix = fileName.replacingOccurrences(of: "_lora_f32.ckpt", with: "")
+    guard let stepString = nameWithoutSuffix.split(separator: "_").last,
+      let step = Int(stepString)
+    else {
+      return nil
+    }
+    return (fileName, step)
+  }()
+
+  trainer.train(
+    resumingLoRAFile: resumingLoRAFile,
+    tokenizers: tokenizerStack, dataFrame: dataFrame, zeroCaption: zeroCaption,
+    trainingSteps: trainingSteps, warmupSteps: warmupSteps,
+    gradientAccumulationSteps: gradientAccumulation,
+    rankOfLoRA: rank, scaleOfLoRA: loraScale,
+    textModelLearningRate: textModelLearningRate, unetLearningRate: unetLearningRate,
+    stepsBetweenRestarts: stepsBetweenRestarts, seed: seed, trainableKeys: trainableKeys,
+    customEmbeddingLength: customEmbeddingLength,
+    customEmbeddingLearningRate: customEmbeddingLearningRate,
+    stopEmbeddingTrainingAtStep: stopEmbeddingTrainingAtStep,
+    resolutionDependentShift: config.resolutionDependentShift, shift: resolvedShift,
+    noiseOffset: noiseOffset, guidanceEmbed: guidanceEmbed,
+    denoisingTimesteps: denoisingTimesteps,
+    captionDropoutRate: captionDropout, orthonormalLoRADown: orthonormalDown,
+    powerEMA: powerEMA,
+    memorySaver: memorySaver, weightsMemory: weightsMemory
+  ) { state, loss, checkpoint in
+    switch state {
+    case .compile:
+      print("[LoRA] Compiling computation graph...")
+    case .step(let step):
+      lastStep = step
+      let elapsed = Date().timeIntervalSince(startTime)
+      let itPerSec = step > 0 ? Double(step) / elapsed : 0
+      print(
+        "[LoRA] Step \(step)/\(trainingSteps) | Loss: \(String(format: "%.4f", loss)) | \(String(format: "%.2f", itPerSec)) it/s"
+      )
+      let shouldSave =
+        step == trainingSteps || (saveEvery > 0 && step > 0 && step % saveEvery == 0)
+      if shouldSave {
+        let filename = "\(output)_\(step)_lora_f32.ckpt"
+        let outputPath = LoRAZoo.filePathForModelDownloaded(filename)
+        checkpoint.makeLoRA(to: outputPath, scale: loraScale)
+        print("[LoRA] Saved checkpoint: \(filename)")
+      }
+    }
+    fflush(stdout)
+    return true
+  }
+
+  let totalTime = Date().timeIntervalSince(startTime)
+  print("Training complete in \(String(format: "%.1f", totalTime))s.")
+  print("Final checkpoint: \(output)_\(lastStep)_lora_f32.ckpt")
+}
+
 @main
 struct DrawThingsCLI: ParsableCommand {
   static let configuration = CommandConfiguration(
-    commandName: "drawthings",
-    abstract: "DrawThings local inference CLI",
-    subcommands: [Generate.self, Models.self, LoRA.self],
-    defaultSubcommand: Generate.self
+    commandName: CLIIdentity.commandName,
+    abstract: "Local inference and training CLI for Draw Things models.",
+    discussion: CLIHelpText.root,
+    version: CLIIdentity.version,
+    subcommands: [Generate.self, Models.self, Train.self, Completion.self]
   )
 }
 
 extension DrawThingsCLI {
   struct Generate: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Run local inference and save generated output image(s) or video.")
+      abstract: "Run local inference and save generated output image(s) or video.",
+      discussion: CLIHelpText.generate)
 
-    @OptionGroup var modelsDirectoryOptions: ModelsDirectoryOptions
-
-    @Option(name: .shortAndLong, help: "Model file, model name, or Hugging Face repo/URL.")
-    var model: String?
-
-    @Option(name: .shortAndLong, help: "Prompt text.")
-    var prompt: String = ""
-
-    @Option(
-      name: .long, help: "Negative prompt text. If omitted, model recommendations may provide one.")
-    var negativePrompt: String?
-
-    @Option(name: .long, help: "Sampling steps.")
-    var steps: Int?
-
-    @Option(name: .long, help: "CFG guidance scale.")
-    var cfg: Float?
-
-    @Option(name: .long, help: "Output width in pixels (multiple of 64).")
-    var width: Int?
-
-    @Option(name: .long, help: "Output height in pixels (multiple of 64).")
-    var height: Int?
-
-    @Option(name: .long, help: "Number of frames for video-capable models.")
-    var frames: Int?
-
-    @Option(name: .long, help: "Denoising strength for img2img (0...1).")
-    var strength: Float?
-
-    @Option(name: .shortAndLong, help: "Random seed.")
-    var seed: UInt32?
-
-    @Option(name: .shortAndLong, help: "Output path (.png, .mov, or .mp4).")
-    var output: String = "output.png"
-
-    @Option(name: .long, help: "Inline JSON override in JSGenerationConfiguration format.")
-    var configJSON: String?
-
-    @Option(name: .long, help: "Path to JSON override file in JSGenerationConfiguration format.")
-    var configFile: String?
-
-    @Option(name: .long, help: "Input image path for img2img.")
-    var image: String?
-
-    @Option(name: .customLong("init-image"), help: "Alias of --image.")
-    var initImage: String?
-
-    @Option(name: .customLong("input-image"), help: "Alias of --image.")
-    var inputImage: String?
-
-    @Flag(name: .long, inversion: .prefixedNo, help: "Auto-download missing model files.")
-    var downloadMissing: Bool = true
+    @OptionGroup(title: "Model Resolution") var modelResolution: GenerateModelResolutionOptions
+    @OptionGroup(title: "Prompts") var prompts: GeneratePromptOptions
+    @OptionGroup(title: "Sampling") var sampling: GenerateSamplingOptions
+    @OptionGroup(title: "Configuration Overrides")
+    var configurationOverrides: GenerateConfigurationOverrideOptions
+    @OptionGroup(title: "Image Input") var imageInput: GenerateImageInputOptions
+    @OptionGroup(title: "Output") var output: GenerateOutputOptions
+    @OptionGroup(title: "Execution") var execution: GenerateExecutionOptions
 
     mutating func run() throws {
+      NetworkAccessPolicy.offline = execution.offline
       let modelsDirectory = try ModelsDirectoryResolver.resolve(
-        path: modelsDirectoryOptions.modelsDir)
+        path: modelResolution.modelsDirectoryOptions.modelsDir)
       ModelZoo.externalUrls = [modelsDirectory]
 
-      guard let model else {
+      guard let model = modelResolution.model else {
         printModelResolutionHelp(modelsDirectory: modelsDirectory)
         throw ValidationError("--model is required.")
       }
@@ -1364,21 +1988,26 @@ extension DrawThingsCLI {
       }
 
       let resolvedConfiguration = try createConfiguration(
-        model: model, steps: steps, cfg: cfg, width: width, height: height, frames: frames,
-        seed: seed, strength: strength, configJSON: configJSON, configFile: configFile,
+        model: model, steps: sampling.steps, cfg: sampling.cfg, width: sampling.width,
+        height: sampling.height, frames: sampling.frames,
+        seed: sampling.seed, strength: sampling.strength,
+        configJSON: configurationOverrides.configJSON,
+        configFile: configurationOverrides.configFile,
         modelsDirectory: modelsDirectory)
+      let promptValues = try resolvedPrompts(prompts)
       let configuration = resolvedConfiguration.configuration
       let resolvedNegativePrompt =
-        negativePrompt ?? resolvedConfiguration.recommendedNegativePrompt ?? ""
+        promptValues.negative ?? resolvedConfiguration.recommendedNegativePrompt ?? ""
 
       let files = requiredFiles(for: configuration)
       try ModelDownloader.ensureFiles(
-        files, modelsDirectory: modelsDirectory, downloadMissing: downloadMissing)
+        files, modelsDirectory: modelsDirectory, downloadMissing: execution.downloadMissing)
 
       let imagePath = try mergedAlias(
         primary: try mergedAlias(
-          primary: image, alias: initImage, primaryFlag: "--image", aliasFlag: "--init-image"),
-        alias: inputImage, primaryFlag: "--image", aliasFlag: "--input-image")
+          primary: imageInput.image, alias: imageInput.initImage, primaryFlag: "--image",
+          aliasFlag: "--init-image"),
+        alias: imageInput.inputImage, primaryFlag: "--image", aliasFlag: "--input-image")
       let inputImageTensor: Tensor<FloatType>? =
         if let imagePath {
           try loadInputImageTensor(
@@ -1390,8 +2019,8 @@ extension DrawThingsCLI {
 
       let runner = try LocalGenerationRunner()
       let outputPaths = try runner.generate(
-        prompt: prompt, negativePrompt: resolvedNegativePrompt, configuration: configuration,
-        outputPath: output, inputImage: inputImageTensor)
+        prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
+        configuration: configuration, outputPath: output.output, inputImage: inputImageTensor)
       print("Models directory: \(modelsDirectory.path)")
       for path in outputPaths {
         print("Wrote: \(path)")
@@ -1402,41 +2031,59 @@ extension DrawThingsCLI {
   struct Models: ParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Model utilities.",
-      subcommands: [List.self, Ensure.self],
-      defaultSubcommand: List.self
+      discussion: CLIHelpText.models,
+      subcommands: [List.self, Ensure.self]
     )
 
     struct List: ParsableCommand {
       static let configuration = CommandConfiguration(
-        abstract: "List available local-inference model mappings.")
+        abstract: "List available local-inference model mappings.",
+        discussion: CLIHelpText.modelList)
 
       @OptionGroup var modelsDirectoryOptions: ModelsDirectoryOptions
 
       @Flag(name: .long, help: "Show downloaded models only.")
       var downloadedOnly: Bool = false
 
+      @Flag(
+        name: .long,
+        help: "Disable network access and use cached community model catalogs only.")
+      var offline: Bool = false
+
       mutating func run() throws {
+        NetworkAccessPolicy.offline = offline
         let modelsDirectory = try ModelsDirectoryResolver.resolve(
           path: modelsDirectoryOptions.modelsDir)
         ModelZoo.externalUrls = [modelsDirectory]
         print("Models directory: \(modelsDirectory.path)")
-        printModelList(downloadedOnly: downloadedOnly, modelsDirectory: modelsDirectory)
+        printModelList(
+          downloadedOnly: downloadedOnly, modelsDirectory: modelsDirectory,
+          allowNetwork: !offline)
       }
     }
 
     struct Ensure: ParsableCommand {
       static let configuration = CommandConfiguration(
-        abstract: "Ensure model files exist locally (download if missing).")
+        abstract: "Ensure model files exist locally (download if missing).",
+        discussion: CLIHelpText.modelEnsure)
 
       @OptionGroup var modelsDirectoryOptions: ModelsDirectoryOptions
 
-      @Option(name: .shortAndLong, help: "Model file, model name, or Hugging Face repo/URL.")
+      @Option(name: .shortAndLong, help: modelReferenceHelp)
       var model: String?
 
       @Flag(name: .long, inversion: .prefixedNo, help: "Include model dependencies.")
       var includeDependencies: Bool = true
 
+      @Flag(
+        name: .long,
+        help:
+          "Disable network access. Uses cached community model catalogs only, and never downloads models."
+      )
+      var offline: Bool = false
+
       mutating func run() throws {
+        NetworkAccessPolicy.offline = offline
         let modelsDirectory = try ModelsDirectoryResolver.resolve(
           path: modelsDirectoryOptions.modelsDir)
         ModelZoo.externalUrls = [modelsDirectory]
@@ -1465,6 +2112,67 @@ extension DrawThingsCLI {
       }
     }
   }
+
+  struct Train: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Training utilities.",
+      discussion: CLIHelpText.train,
+      subcommands: [LoRA.self]
+    )
+
+    struct LoRA: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        commandName: "lora",
+        abstract: "Train a LoRA model locally.",
+        discussion: CLIHelpText.loraTrain)
+
+      @OptionGroup var options: LoRATrainCommandOptions
+
+      mutating func run() throws {
+        NetworkAccessPolicy.offline = options.execution.offline
+        try runLoRATraining(options)
+      }
+    }
+  }
+
+  struct Completion: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Generate shell completion scripts.",
+      discussion: CLIHelpText.completion
+    )
+
+    enum Shell: String, ExpressibleByArgument {
+      case bash
+      case zsh
+      case fish
+
+      var completionShell: CompletionShell {
+        switch self {
+        case .bash:
+          return .bash
+        case .zsh:
+          return .zsh
+        case .fish:
+          return .fish
+        }
+      }
+    }
+
+    @Argument(help: "Shell to generate completions for.")
+    var shell: Shell
+
+    @Option(name: .shortAndLong, help: "Write the completion script to a file instead of stdout.")
+    var output: String?
+
+    mutating func run() throws {
+      let script = DrawThingsCLI.completionScript(for: shell.completionShell)
+      if let output {
+        try script.write(toFile: output, atomically: true, encoding: .utf8)
+      } else {
+        print(script, terminator: "")
+      }
+    }
+  }
 }
 
 private func mergedAlias(
@@ -1474,6 +2182,45 @@ private func mergedAlias(
     throw ValidationError("Use only one of \(primaryFlag) or \(aliasFlag)")
   }
   return primary ?? alias
+}
+
+private func loadTextOption(
+  inline: String?, filePath: String?, inlineFlag: String, fileFlag: String
+) throws -> String? {
+  if inline != nil && filePath != nil {
+    throw ValidationError("Use only one of \(inlineFlag) or \(fileFlag)")
+  }
+  if let inline {
+    return inline
+  }
+  guard let filePath else {
+    return nil
+  }
+  if filePath == "-" {
+    let data = FileHandle.standardInput.readDataToEndOfFile()
+    guard let text = String(data: data, encoding: .utf8) else {
+      throw ValidationError("Failed to read UTF-8 text from stdin for \(fileFlag)")
+    }
+    return text
+  }
+  return try String(contentsOfFile: filePath, encoding: .utf8)
+}
+
+private func resolvedPrompts(_ options: GeneratePromptOptions) throws -> (
+  prompt: String, negative: String?
+) {
+  if options.promptFile == "-", options.negativePromptFile == "-" {
+    throw ValidationError("Use stdin for only one of --prompt-file or --negative-prompt-file")
+  }
+  let prompt =
+    try loadTextOption(
+      inline: options.prompt, filePath: options.promptFile, inlineFlag: "--prompt",
+      fileFlag: "--prompt-file") ?? ""
+  let negative =
+    try loadTextOption(
+      inline: options.negativePrompt, filePath: options.negativePromptFile,
+      inlineFlag: "--negative-prompt", fileFlag: "--negative-prompt-file")
+  return (prompt, negative)
 }
 
 private func loadInputImageTensor(path: String, imageWidth: Int, imageHeight: Int) throws
@@ -1855,354 +2602,4 @@ private func parseWeightsMemoryValue(_ value: Any?) throws -> LoRATrainer.Weight
   throw ValidationError(
     "Invalid weights_memory_management value in --config-json. Use enum raw value or one of: cached, justInTime."
   )
-}
-
-extension DrawThingsCLI {
-  struct LoRA: ParsableCommand {
-    static let configuration = CommandConfiguration(
-      commandName: "lora",
-      abstract: "LoRA training utilities.",
-      subcommands: [Train.self],
-      defaultSubcommand: Train.self
-    )
-
-    struct Train: ParsableCommand {
-      static let configuration = CommandConfiguration(
-        abstract: "Train a LoRA model locally.")
-
-      @OptionGroup var modelsDirectoryOptions: ModelsDirectoryOptions
-
-      @Option(name: .long, help: "Inline JSON string in LoRATrainingConfiguration format.")
-      var configJSON: String?
-
-      @Option(name: .shortAndLong, help: "Model file, model name, or Hugging Face repo/URL.")
-      var model: String?
-
-      @Option(name: .long, help: "Dataset directory containing images and optional .txt captions.")
-      var dataset: String?
-
-      @Option(name: .shortAndLong, help: "Output LoRA filename prefix (without extension).")
-      var output: String?
-
-      @Option(name: .long, help: "Display name for LoRA metadata.")
-      var name: String?
-
-      @Option(name: .long, help: "Training steps.")
-      var steps: Int?
-
-      @Option(name: .long, help: "LoRA rank.")
-      var rank: Int?
-
-      @Option(name: .long, help: "LoRA scale.")
-      var scale: Float?
-
-      @Option(
-        name: .long,
-        help:
-          "UNet learning rate as a float or range. Examples: 1e-4, [5e-5,1e-4], 5e-5:1e-4.")
-      var learningRate: String?
-
-      @Option(name: .long, help: "Gradient accumulation steps.")
-      var gradientAccumulation: Int?
-
-      @Option(name: .long, help: "Warmup steps.")
-      var warmupSteps: Int?
-
-      @Option(name: .long, help: "Save checkpoint every N steps (0 means only final).")
-      var saveEvery: Int?
-
-      @Option(name: .long, help: "Random seed.")
-      var seed: UInt32?
-
-      @Option(name: .long, help: "CLIP skip layers.")
-      var clipSkip: Int?
-
-      @Option(name: .long, help: "Noise offset.")
-      var noiseOffset: Float?
-
-      @Option(name: .long, help: "Caption dropout rate.")
-      var captionDropout: Float?
-
-      @Option(name: .long, help: "Output resolution in pixels (square).")
-      var resolution: Int?
-
-      @Option(name: .long, help: "Output width in pixels (multiple of 64).")
-      var width: Int?
-
-      @Option(name: .long, help: "Output height in pixels (multiple of 64).")
-      var height: Int?
-
-      @Option(name: .long, help: "Use image aspect ratio bucket training (true/false).")
-      var useAspectRatio: Bool?
-
-      @Option(name: .long, help: "Use orthonormal LoRA down initialization (true/false).")
-      var orthonormalDown: Bool?
-
-      @Option(name: .long, help: "Co-train text model (true/false).")
-      var cotrainTextModel: Bool?
-
-      @Option(name: .long, help: "Resume from a saved checkpoint filename/path.")
-      var resume: String?
-
-      @Option(name: .customLong("train-checkpoint"), help: "Alias of --resume.")
-      var trainCheckpoint: String?
-
-      @Option(name: .long, help: "Memory saver mode: minimal, balanced, speed, turbo.")
-      var memorySaver: String?
-
-      @Option(name: .long, help: "Weights memory mode: cached, justInTime.")
-      var weightsMemory: String?
-
-      @Flag(name: .long, help: "Validate and print resolved training config without training.")
-      var dryRun: Bool = false
-
-      @Flag(name: .long, inversion: .prefixedNo, help: "Auto-download missing model files.")
-      var downloadMissing: Bool = true
-
-      mutating func run() throws {
-        let (config, configJSONDictionary) = try LoRATrainConfigLoader.load(configJSON: configJSON)
-        let resumeCheckpoint = try mergedAlias(
-          primary: resume, alias: trainCheckpoint, primaryFlag: "--resume",
-          aliasFlag: "--train-checkpoint")
-
-        let modelsDirectory = try ModelsDirectoryResolver.resolve(
-          path: modelsDirectoryOptions.modelsDir)
-        ModelZoo.externalUrls = [modelsDirectory]
-
-        let modelInput = model ?? config.baseModel
-        guard let modelInput else {
-          printModelResolutionHelp(modelsDirectory: modelsDirectory)
-          throw ValidationError("--model is required.")
-        }
-        guard
-          let modelSpecification = ModelResolver.resolve(
-            modelInput, modelsDirectory: modelsDirectory)
-        else {
-          printModelResolutionHelp(modelsDirectory: modelsDirectory)
-          throw unresolvedModelValidationError(modelInput)
-        }
-
-        let datasetDirectory = dataset
-        guard let datasetDirectory, !datasetDirectory.isEmpty else {
-          throw ValidationError("--dataset is required.")
-        }
-
-        let output = output ?? config.name ?? "lora_output"
-        let name = name ?? config.name ?? output
-        let trainingSteps = steps ?? Int(config.trainingSteps)
-        guard trainingSteps > 0 else { throw ValidationError("--steps must be > 0") }
-        let rank = rank ?? Int(config.networkDim)
-        guard rank > 0 else { throw ValidationError("--rank must be > 0") }
-        let loraScale = scale ?? config.networkScale
-        guard loraScale > 0 else { throw ValidationError("--scale must be > 0") }
-        let unetLearningRate: ClosedRange<Float> =
-          if let learningRate {
-            try parseLearningRateRange(learningRate)
-          } else {
-            min(
-              config.unetLearningRate, config.unetLearningRateLowerBound)...max(
-                config.unetLearningRate, config.unetLearningRateLowerBound)
-          }
-        let textModelLearningRate = config.textModelLearningRate
-        let gradientAccumulation = gradientAccumulation ?? Int(config.gradientAccumulationSteps)
-        guard gradientAccumulation > 0 else {
-          throw ValidationError("--gradient-accumulation must be > 0")
-        }
-        let warmupSteps = warmupSteps ?? Int(config.warmupSteps)
-        let saveEvery = saveEvery ?? Int(config.saveEveryNSteps)
-        let seed = seed ?? config.seed
-        let clipSkip = clipSkip ?? Int(config.clipSkip)
-        let noiseOffset = noiseOffset ?? config.noiseOffset
-        let captionDropout = captionDropout ?? config.captionDropoutRate
-        let maxTextLength = Int(config.maxTextLength)
-        let useAspectRatio = useAspectRatio ?? config.useImageAspectRatio
-        let guidanceEmbedLowerBound = min(
-          config.guidanceEmbedLowerBound, config.guidanceEmbedUpperBound)
-        let guidanceEmbedUpperBound = max(
-          config.guidanceEmbedLowerBound, config.guidanceEmbedUpperBound)
-        let guidanceEmbed = guidanceEmbedLowerBound...guidanceEmbedUpperBound
-        let denoisingLowerBound = min(max(config.denoisingStart, 0), 1)
-        let denoisingUpperBound = min(max(config.denoisingEnd, 0), 1)
-        let denoisingTimesteps =
-          Int(
-            (min(denoisingLowerBound, denoisingUpperBound) * 999).rounded())...Int(
-            (max(denoisingLowerBound, denoisingUpperBound) * 999).rounded())
-        let orthonormalDown = orthonormalDown ?? config.orthonormalLoraDown
-        let cotrainTextModel = cotrainTextModel ?? config.cotrainTextModel
-        let cotrainCustomEmbedding = config.cotrainCustomEmbedding
-        let customEmbeddingLength = Int(config.customEmbeddingLength)
-        let customEmbeddingLearningRate = config.customEmbeddingLearningRate
-        let stopEmbeddingTrainingAtStep = Int(config.stopEmbeddingTrainingAtStep)
-        let memorySaverFromConfig = try parseMemorySaverValue(
-          LoRATrainConfigLoader.memorySaverValue(from: configJSONDictionary))
-        let weightsMemoryFromConfig = try parseWeightsMemoryValue(
-          LoRATrainConfigLoader.weightsMemoryValue(from: configJSONDictionary))
-        let memorySaver =
-          try memorySaver.map { try parseMemorySaver($0) } ?? memorySaverFromConfig ?? .balanced
-        let weightsMemory =
-          try weightsMemory.map { try parseWeightsMemory($0) } ?? weightsMemoryFromConfig ?? .cached
-        let shouldDryRun = dryRun
-
-        let widthPx = width ?? resolution ?? Int(config.startWidth) * 64
-        let heightPx = height ?? resolution ?? Int(config.startHeight) * 64
-        guard widthPx > 0 && widthPx % 64 == 0 else {
-          throw ValidationError("--width must be a positive multiple of 64")
-        }
-        guard heightPx > 0 && heightPx % 64 == 0 else {
-          throw ValidationError("--height must be a positive multiple of 64")
-        }
-        let imageScale = DeviceCapability.Scale(
-          widthScale: UInt16(widthPx / 64), heightScale: UInt16(heightPx / 64))
-        let additionalScales: [DeviceCapability.Scale] =
-          useAspectRatio
-          ? config.additionalScales.map {
-            DeviceCapability.Scale(widthScale: $0, heightScale: $0)
-          } : []
-        let resolvedShift: Float =
-          config.resolutionDependentShift
-          ? Float(ModelZoo.shiftFor((width: imageScale.widthScale, height: imageScale.heightScale)))
-          : config.shift
-        let powerEMA: ClosedRange<Float>? =
-          config.powerEmaLowerBound > 0 && config.powerEmaUpperBound > 0
-          ? min(
-            config.powerEmaLowerBound, config.powerEmaUpperBound)...max(
-              config.powerEmaLowerBound, config.powerEmaUpperBound) : nil
-        let stepsBetweenRestarts = Int(config.stepsBetweenRestarts)
-
-        let datasetInputs = try loadTrainingDataset(from: datasetDirectory)
-        guard !datasetInputs.isEmpty else {
-          throw ValidationError("No dataset images found in '\(datasetDirectory)'.")
-        }
-
-        print("Models directory: \(modelsDirectory.path)")
-        print("Model: \(modelSpecification.file)")
-        print("Dataset: \(datasetDirectory)")
-        print("Name: \(name)")
-        print("Training steps: \(trainingSteps)")
-        print("Rank: \(rank), scale: \(loraScale)")
-        print("Resolution: \(widthPx)x\(heightPx)")
-        print("Dataset size: \(datasetInputs.count) sample(s)")
-        if shouldDryRun {
-          print("Dry run completed. Use the same command without --dry-run to start training.")
-          return
-        }
-
-        let files = ModelZoo.filesToDownload(modelSpecification).map(\.file)
-        try ModelDownloader.ensureFiles(
-          files, modelsDirectory: modelsDirectory, downloadMissing: downloadMissing)
-
-        let tokenizers = createLoRATrainerTokenizers()
-        let session = UUID().uuidString
-        let trainer = LoRATrainer(
-          tensorBoard: nil, comment: "\(output)-",
-          model: modelSpecification.file, scale: imageScale, additionalScales: additionalScales,
-          useImageAspectRatio: useAspectRatio, cotrainTextModel: cotrainTextModel,
-          cotrainCustomEmbedding: cotrainCustomEmbedding, clipSkip: clipSkip,
-          maxTextLength: maxTextLength, session: session, resumeIfPossible: false,
-          imageInspector: inspectTrainingImage, imageLoader: loadTrainingTensor)
-
-        let tokenizerStack: [TextualInversionPoweredTokenizer & Tokenizer]
-        switch trainer.version {
-        case .v1:
-          tokenizerStack = [tokenizers.tokenizerV1]
-        case .v2:
-          tokenizerStack = [tokenizers.tokenizerV2]
-        case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b:
-          switch trainer.textEncoderVersion {
-          case .chatglm3_6b:
-            tokenizerStack = [tokenizers.tokenizerChatGLM3]
-          case nil:
-            tokenizerStack = [tokenizers.tokenizerV2]
-          }
-        case .flux1:
-          tokenizerStack = [tokenizers.tokenizerV2, tokenizers.tokenizerT5]
-        case .qwenImage:
-          tokenizerStack = [tokenizers.tokenizerQwen25]
-        default:
-          throw ValidationError("Unsupported LoRA trainer model version: \(trainer.version)")
-        }
-
-        guard
-          let (dataFrame, zeroCaption) = trainer.prepareDataset(
-            inputs: datasetInputs, tokenizers: tokenizerStack,
-            customEmbeddingLength: customEmbeddingLength,
-            progressHandler: { state, index in
-              switch state {
-              case .imageEncoding:
-                print("\rEncoding images: \(index)/\(datasetInputs.count)", terminator: "")
-              case .conditionalEncoding:
-                print("\rEncoding captions: \(index)/\(datasetInputs.count)", terminator: "")
-              }
-              fflush(stdout)
-              return true
-            })
-        else {
-          throw ValidationError("Failed to prepare training dataset.")
-        }
-        print("")
-
-        let trainableKeys: [String] = trainer.version == .flux1 ? flux1TrainableKeys() : []
-        let startTime = Date()
-        var lastStep = 0
-
-        let resumeFile = resumeCheckpoint
-        let resumingLoRAFile: (String, Int)? = {
-          guard let resumeFile, !resumeFile.isEmpty else { return nil }
-          let fileName = URL(fileURLWithPath: resumeFile).lastPathComponent
-          let nameWithoutSuffix = fileName.replacingOccurrences(of: "_lora_f32.ckpt", with: "")
-          guard let stepString = nameWithoutSuffix.split(separator: "_").last,
-            let step = Int(stepString)
-          else {
-            return nil
-          }
-          return (fileName, step)
-        }()
-
-        trainer.train(
-          resumingLoRAFile: resumingLoRAFile,
-          tokenizers: tokenizerStack, dataFrame: dataFrame, zeroCaption: zeroCaption,
-          trainingSteps: trainingSteps, warmupSteps: warmupSteps,
-          gradientAccumulationSteps: gradientAccumulation,
-          rankOfLoRA: rank, scaleOfLoRA: loraScale,
-          textModelLearningRate: textModelLearningRate, unetLearningRate: unetLearningRate,
-          stepsBetweenRestarts: stepsBetweenRestarts, seed: seed, trainableKeys: trainableKeys,
-          customEmbeddingLength: customEmbeddingLength,
-          customEmbeddingLearningRate: customEmbeddingLearningRate,
-          stopEmbeddingTrainingAtStep: stopEmbeddingTrainingAtStep,
-          resolutionDependentShift: config.resolutionDependentShift, shift: resolvedShift,
-          noiseOffset: noiseOffset, guidanceEmbed: guidanceEmbed,
-          denoisingTimesteps: denoisingTimesteps,
-          captionDropoutRate: captionDropout, orthonormalLoRADown: orthonormalDown,
-          powerEMA: powerEMA,
-          memorySaver: memorySaver, weightsMemory: weightsMemory
-        ) { state, loss, checkpoint in
-          switch state {
-          case .compile:
-            print("[LoRA] Compiling computation graph...")
-          case .step(let step):
-            lastStep = step
-            let elapsed = Date().timeIntervalSince(startTime)
-            let itPerSec = step > 0 ? Double(step) / elapsed : 0
-            print(
-              "[LoRA] Step \(step)/\(trainingSteps) | Loss: \(String(format: "%.4f", loss)) | \(String(format: "%.2f", itPerSec)) it/s"
-            )
-            let shouldSave =
-              step == trainingSteps || (saveEvery > 0 && step > 0 && step % saveEvery == 0)
-            if shouldSave {
-              let filename = "\(output)_\(step)_lora_f32.ckpt"
-              let outputPath = LoRAZoo.filePathForModelDownloaded(filename)
-              checkpoint.makeLoRA(to: outputPath, scale: loraScale)
-              print("[LoRA] Saved checkpoint: \(filename)")
-            }
-          }
-          fflush(stdout)
-          return true
-        }
-
-        let totalTime = Date().timeIntervalSince(startTime)
-        print("Training complete in \(String(format: "%.1f", totalTime))s.")
-        print("Final checkpoint: \(output)_\(lastStep)_lora_f32.ckpt")
-      }
-    }
-  }
 }
