@@ -502,8 +502,6 @@ public final class ImageHistoryManager {
   public private(set) var textLineage: Int64? = nil
   public private(set) var scaleFactor: Int = 1
   public private(set) var isGenerated: Bool = false
-  public private(set) var reason: Reason = .other
-  public private(set) var wallClock: Int64 = 0
   public private(set) var contentOffset: (x: Int32, y: Int32) = (x: 0, y: 0)
   public private(set) var scaleFactorBy120: Int32 = 120
   public private(set) var isVideo: Bool = false
@@ -623,8 +621,6 @@ public final class ImageHistoryManager {
     textLineage = imageHistory.textLineage == -1 ? nil : imageHistory.textLineage
     scaleFactor = max(Int(imageHistory.scaleFactor), 1)
     isGenerated = imageHistory.generated
-    reason = imageHistory.reason
-    wallClock = imageHistory.wallClock
     contentOffset = (x: imageHistory.contentOffsetX, y: imageHistory.contentOffsetY)
     scaleFactorBy120 = imageHistory.scaleFactorBy120
     configuration = GenerationConfiguration(
@@ -721,116 +717,6 @@ public final class ImageHistoryManager {
     return uniqueVersion
   }
 
-  private func makePreviewId(
-    imageData: [ImageData], shuffleData: [ShuffleData], preview: UIImage?
-  ) -> Int64? {
-    guard let preview = preview else { return nil }
-    var id: Int64 = 0
-    for item in imageData {
-      id &+= Int64(item.tensorId ?? 0) &+ Int64(item.maskId ?? 0) &+ Int64(item.depthMapId ?? 0)
-      id &+=
-        Int64(item.scribbleId ?? 0) &+ Int64(item.poseId ?? 0)
-        &+ Int64(item.colorPaletteId ?? 0)
-      id &+= Int64(item.customId ?? 0)
-    }
-    for shuffleData in shuffleData {
-      id &+= Int64(shuffleData.shuffleId) * Int64((shuffleData.weight * 1000).rounded())
-    }
-    previewCache[id] = preview
-    return id
-  }
-
-  private func makeTensorHistoryNode(
-    history: History, lineage: Int64, logicalTime: Int64, wallClock: Int64, dataStored: Int,
-    shuffleDataStored: Int, previewId: Int64?, clipId: Int64?, indexInAClip: Int?, audio: Bool
-  ) -> TensorHistoryNode {
-    let configuration = history.configuration
-    return TensorHistoryNode(
-      lineage: lineage, logicalTime: logicalTime, startWidth: configuration.startWidth,
-      startHeight: configuration.startHeight, seed: configuration.seed,
-      steps: configuration.steps,
-      guidanceScale: configuration.guidanceScale, strength: configuration.strength,
-      model: configuration.model, tensorId: nil, maskId: nil,
-      wallClock: wallClock,
-      textEdits: history.textEdits.map { Int64($0) },
-      textLineage: history.textLineage, batchSize: configuration.batchSize,
-      sampler: SamplerType(from: configuration.sampler), hiresFix: configuration.hiresFix,
-      hiresFixStartWidth: configuration.hiresFixStartWidth,
-      hiresFixStartHeight: configuration.hiresFixStartHeight,
-      hiresFixStrength: configuration.hiresFixStrength,
-      upscaler: configuration.upscaler, scaleFactor: 1,
-      depthMapId: nil, generated: history.isGenerated,
-      imageGuidanceScale: configuration.imageGuidanceScale,
-      seedMode: SeedMode(from: configuration.seedMode), clipSkip: configuration.clipSkip,
-      controls: configuration.controls.map { Control(from: $0) }, scribbleId: nil,
-      poseId: nil, loras: configuration.loras.map { LoRA(from: $0) },
-      colorPaletteId: nil, maskBlur: configuration.maskBlur, customId: nil,
-      faceRestoration: configuration.faceRestoration,
-      clipWeight: configuration.clipWeight,
-      negativePromptForImagePrior: configuration.negativePromptForImagePrior,
-      imagePriorSteps: configuration.imagePriorSteps, dataStored: Int32(dataStored),
-      previewId: previewId, contentOffsetX: history.contentOffset.x, contentOffsetY: history.contentOffset.y,
-      scaleFactorBy120: history.scaleFactorBy120, refinerModel: configuration.refinerModel,
-      originalImageHeight: configuration.originalImageHeight,
-      originalImageWidth: configuration.originalImageWidth, cropTop: configuration.cropTop,
-      cropLeft: configuration.cropLeft, targetImageHeight: configuration.targetImageHeight,
-      targetImageWidth: configuration.targetImageWidth,
-      aestheticScore: configuration.aestheticScore,
-      negativeAestheticScore: configuration.negativeAestheticScore,
-      zeroNegativePrompt: configuration.zeroNegativePrompt,
-      refinerStart: configuration.refinerStart,
-      negativeOriginalImageHeight: configuration.negativeOriginalImageHeight,
-      negativeOriginalImageWidth: configuration.negativeOriginalImageWidth,
-      shuffleDataStored: Int32(shuffleDataStored), fpsId: configuration.fpsId,
-      motionBucketId: configuration.motionBucketId, condAug: configuration.condAug,
-      startFrameCfg: configuration.startFrameCfg, numFrames: configuration.numFrames,
-      maskBlurOutset: configuration.maskBlurOutset, sharpness: configuration.sharpness,
-      shift: configuration.shift, stage2Steps: configuration.stage2Steps,
-      stage2Cfg: configuration.stage2Cfg, stage2Shift: configuration.stage2Shift,
-      tiledDecoding: configuration.tiledDecoding,
-      decodingTileWidth: configuration.decodingTileWidth,
-      decodingTileHeight: configuration.decodingTileHeight,
-      decodingTileOverlap: configuration.decodingTileOverlap,
-      stochasticSamplingGamma: configuration.stochasticSamplingGamma,
-      preserveOriginalAfterInpaint: configuration.preserveOriginalAfterInpaint,
-      tiledDiffusion: configuration.tiledDiffusion,
-      diffusionTileWidth: configuration.diffusionTileWidth,
-      diffusionTileHeight: configuration.diffusionTileHeight,
-      diffusionTileOverlap: configuration.diffusionTileOverlap,
-      upscalerScaleFactor: configuration.upscalerScaleFactor,
-      scriptSessionId: history.scriptSessionId,
-      t5TextEncoder: configuration.t5TextEncoder,
-      separateClipL: configuration.separateClipL,
-      clipLText: configuration.clipLText,
-      separateOpenClipG: configuration.separateOpenClipG,
-      openClipGText: configuration.openClipGText,
-      speedUpWithGuidanceEmbed: configuration.speedUpWithGuidanceEmbed,
-      guidanceEmbed: configuration.guidanceEmbed,
-      resolutionDependentShift: configuration.resolutionDependentShift,
-      teaCacheStart: configuration.teaCacheStart,
-      teaCacheEnd: configuration.teaCacheEnd,
-      teaCacheThreshold: configuration.teaCacheThreshold,
-      teaCache: configuration.teaCache,
-      separateT5: configuration.separateT5,
-      t5Text: configuration.t5Text,
-      teaCacheMaxSkipSteps: configuration.teaCacheMaxSkipSteps,
-      textPrompt: history.textPrompt,
-      negativeTextPrompt: history.negativeTextPrompt,
-      clipId: clipId,
-      indexInAClip: clipId.map { _ in Int32(indexInAClip ?? 0) },
-      causalInferenceEnabled: configuration.causalInferenceEnabled,
-      causalInference: configuration.causalInference,
-      causalInferencePad: configuration.causalInferencePad,
-      cfgZeroStar: configuration.cfgZeroStar,
-      cfgZeroInitSteps: configuration.cfgZeroInitSteps,
-      generationTime: history.profile?.duration,
-      reason: history.reason,
-      compressionArtifacts: CompressionMethod(from: configuration.compressionArtifacts),
-      compressionArtifactsQuality: configuration.compressionArtifactsQuality,
-      audio: audio
-    )
-  }
-
   public struct History {
     public var imageData: [ImageData]
     public var reason: Reason
@@ -846,16 +732,13 @@ public final class ImageHistoryManager {
     public var profile: GenerationProfile?
     public var textPrompt: String?
     public var negativeTextPrompt: String?
-    public var inProgressIdentifier: Int64?
-    public var forceNewHistoryNode: Bool
     public init(
       imageData: [ImageData], reason: Reason, preview: UIImage?, textEdits: Int?,
       textLineage: Int64?,
       configuration: GenerationConfiguration, isGenerated: Bool,
       contentOffset: (x: Int32, y: Int32), scaleFactorBy120: Int32, scriptSessionId: UInt64?,
       shuffleData: [ShuffleData]? = nil, profile: GenerationProfile? = nil,
-      textPrompt: String? = nil, negativeTextPrompt: String? = nil,
-      inProgressIdentifier: Int64? = nil, forceNewHistoryNode: Bool = false
+      textPrompt: String? = nil, negativeTextPrompt: String? = nil
     ) {
       self.imageData = imageData
       self.reason = reason
@@ -871,8 +754,6 @@ public final class ImageHistoryManager {
       self.profile = profile
       self.textPrompt = textPrompt
       self.negativeTextPrompt = negativeTextPrompt
-      self.inProgressIdentifier = inProgressIdentifier
-      self.forceNewHistoryNode = forceNewHistoryNode
     }
   }
 
@@ -1052,7 +933,7 @@ public final class ImageHistoryManager {
       let imageData = history.imageData
       let shuffleData = history.shuffleData ?? self.shuffleData
       // Only moving forward if we are not empty. Otherwise just update the empty state.
-      if history.forceNewHistoryNode || !imageData.isEmpty || !self.imageData.isEmpty || !shuffleData.isEmpty
+      if !imageData.isEmpty || !self.imageData.isEmpty || !shuffleData.isEmpty
         || !self.shuffleData.isEmpty
       {
         logicalTime += 1
@@ -1072,14 +953,110 @@ public final class ImageHistoryManager {
         return (try? jsonEncoder.encode(profile)).map { [UInt8]($0) }
       }()
       self._profileData = profileData
-      let previewId = makePreviewId(
-        imageData: imageData, shuffleData: shuffleData, preview: history.preview)
+      let previewId: Int64?
+      if let preview = history.preview {
+        var id: Int64 = 0
+        for item in imageData {
+          id &+= Int64(item.tensorId ?? 0) &+ Int64(item.maskId ?? 0) &+ Int64(item.depthMapId ?? 0)
+          id &+=
+            Int64(item.scribbleId ?? 0) &+ Int64(item.poseId ?? 0)
+            &+ Int64(item.colorPaletteId ?? 0)
+          id &+= Int64(item.customId ?? 0)
+        }
+        for shuffleData in shuffleData {
+          id &+= Int64(shuffleData.shuffleId) * Int64((shuffleData.weight * 1000).rounded())
+        }
+        previewCache[id] = preview
+        previewId = id
+      } else {
+        previewId = nil
+      }
       self.previewId = previewId
-      let nodeWallClock = history.inProgressIdentifier ?? (wallClock + Int64(i))
-      let tensorHistoryNode = makeTensorHistoryNode(
-        history: history, lineage: lineage, logicalTime: logicalTime, wallClock: nodeWallClock,
-        dataStored: imageData.count, shuffleDataStored: shuffleData.count, previewId: previewId,
-        clipId: clipId, indexInAClip: i, audio: audioId != nil)
+      let configuration = history.configuration
+      let tensorHistoryNode = TensorHistoryNode(
+        lineage: lineage, logicalTime: logicalTime, startWidth: configuration.startWidth,
+        startHeight: configuration.startHeight, seed: configuration.seed,
+        steps: configuration.steps,
+        guidanceScale: configuration.guidanceScale, strength: configuration.strength,
+        model: configuration.model, tensorId: nil, maskId: nil,
+        wallClock: wallClock + Int64(i),
+        textEdits: history.textEdits.map { Int64($0) },
+        textLineage: history.textLineage, batchSize: configuration.batchSize,
+        sampler: SamplerType(from: configuration.sampler), hiresFix: configuration.hiresFix,
+        hiresFixStartWidth: configuration.hiresFixStartWidth,
+        hiresFixStartHeight: configuration.hiresFixStartHeight,
+        hiresFixStrength: configuration.hiresFixStrength,
+        upscaler: configuration.upscaler, scaleFactor: 1,
+        depthMapId: nil, generated: isGenerated,
+        imageGuidanceScale: configuration.imageGuidanceScale,
+        seedMode: SeedMode(from: configuration.seedMode), clipSkip: configuration.clipSkip,
+        controls: configuration.controls.map { Control(from: $0) }, scribbleId: nil,
+        poseId: nil, loras: configuration.loras.map { LoRA(from: $0) },
+        colorPaletteId: nil, maskBlur: configuration.maskBlur, customId: nil,
+        faceRestoration: configuration.faceRestoration,
+        clipWeight: configuration.clipWeight,
+        negativePromptForImagePrior: configuration.negativePromptForImagePrior,
+        imagePriorSteps: configuration.imagePriorSteps, dataStored: Int32(imageData.count),
+        previewId: previewId, contentOffsetX: contentOffset.x, contentOffsetY: contentOffset.y,
+        scaleFactorBy120: scaleFactorBy120, refinerModel: configuration.refinerModel,
+        originalImageHeight: configuration.originalImageHeight,
+        originalImageWidth: configuration.originalImageWidth, cropTop: configuration.cropTop,
+        cropLeft: configuration.cropLeft, targetImageHeight: configuration.targetImageHeight,
+        targetImageWidth: configuration.targetImageWidth,
+        aestheticScore: configuration.aestheticScore,
+        negativeAestheticScore: configuration.negativeAestheticScore,
+        zeroNegativePrompt: configuration.zeroNegativePrompt,
+        refinerStart: configuration.refinerStart,
+        negativeOriginalImageHeight: configuration.negativeOriginalImageHeight,
+        negativeOriginalImageWidth: configuration.negativeOriginalImageWidth,
+        shuffleDataStored: Int32(shuffleData.count), fpsId: configuration.fpsId,
+        motionBucketId: configuration.motionBucketId, condAug: configuration.condAug,
+        startFrameCfg: configuration.startFrameCfg, numFrames: configuration.numFrames,
+        maskBlurOutset: configuration.maskBlurOutset, sharpness: configuration.sharpness,
+        shift: configuration.shift, stage2Steps: configuration.stage2Steps,
+        stage2Cfg: configuration.stage2Cfg, stage2Shift: configuration.stage2Shift,
+        tiledDecoding: configuration.tiledDecoding,
+        decodingTileWidth: configuration.decodingTileWidth,
+        decodingTileHeight: configuration.decodingTileHeight,
+        decodingTileOverlap: configuration.decodingTileOverlap,
+        stochasticSamplingGamma: configuration.stochasticSamplingGamma,
+        preserveOriginalAfterInpaint: configuration.preserveOriginalAfterInpaint,
+        tiledDiffusion: configuration.tiledDiffusion,
+        diffusionTileWidth: configuration.diffusionTileWidth,
+        diffusionTileHeight: configuration.diffusionTileHeight,
+        diffusionTileOverlap: configuration.diffusionTileOverlap,
+        upscalerScaleFactor: configuration.upscalerScaleFactor,
+        scriptSessionId: history.scriptSessionId,
+        t5TextEncoder: configuration.t5TextEncoder,
+        separateClipL: configuration.separateClipL,
+        clipLText: configuration.clipLText,
+        separateOpenClipG: configuration.separateOpenClipG,
+        openClipGText: configuration.openClipGText,
+        speedUpWithGuidanceEmbed: configuration.speedUpWithGuidanceEmbed,
+        guidanceEmbed: configuration.guidanceEmbed,
+        resolutionDependentShift: configuration.resolutionDependentShift,
+        teaCacheStart: configuration.teaCacheStart,
+        teaCacheEnd: configuration.teaCacheEnd,
+        teaCacheThreshold: configuration.teaCacheThreshold,
+        teaCache: configuration.teaCache,
+        separateT5: configuration.separateT5,
+        t5Text: configuration.t5Text,
+        teaCacheMaxSkipSteps: configuration.teaCacheMaxSkipSteps,
+        textPrompt: history.textPrompt,
+        negativeTextPrompt: history.negativeTextPrompt,
+        clipId: clipId,
+        indexInAClip: clipId.map { _ in Int32(i) },
+        causalInferenceEnabled: configuration.causalInferenceEnabled,
+        causalInference: configuration.causalInference,
+        causalInferencePad: configuration.causalInferencePad,
+        cfgZeroStar: configuration.cfgZeroStar,
+        cfgZeroInitSteps: configuration.cfgZeroInitSteps,
+        generationTime: history.profile?.duration,
+        reason: history.reason,
+        compressionArtifacts: CompressionMethod(from: configuration.compressionArtifacts),
+        compressionArtifactsQuality: configuration.compressionArtifactsQuality,
+        audio: audioId != nil
+      )
       // Only needs to append
       clipData?.frames.append(
         ClipData.FrameData(logicalTime: logicalTime, lineage: lineage, previewId: previewId))
@@ -1203,164 +1180,6 @@ public final class ImageHistoryManager {
           self.clipDataCache[clipId] = nil
         }
       }
-    }
-  }
-
-  @discardableResult
-  public func pushGenerationQueue(_ history: History) -> Int64 {
-    dispatchPrecondition(condition: .onQueue(.main))
-    var inProgressIdentifier = Int64(Date().timeIntervalSince1970 * 1_000_000)
-    while project.fetch(for: TensorHistoryNode.self).where(
-      TensorHistoryNode.wallClock == inProgressIdentifier, limit: .limit(1)
-    ).count > 0 {
-      inProgressIdentifier += 1
-    }
-    var history = history
-    history.inProgressIdentifier = inProgressIdentifier
-    history.forceNewHistoryNode = true
-    pushHistory([history])
-    return inProgressIdentifier
-  }
-
-  public func updateGenerationQueuePreview(_ inProgressIdentifier: Int64, preview: UIImage?) {
-    dispatchPrecondition(condition: .onQueue(.main))
-    guard let preview = preview else { return }
-    previewCache[inProgressIdentifier] = preview
-    guard
-      let queuedNode = project.fetch(for: TensorHistoryNode.self).where(
-        TensorHistoryNode.wallClock == inProgressIdentifier, limit: .limit(1)
-      ).first
-    else { return }
-    guard queuedNode.previewId != inProgressIdentifier else { return }
-
-    project.performChanges([TensorHistoryNode.self]) { transactionContext in
-      guard let changeRequest = TensorHistoryNodeChangeRequest.changeRequest(queuedNode) else {
-        return
-      }
-      changeRequest.previewId = inProgressIdentifier
-      transactionContext.try(submit: changeRequest)
-    } completionHandler: { _ in }
-
-    let logicalTimeAndLineage = LogicalTimeAndLineage(
-      logicalTime: queuedNode.logicalTime, lineage: queuedNode.lineage)
-    nodeCache[queuedNode.logicalTime] = nil
-    nodeLineageCache[logicalTimeAndLineage] = nil
-  }
-
-  @discardableResult
-  public func completeGenerationQueue(_ inProgressIdentifier: Int64, with history: History) -> Bool {
-    dispatchPrecondition(condition: .onQueue(.main))
-    guard
-      let queuedNode = project.fetch(for: TensorHistoryNode.self).where(
-        TensorHistoryNode.wallClock == inProgressIdentifier, limit: .limit(1)
-      ).first
-    else {
-      return false
-    }
-    let imageData = history.imageData
-    let shuffleData = history.shuffleData ?? self.shuffleData
-    let previewId = makePreviewId(imageData: imageData, shuffleData: shuffleData, preview: history.preview)
-    let profileData: [UInt8]? = {
-      guard let profile = history.profile else { return nil }
-      let jsonEncoder = JSONEncoder()
-      jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
-      return (try? jsonEncoder.encode(profile)).map { [UInt8]($0) }
-    }()
-    let tensorHistoryNode = makeTensorHistoryNode(
-      history: history, lineage: queuedNode.lineage, logicalTime: queuedNode.logicalTime,
-      wallClock: queuedNode.wallClock, dataStored: imageData.count, shuffleDataStored: shuffleData.count,
-      previewId: previewId, clipId: nil, indexInAClip: nil, audio: false
-    )
-    let logicalTimeAndLineage = LogicalTimeAndLineage(
-      logicalTime: queuedNode.logicalTime, lineage: queuedNode.lineage)
-    let tensorData = imageData.enumerated().map {
-      TensorData(
-        lineage: queuedNode.lineage, logicalTime: queuedNode.logicalTime, index: Int64($0),
-        x: $1.x, y: $1.y, width: $1.width, height: $1.height, scaleFactorBy120: $1.scaleFactorBy120,
-        tensorId: $1.tensorId, maskId: $1.maskId, depthMapId: $1.depthMapId, scribbleId: $1.scribbleId,
-        poseId: $1.poseId, colorPaletteId: $1.colorPaletteId, customId: $1.customId)
-    }
-    let tensorMoodboardData = shuffleData.enumerated().map {
-      TensorMoodboardData(
-        lineage: queuedNode.lineage, logicalTime: queuedNode.logicalTime, index: Int64($0),
-        shuffleId: $1.shuffleId, weight: $1.weight)
-    }
-    let oldTensorData = Array(
-      project.fetch(for: TensorData.self).where(
-        TensorData.lineage == queuedNode.lineage && TensorData.logicalTime == queuedNode.logicalTime))
-    let oldMoodboardData = Array(
-      project.fetch(for: TensorMoodboardData.self).where(
-        TensorMoodboardData.lineage == queuedNode.lineage
-          && TensorMoodboardData.logicalTime == queuedNode.logicalTime))
-    project.performChanges([
-      TensorHistoryNode.self, ThumbnailHistoryNode.self, ThumbnailHistoryHalfNode.self,
-      TensorData.self, TensorMoodboardData.self,
-    ]) { transactionContext in
-      let upsertRequest = TensorHistoryNodeChangeRequest.upsertRequest(tensorHistoryNode)
-      if let profileData = profileData {
-        upsertRequest.profileData = profileData
-      }
-      transactionContext.try(submit: upsertRequest)
-      for item in oldTensorData {
-        guard let deletionRequest = TensorDataChangeRequest.deletionRequest(item) else { continue }
-        transactionContext.try(submit: deletionRequest)
-      }
-      for item in oldMoodboardData {
-        guard let deletionRequest = TensorMoodboardDataChangeRequest.deletionRequest(item) else { continue }
-        transactionContext.try(submit: deletionRequest)
-      }
-      for item in tensorData {
-        transactionContext.try(submit: TensorDataChangeRequest.upsertRequest(item))
-      }
-      for item in tensorMoodboardData {
-        transactionContext.try(submit: TensorMoodboardDataChangeRequest.upsertRequest(item))
-      }
-      #if canImport(UIKit)
-        if let preview = history.preview, let previewId = previewId {
-          let previewData = preview.jpegData(compressionQuality: 0.75)
-          let downsampleData = downsampleImage(preview)?.jpegData(compressionQuality: 0.5)
-          let thumbnailHistoryNodeChangeRequest = ThumbnailHistoryNodeChangeRequest.creationRequest()
-          thumbnailHistoryNodeChangeRequest.id = previewId
-          thumbnailHistoryNodeChangeRequest.data = previewData.map { [UInt8]($0) } ?? []
-          let thumbnailHistoryHalfNodeChangeRequest = ThumbnailHistoryHalfNodeChangeRequest.creationRequest()
-          thumbnailHistoryHalfNodeChangeRequest.id = previewId
-          thumbnailHistoryHalfNodeChangeRequest.data = downsampleData.map { [UInt8]($0) } ?? []
-          if thumbnailHistoryNodeChangeRequest.data.count > 0 {
-            let _ = try? transactionContext.submit(thumbnailHistoryNodeChangeRequest)
-          }
-          if thumbnailHistoryHalfNodeChangeRequest.data.count > 0 {
-            let _ = try? transactionContext.submit(thumbnailHistoryHalfNodeChangeRequest)
-          }
-        }
-      #endif
-    } completionHandler: { _ in }
-    let imageVersion = uniqueVersion()
-    nodeCache[queuedNode.logicalTime] = (tensorHistoryNode, imageVersion)
-    nodeLineageCache[logicalTimeAndLineage] = (tensorHistoryNode, imageVersion)
-    imageDataCache[logicalTimeAndLineage] = (tensorData, imageVersion)
-    shuffleDataCache[logicalTimeAndLineage] = (tensorMoodboardData, imageVersion)
-    if logicalTime == queuedNode.logicalTime && lineage == queuedNode.lineage {
-      setImageHistory(
-        tensorHistoryNode, imageData: tensorData, shuffleData: tensorMoodboardData,
-        clipData: nil)
-    }
-    return true
-  }
-
-  public func removeGenerationQueue(
-    _ inProgressIdentifier: Int64, completion: (() -> Void)? = nil
-  ) {
-    dispatchPrecondition(condition: .onQueue(.main))
-    guard
-      let queuedNode = project.fetch(for: TensorHistoryNode.self).where(
-        TensorHistoryNode.wallClock == inProgressIdentifier, limit: .limit(1)
-      ).first
-    else {
-      completion?()
-      return
-    }
-    deleteHistory(queuedNode) { _, _, _ in
-      completion?()
     }
   }
 
@@ -1621,51 +1440,10 @@ public final class ImageHistoryManager {
       setImageHistory(
         imageHistory, imageData: imageData, shuffleData: shuffleData, clipData: clipData)
     } else {
-      let fallbackImageHistory =
-        project.fetch(for: TensorHistoryNode.self).where(
-          TensorHistoryNode.logicalTime <= logicalTime, limit: .limit(1),
-          orderBy: [TensorHistoryNode.logicalTime.descending, TensorHistoryNode.lineage.descending]
-        ).first
-        ?? project.fetch(for: TensorHistoryNode.self).all(
-          limit: .limit(1),
-          orderBy: [TensorHistoryNode.logicalTime.descending, TensorHistoryNode.lineage.descending]
-        ).first
-      if let fallbackImageHistory = fallbackImageHistory {
-        let imageData =
-          imageDataCache[
-            LogicalTimeAndLineage(
-              logicalTime: fallbackImageHistory.logicalTime, lineage: fallbackImageHistory.lineage)]
-          .map { $0.0 }
-          ?? Array(
-            project.fetch(for: TensorData.self).where(
-              TensorData.logicalTime == fallbackImageHistory.logicalTime
-                && TensorData.lineage == fallbackImageHistory.lineage))
-        let shuffleData =
-          shuffleDataCache[
-            LogicalTimeAndLineage(
-              logicalTime: fallbackImageHistory.logicalTime, lineage: fallbackImageHistory.lineage)]
-          .map { $0.0 }
-          ?? Array(
-            project.fetch(for: TensorMoodboardData.self).where(
-              TensorMoodboardData.logicalTime == fallbackImageHistory.logicalTime
-                && TensorMoodboardData.lineage == fallbackImageHistory.lineage))
-        let clipData = fetchClipData(clipId: fallbackImageHistory.clipId)
-        setImageHistory(
-          fallbackImageHistory, imageData: imageData, shuffleData: shuffleData, clipData: clipData)
-        project.dictionary["image_seek_to", Int.self] = Int(self.logicalTime)
-        if let _ = lineage {
-          project.dictionary["image_seek_to_lineage", Int.self] = Int(self.lineage)
-        } else {
-          project.dictionary["image_seek_to_lineage", Int.self] = nil
-        }
-        return false
-      }
       assert(logicalTime == 0)
       configuration = nil
       scaleFactor = 1
       isGenerated = false
-      reason = .other
-      wallClock = 0
       tensorId = nil
       maskId = nil
       depthMapId = nil
@@ -1691,10 +1469,6 @@ public final class ImageHistoryManager {
       project.dictionary["image_seek_to_lineage", Int.self] = nil
     }
     return true
-  }
-
-  public var isQueuePlaceholderSelection: Bool {
-    logicalTime > 0 && reason == .generate && !isGenerated && dataStored.isEmpty
   }
 
   private var _profileData: [UInt8]?
