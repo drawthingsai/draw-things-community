@@ -113,6 +113,12 @@ enum TerminalImageProtocol: String, ExpressibleByArgument {
   case kitty
 }
 
+private enum TerminalImageRenderMode {
+  case disabled
+  case automatic
+  case explicit
+}
+
 private enum CLIIdentity {
   static let commandName = "draw-things-cli"
 
@@ -454,8 +460,10 @@ struct GenerateOutputOptions: ParsableArguments {
     name: .shortAndLong,
     help: ArgumentHelp(
       "Output path (.png, .mov, or .mp4).",
-      discussion: "Use .png for image output and .mov/.mp4 for video-capable models."))
-  var output: String = "output.png"
+      discussion:
+        "Use .png for image output and .mov/.mp4 for video-capable models. If omitted, the CLI previews the result inline in supported interactive terminals and does not write a file."
+    ))
+  var output: String?
 
   @Option(name: .long, help: videoFormatHelp)
   var videoFormat: VideoExportFormat?
@@ -1908,9 +1916,10 @@ private enum TerminalImageRenderer {
   private static let kittyChunkSize = 4_096
 
   static func validateRequestedOutput(
-    outputPath: String, enabled: Bool, protocolChoice: TerminalImageProtocol
+    outputPath: String, mode: TerminalImageRenderMode, protocolChoice: TerminalImageProtocol,
+    requiresRenderableOutput: Bool
   ) throws {
-    guard enabled else {
+    guard mode != .disabled else {
       if protocolChoice != .auto {
         throw ValidationError("--terminal-image-protocol requires --terminal-image")
       }
@@ -1923,17 +1932,31 @@ private enum TerminalImageRenderer {
     guard outputURL.pathExtension.lowercased() == "png" else {
       throw ValidationError("--terminal-image requires .png output")
     }
-    #if canImport(Darwin) || canImport(Glibc)
-      guard isatty(STDOUT_FILENO) != 0 else {
-        throw ValidationError("--terminal-image requires stdout to be a TTY")
+    if mode == .explicit && !isStandardOutputTTY {
+      throw ValidationError("--terminal-image requires stdout to be a TTY")
+    }
+    if requiresRenderableOutput {
+      guard isStandardOutputTTY else {
+        throw ValidationError(
+          "No --output provided and stdout is not a TTY. Pass --output to save a file."
+        )
       }
-    #endif
+      guard
+        resolvedProtocol(for: protocolChoice, environment: ProcessInfo.processInfo.environment)
+          != nil
+      else {
+        throw ValidationError(
+          "No --output provided and no supported terminal image protocol was detected. Pass --output to save a file, or run in iTerm2, kitty, or Ghostty."
+        )
+      }
+    }
   }
 
   static func renderGeneratedOutputsIfRequested(
-    _ outputPaths: [String], enabled: Bool, protocolChoice: TerminalImageProtocol
+    _ outputPaths: [String], mode: TerminalImageRenderMode, protocolChoice: TerminalImageProtocol
   ) {
-    guard enabled, let firstPath = outputPaths.first else { return }
+    guard mode != .disabled, let firstPath = outputPaths.first else { return }
+    guard mode != .automatic || isStandardOutputTTY else { return }
     if outputPaths.count > 1 {
       write(
         "Terminal preview: rendering the first PNG only (\(outputPaths.count) files written).\n",
@@ -1995,6 +2018,14 @@ private enum TerminalImageRenderer {
   private static func previewColumns(environment: [String: String]) -> Int {
     let rawColumns = Int(environment["COLUMNS"] ?? "") ?? 80
     return max(1, rawColumns - 2)
+  }
+
+  private static var isStandardOutputTTY: Bool {
+    #if canImport(Darwin) || canImport(Glibc)
+      return isatty(STDOUT_FILENO) != 0
+    #else
+      return false
+    #endif
   }
 
   private static func renderITerm2(data: Data, fileName: String, columns: Int) {
@@ -2470,10 +2501,24 @@ extension DrawThingsCLI {
         path: modelResolution.modelsDirectoryOptions.modelsDir)
       ModelZoo.isExternalUrlsPreferred = true
       ModelZoo.externalUrls = [modelsDirectory]
-      try validateVideoOutputOptions(outputPath: output.output, videoFormat: output.videoFormat)
+      let writesOutputFile = output.output != nil
+      let outputPath =
+        output.output
+        ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
+          "draw-things-cli-preview-\(UUID().uuidString).png"
+        ).path
+      let terminalImageMode: TerminalImageRenderMode =
+        if output.terminalImage {
+          .explicit
+        } else if output.output == nil {
+          .automatic
+        } else {
+          .disabled
+        }
+      try validateVideoOutputOptions(outputPath: outputPath, videoFormat: output.videoFormat)
       try TerminalImageRenderer.validateRequestedOutput(
-        outputPath: output.output, enabled: output.terminalImage,
-        protocolChoice: output.terminalImageProtocol)
+        outputPath: outputPath, mode: terminalImageMode,
+        protocolChoice: output.terminalImageProtocol, requiresRenderableOutput: !writesOutputFile)
 
       guard let model = modelResolution.model else {
         printModelResolutionHelp(modelsDirectory: modelsDirectory)
@@ -2517,14 +2562,25 @@ extension DrawThingsCLI {
       let runner = try LocalGenerationRunner()
       let outputPaths = try runner.generate(
         prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
-        configuration: configuration, outputPath: output.output, inputImage: inputImageTensor,
+        configuration: configuration, outputPath: outputPath, inputImage: inputImageTensor,
         videoFormat: output.videoFormat)
+      defer {
+        if !writesOutputFile {
+          for path in outputPaths {
+            try? FileManager.default.removeItem(atPath: path)
+          }
+        }
+      }
       print("Models directory: \(modelsDirectory.path)")
-      for path in outputPaths {
-        print("Wrote: \(path)")
+      if writesOutputFile {
+        for path in outputPaths {
+          print("Wrote: \(path)")
+        }
+      } else {
+        print("Previewed inline.")
       }
       TerminalImageRenderer.renderGeneratedOutputsIfRequested(
-        outputPaths, enabled: output.terminalImage,
+        outputPaths, mode: terminalImageMode,
         protocolChoice: output.terminalImageProtocol)
     }
   }
