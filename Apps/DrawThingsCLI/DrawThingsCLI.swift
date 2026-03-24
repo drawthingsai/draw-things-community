@@ -18,6 +18,12 @@ import ScriptDataModels
 import Tokenizer
 import Trainer
 
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
+
 #if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo)
   import AVFoundation
   import CoreMedia
@@ -101,6 +107,12 @@ enum VideoExportFormat: String, ExpressibleByArgument {
   case hevc
 }
 
+enum TerminalImageProtocol: String, ExpressibleByArgument {
+  case auto
+  case iterm2
+  case kitty
+}
+
 private enum CLIIdentity {
   static let commandName = "draw-things-cli"
 
@@ -166,6 +178,7 @@ private enum CLIHelpText {
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\""))
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt-file prompt.txt"))
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"studio portrait\" --image input.png --strength 0.35"))
+      \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\" --terminal-image"))
       \(CLIIdentity.command("generate --model ltx_2.3_22b_distilled_q6p.ckpt --prompt \"ocean waves at sunset\" --frames 49 --output clip.mov"))
     """
 
@@ -281,6 +294,18 @@ private let videoFormatHelp = ArgumentHelp(
   "Video export format for .mov/.mp4 outputs.",
   discussion:
     "Accepted values: prores4444, prores422hq, h264, hevc. ProRes formats require .mov output."
+)
+
+private let terminalImageHelp = ArgumentHelp(
+  "Render the first generated PNG inline in supported terminals.",
+  discussion:
+    "Auto-detects iTerm2 or kitty-graphics terminals such as kitty and Ghostty. PNG output only."
+)
+
+private let terminalImageProtocolHelp = ArgumentHelp(
+  "Terminal inline image protocol.",
+  discussion:
+    "Accepted values: auto, iterm2, kitty. `auto` prefers iTerm2, then kitty-graphics terminals such as Ghostty."
 )
 
 private let modelImportArtifactHelp = ArgumentHelp(
@@ -434,6 +459,12 @@ struct GenerateOutputOptions: ParsableArguments {
 
   @Option(name: .long, help: videoFormatHelp)
   var videoFormat: VideoExportFormat?
+
+  @Flag(name: .long, help: terminalImageHelp)
+  var terminalImage: Bool = false
+
+  @Option(name: .long, help: terminalImageProtocolHelp)
+  var terminalImageProtocol: TerminalImageProtocol = .auto
 }
 
 struct GenerateExecutionOptions: ParsableArguments {
@@ -1866,6 +1897,160 @@ private final class LocalGenerationRunner {
   #endif
 }
 
+private enum TerminalImageRenderer {
+  private enum ResolvedProtocol {
+    case iterm2
+    case kitty
+  }
+
+  private static let iTerm2PayloadLimit = 900_000
+  private static let iTerm2MultipartChunkSize = 32_768
+  private static let kittyChunkSize = 4_096
+
+  static func validateRequestedOutput(
+    outputPath: String, enabled: Bool, protocolChoice: TerminalImageProtocol
+  ) throws {
+    guard enabled else {
+      if protocolChoice != .auto {
+        throw ValidationError("--terminal-image-protocol requires --terminal-image")
+      }
+      return
+    }
+    var outputURL = URL(fileURLWithPath: outputPath)
+    if outputURL.pathExtension.isEmpty {
+      outputURL = outputURL.appendingPathExtension("png")
+    }
+    guard outputURL.pathExtension.lowercased() == "png" else {
+      throw ValidationError("--terminal-image requires .png output")
+    }
+    #if canImport(Darwin) || canImport(Glibc)
+      guard isatty(STDOUT_FILENO) != 0 else {
+        throw ValidationError("--terminal-image requires stdout to be a TTY")
+      }
+    #endif
+  }
+
+  static func renderGeneratedOutputsIfRequested(
+    _ outputPaths: [String], enabled: Bool, protocolChoice: TerminalImageProtocol
+  ) {
+    guard enabled, let firstPath = outputPaths.first else { return }
+    if outputPaths.count > 1 {
+      write(
+        "Terminal preview: rendering the first PNG only (\(outputPaths.count) files written).\n",
+        to: .standardError)
+    }
+    do {
+      try render(path: firstPath, protocolChoice: protocolChoice)
+    } catch {
+      let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+      write("Terminal preview skipped: \(message)\n", to: .standardError)
+    }
+  }
+
+  private static func render(path: String, protocolChoice: TerminalImageProtocol) throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard
+      let resolvedProtocol = resolvedProtocol(
+        for: protocolChoice, environment: environment)
+    else {
+      throw ValidationError(
+        "Could not detect a supported terminal image protocol. Use iTerm2 or a kitty-graphics terminal such as Ghostty, or set --terminal-image-protocol explicitly."
+      )
+    }
+    let fileURL = URL(fileURLWithPath: path)
+    let fileName = fileURL.lastPathComponent
+    let data = try Data(contentsOf: fileURL)
+    switch resolvedProtocol {
+    case .iterm2:
+      renderITerm2(
+        data: data, fileName: fileName, columns: previewColumns(environment: environment))
+    case .kitty:
+      renderKitty(data: data, columns: previewColumns(environment: environment))
+    }
+  }
+
+  private static func resolvedProtocol(
+    for choice: TerminalImageProtocol, environment: [String: String]
+  ) -> ResolvedProtocol? {
+    switch choice {
+    case .iterm2:
+      return .iterm2
+    case .kitty:
+      return .kitty
+    case .auto:
+      let termProgram = environment["TERM_PROGRAM"]?.lowercased()
+      if environment["ITERM_SESSION_ID"] != nil || termProgram == "iterm.app" {
+        return .iterm2
+      }
+      let term = environment["TERM"]?.lowercased() ?? ""
+      if environment["KITTY_WINDOW_ID"] != nil || termProgram == "ghostty"
+        || term.contains("kitty") || term.contains("ghostty")
+      {
+        return .kitty
+      }
+      return nil
+    }
+  }
+
+  private static func previewColumns(environment: [String: String]) -> Int {
+    let rawColumns = Int(environment["COLUMNS"] ?? "") ?? 80
+    return max(1, rawColumns - 2)
+  }
+
+  private static func renderITerm2(data: Data, fileName: String, columns: Int) {
+    let encodedName = Data(fileName.utf8).base64EncodedString()
+    let arguments =
+      "name=\(encodedName);size=\(data.count);width=\(columns);preserveAspectRatio=1;inline=1"
+    let encoded = data.base64EncodedString()
+    if ProcessInfo.processInfo.environment["TMUX"] == nil,
+      encoded.count + arguments.count < iTerm2PayloadLimit
+    {
+      write("\u{1B}]1337;File=\(arguments):\(encoded)\u{07}\n", to: .standardOutput)
+      return
+    }
+    write("\u{1B}]1337;MultipartFile=\(arguments)\u{07}", to: .standardOutput)
+    for chunk in base64Chunks(encoded, chunkSize: iTerm2MultipartChunkSize) {
+      write("\u{1B}]1337;FilePart=\(chunk)\u{07}", to: .standardOutput)
+    }
+    write("\u{1B}]1337;FileEnd\u{07}\n", to: .standardOutput)
+  }
+
+  private static func renderKitty(data: Data, columns: Int) {
+    let encoded = data.base64EncodedString()
+    let chunks = base64Chunks(encoded, chunkSize: kittyChunkSize)
+    for (index, chunk) in chunks.enumerated() {
+      let isLast = index == chunks.count - 1
+      if index == 0 {
+        write(
+          "\u{1B}_Ga=T,f=100,c=\(columns),q=2,m=\(isLast ? 0 : 1);\(chunk)\u{1B}\\",
+          to: .standardOutput)
+      } else {
+        write("\u{1B}_Gm=\(isLast ? 0 : 1);\(chunk)\u{1B}\\", to: .standardOutput)
+      }
+    }
+    write("\n", to: .standardOutput)
+  }
+
+  private static func base64Chunks(_ encoded: String, chunkSize: Int) -> [Substring] {
+    guard !encoded.isEmpty else { return [] }
+    var chunks: [Substring] = []
+    var start = encoded.startIndex
+    while start < encoded.endIndex {
+      let end =
+        encoded.index(start, offsetBy: chunkSize, limitedBy: encoded.endIndex)
+        ?? encoded.endIndex
+      chunks.append(encoded[start..<end])
+      start = end
+    }
+    return chunks
+  }
+
+  private static func write(_ value: String, to handle: FileHandle) {
+    guard let data = value.data(using: .utf8) else { return }
+    handle.write(data)
+  }
+}
+
 private func printTable(headers: [String], rows: [[String]], maxWidths: [Int]? = nil) {
   guard !headers.isEmpty else { return }
   let columnCount = headers.count
@@ -2286,6 +2471,9 @@ extension DrawThingsCLI {
       ModelZoo.isExternalUrlsPreferred = true
       ModelZoo.externalUrls = [modelsDirectory]
       try validateVideoOutputOptions(outputPath: output.output, videoFormat: output.videoFormat)
+      try TerminalImageRenderer.validateRequestedOutput(
+        outputPath: output.output, enabled: output.terminalImage,
+        protocolChoice: output.terminalImageProtocol)
 
       guard let model = modelResolution.model else {
         printModelResolutionHelp(modelsDirectory: modelsDirectory)
@@ -2335,6 +2523,9 @@ extension DrawThingsCLI {
       for path in outputPaths {
         print("Wrote: \(path)")
       }
+      TerminalImageRenderer.renderGeneratedOutputsIfRequested(
+        outputPaths, enabled: output.terminalImage,
+        protocolChoice: output.terminalImageProtocol)
     }
   }
 
