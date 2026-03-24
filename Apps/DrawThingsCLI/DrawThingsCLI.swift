@@ -1143,6 +1143,72 @@ private enum SHARefresh {
 }
 
 private enum ModelDownloader {
+  private final class DownloadProgressPrinter {
+    private let file: String
+    private let index: Int
+    private let total: Int
+    private let byteFormatter: ByteCountFormatter
+    private var lastLineLength: Int = 0
+    private var hasRendered = false
+
+    init(file: String, index: Int, total: Int) {
+      self.file = file
+      self.index = index
+      self.total = total
+      let byteFormatter = ByteCountFormatter()
+      byteFormatter.countStyle = .file
+      byteFormatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB, .useTB]
+      self.byteFormatter = byteFormatter
+    }
+
+    func update(totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64, isComplete: Bool) {
+      let line = renderLine(
+        totalBytesWritten: totalBytesWritten,
+        totalBytesExpectedToWrite: totalBytesExpectedToWrite,
+        isComplete: isComplete)
+      let padding = String(
+        repeating: " ", count: max(0, lastLineLength - line.count))
+      let output = "\r\(line)\(padding)\(isComplete ? "\n" : "")"
+      FileHandle.standardOutput.write(Data(output.utf8))
+      hasRendered = true
+      lastLineLength = isComplete ? 0 : line.count
+    }
+
+    func finishLineIfNeeded() {
+      guard hasRendered, lastLineLength > 0 else { return }
+      FileHandle.standardOutput.write(Data("\n".utf8))
+      lastLineLength = 0
+    }
+
+    private func renderLine(
+      totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64, isComplete: Bool
+    ) -> String {
+      let progress =
+        totalBytesExpectedToWrite > 0
+        ? min(1, max(0, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)))
+        : (isComplete ? 1 : 0)
+      let percent = Int((progress * 100).rounded())
+      let barWidth = 24
+      let filledWidth = min(barWidth, Int((Double(barWidth) * progress).rounded(.down)))
+      let bar: String
+      if filledWidth >= barWidth {
+        bar = String(repeating: "=", count: barWidth)
+      } else {
+        bar =
+          String(repeating: "=", count: filledWidth)
+          + ">"
+          + String(repeating: " ", count: max(0, barWidth - filledWidth - 1))
+      }
+      let written = byteFormatter.string(fromByteCount: totalBytesWritten)
+      let totalBytes =
+        totalBytesExpectedToWrite > 0
+        ? byteFormatter.string(fromByteCount: totalBytesExpectedToWrite)
+        : "?"
+      return
+        "[\(index)/\(total)] \(file) [\(bar)] \(String(format: "%3d", percent))% \(written)/\(totalBytes)"
+    }
+  }
+
   static func ensureFiles(
     _ files: [String], modelsDirectory: URL, downloadMissing: Bool
   ) throws {
@@ -1177,26 +1243,22 @@ private enum ModelDownloader {
     try FileManager.default.createDirectory(
       at: localURL.deletingLastPathComponent(), withIntermediateDirectories: true)
     let expectedSHA = ModelZoo.fileSHA256ForModelDownloaded(file)
-
-    print("Downloading [\(index)/\(total)] \(file)")
     let semaphore = DispatchSemaphore(value: 0)
     var outputError: Error?
-    var lastPrintedPercent = -1
+    let progressPrinter = DownloadProgressPrinter(file: file, index: index, total: total)
     let downloader = ResumableDownloader(
       remoteUrl: remoteURL, localUrl: localURL, sha256: expectedSHA)
     downloader.resume { totalBytesWritten, totalBytesExpectedToWrite, isComplete, error in
       if let error {
+        progressPrinter.finishLineIfNeeded()
         outputError = error
         semaphore.signal()
         return
       }
-      if totalBytesExpectedToWrite > 0 {
-        let percent = Int((Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)) * 100)
-        if percent >= lastPrintedPercent + 10 || isComplete {
-          print("  \(percent)%")
-          lastPrintedPercent = percent
-        }
-      }
+      progressPrinter.update(
+        totalBytesWritten: totalBytesWritten,
+        totalBytesExpectedToWrite: totalBytesExpectedToWrite,
+        isComplete: isComplete)
       if isComplete {
         semaphore.signal()
       }
