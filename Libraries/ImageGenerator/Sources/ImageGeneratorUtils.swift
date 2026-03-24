@@ -5,19 +5,6 @@ import ModelZoo
 import NNC
 
 public struct ImageGeneratorUtils {
-  public static func specificationForModel(
-    _ name: String, specificationOverrides: [String: ModelZoo.Specification]
-  ) -> ModelZoo.Specification? {
-    specificationOverrides[name] ?? ModelZoo.specificationForModel(name)
-  }
-
-  public static func versionForModel(
-    _ name: String, specificationOverrides: [String: ModelZoo.Specification]
-  ) -> ModelVersion {
-    guard let specification = specificationForModel(name, specificationOverrides: specificationOverrides)
-    else { return .v1 }
-    return specification.version
-  }
 
   public static var isDepthModelAvailable: Bool {
     EverythingZoo.isModelDownloaded("depth_anything_v2.0_f16.ckpt")
@@ -177,14 +164,7 @@ public struct ImageGeneratorUtils {
   }
 
   public static func modifierForModel(_ file: String, LoRAs: [String]) -> SamplerModifier {
-    modifierForModel(file, LoRAs: LoRAs, specificationOverrides: [:])
-  }
-
-  public static func modifierForModel(
-    _ file: String, LoRAs: [String], specificationOverrides: [String: ModelZoo.Specification]
-  ) -> SamplerModifier {
-    let modifier =
-      specificationForModel(file, specificationOverrides: specificationOverrides)?.modifier ?? .none
+    let modifier = ModelZoo.modifierForModel(file)
     guard modifier == .none else {
       return modifier
     }
@@ -211,29 +191,17 @@ public struct ImageGeneratorUtils {
   public static func isInpainting(
     for binaryMask: Tensor<UInt8>?, configuration: GenerationConfiguration, memorizedBy: Set<String>
   ) -> Bool {
-    isInpainting(
-      for: binaryMask, configuration: configuration, memorizedBy: memorizedBy,
-      specificationOverrides: [:])
-  }
-
-  public static func isInpainting(
-    for binaryMask: Tensor<UInt8>?, configuration: GenerationConfiguration, memorizedBy: Set<String>,
-    specificationOverrides: [String: ModelZoo.Specification]
-  ) -> Bool {
     guard let binaryMask = binaryMask else { return false }
-    let modelVersion = versionForModel(
-      configuration.model ?? "", specificationOverrides: specificationOverrides)
+    let modelVersion = ModelZoo.versionForModel(configuration.model ?? "")
     let refinerVersion: ModelVersion? = configuration.refinerModel.flatMap {
       guard $0 != configuration.model, ModelZoo.isModelDownloaded($0, memorizedBy: memorizedBy)
       else { return nil }
-      let version = versionForModel($0, specificationOverrides: specificationOverrides)
+      let version = ModelZoo.versionForModel($0)
       guard ModelZoo.isCompatibleRefiner(modelVersion, refinerVersion: version) else { return nil }
-      return versionForModel($0, specificationOverrides: specificationOverrides)
+      return ModelZoo.versionForModel($0)
     }
     var alternativeDecoderVersion: AlternativeDecoderVersion? =
-      ((specificationForModel(
-        configuration.model ?? "", specificationOverrides: specificationOverrides
-      )?.modifier ?? .none) == .qwenimageLayered)
+      (ModelZoo.modifierForModel(configuration.model ?? "") == .qwenimageLayered)
       ? .transparent : nil
     for lora in configuration.loras {
       guard let file = lora.file else { continue }
@@ -379,27 +347,14 @@ extension ImageGeneratorUtils {
     models: [ModelZoo.Specification], loras: [LoRAZoo.Specification],
     controlNets: [ControlNetZoo.Specification], upscalers: [UpscalerZoo.Specification]
   ) {
-    metadataOverride(configuration, specificationOverrides: [:])
-  }
-
-  public static func metadataOverride(
-    _ configuration: GenerationConfiguration,
-    specificationOverrides: [String: ModelZoo.Specification]
-  ) -> (
-    models: [ModelZoo.Specification], loras: [LoRAZoo.Specification],
-    controlNets: [ControlNetZoo.Specification], upscalers: [UpscalerZoo.Specification]
-  ) {
     var models = [ModelZoo.Specification]()
     func appendModel(_ model: String?) {
       guard let model = model else { return }
-      guard let specification = specificationForModel(model, specificationOverrides: specificationOverrides)
-      else { return }
+      guard let specification = ModelZoo.specificationForModel(model) else { return }
       models.append(specification)
       if let stageModels = specification.stageModels {
         for stageModel in stageModels {
-          if let specification = specificationForModel(
-            stageModel, specificationOverrides: specificationOverrides)
-          {
+          if let specification = ModelZoo.specificationForModel(stageModel) {
             models.append(specification)
           }
         }

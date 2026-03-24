@@ -39,7 +39,6 @@ public struct RemoteImageGenerator: ImageGenerator {
   public let serverIdentifier: UInt64
   public let name: String
   public let deviceType: ImageGeneratorDeviceType
-  public var modelSpecificationOverrides: [String: ModelZoo.Specification]
   private var fileExistsCall: UnaryCall<FileListRequest, FileExistenceResponse>? = nil
   private var authenticationHandler:
     ((Bool, Data, GenerationConfiguration, Bool, Int, (@escaping () -> Void) -> Void) -> String?)?
@@ -48,7 +47,6 @@ public struct RemoteImageGenerator: ImageGenerator {
   public init(
     name: String, deviceType: ImageGeneratorDeviceType, client: ImageGenerationClientWrapper,
     serverIdentifier: UInt64,
-    modelSpecificationOverrides: [String: ModelZoo.Specification] = [:],
     authenticationHandler: (
       (Bool, Data, GenerationConfiguration, Bool, Int, (@escaping () -> Void) -> Void) -> String?
     )?,
@@ -58,7 +56,6 @@ public struct RemoteImageGenerator: ImageGenerator {
     self.deviceType = deviceType
     self.client = client
     self.serverIdentifier = serverIdentifier
-    self.modelSpecificationOverrides = modelSpecificationOverrides
     self.authenticationHandler = authenticationHandler
     self.requestExceedLimitHandler = requestExceedLimitHandler
   }
@@ -97,8 +94,7 @@ public struct RemoteImageGenerator: ImageGenerator {
     guard let client = client.client else {
       throw RemoteImageGeneratorError.notConnected
     }
-    var metadataOverride = ImageGeneratorUtils.metadataOverride(
-      configuration, specificationOverrides: modelSpecificationOverrides)
+    var metadataOverride = ImageGeneratorUtils.metadataOverride(configuration)
     var configuration = configuration
     // Replacing local LoRA to the LoRA name that is mapped.
     if !configuration.loras.isEmpty, !fileMapping.isEmpty {
@@ -181,16 +177,11 @@ public struct RemoteImageGenerator: ImageGenerator {
     // If this is txt2img, there is not controlnet, no modifier, not inpainting.
     let modifier: SamplerModifier =
       configuration.model.map {
-        ImageGeneratorUtils.modifierForModel(
-          $0, LoRAs: configuration.loras.compactMap(\.file),
-          specificationOverrides: modelSpecificationOverrides)
+        ImageGeneratorUtils.modifierForModel($0, LoRAs: configuration.loras.compactMap(\.file))
       } ?? .none
     let isInpainting = ImageGeneratorUtils.isInpainting(
-      for: mask, configuration: configuration, memorizedBy: [],
-      specificationOverrides: modelSpecificationOverrides)
-    let version = configuration.model.map {
-      ImageGeneratorUtils.versionForModel($0, specificationOverrides: modelSpecificationOverrides)
-    } ?? .v1
+      for: mask, configuration: configuration, memorizedBy: [])
+    let version = configuration.model.map { ModelZoo.versionForModel($0) } ?? .v1
     if configuration.strength == 1 && configuration.controls.isEmpty && modifier == .none
       && !isInpainting && version != .svdI2v
     {
