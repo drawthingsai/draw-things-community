@@ -1,3 +1,4 @@
+import DataModels
 import Foundation
 import History
 import SQLiteDflat
@@ -47,6 +48,38 @@ final class ImageHistoryManagerTests: XCTestCase {
     wait(for: [expectation], timeout: 5)
   }
 
+  private func waitForCondition(timeout: TimeInterval = 2.0, _ condition: @escaping () -> Bool) {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+      if condition() { return }
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
+  }
+
+  private func makeConfiguration(seed: UInt32 = 1) -> GenerationConfiguration {
+    GenerationConfiguration(
+      id: 0, startWidth: 8, startHeight: 8, seed: seed, steps: 20, guidanceScale: 7.5,
+      batchCount: 1, batchSize: 1
+    )
+  }
+
+  private func makeHistory(
+    configuration: GenerationConfiguration, tensorId: Int64?, isGenerated: Bool
+  ) -> ImageHistoryManager.History {
+    let imageData =
+      tensorId.map {
+        [
+          ImageHistoryManager.ImageData(
+            x: 0, y: 0, width: 512, height: 512, scaleFactorBy120: 120, tensorId: $0)
+        ]
+      } ?? []
+    return ImageHistoryManager.History(
+      imageData: imageData, reason: .generate, preview: nil, textEdits: nil, textLineage: nil,
+      configuration: configuration, isGenerated: isGenerated, contentOffset: (x: 0, y: 0),
+      scaleFactorBy120: 120, scriptSessionId: nil
+    )
+  }
+
   func testUnsacredSeekPersistsResolvedLineage() {
     seedHistory(
       nodes: [
@@ -92,5 +125,87 @@ final class ImageHistoryManagerTests: XCTestCase {
     }
 
     XCTAssertNil(workspace.dictionary["image_seek_to_lineage", Int.self])
+  }
+
+  func testPushGenerationQueueAddsPlaceholder() {
+    let manager = onMain {
+      ImageHistoryManager(
+        project: workspace, filePath: temporaryDirectory.appendingPathComponent("store.ckpt").path)
+    }
+
+    let inProgressIdentifier = onMain {
+      manager.pushGenerationQueue(
+        makeHistory(configuration: makeConfiguration(), tensorId: nil, isGenerated: false)
+      )
+    }
+
+    waitForCondition { [self] in
+      self.onMain { Array(manager.allImageHistories(false)).count == 1 }
+    }
+    let nodes = onMain { Array(manager.allImageHistories(false)) }
+    XCTAssertEqual(nodes.count, 1)
+    XCTAssertEqual(nodes[0].wallClock, inProgressIdentifier)
+    XCTAssertFalse(nodes[0].generated)
+    XCTAssertEqual(nodes[0].dataStored, 0)
+  }
+
+  func testCompleteGenerationQueueFindsNodeAfterDeleteRenumber() {
+    let manager = onMain {
+      ImageHistoryManager(
+        project: workspace, filePath: temporaryDirectory.appendingPathComponent("store.ckpt").path)
+    }
+
+    onMain {
+      manager.pushHistory([makeHistory(configuration: makeConfiguration(seed: 11), tensorId: 11, isGenerated: true)])
+    }
+    let inProgressIdentifier = onMain {
+      manager.pushGenerationQueue(
+        makeHistory(configuration: makeConfiguration(seed: 22), tensorId: nil, isGenerated: false)
+      )
+    }
+
+    waitForCondition { [self] in
+      self.onMain { manager.allImageHistories(false).contains(where: { $0.seed == 11 }) }
+    }
+    let firstNode = onMain { manager.allImageHistories(false).first(where: { $0.seed == 11 }) }
+    guard let firstNode else {
+      XCTFail("Expected first generated node")
+      return
+    }
+
+    let deleteExpectation = expectation(description: "delete old history")
+    onMain {
+      manager.deleteHistory(firstNode) { _, _, _ in
+        deleteExpectation.fulfill()
+      }
+    }
+    wait(for: [deleteExpectation], timeout: 3.0)
+
+    let finalized = onMain {
+      manager.completeGenerationQueue(
+        inProgressIdentifier,
+        with: makeHistory(configuration: makeConfiguration(seed: 33), tensorId: 33, isGenerated: true)
+      )
+    }
+    XCTAssertTrue(finalized)
+
+    waitForCondition { [self] in
+      self.onMain {
+        guard let node = manager.allImageHistories(false).first(where: { $0.wallClock == inProgressIdentifier })
+        else { return false }
+        return node.generated && node.seed == 33 && node.dataStored == 1
+      }
+    }
+
+    let nodes = onMain {
+      Array(manager.allImageHistories(false))
+    }
+    guard let finalizedNode = nodes.first(where: { $0.wallClock == inProgressIdentifier }) else {
+      XCTFail("Expected finalized queued node")
+      return
+    }
+    XCTAssertTrue(finalizedNode.generated)
+    XCTAssertEqual(finalizedNode.seed, 33)
+    XCTAssertEqual(finalizedNode.dataStored, 1)
   }
 }

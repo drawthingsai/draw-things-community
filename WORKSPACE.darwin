@@ -316,6 +316,14 @@ load("@s4nnc//:deps.bzl", "s4nnc_extra_deps")
 s4nnc_extra_deps()
 
 new_git_repository(
+    name = "Lottie",
+    build_file = "lottie.BUILD",
+    commit = "a004050748dc197c56256a14dca49a035d74726c",
+    remote = "https://github.com/airbnb/lottie-ios.git",
+    shallow_since = "1748373972 -0700",
+)
+
+new_git_repository(
     name = "Yams",
     build_file = "yams.BUILD",
     commit = "948991e19e795cdd7bd310756a97b5fbda559535",
