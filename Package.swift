@@ -2,9 +2,9 @@
 import Foundation
 import PackageDescription
 
-let hasMediaGenerationKitSDKSwiftPMTargets = [
+let hasMediaGenerationKitSwiftPMTargets = [
   "Libraries/DeviceAttestation/Sources",
-  "Libraries/MediaGenerationKitSDK/Sources",
+  "Libraries/MediaGenerationKit/Sources",
   "Apps/SDKCLI",
 ].allSatisfy { FileManager.default.fileExists(atPath: $0) }
 
@@ -15,9 +15,9 @@ let package = Package(
     .executable(name: "gRPCServerCLI", targets: ["gRPCServerCLI"]),
     .executable(name: "draw-things-cli", targets: ["DrawThingsCLI"]),
   ]
-    + (hasMediaGenerationKitSDKSwiftPMTargets
+    + (hasMediaGenerationKitSwiftPMTargets
       ? [
-        .library(name: "MediaGenerationKitSDK", targets: ["MediaGenerationKitSDK"])
+        .library(name: "MediaGenerationKit", targets: ["MediaGenerationKit"])
       ] : []),
   dependencies: [
     .package(
@@ -481,14 +481,14 @@ let package = Package(
     ),
 
   ]
-    + (hasMediaGenerationKitSDKSwiftPMTargets
+    + (hasMediaGenerationKitSwiftPMTargets
       ? [
         .target(
           name: "DeviceAttestation",
           path: "Libraries/DeviceAttestation/Sources"
         ),
         .target(
-          name: "MediaGenerationKitSDK",
+          name: "MediaGenerationKit",
           dependencies: [
             "BinaryResources",
             "ConfigurationZoo",
@@ -508,17 +508,18 @@ let package = Package(
             .product(name: "SQLiteDflat", package: "dflat"),
             .product(name: "Crypto", package: "swift-crypto"),
           ],
-          path: "Libraries/MediaGenerationKitSDK/Sources"
+          path: "Libraries/MediaGenerationKit/Sources"
         ),
         .executableTarget(
           name: "SDKCLI",
           dependencies: [
-            "MediaGenerationKitSDK",
+            "MediaGenerationKit",
             "DataModels",
             "ImageGenerator",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
           ],
           path: "Apps/SDKCLI",
+          exclude: ["AGENTS.md"],
           sources: ["SDKCLI.swift"]
         ),
       ] : [])
