@@ -325,7 +325,7 @@ public final class ProgressBarPrinter {
     let percent = Int(round(progress * 100))
     let template =
       if let detail, !detail.isEmpty {
-        "\(label) \(detail) []"
+        "\(label) \(detail) [] XXX%"
       } else {
         "\(label) [] XXX%"
       }
@@ -340,10 +340,8 @@ public final class ProgressBarPrinter {
 
     var string = template
     string = string.replacingOccurrences(of: "[]", with: bar)
-    if detail == nil || detail?.isEmpty == true {
-      let numberString = String(percent).padding(toLength: 3, withPad: " ", startingAt: 0)
-      string = string.replacingOccurrences(of: "XXX", with: numberString)
-    }
+    let numberString = String(percent).padding(toLength: 3, withPad: " ", startingAt: 0)
+    string = string.replacingOccurrences(of: "XXX", with: numberString)
     let lineClearString = "\u{1B}[1A\u{1B}[K"
     print("\(lineClearString)\(string)")
   }

@@ -2768,10 +2768,10 @@ extension DrawThingsCLI {
           print("Wrote: \(path)")
         }
       }
-      printGenerationTimingSummary(result.timing)
       TerminalImageRenderer.renderGeneratedOutputsIfRequested(
         result.outputPaths, mode: terminalImageMode,
         protocolChoice: output.terminalImageProtocol)
+      printGenerationTimingSummary(result.timing)
     }
   }
 
