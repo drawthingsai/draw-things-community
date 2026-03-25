@@ -11,6 +11,7 @@ Apps/ModelConverter
 Apps/ModelQuantizer
 Apps/gRPCServerCLI
 Apps/DrawThingsCLI
+Formula
 Libraries/ConfigurationZoo
 Libraries/DataModels
 Libraries/Downloader
