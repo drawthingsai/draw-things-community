@@ -635,18 +635,18 @@ private enum ModelsDirectoryResolver {
     {
       return try normalizeAndEnsureDirectory(URL(fileURLWithPath: envPath, isDirectory: true))
     }
-#if os(macOS)
-    let appContainerModelsDirectory = URL(
-      fileURLWithPath: (appContainerModelsDirectoryPath as NSString).expandingTildeInPath,
-      isDirectory: true)
-    return try normalizeAndEnsureDirectory(appContainerModelsDirectory)
-#else
-    if let adjacent = executableAdjacentModelsDirectoryIfExists() {
-      return adjacent
-    }
-    let fallback = try documentsModelsDirectory()
-    return try normalizeAndEnsureDirectory(fallback)
-#endif
+    #if os(macOS)
+      let appContainerModelsDirectory = URL(
+        fileURLWithPath: (appContainerModelsDirectoryPath as NSString).expandingTildeInPath,
+        isDirectory: true)
+      return try normalizeAndEnsureDirectory(appContainerModelsDirectory)
+    #else
+      if let adjacent = executableAdjacentModelsDirectoryIfExists() {
+        return adjacent
+      }
+      let fallback = try documentsModelsDirectory()
+      return try normalizeAndEnsureDirectory(fallback)
+    #endif
   }
 
   private static func executableAdjacentModelsDirectoryIfExists() -> URL? {
@@ -1570,6 +1570,16 @@ private func createLocalImageGenerator(queue: DispatchQueue) throws -> (String, 
 }
 
 private final class LocalGenerationRunner {
+  struct GenerationTimingSummary {
+    let totalGenerationDuration: TimeInterval
+    let samplingStepDurations: [TimeInterval]
+  }
+
+  struct GenerationRunResult {
+    let outputPaths: [String]
+    let timing: GenerationTimingSummary
+  }
+
   private enum OutputDestination {
     case png(URL)
     case video(URL, containerExtension: String)
@@ -1579,6 +1589,83 @@ private final class LocalGenerationRunner {
     let width: Int
     let height: Int
     let channels: Int
+  }
+
+  private final class GenerationTimingTracker {
+    private enum SamplingPhase {
+      case firstPass
+      case secondPass
+    }
+
+    private let startTime = Date()
+    private var lastNonSamplingSignpostTime = Date()
+    private var lastSamplingStepTime: Date?
+    private var currentSamplingPhase: SamplingPhase?
+    private(set) var samplingStepDurations: [TimeInterval] = []
+
+    func record(signpost: ImageGeneratorSignpost, signposts: Set<ImageGeneratorSignpost>) {
+      let now = Date()
+      switch signpost {
+      case .sampling(let step):
+        guard let totalSteps = totalSamplingSteps(in: signposts, phase: .firstPass),
+          step < totalSteps
+        else {
+          currentSamplingPhase = nil
+          lastSamplingStepTime = nil
+          lastNonSamplingSignpostTime = now
+          return
+        }
+        recordSamplingStep(at: now, phase: .firstPass)
+      case .secondPassSampling(let step):
+        guard let totalSteps = totalSamplingSteps(in: signposts, phase: .secondPass),
+          step < totalSteps
+        else {
+          currentSamplingPhase = nil
+          lastSamplingStepTime = nil
+          lastNonSamplingSignpostTime = now
+          return
+        }
+        recordSamplingStep(at: now, phase: .secondPass)
+      default:
+        currentSamplingPhase = nil
+        lastSamplingStepTime = nil
+        lastNonSamplingSignpostTime = now
+      }
+    }
+
+    func summary() -> GenerationTimingSummary {
+      GenerationTimingSummary(
+        totalGenerationDuration: Date().timeIntervalSince(startTime),
+        samplingStepDurations: samplingStepDurations)
+    }
+
+    private func recordSamplingStep(at time: Date, phase: SamplingPhase) {
+      let stepDuration: TimeInterval
+      if currentSamplingPhase == phase, let lastSamplingStepTime {
+        stepDuration = time.timeIntervalSince(lastSamplingStepTime)
+      } else {
+        currentSamplingPhase = phase
+        stepDuration = time.timeIntervalSince(lastNonSamplingSignpostTime)
+      }
+      samplingStepDurations.append(stepDuration)
+      lastSamplingStepTime = time
+    }
+
+    private func totalSamplingSteps(
+      in signposts: Set<ImageGeneratorSignpost>, phase: SamplingPhase
+    ) -> Int? {
+      for signpost in signposts {
+        switch (phase, signpost) {
+        case (.firstPass, .sampling(let steps)):
+          return steps
+        case (.secondPass, .secondPassSampling(let steps)):
+          return steps
+        default:
+          continue
+        }
+      }
+      return nil
+    }
   }
 
   private let queue = DispatchQueue(label: "com.drawthings.cli.generate", qos: .userInteractive)
@@ -1600,22 +1687,28 @@ private final class LocalGenerationRunner {
     prompt: String, negativePrompt: String, configuration: GenerationConfiguration,
     outputPath: String,
     inputImage: Tensor<FloatType>?, videoFormat: VideoExportFormat?
-  ) throws -> [String] {
+  ) throws -> GenerationRunResult {
     let trace = ImageGeneratorTrace(fromBridge: true)
     let progressPrinter = ProgressBarPrinter()
     let estimation = GenerationEstimation.default
+    let timingTracker = GenerationTimingTracker()
     let hints = [(ControlHintType, [(AnyTensor, Float)])]()
+    progressPrinter.update(progress: 0, label: "Starting...", detail: nil)
     let (images, _, _) = queue.sync {
       imageGenerator.generate(
         trace: trace, image: inputImage, scaleFactor: 1, mask: nil, hints: hints, text: prompt,
         negativeText: negativePrompt, configuration: configuration, fileMapping: [:], keywords: [],
         cancellation: { _ in },
         feedback: { signpost, signposts, _ in
+          timingTracker.record(signpost: signpost, signposts: signposts)
           let (elapsed, estimatedTotal) = GenerationEstimator.estimateUpToDateDuration(
             from: estimation, signpost: signpost, signposts: signposts)
           if estimatedTotal > 0 {
             let progress = Float(elapsed / estimatedTotal)
-            progressPrinter.update(progress: progress)
+            let progressText = cliProgressText(signpost: signpost, signposts: signposts)
+            progressPrinter.update(
+              progress: progress, label: progressText.label, detail: progressText.detail
+            )
           }
           return true
         })
@@ -1623,8 +1716,10 @@ private final class LocalGenerationRunner {
     guard let images, !images.isEmpty else {
       throw DrawThingsCLIError.generationFailed
     }
-    return try saveOutputs(
+    let timing = timingTracker.summary()
+    let outputPaths = try saveOutputs(
       images, outputPath: outputPath, configuration: configuration, videoFormat: videoFormat)
+    return GenerationRunResult(outputPaths: outputPaths, timing: timing)
   }
 
   private func saveOutputs(
@@ -1913,6 +2008,92 @@ private final class LocalGenerationRunner {
       }
     }
   #endif
+}
+
+private func formatDurationForCLI(_ duration: TimeInterval) -> String {
+  if duration < 1 {
+    return "\(Int((duration * 1000).rounded())) ms"
+  }
+  return String(format: "%.2f s", duration)
+}
+
+private func medianDuration(_ durations: [TimeInterval]) -> TimeInterval {
+  let sorted = durations.sorted()
+  guard !sorted.isEmpty else { return 0 }
+  let midpoint = sorted.count / 2
+  if sorted.count.isMultiple(of: 2) {
+    return (sorted[midpoint - 1] + sorted[midpoint]) / 2
+  }
+  return sorted[midpoint]
+}
+
+private func printGenerationTimingSummary(
+  _ summary: LocalGenerationRunner.GenerationTimingSummary
+) {
+  print("Generation timing:")
+  print(
+    "  Total generation time (including model loading): \(formatDurationForCLI(summary.totalGenerationDuration))"
+  )
+  guard !summary.samplingStepDurations.isEmpty else {
+    return
+  }
+  let averageStepDuration =
+    summary.samplingStepDurations.reduce(0, +) / Double(summary.samplingStepDurations.count)
+  let medianStepDuration = medianDuration(summary.samplingStepDurations)
+  print(
+    "  Sampling step time (\(summary.samplingStepDurations.count) step(s)): avg \(formatDurationForCLI(averageStepDuration)), median \(formatDurationForCLI(medianStepDuration))"
+  )
+}
+
+private func cliSamplingSteps(
+  signposts: Set<ImageGeneratorSignpost>, isSecondPassSampling: Bool
+) -> Int {
+  for signpost in signposts {
+    switch signpost {
+    case .sampling(let steps):
+      if !isSecondPassSampling {
+        return steps
+      }
+    case .secondPassSampling(let steps):
+      if isSecondPassSampling {
+        return steps
+      }
+    case .faceRestored, .imageDecoded, .imageEncoded, .imageUpscaled, .secondPassImageDecoded,
+      .secondPassImageEncoded, .textEncoded, .controlsGenerated:
+      continue
+    }
+  }
+  return 0
+}
+
+private func cliProgressText(
+  signpost: ImageGeneratorSignpost, signposts: Set<ImageGeneratorSignpost>
+) -> (label: String, detail: String?) {
+  switch signpost {
+  case .faceRestored, .secondPassImageDecoded, .imageUpscaled:
+    return ("Finishing...", nil)
+  case .imageEncoded, .secondPassImageEncoded, .textEncoded, .controlsGenerated:
+    return ("Processing...", nil)
+  case .sampling(let step):
+    let steps = cliSamplingSteps(signposts: signposts, isSecondPassSampling: false)
+    if step == steps {
+      return ("Finishing...", nil)
+    }
+    return ("Sampling...", "\(step + 1) / \(steps)")
+  case .secondPassSampling(let step):
+    let steps = cliSamplingSteps(signposts: signposts, isSecondPassSampling: true)
+    if step == steps {
+      return ("Finishing...", nil)
+    }
+    return ("Sampling...", "\(step + 1) / \(steps)")
+  case .imageDecoded:
+    if signposts.contains(.secondPassImageDecoded) {
+      return ("Processing...", nil)
+    } else if signposts.contains(.imageUpscaled) {
+      return ("Upscaling...", nil)
+    }
+    return ("Finishing...", nil)
+  }
 }
 
 private enum TerminalImageRenderer {
@@ -2570,27 +2751,26 @@ extension DrawThingsCLI {
         }
 
       let runner = try LocalGenerationRunner()
-      let outputPaths = try runner.generate(
+      let result = try runner.generate(
         prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
         configuration: configuration, outputPath: outputPath, inputImage: inputImageTensor,
         videoFormat: output.videoFormat)
       defer {
         if !writesOutputFile {
-          for path in outputPaths {
+          for path in result.outputPaths {
             try? FileManager.default.removeItem(atPath: path)
           }
         }
       }
       print("Models directory: \(modelsDirectory.path)")
       if writesOutputFile {
-        for path in outputPaths {
+        for path in result.outputPaths {
           print("Wrote: \(path)")
         }
-      } else {
-        print("Previewed inline.")
       }
+      printGenerationTimingSummary(result.timing)
       TerminalImageRenderer.renderGeneratedOutputsIfRequested(
-        outputPaths, mode: terminalImageMode,
+        result.outputPaths, mode: terminalImageMode,
         protocolChoice: output.terminalImageProtocol)
     }
   }

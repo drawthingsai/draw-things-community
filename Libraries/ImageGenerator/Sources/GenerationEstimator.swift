@@ -317,13 +317,18 @@ public final class ProgressBarPrinter {
     return result == 0 ? Int(winsize.ws_col) : nil
   }
 
-  public func update(progress: Float) {
+  public func update(progress: Float, label: String, detail: String?) {
     if !hasPrintedBefore {
       print("")
       hasPrintedBefore = true
     }
     let percent = Int(round(progress * 100))
-    let template = "Image generation: [] XXX%"
+    let template =
+      if let detail, !detail.isEmpty {
+        "\(label) \(detail) []"
+      } else {
+        "\(label) [] XXX%"
+      }
     // Note that in Xcode, terminalWidth() returns 0
     let terminalWidth = max(terminalWidth() ?? 0, template.count + 1)  // Minimum bar size of 1
 
@@ -335,8 +340,10 @@ public final class ProgressBarPrinter {
 
     var string = template
     string = string.replacingOccurrences(of: "[]", with: bar)
-    let numberString = String(percent).padding(toLength: 3, withPad: " ", startingAt: 0)
-    string = string.replacingOccurrences(of: "XXX", with: numberString)
+    if detail == nil || detail?.isEmpty == true {
+      let numberString = String(percent).padding(toLength: 3, withPad: " ", startingAt: 0)
+      string = string.replacingOccurrences(of: "XXX", with: numberString)
+    }
     let lineClearString = "\u{1B}[1A\u{1B}[K"
     print("\(lineClearString)\(string)")
   }
