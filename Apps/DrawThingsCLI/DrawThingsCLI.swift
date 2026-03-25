@@ -1719,6 +1719,7 @@ private final class LocalGenerationRunner {
     let timing = timingTracker.summary()
     let outputPaths = try saveOutputs(
       images, outputPath: outputPath, configuration: configuration, videoFormat: videoFormat)
+    progressPrinter.update(progress: 1, label: "Generated", detail: nil)
     return GenerationRunResult(outputPaths: outputPaths, timing: timing)
   }
 
@@ -2751,6 +2752,7 @@ extension DrawThingsCLI {
         }
 
       let runner = try LocalGenerationRunner()
+      print("Models directory: \(modelsDirectory.path)")
       let result = try runner.generate(
         prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
         configuration: configuration, outputPath: outputPath, inputImage: inputImageTensor,
@@ -2762,7 +2764,6 @@ extension DrawThingsCLI {
           }
         }
       }
-      print("Models directory: \(modelsDirectory.path)")
       if writesOutputFile {
         for path in result.outputPaths {
           print("Wrote: \(path)")
