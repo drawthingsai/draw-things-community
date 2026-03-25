@@ -259,7 +259,7 @@ private enum CLIHelpText {
 private let modelsDirectoryHelp = ArgumentHelp(
   "Models directory.",
   discussion:
-    "Resolution order: --models-dir, DRAWTHINGS_MODELS_DIR, <binary-dir>/Models (if it exists), then ~/Documents/Models."
+    "Resolution order: --models-dir, DRAWTHINGS_MODELS_DIR, then on macOS ~/Library/Containers/com.liuliu.draw-things/Data/Documents/Models. On other platforms, fall back to <binary-dir>/Models (if it exists), then ~/Documents/Models."
 )
 
 private let modelReferenceHelp = ArgumentHelp(
@@ -624,6 +624,9 @@ struct LoRATrainCommandOptions: ParsableArguments {
 }
 
 private enum ModelsDirectoryResolver {
+  private static let appContainerModelsDirectoryPath =
+    "~/Library/Containers/com.liuliu.draw-things/Data/Documents/Models"
+
   static func resolve(path: String?) throws -> URL {
     if let path, !path.isEmpty {
       return try normalizeAndEnsureDirectory(URL(fileURLWithPath: path, isDirectory: true))
@@ -632,11 +635,18 @@ private enum ModelsDirectoryResolver {
     {
       return try normalizeAndEnsureDirectory(URL(fileURLWithPath: envPath, isDirectory: true))
     }
+#if os(macOS)
+    let appContainerModelsDirectory = URL(
+      fileURLWithPath: (appContainerModelsDirectoryPath as NSString).expandingTildeInPath,
+      isDirectory: true)
+    return try normalizeAndEnsureDirectory(appContainerModelsDirectory)
+#else
     if let adjacent = executableAdjacentModelsDirectoryIfExists() {
       return adjacent
     }
     let fallback = try documentsModelsDirectory()
     return try normalizeAndEnsureDirectory(fallback)
+#endif
   }
 
   private static func executableAdjacentModelsDirectoryIfExists() -> URL? {
