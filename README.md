@@ -25,13 +25,54 @@ swift build --target gRPCServerCLI
 To run the CLI with SwiftPM, use the executable name form (not `--target`):
 
 ```bash
-swift run gRPCServerCLI /path/to/models
+swift run -c release gRPCServerCLI /path/to/models
 ```
 
 You can also inspect CLI options with:
 
 ```bash
-swift run gRPCServerCLI --help
+swift run -c release gRPCServerCLI --help
+```
+
+# Quick Start with draw-things-cli on macOS
+
+If you want to build the local inference and LoRA training CLI from this repository, build the SwiftPM product with:
+
+```bash
+swift build --product draw-things-cli
+```
+
+To inspect the CLI surface from SwiftPM, run:
+
+```bash
+swift run -c release draw-things-cli --help
+swift run -c release draw-things-cli generate --help
+```
+
+A minimal generation run looks like:
+
+```bash
+swift run -c release draw-things-cli generate --model flux_2_klein_4b_q6p.ckpt --prompt "a small red cube on a table"
+```
+
+On macOS, `draw-things-cli` defaults to the same model directory used by the sandboxed Draw Things app:
+
+```text
+~/Library/Containers/com.liuliu.draw-things/Data/Documents/Models
+```
+
+You can override that with `--models-dir` or `DRAWTHINGS_MODELS_DIR`.
+
+If you prefer Homebrew, install the latest CLI with:
+
+```bash
+brew install --HEAD drawthingsai/draw-things/draw-things-cli
+```
+
+Then verify the install with:
+
+```bash
+draw-things-cli --help
 ```
 
 # Self-host gRPCServerCLI from Packaged Binaries
