@@ -5,7 +5,7 @@ import PackageDescription
 let hasMediaGenerationKitSwiftPMTargets = [
   "Libraries/DeviceAttestation/Sources",
   "Libraries/MediaGenerationKit/Sources",
-  "Apps/SDKCLI",
+  "Apps/MediaGenerationKitCLI",
 ].allSatisfy { FileManager.default.fileExists(atPath: $0) }
 
 let package = Package(
@@ -511,16 +511,16 @@ let package = Package(
           path: "Libraries/MediaGenerationKit/Sources"
         ),
         .executableTarget(
-          name: "SDKCLI",
+          name: "MediaGenerationKitCLI",
           dependencies: [
             "MediaGenerationKit",
             "DataModels",
             "ImageGenerator",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
           ],
-          path: "Apps/SDKCLI",
+          path: "Apps/MediaGenerationKitCLI",
           exclude: ["AGENTS.md"],
-          sources: ["SDKCLI.swift"]
+          sources: ["MediaGenerationKitCLI.swift"]
         ),
       ] : [])
 )
