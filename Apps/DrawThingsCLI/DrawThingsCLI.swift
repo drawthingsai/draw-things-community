@@ -777,7 +777,7 @@ private enum RecommendedSettingsResolver {
   static func resolve(
     model: String, overrideDictionary: [String: Any]?, modelsDirectory: URL, allowNetwork: Bool
   ) -> (GenerationConfiguration, String?) {
-    let defaultConfiguration = GenerationConfiguration.default
+    let defaultConfiguration = defaultConfiguration(for: model)
     let loras = loras(from: overrideDictionary)
     guard
       let specification = findRecommendedSettings(
@@ -812,6 +812,15 @@ private enum RecommendedSettingsResolver {
       return (builder.build(), nil)
     }
     return (configuration, specification.negative?.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+
+  private static func defaultConfiguration(for model: String) -> GenerationConfiguration {
+    let defaultScale = DeviceCapability.defaultScale(ModelZoo.defaultScaleForModel(model))
+    var builder = GenerationConfigurationBuilder(from: GenerationConfiguration.default)
+    builder.model = model
+    builder.startWidth = defaultScale
+    builder.startHeight = defaultScale
+    return builder.build()
   }
 
   private static func loras(from overrideDictionary: [String: Any]?) -> Set<String> {
