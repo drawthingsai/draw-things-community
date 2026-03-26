@@ -171,12 +171,11 @@ func CrossAttentionKeysAndValues(
       }
       var out = Functional.concat(axis: 0, out0, out1)
       var ipKVs = [Input]()
-      // TODO: 2026-03-25 Quantized attention is not propagated through this split-token IP-adapter add-back path yet.
       for _ in injectIPAdapterLengths {
         let ipKeys = Input()
         let ipValues = Input()
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16])
+          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
         out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
         ipKVs.append(contentsOf: [ipKeys, ipValues])
       }

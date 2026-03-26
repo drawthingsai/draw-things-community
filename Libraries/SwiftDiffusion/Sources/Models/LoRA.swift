@@ -596,9 +596,8 @@ func LoRACrossAttention(
         out = unifyheads(out)
         return Model([x, c] + ipKVs, [out])
       } else {
-        // TODO: 2026-03-25 Quantized attention is not propagated through this unfused LoRA cross-attention path yet.
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16])
+          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
         var out = scaledDotProductAttention(queries, keys, values)
         let unifyheads = LoRADense(count: k * h, configuration: LoRAConfiguration)
         out = unifyheads(out.reshaped([b, hw, h * k]))
@@ -616,7 +615,6 @@ func LoRACrossAttention(
       }
       let b0 = b / 2
       let out0: Model.IO
-      // TODO: 2026-03-25 Quantized attention is not propagated through these split-token LoRA cross-attention branches yet.
       if b0 == 1 || t.0 >= t.1 {
         let keys0 = keys.reshaped(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
@@ -626,7 +624,7 @@ func LoRACrossAttention(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
         out0 = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16])(
+          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))(
             queries0, keys0, values0
           ).reshaped([b0, hw, h * k])
       } else {
