@@ -1870,7 +1870,7 @@ extension UNetFromNNC {
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
                 modelKey, model: unet.unwrapped,
-                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                codec: [.jit, .q6p, .q8p, .ezm7, .i8x, externalData]
               ) {
                 name, dataType, format, shape in
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
@@ -1888,7 +1888,7 @@ extension UNetFromNNC {
                     name,
                     codec: [
                       .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap),
-                      .q6p, .q8p,
+                      .q6p, .q8p, .i8x,
                     ])
                 {
                   guard !loadedFromWeightsCache else {
@@ -1940,7 +1940,8 @@ extension UNetFromNNC {
           ) { controlModelLoader in
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
-                modelKey, model: unet.unwrapped, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                modelKey, model: unet.unwrapped,
+                codec: [.jit, .q6p, .q8p, .ezm7, .i8x, externalData]
               ) {
                 name, dataType, _, shape in
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
@@ -1958,7 +1959,7 @@ extension UNetFromNNC {
                     name,
                     codec: [
                       .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap),
-                      .q6p, .q8p,
+                      .q6p, .q8p, .i8x,
                     ])
                 {
                   guard !loadedFromWeightsCache else {
@@ -2008,7 +2009,7 @@ extension UNetFromNNC {
           version: version
         ) { controlModelLoader in
           store.read(
-            modelKey, model: unet.unwrapped, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+            modelKey, model: unet.unwrapped, codec: [.jit, .q6p, .q8p, .ezm7, .i8x, externalData]
           ) {
             name, _, _, _ in
             if let result = controlModelLoader.loadMergedWeight(name: name) {
@@ -2029,7 +2030,7 @@ extension UNetFromNNC {
                 name,
                 codec: [
                   .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap), .q6p,
-                  .q8p,
+                  .q8p, .i8x,
                 ])
             {
               return .final(
@@ -2051,7 +2052,8 @@ extension UNetFromNNC {
         store.read(
           "time_embed", model: timeEmbed,
           codec: [
-            .q6p, .q8p, .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap),
+            .q6p, .q8p, .i8x, .ezm7,
+            .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap),
           ])
       }
       if let previewer = previewer {
@@ -2060,7 +2062,8 @@ extension UNetFromNNC {
         store.read(
           "previewer", model: previewer,
           codec: [
-            .q6p, .q8p, .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap),
+            .q6p, .q8p, .i8x, .ezm7,
+            .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap),
           ])
       }
     }

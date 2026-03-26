@@ -280,7 +280,7 @@ extension UNetFixedEncoder {
           encoderHidProj.compile(inputs: textEncoding[0])
           $0.read(
             "encoder_hid_proj", model: encoderHidProj,
-            codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+            codec: [.jit, .q6p, .q8p, .ezm7, .i8x, externalData])
           textEncoding = encoderHidProj(inputs: textEncoding[0]).map { $0.as(of: FloatType.self) }
         }
       }
@@ -303,7 +303,7 @@ extension UNetFixedEncoder {
         if lora.count > 0 {
           LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
-              "unet_fixed", model: unetBaseFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
+              "unet_fixed", model: unetBaseFixed, codec: [.q6p, .q8p, .i8x, .ezm7, .jit, externalData]
             ) {
               name, dataType, _, shape in
               return loader.mergeLoRA(
@@ -313,7 +313,7 @@ extension UNetFixedEncoder {
           }
         } else {
           store.read(
-            "unet_fixed", model: unetBaseFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData])
+            "unet_fixed", model: unetBaseFixed, codec: [.q6p, .q8p, .i8x, .ezm7, .jit, externalData])
         }
       }
       return (
@@ -338,7 +338,7 @@ extension UNetFixedEncoder {
           LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "unet_fixed", model: unetRefinerFixed,
-              codec: [.q6p, .q8p, .ezm7, .jit, externalData]
+              codec: [.q6p, .q8p, .i8x, .ezm7, .jit, externalData]
             ) {
               name, dataType, _, shape in
               return loader.mergeLoRA(
@@ -348,7 +348,7 @@ extension UNetFixedEncoder {
           }
         } else {
           store.read(
-            "unet_fixed", model: unetRefinerFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData])
+            "unet_fixed", model: unetRefinerFixed, codec: [.q6p, .q8p, .i8x, .ezm7, .jit, externalData])
         }
       }
       return (
@@ -379,7 +379,7 @@ extension UNetFixedEncoder {
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) {
-        $0.read("unet_fixed", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+        $0.read("unet_fixed", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
       }
       var kvs = unetFixed(inputs: crossattn, numFramesEmb).map { $0.as(of: FloatType.self) }
       let zeroProj = graph.variable(like: crossattn)
@@ -434,7 +434,7 @@ extension UNetFixedEncoder {
         if lora.count > 0 {
           LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
-              "dit", model: unetFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
+              "dit", model: unetFixed, codec: [.q6p, .q8p, .i8x, .ezm7, .jit, externalData]
             ) {
               name, dataType, _, shape in
               return loader.mergeLoRA(
@@ -443,7 +443,7 @@ extension UNetFixedEncoder {
             }
           }
         } else {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       return (
@@ -480,7 +480,7 @@ extension UNetFixedEncoder {
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
         ) { store in
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       let result = unetFixed(inputs: c, timeEmbeds).map { $0.as(of: FloatType.self) }
@@ -580,7 +580,7 @@ extension UNetFixedEncoder {
           if lora.count > 0 {
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
-                "dit", model: unetFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
+                "dit", model: unetFixed, codec: [.q6p, .q8p, .i8x, .ezm7, .jit, externalData]
               ) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
@@ -589,7 +589,7 @@ extension UNetFixedEncoder {
               }
             }
           } else {
-            store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+            store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
           }
         }
       }
@@ -615,7 +615,7 @@ extension UNetFixedEncoder {
           // TODO: Do the name remapping.
           LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
-              "stage_c_fixed", model: stageCFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
+              "stage_c_fixed", model: stageCFixed, codec: [.q6p, .q8p, .i8x, .ezm7, .jit, externalData]
             ) {
               name, dataType, _, shape in
               var name = name
@@ -631,7 +631,7 @@ extension UNetFixedEncoder {
           }
         } else {
           store.read(
-            "stage_c_fixed", model: stageCFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
+            "stage_c_fixed", model: stageCFixed, codec: [.q6p, .q8p, .ezm7, .i8x, .jit, externalData]
           ) {
             name, _, _, _ in
             guard name.hasPrefix("__stage_c_fixed__") else { return .continue(name) }
@@ -803,7 +803,7 @@ extension UNetFixedEncoder {
                 return ($0, $0)
               })
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
@@ -824,7 +824,7 @@ extension UNetFixedEncoder {
             }
           } else {
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -833,7 +833,7 @@ extension UNetFixedEncoder {
             }
           }
         } else if !loadedFromWeightsCache {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       var conditions = unetFixed(inputs: c, referenceImages + restInputs).map {
@@ -991,7 +991,7 @@ extension UNetFixedEncoder {
                 return ($0, $0)
               })
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
@@ -1012,7 +1012,7 @@ extension UNetFixedEncoder {
             }
           } else {
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -1021,7 +1021,7 @@ extension UNetFixedEncoder {
             }
           }
         } else if !loadedFromWeightsCache {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       let conditions = unetFixed(
@@ -1148,7 +1148,7 @@ extension UNetFixedEncoder {
                   return ($0, $0)
                 })
               LoRALoader.openStore(graph, lora: lora) { loader in
-                store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+                store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
                 {
                   name, dataType, format, shape in
                   if let result = controlModelLoader.loadMergedWeight(name: name) {
@@ -1183,7 +1183,7 @@ extension UNetFixedEncoder {
               }
             } else {
               LoRALoader.openStore(graph, lora: lora) { loader in
-                store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+                store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
                 {
                   name, dataType, _, shape in
                   if let result = controlModelLoader.loadMergedWeight(name: name) {
@@ -1203,7 +1203,7 @@ extension UNetFixedEncoder {
               }
             }
           } else {
-            store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+            store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
               name, _, _, _ in
               if let result = controlModelLoader.loadMergedWeight(name: name) {
                 return result
@@ -1399,7 +1399,7 @@ extension UNetFixedEncoder {
                 return ($0, $0)
               })
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
@@ -1420,7 +1420,7 @@ extension UNetFixedEncoder {
             }
           } else {
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -1429,7 +1429,7 @@ extension UNetFixedEncoder {
             }
           }
         } else if !loadedFromWeightsCache {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       var conditions = unetFixed(
@@ -1660,7 +1660,7 @@ extension UNetFixedEncoder {
       ) { store in
         if let shape = xPadTokens?.shape,
           let xPadToken =
-            (store.read("x_pad_token", kind: .CPU, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+            (store.read("x_pad_token", kind: .CPU, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
               .map { Tensor<FloatType>(from: $0) })
         {
           let padToken = xPadToken.reshaped(.HWC(1, 1, 3840))
@@ -1673,7 +1673,7 @@ extension UNetFixedEncoder {
         if let shape = capPadTokens?.shape,
           let capPadToken =
             (store.read(
-              "cap_pad_token", kind: .CPU, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+              "cap_pad_token", kind: .CPU, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
             ).map { Tensor<FloatType>(from: $0) })
         {
           let padToken = capPadToken.reshaped(.HWC(1, 1, 3840))
@@ -1690,7 +1690,7 @@ extension UNetFixedEncoder {
                 return ($0, $0)
               })
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
@@ -1711,7 +1711,7 @@ extension UNetFixedEncoder {
             }
           } else {
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -1720,7 +1720,7 @@ extension UNetFixedEncoder {
             }
           }
         } else if !loadedFromWeightsCache {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       let conditions = unetFixed(
@@ -1881,7 +1881,7 @@ extension UNetFixedEncoder {
                 return ($0, $0)
               })
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
@@ -1902,7 +1902,7 @@ extension UNetFixedEncoder {
             }
           } else {
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -1911,7 +1911,7 @@ extension UNetFixedEncoder {
             }
           }
         } else if !loadedFromWeightsCache {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       var conditions = unetFixed(
@@ -2027,7 +2027,7 @@ extension UNetFixedEncoder {
       ) { store in
         if let videoConnectorLearnableRegisters =
           (store.read(
-            "text_video_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .ezm7]
+            "text_video_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .i8x, .ezm7]
           ).map { Tensor<FloatType>(from: $0).toGPU(0) })
         {
           let registers = graph.variable(videoConnectorLearnableRegisters).reshaped(
@@ -2041,7 +2041,7 @@ extension UNetFixedEncoder {
         }
         if let audioConnectorLearnableRegisters =
           (store.read(
-            "text_audio_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .ezm7]
+            "text_audio_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .i8x, .ezm7]
           ).map { Tensor<FloatType>(from: $0).toGPU(0) })
         {
           let registers = graph.variable(audioConnectorLearnableRegisters).reshaped(
@@ -2095,7 +2095,7 @@ extension UNetFixedEncoder {
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
                 "text_video_connector", model: videoConnector,
-                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge,
@@ -2115,7 +2115,7 @@ extension UNetFixedEncoder {
               }
               store.read(
                 "text_audio_connector", model: audioConnector,
-                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge,
@@ -2138,7 +2138,7 @@ extension UNetFixedEncoder {
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
                 "text_video_connector", model: videoConnector,
-                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -2146,7 +2146,7 @@ extension UNetFixedEncoder {
               }
               store.read(
                 "text_audio_connector", model: audioConnector,
-                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -2158,12 +2158,12 @@ extension UNetFixedEncoder {
           if !loadedVideoConnectorFromWeightsCache {
             store.read(
               "text_video_connector", model: videoConnector,
-              codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+              codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
           }
           if !loadedAudioConnectorFromWeightsCache {
             store.read(
               "text_audio_connector", model: audioConnector,
-              codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+              codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
           }
         }
       }
@@ -2221,7 +2221,7 @@ extension UNetFixedEncoder {
               uniqueKeysWithValues: (0..<48).map { ($0, $0) })
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
-                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge,
@@ -2243,7 +2243,7 @@ extension UNetFixedEncoder {
           } else {
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
-                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -2254,7 +2254,7 @@ extension UNetFixedEncoder {
         } else if !loadedFromWeightsCache {
           store.read(
             "dit", model: unetFixed,
-            codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       let contexts = unetFixed(inputs: timeEmbeds)
@@ -2328,7 +2328,7 @@ extension UNetFixedEncoder {
       ) { store in
         if let videoConnectorLearnableRegisters =
           (store.read(
-            "text_video_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .ezm7]
+            "text_video_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .i8x, .ezm7]
           ).map { Tensor<FloatType>(from: $0).toGPU(0) })
         {
           let registers = graph.variable(videoConnectorLearnableRegisters).reshaped(
@@ -2342,7 +2342,7 @@ extension UNetFixedEncoder {
         }
         if let audioConnectorLearnableRegisters =
           (store.read(
-            "text_audio_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .ezm7]
+            "text_audio_connector_learnable_registers", codec: [.externalData, .q6p, .q8p, .i8x, .ezm7]
           ).map { Tensor<FloatType>(from: $0).toGPU(0) })
         {
           let registers = graph.variable(audioConnectorLearnableRegisters).reshaped(
@@ -2391,7 +2391,7 @@ extension UNetFixedEncoder {
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
                 "text_video_connector", model: videoConnector,
-                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge,
@@ -2411,7 +2411,7 @@ extension UNetFixedEncoder {
               }
               store.read(
                 "text_audio_connector", model: audioConnector,
-                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge,
@@ -2434,7 +2434,7 @@ extension UNetFixedEncoder {
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
                 "text_video_connector", model: videoConnector,
-                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -2442,7 +2442,7 @@ extension UNetFixedEncoder {
               }
               store.read(
                 "text_audio_connector", model: audioConnector,
-                codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -2454,12 +2454,12 @@ extension UNetFixedEncoder {
           if !loadedVideoConnectorFromWeightsCache {
             store.read(
               "text_video_connector", model: videoConnector,
-              codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+              codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
           }
           if !loadedAudioConnectorFromWeightsCache {
             store.read(
               "text_audio_connector", model: audioConnector,
-              codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+              codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
           }
         }
       }
@@ -2517,7 +2517,7 @@ extension UNetFixedEncoder {
               uniqueKeysWithValues: (0..<48).map { ($0, $0) })
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
-                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge,
@@ -2539,7 +2539,7 @@ extension UNetFixedEncoder {
           } else {
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
-                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) { name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -2550,7 +2550,7 @@ extension UNetFixedEncoder {
         } else if !loadedFromWeightsCache {
           store.read(
             "dit", model: unetFixed,
-            codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       let contexts = unetFixed(inputs: videoContext, audioContext, timeEmbeds)
@@ -2633,7 +2633,7 @@ extension UNetFixedEncoder {
                 return ($0, $0)
               })
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, format, shape in
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
@@ -2654,7 +2654,7 @@ extension UNetFixedEncoder {
             }
           } else {
             LoRALoader.openStore(graph, lora: lora) { loader in
-              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData]) {
+              store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]) {
                 name, dataType, _, shape in
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
@@ -2663,7 +2663,7 @@ extension UNetFixedEncoder {
             }
           }
         } else if !loadedFromWeightsCache {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .ezm7, externalData])
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       let conditions = unetFixed(
@@ -2702,7 +2702,7 @@ extension UNetFixedEncoder {
         if lora.count > 0 {
           LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
-              "stage_b_fixed", model: stageBFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
+              "stage_b_fixed", model: stageBFixed, codec: [.q6p, .q8p, .i8x, .ezm7, .jit, externalData]
             ) {
               name, dataType, _, shape in
               return loader.mergeLoRA(
@@ -2712,7 +2712,7 @@ extension UNetFixedEncoder {
           }
         } else {
           store.read(
-            "stage_b_fixed", model: stageBFixed, codec: [.q6p, .q8p, .ezm7, .jit, externalData]
+            "stage_b_fixed", model: stageBFixed, codec: [.q6p, .q8p, .i8x, .ezm7, .jit, externalData]
           ) {
             name, _, _, _ in
             guard name.hasPrefix("__stage_b_fixed__") else { return .continue(name) }
