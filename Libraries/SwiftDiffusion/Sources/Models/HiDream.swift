@@ -146,7 +146,7 @@ private func MoEFeedForward(
 
 private func JointTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, contextBlockPreOnly: Bool,
-  upcast: Bool, usesFlashAttention: Bool
+  upcast: Bool, usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -183,16 +183,21 @@ private func JointTransformerBlock(
   var values = Functional.concat(axis: 1, xV, contextV)
   var queries = Functional.concat(axis: 1, xQ, contextQ)
   // Reshape queries because llama3 encoder doesn't participate query, just serve as kv.
-  queries =
-    (1.0 / Float(k).squareRoot().squareRoot())
-    * Functional.cmul(left: queries, right: rot).reshaped(
-      [b, t.0 + hw, h, k], strides: [(t.1 + hw) * h * k, h * k, k, 1]
-    ).contiguous()
-  keys = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: keys, right: rot)
+  queries = Functional.cmul(left: queries, right: rot).reshaped(
+    [b, t.0 + hw, h, k], strides: [(t.1 + hw) * h * k, h * k, k, 1]
+  ).contiguous()
+  keys = Functional.cmul(left: keys, right: rot)
+  if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+    queries = (1.0 / Float(k).squareRoot().squareRoot()) * queries
+    keys = (1.0 / Float(k).squareRoot().squareRoot()) * keys
+  }
   // Now run attention.
   let out: Model.IO
-  if usesFlashAttention {
-    out = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+  if usesFlashAttention != .none {
+    out = ScaledDotProductAttention(
+      scale: usesFlashAttention == .scale1 ? 1 : (1.0 / Float(k).squareRoot()),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+    )(
       queries, keys, values
     ).reshaped([b, t.0 + hw, h * k])
   } else {
@@ -338,7 +343,7 @@ private func JointTransformerBlock(
 
 private func SingleTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, contextBlockPreOnly: Bool,
-  upcast: Bool, usesFlashAttention: Bool
+  upcast: Bool, usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
@@ -357,15 +362,20 @@ private func SingleTransformerBlock(
   var xV = xToValues(xOut).reshaped([b, hw + t.1, h, k])
   // Reshape queries because llama3 encoder doesn't participate query, just serve as kv.
   let xLength = contextBlockPreOnly ? hw : hw + t.0
-  xQ =
-    (1.0 / Float(k).squareRoot().squareRoot())
-    * Functional.cmul(left: xQ, right: rot).reshaped(
-      [b, xLength, h, k], strides: [(t.1 + hw) * h * k, h * k, k, 1]
-    ).contiguous()
-  xK = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xK, right: rot)
+  xQ = Functional.cmul(left: xQ, right: rot).reshaped(
+    [b, xLength, h, k], strides: [(t.1 + hw) * h * k, h * k, k, 1]
+  ).contiguous()
+  xK = Functional.cmul(left: xK, right: rot)
+  if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+    xQ = (1.0 / Float(k).squareRoot().squareRoot()) * xQ
+    xK = (1.0 / Float(k).squareRoot().squareRoot()) * xK
+  }
   // Now run attention.
-  if usesFlashAttention {
-    xOut = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+  if usesFlashAttention != .none {
+    xOut = ScaledDotProductAttention(
+      scale: usesFlashAttention == .scale1 ? 1 : (1.0 / Float(k).squareRoot()),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+    )(
       xQ, xK, xV
     ).reshaped([b, xLength, h * k])
   } else {
@@ -456,7 +466,7 @@ private func SingleTransformerBlock(
 
 public func HiDream(
   batchSize: Int, height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int),
-  usesFlashAttention: Bool, outputResidual: Bool, inputResidual: Bool
+  usesFlashAttention: FlashAttentionLevel, outputResidual: Bool, inputResidual: Bool
 )
   -> (
     Model, ModelWeightMapper
@@ -823,7 +833,8 @@ private func LoRAMoEFeedForward(
 
 private func LoRAJointTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, contextBlockPreOnly: Bool,
-  upcast: Bool, usesFlashAttention: Bool, layerIndex: Int, configuration: LoRANetworkConfiguration
+  upcast: Bool, usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
+  configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
   let x = Input()
@@ -866,16 +877,21 @@ private func LoRAJointTransformerBlock(
   var values = Functional.concat(axis: 1, xV, contextV)
   var queries = Functional.concat(axis: 1, xQ, contextQ)
   // Reshape queries because llama3 encoder doesn't participate query, just serve as kv.
-  queries =
-    (1.0 / Float(k).squareRoot().squareRoot())
-    * Functional.cmul(left: queries, right: rot).reshaped(
-      [b, t.0 + hw, h, k], strides: [(t.1 + hw) * h * k, h * k, k, 1]
-    ).contiguous()
-  keys = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: keys, right: rot)
+  queries = Functional.cmul(left: queries, right: rot).reshaped(
+    [b, t.0 + hw, h, k], strides: [(t.1 + hw) * h * k, h * k, k, 1]
+  ).contiguous()
+  keys = Functional.cmul(left: keys, right: rot)
+  if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+    queries = (1.0 / Float(k).squareRoot().squareRoot()) * queries
+    keys = (1.0 / Float(k).squareRoot().squareRoot()) * keys
+  }
   // Now run attention.
   let out: Model.IO
-  if usesFlashAttention {
-    out = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+  if usesFlashAttention != .none {
+    out = ScaledDotProductAttention(
+      scale: usesFlashAttention == .scale1 ? 1 : (1.0 / Float(k).squareRoot()),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+    )(
       queries, keys, values
     ).reshaped([b, t.0 + hw, h * k])
   } else {
@@ -1025,7 +1041,8 @@ private func LoRAJointTransformerBlock(
 
 private func LoRASingleTransformerBlock(
   prefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, contextBlockPreOnly: Bool,
-  upcast: Bool, usesFlashAttention: Bool, layerIndex: Int, configuration: LoRANetworkConfiguration
+  upcast: Bool, usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
+  configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
@@ -1047,15 +1064,20 @@ private func LoRASingleTransformerBlock(
   var xV = xToValues(xOut).reshaped([b, hw + t.1, h, k])
   // Reshape queries because llama3 encoder doesn't participate query, just serve as kv.
   let xLength = contextBlockPreOnly ? hw : hw + t.0
-  xQ =
-    (1.0 / Float(k).squareRoot().squareRoot())
-    * Functional.cmul(left: xQ, right: rot).reshaped(
-      [b, xLength, h, k], strides: [(t.1 + hw) * h * k, h * k, k, 1]
-    ).contiguous()
-  xK = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xK, right: rot)
+  xQ = Functional.cmul(left: xQ, right: rot).reshaped(
+    [b, xLength, h, k], strides: [(t.1 + hw) * h * k, h * k, k, 1]
+  ).contiguous()
+  xK = Functional.cmul(left: xK, right: rot)
+  if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+    xQ = (1.0 / Float(k).squareRoot().squareRoot()) * xQ
+    xK = (1.0 / Float(k).squareRoot().squareRoot()) * xK
+  }
   // Now run attention.
-  if usesFlashAttention {
-    xOut = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+  if usesFlashAttention != .none {
+    xOut = ScaledDotProductAttention(
+      scale: usesFlashAttention == .scale1 ? 1 : (1.0 / Float(k).squareRoot()),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+    )(
       xQ, xK, xV
     ).reshaped([b, xLength, h * k])
   } else {
@@ -1147,7 +1169,7 @@ private func LoRASingleTransformerBlock(
 
 public func LoRAHiDream(
   batchSize: Int, height: Int, width: Int, textLength: (Int, Int), layers: (Int, Int),
-  usesFlashAttention: Bool, outputResidual: Bool, inputResidual: Bool,
+  usesFlashAttention: FlashAttentionLevel, outputResidual: Bool, inputResidual: Bool,
   LoRAConfiguration: LoRANetworkConfiguration
 )
   -> (

@@ -234,7 +234,7 @@ public protocol Sampler<FloatType, UNet> {
   var modifier: SamplerModifier { get }
   var version: ModelVersion { get }
   var upcastAttention: Bool { get }
-  var usesFlashAttention: Bool { get }
+  var usesFlashAttention: UseFlashAttention { get }
   var externalOnDemand: Bool { get }
   var injectControls: Bool { get }
   var injectT2IAdapters: Bool { get }

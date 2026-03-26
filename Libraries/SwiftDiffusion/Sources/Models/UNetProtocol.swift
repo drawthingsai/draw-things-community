@@ -4,6 +4,19 @@ import DiffusionMappings
 import NNC
 import WeightsCache
 
+public enum UseFlashAttention {
+  case none
+  case sdpa
+  case quantized
+}
+
+public enum FlashAttentionLevel {
+  case none
+  case scale1
+  case scaleMerged
+  case quantized
+}
+
 public struct InjectedControlsAndAdapters<FloatType: TensorNumeric & BinaryFloatingPoint> {
   var injectedControls: [DynamicGraph.Tensor<FloatType>]
   var injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>]
@@ -53,7 +66,8 @@ public protocol UNetProtocol {
     filePath: String, externalOnDemand: Bool, deviceProperties: DeviceProperties,
     version: ModelVersion,
     modifier: SamplerModifier,
-    qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
+    qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool,
+    usesFlashAttention: UseFlashAttention,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
@@ -513,7 +527,8 @@ extension UNetFromNNC {
   public mutating func compileModel(
     filePath: String, externalOnDemand: Bool, deviceProperties: DeviceProperties,
     version: ModelVersion, modifier: SamplerModifier,
-    qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool, usesFlashAttention: Bool,
+    qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool,
+    usesFlashAttention useFlashAttention: UseFlashAttention,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
@@ -527,6 +542,18 @@ extension UNetFromNNC {
   ) -> Bool {
     guard unet == nil else { return true }
     isCancelled.store(false, ordering: .releasing)
+    func valueOr(
+      _ usesFlashAttention: UseFlashAttention, _ value: FlashAttentionLevel
+    ) -> FlashAttentionLevel {
+      switch usesFlashAttention {
+      case .none:
+        return .none
+      case .quantized:
+        return .quantized
+      case .sdpa:
+        return value
+      }
+    }
     let injectedControls = injectedControlsAndAdapters.injectedControls
     let injectedIPAdapters = injectedControlsAndAdapters.injectedIPAdapters
     let injectedT2IAdapters = injectedControlsAndAdapters.injectedT2IAdapters
@@ -581,7 +608,7 @@ extension UNetFromNNC {
             LoRAUNet(
               batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
               startWidth: tiledWidth, startHeight: tiledHeight,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               injectControls: injectControlsAndAdapters.injectControls,
               injectT2IAdapters: injectControlsAndAdapters.injectT2IAdapters,
               injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
@@ -593,7 +620,7 @@ extension UNetFromNNC {
             UNet(
               batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
               startWidth: tiledWidth, startHeight: tiledHeight,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               injectControls: injectControlsAndAdapters.injectControls,
               injectT2IAdapters: injectControlsAndAdapters.injectT2IAdapters,
               injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
@@ -617,7 +644,7 @@ extension UNetFromNNC {
             LoRAUNetv2(
               batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
               startWidth: tiledWidth, startHeight: tiledHeight, upcastAttention: upcastAttention,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               injectControls: injectControlsAndAdapters.injectControls,
               LoRAConfiguration: configuration
             ))
@@ -627,7 +654,7 @@ extension UNetFromNNC {
             UNetv2(
               batchSize: batchSize, embeddingLength: (tokenLengthUncond, tokenLengthCond),
               startWidth: tiledWidth, startHeight: tiledHeight, upcastAttention: upcastAttention,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               injectControls: injectControlsAndAdapters.injectControls
             ).0)
       }
@@ -648,7 +675,7 @@ extension UNetFromNNC {
           inputAttentionRes: [1: [1, 1], 2: [1, 1], 4: [1, 1]], middleAttentionBlocks: 1,
           outputAttentionRes: [1: [1, 1, 1], 2: [1, 1, 1], 4: [1, 1, 1]], embeddingLength: (1, 1),
           injectIPAdapterLengths: [], upcastAttention: ([:], false, [1: [0, 1, 2]]),
-          usesFlashAttention: usesFlashAttention ? .scale1 : .none, injectControls: false,
+          usesFlashAttention: valueOr(useFlashAttention, .scale1), injectControls: false,
           isTemporalMixEnabled: true, of: FloatType.self
         )
       unet = ModelBuilderOrModel.model(model)
@@ -666,7 +693,7 @@ extension UNetFromNNC {
           batchSize: batchSize, channels: 384, outChannels: 8, channelMult: [1, 2, 3, 4],
           numResBlocks: 3, numHeadChannels: 64, t: 87, startHeight: tiledHeight,
           startWidth: tiledWidth, attentionResolutions: Set([2, 4, 8]),
-          usesFlashAttention: usesFlashAttention))
+          usesFlashAttention: valueOr(useFlashAttention, .scaleMerged)))
       timeEmbed = timestepEmbedding(prefix: "time_embed", channels: 384 * 4)
     case .sdxlBase:
       tiledWidth =
@@ -689,7 +716,7 @@ extension UNetFromNNC {
             embeddingLength: (tokenLengthUncond, tokenLengthCond),
             injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
             upcastAttention: upcastAttention ? ([:], false, [2: [0, 1, 2]]) : ([:], false, [:]),
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+            usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
             injectControls: injectControlsAndAdapters.injectControls,
             LoRAConfiguration: configuration
           )
@@ -702,7 +729,7 @@ extension UNetFromNNC {
             embeddingLength: (tokenLengthUncond, tokenLengthCond),
             injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
             upcastAttention: upcastAttention ? ([:], false, [2: [0, 1, 2]]) : ([:], false, [:]),
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+            usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
             injectControls: injectControlsAndAdapters.injectControls, isTemporalMixEnabled: false,
             of: FloatType.self
           )
@@ -728,7 +755,7 @@ extension UNetFromNNC {
             middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
             embeddingLength: (tokenLengthUncond, tokenLengthCond), injectIPAdapterLengths: [],
             upcastAttention: ([:], false, [:]),
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+            usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
             injectControls: false, LoRAConfiguration: configuration
           )
       } else {
@@ -739,7 +766,8 @@ extension UNetFromNNC {
             middleAttentionBlocks: 4, outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
             embeddingLength: (tokenLengthUncond, tokenLengthCond), injectIPAdapterLengths: [],
             upcastAttention: ([:], false, [:]),
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, injectControls: false,
+            usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
+            injectControls: false,
             isTemporalMixEnabled: false, of: FloatType.self
           )
       }
@@ -765,7 +793,7 @@ extension UNetFromNNC {
             embeddingLength: (tokenLengthUncond, tokenLengthCond),
             injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
             upcastAttention: ([:], false, [:]),
-            usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
             injectControls: false, LoRAConfiguration: configuration
           )
       } else {
@@ -777,7 +805,7 @@ extension UNetFromNNC {
             embeddingLength: (tokenLengthUncond, tokenLengthCond),
             injectIPAdapterLengths: injectControlsAndAdapters.injectIPAdapterLengths,
             upcastAttention: ([:], false, [:]),
-            usesFlashAttention: usesFlashAttention ? .scale1 : .none, injectControls: false,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1), injectControls: false,
             isTemporalMixEnabled: false, of: FloatType.self
           )
       }
@@ -792,7 +820,7 @@ extension UNetFromNNC {
         WurstchenStageC(
           batchSize: batchSize, height: startHeight, width: startWidth,
           t: (tokenLengthUncond + 8, tokenLengthCond + 8),
-          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
+          usesFlashAttention: valueOr(useFlashAttention, .scaleMerged)
         ).0)
       previewer = WurstchenStageCPreviewer()
     case .wurstchenStageB:
@@ -807,7 +835,7 @@ extension UNetFromNNC {
       unet = ModelBuilderOrModel.model(
         WurstchenStageB(
           batchSize: batchSize, cIn: 4, height: tiledHeight, width: tiledWidth,
-          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none
+          usesFlashAttention: valueOr(useFlashAttention, .scaleMerged)
         ).0)
     case .sd3:
       var posEmbedMaxSize = 192
@@ -834,7 +862,7 @@ extension UNetFromNNC {
               batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
               width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: qkNorm,
               dualAttentionLayers: dualAttentionLayers, posEmbedMaxSize: posEmbedMaxSize,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               LoRAConfiguration: configuration, of: FloatType.self
             ).1)
       } else {
@@ -844,7 +872,8 @@ extension UNetFromNNC {
               batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
               width: tiledWidth, channels: 1536, layers: 24, upcast: false, qkNorm: qkNorm,
               dualAttentionLayers: dualAttentionLayers, posEmbedMaxSize: posEmbedMaxSize,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
+              of: FloatType.self
             ).1)
       }
     case .sd3Large:
@@ -867,7 +896,7 @@ extension UNetFromNNC {
               batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
               width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
               dualAttentionLayers: [], posEmbedMaxSize: 192,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               LoRAConfiguration: configuration, of: FloatType.self
             ).1)
       } else {
@@ -877,7 +906,8 @@ extension UNetFromNNC {
               batchSize: batchSize, t: c[0].shape[1], height: tiledHeight,
               width: tiledWidth, channels: 2432, layers: 38, upcast: true, qkNorm: true,
               dualAttentionLayers: [], posEmbedMaxSize: 192,
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
+              of: FloatType.self
             ).1)
       }
     case .pixart:
@@ -897,7 +927,7 @@ extension UNetFromNNC {
             batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152,
             layers: 28,
             tokenLength: (tokenLengthUncond, tokenLengthCond),
-            usesFlashAttention: usesFlashAttention,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
             LoRAConfiguration: configuration, of: FloatType.self
           ).1)
       } else {
@@ -906,7 +936,7 @@ extension UNetFromNNC {
             batchSize: batchSize, height: tiledHeight, width: tiledWidth, channels: 1152,
             layers: 28,
             tokenLength: (tokenLengthUncond, tokenLengthCond),
-            usesFlashAttention: usesFlashAttention,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
             of: FloatType.self
           ).1)
       }
@@ -934,7 +964,7 @@ extension UNetFromNNC {
           batchSize: batchSize, tokenLength: max(256, max(tokenLengthCond, tokenLengthUncond)),
           height: tiledHeight, width: tiledWidth, maxSequence: maxSequence, channels: 3072,
           layers: (4, 32),
-          usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, of: FloatType.self
+          usesFlashAttention: valueOr(useFlashAttention, .scaleMerged), of: FloatType.self
         ).1)
     case .flux1:
       tiledWidth =
@@ -971,7 +1001,7 @@ extension UNetFromNNC {
             batchSize: isTeaCacheEnabled ? 1 : batchSize, tokenLength: tokenLength,
             referenceSequenceLength: referenceSequenceLength,
             height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+            usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
             contextPreloaded: true,
             injectControls: injectControlsAndAdapters.injectControls,
             injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: isTeaCacheEnabled,
@@ -986,7 +1016,7 @@ extension UNetFromNNC {
               batchSize: 1, tokenLength: tokenLength,
               referenceSequenceLength: referenceSequenceLength,
               height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               contextPreloaded: true,
               injectControls: injectControlsAndAdapters.injectControls,
               injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: false,
@@ -1002,7 +1032,7 @@ extension UNetFromNNC {
             batchSize: isTeaCacheEnabled ? 1 : batchSize, tokenLength: tokenLength,
             referenceSequenceLength: referenceSequenceLength,
             height: tiledHeight, width: tiledWidth, channels: 3072, layers: (19, 38),
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+            usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
             contextPreloaded: true,
             injectControls: injectControlsAndAdapters.injectControls,
             injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: isTeaCacheEnabled,
@@ -1017,7 +1047,7 @@ extension UNetFromNNC {
               batchSize: 1, tokenLength: tokenLength,
               referenceSequenceLength: referenceSequenceLength,
               height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               contextPreloaded: true,
               injectControls: injectControlsAndAdapters.injectControls,
               injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: false,
@@ -1048,7 +1078,7 @@ extension UNetFromNNC {
               time: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: $0[3].shape[1],
               channels: 3072, layers: (20, 40),
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               outputResidual: isTeaCacheEnabled, inputResidual: false,
               LoRAConfiguration: configuration
             ).1
@@ -1063,7 +1093,7 @@ extension UNetFromNNC {
               width: tiledWidth,
               textLength: 0,
               channels: 3072, layers: (0, 0),
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               outputResidual: false, inputResidual: true, LoRAConfiguration: configuration
             ).1,
             inferModel: HunyuanNorm1(
@@ -1077,7 +1107,7 @@ extension UNetFromNNC {
               time: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: $0[3].shape[1],
               channels: 3072, layers: (20, 40),
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               outputResidual: isTeaCacheEnabled, inputResidual: false
             ).1
           })
@@ -1091,7 +1121,7 @@ extension UNetFromNNC {
               width: tiledWidth,
               textLength: 0,
               channels: 3072, layers: (0, 0),
-              usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               outputResidual: false, inputResidual: true
             ).1,
             inferModel: HunyuanNorm1(
@@ -1124,7 +1154,8 @@ extension UNetFromNNC {
             channels: 1_536, layers: 30, vaceLayers: vaceLayers, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
-            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
+            outputResidual: isTeaCacheEnabled,
             inputResidual: false, outputChannels: 16, LoRAConfiguration: configuration
           ).1)
         if isTeaCacheEnabled {
@@ -1137,7 +1168,8 @@ extension UNetFromNNC {
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
               injectImage: injectImage,
-              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              outputResidual: false, inputResidual: true,
               outputChannels: 16, LoRAConfiguration: configuration
             ).1)
         }
@@ -1147,7 +1179,8 @@ extension UNetFromNNC {
             channels: 1_536, layers: 30, vaceLayers: vaceLayers, intermediateSize: 8_960,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
-            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
+            outputResidual: isTeaCacheEnabled,
             inputResidual: false, outputChannels: 16
           ).1)
         if isTeaCacheEnabled {
@@ -1159,7 +1192,8 @@ extension UNetFromNNC {
               channels: 1_536, layers: 0, vaceLayers: [], intermediateSize: 8_960,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
-              injectImage: injectImage, usesFlashAttention: usesFlashAttention,
+              injectImage: injectImage,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
               outputResidual: false, inputResidual: true, outputChannels: 16
             ).1)
         }
@@ -1184,7 +1218,7 @@ extension UNetFromNNC {
             channels: 3_072, layers: 30, vaceLayers: [], intermediateSize: 14_336,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: false,
-            usesFlashAttention: usesFlashAttention, outputResidual: false,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1), outputResidual: false,
             inputResidual: false, outputChannels: 48, LoRAConfiguration: configuration
           ).1)
       } else {
@@ -1193,7 +1227,7 @@ extension UNetFromNNC {
             channels: 3_072, layers: 30, vaceLayers: [], intermediateSize: 14_336,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: false,
-            usesFlashAttention: usesFlashAttention, outputResidual: false,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1), outputResidual: false,
             inputResidual: false, outputChannels: 48
           ).1)
       }
@@ -1222,7 +1256,8 @@ extension UNetFromNNC {
             channels: 5_120, layers: 40, vaceLayers: vaceLayers, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
-            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
+            outputResidual: isTeaCacheEnabled,
             inputResidual: false, outputChannels: 16, LoRAConfiguration: configuration
           ).1)
         if isTeaCacheEnabled {
@@ -1235,7 +1270,8 @@ extension UNetFromNNC {
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
               injectImage: injectImage,
-              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              outputResidual: false, inputResidual: true,
               outputChannels: 16, LoRAConfiguration: configuration
             ).1)
         }
@@ -1245,7 +1281,8 @@ extension UNetFromNNC {
             channels: 5_120, layers: 40, vaceLayers: vaceLayers, intermediateSize: 13_824,
             time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight, width: tiledWidth,
             textLength: textLength, causalInference: causalInference, injectImage: injectImage,
-            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
+            outputResidual: isTeaCacheEnabled,
             inputResidual: false, outputChannels: 16
           ).1)
         if isTeaCacheEnabled {
@@ -1257,7 +1294,8 @@ extension UNetFromNNC {
               channels: 5_120, layers: 0, vaceLayers: [], intermediateSize: 13_824,
               time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
               width: tiledWidth, textLength: textLength, causalInference: causalInference,
-              injectImage: injectImage, usesFlashAttention: usesFlashAttention,
+              injectImage: injectImage,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
               outputResidual: false, inputResidual: true, outputChannels: 16
             ).1)
         }
@@ -1291,7 +1329,7 @@ extension UNetFromNNC {
               batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength, referenceSequenceLength: referenceSequenceLength,
               channels: 3_072, layers: 60,
-              usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
+              usesFlashAttention: valueOr(useFlashAttention, isBF16 ? .scaleMerged : .scale1),
               isBF16: isBF16, isQwenImageLayered: isQwenImageLayered,
               zeroTimestepForReference: zeroTimestepForReference,
               activationQkScaling: activationQkScaling,
@@ -1315,7 +1353,7 @@ extension UNetFromNNC {
               batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength, referenceSequenceLength: referenceSequenceLength,
               channels: 3_072, layers: 60,
-              usesFlashAttention: usesFlashAttention ? (isBF16 ? .scaleMerged : .scale1) : .none,
+              usesFlashAttention: valueOr(useFlashAttention, isBF16 ? .scaleMerged : .scale1),
               isBF16: isBF16, isQwenImageLayered: isQwenImageLayered,
               zeroTimestepForReference: zeroTimestepForReference,
               activationQkScaling: activationQkScaling,
@@ -1349,7 +1387,7 @@ extension UNetFromNNC {
               activationProjScaling: activationProjScaling,
               activationFfnProjUpScaling: activationFfnProjUpScaling,
               activationFfnScaling: activationFfnScaling,
-              usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
               LoRAConfiguration: configuration
             ).0
           })
@@ -1364,7 +1402,7 @@ extension UNetFromNNC {
               activationProjScaling: activationProjScaling,
               activationFfnProjUpScaling: activationFfnProjUpScaling,
               activationFfnScaling: activationFfnScaling,
-              usesFlashAttention: usesFlashAttention ? .scale1 : .none
+              usesFlashAttention: valueOr(useFlashAttention, .scale1)
             ).0
           })
       }
@@ -1412,7 +1450,7 @@ extension UNetFromNNC {
               batchSize: $0[0].shape[0], tokenLength: tokenLength,
               referenceSequenceLength: referenceSequenceLength,
               height: tiledHeight, width: tiledWidth, channels: channels, layers: layers,
-              usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
               kvCache: modifier == .kontextKv && referenceImageCount > 0,
               LoRAConfiguration: configuration
             ).1
@@ -1436,7 +1474,7 @@ extension UNetFromNNC {
               batchSize: $0[0].shape[0], tokenLength: tokenLength,
               referenceSequenceLength: referenceSequenceLength,
               height: tiledHeight, width: tiledWidth, channels: channels, layers: layers,
-              usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
               kvCache: modifier == .kontextKv && referenceImageCount > 0
             ).1
           })
@@ -1462,7 +1500,8 @@ extension UNetFromNNC {
             batchSize: 1, height: tiledHeight,
             width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
             textLength: (t5Length, llama3Length), layers: (16, 32),
-            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
+            outputResidual: isTeaCacheEnabled,
             inputResidual: false, LoRAConfiguration: configuration
           ).0)
         if isTeaCacheEnabled {
@@ -1474,7 +1513,8 @@ extension UNetFromNNC {
               batchSize: 1, height: tiledHeight,
               width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
               textLength: (t5Length, llama3Length), layers: (0, 0),
-              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              outputResidual: false, inputResidual: true,
               LoRAConfiguration: configuration
             ).0)
         }
@@ -1484,7 +1524,8 @@ extension UNetFromNNC {
             batchSize: 1, height: tiledHeight,
             width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
             textLength: (t5Length, llama3Length), layers: (16, 32),
-            usesFlashAttention: usesFlashAttention, outputResidual: isTeaCacheEnabled,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
+            outputResidual: isTeaCacheEnabled,
             inputResidual: false
           ).0)
         if isTeaCacheEnabled {
@@ -1496,7 +1537,8 @@ extension UNetFromNNC {
               batchSize: 1, height: tiledHeight,
               width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
               textLength: (t5Length, llama3Length), layers: (0, 0),
-              usesFlashAttention: usesFlashAttention, outputResidual: false, inputResidual: true
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              outputResidual: false, inputResidual: true
             ).0)
         }
       }
@@ -1527,7 +1569,8 @@ extension UNetFromNNC {
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
               tokenModulation: tokenModulation, KV: true,
-              usesFlashAttention: usesFlashAttention, useGatedAttention: false,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              useGatedAttention: false,
               textCrossAttentionAdaLN: false,
               LoRAConfiguration: configuration
             ).1
@@ -1542,7 +1585,8 @@ extension UNetFromNNC {
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
               tokenModulation: tokenModulation, KV: true,
-              usesFlashAttention: usesFlashAttention, useGatedAttention: false,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              useGatedAttention: false,
               textCrossAttentionAdaLN: false
             ).1
           })
@@ -1574,7 +1618,8 @@ extension UNetFromNNC {
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
               tokenModulation: tokenModulation, KV: false,
-              usesFlashAttention: usesFlashAttention, useGatedAttention: true,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              useGatedAttention: true,
               textCrossAttentionAdaLN: true,
               LoRAConfiguration: configuration
             ).1
@@ -1589,7 +1634,8 @@ extension UNetFromNNC {
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
               tokenModulation: tokenModulation, KV: false,
-              usesFlashAttention: usesFlashAttention, useGatedAttention: true,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              useGatedAttention: true,
               textCrossAttentionAdaLN: true
             ).1
           })

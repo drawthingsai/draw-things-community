@@ -300,12 +300,15 @@ private func JointTransformerBlock(
     }
   case .scale1:
     queries = (1.0 / Float(k).squareRoot()) * queries
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
-  case .scaleMerged:
-    out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
-      queries, keys, values
-    ).reshaped([b, t + hw, h * k])
+  case .scaleMerged, .quantized:
+    out = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])(
+        queries, keys, values
+      ).reshaped([b, t + hw, h * k])
   }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
@@ -473,11 +476,13 @@ private func SingleTransformerBlock(
     }
   case .scale1:
     queries = (1.0 / Float(k).squareRoot()) * queries
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
-  case .scaleMerged:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+      scale: 1, flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+  case .scaleMerged, .quantized:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
   }
   var xIn: Model.IO = x
@@ -1084,12 +1089,15 @@ private func LoRAJointTransformerBlock(
     }
   case .scale1:
     queries = (1.0 / Float(k).squareRoot()) * queries
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
-  case .scaleMerged:
-    out = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
-      queries, keys, values
-    ).reshaped([b, t + hw, h * k])
+  case .scaleMerged, .quantized:
+    out = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])(
+        queries, keys, values
+      ).reshaped([b, t + hw, h * k])
   }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
@@ -1264,11 +1272,13 @@ private func LoRASingleTransformerBlock(
     }
   case .scale1:
     queries = (1.0 / Float(k).squareRoot()) * queries
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
-  case .scaleMerged:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+      scale: 1, flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
+  case .scaleMerged, .quantized:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
   }
   var xIn: Model.IO = x

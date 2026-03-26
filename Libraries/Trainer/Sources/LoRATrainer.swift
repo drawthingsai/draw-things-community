@@ -2416,7 +2416,7 @@ public struct LoRATrainer {
     if !DeviceCapability.isMemoryMapBufferSupported {
       DynamicGraph.flags.insert(.disableMmapMTLBuffer)
     }
-    let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+    let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring) > 0
     if !isMFAEnabled {
       DynamicGraph.flags.insert(.disableMFA)
     } else {
@@ -3608,7 +3608,7 @@ public struct LoRATrainer {
                 filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
                 activationQkScaling: [:], activationProjScaling: [:],
                 activationFfnProjUpScaling: [:], activationFfnScaling: [:],
-                usesFlashAttention: true,
+                usesFlashAttention: .sdpa,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(
@@ -3656,7 +3656,7 @@ public struct LoRATrainer {
                 filePath: "", version: .sdxlRefiner, modifier: .none, dualAttentionLayers: [],
                 activationQkScaling: [:], activationProjScaling: [:],
                 activationFfnProjUpScaling: [:], activationFfnScaling: [:],
-                usesFlashAttention: true,
+                usesFlashAttention: .sdpa,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(
@@ -3697,7 +3697,7 @@ public struct LoRATrainer {
                   filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
                   activationQkScaling: [:],
                   activationProjScaling: [:], activationFfnProjUpScaling: [:],
-                  activationFfnScaling: [:], usesFlashAttention: true,
+                  activationFfnScaling: [:], usesFlashAttention: .sdpa,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
                   deviceProperties: DeviceProperties(
@@ -3724,7 +3724,7 @@ public struct LoRATrainer {
                   filePath: "", version: version, modifier: .none, dualAttentionLayers: [],
                   activationQkScaling: [:],
                   activationProjScaling: [:], activationFfnProjUpScaling: [:],
-                  activationFfnScaling: [:], usesFlashAttention: true,
+                  activationFfnScaling: [:], usesFlashAttention: .sdpa,
                   zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                   externalOnDemand: false,
                   deviceProperties: DeviceProperties(
@@ -3755,7 +3755,7 @@ public struct LoRATrainer {
                 filePath: "", version: .sdxlRefiner, modifier: .none, dualAttentionLayers: [],
                 activationQkScaling: [:],
                 activationProjScaling: [:], activationFfnProjUpScaling: [:],
-                activationFfnScaling: [:], usesFlashAttention: true,
+                activationFfnScaling: [:], usesFlashAttention: .sdpa,
                 zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(

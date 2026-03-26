@@ -225,9 +225,10 @@ private func JointTransformerBlock(
     queries = (1.0 / Float(k).squareRoot()) * queries
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
-  case .scaleMerged:
+  case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+      scale: 1.0 / Float(k).squareRoot(),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
   }
   let contextUnifyheads: Model?
@@ -427,9 +428,10 @@ private func SingleTransformerBlock(
     queries = (1.0 / Float(k).squareRoot()) * queries
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
-  case .scaleMerged:
+  case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+      scale: 1.0 / Float(k).squareRoot(),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
   }
   var xIn: Model.IO = x
@@ -595,7 +597,7 @@ public func Flux1(
         let block = PuLIDCrossAttentionKeysAndValues(
           prefix: "", name: "\(j).double_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
           b: batchSize, t: (injectIPAdapterLength, h * w + referenceSequenceLength),
-          usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
+          usesFlashAttention: usesFlashAttention == .scaleMerged ? .scale1 : usesFlashAttention)
         out = out + block(image, ipKeys, ipValues).to(of: out)
         injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
       }
@@ -642,7 +644,7 @@ public func Flux1(
           let block = PuLIDCrossAttentionKeysAndValues(
             prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
             b: batchSize, t: (injectIPAdapterLength, h * w),
-            usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
+            usesFlashAttention: usesFlashAttention == .scaleMerged ? .scale1 : usesFlashAttention)
           out = out + block(image, ipKeys, ipValues).to(of: out)
           injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
         }
@@ -660,7 +662,7 @@ public func Flux1(
           let block = PuLIDCrossAttentionKeysAndValues(
             prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
             b: batchSize, t: (injectIPAdapterLength, h * w + referenceSequenceLength),
-            usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
+            usesFlashAttention: usesFlashAttention == .scaleMerged ? .scale1 : usesFlashAttention)
           hiddenStates = hiddenStates + block(image, ipKeys, ipValues).to(of: hiddenStates)
           injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
         }
@@ -845,9 +847,10 @@ private func LoRAJointTransformerBlock(
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
     scaledDotProductAttention.gradientCheckpointing = false
-  case .scaleMerged:
+  case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+      scale: 1.0 / Float(k).squareRoot(),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
     scaledDotProductAttention.gradientCheckpointing = false
   }
@@ -1024,9 +1027,10 @@ private func LoRASingleTransformerBlock(
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
     scaledDotProductAttention.gradientCheckpointing = false
-  case .scaleMerged:
+  case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+      scale: 1.0 / Float(k).squareRoot(),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
     scaledDotProductAttention.gradientCheckpointing = false
   }
@@ -1205,7 +1209,7 @@ public func LoRAFlux1(
         let block = PuLIDCrossAttentionKeysAndValues(
           prefix: "", name: "\(j).double_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
           b: batchSize, t: (injectIPAdapterLength, h * w + referenceSequenceLength),
-          usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
+          usesFlashAttention: usesFlashAttention == .scaleMerged ? .scale1 : usesFlashAttention)
         out = out + block(image, ipKeys, ipValues).to(of: out)
         injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
       }
@@ -1255,7 +1259,7 @@ public func LoRAFlux1(
           let block = PuLIDCrossAttentionKeysAndValues(
             prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
             b: batchSize, t: (injectIPAdapterLength, h * w),
-            usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
+            usesFlashAttention: usesFlashAttention == .scaleMerged ? .scale1 : usesFlashAttention)
           out = out + block(image, ipKeys, ipValues).to(of: out)
           injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
         }
@@ -1273,7 +1277,7 @@ public func LoRAFlux1(
           let block = PuLIDCrossAttentionKeysAndValues(
             prefix: "", name: "\(j).single_\(i)", outputDim: channels, k: 2048 / 16, h: 16,
             b: batchSize, t: (injectIPAdapterLength, h * w + referenceSequenceLength),
-            usesFlashAttention: usesFlashAttention == .none ? .none : .scale1)
+            usesFlashAttention: usesFlashAttention == .scaleMerged ? .scale1 : usesFlashAttention)
           hiddenStates = hiddenStates + block(image, ipKeys, ipValues).to(of: hiddenStates)
           injectedIPAdapters.append(contentsOf: [ipKeys, ipValues])
         }

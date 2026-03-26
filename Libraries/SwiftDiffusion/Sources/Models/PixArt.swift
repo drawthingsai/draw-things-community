@@ -44,19 +44,30 @@ private func MLP(hiddenSize: Int, intermediateSize: Int, name: String) -> (Model
   return (fc1, fc2, Model([x], [out]))
 }
 
-private func SelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttention: Bool) -> (
+private func SelfAttention(
+  k: Int, h: Int, b: Int, t: Int, usesFlashAttention: FlashAttentionLevel
+) -> (
   Model, Model, Model, Model, Model
 ) {
   let x = Input()
   let tokeys = Dense(count: k * h, name: "k")
   let toqueries = Dense(count: k * h, name: "q")
   let tovalues = Dense(count: k * h, name: "v")
-  if usesFlashAttention {
+  if usesFlashAttention != .none {
     let keys = tokeys(x).reshaped([b, t, h, k])
-    let queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, t, h, k])
+    let queries: Model.IO
+    let scale: Float
+    if usesFlashAttention == .scale1 {
+      queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, t, h, k])
+      scale = 1
+    } else {
+      queries = toqueries(x).reshaped([b, t, h, k])
+      scale = 1.0 / Float(k).squareRoot()
+    }
     let values = tovalues(x).reshaped([b, t, h, k])
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1, flags: [.Float16], multiHeadOutputProjectionFused: true, name: "o")
+      scale: scale, flags: [.Float16],
+      multiHeadOutputProjectionFused: true, name: "o")
     let out = scaledDotProductAttention(queries, keys, values).reshaped([b, t, k * h])
     return (tokeys, toqueries, tovalues, scaledDotProductAttention, Model([x], [out]))
   } else {
@@ -98,7 +109,7 @@ private func SelfAttention(k: Int, h: Int, b: Int, t: Int, usesFlashAttention: B
 }
 
 private func CrossAttentionKeysAndValues(
-  k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), usesFlashAttention: Bool
+  k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), usesFlashAttention: FlashAttentionLevel
 ) -> (
   Model, Model, Model
 ) {
@@ -106,17 +117,27 @@ private func CrossAttentionKeysAndValues(
   let keys = Input()
   let values = Input()
   let toqueries = Dense(count: k * h, name: "c_q")
-  let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
   if t.0 == t.1 {
     let t = t.0
-    if usesFlashAttention {
+    if usesFlashAttention != .none {
+      let queries: Model.IO
+      let scale: Float
+      if usesFlashAttention == .scale1 {
+        queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+        scale = 1
+      } else {
+        queries = toqueries(x).reshaped([b, hw, h, k])
+        scale = 1.0 / Float(k).squareRoot()
+      }
       let scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1, flags: [.Float16], multiHeadOutputProjectionFused: true, name: "c_o")
+        scale: scale, flags: [.Float16],
+        multiHeadOutputProjectionFused: true, name: "c_o")
       let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
       return (toqueries, scaledDotProductAttention, Model([x, keys, values], [out]))
     } else {
-      let queries = queries.transposed(1, 2)
-      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+      let transposedQueries = queries.transposed(1, 2)
+      var dot = Matmul(transposeB: (2, 3))(transposedQueries, keys)
       dot = dot.reshaped([b * h * hw, t])
       dot = dot.softmax()
       dot = dot.reshaped([b, h, hw, t])
@@ -129,7 +150,16 @@ private func CrossAttentionKeysAndValues(
   } else {
     let b0 = b / 2
     var out: Model.IO
-    if usesFlashAttention {
+    if usesFlashAttention != .none {
+      let queries: Model.IO
+      let scale: Float
+      if usesFlashAttention == .scale1 {
+        queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+        scale = 1
+      } else {
+        queries = toqueries(x).reshaped([b, hw, h, k])
+        scale = 1.0 / Float(k).squareRoot()
+      }
       let out0: Model.IO
       if b0 == 1 || t.0 >= t.1 {
         let keys0 = keys.reshaped(
@@ -139,7 +169,9 @@ private func CrossAttentionKeysAndValues(
         let values0 = values.reshaped(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out0 = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+        out0 = ScaledDotProductAttention(
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+        )(
           queries0, keys0, values0
         ).reshaped([b0, hw, h * k])
       } else {
@@ -154,7 +186,10 @@ private func CrossAttentionKeysAndValues(
             [1, t.0, h, k], offset: [i, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+            ScaledDotProductAttention(
+              scale: scale,
+              flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+            )(
               queries0, keys0, values0
             ).reshaped([1, hw, h * k]))
         }
@@ -170,7 +205,9 @@ private func CrossAttentionKeysAndValues(
         let values1 = values.reshaped(
           [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out1 = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+        out1 = ScaledDotProductAttention(
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+        )(
           queries1, keys1, values1
         ).reshaped([b0, hw, h * k])
       } else {
@@ -187,7 +224,10 @@ private func CrossAttentionKeysAndValues(
             strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+            ScaledDotProductAttention(
+              scale: scale,
+              flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+            )(
               queries1, keys1, values1
             ).reshaped([1, hw, h * k]))
         }
@@ -195,11 +235,12 @@ private func CrossAttentionKeysAndValues(
       }
       out = Functional.concat(axis: 0, out0, out1)
     } else {
-      let queries = queries.transposed(1, 2)
+      let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+      let transposedQueries = queries.transposed(1, 2)
       let keys0 = keys.reshaped(
         [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
       ).transposed(1, 2)
-      let queries0 = queries.reshaped([b0, h, hw, k])
+      let queries0 = transposedQueries.reshaped([b0, h, hw, k])
       let values0 = values.reshaped(
         [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
       ).transposed(1, 2)
@@ -212,7 +253,7 @@ private func CrossAttentionKeysAndValues(
       let keys1 = keys.reshaped(
         [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
       ).transposed(1, 2)
-      let queries1 = queries.reshaped(
+      let queries1 = transposedQueries.reshaped(
         [b0, h, hw, k], offset: [b0, 0, 0, 0], strides: [h * hw * k, hw * k, k, 1])
       let values1 = values.reshaped(
         [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
@@ -234,7 +275,7 @@ private func CrossAttentionKeysAndValues(
 
 private func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   prefix: (String, String), k: Int, h: Int, b: Int, hw: Int, t: (Int, Int),
-  usesFlashAttention: Bool,
+  usesFlashAttention: FlashAttentionLevel,
   of: FloatType.Type = FloatType.self
 ) -> (
   ModelWeightMapper, Model
@@ -309,7 +350,7 @@ private func PixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
 
 public func PixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
   batchSize: Int, height: Int, width: Int, channels: Int, layers: Int, tokenLength: (Int, Int),
-  usesFlashAttention: Bool, of: FloatType.Type = FloatType.self
+  usesFlashAttention: FlashAttentionLevel, of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let posEmbed = Input()
@@ -386,7 +427,8 @@ private func LoRAMLP(
 }
 
 private func LoRASelfAttention(
-  k: Int, h: Int, b: Int, t: Int, configuration: LoRANetworkConfiguration, usesFlashAttention: Bool
+  k: Int, h: Int, b: Int, t: Int, configuration: LoRANetworkConfiguration,
+  usesFlashAttention: FlashAttentionLevel
 ) -> (
   Model, Model, Model, Model, Model
 ) {
@@ -394,12 +436,20 @@ private func LoRASelfAttention(
   let tokeys = LoRADense(count: k * h, configuration: configuration, name: "k")
   let toqueries = LoRADense(count: k * h, configuration: configuration, name: "q")
   let tovalues = LoRADense(count: k * h, configuration: configuration, name: "v")
-  if usesFlashAttention {
+  if usesFlashAttention != .none {
     let keys = tokeys(x).reshaped([b, t, h, k])
-    let queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, t, h, k])
+    let queries: Model.IO
+    let scale: Float
+    if usesFlashAttention == .scale1 {
+      queries = (1.0 / Float(k).squareRoot() * toqueries(x)).reshaped([b, t, h, k])
+      scale = 1
+    } else {
+      queries = toqueries(x).reshaped([b, t, h, k])
+      scale = 1.0 / Float(k).squareRoot()
+    }
     let values = tovalues(x).reshaped([b, t, h, k])
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1, flags: [.Float16])
+      scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     var out = scaledDotProductAttention(queries, keys, values).reshaped([b, t, k * h])
     let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "o")
     out = unifyheads(out)
@@ -444,7 +494,7 @@ private func LoRASelfAttention(
 
 private func LoRACrossAttentionKeysAndValues(
   k: Int, h: Int, b: Int, hw: Int, t: (Int, Int), configuration: LoRANetworkConfiguration,
-  usesFlashAttention: Bool
+  usesFlashAttention: FlashAttentionLevel
 ) -> (
   Model, Model, Model
 ) {
@@ -452,19 +502,28 @@ private func LoRACrossAttentionKeysAndValues(
   let keys = Input()
   let values = Input()
   let toqueries = LoRADense(count: k * h, configuration: configuration, name: "c_q")
-  let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
   if t.0 == t.1 {
     let t = t.0
-    if usesFlashAttention {
+    if usesFlashAttention != .none {
+      let queries: Model.IO
+      let scale: Float
+      if usesFlashAttention == .scale1 {
+        queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+        scale = 1
+      } else {
+        queries = toqueries(x).reshaped([b, hw, h, k])
+        scale = 1.0 / Float(k).squareRoot()
+      }
       let scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1, flags: [.Float16])
+        scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
       var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
       let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "c_o")
       out = unifyheads(out)
       return (toqueries, unifyheads, Model([x, keys, values], [out]))
     } else {
-      let queries = queries.transposed(1, 2)
-      var dot = Matmul(transposeB: (2, 3))(queries, keys)
+      let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+      let transposedQueries = queries.transposed(1, 2)
+      var dot = Matmul(transposeB: (2, 3))(transposedQueries, keys)
       dot = dot.reshaped([b * h * hw, t])
       dot = dot.softmax()
       dot = dot.reshaped([b, h, hw, t])
@@ -477,7 +536,16 @@ private func LoRACrossAttentionKeysAndValues(
   } else {
     let b0 = b / 2
     var out: Model.IO
-    if usesFlashAttention {
+    if usesFlashAttention != .none {
+      let queries: Model.IO
+      let scale: Float
+      if usesFlashAttention == .scale1 {
+        queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+        scale = 1
+      } else {
+        queries = toqueries(x).reshaped([b, hw, h, k])
+        scale = 1.0 / Float(k).squareRoot()
+      }
       let out0: Model.IO
       if b0 == 1 || t.0 >= t.1 {
         let keys0 = keys.reshaped(
@@ -487,7 +555,9 @@ private func LoRACrossAttentionKeysAndValues(
         let values0 = values.reshaped(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out0 = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+        out0 = ScaledDotProductAttention(
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+        )(
           queries0, keys0, values0
         ).reshaped([b0, hw, h * k])
       } else {
@@ -502,7 +572,10 @@ private func LoRACrossAttentionKeysAndValues(
             [1, t.0, h, k], offset: [i, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+            ScaledDotProductAttention(
+              scale: scale,
+              flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+            )(
               queries0, keys0, values0
             ).reshaped([1, hw, h * k]))
         }
@@ -518,7 +591,9 @@ private func LoRACrossAttentionKeysAndValues(
         let values1 = values.reshaped(
           [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
-        out1 = ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+        out1 = ScaledDotProductAttention(
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+        )(
           queries1, keys1, values1
         ).reshaped([b0, hw, h * k])
       } else {
@@ -535,7 +610,10 @@ private func LoRACrossAttentionKeysAndValues(
             strides: [max(t.0, t.1) * h * k, h * k, k, 1]
           )
           outs.append(
-            ScaledDotProductAttention(scale: 1, flags: [.Float16])(
+            ScaledDotProductAttention(
+              scale: scale,
+              flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+            )(
               queries1, keys1, values1
             ).reshaped([1, hw, h * k]))
         }
@@ -543,11 +621,12 @@ private func LoRACrossAttentionKeysAndValues(
       }
       out = Functional.concat(axis: 0, out0, out1)
     } else {
-      let queries = queries.transposed(1, 2)
+      let queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
+      let transposedQueries = queries.transposed(1, 2)
       let keys0 = keys.reshaped(
         [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
       ).transposed(1, 2)
-      let queries0 = queries.reshaped([b0, h, hw, k])
+      let queries0 = transposedQueries.reshaped([b0, h, hw, k])
       let values0 = values.reshaped(
         [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
       ).transposed(1, 2)
@@ -560,7 +639,7 @@ private func LoRACrossAttentionKeysAndValues(
       let keys1 = keys.reshaped(
         [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
       ).transposed(1, 2)
-      let queries1 = queries.reshaped(
+      let queries1 = transposedQueries.reshaped(
         [b0, h, hw, k], offset: [b0, 0, 0, 0], strides: [h * hw * k, hw * k, k, 1])
       let values1 = values.reshaped(
         [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
@@ -583,7 +662,7 @@ private func LoRACrossAttentionKeysAndValues(
 private func LoRAPixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   prefix: (String, String), k: Int, h: Int, b: Int, hw: Int, t: (Int, Int),
   configuration: LoRANetworkConfiguration,
-  usesFlashAttention: Bool, of: FloatType.Type = FloatType.self
+  usesFlashAttention: FlashAttentionLevel, of: FloatType.Type = FloatType.self
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -659,7 +738,7 @@ private func LoRAPixArtMSBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
 
 public func LoRAPixArt<FloatType: TensorNumeric & BinaryFloatingPoint>(
   batchSize: Int, height: Int, width: Int, channels: Int, layers: Int, tokenLength: (Int, Int),
-  usesFlashAttention: Bool, LoRAConfiguration: LoRANetworkConfiguration,
+  usesFlashAttention: FlashAttentionLevel, LoRAConfiguration: LoRANetworkConfiguration,
   of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()

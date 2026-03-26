@@ -68,7 +68,7 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
 private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   prefix: String, weightsPrefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int,
   causalInference: (Int, pad: Int), intermediateSize: Int, injectImage: Bool,
-  usesFlashAttention: Bool,
+  usesFlashAttention: FlashAttentionLevel,
   of: FloatType.Type = FloatType.self
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -90,19 +90,25 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_norm_q")
   xQ = normQ(xQ).reshaped([b, hw, h, k])
   let xV = xToValues(xOut).reshaped([b, hw, h, k])
-  var queries = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xQ, right: rot)
-  var keys = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xK, right: rot)
+  var queries = Functional.cmul(left: xQ, right: rot)
+  var keys = Functional.cmul(left: xK, right: rot)
+  if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+    queries = (1 / Float(k).squareRoot().squareRoot()) * queries
+    keys = (1 / Float(k).squareRoot().squareRoot()) * keys
+  }
   var values = xV
   // Now run attention.
   var out: Model.IO
-  if usesFlashAttention {
+  if usesFlashAttention != .none {
+    let scale = usesFlashAttention == .scale1 ? 1 : 1 / Float(k).squareRoot()
     if causalInference.0 > 0 && causalInference.0 + causalInference.pad < time {
       var outs = [Model.IO]()
       precondition(b == 1)
       let frames = hw / time * causalInference.0
       let padFrames = hw / time * causalInference.pad
       for i in 0..<((time + causalInference.0 - 1) / causalInference.0) {
-        let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+        let scaledDotProductAttention = ScaledDotProductAttention(
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
         let query = queries.reshaped(
           [b, min(hw - i * frames, frames), h, k], offset: [0, i * frames, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
@@ -120,7 +126,8 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
       }
       out = Concat(axis: 1)(outs).reshaped([b, hw, k * h])
     } else {
-      let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+      let scaledDotProductAttention = ScaledDotProductAttention(
+        scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
       out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
     }
   } else {
@@ -160,9 +167,10 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   cQ = contextNormQ(cQ).reshaped([b, hw, h, k])
   let cV = Input()
   var crossOut: Model.IO
-  if usesFlashAttention {
+  if usesFlashAttention != .none {
     let crossAttention = ScaledDotProductAttention(
-      scale: 1 / Float(k).squareRoot(), flags: [.Float16])
+      scale: 1 / Float(k).squareRoot(),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     crossOut = crossAttention(cQ, cK, cV).reshaped([b, hw, k * h])
   } else {
     let cK = cK.transposed(1, 2)
@@ -181,9 +189,10 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
     let cImgK = Input()
     let cImgV = Input()
     let crossOutImg: Model.IO
-    if usesFlashAttention {
+    if usesFlashAttention != .none {
       let crossAttentionImg = ScaledDotProductAttention(
-        scale: 1 / Float(k).squareRoot(), flags: [.Float16])
+        scale: 1 / Float(k).squareRoot(),
+        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
       crossOutImg = crossAttentionImg(cQ, cImgK, cImgV).reshaped([b, hw, k * h])
       crossOutImg.add(dependencies: [crossOut])
     } else {
@@ -301,7 +310,8 @@ private func MLPProj(inChannels: Int, outChannels: Int, name: String) -> (
 public func Wan(
   channels: Int, layers: Int, vaceLayers: [Int], intermediateSize: Int, time: Int, height: Int,
   width: Int, textLength: Int, causalInference: (Int, pad: Int), injectImage: Bool,
-  usesFlashAttention: Bool, outputResidual: Bool, inputResidual: Bool, outputChannels: Int
+  usesFlashAttention: FlashAttentionLevel, outputResidual: Bool, inputResidual: Bool,
+  outputChannels: Int
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let imgIn = Convolution(
@@ -702,7 +712,8 @@ private func LoRAFeedForward(
 private func LoRAWanAttentionBlock(
   prefix: String, weightsPrefix: String, k: Int, h: Int, b: Int, t: (Int, Int), hw: Int, time: Int,
   causalInference: (Int, pad: Int),
-  intermediateSize: Int, injectImage: Bool, usesFlashAttention: Bool, layerIndex: Int,
+  intermediateSize: Int, injectImage: Bool, usesFlashAttention: FlashAttentionLevel,
+  layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -728,19 +739,25 @@ private func LoRAWanAttentionBlock(
   let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(weightsPrefix)x_norm_q")
   xQ = normQ(xQ).reshaped([b, hw, h, k])
   let xV = xToValues(xOut).reshaped([b, hw, h, k])
-  var queries = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xQ, right: rot)
-  var keys = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: xK, right: rot)
+  var queries = Functional.cmul(left: xQ, right: rot)
+  var keys = Functional.cmul(left: xK, right: rot)
+  if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+    queries = (1 / Float(k).squareRoot().squareRoot()) * queries
+    keys = (1 / Float(k).squareRoot().squareRoot()) * keys
+  }
   var values = xV
   // Now run attention.
   var out: Model.IO
-  if usesFlashAttention {
+  if usesFlashAttention != .none {
+    let scale = usesFlashAttention == .scale1 ? 1 : 1 / Float(k).squareRoot()
     if causalInference.0 > 0 && causalInference.0 + causalInference.pad < time {
       var outs = [Model.IO]()
       precondition(b == 1)
       let frames = hw / time * causalInference.0
       let padFrames = hw / time * causalInference.pad
       for i in 0..<((time + causalInference.0 - 1) / causalInference.0) {
-        let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+        let scaledDotProductAttention = ScaledDotProductAttention(
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
         let query = queries.reshaped(
           [b, min(hw - i * frames, frames), h, k], offset: [0, i * frames, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
@@ -758,7 +775,8 @@ private func LoRAWanAttentionBlock(
       }
       out = Concat(axis: 1)(outs).reshaped([b, hw, k * h])
     } else {
-      let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+      let scaledDotProductAttention = ScaledDotProductAttention(
+        scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
       out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
     }
   } else {
@@ -800,9 +818,10 @@ private func LoRAWanAttentionBlock(
   cQ = contextNormQ(cQ).reshaped([b, hw, h, k])
   let cV = Input()
   var crossOut: Model.IO
-  if usesFlashAttention {
+  if usesFlashAttention != .none {
     let crossAttention = ScaledDotProductAttention(
-      scale: 1 / Float(k).squareRoot(), flags: [.Float16])
+      scale: 1 / Float(k).squareRoot(),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     crossOut = crossAttention(cQ, cK, cV).reshaped([b, hw, k * h])
   } else {
     let cK = cK.transposed(1, 2)
@@ -821,9 +840,10 @@ private func LoRAWanAttentionBlock(
     let cImgK = Input()
     let cImgV = Input()
     let crossOutImg: Model.IO
-    if usesFlashAttention {
+    if usesFlashAttention != .none {
       let crossAttentionImg = ScaledDotProductAttention(
-        scale: 1 / Float(k).squareRoot(), flags: [.Float16])
+        scale: 1 / Float(k).squareRoot(),
+        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
       crossOutImg = crossAttentionImg(cQ, cImgK, cImgV).reshaped([b, hw, k * h])
       crossOutImg.add(dependencies: [crossOut])
     } else {
@@ -947,7 +967,8 @@ private func LoRAMLPProj(
 func LoRAWan(
   channels: Int, layers: Int, vaceLayers: [Int], intermediateSize: Int, time: Int, height: Int,
   width: Int, textLength: Int, causalInference: (Int, pad: Int), injectImage: Bool,
-  usesFlashAttention: Bool, outputResidual: Bool, inputResidual: Bool, outputChannels: Int,
+  usesFlashAttention: FlashAttentionLevel, outputResidual: Bool, inputResidual: Bool,
+  outputChannels: Int,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()

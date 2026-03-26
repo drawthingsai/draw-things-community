@@ -44,7 +44,7 @@ private func SelfAttention(
   let tokeys = Dense(count: k * h, name: "to_k")
   let toqueries = Dense(count: k * h, name: "to_q")
   let tovalues = Dense(count: k * h, name: "to_v")
-  if usesFlashAttention == .scale1 || usesFlashAttention == .scaleMerged {
+  if usesFlashAttention != .none {
     var queries: Model.IO
     if usesFlashAttention == .scale1 {
       queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k]).identity()
@@ -56,10 +56,12 @@ private func SelfAttention(
     let scaledDotProductAttention: ScaledDotProductAttention
     if usesFlashAttention == .scale1 {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1, flags: [.Float16], multiHeadOutputProjectionFused: true, name: "to_out")
+        scale: 1, flags: [.Float16],
+        multiHeadOutputProjectionFused: true, name: "to_out")
     } else {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(), flags: [.Float16],
+        scale: 1.0 / Float(k).squareRoot(),
+        flags: [.Float16],
         multiHeadOutputProjectionFused: true, name: "to_out")
     }
     let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])

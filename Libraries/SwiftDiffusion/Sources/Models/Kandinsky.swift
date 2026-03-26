@@ -1,6 +1,8 @@
 import NNC
 
-private func SelfAttention(prefix: String, k: Int, h: Int, b: Int, t: Int, usesFlashAttention: Bool)
+private func SelfAttention(
+  prefix: String, k: Int, h: Int, b: Int, t: Int, usesFlashAttention: FlashAttentionLevel
+)
   -> Model
 {
   let x = Input()
@@ -8,12 +10,13 @@ private func SelfAttention(prefix: String, k: Int, h: Int, b: Int, t: Int, usesF
   let tokeys = Dense(count: k * h)
   let toqueries = Dense(count: k * h)
   let tovalues = Dense(count: k * h)
-  if usesFlashAttention {
+  if usesFlashAttention != .none {
     let queries = toqueries(x).reshaped([b, t, h, k]).identity().identity()
     let keys = tokeys(x).reshaped([b, t, h, k]).identity()
     let values = tovalues(x).reshaped([b, t, h, k])
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), isCausal: true, hasAttentionMask: true, flags: [.Float16],
+      scale: 1.0 / Float(k).squareRoot(), isCausal: true, hasAttentionMask: true,
+      flags: [.Float16],
       multiHeadOutputProjectionFused: true)
     let out = scaledDotProductAttention(queries, keys, values, causalAttentionMask).reshaped([
       b * t, h * k,
@@ -37,7 +40,7 @@ private func SelfAttention(prefix: String, k: Int, h: Int, b: Int, t: Int, usesF
 }
 
 private func ResidualAttentionBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, usesFlashAttention: Bool
+  prefix: String, k: Int, h: Int, b: Int, t: Int, usesFlashAttention: FlashAttentionLevel
 ) -> Model {
   let x = Input()
   let causalAttentionMask = Input()
@@ -62,7 +65,8 @@ func timestepEmbedding(prefix: String, channels: Int) -> Model {
 }
 
 public func DiffusionMappingModel(
-  numberOfLayers: Int, k: Int, h: Int, b: Int, t: Int, outChannels: Int, usesFlashAttention: Bool
+  numberOfLayers: Int, k: Int, h: Int, b: Int, t: Int, outChannels: Int,
+  usesFlashAttention: FlashAttentionLevel
 )
   -> Model
 {
@@ -129,7 +133,8 @@ private func ResBlock(
 }
 
 private func AttentionBlock(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, height: Int, width: Int, usesFlashAttention: Bool
+  prefix: String, k: Int, h: Int, b: Int, t: Int, height: Int, width: Int,
+  usesFlashAttention: FlashAttentionLevel
 )
   -> Model
 {
@@ -144,7 +149,7 @@ private func AttentionBlock(
   let toqueries = Dense(count: k * h)
   let tovalues = Dense(count: k * h)
   let encoderIn = encoderOut
-  if usesFlashAttention {
+  if usesFlashAttention != .none {
     let encoderkeys = toencoderkeys(encoderIn).reshaped([b, t, h, k])
     let encodervalues = toencodervalues(encoderIn).reshaped([b, t, h, k])
     var keys = tokeys(out).reshaped([b, hw, h, k])
@@ -153,7 +158,9 @@ private func AttentionBlock(
     keys = Functional.concat(axis: 1, encoderkeys, keys).identity()
     values = Functional.concat(axis: 1, encodervalues, values)
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16], multiHeadOutputProjectionFused: true)
+      scale: 1.0 / Float(k).squareRoot(),
+      flags: [.Float16],
+      multiHeadOutputProjectionFused: true)
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, height, width, k * h]) + x
   } else {
     let encoderkeys = toencoderkeys(encoderIn).reshaped([b, t, h, k]).transposed(1, 2)
@@ -190,7 +197,7 @@ private func AttentionBlock(
 private func InputBlocks(
   prefix: String, batchSize: Int, channels: Int, channelMult: [Int], numResBlocks: Int,
   numHeadChannels: Int, t: Int, startHeight: Int, startWidth: Int, attentionResolutions: Set<Int>,
-  usesFlashAttention: Bool, x: Model.IO, emb: Model.IO, xfOut: Model.IO
+  usesFlashAttention: FlashAttentionLevel, x: Model.IO, emb: Model.IO, xfOut: Model.IO
 ) -> (Model.IO, [Model.IO]) {
   let convIn = Convolution(
     groups: 1, filters: channels, filterSize: [3, 3],
@@ -238,7 +245,8 @@ private func InputBlocks(
 private func OutputBlocks(
   prefix: String, batchSize: Int, channels: Int, channelMult: [Int], numResBlocks: Int,
   numHeadChannels: Int, t: Int, startHeight: Int, startWidth: Int, attentionResolutions: Set<Int>,
-  usesFlashAttention: Bool, x: Model.IO, emb: Model.IO, xfOut: Model.IO, hs: [Model.IO]
+  usesFlashAttention: FlashAttentionLevel, x: Model.IO, emb: Model.IO, xfOut: Model.IO,
+  hs: [Model.IO]
 ) -> Model.IO {
   var out: Model.IO = x
   var i = 0
@@ -298,7 +306,7 @@ public func ImageAndTextEmbedding(batchSize: Int) -> Model {
 public func UNetKandinsky(
   batchSize: Int, channels: Int, outChannels: Int, channelMult: [Int], numResBlocks: Int,
   numHeadChannels: Int, t: Int, startHeight: Int, startWidth: Int, attentionResolutions: Set<Int>,
-  usesFlashAttention: Bool
+  usesFlashAttention: FlashAttentionLevel
 ) -> Model {
   let x = Input()
   let emb = Input()

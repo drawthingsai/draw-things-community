@@ -155,7 +155,7 @@ extension DiffusionMapping {
       positionalEmbeddingGPU[81..<(81 * 2), 0..<2048] = positionalEmbedding
       let diffusionMapping = DiffusionMappingModel(
         numberOfLayers: 20, k: 64, h: 32, b: 2, t: 81, outChannels: 768,
-        usesFlashAttention: usesFlashAttention)
+        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
       let dmCasualAttensionMask = graph.variable(Tensor<FloatType>(.CPU, .NHWC(2, 1, 81, 81)))
       for i in 0..<81 {
         for j in 0..<81 {

@@ -107,7 +107,7 @@ extension LocalImageGenerator {
     distilledGuidanceLayers: Int, activationQkScaling: [Int: Int],
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int],
-    usesFlashAttention: Bool, objective: Denoiser.Objective,
+    usesFlashAttention: UseFlashAttention, objective: Denoiser.Objective,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool, injectT2IAdapters: Bool,
     injectAttentionKV: Bool,
     injectIPAdapterLengths: [Int], lora: [LoRAConfiguration], isGuidanceEmbedEnabled: Bool,
@@ -3643,7 +3643,16 @@ extension LocalImageGenerator {
     if !DeviceCapability.isMemoryMapBufferSupported {
       DynamicGraph.flags.insert(.disableMmapMTLBuffer)
     }
-    let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+    let useMFA = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+    let isMFAEnabled = useMFA > 0
+    let usesFlashAttention: UseFlashAttention =
+      if useMFA == 0 {
+        .none
+      } else if useMFA == 1 {
+        DeviceCapability.isMQASupported ? .quantized : .sdpa
+      } else {
+        .sdpa
+      }
     if !isMFAEnabled {
       DynamicGraph.flags.insert(.disableMFA)
     } else {
@@ -3811,7 +3820,7 @@ extension LocalImageGenerator {
       activationProjScaling: activationProjScaling,
       activationFfnProjUpScaling: activationFfnProjUpScaling,
       activationFfnScaling: activationFfnScaling,
-      usesFlashAttention: isMFAEnabled,
+      usesFlashAttention: usesFlashAttention,
       objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
@@ -4556,7 +4565,7 @@ extension LocalImageGenerator {
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
         activationFfnProjUpScaling: activationFfnProjUpScaling,
-        activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
+        activationFfnScaling: activationFfnScaling, usesFlashAttention: usesFlashAttention,
         objective: modelObjective,
         upcastAttention: modelUpcastAttention,
         externalOnDemand: externalOnDemand,
@@ -4876,7 +4885,16 @@ extension LocalImageGenerator {
     if !DeviceCapability.isMemoryMapBufferSupported {
       DynamicGraph.flags.insert(.disableMmapMTLBuffer)
     }
-    let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+    let useMFA = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+    let isMFAEnabled = useMFA > 0
+    let usesFlashAttention: UseFlashAttention =
+      if useMFA == 0 {
+        .none
+      } else if useMFA == 1 {
+        DeviceCapability.isMQASupported ? .quantized : .sdpa
+      } else {
+        .sdpa
+      }
     if !isMFAEnabled {
       DynamicGraph.flags.insert(.disableMFA)
     } else {
@@ -5016,7 +5034,7 @@ extension LocalImageGenerator {
       activationProjScaling: activationProjScaling,
       activationFfnProjUpScaling: activationFfnProjUpScaling,
       activationFfnScaling: activationFfnScaling,
-      usesFlashAttention: isMFAEnabled,
+      usesFlashAttention: usesFlashAttention,
       objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
@@ -5512,7 +5530,7 @@ extension LocalImageGenerator {
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnProjUpScaling: activationFfnProjUpScaling,
-          activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
+          activationFfnScaling: activationFfnScaling, usesFlashAttention: usesFlashAttention,
           objective: modelObjective,
           upcastAttention: modelUpcastAttention,
           externalOnDemand: externalOnDemand,
@@ -6286,7 +6304,16 @@ extension LocalImageGenerator {
     if !DeviceCapability.isMemoryMapBufferSupported {
       DynamicGraph.flags.insert(.disableMmapMTLBuffer)
     }
-    let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+    let useMFA = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+    let isMFAEnabled = useMFA > 0
+    let usesFlashAttention: UseFlashAttention =
+      if useMFA == 0 {
+        .none
+      } else if useMFA == 1 {
+        DeviceCapability.isMQASupported ? .quantized : .sdpa
+      } else {
+        .sdpa
+      }
     if !isMFAEnabled {
       DynamicGraph.flags.insert(.disableMFA)
     } else {
@@ -6487,7 +6514,7 @@ extension LocalImageGenerator {
       activationProjScaling: activationProjScaling,
       activationFfnProjUpScaling: activationFfnProjUpScaling,
       activationFfnScaling: activationFfnScaling,
-      usesFlashAttention: isMFAEnabled,
+      usesFlashAttention: usesFlashAttention,
       objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
@@ -6892,7 +6919,7 @@ extension LocalImageGenerator {
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnProjUpScaling: activationFfnProjUpScaling,
-          activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
+          activationFfnScaling: activationFfnScaling, usesFlashAttention: usesFlashAttention,
           objective: modelObjective,
           upcastAttention: modelUpcastAttention,
           externalOnDemand: externalOnDemand,
@@ -7163,7 +7190,16 @@ extension LocalImageGenerator {
     if !DeviceCapability.isMemoryMapBufferSupported {
       DynamicGraph.flags.insert(.disableMmapMTLBuffer)
     }
-    let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+    let useMFA = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+    let isMFAEnabled = useMFA > 0
+    let usesFlashAttention: UseFlashAttention =
+      if useMFA == 0 {
+        .none
+      } else if useMFA == 1 {
+        DeviceCapability.isMQASupported ? .quantized : .sdpa
+      } else {
+        .sdpa
+      }
     if !isMFAEnabled {
       DynamicGraph.flags.insert(.disableMFA)
     } else {
@@ -7364,7 +7400,7 @@ extension LocalImageGenerator {
       activationProjScaling: activationProjScaling,
       activationFfnProjUpScaling: activationFfnProjUpScaling,
       activationFfnScaling: activationFfnScaling,
-      usesFlashAttention: isMFAEnabled,
+      usesFlashAttention: usesFlashAttention,
       objective: modelObjective,
       upcastAttention: modelUpcastAttention,
       externalOnDemand: externalOnDemand, injectControls: canInjectControls,
@@ -7905,7 +7941,7 @@ extension LocalImageGenerator {
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
           activationFfnProjUpScaling: activationFfnProjUpScaling,
-          activationFfnScaling: activationFfnScaling, usesFlashAttention: isMFAEnabled,
+          activationFfnScaling: activationFfnScaling, usesFlashAttention: usesFlashAttention,
           objective: modelObjective,
           upcastAttention: modelUpcastAttention,
           externalOnDemand: externalOnDemand,

@@ -95,7 +95,7 @@ public final class ModelPreloader {
   private var unetModifier: SamplerModifier? = nil
   private var unetVersion: ModelVersion? = nil
   private var unetUpcastAttention: Bool? = nil
-  private var unetUsesFlashAttention: Bool? = nil
+  private var unetUsesFlashAttention: UseFlashAttention? = nil
   private var unetExternalOnDemand: Bool? = nil
   private var unetInjectControls: Bool? = nil
   private var unetInjectT2IAdapters: Bool? = nil
@@ -128,7 +128,7 @@ public final class ModelPreloader {
   private var activeSentinel: Int = 0
   private let sentinel = ManagedAtomic<Int>(0)
   private var useCoreML: Bool? = nil
-  private var useMFA: Bool? = nil
+  private var useMFA: Int? = nil
   private var coreMLComputeUnit: Int? = nil
   private var loraUseCoreML: Bool? = nil
   private var externalStore: Bool? = nil
@@ -212,9 +212,9 @@ public final class ModelPreloader {
       }
       if let _ = self.workspace.dictionary["mfa_guard", Bool.self] {
         if !DeviceCapability.isMFASupported {
-          self.workspace.dictionary["use_mfa_v3", Bool.self] = nil
+          self.workspace.dictionary["use_mfa_v4", Int.self] = nil
         } else {
-          self.workspace.dictionary["use_mfa_v3", Bool.self] = false
+          self.workspace.dictionary["use_mfa_v4", Int.self] = 0
         }
         self.workspace.dictionary["mfa_guard", Bool.self] = nil
       }
@@ -335,7 +335,7 @@ public final class ModelPreloader {
         }
       }
     }
-    useMFASubscription = workspace.dictionary.subscribe("use_mfa_v3", of: Bool.self) {
+    useMFASubscription = workspace.dictionary.subscribe("use_mfa_v4", of: Int.self) {
       value in
       queue.async { [weak self] in
         guard let self = self else { return }
@@ -384,7 +384,7 @@ extension ModelPreloader {
     workspace.dictionary["coreml_guard", Bool.self] = nil
   }
   public func beginMFAGuard() -> Bool {
-    guard DeviceCapability.isMFAEnabled.load(ordering: .acquiring) else { return false }
+    guard DeviceCapability.isMFAEnabled.load(ordering: .acquiring) > 0 else { return false }
     // For these devices, we are very confident it just works, hence, no need to disable MFA upon crash.
     guard !(DeviceCapability.isMFASupported && DeviceCapability.isMFACausalAttentionMaskSupported)
     else { return true }
@@ -510,6 +510,15 @@ extension ModelPreloader {
     let autoencoderPath = ModelZoo.filePathForModelDownloaded(autoencoderModel)
     let textEncoderPath = ModelZoo.filePathForModelDownloaded(textEncoderModel)
     let highPrecisionForAutoencoder = ModelZoo.isHighPrecisionAutoencoderForModel(modelFile)
+    let usesFlashAttention: UseFlashAttention
+    switch useMFA {
+    case 1:
+      usesFlashAttention = .quantized
+    case 2:
+      usesFlashAttention = .sdpa
+    default:
+      usesFlashAttention = .none
+    }
     var useCoreML = CoreMLModelManager.isCoreMLSupported.load(ordering: .acquiring)
     let useLoRACoreML = CoreMLModelManager.isLoRASupported.load(ordering: .acquiring)
     if useCoreML {
@@ -584,7 +593,7 @@ extension ModelPreloader {
             filePath: modelPath, version: modelVersion, modifier: .none, dualAttentionLayers: [],
             activationQkScaling: [:],
             activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:],
-            usesFlashAttention: useMFA,
+            usesFlashAttention: useMFA > 0 ? .sdpa : .none,
             zeroNegativePrompt: false, isQuantizedModel: false, canRunLoRASeparately: false,
             externalOnDemand: false,
             deviceProperties: DeviceCapability.deviceProperties,
@@ -620,7 +629,7 @@ extension ModelPreloader {
           deviceProperties: DeviceCapability.deviceProperties,
           version: modelVersion, modifier: .none, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
-          upcastAttention: upcastAttention, usesFlashAttention: useMFA,
+          upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
           injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>(
             injectControls: false, injectT2IAdapters: false, injectAttentionKV: false,
             injectIPAdapterLengths: [], injectControlModels: []), lora: lora,
@@ -645,7 +654,7 @@ extension ModelPreloader {
         unetGuidanceEmbed = false
         unetVersion = modelVersion
         unetUpcastAttention = upcastAttention
-        unetUsesFlashAttention = useMFA
+        unetUsesFlashAttention = usesFlashAttention
         unetTokenLengthUncond = 77
         unetTokenLengthCond = 77
         unetModifier = modelModifier
@@ -730,7 +739,7 @@ extension ModelPreloader {
               vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 768,
               numLayers: 13 - min(max(clipSkip, 1), 12),
               numHeads: 12, batchSize: 2, intermediateSize: 3072,
-              usesFlashAttention: useMFA && DeviceCapability.isMFACausalAttentionMaskSupported
+              usesFlashAttention: useMFA > 0 && DeviceCapability.isMFACausalAttentionMaskSupported
             ).0
           textModelLoRAPrefix = ""
         case .v2:
@@ -740,7 +749,7 @@ extension ModelPreloader {
               vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 1024,
               numLayers: 24 - min(max(clipSkip, 1), 23),
               numHeads: 16, batchSize: 2, intermediateSize: 4096,
-              usesFlashAttention: useMFA && DeviceCapability.isMFACausalAttentionMaskSupported
+              usesFlashAttention: useMFA > 0 && DeviceCapability.isMFACausalAttentionMaskSupported
             ).0
           textModelLoRAPrefix = ""
         case .sdxlBase, .sdxlRefiner, .ssd1b:
@@ -750,7 +759,7 @@ extension ModelPreloader {
               vocabularySize: 49408, maxLength: 77, maxTokenLength: 77, embeddingSize: 1280,
               numLayers: 32 - min(max(clipSkip - 1, 0), 30), numHeads: 20, batchSize: 2,
               intermediateSize: 5120,
-              usesFlashAttention: useMFA && DeviceCapability.isMFACausalAttentionMaskSupported,
+              usesFlashAttention: useMFA > 0 && DeviceCapability.isMFACausalAttentionMaskSupported,
               outputPenultimate: true
             ).0
           textModelLoRAPrefix = "__te2"
@@ -853,7 +862,8 @@ extension ModelPreloader {
         textEncoderFilePaths = [textEncoderPath]
         textEncoderVersion = modelVersion
         textEncoderIsCfgEnabled = true
-        textEncoderUsesFlashAttention = useMFA && DeviceCapability.isMFACausalAttentionMaskSupported
+        textEncoderUsesFlashAttention =
+          useMFA > 0 && DeviceCapability.isMFACausalAttentionMaskSupported
         textEncoderInjectEmbeddings = false
         textEncoderMaxLength = 77
         textEncoderClipSkip = clipSkip
@@ -1019,12 +1029,10 @@ extension ModelPreloader {
     }
   }
 
-  func updateUseMFA(_ value: Bool?) {
+  func updateUseMFA(_ value: Int?) {
     dispatchPrecondition(condition: .onQueue(queue))
-    if let value = value {
-      DeviceCapability.isMFAEnabled.store(value, ordering: .releasing)
-    }
-    let useMFA = value ?? DeviceCapability.isMFASupported
+    let useMFA = value ?? (DeviceCapability.isMFASupported ? 1 : 0)
+    DeviceCapability.isMFAEnabled.store(useMFA, ordering: .releasing)
     guard self.useMFA != nil && self.useMFA != useMFA else {
       self.useMFA = useMFA
       return

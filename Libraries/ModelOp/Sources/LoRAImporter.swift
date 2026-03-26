@@ -100,7 +100,7 @@ public enum LoRAImporter {
     case .pixart:
       (unetMapper, unet) = PixArt(
         batchSize: 2, height: 64, width: 64, channels: 1152, layers: 28,
-        tokenLength: (77, 77), usesFlashAttention: false, of: FloatType.self)
+        tokenLength: (77, 77), usesFlashAttention: .none, of: FloatType.self)
       (unetFixedMapper, unetFixed) = PixArtFixed(
         batchSize: 2, channels: 1152, layers: 28, tokenLength: (77, 77),
         usesFlashAttention: false, of: FloatType.self)
@@ -123,7 +123,8 @@ public enum LoRAImporter {
       (unetMapper, unet) = Wan(
         channels: 1_536, layers: 30, vaceLayers: [], intermediateSize: 8_960, time: 1, height: 64,
         width: 64,
-        textLength: 512, causalInference: (0, 0), injectImage: true, usesFlashAttention: true,
+        textLength: 512, causalInference: (0, 0), injectImage: true,
+        usesFlashAttention: .scale1,
         outputResidual: false, inputResidual: false, outputChannels: 16)
       (unetFixedMapper, unetFixed) = WanFixed(
         timesteps: 1, batchSize: (1, 1), channels: 1_536, layers: 30, vaceLayers: [],
@@ -132,7 +133,8 @@ public enum LoRAImporter {
       (unetMapper, unet) = Wan(
         channels: 5_120, layers: 40, vaceLayers: [], intermediateSize: 13_824, time: 1, height: 64,
         width: 64,
-        textLength: 512, causalInference: (0, 0), injectImage: true, usesFlashAttention: true,
+        textLength: 512, causalInference: (0, 0), injectImage: true,
+        usesFlashAttention: .scale1,
         outputResidual: false, inputResidual: false, outputChannels: 16)
       (unetFixedMapper, unetFixed) = WanFixed(
         timesteps: 1, batchSize: (1, 1), channels: 5_120, layers: 40, vaceLayers: [],
@@ -142,7 +144,7 @@ public enum LoRAImporter {
         channels: 3_072, layers: 30, vaceLayers: [], intermediateSize: 14_336,
         time: 1, height: 64, width: 64,
         textLength: 512, causalInference: (0, 0), injectImage: true,
-        usesFlashAttention: true, outputResidual: false,
+        usesFlashAttention: .scale1, outputResidual: false,
         inputResidual: false, outputChannels: 48
       )
       (unetFixedMapper, unetFixed) = WanFixed(
@@ -152,7 +154,7 @@ public enum LoRAImporter {
     case .hiDreamI1:
       (unet, unetMapper) = HiDream(
         batchSize: 1, height: 64, width: 64, textLength: (128, 128), layers: (16, 32),
-        usesFlashAttention: true, outputResidual: false, inputResidual: false)
+        usesFlashAttention: .scale1, outputResidual: false, inputResidual: false)
       (unetFixed, unetFixedMapper) = HiDreamFixed(
         timesteps: 1, layers: (16, 32), outputTimesteps: false)
     case .qwenImage:
@@ -203,21 +205,23 @@ public enum LoRAImporter {
     case .ltx2:
       (unetMapper, unet) = LTX2(
         time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
-        layers: 48, tokenModulation: false, KV: true, usesFlashAttention: true,
+        layers: 48, tokenModulation: false, KV: true, usesFlashAttention: .scale1,
         useGatedAttention: false,
         textCrossAttentionAdaLN: false)
       (unetFixedMapper, unetFixed) = LTX2Fixed(
         time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
-        layers: 48, contextProjection: true, textCrossAttentionAdaLN: false, KV: true)
+        layers: 48, contextProjection: true, textCrossAttentionAdaLN: false, KV: true,
+        usesFlashAttention: .scale1)
     case .ltx2_3:
       (unetMapper, unet) = LTX2(
         time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
-        layers: 48, tokenModulation: false, KV: false, usesFlashAttention: true,
+        layers: 48, tokenModulation: false, KV: false, usesFlashAttention: .scale1,
         useGatedAttention: true,
         textCrossAttentionAdaLN: true)
       (unetFixedMapper, unetFixed) = LTX2Fixed(
         time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
-        layers: 48, contextProjection: false, textCrossAttentionAdaLN: true, KV: false)
+        layers: 48, contextProjection: false, textCrossAttentionAdaLN: true, KV: false,
+        usesFlashAttention: .scale1)
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
@@ -568,7 +572,7 @@ public enum LoRAImporter {
         filePath: "", version: version, modifier: .none, dualAttentionLayers: dualAttentionLayers,
         activationQkScaling: [:],
         activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:],
-        usesFlashAttention: false,
+        usesFlashAttention: .none,
         zeroNegativePrompt: false,
         isQuantizedModel: false,
         canRunLoRASeparately: false, externalOnDemand: false,

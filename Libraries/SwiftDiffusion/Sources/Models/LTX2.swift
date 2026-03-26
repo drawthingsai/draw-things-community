@@ -234,7 +234,8 @@ private func MLPEmbedder(channels: Int, name: String) -> (Model, Model, Model) {
 }
 
 private func LTX2SelfAttention(
-  prefix: String, k: Int, h: Int, b: Int, t: Int, name: String, usesFlashAttention: Bool,
+  prefix: String, k: Int, h: Int, b: Int, t: Int, name: String,
+  usesFlashAttention: FlashAttentionLevel,
   useGatedAttention: Bool
 ) -> (
   ModelWeightMapper, Model
@@ -252,14 +253,27 @@ private func LTX2SelfAttention(
   let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(name)_norm_q")
   queries = normQ(queries).reshaped([b, t, h, k])
   let values = toValues(x).reshaped([b, t, h, k])
-  queries = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: queries, right: rot)
-  keys = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: keys, right: rot)
+  queries = Functional.cmul(left: queries, right: rot)
+  keys = Functional.cmul(left: keys, right: rot)
+  if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+    queries = (1 / Float(k).squareRoot().squareRoot()) * queries
+    keys = (1 / Float(k).squareRoot().squareRoot()) * keys
+  }
   // Now run attention.
   var out: Model.IO
-  if usesFlashAttention {
+  switch usesFlashAttention {
+  case .scale1:
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values)
-  } else {
+  case .scaleMerged:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1 / Float(k).squareRoot(), flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values)
+  case .quantized:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1 / Float(k).squareRoot(), flags: [.Int8, .Float16])
+    out = scaledDotProductAttention(queries, keys, values)
+  case .none:
     let transposedKeys = keys.transposed(1, 2)
     let transposedQueries = queries.transposed(1, 2)
     let transposedValues = values.transposed(1, 2)
@@ -304,7 +318,7 @@ private func LTX2SelfAttention(
 
 private func LTX2CrossAttention(
   prefix: String, k: (Int, Int, Int), h: Int, b: Int, t: (Int, Int), positionEmbedding: Bool,
-  KV: Bool, name: String, usesFlashAttention: Bool, useGatedAttention: Bool
+  KV: Bool, name: String, usesFlashAttention: FlashAttentionLevel, useGatedAttention: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   var context = [Input()]
@@ -335,7 +349,9 @@ private func LTX2CrossAttention(
     keys = toKeysLocal(context[0])
     let normKLocal = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(name)_norm_k")
     keys = normKLocal(keys).reshaped([b, t.1, h, k.1])
-    keys = (1 / Float(k.1).squareRoot().squareRoot()) * keys
+    if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+      keys = (1 / Float(k.1).squareRoot().squareRoot()) * keys
+    }
     values = toValuesLocal(context[0]).reshaped([b, t.1, h, k.1])
     toKeys = toKeysLocal
     toValues = toValuesLocal
@@ -352,13 +368,24 @@ private func LTX2CrossAttention(
   if let rotK = rotK {
     keys = Functional.cmul(left: keys, right: rotK)
   }
-  queries = (1 / Float(k.1).squareRoot().squareRoot()) * queries
+  if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+    queries = (1 / Float(k.1).squareRoot().squareRoot()) * queries
+  }
   // Now run attention.
   var out: Model.IO
-  if usesFlashAttention {
+  switch usesFlashAttention {
+  case .scale1:
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values)
-  } else {
+  case .scaleMerged:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1 / Float(k.1).squareRoot(), flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values)
+  case .quantized:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1 / Float(k.1).squareRoot(), flags: [.Int8, .Float16])
+    out = scaledDotProductAttention(queries, keys, values)
+  case .none:
     let transposedKeys = keys.transposed(1, 2)
     let transposedQueries = queries.transposed(1, 2)
     let transposedValues = values.transposed(1, 2)
@@ -423,7 +450,8 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -
 
 private func LTX2TransformerBlock(
   prefix: String, k: (Int, Int), h: Int, b: Int, t: Int, time: Int, hw: Int, a: Int,
-  tokenModulation: Bool, KV: Bool, usesFlashAttention: Bool, useGatedAttention: Bool,
+  tokenModulation: Bool, KV: Bool, usesFlashAttention: FlashAttentionLevel,
+  useGatedAttention: Bool,
   textCrossAttentionAdaLN: Bool
 ) -> (ModelWeightMapper, Model) {
   let vx = Input()
@@ -680,7 +708,8 @@ private func LTX2AdaLNSingle(
 
 public func LTX2(
   time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int, channels: (Int, Int), layers: Int,
-  tokenModulation: Bool, KV: Bool, usesFlashAttention: Bool, useGatedAttention: Bool,
+  tokenModulation: Bool, KV: Bool, usesFlashAttention: FlashAttentionLevel,
+  useGatedAttention: Bool,
   textCrossAttentionAdaLN: Bool
 ) -> (
   ModelWeightMapper, Model
@@ -769,6 +798,7 @@ public func LTX2(
 
 private func LTX2CrossAttentionFixed(
   prefix: String, k: (Int, Int, Int), h: Int, t: Int, positionEmbedding: Bool,
+  usesFlashAttention: FlashAttentionLevel,
   name: String
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
@@ -795,7 +825,7 @@ private func LTX2CrossAttentionFixed(
 
 private func LTX2TransformerBlockFixed(
   prefix: String, k: (Int, Int), h: Int, b: Int, t: Int,
-  textCrossAttentionAdaLN: Bool, KV: Bool
+  textCrossAttentionAdaLN: Bool, KV: Bool, usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let cv = KV ? Input() : nil
   let ca = KV ? Input() : nil
@@ -815,6 +845,7 @@ private func LTX2TransformerBlockFixed(
     KV
     ? LTX2CrossAttentionFixed(
       prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, t: t, positionEmbedding: false,
+      usesFlashAttention: usesFlashAttention,
       name: "cv")
     : nil
   var outs = [Model.IO]()
@@ -822,7 +853,7 @@ private func LTX2TransformerBlockFixed(
     KV
     ? LTX2CrossAttentionFixed(
       prefix: "\(prefix).audio_attn2", k: (k.1, k.1, k.1), h: h, t: t,
-      positionEmbedding: false, name: "ca")
+      positionEmbedding: false, usesFlashAttention: usesFlashAttention, name: "ca")
     : nil
   if let cv = cv, let attn2MapperAndModel = attn2MapperAndModel, let ca = ca,
     let audioAttn2MapperAndModel = audioAttn2MapperAndModel
@@ -942,7 +973,8 @@ private func LTX2TransformerBlockFixed(
 
 public func LTX2Fixed(
   time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int,
-  contextProjection: Bool, textCrossAttentionAdaLN: Bool, KV: Bool
+  contextProjection: Bool, textCrossAttentionAdaLN: Bool, KV: Bool,
+  usesFlashAttention: FlashAttentionLevel
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -1045,7 +1077,8 @@ public func LTX2Fixed(
   for i in 0..<layers {
     let (mapper, block) = LTX2TransformerBlockFixed(
       prefix: "transformer_blocks.\(i)", k: (channels.0 / 32, channels.1 / 32), h: 32, b: 1,
-      t: textLength, textCrossAttentionAdaLN: textCrossAttentionAdaLN, KV: KV)
+      t: textLength, textCrossAttentionAdaLN: textCrossAttentionAdaLN, KV: KV,
+      usesFlashAttention: usesFlashAttention)
     var blockInputs = [Model.IO]()
     if let txtOut = txtOut, let aTxtOut = aTxtOut {
       blockInputs.append(contentsOf: [txtOut, aTxtOut])
@@ -1358,7 +1391,8 @@ private func LoRAMLPEmbedder(channels: Int, name: String, configuration: LoRANet
 
 private func LoRALTX2SelfAttention(
   prefix: String, k: Int, h: Int, b: Int, t: Int, layerIndex: Int, name: String,
-  usesFlashAttention: Bool, useGatedAttention: Bool, configuration: LoRANetworkConfiguration
+  usesFlashAttention: FlashAttentionLevel, useGatedAttention: Bool,
+  configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = Input()
@@ -1379,13 +1413,26 @@ private func LoRALTX2SelfAttention(
   let normQ = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(name)_norm_q")
   queries = normQ(queries).reshaped([b, t, h, k])
   let values = toValues(x).reshaped([b, t, h, k])
-  queries = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: queries, right: rot)
-  keys = (1 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: keys, right: rot)
+  queries = Functional.cmul(left: queries, right: rot)
+  keys = Functional.cmul(left: keys, right: rot)
+  if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+    queries = (1 / Float(k).squareRoot().squareRoot()) * queries
+    keys = (1 / Float(k).squareRoot().squareRoot()) * keys
+  }
   var out: Model.IO
-  if usesFlashAttention {
+  switch usesFlashAttention {
+  case .scale1:
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values)
-  } else {
+  case .scaleMerged:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1 / Float(k).squareRoot(), flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values)
+  case .quantized:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1 / Float(k).squareRoot(), flags: [.Int8, .Float16])
+    out = scaledDotProductAttention(queries, keys, values)
+  case .none:
     let transposedKeys = keys.transposed(1, 2)
     let transposedQueries = queries.transposed(1, 2)
     let transposedValues = values.transposed(1, 2)
@@ -1431,7 +1478,8 @@ private func LoRALTX2SelfAttention(
 
 private func LoRALTX2CrossAttention(
   prefix: String, k: (Int, Int, Int), h: Int, b: Int, t: (Int, Int), positionEmbedding: Bool,
-  KV: Bool, layerIndex: Int, name: String, usesFlashAttention: Bool, useGatedAttention: Bool,
+  KV: Bool, layerIndex: Int, name: String, usesFlashAttention: FlashAttentionLevel,
+  useGatedAttention: Bool,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -1465,7 +1513,9 @@ private func LoRALTX2CrossAttention(
     keys = toKeysLocal(context[0])
     let normKLocal = RMSNorm(epsilon: 1e-6, axis: [2], name: "\(name)_norm_k")
     keys = normKLocal(keys).reshaped([b, t.1, h, k.1])
-    keys = (1 / Float(k.1).squareRoot().squareRoot()) * keys
+    if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+      keys = (1 / Float(k.1).squareRoot().squareRoot()) * keys
+    }
     values = toValuesLocal(context[0]).reshaped([b, t.1, h, k.1])
     toKeys = toKeysLocal
     toValues = toValuesLocal
@@ -1486,12 +1536,23 @@ private func LoRALTX2CrossAttention(
   if let rotK = rotK {
     keys = Functional.cmul(left: keys, right: rotK)
   }
-  queries = (1 / Float(k.1).squareRoot().squareRoot()) * queries
+  if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {
+    queries = (1 / Float(k.1).squareRoot().squareRoot()) * queries
+  }
   var out: Model.IO
-  if usesFlashAttention {
+  switch usesFlashAttention {
+  case .scale1:
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values)
-  } else {
+  case .scaleMerged:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1 / Float(k.1).squareRoot(), flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values)
+  case .quantized:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1 / Float(k.1).squareRoot(), flags: [.Int8, .Float16])
+    out = scaledDotProductAttention(queries, keys, values)
+  case .none:
     let transposedKeys = keys.transposed(1, 2)
     let transposedQueries = queries.transposed(1, 2)
     let transposedValues = values.transposed(1, 2)
@@ -1562,7 +1623,7 @@ private func LoRAFeedForward(
 
 private func LoRALTX2TransformerBlock(
   prefix: String, k: (Int, Int), h: Int, b: Int, t: Int, time: Int, hw: Int, a: Int,
-  tokenModulation: Bool, layerIndex: Int, KV: Bool, usesFlashAttention: Bool,
+  tokenModulation: Bool, layerIndex: Int, KV: Bool, usesFlashAttention: FlashAttentionLevel,
   useGatedAttention: Bool,
   textCrossAttentionAdaLN: Bool, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
@@ -1829,7 +1890,8 @@ private func LoRALTX2AdaLNSingle(
 
 public func LoRALTX2(
   time: Int, h: Int, w: Int, textLength: Int, audioFrames: Int, channels: (Int, Int), layers: Int,
-  tokenModulation: Bool, KV: Bool, usesFlashAttention: Bool, useGatedAttention: Bool,
+  tokenModulation: Bool, KV: Bool, usesFlashAttention: FlashAttentionLevel,
+  useGatedAttention: Bool,
   textCrossAttentionAdaLN: Bool,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
@@ -1919,7 +1981,8 @@ public func LoRALTX2(
 }
 
 private func LoRALTX2CrossAttentionFixed(
-  prefix: String, k: (Int, Int, Int), h: Int, t: Int, positionEmbedding: Bool, layerIndex: Int,
+  prefix: String, k: (Int, Int, Int), h: Int, t: Int, positionEmbedding: Bool,
+  usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
   name: String, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let context = Input()
@@ -1948,7 +2011,8 @@ private func LoRALTX2CrossAttentionFixed(
 
 private func LoRALTX2TransformerBlockFixed(
   prefix: String, k: (Int, Int), h: Int, b: Int, t: Int, layerIndex: Int,
-  textCrossAttentionAdaLN: Bool, KV: Bool, configuration: LoRANetworkConfiguration
+  textCrossAttentionAdaLN: Bool, KV: Bool, usesFlashAttention: FlashAttentionLevel,
+  configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let cv = KV ? Input() : nil
   let ca = KV ? Input() : nil
@@ -1962,6 +2026,7 @@ private func LoRALTX2TransformerBlockFixed(
     KV
     ? LoRALTX2CrossAttentionFixed(
       prefix: "\(prefix).attn2", k: (k.0, k.0, k.0), h: h, t: t, positionEmbedding: false,
+      usesFlashAttention: usesFlashAttention,
       layerIndex: layerIndex, name: "cv", configuration: configuration)
     : nil
   var outs = [Model.IO]()
@@ -1975,7 +2040,8 @@ private func LoRALTX2TransformerBlockFixed(
     KV
     ? LoRALTX2CrossAttentionFixed(
       prefix: "\(prefix).audio_attn2", k: (k.1, k.1, k.1), h: h, t: t,
-      positionEmbedding: false, layerIndex: layerIndex, name: "ca", configuration: configuration)
+      positionEmbedding: false, usesFlashAttention: usesFlashAttention, layerIndex: layerIndex,
+      name: "ca", configuration: configuration)
     : nil
   if let cv = cv, let attn2MapperAndModel = attn2MapperAndModel, let ca = ca,
     let audioAttn2MapperAndModel = audioAttn2MapperAndModel
@@ -2096,6 +2162,7 @@ private func LoRALTX2TransformerBlockFixed(
 public func LoRALTX2Fixed(
   time: Int, textLength: Int, audioFrames: Int, timesteps: Int, channels: (Int, Int), layers: Int,
   contextProjection: Bool, textCrossAttentionAdaLN: Bool, KV: Bool,
+  usesFlashAttention: FlashAttentionLevel,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   ModelWeightMapper, Model
@@ -2197,6 +2264,7 @@ public func LoRALTX2Fixed(
     let (mapper, block) = LoRALTX2TransformerBlockFixed(
       prefix: "transformer_blocks.\(i)", k: (channels.0 / 32, channels.1 / 32), h: 32, b: 1,
       t: textLength, layerIndex: i, textCrossAttentionAdaLN: textCrossAttentionAdaLN, KV: KV,
+      usesFlashAttention: usesFlashAttention,
       configuration: LoRAConfiguration)
     var blockInputs = [Model.IO]()
     if let txtOut = txtOut, let aTxtOut = aTxtOut {

@@ -17,7 +17,7 @@ where UNet.FloatType == FloatType {
   public let activationProjScaling: [Int: Int]
   public let activationFfnProjUpScaling: [Int: Int]
   public let activationFfnScaling: [Int: Int]
-  public let usesFlashAttention: Bool
+  public let usesFlashAttention: UseFlashAttention
   public let upcastAttention: Bool
   public let externalOnDemand: Bool
   public let injectControls: Bool
@@ -42,7 +42,7 @@ where UNet.FloatType == FloatType {
     dualAttentionLayers: [Int], distilledGuidanceLayers: Int, activationQkScaling: [Int: Int],
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int],
-    usesFlashAttention: Bool,
+    usesFlashAttention: UseFlashAttention,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
@@ -446,7 +446,8 @@ extension LCMSampler: Sampler {
             activationProjScaling: refiner.activationProjScaling,
             activationFfnProjUpScaling: refiner.activationFfnProjUpScaling,
             activationFfnScaling: refiner.activationFfnScaling,
-            usesFlashAttention: usesFlashAttention, zeroNegativePrompt: zeroNegativePrompt,
+            usesFlashAttention: usesFlashAttention,
+            zeroNegativePrompt: zeroNegativePrompt,
             isQuantizedModel: refiner.isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
             externalOnDemand: refiner.externalOnDemand, deviceProperties: deviceProperties,
             weightsCache: weightsCache)
@@ -550,7 +551,7 @@ extension LCMSampler: Sampler {
         let injectedIPAdapters = ControlModel<FloatType>
           .injectedIPAdapters(
             injecteds: injectedControls, step: i, version: unet.version,
-            usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
+            usesFlashAttention: usesFlashAttention != .none, inputs: xIn, t, injectedControlsC,
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: false, index: i - startStep.integral,
             mainUNetAndWeightMapper: unet.modelAndWeightMapper,
@@ -558,7 +559,7 @@ extension LCMSampler: Sampler {
         let injectedControlsAndAdapters = ControlModel<FloatType>
           .injectedControlsAndAdapters(
             injecteds: injectedControls, step: i, version: unet.version,
-            usesFlashAttention: usesFlashAttention, inputs: xIn, t, injectedControlsC,
+            usesFlashAttention: usesFlashAttention != .none, inputs: xIn, t, injectedControlsC,
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: false, index: i - startStep.integral,
             mainUNetAndWeightMapper: unet.modelAndWeightMapper,

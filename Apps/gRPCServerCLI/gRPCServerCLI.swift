@@ -476,7 +476,7 @@ struct gRPCServerCLI: ParsableCommand {
     }
 
     if noFlashAttention {
-      DeviceCapability.isMFAEnabled.store(false, ordering: .releasing)
+      DeviceCapability.isMFAEnabled.store(0, ordering: .releasing)
     }
     if gpu > 0 && gpu < DeviceKind.GPUs.count {
       DeviceKind.GPUs.permute(gpu)

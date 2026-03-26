@@ -13,7 +13,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public let activationProjScaling: [Int: Int]
   public let activationFfnProjUpScaling: [Int: Int]
   public let activationFfnScaling: [Int: Int]
-  public let usesFlashAttention: Bool
+  public let usesFlashAttention: UseFlashAttention
   public let zeroNegativePrompt: Bool
   public let isQuantizedModel: Bool
   public let canRunLoRASeparately: Bool
@@ -24,7 +24,7 @@ public struct UNetFixedEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
     filePath: String, version: ModelVersion, modifier: SamplerModifier, dualAttentionLayers: [Int],
     activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
     activationFfnProjUpScaling: [Int: Int],
-    activationFfnScaling: [Int: Int], usesFlashAttention: Bool,
+    activationFfnScaling: [Int: Int], usesFlashAttention: UseFlashAttention,
     zeroNegativePrompt: Bool, isQuantizedModel: Bool, canRunLoRASeparately: Bool,
     externalOnDemand: Bool, deviceProperties: DeviceProperties, weightsCache: WeightsCache
   ) {
@@ -216,6 +216,18 @@ extension UNetFixedEncoder {
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
     )], referenceImages: [DynamicGraph.Tensor<FloatType>]
   ) -> ([DynamicGraph.AnyTensor], ModelWeightMapper?) {
+    func valueOr(
+      _ usesFlashAttention: UseFlashAttention, _ value: FlashAttentionLevel
+    ) -> FlashAttentionLevel {
+      switch usesFlashAttention {
+      case .none:
+        return .none
+      case .quantized:
+        return .quantized
+      case .sdpa:
+        return value
+      }
+    }
     let graph = textEncoding[0].graph
     let lora = Array(
       (OrderedDictionary<String, LoRAConfiguration>(
@@ -245,7 +257,7 @@ extension UNetFixedEncoder {
             channels: [320, 640, 1280], embeddingLength: (tokenLengthUncond, tokenLengthCond),
             inputAttentionRes: [2: [2, 2], 4: [10, 10]], middleAttentionBlocks: 10,
             outputAttentionRes: [2: [2, 2, 2], 4: [10, 10, 10]],
-            usesFlashAttention: usesFlashAttention ? .scaleMerged : .none,
+            usesFlashAttention: valueOr(usesFlashAttention, .scaleMerged),
             isTemporalMixEnabled: false
           )
       } else {
@@ -256,7 +268,7 @@ extension UNetFixedEncoder {
             channels: [320, 640, 1280], embeddingLength: (tokenLengthUncond, tokenLengthCond),
             inputAttentionRes: [2: [2, 2], 4: [4, 4]], middleAttentionBlocks: 0,
             outputAttentionRes: [2: [2, 1, 1], 4: [4, 4, 10]],
-            usesFlashAttention: usesFlashAttention ? .scale1 : .none, isTemporalMixEnabled: false
+            usesFlashAttention: valueOr(usesFlashAttention, .scale1), isTemporalMixEnabled: false
           )
       }
       var textEncoding = textEncoding
@@ -315,7 +327,7 @@ extension UNetFixedEncoder {
         channels: [384, 768, 1536, 1536], embeddingLength: (tokenLengthUncond, tokenLengthCond),
         inputAttentionRes: [2: [4, 4], 4: [4, 4]], middleAttentionBlocks: 4,
         outputAttentionRes: [2: [4, 4, 4], 4: [4, 4, 4]],
-        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none, isTemporalMixEnabled: false
+        usesFlashAttention: valueOr(usesFlashAttention, .scaleMerged), isTemporalMixEnabled: false
       )
       unetRefinerFixed.maxConcurrency = .limit(4)
       unetRefinerFixed.compile(inputs: textEncoding[1])
@@ -413,7 +425,7 @@ extension UNetFixedEncoder {
       let (_, unetFixed) = PixArtFixed(
         batchSize: cBatchSize, channels: 1152, layers: 28,
         tokenLength: (tokenLengthUncond, tokenLengthCond),
-        usesFlashAttention: usesFlashAttention, of: FloatType.self)
+        usesFlashAttention: usesFlashAttention != .none, of: FloatType.self)
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: timeEmbeds, c)
       graph.openStore(
@@ -592,7 +604,7 @@ extension UNetFixedEncoder {
       emptyImage.full(0)
       let (stageCFixed, _) = WurstchenStageCFixed(
         batchSize: batchSize, t: (tokenLengthUncond + 8, tokenLengthCond + 8),
-        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+        usesFlashAttention: valueOr(usesFlashAttention, .scaleMerged))
       stageCFixed.maxConcurrency = .limit(4)
       stageCFixed.compile(
         inputs: textEncoding[0], textEncoding[1].reshaped(.HWC(batchSize, 1, 1280)), emptyImage)
@@ -1575,7 +1587,7 @@ extension UNetFixedEncoder {
             activationProjScaling: activationProjScaling,
             activationFfnProjUpScaling: activationFfnProjUpScaling,
             activationFfnScaling: activationFfnScaling,
-            usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+            usesFlashAttention: valueOr(usesFlashAttention, .scale1),
             LoRAConfiguration: configuration
           ).0
       } else {
@@ -1587,7 +1599,7 @@ extension UNetFixedEncoder {
             activationProjScaling: activationProjScaling,
             activationFfnProjUpScaling: activationFfnProjUpScaling,
             activationFfnScaling: activationFfnScaling,
-            usesFlashAttention: usesFlashAttention ? .scale1 : .none
+            usesFlashAttention: valueOr(usesFlashAttention, .scale1)
           ).0
       }
       unetFixed.maxConcurrency = .limit(4)
@@ -1818,14 +1830,14 @@ extension UNetFixedEncoder {
           timesteps: timesteps.count,
           channels: channels, layers: layers, numberOfReferenceImages: referenceImages.count,
           guidanceEmbed: isGuidanceEmbedSupported,
-          usesFlashAttention: usesFlashAttention ? .scale1 : .none, kvCache: kvCache,
+          usesFlashAttention: valueOr(usesFlashAttention, .scale1), kvCache: kvCache,
           LoRAConfiguration: configuration)
       } else {
         (_, unetFixed) = Flux2Fixed(
           timesteps: timesteps.count,
           channels: channels, layers: layers, numberOfReferenceImages: referenceImages.count,
           guidanceEmbed: isGuidanceEmbedSupported,
-          usesFlashAttention: usesFlashAttention ? .scale1 : .none,
+          usesFlashAttention: valueOr(usesFlashAttention, .scale1),
           kvCache: modifier == .kontextKv && referenceImages.count > 0)
       }
       unetFixed.maxConcurrency = .limit(4)
@@ -1982,14 +1994,14 @@ extension UNetFixedEncoder {
           LoRAEmbedding1DConnector(
             prefix: "model.diffusion_model.video_embeddings_connector", layers: 8,
             batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 128,
-            numberOfHeads: 32, usesFlashAttention: usesFlashAttention, useGatedAttention: true,
+            numberOfHeads: 32, usesFlashAttention: usesFlashAttention != .none, useGatedAttention: true,
             LoRAConfiguration: configuration
           ).0
         audioConnector =
           LoRAEmbedding1DConnector(
             prefix: "model.diffusion_model.audio_embeddings_connector", layers: 8,
             batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 64,
-            numberOfHeads: 32, usesFlashAttention: usesFlashAttention, useGatedAttention: true,
+            numberOfHeads: 32, usesFlashAttention: usesFlashAttention != .none, useGatedAttention: true,
             LoRAConfiguration: configuration
           ).0
       } else {
@@ -1997,13 +2009,13 @@ extension UNetFixedEncoder {
           Embedding1DConnector(
             prefix: "model.diffusion_model.video_embeddings_connector", layers: 8,
             batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 128,
-            numberOfHeads: 32, usesFlashAttention: usesFlashAttention, useGatedAttention: true
+            numberOfHeads: 32, usesFlashAttention: usesFlashAttention != .none, useGatedAttention: true
           ).0
         audioConnector =
           Embedding1DConnector(
             prefix: "model.diffusion_model.audio_embeddings_connector", layers: 8,
             batchSize: cBatchSize, tokenLength: paddedTextLength, headDimension: 64,
-            numberOfHeads: 32, usesFlashAttention: usesFlashAttention, useGatedAttention: true
+            numberOfHeads: 32, usesFlashAttention: usesFlashAttention != .none, useGatedAttention: true
           ).0
       }
       var videoHiddenStates = graph.variable(
@@ -2185,7 +2197,7 @@ extension UNetFixedEncoder {
           LoRALTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: false, textCrossAttentionAdaLN: true, KV: false,
+            contextProjection: false, textCrossAttentionAdaLN: true, KV: false, usesFlashAttention: valueOr(usesFlashAttention, .scale1),
             LoRAConfiguration: configuration
           ).1
       } else {
@@ -2193,7 +2205,7 @@ extension UNetFixedEncoder {
           LTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: false, textCrossAttentionAdaLN: true, KV: false
+            contextProjection: false, textCrossAttentionAdaLN: true, KV: false, usesFlashAttention: valueOr(usesFlashAttention, .scale1),
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)
@@ -2283,14 +2295,14 @@ extension UNetFixedEncoder {
           LoRAEmbedding1DConnector(
             prefix: "embeddings_connector", layers: 2, batchSize: cBatchSize,
             tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
-            usesFlashAttention: usesFlashAttention, useGatedAttention: false,
+            usesFlashAttention: usesFlashAttention != .none, useGatedAttention: false,
             LoRAConfiguration: configuration
           ).0
         audioConnector =
           LoRAEmbedding1DConnector(
             prefix: "audio_embeddings_connector", layers: 2, batchSize: cBatchSize,
             tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
-            usesFlashAttention: usesFlashAttention, useGatedAttention: false,
+            usesFlashAttention: usesFlashAttention != .none, useGatedAttention: false,
             LoRAConfiguration: configuration
           ).0
       } else {
@@ -2298,13 +2310,13 @@ extension UNetFixedEncoder {
           Embedding1DConnector(
             prefix: "embeddings_connector", layers: 2, batchSize: cBatchSize,
             tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
-            usesFlashAttention: usesFlashAttention, useGatedAttention: false
+            usesFlashAttention: usesFlashAttention != .none, useGatedAttention: false
           ).0
         audioConnector =
           Embedding1DConnector(
             prefix: "audio_embeddings_connector", layers: 2, batchSize: cBatchSize,
             tokenLength: paddedTextLength, headDimension: 128, numberOfHeads: 30,
-            usesFlashAttention: usesFlashAttention, useGatedAttention: false
+            usesFlashAttention: usesFlashAttention != .none, useGatedAttention: false
           ).0
       }
       var videoHiddenStates = graph.variable(
@@ -2481,7 +2493,7 @@ extension UNetFixedEncoder {
           LoRALTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: true, textCrossAttentionAdaLN: false, KV: true,
+            contextProjection: true, textCrossAttentionAdaLN: false, KV: true, usesFlashAttention: valueOr(usesFlashAttention, .scale1),
             LoRAConfiguration: configuration
           ).1
       } else {
@@ -2489,7 +2501,7 @@ extension UNetFixedEncoder {
           LTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: true, textCrossAttentionAdaLN: false, KV: true
+            contextProjection: true, textCrossAttentionAdaLN: false, KV: true, usesFlashAttention: valueOr(usesFlashAttention, .scale1)
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)
@@ -2666,7 +2678,7 @@ extension UNetFixedEncoder {
       let (stageBFixed, _) = WurstchenStageBFixed(
         batchSize: cfgChannelsAndBatchSize, height: startHeight, width: startWidth,
         effnetHeight: effnetHeight, effnetWidth: effnetWidth,
-        usesFlashAttention: usesFlashAttention ? .scaleMerged : .none)
+        usesFlashAttention: valueOr(usesFlashAttention, .scaleMerged))
       var effnet = graph.variable(
         .GPU(0), .NHWC(cfgChannelsAndBatchSize, effnetHeight, effnetWidth, 16), of: FloatType.self)
       if batchSize != cfgChannelsAndBatchSize {

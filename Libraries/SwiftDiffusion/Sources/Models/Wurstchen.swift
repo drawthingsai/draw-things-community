@@ -117,13 +117,13 @@ private func MultiHeadAttention(
   let tovalues = Dense(count: k * h, name: "\(prefix).values")
   var keys = tokeys(x).reshaped([b, hw, h, k])
   var queries: Model.IO
-  if usesFlashAttention != .scaleMerged {
+  if usesFlashAttention == .scale1 {
     queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k])
   } else {
     queries = toqueries(x).reshaped([b, hw, h, k])
   }
   var values = tovalues(x).reshaped([b, hw, h, k])
-  if usesFlashAttention == .scale1 || usesFlashAttention == .scaleMerged {
+  if usesFlashAttention != .none {
     keys = Functional.concat(axis: 1, keys, key)
     values = Functional.concat(axis: 1, values, value)
     if t.0 == t.1 || b == 1 {
@@ -133,7 +133,8 @@ private func MultiHeadAttention(
           scale: 1, flags: [.Float16], multiHeadOutputProjectionFused: true, name: "unifyheads")
       } else {
         scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), flags: [.Float16],
+          scale: 1.0 / Float(k).squareRoot(),
+          flags: [.Float16],
           multiHeadOutputProjectionFused: true, name: "unifyheads")
       }
       let out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
@@ -181,9 +182,11 @@ private func MultiHeadAttention(
         [b0, hw + t.0, h, k], offset: [0, 0, 0, 0],
         strides: [(hw + max(t.0, t.1)) * h * k, h * k, k, 1]
       )
-      let out0 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
-        queries0, keys0, values0
-      ).reshaped([b0, hw, h * k])
+      let out0 = ScaledDotProductAttention(
+        scale: 1.0 / Float(k).squareRoot(),
+        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])(
+          queries0, keys0, values0
+        ).reshaped([b0, hw, h * k])
       let keys1 = keys.reshaped(
         [b0, hw + t.1, h, k], offset: [b0, 0, 0, 0],
         strides: [(hw + max(t.0, t.1)) * h * k, h * k, k, 1]
@@ -194,9 +197,11 @@ private func MultiHeadAttention(
         [b0, hw + t.1, h, k], offset: [b0, 0, 0, 0],
         strides: [(hw + max(t.0, t.1)) * h * k, h * k, k, 1]
       )
-      let out1 = ScaledDotProductAttention(scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])(
-        queries1, keys1, values1
-      ).reshaped([b0, hw, h * k])
+      let out1 = ScaledDotProductAttention(
+        scale: 1.0 / Float(k).squareRoot(),
+        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])(
+          queries1, keys1, values1
+        ).reshaped([b0, hw, h * k])
       var out = Functional.concat(axis: 0, out0, out1)
       let unifyheads = Dense(count: k * h, name: "unifyheads")
       out = unifyheads(out)
@@ -412,7 +417,7 @@ func AttnBlockFixed(
       let keys = tokeys(kvOut).reshaped([batchSize, t.0, nHead, k]).transposed(1, 2)
       let values = tovalues(kvOut).reshaped([batchSize, t.0, nHead, k]).transposed(1, 2)
       return (Model([kv], [keys, values]), mapper)
-    case .scale1, .scaleMerged:
+    case .scale1, .scaleMerged, .quantized:
       let keys = tokeys(kvOut).reshaped([batchSize, t.0, nHead, k])
       let values = tovalues(kvOut).reshaped([batchSize, t.0, nHead, k])
       return (Model([kv], [keys, values]), mapper)

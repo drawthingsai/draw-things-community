@@ -481,7 +481,7 @@ func LoRASelfAttention(
   let tokeys = LoRADense(count: k * h, configuration: LoRAConfiguration, noBias: true)
   let toqueries = LoRADense(count: k * h, configuration: LoRAConfiguration, noBias: true)
   let tovalues = LoRADense(count: k * h, configuration: LoRAConfiguration, noBias: true)
-  if usesFlashAttention == .scale1 || usesFlashAttention == .scaleMerged {
+  if usesFlashAttention != .none {
     var queries: Model.IO
     if usesFlashAttention == .scale1 {
       queries = ((1.0 / Float(k).squareRoot()) * toqueries(x)).reshaped([b, hw, h, k]).identity()
@@ -496,7 +496,9 @@ func LoRASelfAttention(
         scale: 1, flags: upcastAttention ? [] : [.Float16])
     } else {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16])
+        scale: 1.0 / Float(k).squareRoot(),
+        flags: upcastAttention
+          ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
     }
     var out = scaledDotProductAttention(queries, keys, values)
     let unifyheads = LoRADense(count: k * h, configuration: LoRAConfiguration)
@@ -567,7 +569,7 @@ func LoRACrossAttention(
   let tokeys = LoRADense(count: k * h, configuration: LoRAConfiguration, noBias: true)
   let toqueries = LoRADense(count: k * h, configuration: LoRAConfiguration, noBias: true)
   let tovalues = LoRADense(count: k * h, configuration: LoRAConfiguration, noBias: true)
-  if usesFlashAttention == .scale1 || usesFlashAttention == .scaleMerged {
+  if usesFlashAttention != .none {
     if b == 1 || t.0 == t.1 {
       let t = t.0
       let queries = toqueries(x).reshaped([b, hw, h, k]).identity().identity()
@@ -575,14 +577,18 @@ func LoRACrossAttention(
       let values = tovalues(c).reshaped([b, t, h, k])
       if injectIPAdapterLengths.count > 0 {
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16])
+          scale: 1.0 / Float(k).squareRoot(),
+          flags: upcastAttention
+            ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
         var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, h * k])
         var ipKVs = [Input]()
         for _ in injectIPAdapterLengths {
           let ipKeys = Input()
           let ipValues = Input()
           let scaledDotProductAttention = ScaledDotProductAttention(
-            scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16])
+            scale: 1.0 / Float(k).squareRoot(),
+            flags: upcastAttention
+              ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
           out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
           ipKVs.append(contentsOf: [ipKeys, ipValues])
         }
@@ -590,6 +596,7 @@ func LoRACrossAttention(
         out = unifyheads(out)
         return Model([x, c] + ipKVs, [out])
       } else {
+        // TODO: 2026-03-25 Quantized attention is not propagated through this unfused LoRA cross-attention path yet.
         let scaledDotProductAttention = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16])
         var out = scaledDotProductAttention(queries, keys, values)
@@ -609,6 +616,7 @@ func LoRACrossAttention(
       }
       let b0 = b / 2
       let out0: Model.IO
+      // TODO: 2026-03-25 Quantized attention is not propagated through these split-token LoRA cross-attention branches yet.
       if b0 == 1 || t.0 >= t.1 {
         let keys0 = keys.reshaped(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
@@ -1319,18 +1327,22 @@ func LoRACrossAttentionKeysAndValues(
   let keys = Input()
   let values = Input()
   let toqueries = LoRADense(count: k * h, configuration: LoRAConfiguration, noBias: true)
-  if usesFlashAttention == .scale1 || usesFlashAttention == .scaleMerged {
+  if usesFlashAttention != .none {
     if b == 1 || t.0 == t.1 {
       let queries = toqueries(x).reshaped([b, hw, h, k])
       let scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16])
+        scale: 1.0 / Float(k).squareRoot(),
+        flags: upcastAttention
+          ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
       var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, h * k])
       var ipKVs = [Input]()
       for _ in injectIPAdapterLengths {
         let ipKeys = Input()
         let ipValues = Input()
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : [.Float16])
+          scale: 1.0 / Float(k).squareRoot(),
+          flags: upcastAttention
+            ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
         out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
         ipKVs.append(contentsOf: [ipKeys, ipValues])
       }
