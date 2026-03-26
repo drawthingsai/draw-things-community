@@ -702,7 +702,8 @@ private enum ModelResolver {
 
 private enum ConfigurationLoader {
   static func load(
-    model: String, configJSON: String?, configFile: String?, modelsDirectory: URL
+    modelSpecification: ModelZoo.Specification, configJSON: String?, configFile: String?,
+    modelsDirectory: URL
   ) throws -> ResolvedGenerationConfiguration {
     if configJSON != nil && configFile != nil {
       throw ValidationError("Use only one of --config-json or --config-file")
@@ -711,10 +712,10 @@ private enum ConfigurationLoader {
       configJSON: configJSON, configFile: configFile)
     let (recommendedConfiguration, recommendedNegativePrompt) =
       RecommendedSettingsResolver.resolve(
-        model: model, overrideDictionary: overrideDictionary, modelsDirectory: modelsDirectory,
-        allowNetwork: !NetworkAccessPolicy.offline)
+        modelSpecification: modelSpecification, overrideDictionary: overrideDictionary,
+        modelsDirectory: modelsDirectory, allowNetwork: !NetworkAccessPolicy.offline)
     let configuration = try mergeOverrides(
-      overrideDictionary, onto: recommendedConfiguration, forcingModel: model)
+      overrideDictionary, onto: recommendedConfiguration, forcingModel: modelSpecification.file)
     return ResolvedGenerationConfiguration(
       configuration: configuration, recommendedNegativePrompt: recommendedNegativePrompt)
   }
@@ -775,16 +776,18 @@ private enum ConfigurationLoader {
 
 private enum RecommendedSettingsResolver {
   static func resolve(
-    model: String, overrideDictionary: [String: Any]?, modelsDirectory: URL, allowNetwork: Bool
+    modelSpecification: ModelZoo.Specification, overrideDictionary: [String: Any]?,
+    modelsDirectory: URL, allowNetwork: Bool
   ) -> (GenerationConfiguration, String?) {
-    let defaultConfiguration = defaultConfiguration(for: model)
+    let defaultConfiguration = defaultConfiguration(for: modelSpecification)
     let loras = loras(from: overrideDictionary)
     guard
       let specification = findRecommendedSettings(
-        model: model, loras: loras, modelsDirectory: modelsDirectory, allowNetwork: allowNetwork)
+        model: modelSpecification.file, loras: loras, modelsDirectory: modelsDirectory,
+        allowNetwork: allowNetwork)
     else {
       var builder = GenerationConfigurationBuilder(from: defaultConfiguration)
-      builder.model = model
+      builder.model = modelSpecification.file
       return (builder.build(), nil)
     }
     guard
@@ -793,13 +796,13 @@ private enum RecommendedSettingsResolver {
       var mergedDictionary = try? JSONSerialization.jsonObject(with: defaultData) as? [String: Any]
     else {
       var builder = GenerationConfigurationBuilder(from: defaultConfiguration)
-      builder.model = model
+      builder.model = modelSpecification.file
       return (builder.build(), nil)
     }
     for (key, value) in specification.configuration {
       mergedDictionary[key] = value
     }
-    mergedDictionary["model"] = model
+    mergedDictionary["model"] = modelSpecification.file
     guard
       let mergedData = try? JSONSerialization.data(withJSONObject: mergedDictionary),
       let configuration = try? JSONDecoder().decode(
@@ -808,16 +811,18 @@ private enum RecommendedSettingsResolver {
       .createGenerationConfiguration()
     else {
       var builder = GenerationConfigurationBuilder(from: defaultConfiguration)
-      builder.model = model
+      builder.model = modelSpecification.file
       return (builder.build(), nil)
     }
     return (configuration, specification.negative?.trimmingCharacters(in: .whitespacesAndNewlines))
   }
 
-  private static func defaultConfiguration(for model: String) -> GenerationConfiguration {
-    let defaultScale = DeviceCapability.defaultScale(ModelZoo.defaultScaleForModel(model))
+  private static func defaultConfiguration(for modelSpecification: ModelZoo.Specification)
+    -> GenerationConfiguration
+  {
+    let defaultScale = DeviceCapability.defaultScale(modelSpecification.defaultScale)
     var builder = GenerationConfigurationBuilder(from: GenerationConfiguration.default)
-    builder.model = model
+    builder.model = modelSpecification.file
     builder.startWidth = defaultScale
     builder.startHeight = defaultScale
     return builder.build()
@@ -2371,17 +2376,15 @@ private func requiredFiles(for configuration: GenerationConfiguration) -> [Strin
 }
 
 private func createConfiguration(
-  model: String, steps: Int?, cfg: Float?, width: Int?, height: Int?, frames: Int?, seed: UInt32?,
-  strength: Float?, configJSON: String?, configFile: String?, modelsDirectory: URL
+  modelSpecification: ModelZoo.Specification, steps: Int?, cfg: Float?, width: Int?, height: Int?,
+  frames: Int?, seed: UInt32?, strength: Float?, configJSON: String?, configFile: String?,
+  modelsDirectory: URL
 ) throws -> ResolvedGenerationConfiguration {
-  guard let modelSpec = ModelResolver.resolve(model, modelsDirectory: modelsDirectory) else {
-    throw DrawThingsCLIError.unsupportedModelInput(model)
-  }
   let resolvedConfiguration = try ConfigurationLoader.load(
-    model: modelSpec.file, configJSON: configJSON, configFile: configFile,
+    modelSpecification: modelSpecification, configJSON: configJSON, configFile: configFile,
     modelsDirectory: modelsDirectory)
   var builder = GenerationConfigurationBuilder(from: resolvedConfiguration.configuration)
-  builder.model = modelSpec.file
+  builder.model = modelSpecification.file
   if let steps {
     guard steps >= 1 else { throw ValidationError("--steps must be >= 1") }
     builder.steps = UInt32(steps)
@@ -2725,14 +2728,16 @@ extension DrawThingsCLI {
         printModelResolutionHelp(modelsDirectory: modelsDirectory)
         throw ValidationError("--model is required.")
       }
-      guard ModelResolver.resolve(model, modelsDirectory: modelsDirectory) != nil else {
+      guard
+        let modelSpecification = ModelResolver.resolve(model, modelsDirectory: modelsDirectory)
+      else {
         printModelResolutionHelp(modelsDirectory: modelsDirectory)
         throw unresolvedModelValidationError(model)
       }
 
       let resolvedConfiguration = try createConfiguration(
-        model: model, steps: sampling.steps, cfg: sampling.cfg, width: sampling.width,
-        height: sampling.height, frames: sampling.frames,
+        modelSpecification: modelSpecification, steps: sampling.steps, cfg: sampling.cfg,
+        width: sampling.width, height: sampling.height, frames: sampling.frames,
         seed: sampling.seed, strength: sampling.strength,
         configJSON: configurationOverrides.configJSON,
         configFile: configurationOverrides.configFile,
