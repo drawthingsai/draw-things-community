@@ -552,13 +552,13 @@ public enum ComputeUnits {
   public static func threshold(for priority: String?) -> Int {
     switch priority {
     case "community":
-      return 15000  // around 120s
+      return 10_000  // around 120s
     case "plus":
       return 40000  // around 300s
     case nil:
-      return 15000
+      return 10_000
     default:
-      return 15000
+      return 10_000
     }
   }
 

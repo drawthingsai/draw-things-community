@@ -76,7 +76,7 @@ message UpdatePrivateKeyResponse {
 }
 
 message UpdateComputeUnitRequest {
-    map<string, int32> cu_config = 1;  // e.g. {"community": 15000, "plus": 40000}
+    map<string, int32> cu_config = 1;  // e.g. {"community": 10000, "plus": 40000}
     int64 expiration_timestamp = 2;  // Unix timestamp in seconds
 }
 
