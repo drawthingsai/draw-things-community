@@ -750,6 +750,28 @@ public struct ModelZoo: DownloadZoo {
       "249f5bd521472a952775e0cb9729836d2fc9ab488ca64e08329e19dd07060157",
     "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt":
       "30f695c0b24a59a6490f1552c025124d713f61d4e6a90da6b0def038c8caa845",
+    "ltx_2.3_22b_distilled_i8x.ckpt":
+      "7da4b90696da134e02024df1501b1cb7f352b4714c4ccb0223fbf88b101829dc",
+    "ltx_2.3_22b_dev_i8x.ckpt":
+      "0f6444dd1784417618ccb7648416df931c572913a4840c689a48ed272a6d2679",
+    "z_image_turbo_1.0_i8x.ckpt":
+      "1f12425e76cc525de20d8047aac681949d964c986c59dca8615b17ce7601ce29",
+    "z_image_1.0_i8x.ckpt":
+      "ae7436f413ebd81250983005babb5bfdb562b0c97046ec582ade04cffed3c315",
+    "flux_2_klein_4b_i8x.ckpt":
+      "19985019d78456d6de025a27f048ddc6aefd4e2e28e4ea1827126841932bb645",
+    "flux_2_klein_base_4b_i8x.ckpt":
+      "e0ebcfa55e32ed9cc5d3c1c679fae1ecd5e518c00af9411afcbb5da1c5b36472",
+    "qwen_image_2512_i8x.ckpt":
+      "86746c3c385255b1b71a40ab8c6b4b758c14eb27dad64f4ae1742521294cf868",
+    "qwen_image_2512_bf16_i8x.ckpt":
+      "9bcedf9b533a7d6a734faa15801085cf4c74678119dc648851352e16b8fd80aa",
+    "qwen_image_edit_2511_i8x.ckpt":
+      "12bb11eb40d79935b39cbc3899a51876786d50ac4afd1b09163cf91cd67a7a8b",
+    "qwen_image_edit_2511_bf16_i8x.ckpt":
+      "f4430119fb5ecf2ede5b9bdfe42d57e79668b73eba79137588e74a763aca17a4",
+    "qwen_image_layered_1.0_bf16_i8x.ckpt":
+      "6bbe85a146a49f485341a952396245bb2fb758671ce794eb6b4cedadddb9b87f",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -760,6 +782,20 @@ public struct ModelZoo: DownloadZoo {
       version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
       autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2.3_22b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      latentsUpscalers: [
+        .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
+      ],
+      note:
+        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a significant update to LTX-2 with improved audio and visual quality and enhanced prompt adherence. It is a state-of-the-art open-source audio-video foundation model developed by Lightricks and can generate synchronized video and audio within a single model. The [distilled] checkpoint is the distilled version of the full model and is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
+      copyright: "© 2026 Lightricks", huggingFaceLink: "Lightricks/LTX-2.3"
+    ),
+    Specification(
+      name: "LTX-2.3 22B [distilled] (8-bit S)", file: "ltx_2.3_22b_distilled_i8x.ckpt", prefix: "",
+      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      clipEncoder: "ltx_2.3_22b_distilled_i8x.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       latentsUpscalers: [
         .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
@@ -788,6 +824,20 @@ public struct ModelZoo: DownloadZoo {
       version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
       autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
       clipEncoder: "ltx_2.3_22b_dev_q8p.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      latentsUpscalers: [
+        .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
+      ],
+      note:
+        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a significant update to LTX-2 with improved audio and visual quality and enhanced prompt adherence. It is a state-of-the-art open-source audio-video foundation model developed by Lightricks and can generate synchronized video and audio within a single model. The [dev] checkpoint is the full model variant and is fully trainable. For best results, set Text Guidance to 3.5 and use 20–30 sampling steps.",
+      copyright: "© 2026 Lightricks"
+    ),
+    Specification(
+      name: "LTX-2.3 22B [dev] (8-bit S)", file: "ltx_2.3_22b_dev_i8x.ckpt", prefix: "",
+      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      clipEncoder: "ltx_2.3_22b_dev_i8x.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       latentsUpscalers: [
         .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
@@ -861,6 +911,15 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2025 Alibaba", huggingFaceLink: "Tongyi-MAI/Z-Image-Turbo"
     ),
     Specification(
+      name: "Z Image Turbo 1.0 (8-bit S)", file: "z_image_turbo_1.0_i8x.ckpt", prefix: "",
+      version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "[Z Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 8 sampling steps recommended.",
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Tongyi-MAI/Z-Image-Turbo"
+    ),
+    Specification(
       name: "Z Image Turbo 1.0 (6-bit)", file: "z_image_turbo_1.0_q6p.ckpt", prefix: "",
       version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
@@ -871,6 +930,25 @@ public struct ModelZoo: DownloadZoo {
     ),
     Specification(
       name: "Z Image Base 1.0", file: "z_image_1.0_q8p.ckpt", prefix: "",
+      version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
+      autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationQkScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 1 : 32) }),
+        activationProjScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 2 : 1) }),
+        activationFfnProjUpScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 1 : 32) }),
+        activationFfnScaling: Dictionary(
+          uniqueKeysWithValues: (0..<34).map { ($0, $0 < 2 ? 2 : 1) })),
+      note:
+        "[Z Image](https://huggingface.co/Tongyi-MAI/Z-Image) is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 28 to 50 sampling steps recommended.",
+      copyright: "© 2026 Alibaba", huggingFaceLink: "Tongyi-MAI/Z-Image"
+    ),
+    Specification(
+      name: "Z Image Base 1.0 (8-bit S)", file: "z_image_1.0_i8x.ckpt", prefix: "",
       version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
@@ -923,6 +1001,21 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2025 Alibaba", huggingFaceLink: "Qwen/Qwen-Image-2512"
     ),
     Specification(
+      name: "Qwen Image 2512 (8-bit S)", file: "qwen_image_2512_i8x.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnProjUpScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      note:
+        "[Qwen Image 2512](https://huggingface.co/Qwen/Qwen-Image-2512) is the december update of Qwen Image model with improvements on enhanced human realism, finer natural detail and improved text rendering. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Qwen/Qwen-Image-2512"
+    ),
+    Specification(
       name: "Qwen Image 2512 (6-bit)", file: "qwen_image_2512_q6p.ckpt", prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
@@ -939,6 +1032,20 @@ public struct ModelZoo: DownloadZoo {
     ),
     Specification(
       name: "Qwen Image 2512 (BF16)", file: "qwen_image_2512_bf16_q8p.ckpt", prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationQkScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      isBf16: true,
+      note:
+        "[Qwen Image 2512](https://huggingface.co/Qwen/Qwen-Image-2512) is the december update of Qwen Image model with improvements on enhanced human realism, finer natural detail and improved text rendering. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Qwen Image 2512 (BF16, 8-bit S)", file: "qwen_image_2512_bf16_i8x.ckpt", prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
@@ -975,6 +1082,15 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2026 Black Forest Labs", huggingFaceLink: "black-forest-labs/FLUX.2-klein-4B"
     ),
     Specification(
+      name: "FLUX.2 [klein] 4B (8-bit S)", file: "flux_2_klein_4b_i8x.ckpt", prefix: "",
+      version: .flux2_4b, defaultScale: 16, textEncoder: "qwen_3_4b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
+      paddedTextEncodingLength: 512, hiresFixScale: 24,
+      note:
+        "[FLUX.2 [klein] 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) is a 4 billion parameter rectified flow transformer capable of generating, editing and combining images based on text instructions.",
+      copyright: "© 2026 Black Forest Labs", huggingFaceLink: "black-forest-labs/FLUX.2-klein-4B"
+    ),
+    Specification(
       name: "FLUX.2 [klein] 4B (6-bit)", file: "flux_2_klein_4b_q6p.ckpt", prefix: "",
       version: .flux2_4b, defaultScale: 16, textEncoder: "qwen_3_4b_q8p.ckpt",
       autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
@@ -985,6 +1101,16 @@ public struct ModelZoo: DownloadZoo {
     ),
     Specification(
       name: "FLUX.2 [klein] 4B Base", file: "flux_2_klein_base_4b_q8p.ckpt", prefix: "",
+      version: .flux2_4b, defaultScale: 16, textEncoder: "qwen_3_4b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
+      paddedTextEncodingLength: 512, hiresFixScale: 24,
+      note:
+        "[FLUX.2 [klein] 4B Base](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B) is a 4 billion parameter rectified flow transformer capable of generating, editing and combining images based on text instructions.",
+      copyright: "© 2026 Black Forest Labs",
+      huggingFaceLink: "black-forest-labs/FLUX.2-klein-base-4B"
+    ),
+    Specification(
+      name: "FLUX.2 [klein] 4B Base (8-bit S)", file: "flux_2_klein_base_4b_i8x.ckpt", prefix: "",
       version: .flux2_4b, defaultScale: 16, textEncoder: "qwen_3_4b_q8p.ckpt",
       autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
       paddedTextEncodingLength: 512, hiresFixScale: 24,
@@ -1054,6 +1180,21 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2025 Alibaba", huggingFaceLink: "Qwen/Qwen-Image-Edit-2511"
     ),
     Specification(
+      name: "Qwen Image Edit 2511 (8-bit S)", file: "qwen_image_edit_2511_i8x.ckpt",
+      prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", modifier: .qwenimageEdit2511,
+      clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      mmdit: .init(
+        qkNorm: true, dualAttentionLayers: [],
+        activationProjScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) }),
+        activationFfnScaling: Dictionary(uniqueKeysWithValues: (0..<60).map { ($0, 2) })),
+      note:
+        "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is an enhanced image editing model that significantly improves character consistency, mitigates image drift, and strengthens multi-person fusion capabilities compared to its predecessor (2509). It integrates popular LoRA features natively, enabling advanced lighting control and viewpoint generation without extra tuning, alongside specialized industrial design and geometric reasoning capabilities. It is Apache 2.0-licensed, with 40 inference steps recommended for optimal results.",
+      copyright: "© 2025 Alibaba", huggingFaceLink: "Qwen/Qwen-Image-Edit-2511"
+    ),
+    Specification(
       name: "Qwen Image Edit 2511 (6-bit)", file: "qwen_image_edit_2511_q6p.ckpt",
       prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
@@ -1070,6 +1211,17 @@ public struct ModelZoo: DownloadZoo {
     ),
     Specification(
       name: "Qwen Image Edit 2511 (BF16)", file: "qwen_image_edit_2511_bf16_q8p.ckpt",
+      prefix: "",
+      version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", modifier: .qwenimageEdit2511,
+      clipEncoder: "qwen_2.5_vl_7b_vit_f16.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24, isBf16: true,
+      note:
+        "[Qwen Image Edit 2511](https://huggingface.co/Qwen/Qwen-Image-Edit-2511) is an enhanced image editing model that significantly improves character consistency, mitigates image drift, and strengthens multi-person fusion capabilities compared to its predecessor (2509). It integrates popular LoRA features natively, enabling advanced lighting control and viewpoint generation without extra tuning, alongside specialized industrial design and geometric reasoning capabilities. It is Apache 2.0-licensed, with 40 inference steps recommended for optimal results. The BF16 version is only compatible with macOS 15, iOS 18 and above.",
+      copyright: "© 2025 Alibaba"
+    ),
+    Specification(
+      name: "Qwen Image Edit 2511 (BF16, 8-bit S)", file: "qwen_image_edit_2511_bf16_i8x.ckpt",
       prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
       autoencoder: "qwen_image_vae_f16.ckpt", modifier: .qwenimageEdit2511,

@@ -880,7 +880,7 @@ private enum RecommendedSettingsResolver {
     let stem = file.components(separatedBy: ".")[0]
     guard !stem.isEmpty else { return "" }
     var components = stem.components(separatedBy: "_")
-    while let last = components.last, ["f16", "svd", "q5p", "q6p", "q8p"].contains(last) {
+    while let last = components.last, ["f16", "svd", "q5p", "q6p", "q8p", "i8x"].contains(last) {
       components.removeLast()
     }
     return components.joined(separator: "_")
