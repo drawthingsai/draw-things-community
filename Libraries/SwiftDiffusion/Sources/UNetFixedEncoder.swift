@@ -2205,7 +2205,7 @@ extension UNetFixedEncoder {
           LTX2Fixed(
             time: batchSize, textLength: paddedTextLength, audioFrames: (batchSize - 1) * 8 + 1,
             timesteps: timesteps.count, channels: (4096, 2048), layers: 48,
-            contextProjection: false, textCrossAttentionAdaLN: true, KV: false, usesFlashAttention: valueOr(usesFlashAttention, .scale1),
+            contextProjection: false, textCrossAttentionAdaLN: true, KV: false, usesFlashAttention: valueOr(usesFlashAttention, .scale1)
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)
