@@ -17,7 +17,8 @@ let package = Package(
   ]
     + (hasMediaGenerationKitSwiftPMTargets
       ? [
-        .library(name: "MediaGenerationKit", targets: ["MediaGenerationKit"])
+        .library(name: "MediaGenerationKit", targets: ["MediaGenerationKit"]),
+        .executable(name: "media-generation-kit-cli", targets: ["MediaGenerationKitCLI"]),
       ] : []),
   dependencies: [
     .package(
@@ -515,8 +516,11 @@ let package = Package(
           dependencies: [
             "MediaGenerationKit",
             "DataModels",
+            "Diffusion",
             "ImageGenerator",
+            "ModelZoo",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            .product(name: "NNC", package: "s4nnc"),
           ],
           path: "Apps/MediaGenerationKitCLI",
           exclude: ["AGENTS.md"],
