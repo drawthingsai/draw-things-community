@@ -1,5 +1,6 @@
 import DataModels
 import Diffusion
+import Foundation
 import XCTest
 
 @testable import ModelZoo
@@ -57,6 +58,34 @@ final class ComputeUnitsTests: XCTestCase {
       name: modelName, file: "test.ckpt", prefix: "test", version: version,
       paddedTextEncodingLength: paddedTextEncodingLength)
     return (model: [modelName: specification], lora: [:])
+  }
+
+  func testFilePathForModelDownloadedUsesExternalFolderForNewFiles() throws {
+    let previousExternalUrls = ModelZoo.externalUrls
+    let previousPreference = ModelZoo.isExternalUrlsPreferred
+    defer {
+      ModelZoo.externalUrls = previousExternalUrls
+      ModelZoo.isExternalUrlsPreferred = previousPreference
+    }
+
+    let fileManager = FileManager.default
+    let fileName = "model-zoo-path-selection-\(UUID().uuidString).ckpt"
+    let internalPath = ModelZoo.internalFilePathForModelDownloaded(fileName)
+    let externalDirectory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
+      UUID().uuidString, isDirectory: true)
+    let externalPath = externalDirectory.appendingPathComponent(fileName).path
+
+    try fileManager.createDirectory(at: externalDirectory, withIntermediateDirectories: true)
+    defer {
+      try? fileManager.removeItem(at: externalDirectory)
+      try? fileManager.removeItem(atPath: internalPath)
+    }
+    try? fileManager.removeItem(atPath: internalPath)
+
+    ModelZoo.isExternalUrlsPreferred = false
+    ModelZoo.externalUrls = [externalDirectory]
+
+    XCTAssertEqual(ModelZoo.filePathForModelDownloaded(fileName), externalPath)
   }
 
   private func calibrationModelCoefficient(_ modelVersion: ModelVersion) -> Double {

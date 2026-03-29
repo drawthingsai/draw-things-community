@@ -1525,7 +1525,8 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2025 Alibaba"
     ),
     Specification(
-      name: "Wan 2.2 Low Noise Expert T2V A14B (8-bit S)", file: "wan_v2.2_a14b_lne_t2v_i8x.ckpt", prefix: "",
+      name: "Wan 2.2 Low Noise Expert T2V A14B (8-bit S)", file: "wan_v2.2_a14b_lne_t2v_i8x.ckpt",
+      prefix: "",
       version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
       autoencoder: "wan_v2.1_video_vae_f16.ckpt", hiresFixScale: 16,
       teaCacheCoefficients: [
@@ -1597,7 +1598,8 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2025 Alibaba"
     ),
     Specification(
-      name: "Wan 2.2 Low Noise Expert I2V A14B (8-bit S)", file: "wan_v2.2_a14b_lne_i2v_i8x.ckpt", prefix: "",
+      name: "Wan 2.2 Low Noise Expert I2V A14B (8-bit S)", file: "wan_v2.2_a14b_lne_i2v_i8x.ckpt",
+      prefix: "",
       version: .wan21_14b, defaultScale: 12, textEncoder: "umt5_xxl_encoder_q8p.ckpt",
       autoencoder: "wan_v2.1_video_vae_f16.ckpt", modifier: .inpainting, hiresFixScale: 16,
       teaCacheCoefficients: [
@@ -2379,7 +2381,7 @@ public struct ModelZoo: DownloadZoo {
     if fileManager.fileExists(atPath: otherFilePath) {
       return otherFilePath
     }
-    return isExternalUrlsPreferred ? externalUrl.appendingPathComponent(name).path : otherFilePath
+    return externalUrl.appendingPathComponent(name).path
   }
 
   public static func isModelDownloaded(
