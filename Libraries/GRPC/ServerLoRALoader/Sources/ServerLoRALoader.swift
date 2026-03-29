@@ -13,12 +13,12 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
     self.localLoRAManager = localLoRAManager
   }
 
-  public func newConfiguration(
+  public func rewrite(
     configuration: GenerationConfiguration,
     progress: @escaping (_ bytesReceived: Int64, _ bytesExpected: Int64, _ index: Int, _ total: Int)
       -> Void,
     cancellation: @escaping (@escaping () -> Void) -> Void,
-    completion: @escaping (Result<GenerationConfiguration, Error>) -> Void
+    completion: @escaping (Result<ServerConfigurationRewriteResult, Error>) -> Void
   ) {
 
     let configLoras: [String] = configuration.loras.compactMap { $0.file }
@@ -46,7 +46,7 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
 
     guard loRAsNeedToLoad.count > 0 else {
       self.logger.info("No loRAs need to load.")
-      completion(.success(configuration))
+      completion(.success(ServerConfigurationRewriteResult(configuration: configuration)))
       return
     }
 
@@ -62,7 +62,7 @@ public struct ServerLoRALoader: ServerConfigurationRewriter {
       }
 
       self.logger.info("Downloaded LoRAs: \(results)")
-      completion(.success(configuration))
+      completion(.success(ServerConfigurationRewriteResult(configuration: configuration)))
     }
   }
 

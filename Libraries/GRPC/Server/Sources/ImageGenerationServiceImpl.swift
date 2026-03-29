@@ -212,7 +212,7 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       context.closeFuture.whenComplete { _ in
         cancel()
       }
-      serverConfigurationRewriter.newConfiguration(configuration: configuration) {
+      serverConfigurationRewriter.rewrite(configuration: configuration) {
         bytesReceived, bytesExpected, index, total in
         let response = ImageGenerationResponse.with {
           $0.remoteDownload = RemoteDownloadResponse.with {
@@ -235,11 +235,12 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
           $0 = nil
         }
         switch result {
-        case .success(let newConfiguration):
+        case .success(let rewriteResult):
           queue.async { [weak self] in
             guard let self = self else { return }
             self.generateImage(
-              configuration: newConfiguration, request: request, promise: promise, context: context,
+              configuration: rewriteResult.configuration, request: request,
+              fileMapping: rewriteResult.fileMapping, promise: promise, context: context,
               responseCompression: responseCompression, cancelFlag: cancelFlag,
               successFlag: successFlag,
               cancellation: &cancellation, cancel: cancel
@@ -260,7 +261,8 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       queue.async { [weak self] in
         guard let self = self else { return }
         self.generateImage(
-          configuration: configuration, request: request, promise: promise, context: context,
+          configuration: configuration, request: request, fileMapping: [:], promise: promise,
+          context: context,
           responseCompression: responseCompression
         )
       }
@@ -271,6 +273,7 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   private func generateImage(
     configuration: GenerationConfiguration,
     request: ImageGenerationRequest,
+    fileMapping: [String: String],
     promise: EventLoopPromise<GRPCStatus>,
     context: StreamingResponseCallContext<ImageGenerationResponse>,
     responseCompression: Bool
@@ -296,7 +299,8 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       cancel()
     }
     generateImage(
-      configuration: configuration, request: request, promise: promise, context: context,
+      configuration: configuration, request: request, fileMapping: fileMapping, promise: promise,
+      context: context,
       responseCompression: responseCompression, cancelFlag: cancelFlag, successFlag: successFlag,
       cancellation: &cancellation,
       cancel: cancel)
@@ -305,6 +309,7 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   private func generateImage(
     configuration: GenerationConfiguration,
     request: ImageGenerationRequest,
+    fileMapping: [String: String],
     promise: EventLoopPromise<GRPCStatus>,
     context: StreamingResponseCallContext<ImageGenerationResponse>,
     responseCompression: Bool,
@@ -462,7 +467,7 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       let (images, audio, scaleFactor) = try self.imageGenerator.generate(
         trace: trace, image: image, scaleFactor: Int(request.scaleFactor), mask: mask, hints: hints,
         text: request.prompt, negativeText: request.negativePrompt, configuration: configuration,
-        fileMapping: [:],
+        fileMapping: fileMapping,
         keywords: request.keywords,
         cancellation: { cancellationBlock in
           cancellation.modify {

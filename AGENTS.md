@@ -52,6 +52,10 @@
 - Do not introduce `DispatchQueue`, `DispatchGroup`, or `DispatchSemaphore` in utility functions to simulate sync/async behavior unless absolutely necessary.
 - Keep utility functions thread-agnostic and leave threading/queue decisions to upper-level call sites.
 
+## Swift Error Style
+- Do not introduce new `NSError` values in Swift-first code paths.
+- Prefer dedicated `enum Error` / `LocalizedError` types, including small file-local enums for one-off errors.
+
 ## Instruction Count Utilities (s4nnc Models)
 - For model compute-estimation helpers, prefer exact, boring names derived from the original builder:
   - use `{ORIGINAL_FUNC}InstructionCount` (for example `Flux1InstructionCount`, `Flux1FixedInstructionCount`).
