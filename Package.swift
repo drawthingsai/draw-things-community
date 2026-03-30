@@ -2,22 +2,14 @@
 import Foundation
 import PackageDescription
 
-let hasMediaGenerationKitSwiftPMTargets = [
-  "Libraries/DeviceAttestation/Sources",
-  "Libraries/MediaGenerationKit/Sources",
-].allSatisfy { FileManager.default.fileExists(atPath: $0) }
-
 let package = Package(
   name: "DrawThings",
   platforms: [.macOS(.v13), .iOS(.v16)],
   products: [
     .executable(name: "gRPCServerCLI", targets: ["gRPCServerCLI"]),
     .executable(name: "draw-things-cli", targets: ["DrawThingsCLI"]),
-  ]
-    + (hasMediaGenerationKitSwiftPMTargets
-      ? [
-        .library(name: "_MediaGenerationKit", targets: ["_MediaGenerationKit"])
-      ] : []),
+    .library(name: "_MediaGenerationKit", targets: ["_MediaGenerationKit"]),
+  ],
   dependencies: [
     .package(
       url: "https://github.com/liuliu/ccv.git", revision: "ae1de9962437c14ff7d84af9bac66305e7ce5927"
@@ -478,36 +470,32 @@ let package = Package(
       path: "Apps/DrawThingsCLI",
       sources: ["DrawThingsCLI.swift"]
     ),
-
+    .target(
+      name: "DeviceAttestation",
+      path: "Libraries/DeviceAttestation/Sources"
+    ),
+    .target(
+      name: "_MediaGenerationKit",
+      dependencies: [
+        "BinaryResources",
+        "ConfigurationZoo",
+        "DataModels",
+        "DeviceAttestation",
+        "Diffusion",
+        "Downloader",
+        "ImageGenerator",
+        "LocalImageGenerator",
+        "ModelOp",
+        "RemoteImageGenerator",
+        "ModelZoo",
+        "ScriptDataModels",
+        "Tokenizer",
+        "GRPCServer",
+        .product(name: "NNC", package: "s4nnc"),
+        .product(name: "SQLiteDflat", package: "dflat"),
+        .product(name: "Crypto", package: "swift-crypto"),
+      ],
+      path: "Libraries/MediaGenerationKit/Sources"
+    ),
   ]
-    + (hasMediaGenerationKitSwiftPMTargets
-      ? [
-        .target(
-          name: "DeviceAttestation",
-          path: "Libraries/DeviceAttestation/Sources"
-        ),
-        .target(
-          name: "_MediaGenerationKit",
-          dependencies: [
-            "BinaryResources",
-            "ConfigurationZoo",
-            "DataModels",
-            "DeviceAttestation",
-            "Diffusion",
-            "Downloader",
-            "ImageGenerator",
-            "LocalImageGenerator",
-            "ModelOp",
-            "RemoteImageGenerator",
-            "ModelZoo",
-            "ScriptDataModels",
-            "Tokenizer",
-            "GRPCServer",
-            .product(name: "NNC", package: "s4nnc"),
-            .product(name: "SQLiteDflat", package: "dflat"),
-            .product(name: "Crypto", package: "swift-crypto"),
-          ],
-          path: "Libraries/MediaGenerationKit/Sources"
-        ),
-      ] : [])
 )
