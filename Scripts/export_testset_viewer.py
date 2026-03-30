@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import re
 import shutil
@@ -18,6 +19,7 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 ASPECT_ORDER = ["1x1", "1x2", "2x1", "3x4", "4x3"]
 SPECIAL_DIRECTORIES = {"Scores", "EditTest"}
 CATEGORY_DIRECTORY_PATTERN = re.compile(r"^C\d+_.+")
+SCORES_FILENAME_PATTERN = re.compile(r"^opus_4\.6_scores(?:_(1x2|2x1|3x4|4x3))?\.csv$")
 
 
 @dataclass(frozen=True)
@@ -111,6 +113,17 @@ def parse_scores(csv_path: Path) -> dict[str, dict[str, Any]]:
         return result
 
 
+def parse_scores_by_aspect(category_dir: Path) -> dict[str, dict[str, dict[str, Any]]]:
+    result: dict[str, dict[str, dict[str, Any]]] = {}
+    for csv_path in sorted(category_dir.glob("opus_4.6_scores*.csv")):
+        match = SCORES_FILENAME_PATTERN.match(csv_path.name)
+        if not match:
+            continue
+        aspect = match.group(1) or "1x1"
+        result[aspect] = parse_scores(csv_path)
+    return result
+
+
 def read_prompt(category_dir: Path) -> str:
     prompt_path = category_dir / "prompt.txt"
     if not prompt_path.exists():
@@ -198,25 +211,30 @@ def build_manifest(source: Path, output: Path, copy_images: bool, skip_thumbnail
         if prompt_override.get("prompt"):
             prompt = prompt_override["prompt"]
         prompt_zh = prompt_override.get("promptZh", "")
-        scores = parse_scores(category_dir / "opus_4.6_scores.csv")
+        scores_by_aspect = parse_scores_by_aspect(category_dir)
         image_groups = collect_images(category_dir)
 
         models: list[dict[str, Any]] = []
-        ordered_model_ids = list(scores.keys())
+        ordered_model_ids: list[str] = []
+        for aspect_scores in scores_by_aspect.values():
+            for model_id in aspect_scores.keys():
+                if model_id not in ordered_model_ids:
+                    ordered_model_ids.append(model_id)
         for model_id in sorted(image_groups.keys()):
-            if model_id not in scores:
+            if model_id not in ordered_model_ids:
                 ordered_model_ids.append(model_id)
 
         for model_id in ordered_model_ids:
             variants = sorted(image_groups.get(model_id, []), key=lambda item: aspect_sort_key(item.aspect))
             if not variants:
                 continue
-            score_entry = scores.get(model_id, {})
+            default_score_entry = scores_by_aspect.get("1x1", {}).get(model_id, {})
             variant_entries: list[dict[str, Any]] = []
             for variant in variants:
                 source_image = category_dir / variant.filename
                 image_key = f"images/{category_id}/{variant.filename}"
                 thumb_key = f"thumbs/{category_id}/{variant.filename}"
+                score_entry = scores_by_aspect.get(variant.aspect, {}).get(model_id, default_score_entry)
                 if copy_images:
                     copy_image(source_image, output / image_key)
                 if not skip_thumbnails:
@@ -227,6 +245,8 @@ def build_manifest(source: Path, output: Path, copy_images: bool, skip_thumbnail
                         "filename": variant.filename,
                         "imageKey": image_key,
                         "thumbKey": None if skip_thumbnails else thumb_key,
+                        "score": score_entry.get("score"),
+                        "note": score_entry.get("note", ""),
                     }
                 )
                 total_images += 1
@@ -235,8 +255,8 @@ def build_manifest(source: Path, output: Path, copy_images: bool, skip_thumbnail
                 {
                     "id": model_id,
                     "label": model_id,
-                    "score": score_entry.get("score"),
-                    "note": score_entry.get("note", ""),
+                    "score": default_score_entry.get("score"),
+                    "note": default_score_entry.get("note", ""),
                     "variants": variant_entries,
                 }
             )
@@ -278,9 +298,15 @@ def main() -> None:
         skip_thumbnails=args.skip_thumbnails,
         thumb_max_size=args.thumb_max_size,
     )
-    manifest_path = output / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    manifest_json = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+    manifest_hash_full = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
+    manifest_hash = manifest_hash_full[:16]
+    manifest_name = f"manifest_{manifest_hash}.json"
+    manifest_path = output / manifest_name
+    manifest_path.write_text(manifest_json, encoding="utf-8")
+    (output / "manifest_name.txt").write_text(manifest_name + "\n", encoding="utf-8")
     print(f"Wrote manifest: {manifest_path}")
+    print(f"Manifest filename: {manifest_name}")
     print(f"Categories: {manifest['summary']['categoryCount']}")
     print(f"Images: {manifest['summary']['imageCount']}")
     if args.copy_images:
