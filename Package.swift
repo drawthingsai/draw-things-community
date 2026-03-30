@@ -487,7 +487,7 @@ let package = Package(
           path: "Libraries/DeviceAttestation/Sources"
         ),
         .target(
-          name: "MediaGenerationKit",
+          name: "_MediaGenerationKit",
           dependencies: [
             "BinaryResources",
             "ConfigurationZoo",
@@ -508,21 +508,6 @@ let package = Package(
             .product(name: "Crypto", package: "swift-crypto"),
           ],
           path: "Libraries/MediaGenerationKit/Sources"
-        ),
-        .executableTarget(
-          name: "MediaGenerationKitCLI",
-          dependencies: [
-            "MediaGenerationKit",
-            "DataModels",
-            "Diffusion",
-            "ImageGenerator",
-            "ModelZoo",
-            .product(name: "ArgumentParser", package: "swift-argument-parser"),
-            .product(name: "NNC", package: "s4nnc"),
-          ],
-          path: "Apps/MediaGenerationKitCLI",
-          exclude: ["AGENTS.md"],
-          sources: ["MediaGenerationKitCLI.swift"]
         ),
       ] : [])
 )
