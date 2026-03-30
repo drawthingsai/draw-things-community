@@ -5,7 +5,6 @@ import PackageDescription
 let hasMediaGenerationKitSwiftPMTargets = [
   "Libraries/DeviceAttestation/Sources",
   "Libraries/MediaGenerationKit/Sources",
-  "Apps/MediaGenerationKitCLI",
 ].allSatisfy { FileManager.default.fileExists(atPath: $0) }
 
 let package = Package(
@@ -17,8 +16,7 @@ let package = Package(
   ]
     + (hasMediaGenerationKitSwiftPMTargets
       ? [
-        .library(name: "MediaGenerationKit", targets: ["MediaGenerationKit"]),
-        .executable(name: "media-generation-kit-cli", targets: ["MediaGenerationKitCLI"]),
+        .library(name: "_MediaGenerationKit", targets: ["_MediaGenerationKit"])
       ] : []),
   dependencies: [
     .package(
