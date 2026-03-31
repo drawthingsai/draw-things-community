@@ -67,12 +67,10 @@ extension MediaGenerationEnvironment.Storage {
     includeDependencies: Bool = true,
     verification: ((String, Int, Int) -> Void)? = nil,
     progress: ((MediaGenerationModelDownloadProgress) -> Void)? = nil
-  ) throws {
+  ) async throws {
     let modelsDirectory = try modelsDirectoryURL()
     let externalUrls = self.externalUrls
-    if !externalUrls.isEmpty {
-      ModelZoo.externalUrls = externalUrls
-    }
+    ModelZoo.externalUrls = externalUrls
 
     let allFiles: [String]
     if let specification = ModelZoo.specificationForModel(file) {
@@ -95,6 +93,7 @@ extension MediaGenerationEnvironment.Storage {
     var filesToDownload: [String] = []
 
     for (index, fileName) in allFiles.enumerated() {
+      try Task.checkCancellation()
       verification?(fileName, index + 1, allFiles.count)
       if try Self.fileNeedsDownload(
         fileName,
@@ -105,7 +104,8 @@ extension MediaGenerationEnvironment.Storage {
     }
 
     for (index, fileName) in filesToDownload.enumerated() {
-      try Self.downloadFile(
+      try Task.checkCancellation()
+      try await Self.downloadFile(
         fileName: fileName,
         fileIndex: index,
         totalFiles: filesToDownload.count,
@@ -171,7 +171,7 @@ extension MediaGenerationEnvironment.Storage {
     fileIndex: Int,
     totalFiles: Int,
     progress: ((MediaGenerationModelDownloadProgress) -> Void)?
-  ) throws {
+  ) async throws {
     let localURL = URL(fileURLWithPath: ModelZoo.filePathForModelDownloaded(fileName))
     let remoteURL = URL(string: "https://static.libnnc.org/\(fileName)")!
     let expectedSHA = ModelZoo.fileSHA256ForModelDownloaded(fileName)
@@ -180,36 +180,45 @@ extension MediaGenerationEnvironment.Storage {
       withIntermediateDirectories: true
     )
 
-    let semaphore = DispatchSemaphore(value: 0)
-    var downloadError: Error?
-
     let downloader = ResumableDownloader(
       remoteUrl: remoteURL,
       localUrl: localURL,
       sha256: expectedSHA
     )
-    downloader.resume { totalBytesWritten, totalBytesExpectedToWrite, isComplete, error in
-      if let error {
-        downloadError = error
-        semaphore.signal()
-        return
-      }
-      progress?(
-        MediaGenerationModelDownloadProgress(
-          file: fileName,
-          fileIndex: fileIndex + 1,
-          totalFiles: totalFiles,
-          bytesWritten: totalBytesWritten,
-          totalBytesExpected: totalBytesExpectedToWrite
-        )
-      )
-      if isComplete {
-        semaphore.signal()
-      }
-    }
-    semaphore.wait()
+    let bridge = MediaGenerationAsyncResultBridge<Void>()
 
-    if let error = downloadError {
+    do {
+      try await withTaskCancellationHandler(operation: {
+        try await withCheckedThrowingContinuation { continuation in
+          guard bridge.install(continuation) else { return }
+          downloader.resume { totalBytesWritten, totalBytesExpectedToWrite, isComplete, error in
+            if let error {
+              bridge.resume(throwing: error)
+              return
+            }
+            progress?(
+              MediaGenerationModelDownloadProgress(
+                file: fileName,
+                fileIndex: fileIndex + 1,
+                totalFiles: totalFiles,
+                bytesWritten: totalBytesWritten,
+                totalBytesExpected: totalBytesExpectedToWrite
+              )
+            )
+            if isComplete {
+              bridge.resume(returning: ())
+            }
+          }
+        }
+      }, onCancel: {
+        bridge.cancel()
+        DispatchQueue.global(qos: .userInitiated).async {
+          downloader.cancel()
+        }
+      })
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
       if let downloaderError = error as? ResumableDownloader.DownloadError,
         case .fileMismatch = downloaderError
       {

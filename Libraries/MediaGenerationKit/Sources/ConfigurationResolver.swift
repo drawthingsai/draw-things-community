@@ -16,8 +16,9 @@ internal enum ConfigurationZooLoader {
   private static let lock = NSLock()
   private static var bundledCache: [ConfigurationZoo.Specification]?
   private static var remoteCache: [ConfigurationZoo.Specification]?
+  private static var remoteLoadTask: Task<[ConfigurationZoo.Specification], Never>?
 
-  static func specifications(from source: ConfigurationZooSource, offline: Bool)
+  static func specificationsSync(from source: ConfigurationZooSource, offline: Bool)
     -> [ConfigurationZoo.Specification]
   {
     switch source {
@@ -51,6 +52,58 @@ internal enum ConfigurationZooLoader {
     }
   }
 
+  static func specifications(from source: ConfigurationZooSource, offline: Bool) async
+    -> [ConfigurationZoo.Specification]
+  {
+    switch source {
+    case .builtin:
+      return specificationsSync(from: .builtin, offline: offline)
+    case .bundled:
+      return specificationsSync(from: .bundled, offline: offline)
+    case .remote:
+      guard !offline else { return [] }
+      let remoteState = cachedRemoteState()
+      if let remoteCache = remoteState.cache {
+        return remoteCache
+      }
+      if let remoteLoadTask = remoteState.task {
+        return await remoteLoadTask.value
+      }
+      let loadTask = Task<[ConfigurationZoo.Specification], Never> {
+        guard let data = await MediaGenerationResourceLoader.fetchRemoteData(url: remoteURL) else {
+          return []
+        }
+        return parse(data)
+      }
+      updateRemoteState(cache: nil, task: loadTask)
+
+      let loaded = await loadTask.value
+
+      updateRemoteState(cache: loaded, task: nil)
+      return loaded
+    }
+  }
+
+  private static func cachedRemoteState() -> (
+    cache: [ConfigurationZoo.Specification]?, task: Task<[ConfigurationZoo.Specification], Never>?
+  ) {
+    lock.lock()
+    defer { lock.unlock() }
+    return (remoteCache, remoteLoadTask)
+  }
+
+  private static func updateRemoteState(
+    cache: [ConfigurationZoo.Specification]?,
+    task: Task<[ConfigurationZoo.Specification], Never>?
+  ) {
+    lock.lock()
+    if let cache {
+      remoteCache = cache
+    }
+    remoteLoadTask = task
+    lock.unlock()
+  }
+
   private static func parse(_ data: Data) -> [ConfigurationZoo.Specification] {
     guard let jsonSpecifications = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
     else {
@@ -79,7 +132,28 @@ internal enum ConfigurationResolver {
     offline: Bool
   ) -> ConfigurationZoo.Specification? {
     for source in [ConfigurationZooSource.builtin, .bundled, .remote] {
-      let configurations = ConfigurationZooLoader.specifications(from: source, offline: offline)
+      let configurations = ConfigurationZooLoader.specificationsSync(from: source, offline: offline)
+      guard !configurations.isEmpty else {
+        continue
+      }
+      if let specification = matchingConfiguration(
+        for: model,
+        loras: loras,
+        in: configurations
+      ) {
+        return specification
+      }
+    }
+    return nil
+  }
+
+  static func configuration(
+    for model: String,
+    loras: Set<String>,
+    offline: Bool
+  ) async -> ConfigurationZoo.Specification? {
+    for source in [ConfigurationZooSource.builtin, .bundled, .remote] {
+      let configurations = await ConfigurationZooLoader.specifications(from: source, offline: offline)
       guard !configurations.isEmpty else {
         continue
       }
@@ -108,6 +182,37 @@ internal enum ConfigurationResolver {
   {
     let defaultConfiguration = defaultConfiguration(for: model)
     guard let specification = configuration(for: model, loras: loras, offline: offline) else {
+      return defaultConfiguration
+    }
+    guard
+      let defaultData = try? JSONEncoder().encode(
+        JSGenerationConfiguration(configuration: defaultConfiguration)
+      ),
+      var mergedDictionary = try? JSONSerialization.jsonObject(with: defaultData) as? [String: Any]
+    else {
+      return defaultConfiguration
+    }
+    for (key, value) in specification.configuration {
+      mergedDictionary[key] = value
+    }
+    mergedDictionary["model"] = model
+    guard
+      let mergedData = try? JSONSerialization.data(withJSONObject: mergedDictionary),
+      let configuration = try? JSONDecoder().decode(
+        JSGenerationConfiguration.self,
+        from: mergedData
+      ).createGenerationConfiguration()
+    else {
+      return defaultConfiguration
+    }
+    return configuration
+  }
+
+  static func recommendedTemplate(for model: String, loras: Set<String>, offline: Bool) async
+    -> GenerationConfiguration
+  {
+    let defaultConfiguration = defaultConfiguration(for: model)
+    guard let specification = await configuration(for: model, loras: loras, offline: offline) else {
       return defaultConfiguration
     }
     guard

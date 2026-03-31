@@ -29,6 +29,7 @@ public enum MediaGenerationKitError: Error, LocalizedError {
   case hashMismatch(String)
   case insufficientStorage
   case notConfigured
+  case asyncOperationRequired(String)
 
   public var errorDescription: String? {
     switch self {
@@ -51,6 +52,9 @@ public enum MediaGenerationKitError: Error, LocalizedError {
     case .hashMismatch(let f): return "Checksum mismatch for: \(f)"
     case .insufficientStorage: return "Insufficient storage"
     case .notConfigured: return "Cloud compute is not configured"
+    case .asyncOperationRequired(let operation):
+      return
+        "Synchronous \(operation) would require a network fetch. Use the async overload instead."
     }
   }
 }
@@ -312,9 +316,7 @@ extension MediaGenerationEnvironment.Storage {
   ) throws {
     _ = try modelsDirectoryURL()
     let externalUrls = self.externalUrls
-    if !externalUrls.isEmpty {
-      ModelZoo.externalUrls = externalUrls
-    }
+    ModelZoo.externalUrls = externalUrls
     let localResources = localResources()
     DeviceCapability.cacheUri = URL(fileURLWithPath: localResources.tempDir)
     MediaGenerationExecutionUtilities.generate(

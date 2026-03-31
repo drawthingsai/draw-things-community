@@ -22,9 +22,7 @@ public struct MediaGenerationEnvironment: Sendable {
 
     init(externalUrls: [URL]) {
       self.currentExternalURLs = externalUrls
-      if !externalUrls.isEmpty {
-        ModelZoo.externalUrls = externalUrls
-      }
+      ModelZoo.externalUrls = externalUrls
     }
 
     var externalUrls: [URL] {
@@ -37,9 +35,7 @@ public struct MediaGenerationEnvironment: Sendable {
         lock.lock()
         currentExternalURLs = newValue
         lock.unlock()
-        if !newValue.isEmpty {
-          ModelZoo.externalUrls = newValue
-        }
+        ModelZoo.externalUrls = newValue
       }
     }
 
@@ -50,11 +46,7 @@ public struct MediaGenerationEnvironment: Sendable {
         DeviceCapability.cacheUri = URL(fileURLWithPath: cachedLocalResources.tempDir)
         return cachedLocalResources
       }
-      lock.unlock()
-
       let localResources = MediaGenerationExecutionUtilities.createLocalResources()
-
-      lock.lock()
       self.cachedLocalResources = localResources
       lock.unlock()
 
@@ -76,47 +68,40 @@ public struct MediaGenerationEnvironment: Sendable {
       offline: Bool,
       stateHandler: (@Sendable (EnsureState) -> Void)?
     ) async throws -> ModelResolver.Model {
-      guard let resolvedModel = try ModelResolver.resolve(model, offline: offline) else {
+      guard let resolvedModel = try await ModelResolver.resolve(model, offline: offline) else {
         throw MediaGenerationKitError.unresolvedModelReference(
           query: model,
-          suggestions: ModelResolver.suggestions(model, limit: 5, offline: offline).map(\.file)
+          suggestions: await ModelResolver.suggestions(model, limit: 5, offline: offline).map(\.file)
         )
       }
 
+      try Task.checkCancellation()
       stateHandler?(.resolving)
-      return try await withCheckedThrowingContinuation { continuation in
-        DispatchQueue.global(qos: .userInitiated).async {
-          do {
-            try self.ensureModelReady(
-              file: resolvedModel.file,
-              includeDependencies: true,
-              verification: { file, fileIndex, totalFiles in
-                stateHandler?(
-                  .verifying(
-                    file: file,
-                    fileIndex: fileIndex,
-                    totalFiles: totalFiles
-                  )
-                )
-              },
-              progress: { progress in
-                stateHandler?(
-                  .downloading(
-                    file: progress.file,
-                    fileIndex: progress.fileIndex,
-                    totalFiles: progress.totalFiles,
-                    bytesWritten: progress.bytesWritten,
-                    totalBytesExpected: progress.totalBytesExpected
-                  )
-                )
-              }
+      try await ensureModelReady(
+        file: resolvedModel.file,
+        includeDependencies: true,
+        verification: { file, fileIndex, totalFiles in
+          stateHandler?(
+            .verifying(
+              file: file,
+              fileIndex: fileIndex,
+              totalFiles: totalFiles
             )
-            continuation.resume(returning: resolvedModel)
-          } catch {
-            continuation.resume(throwing: error)
-          }
+          )
+        },
+        progress: { progress in
+          stateHandler?(
+            .downloading(
+              file: progress.file,
+              fileIndex: progress.fileIndex,
+              totalFiles: progress.totalFiles,
+              bytesWritten: progress.bytesWritten,
+              totalBytesExpected: progress.totalBytesExpected
+            )
+          )
         }
-      }
+      )
+      return resolvedModel
     }
 
     func modelsDirectoryURL() throws -> URL {
@@ -127,27 +112,66 @@ public struct MediaGenerationEnvironment: Sendable {
       return try MediaGenerationDefaults.ensureDirectory(primaryURL)
     }
 
-    func resolveModel(_ model: String, offline: Bool) -> MediaGenerationResolvedModel? {
-      try? ModelResolver.resolve(model, offline: offline)
+    func resolveModel(_ model: String, offline: Bool) throws -> MediaGenerationResolvedModel? {
+      try ModelResolver.resolve(model, offline: offline, operation: "resolveModel")
     }
 
-    func suggestions(for model: String, limit: Int, offline: Bool) -> [MediaGenerationResolvedModel] {
-      ModelResolver.suggestions(model, limit: limit, offline: offline)
+    func resolveModel(_ model: String, offline: Bool) async -> MediaGenerationResolvedModel? {
+      try? await ModelResolver.resolve(model, offline: offline)
+    }
+
+    func suggestions(for model: String, limit: Int, offline: Bool) throws
+      -> [MediaGenerationResolvedModel]
+    {
+      try ModelResolver.suggestions(model, limit: limit, offline: offline)
+    }
+
+    func suggestions(for model: String, limit: Int, offline: Bool) async -> [MediaGenerationResolvedModel]
+    {
+      await ModelResolver.suggestions(model, limit: limit, offline: offline)
     }
 
     func inspect(_ model: String, offline: Bool) throws -> MediaGenerationResolvedModel {
-      guard let specification = ModelResolver.specification(for: model, offline: offline) else {
+      guard
+        let specification = try ModelResolver.specification(
+          for: model,
+          offline: offline,
+          operation: "inspectModel"
+        )
+      else {
         throw MediaGenerationKitError.unresolvedModelReference(
           query: model,
-          suggestions: ModelResolver.suggestions(model, limit: 5, offline: offline).map(\.file)
+          suggestions: (try? ModelResolver.suggestions(model, limit: 5, offline: offline).map(\.file))
+            ?? []
         )
       }
 
       return ModelResolver.model(from: specification)
     }
 
-    func downloadableModels(includeDownloaded: Bool, offline: Bool) -> [MediaGenerationResolvedModel] {
-      ModelResolver.catalogModels(includeDownloaded: includeDownloaded, offline: offline)
+    func inspect(_ model: String, offline: Bool) async throws -> MediaGenerationResolvedModel {
+      guard let specification = await ModelResolver.specification(for: model, offline: offline) else {
+        throw MediaGenerationKitError.unresolvedModelReference(
+          query: model,
+          suggestions: await ModelResolver.suggestions(model, limit: 5, offline: offline).map(\.file)
+        )
+      }
+
+      return ModelResolver.model(from: specification)
+    }
+
+    func downloadableModels(includeDownloaded: Bool, offline: Bool) throws
+      -> [MediaGenerationResolvedModel]
+    {
+      try ModelResolver.catalogModelsSynchronouslyIfAvailable(
+        includeDownloaded: includeDownloaded,
+        offline: offline
+      )
+    }
+
+    func downloadableModels(includeDownloaded: Bool, offline: Bool) async -> [MediaGenerationResolvedModel]
+    {
+      await ModelResolver.catalogModels(includeDownloaded: includeDownloaded, offline: offline)
     }
   }
 
@@ -185,31 +209,60 @@ public struct MediaGenerationEnvironment: Sendable {
 
   public func resolveModel(
     _ model: String,
+    offline: Bool = true
+  ) throws -> MediaGenerationResolvedModel? {
+    try storage.resolveModel(model, offline: offline)
+  }
+
+  public func resolveModel(
+    _ model: String,
     offline: Bool = false
-  ) -> MediaGenerationResolvedModel? {
-    storage.resolveModel(model, offline: offline)
+  ) async -> MediaGenerationResolvedModel? {
+    await storage.resolveModel(model, offline: offline)
+  }
+
+  public func suggestedModels(
+    for model: String,
+    limit: Int = 5,
+    offline: Bool = true
+  ) throws -> [MediaGenerationResolvedModel] {
+    try storage.suggestions(for: model, limit: limit, offline: offline)
   }
 
   public func suggestedModels(
     for model: String,
     limit: Int = 5,
     offline: Bool = false
-  ) -> [MediaGenerationResolvedModel] {
-    storage.suggestions(for: model, limit: limit, offline: offline)
+  ) async -> [MediaGenerationResolvedModel] {
+    await storage.suggestions(for: model, limit: limit, offline: offline)
+  }
+
+  public func inspectModel(
+    _ model: String,
+    offline: Bool = true
+  ) throws -> MediaGenerationResolvedModel {
+    return try storage.inspect(model, offline: offline)
   }
 
   public func inspectModel(
     _ model: String,
     offline: Bool = false
-  ) throws -> MediaGenerationResolvedModel {
-    try storage.inspect(model, offline: offline)
+  ) async throws -> MediaGenerationResolvedModel {
+    try await storage.inspect(model, offline: offline)
+  }
+
+  public func downloadableModels(
+    includeDownloaded: Bool = true,
+    offline: Bool = true
+  ) throws -> [MediaGenerationResolvedModel] {
+    try storage.downloadableModels(includeDownloaded: includeDownloaded, offline: offline)
   }
 
   public func downloadableModels(
     includeDownloaded: Bool = true,
     offline: Bool = false
-  ) -> [MediaGenerationResolvedModel] {
-    storage.downloadableModels(includeDownloaded: includeDownloaded, offline: offline)
+  ) async -> [MediaGenerationResolvedModel] {
+    await storage.downloadableModels(includeDownloaded: includeDownloaded, offline: offline)
   }
 
   internal init(storage: Storage) {

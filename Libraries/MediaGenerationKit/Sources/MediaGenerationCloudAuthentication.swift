@@ -13,7 +13,12 @@ internal enum MediaGenerationCloudAuthentication {
   private static let paygStatusCacheTTL: TimeInterval = 30
   private static let paygStatusCacheQueue = DispatchQueue(
     label: "com.drawthings.sdk.cloud-auth.payg-cache")
-  private static var paygStatusCache: [String: (enabled: Bool, cachedAt: Date)] = [:]
+  private static var paygStatusCache: [PaygCacheKey: (enabled: Bool, cachedAt: Date)] = [:]
+
+  private struct PaygCacheKey: Hashable {
+    let shortTermToken: String
+    let baseURL: URL
+  }
 
   private struct AuthenticationRequest: Codable {
     let blob: String
@@ -35,23 +40,66 @@ internal enum MediaGenerationCloudAuthentication {
     let paygEligible: Bool
   }
 
+  private final class TaskCancellationBag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var tasks: [URLSessionTask] = []
+
+    func register(_ task: URLSessionTask) {
+      let shouldCancelImmediately: Bool
+      lock.lock()
+      shouldCancelImmediately = cancelled
+      if !cancelled {
+        tasks.append(task)
+      }
+      lock.unlock()
+      if shouldCancelImmediately {
+        task.cancel()
+      }
+    }
+
+    func cancelAll() {
+      let tasks: [URLSessionTask]
+      lock.lock()
+      if cancelled {
+        lock.unlock()
+        return
+      }
+      cancelled = true
+      tasks = self.tasks
+      self.tasks.removeAll()
+      lock.unlock()
+      tasks.forEach { $0.cancel() }
+    }
+  }
+
   static func authenticate(
     shortTermToken: String,
     encodedBlob: String,
     fromBridge: Bool,
     estimatedComputeUnits: Double?,
     baseURL: URL = CloudConfiguration.defaultBaseURL,
+    timeout: TimeInterval = 30,
     cancellation: (@escaping () -> Void) -> Void
   ) -> String? {
+    let taskCancellationBag = TaskCancellationBag()
+    cancellation {
+      taskCancellationBag.cancelAll()
+    }
 
-    let group = DispatchGroup()
-    group.enter()
-
-    let paygEnabled = fetchPaygEnabled(shortTermToken: shortTermToken, baseURL: baseURL)
+    let paygEnabled =
+      cachedPaygEnabled(shortTermToken: shortTermToken, baseURL: baseURL)
+      ?? fetchPaygEnabled(
+        shortTermToken: shortTermToken,
+        baseURL: baseURL,
+        timeout: min(timeout, 10),
+        taskCancellationBag: taskCancellationBag
+      )
     let isPositiveAmount = (estimatedComputeUnits ?? 0) > 0
 
     var request = URLRequest(url: baseURL.appendingPathComponent("/authenticate"))
     request.httpMethod = "POST"
+    request.timeoutInterval = timeout
     request.addValue("application/json", forHTTPHeaderField: "Content-Type")
     request.addValue(shortTermToken, forHTTPHeaderField: "Authorization")
 
@@ -67,11 +115,12 @@ internal enum MediaGenerationCloudAuthentication {
     )
 
     guard let body = try? JSONEncoder().encode(requestBody) else {
-      group.leave()
       return nil
     }
     request.httpBody = body
 
+    let group = DispatchGroup()
+    group.enter()
     var bearerToken: String?
 
     let task = URLSession.shared.dataTask(with: request) { data, response, error in
@@ -89,28 +138,52 @@ internal enum MediaGenerationCloudAuthentication {
       bearerToken = authResponse.gRPCToken
     }
 
-    cancellation {
-      task.cancel()
+    taskCancellationBag.register(task)
+    task.resume()
+
+    guard group.wait(timeout: .now() + timeout) != .timedOut else {
+      taskCancellationBag.cancelAll()
+      return nil
+    }
+    return bearerToken
+  }
+
+  static func prefetchPaygEnabled(
+    shortTermToken: String,
+    baseURL: URL
+  ) async -> Bool {
+    if let cached = cachedPaygEnabled(shortTermToken: shortTermToken, baseURL: baseURL) {
+      return cached
     }
 
-    task.resume()
-    group.wait()
+    var request = URLRequest(url: baseURL.appendingPathComponent("/billing/stripe/payg"))
+    request.httpMethod = "GET"
+    request.timeoutInterval = 10
+    request.addValue(shortTermToken, forHTTPHeaderField: "Authorization")
 
-    return bearerToken
+    do {
+      let (data, response) = try await URLSession.shared.data(for: request)
+      guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        cachePaygEnabled(false, shortTermToken: shortTermToken, baseURL: baseURL)
+        return false
+      }
+      let status = try JSONDecoder().decode(PaygStatusResponse.self, from: data)
+      let isEnabled = status.paygEnabled && status.paygEligible
+      cachePaygEnabled(isEnabled, shortTermToken: shortTermToken, baseURL: baseURL)
+      return isEnabled
+    } catch {
+      return false
+    }
   }
 
   private static func fetchPaygEnabled(
     shortTermToken: String,
-    baseURL: URL
+    baseURL: URL,
+    timeout: TimeInterval,
+    taskCancellationBag: TaskCancellationBag
   ) -> Bool {
-    let now = Date()
-    if let cached = paygStatusCacheQueue.sync(
-      execute: {
-        paygStatusCache[shortTermToken]
-      }),
-      now.timeIntervalSince(cached.cachedAt) <= paygStatusCacheTTL
-    {
-      return cached.enabled
+    if let cached = cachedPaygEnabled(shortTermToken: shortTermToken, baseURL: baseURL) {
+      return cached
     }
 
     let group = DispatchGroup()
@@ -119,9 +192,10 @@ internal enum MediaGenerationCloudAuthentication {
 
     var request = URLRequest(url: baseURL.appendingPathComponent("/billing/stripe/payg"))
     request.httpMethod = "GET"
+    request.timeoutInterval = timeout
     request.addValue(shortTermToken, forHTTPHeaderField: "Authorization")
 
-    URLSession.shared.dataTask(with: request) { data, response, _ in
+    let task = URLSession.shared.dataTask(with: request) { data, response, _ in
       defer { group.leave() }
       guard let httpResponse = response as? HTTPURLResponse,
         httpResponse.statusCode == 200,
@@ -131,12 +205,43 @@ internal enum MediaGenerationCloudAuthentication {
         return
       }
       isEnabled = status.paygEnabled && status.paygEligible
-    }.resume()
-
-    group.wait()
-    paygStatusCacheQueue.sync {
-      paygStatusCache[shortTermToken] = (enabled: isEnabled, cachedAt: now)
     }
+
+    taskCancellationBag.register(task)
+    task.resume()
+
+    guard group.wait(timeout: .now() + timeout) != .timedOut else {
+      task.cancel()
+      cachePaygEnabled(false, shortTermToken: shortTermToken, baseURL: baseURL)
+      return false
+    }
+
+    cachePaygEnabled(isEnabled, shortTermToken: shortTermToken, baseURL: baseURL)
     return isEnabled
+  }
+
+  private static func cachedPaygEnabled(shortTermToken: String, baseURL: URL) -> Bool? {
+    let now = Date()
+    let key = PaygCacheKey(shortTermToken: shortTermToken, baseURL: baseURL)
+    return paygStatusCacheQueue.sync {
+      guard let cached = paygStatusCache[key],
+        now.timeIntervalSince(cached.cachedAt) <= paygStatusCacheTTL
+      else {
+        return nil
+      }
+      return cached.enabled
+    }
+  }
+
+  private static func cachePaygEnabled(
+    _ enabled: Bool,
+    shortTermToken: String,
+    baseURL: URL
+  ) {
+    let key = PaygCacheKey(shortTermToken: shortTermToken, baseURL: baseURL)
+    let now = Date()
+    paygStatusCacheQueue.sync {
+      paygStatusCache[key] = (enabled: enabled, cachedAt: now)
+    }
   }
 }

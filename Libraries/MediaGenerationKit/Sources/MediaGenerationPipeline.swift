@@ -567,6 +567,9 @@ public struct MediaGenerationPipeline: Sendable {
     ) async throws -> [MediaGenerationPipeline.Result] {
       let executionInputs = try MediaGenerationPipeline.executionInputs(from: inputs)
       let runtimeConfiguration = try configuration.runtimeConfiguration(template: recommendedTemplate)
+      if let remoteExecutor {
+        try await remoteExecutor.prepareForGeneration()
+      }
       let cancellationBridge = MediaGenerationCancellationBridge()
       logger.debug(
         "Starting media generation",
@@ -683,24 +686,28 @@ public struct MediaGenerationPipeline: Sendable {
     FileInput(path)
   }
 
-  public static func fromPretrained(_ model: String, backend: Backend) throws
+  public static func fromPretrained(_ model: String, backend: Backend) async throws
     -> MediaGenerationPipeline
   {
-    let preparedStorage = try backend.preparedStorage()
+    let preparedStorage = try await backend.preparedStorage()
     let resolvedModel: String
-    if let localResolution = try ModelResolver.resolve(model, offline: preparedStorage.offline) {
+    if let localResolution = try await ModelResolver.resolve(model, offline: preparedStorage.offline) {
       resolvedModel = localResolution.file
     } else if backend.allowsUnresolvedModelReference {
       resolvedModel = model
     } else {
       throw MediaGenerationKitError.unresolvedModelReference(
         query: model,
-        suggestions: ModelResolver.suggestions(model, limit: 5, offline: preparedStorage.offline)
+        suggestions: await ModelResolver.suggestions(
+          model,
+          limit: 5,
+          offline: preparedStorage.offline
+        )
           .map(\.file)
       )
     }
 
-    let recommendedTemplate = ConfigurationResolver.recommendedTemplate(
+    let recommendedTemplate = await ConfigurationResolver.recommendedTemplate(
       for: resolvedModel,
       loras: [],
       offline: preparedStorage.offline
@@ -871,7 +878,7 @@ extension MediaGenerationPipeline.Backend {
     }
   }
 
-  fileprivate func preparedStorage() throws -> PreparedStorage {
+  fileprivate func preparedStorage() async throws -> PreparedStorage {
     switch self {
     case .local(let directory):
       let environment = try MediaGenerationEnvironment.local(directory)
@@ -889,7 +896,7 @@ extension MediaGenerationPipeline.Backend {
         } else {
           .none
         }
-      let remoteExecutor = try MediaGenerationRemoteExecutor(configuration:
+      let remoteExecutor = try await MediaGenerationRemoteExecutor.create(configuration:
         MediaGenerationRemoteConfiguration(
           serverURL: endpoint.host,
           port: endpoint.port,
@@ -906,7 +913,7 @@ extension MediaGenerationPipeline.Backend {
       let environment = MediaGenerationEnvironment.default
       let resolvedAPIKey = try MediaGenerationDefaults.resolveAPIKey(explicitAPIKey: apiKey)
       let resolvedBaseURL = options.baseURL ?? CloudConfiguration.defaultBaseURL
-      let remoteExecutor = try MediaGenerationRemoteExecutor(configuration:
+      let remoteExecutor = try await MediaGenerationRemoteExecutor.create(configuration:
         MediaGenerationRemoteConfiguration(
           serverURL: "compute.drawthings.ai",
           port: 443,
@@ -926,6 +933,7 @@ extension MediaGenerationPipeline.Backend {
       )
     }
   }
+
 }
 
 extension CIImage: MediaGenerationImageInput {}

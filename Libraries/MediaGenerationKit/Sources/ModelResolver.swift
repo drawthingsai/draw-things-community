@@ -37,8 +37,10 @@ internal enum ModelZooLoader {
   private static let lock = NSLock()
   private static var bundledCache: [ModelZoo.Specification]?
   private static var remoteCache: [ModelZoo.Specification]?
+  private static var remoteLoadTask: Task<[ModelZoo.Specification], Never>?
 
-  static func specifications(from source: ModelZooSource, offline: Bool) -> [ModelZoo.Specification] {
+  static func specificationsSync(from source: ModelZooSource, offline: Bool) -> [ModelZoo.Specification]
+  {
     switch source {
     case .builtin:
       return ModelZoo.availableSpecifications.filter { $0.remoteApiModelConfig == nil }
@@ -70,6 +72,63 @@ internal enum ModelZooLoader {
     }
   }
 
+  static func specifications(from source: ModelZooSource, offline: Bool) async -> [ModelZoo.Specification]
+  {
+    switch source {
+    case .builtin:
+      return specificationsSync(from: .builtin, offline: offline)
+    case .bundled:
+      return specificationsSync(from: .bundled, offline: offline)
+    case .remote:
+      guard !offline else { return [] }
+      let remoteState = cachedRemoteState()
+      if let remoteCache = remoteState.cache {
+        return remoteCache
+      }
+      if let remoteLoadTask = remoteState.task {
+        return await remoteLoadTask.value
+      }
+      let loadTask = Task<[ModelZoo.Specification], Never> {
+        guard let data = await MediaGenerationResourceLoader.fetchRemoteData(url: remoteURL) else {
+          return []
+        }
+        return parse(data)
+      }
+      updateRemoteState(cache: nil, task: loadTask)
+
+      let loaded = await loadTask.value
+
+      updateRemoteState(cache: loaded, task: nil)
+      return loaded
+    }
+  }
+
+  private static func cachedRemoteState() -> (
+    cache: [ModelZoo.Specification]?, task: Task<[ModelZoo.Specification], Never>?
+  ) {
+    lock.lock()
+    defer { lock.unlock() }
+    return (remoteCache, remoteLoadTask)
+  }
+
+  static func cachedRemoteSpecifications() -> [ModelZoo.Specification]? {
+    lock.lock()
+    defer { lock.unlock() }
+    return remoteCache
+  }
+
+  private static func updateRemoteState(
+    cache: [ModelZoo.Specification]?,
+    task: Task<[ModelZoo.Specification], Never>?
+  ) {
+    lock.lock()
+    if let cache {
+      remoteCache = cache
+    }
+    remoteLoadTask = task
+    lock.unlock()
+  }
+
   private static func parse(_ data: Data) -> [ModelZoo.Specification] {
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -88,21 +147,63 @@ internal enum ModelZooLoader {
 internal enum ModelResolver {
   typealias Model = MediaGenerationResolvedModel
 
-  static func resolve(_ input: String, offline: Bool) throws -> Model? {
-    if let specification = specification(for: input, offline: offline) {
+  static func resolve(_ input: String, offline: Bool, operation: String = "resolveModel") throws
+    -> Model?
+  {
+    if let specification = try specification(for: input, offline: offline, operation: operation) {
       return model(from: specification)
     }
     return nil
   }
 
-  static func specification(for input: String, offline: Bool) -> ModelZoo.Specification? {
+  static func resolve(_ input: String, offline: Bool) async throws -> Model? {
+    if let specification = await specification(for: input, offline: offline) {
+      return model(from: specification)
+    }
+    return nil
+  }
+
+  static func specification(for input: String, offline: Bool, operation: String = "resolveModel")
+    throws -> ModelZoo.Specification?
+  {
     if let specification = ModelZoo.resolveModelReference(input)?.specification {
       return specification
     }
 
     if let bundled = matchingSpecification(
       for: input,
-      in: ModelZooLoader.specifications(from: .bundled, offline: offline)
+      in: ModelZooLoader.specificationsSync(from: .bundled, offline: offline)
+    ) {
+      primeOverrideMapping(with: bundled)
+      return bundled
+    }
+
+    if offline {
+      return nil
+    }
+
+    if let remoteSpecifications = ModelZooLoader.cachedRemoteSpecifications() {
+      if let remote = matchingSpecification(
+        for: input,
+        in: remoteSpecifications
+      ) {
+        primeOverrideMapping(with: remote)
+        return remote
+      }
+      return nil
+    }
+
+    throw MediaGenerationKitError.asyncOperationRequired(operation)
+  }
+
+  static func specification(for input: String, offline: Bool) async -> ModelZoo.Specification? {
+    if let specification = ModelZoo.resolveModelReference(input)?.specification {
+      return specification
+    }
+
+    if let bundled = matchingSpecification(
+      for: input,
+      in: ModelZooLoader.specificationsSync(from: .bundled, offline: offline)
     ) {
       primeOverrideMapping(with: bundled)
       return bundled
@@ -110,7 +211,7 @@ internal enum ModelResolver {
 
     if let remote = matchingSpecification(
       for: input,
-      in: ModelZooLoader.specifications(from: .remote, offline: offline)
+      in: await ModelZooLoader.specifications(from: .remote, offline: offline)
     ) {
       primeOverrideMapping(with: remote)
       return remote
@@ -119,7 +220,11 @@ internal enum ModelResolver {
     return nil
   }
 
-  static func suggestions(_ input: String, limit: Int = 5, offline: Bool) -> [Model] {
+  static func suggestions(_ input: String, limit: Int = 5, offline: Bool) throws -> [Model] {
+    if !offline, ModelZooLoader.cachedRemoteSpecifications() == nil {
+      throw MediaGenerationKitError.asyncOperationRequired("suggestedModels")
+    }
+
     var results = [Model]()
     var seen = Set<String>()
 
@@ -132,9 +237,18 @@ internal enum ModelResolver {
 
     for source in [ModelZooSource.bundled, .remote] {
       guard results.count < limit else { break }
+      let specifications: [ModelZoo.Specification]
+      switch source {
+      case .bundled:
+        specifications = ModelZooLoader.specificationsSync(from: .bundled, offline: offline)
+      case .remote:
+        specifications = offline ? [] : (ModelZooLoader.cachedRemoteSpecifications() ?? [])
+      case .builtin:
+        specifications = ModelZooLoader.specificationsSync(from: .builtin, offline: offline)
+      }
       let candidates = candidateSpecifications(
         for: input,
-        in: ModelZooLoader.specifications(from: source, offline: offline),
+        in: specifications,
         limit: limit - results.count
       )
       for specification in candidates {
@@ -142,6 +256,52 @@ internal enum ModelResolver {
         if seen.insert(candidate.file).inserted {
           results.append(candidate)
         }
+      }
+    }
+
+    return Array(results.prefix(limit))
+  }
+
+  static func suggestions(_ input: String, limit: Int = 5, offline: Bool) async -> [Model] {
+    var results = [Model]()
+    var seen = Set<String>()
+
+    for specification in ModelZoo.candidateSpecifications(forModelReference: input, limit: limit) {
+      let candidate = model(from: specification)
+      if seen.insert(candidate.file).inserted {
+        results.append(candidate)
+      }
+    }
+
+    guard results.count < limit else {
+      return Array(results.prefix(limit))
+    }
+
+    let bundledCandidates = candidateSpecifications(
+      for: input,
+      in: ModelZooLoader.specificationsSync(from: .bundled, offline: offline),
+      limit: limit - results.count
+    )
+    for specification in bundledCandidates {
+      let candidate = model(from: specification)
+      if seen.insert(candidate.file).inserted {
+        results.append(candidate)
+      }
+    }
+
+    guard results.count < limit else {
+      return Array(results.prefix(limit))
+    }
+
+    let remoteCandidates = candidateSpecifications(
+      for: input,
+      in: await ModelZooLoader.specifications(from: .remote, offline: offline),
+      limit: limit - results.count
+    )
+    for specification in remoteCandidates {
+      let candidate = model(from: specification)
+      if seen.insert(candidate.file).inserted {
+        results.append(candidate)
       }
     }
 
@@ -161,8 +321,40 @@ internal enum ModelResolver {
 
   static func catalogModels(includeDownloaded: Bool, offline: Bool) -> [MediaGenerationResolvedModel] {
     var deduplicated = [String: ModelZoo.Specification]()
+    for source in [ModelZooSource.builtin, .bundled] {
+      for specification in ModelZooLoader.specificationsSync(from: source, offline: offline) {
+        deduplicated[specification.file] = specification
+      }
+    }
+
+    if offline {
+      return deduplicated.values
+        .map(model(from:))
+        .filter { includeDownloaded || !$0.isDownloaded }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    if let remoteSpecifications = ModelZooLoader.cachedRemoteSpecifications() {
+      for specification in remoteSpecifications {
+        deduplicated[specification.file] = specification
+      }
+    } else {
+      // Callers that need network-backed remote catalog data must use the async overload.
+      // Sync callers are expected to throw before reaching here.
+    }
+
+    return deduplicated.values
+      .map(model(from:))
+      .filter { includeDownloaded || !$0.isDownloaded }
+      .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+  }
+
+  static func catalogModels(includeDownloaded: Bool, offline: Bool) async
+    -> [MediaGenerationResolvedModel]
+  {
+    var deduplicated = [String: ModelZoo.Specification]()
     for source in [ModelZooSource.builtin, .bundled, .remote] {
-      for specification in ModelZooLoader.specifications(from: source, offline: offline) {
+      for specification in await ModelZooLoader.specifications(from: source, offline: offline) {
         deduplicated[specification.file] = specification
       }
     }
@@ -171,6 +363,15 @@ internal enum ModelResolver {
       .map(model(from:))
       .filter { includeDownloaded || !$0.isDownloaded }
       .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+  }
+
+  static func catalogModelsSynchronouslyIfAvailable(includeDownloaded: Bool, offline: Bool) throws
+    -> [MediaGenerationResolvedModel]
+  {
+    if !offline, ModelZooLoader.cachedRemoteSpecifications() == nil {
+      throw MediaGenerationKitError.asyncOperationRequired("downloadableModels")
+    }
+    return catalogModels(includeDownloaded: includeDownloaded, offline: offline)
   }
 
   private static func matchingSpecification(

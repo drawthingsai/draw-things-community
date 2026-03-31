@@ -40,4 +40,19 @@ internal enum MediaGenerationResourceLoader {
     }
     return responseData
   }
+
+  static func fetchRemoteData(url: URL, timeout: TimeInterval = 10) async -> Data? {
+    var request = URLRequest(url: url)
+    request.timeoutInterval = timeout
+
+    do {
+      let (data, response) = try await URLSession.shared.data(for: request)
+      guard let response = response as? HTTPURLResponse, 200...299 ~= response.statusCode else {
+        return nil
+      }
+      return data
+    } catch {
+      return nil
+    }
+  }
 }

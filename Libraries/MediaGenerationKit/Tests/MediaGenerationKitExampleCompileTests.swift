@@ -6,12 +6,12 @@ import UniformTypeIdentifiers
 @testable import MediaGenerationKit
 
 final class MediaGenerationKitExampleCompileTests: XCTestCase {
-  func testCurrentPipelineExampleSurfaceCompilesAndBasicSetupWorks() throws {
+  func testCurrentPipelineExampleSurfaceCompilesAndBasicSetupWorks() async throws {
     let modelsDirectory = try makeTemporaryDirectory()
     let outputDirectory = try makeTemporaryDirectory()
     let onePixelPNGData = Data(base64Encoded: Self.onePixelPNGBase64)!
 
-    var pipeline = try MediaGenerationPipeline.fromPretrained(
+    var pipeline = try await MediaGenerationPipeline.fromPretrained(
       "flux_2_klein_4b_q8p.ckpt",
       backend: .local(directory: modelsDirectory.path)
     )

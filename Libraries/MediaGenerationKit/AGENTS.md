@@ -20,7 +20,7 @@ Do not reintroduce the removed legacy façade or the old internal runtime naming
 import Foundation
 import MediaGenerationKit
 
-var pipeline = try MediaGenerationPipeline.fromPretrained(
+var pipeline = try await MediaGenerationPipeline.fromPretrained(
   "flux_2_klein_4b_q8p.ckpt",
   backend: .local(directory: "/tmp")
 )
@@ -59,6 +59,7 @@ There is no standalone request/options/assets object.
 
 - configuration lives on `pipeline.configuration`
 - model identity is bound by `fromPretrained(...)`
+- pipeline construction is async
 - copied pipelines should not share mutable configuration
 - async cancellation is `Swift.Task` cancellation
 

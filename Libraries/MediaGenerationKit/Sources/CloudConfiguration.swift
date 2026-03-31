@@ -22,7 +22,7 @@ import Foundation
 ///    // Get token from Firebase SDK
 ///    let tokenResult = try await AppCheck.appCheck().token(forcingRefresh: false)
 ///
-///    let pipeline = try MediaGenerationPipeline.fromPretrained(
+///    let pipeline = try await MediaGenerationPipeline.fromPretrained(
 ///      "z_image_turbo_1.0_q6p.ckpt",
 ///      backend: .cloudCompute(
 ///        apiKey: "dk_xxx",
@@ -43,7 +43,7 @@ import Foundation
 ///    let client = SupabaseClient(supabaseURL: url, supabaseKey: anonKey)
 ///    let authSession = try await client.auth.signInAnonymously()
 ///
-///    let pipeline = try MediaGenerationPipeline.fromPretrained(
+///    let pipeline = try await MediaGenerationPipeline.fromPretrained(
 ///      "z_image_turbo_1.0_q6p.ckpt",
 ///      backend: .cloudCompute(
 ///        apiKey: "dk_xxx",
@@ -106,6 +106,9 @@ internal struct CloudConfiguration {
   /// Default: 300 seconds (5 minutes)
   public let tokenRefreshThreshold: TimeInterval
 
+  /// Network timeout for short-term token requests.
+  public let requestTimeout: TimeInterval
+
   /// Default API base URL
   public static let defaultBaseURL = URL(string: "https://api.drawthings.ai")!
 
@@ -116,6 +119,7 @@ internal struct CloudConfiguration {
     self.appCheck = .none
     self.baseURL = Self.defaultBaseURL
     self.tokenRefreshThreshold = 300
+    self.requestTimeout = 30
   }
 
   /// Initialize with API key and App Check
@@ -127,6 +131,7 @@ internal struct CloudConfiguration {
     self.appCheck = appCheck
     self.baseURL = Self.defaultBaseURL
     self.tokenRefreshThreshold = 300
+    self.requestTimeout = 30
   }
 
   /// Full initializer with all options
@@ -135,15 +140,18 @@ internal struct CloudConfiguration {
   ///   - appCheck: App Check configuration
   ///   - baseURL: Custom API base URL (for testing)
   ///   - tokenRefreshThreshold: Token refresh threshold in seconds
+  ///   - requestTimeout: Timeout for token requests.
   public init(
     apiKey: String,
     appCheck: AppCheckConfiguration,
     baseURL: URL? = nil,
-    tokenRefreshThreshold: TimeInterval = 300
+    tokenRefreshThreshold: TimeInterval = 300,
+    requestTimeout: TimeInterval = 30
   ) {
     self.apiKey = apiKey
     self.appCheck = appCheck
     self.baseURL = baseURL ?? Self.defaultBaseURL
     self.tokenRefreshThreshold = tokenRefreshThreshold
+    self.requestTimeout = requestTimeout
   }
 }

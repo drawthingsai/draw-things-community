@@ -38,19 +38,49 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
   private let queue: DispatchQueue
   private var remoteGeneratorInstance: RemoteImageGenerator?
 
-  init(configuration: MediaGenerationRemoteConfiguration) throws {
-    self.authenticationMode = configuration.authentication
+  private init(
+    authenticationMode: MediaGenerationRemoteAuthenticationMode,
+    cloudAuthenticator: CloudAuthenticator?,
+    queue: DispatchQueue
+  ) {
+    self.authenticationMode = authenticationMode
+    self.cloudAuthenticator = cloudAuthenticator
+    self.queue = queue
+  }
+
+  static func create(configuration: MediaGenerationRemoteConfiguration) async throws
+    -> MediaGenerationRemoteExecutor
+  {
+    let cloudAuthenticator: CloudAuthenticator?
     switch configuration.authentication {
     case .cloudCompute(let apiKey, let baseURL, _):
-      self.cloudAuthenticator = CloudAuthenticatorRegistry.shared.authenticator(
+      cloudAuthenticator = CloudAuthenticatorRegistry.shared.authenticator(
         apiKey: apiKey,
         baseURL: baseURL
       )
     case .none, .sharedSecret:
-      self.cloudAuthenticator = nil
+      cloudAuthenticator = nil
     }
-    self.queue = DispatchQueue(label: "com.drawthings.mediagenerationkit.remote", qos: .userInteractive)
-    try configure(configuration)
+    let executor = MediaGenerationRemoteExecutor(
+      authenticationMode: configuration.authentication,
+      cloudAuthenticator: cloudAuthenticator,
+      queue: DispatchQueue(label: "com.drawthings.mediagenerationkit.remote", qos: .userInteractive)
+    )
+    try await executor.configureAsync(configuration)
+    return executor
+  }
+
+  func prepareForGeneration() async throws {
+    guard case .cloudCompute(_, let baseURL, let appCheck) = authenticationMode,
+      let cloudAuthenticator
+    else {
+      return
+    }
+    let shortTermToken = try await cloudAuthenticator.shortTermToken(appCheck: appCheck)
+    _ = await MediaGenerationCloudAuthentication.prefetchPaygEnabled(
+      shortTermToken: shortTermToken,
+      baseURL: baseURL
+    )
   }
 
   func generate(
@@ -129,7 +159,7 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
     return generator
   }
 
-  private func configure(_ config: MediaGenerationRemoteConfiguration) throws {
+  private func configureAsync(_ config: MediaGenerationRemoteConfiguration) async throws {
     try? disconnect()
 
     #if os(macOS)
@@ -162,40 +192,21 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
       throw MediaGenerationKitError.generationFailed("connect failed: \(error)")
     }
 
-    let echoGroup = DispatchGroup()
-    echoGroup.enter()
-    var echoSucceeded = false
-    var serverIdentifier: UInt64 = 0
-    var discoveredRemoteModels = Set<String>()
-
-    client.echo { success, authenticated, resources, labHours, serverIdent in
-      echoSucceeded = success
-      serverIdentifier = serverIdent
-      if success {
-        for model in resources.models {
-          discoveredRemoteModels.insert(model.file)
-        }
-        for file in resources.files {
-          discoveredRemoteModels.insert(file)
-        }
-      }
-      echoGroup.leave()
-    }
-
-    let echoResult = echoGroup.wait(timeout: .now() + 5)
-    if echoResult == .timedOut || !echoSucceeded {
+    let handshake: RemoteHandshake
+    do {
+      handshake = try await performHandshake(using: client, timeout: 5)
+    } catch {
       try? client.disconnect()
-      throw MediaGenerationKitError.generationFailed(
-        echoResult == .timedOut ? "echo timed out (5s)" : "echo returned success=false")
+      throw error
     }
-    cloudAuthenticator?.updateRemoteModelsFromHandshake(discoveredRemoteModels)
+    cloudAuthenticator?.updateRemoteModelsFromHandshake(handshake.discoveredRemoteModels)
 
     let authHandler = createAuthenticationHandler(from: config.authentication)
     remoteGeneratorInstance = RemoteImageGenerator(
       name: config.deviceName,
       deviceType: deviceType,
       client: client,
-      serverIdentifier: serverIdentifier,
+      serverIdentifier: handshake.serverIdentifier,
       authenticationHandler: authHandler,
       requestExceedLimitHandler: nil
     )
@@ -242,6 +253,7 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
           fromBridge: true,
           estimatedComputeUnits: estimatedComputeUnits,
           baseURL: baseURL,
+          timeout: 30,
           cancellation: cancellation
         )
       }
@@ -264,5 +276,56 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
       return .failure(MediaGenerationKitError.generationFailed("authentication timed out"))
     }
     return tokenResult
+  }
+
+  private struct RemoteHandshake {
+    let serverIdentifier: UInt64
+    let discoveredRemoteModels: Set<String>
+  }
+
+  private func performHandshake(
+    using client: ImageGenerationClientWrapper,
+    timeout: TimeInterval
+  ) async throws -> RemoteHandshake {
+    let bridge = MediaGenerationAsyncResultBridge<RemoteHandshake>()
+    let timeoutTask = Task {
+      try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+      bridge.resume(
+        throwing: MediaGenerationKitError.generationFailed("echo timed out (\(Int(timeout))s)"))
+    }
+
+    defer {
+      timeoutTask.cancel()
+    }
+
+    return try await withTaskCancellationHandler(operation: {
+      try await withCheckedThrowingContinuation { continuation in
+        guard bridge.install(continuation) else { return }
+        client.echo { success, authenticated, resources, labHours, serverIdentifier in
+          guard success else {
+            bridge.resume(
+              throwing: MediaGenerationKitError.generationFailed("echo returned success=false"))
+            return
+          }
+          var discoveredRemoteModels = Set<String>()
+          for model in resources.models {
+            discoveredRemoteModels.insert(model.file)
+          }
+          for file in resources.files {
+            discoveredRemoteModels.insert(file)
+          }
+          bridge.resume(
+            returning: RemoteHandshake(
+              serverIdentifier: serverIdentifier,
+              discoveredRemoteModels: discoveredRemoteModels
+            )
+          )
+        }
+      }
+    }, onCancel: {
+      timeoutTask.cancel()
+      bridge.cancel()
+      try? client.disconnect()
+    })
   }
 }

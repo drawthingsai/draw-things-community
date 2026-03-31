@@ -2,15 +2,16 @@ import Darwin
 import Foundation
 import ImageGenerator
 import Logging
+import ModelZoo
 import XCTest
 import UniformTypeIdentifiers
 
 @testable import MediaGenerationKit
 
 final class MediaGenerationKitTests: XCTestCase {
-  func testPipelineCopyDoesNotShareConfiguration() throws {
+  func testPipelineCopyDoesNotShareConfiguration() async throws {
     let modelsDirectory = try makeTemporaryDirectory()
-    var pipeline = try MediaGenerationPipeline.fromPretrained(
+    var pipeline = try await MediaGenerationPipeline.fromPretrained(
       "flux_2_klein_4b_q8p.ckpt",
       backend: .local(directory: modelsDirectory.path)
     )
@@ -27,9 +28,9 @@ final class MediaGenerationKitTests: XCTestCase {
     XCTAssertNotEqual(pipeline.configuration.steps, copy.configuration.steps)
   }
 
-  func testPipelinePublishesResolvedModelFile() throws {
+  func testPipelinePublishesResolvedModelFile() async throws {
     let modelsDirectory = try makeTemporaryDirectory()
-    let pipeline = try MediaGenerationPipeline.fromPretrained(
+    let pipeline = try await MediaGenerationPipeline.fromPretrained(
       "FLUX.2 [klein] 4B",
       backend: .local(directory: modelsDirectory.path)
     )
@@ -38,15 +39,28 @@ final class MediaGenerationKitTests: XCTestCase {
     XCTAssertEqual(pipeline.configuration.model, "flux_2_klein_4b_q8p.ckpt")
   }
 
-  func testEnvironmentResolvesKnownModelReference() {
-    let resolved = MediaGenerationEnvironment.default.resolveModel("flux_2_klein_4b_q8p.ckpt")
+  func testAsyncFromPretrainedPublishesResolvedModelFile() async throws {
+    let modelsDirectory = try makeTemporaryDirectory()
+    let pipeline = try await MediaGenerationPipeline.fromPretrained(
+      "FLUX.2 [klein] 4B",
+      backend: .local(directory: modelsDirectory.path)
+    )
+
+    XCTAssertEqual(pipeline.model, "flux_2_klein_4b_q8p.ckpt")
+    XCTAssertEqual(pipeline.configuration.model, "flux_2_klein_4b_q8p.ckpt")
+  }
+
+  func testEnvironmentResolvesKnownModelReference() throws {
+    let resolved = try MediaGenerationEnvironment.default.resolveModel("flux_2_klein_4b_q8p.ckpt")
 
     XCTAssertEqual(resolved?.file, "flux_2_klein_4b_q8p.ckpt")
     XCTAssertEqual(resolved?.name, "FLUX.2 [klein] 4B")
   }
 
-  func testEnvironmentSuggestsClosestModels() {
-    let suggestions = MediaGenerationEnvironment.default.suggestedModels(for: "flux_2_klein_4b")
+  func testEnvironmentSuggestsClosestModels() throws {
+    let suggestions = try MediaGenerationEnvironment.default.suggestedModels(
+      for: "flux_2_klein_4b"
+    )
 
     XCTAssertFalse(suggestions.isEmpty)
     XCTAssertTrue(suggestions.contains { $0.file == "flux_2_klein_4b_q8p.ckpt" })
@@ -61,11 +75,72 @@ final class MediaGenerationKitTests: XCTestCase {
     XCTAssertEqual(inspection.version, "FLUX.2 4B")
   }
 
-  func testEnvironmentListsDownloadableModels() {
-    let models = MediaGenerationEnvironment.default.downloadableModels()
+  func testEnvironmentListsDownloadableModels() throws {
+    let models = try MediaGenerationEnvironment.default.downloadableModels()
 
     XCTAssertFalse(models.isEmpty)
     XCTAssertTrue(models.contains { $0.file == "flux_2_klein_4b_q8p.ckpt" })
+  }
+
+  func testEnvironmentResolveModelSyncThrowsOnlyWhenRemoteFetchWouldBeNeeded() throws {
+    XCTAssertNoThrow(
+      try MediaGenerationEnvironment.default.resolveModel("flux_2_klein_4b_q8p.ckpt", offline: false)
+    )
+
+    XCTAssertThrowsError(
+      try MediaGenerationEnvironment.default.resolveModel(
+        "model-that-requires-remote-catalog",
+        offline: false
+      )
+    ) { error in
+      guard case MediaGenerationKitError.asyncOperationRequired(let operation) = error else {
+        return XCTFail("unexpected error: \(error)")
+      }
+      XCTAssertEqual(operation, "resolveModel")
+    }
+  }
+
+  func testEnvironmentSuggestedModelsSyncThrowsWhenRemoteCatalogIsNotCached() {
+    XCTAssertThrowsError(
+      try MediaGenerationEnvironment.default.suggestedModels(
+        for: "flux_2_klein_4b",
+        offline: false
+      )
+    ) { error in
+      guard case MediaGenerationKitError.asyncOperationRequired(let operation) = error else {
+        return XCTFail("unexpected error: \(error)")
+      }
+      XCTAssertEqual(operation, "suggestedModels")
+    }
+  }
+
+  func testEnvironmentInspectModelSyncThrowsOnlyWhenRemoteFetchWouldBeNeeded() throws {
+    XCTAssertNoThrow(
+      try MediaGenerationEnvironment.default.inspectModel("flux_2_klein_4b_q8p.ckpt", offline: false)
+    )
+
+    XCTAssertThrowsError(
+      try MediaGenerationEnvironment.default.inspectModel(
+        "model-that-requires-remote-catalog",
+        offline: false
+      )
+    ) { error in
+      guard case MediaGenerationKitError.asyncOperationRequired(let operation) = error else {
+        return XCTFail("unexpected error: \(error)")
+      }
+      XCTAssertEqual(operation, "inspectModel")
+    }
+  }
+
+  func testEnvironmentDownloadableModelsSyncThrowsWhenRemoteCatalogIsNotCached() {
+    XCTAssertThrowsError(
+      try MediaGenerationEnvironment.default.downloadableModels(offline: false)
+    ) { error in
+      guard case MediaGenerationKitError.asyncOperationRequired(let operation) = error else {
+        return XCTFail("unexpected error: \(error)")
+      }
+      XCTAssertEqual(operation, "downloadableModels")
+    }
   }
 
   func testEnvironmentMaxTotalWeightsCacheSizeRoundTrips() {
@@ -80,7 +155,23 @@ final class MediaGenerationKitTests: XCTestCase {
     XCTAssertEqual(MediaGenerationEnvironment.default.maxTotalWeightsCacheSize, expected)
   }
 
-  func testLocalBackendPrefersEnvironmentModelsDirectory() throws {
+  func testEnvironmentExternalURLsCanBeCleared() throws {
+    let modelsDirectory = try makeTemporaryDirectory()
+    let originalExternalURLs = MediaGenerationEnvironment.default.externalUrls
+    let originalModelZooExternalURLs = ModelZoo.externalUrls
+    addTeardownBlock {
+      MediaGenerationEnvironment.default.externalUrls = originalExternalURLs
+      ModelZoo.externalUrls = originalModelZooExternalURLs
+    }
+
+    MediaGenerationEnvironment.default.externalUrls = [modelsDirectory]
+    XCTAssertEqual(ModelZoo.externalUrls, [modelsDirectory])
+
+    MediaGenerationEnvironment.default.externalUrls = []
+    XCTAssertEqual(ModelZoo.externalUrls, [])
+  }
+
+  func testLocalBackendPrefersEnvironmentModelsDirectory() async throws {
     let invalidFile = FileManager.default.temporaryDirectory.appendingPathComponent(
       "mediagenerationkit-env-\(UUID().uuidString).txt"
     )
@@ -105,12 +196,13 @@ final class MediaGenerationKitTests: XCTestCase {
       )
     )
 
-    XCTAssertThrowsError(
-      try MediaGenerationPipeline.fromPretrained(
+    do {
+      _ = try await MediaGenerationPipeline.fromPretrained(
         "flux_2_klein_4b_q8p.ckpt",
         backend: .local
       )
-    ) { error in
+      XCTFail("expected invalid models directory error")
+    } catch {
       guard case MediaGenerationKitError.invalidModelsDirectory = error else {
         return XCTFail("unexpected error: \(error)")
       }
@@ -145,9 +237,9 @@ final class MediaGenerationKitTests: XCTestCase {
     )
   }
 
-  func testConfigurationValidationRejectsInvalidDimensions() throws {
+  func testConfigurationValidationRejectsInvalidDimensions() async throws {
     let modelsDirectory = try makeTemporaryDirectory()
-    var pipeline = try MediaGenerationPipeline.fromPretrained(
+    var pipeline = try await MediaGenerationPipeline.fromPretrained(
       "flux_2_klein_4b_q8p.ckpt",
       backend: .local(directory: modelsDirectory.path)
     )
@@ -163,9 +255,9 @@ final class MediaGenerationKitTests: XCTestCase {
     }
   }
 
-  func testConfigurationRoundTripsExtendedJSConfigurationFields() throws {
+  func testConfigurationRoundTripsExtendedJSConfigurationFields() async throws {
     let modelsDirectory = try makeTemporaryDirectory()
-    var pipeline = try MediaGenerationPipeline.fromPretrained(
+    var pipeline = try await MediaGenerationPipeline.fromPretrained(
       "flux_2_klein_4b_q8p.ckpt",
       backend: .local(directory: modelsDirectory.path)
     )
