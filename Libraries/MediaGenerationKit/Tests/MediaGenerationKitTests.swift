@@ -11,7 +11,7 @@ final class MediaGenerationKitTests: XCTestCase {
   func testPipelineCopyDoesNotShareConfiguration() throws {
     let modelsDirectory = try makeTemporaryDirectory()
     var pipeline = try MediaGenerationPipeline.fromPretrained(
-      "sd_v1.5_f16.ckpt",
+      "flux_2_klein_4b_q8p.ckpt",
       backend: .local(directory: modelsDirectory.path)
     )
     pipeline.logger = Logger(label: "com.draw-things.tests.pipeline")
@@ -30,42 +30,42 @@ final class MediaGenerationKitTests: XCTestCase {
   func testPipelinePublishesResolvedModelFile() throws {
     let modelsDirectory = try makeTemporaryDirectory()
     let pipeline = try MediaGenerationPipeline.fromPretrained(
-      "Stable Diffusion v1.5",
+      "FLUX.2 [klein] 4B",
       backend: .local(directory: modelsDirectory.path)
     )
 
-    XCTAssertEqual(pipeline.model, "sd_v1.5_f16.ckpt")
-    XCTAssertEqual(pipeline.configuration.model, "sd_v1.5_f16.ckpt")
+    XCTAssertEqual(pipeline.model, "flux_2_klein_4b_q8p.ckpt")
+    XCTAssertEqual(pipeline.configuration.model, "flux_2_klein_4b_q8p.ckpt")
   }
 
   func testEnvironmentResolvesKnownModelReference() {
-    let resolved = MediaGenerationEnvironment.default.resolveModel("Stable Diffusion v1.5")
+    let resolved = MediaGenerationEnvironment.default.resolveModel("flux_2_klein_4b_q8p.ckpt")
 
-    XCTAssertEqual(resolved?.file, "sd_v1.5_f16.ckpt")
-    XCTAssertEqual(resolved?.name, "Stable Diffusion v1.5")
+    XCTAssertEqual(resolved?.file, "flux_2_klein_4b_q8p.ckpt")
+    XCTAssertEqual(resolved?.name, "FLUX.2 [klein] 4B")
   }
 
   func testEnvironmentSuggestsClosestModels() {
-    let suggestions = MediaGenerationEnvironment.default.suggestedModels(for: "Stable Diffusion")
+    let suggestions = MediaGenerationEnvironment.default.suggestedModels(for: "flux_2_klein_4b")
 
     XCTAssertFalse(suggestions.isEmpty)
-    XCTAssertTrue(suggestions.contains { $0.file == "sd_v1.5_f16.ckpt" })
+    XCTAssertTrue(suggestions.contains { $0.file == "flux_2_klein_4b_q8p.ckpt" })
   }
 
   func testEnvironmentCanInspectKnownModel() throws {
-    let inspection = try MediaGenerationEnvironment.default.inspectModel("sd_v1.5_f16.ckpt")
+    let inspection = try MediaGenerationEnvironment.default.inspectModel("flux_2_klein_4b_q8p.ckpt")
 
-    XCTAssertEqual(inspection.file, "sd_v1.5_f16.ckpt")
-    XCTAssertEqual(inspection.name, "Stable Diffusion v1.5")
+    XCTAssertEqual(inspection.file, "flux_2_klein_4b_q8p.ckpt")
+    XCTAssertEqual(inspection.name, "FLUX.2 [klein] 4B")
     XCTAssertNotNil(inspection.version)
-    XCTAssertEqual(inspection.version, "Stable Diffusion v1")
+    XCTAssertEqual(inspection.version, "FLUX.2 4B")
   }
 
   func testEnvironmentListsDownloadableModels() {
     let models = MediaGenerationEnvironment.default.downloadableModels()
 
     XCTAssertFalse(models.isEmpty)
-    XCTAssertTrue(models.contains { $0.file == "sd_v1.5_f16.ckpt" })
+    XCTAssertTrue(models.contains { $0.file == "flux_2_klein_4b_q8p.ckpt" })
   }
 
   func testEnvironmentMaxTotalWeightsCacheSizeRoundTrips() {
@@ -107,7 +107,7 @@ final class MediaGenerationKitTests: XCTestCase {
 
     XCTAssertThrowsError(
       try MediaGenerationPipeline.fromPretrained(
-        "sd_v1.5_f16.ckpt",
+        "flux_2_klein_4b_q8p.ckpt",
         backend: .local
       )
     ) { error in
@@ -148,7 +148,7 @@ final class MediaGenerationKitTests: XCTestCase {
   func testConfigurationValidationRejectsInvalidDimensions() throws {
     let modelsDirectory = try makeTemporaryDirectory()
     var pipeline = try MediaGenerationPipeline.fromPretrained(
-      "sd_v1.5_f16.ckpt",
+      "flux_2_klein_4b_q8p.ckpt",
       backend: .local(directory: modelsDirectory.path)
     )
     pipeline.configuration.width = 513
@@ -166,7 +166,7 @@ final class MediaGenerationKitTests: XCTestCase {
   func testConfigurationRoundTripsExtendedJSConfigurationFields() throws {
     let modelsDirectory = try makeTemporaryDirectory()
     var pipeline = try MediaGenerationPipeline.fromPretrained(
-      "sd_v1.5_f16.ckpt",
+      "flux_2_klein_4b_q8p.ckpt",
       backend: .local(directory: modelsDirectory.path)
     )
     pipeline.configuration.seedMode = .scaleAlike

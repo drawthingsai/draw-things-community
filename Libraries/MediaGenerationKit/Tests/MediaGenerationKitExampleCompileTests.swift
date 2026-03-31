@@ -12,15 +12,14 @@ final class MediaGenerationKitExampleCompileTests: XCTestCase {
     let onePixelPNGData = Data(base64Encoded: Self.onePixelPNGBase64)!
 
     var pipeline = try MediaGenerationPipeline.fromPretrained(
-      "Stable Diffusion v1.5",
+      "flux_2_klein_4b_q8p.ckpt",
       backend: .local(directory: modelsDirectory.path)
     )
 
-    pipeline.configuration.width = 768
-    pipeline.configuration.height = 768
+    pipeline.configuration.width = 1024
+    pipeline.configuration.height = 1024
     pipeline.configuration.seed = 42
-    pipeline.configuration.steps = 28
-    pipeline.configuration.guidanceScale = 7.5
+    pipeline.configuration.steps = 4
     pipeline.configuration.strength = 0.75
     pipeline.logger = Logger(label: "com.draw-things.tests.example")
 
@@ -38,8 +37,8 @@ final class MediaGenerationKitExampleCompileTests: XCTestCase {
     }
     generationTask.cancel()
 
-    XCTAssertEqual(pipeline.model, "sd_v1.5_f16.ckpt")
-    XCTAssertEqual(pipeline.configuration.model, "sd_v1.5_f16.ckpt")
+    XCTAssertEqual(pipeline.model, "flux_2_klein_4b_q8p.ckpt")
+    XCTAssertEqual(pipeline.configuration.model, "flux_2_klein_4b_q8p.ckpt")
 
     let result = try MediaGenerationPipeline.Result(encodedData: onePixelPNGData)
     let outputURL = outputDirectory.appendingPathComponent("output.png")
@@ -49,7 +48,7 @@ final class MediaGenerationKitExampleCompileTests: XCTestCase {
     let environment = MediaGenerationEnvironment.default
     environment.externalUrls = [modelsDirectory]
     let ensureOperation: () async throws -> MediaGenerationResolvedModel = {
-      try await environment.ensure("Stable Diffusion v1.5", offline: true) { _ in
+      try await environment.ensure("flux_2_klein_4b_q8p.ckpt", offline: true) { _ in
       }
     }
     _ = ensureOperation

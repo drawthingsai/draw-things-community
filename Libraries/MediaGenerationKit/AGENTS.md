@@ -21,13 +21,13 @@ import Foundation
 import MediaGenerationKit
 
 var pipeline = try MediaGenerationPipeline.fromPretrained(
-  "sd_v1.5_f16.ckpt",
-  backend: .local("/tmp")
+  "flux_2_klein_4b_q8p.ckpt",
+  backend: .local(directory: "/tmp")
 )
 
-pipeline.configuration.width = 768
-pipeline.configuration.height = 768
-pipeline.configuration.steps = 28
+pipeline.configuration.width = 1024
+pipeline.configuration.height = 1024
+pipeline.configuration.steps = 4
 
 let results = try await pipeline.generate(
   prompt: "a cat in studio lighting",
