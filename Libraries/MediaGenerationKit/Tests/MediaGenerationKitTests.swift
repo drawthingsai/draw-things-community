@@ -12,7 +12,7 @@ final class MediaGenerationKitTests: XCTestCase {
     let modelsDirectory = try makeTemporaryDirectory()
     var pipeline = try MediaGenerationPipeline.fromPretrained(
       "sd_v1.5_f16.ckpt",
-      backend: .local(modelsDirectory.path)
+      backend: .local(directory: modelsDirectory.path)
     )
     pipeline.logger = Logger(label: "com.draw-things.tests.pipeline")
 
@@ -31,7 +31,7 @@ final class MediaGenerationKitTests: XCTestCase {
     let modelsDirectory = try makeTemporaryDirectory()
     let pipeline = try MediaGenerationPipeline.fromPretrained(
       "Stable Diffusion v1.5",
-      backend: .local(modelsDirectory.path)
+      backend: .local(directory: modelsDirectory.path)
     )
 
     XCTAssertEqual(pipeline.model, "sd_v1.5_f16.ckpt")
@@ -108,7 +108,7 @@ final class MediaGenerationKitTests: XCTestCase {
     XCTAssertThrowsError(
       try MediaGenerationPipeline.fromPretrained(
         "sd_v1.5_f16.ckpt",
-        backend: .local()
+        backend: .local
       )
     ) { error in
       guard case MediaGenerationKitError.invalidModelsDirectory = error else {
@@ -149,7 +149,7 @@ final class MediaGenerationKitTests: XCTestCase {
     let modelsDirectory = try makeTemporaryDirectory()
     var pipeline = try MediaGenerationPipeline.fromPretrained(
       "sd_v1.5_f16.ckpt",
-      backend: .local(modelsDirectory.path)
+      backend: .local(directory: modelsDirectory.path)
     )
     pipeline.configuration.width = 513
 
@@ -167,7 +167,7 @@ final class MediaGenerationKitTests: XCTestCase {
     let modelsDirectory = try makeTemporaryDirectory()
     var pipeline = try MediaGenerationPipeline.fromPretrained(
       "sd_v1.5_f16.ckpt",
-      backend: .local(modelsDirectory.path)
+      backend: .local(directory: modelsDirectory.path)
     )
     pipeline.configuration.seedMode = .scaleAlike
     pipeline.configuration.clipSkip = 2
@@ -324,7 +324,7 @@ final class MediaGenerationKitTests: XCTestCase {
 
   func testLoRAStoreRejectsNonCloudBackend() throws {
     let modelsDirectory = try makeTemporaryDirectory()
-    XCTAssertThrowsError(try LoRAStore(backend: .local(modelsDirectory.path)))
+    XCTAssertThrowsError(try LoRAStore(backend: .local(directory: modelsDirectory.path)))
   }
 
   func testLoRAStoreAcceptsCloudBackend() throws {

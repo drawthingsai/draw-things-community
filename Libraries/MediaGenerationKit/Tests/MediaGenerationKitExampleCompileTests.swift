@@ -13,7 +13,7 @@ final class MediaGenerationKitExampleCompileTests: XCTestCase {
 
     var pipeline = try MediaGenerationPipeline.fromPretrained(
       "Stable Diffusion v1.5",
-      backend: .local(modelsDirectory.path)
+      backend: .local(directory: modelsDirectory.path)
     )
 
     pipeline.configuration.width = 768

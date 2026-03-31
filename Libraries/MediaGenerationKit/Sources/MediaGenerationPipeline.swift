@@ -72,9 +72,13 @@ public struct MediaGenerationPipeline: Sendable {
   }
 
   public enum Backend: Sendable {
-    case local(_ directory: String? = nil)
+    case local(directory: String?)
     case remote(_ endpoint: Endpoint, options: RemoteOptions = .init())
     case cloudCompute(apiKey: String? = nil, options: CloudComputeOptions = .init())
+
+    public static var local: Backend {
+      .local(directory: nil)
+    }
   }
 
   public struct Configuration: Sendable {
