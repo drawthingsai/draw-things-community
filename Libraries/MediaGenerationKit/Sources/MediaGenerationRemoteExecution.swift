@@ -19,7 +19,7 @@ internal struct MediaGenerationRemoteConfiguration {
 
   public init(
     serverURL: String,
-    port: Int = 7860,
+    port: Int = 7859,
     useTLS: Bool = false,
     authentication: MediaGenerationRemoteAuthenticationMode = .none,
     deviceName: String? = nil
@@ -33,10 +33,12 @@ internal struct MediaGenerationRemoteConfiguration {
 }
 
 internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
+  private let authenticationMode: MediaGenerationRemoteAuthenticationMode
   private let queue: DispatchQueue
   private var remoteGeneratorInstance: RemoteImageGenerator?
 
   init(configuration: MediaGenerationRemoteConfiguration) throws {
+    self.authenticationMode = configuration.authentication
     self.queue = DispatchQueue(label: "com.drawthings.mediagenerationkit.remote", qos: .userInteractive)
     try configure(configuration)
   }
@@ -93,7 +95,7 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
       throw MediaGenerationKitError.remoteNotConfigured
     }
 
-    if let requestedModel {
+    if case .cloudCompute = authenticationMode, let requestedModel {
       let remoteModels = try listRemoteModels()
       if !remoteModels.contains(requestedModel) {
         throw MediaGenerationKitError.modelNotFoundOnRemote(requestedModel)
