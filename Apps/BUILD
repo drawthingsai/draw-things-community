@@ -73,3 +73,35 @@ swift_binary(
         ":gRPCServerCLILib",
     ],
 )
+
+swift_library(
+    name = "DrawThingsCLILib",
+    srcs = glob(["DrawThingsCLI/*.swift"]),
+    visibility = ["//Apps:__subpackages__"],
+    deps = [
+        "//Libraries/BinaryResources",
+        "//Libraries/ConfigurationZoo",
+        "//Libraries/DataModels",
+        "//Libraries/Downloader",
+        "//Libraries/ImageGenerator",
+        "//Libraries/LocalImageGenerator",
+        "//Libraries/ModelOp",
+        "//Libraries/ModelZoo",
+        "//Libraries/Scripting:ScriptDataModels",
+        "//Libraries/SwiftDiffusion",
+        "//Libraries/Tokenizer",
+        "//Libraries/Trainer",
+        "@SwiftArgumentParser//:ArgumentParser",
+        "@SwiftPNG//:PNG",
+        "@dflat//:SQLiteDflat",
+    ],
+)
+
+swift_binary(
+    name = "DrawThingsCLI",
+    srcs = [],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":DrawThingsCLILib",
+    ],
+)
