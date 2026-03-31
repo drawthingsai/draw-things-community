@@ -3,8 +3,8 @@ import CoreImage
 @preconcurrency import DataModels
 @preconcurrency import Diffusion
 import Foundation
-import ImageGenerator
 import ImageIO
+import ImageGenerator
 import Logging
 import ModelZoo
 import NNC
@@ -565,8 +565,7 @@ public struct MediaGenerationPipeline: Sendable {
       stateHandler: ((MediaGenerationPipeline.State) -> Void)?
     ) async throws -> [MediaGenerationPipeline.Result] {
       let executionInputs = try MediaGenerationPipeline.executionInputs(from: inputs)
-      let runtimeConfiguration = try configuration.runtimeConfiguration(
-        template: recommendedTemplate)
+      let runtimeConfiguration = try configuration.runtimeConfiguration(template: recommendedTemplate)
       let cancellationBridge = MediaGenerationCancellationBridge()
       logger.debug(
         "Starting media generation",
@@ -578,28 +577,46 @@ public struct MediaGenerationPipeline: Sendable {
         ]
       )
 
-      let tensors: [Tensor<FloatType>] = try await withTaskCancellationHandler(
-        operation: {
-          try await withCheckedThrowingContinuation { continuation in
-            let feedback: (ImageGeneratorSignpost, Tensor<FloatType>?) -> Bool = { signpost, _ in
-              if cancellationBridge.isCancelled {
-                return false
-              }
-              stateHandler?(
-                MediaGenerationPipeline.State(
-                  signpost: signpost,
-                  totalSteps: Int(runtimeConfiguration.steps)
-                )
+      let tensors: [Tensor<FloatType>] = try await withTaskCancellationHandler(operation: {
+        try await withCheckedThrowingContinuation { continuation in
+          let feedback: (ImageGeneratorSignpost, Tensor<FloatType>?) -> Bool = { signpost, _ in
+            if cancellationBridge.isCancelled {
+              return false
+            }
+            stateHandler?(
+              MediaGenerationPipeline.State(
+                signpost: signpost,
+                totalSteps: Int(runtimeConfiguration.steps)
               )
-              return !cancellationBridge.isCancelled
-            }
-            let completion: (Swift.Result<[Tensor<FloatType>], MediaGenerationKitError>) -> Void = {
-              result in
-              cancellationBridge.finish()
-              continuation.resume(with: result)
-            }
-            if let remoteExecutor {
-              remoteExecutor.generate(
+            )
+            return !cancellationBridge.isCancelled
+          }
+          let completion: (Swift.Result<[Tensor<FloatType>], MediaGenerationKitError>) -> Void = {
+            result in
+            cancellationBridge.finish()
+            continuation.resume(with: result)
+          }
+          if let remoteExecutor {
+            remoteExecutor.generate(
+              prompt: prompt,
+              negativePrompt: negativePrompt,
+              configuration: runtimeConfiguration,
+              image: executionInputs.image,
+              mask: executionInputs.mask,
+              hints: executionInputs.hints,
+              cancellationBridge: cancellationBridge,
+              uploadProgress: { bytesSent, totalBytes in
+                stateHandler?(.uploading(bytesSent: bytesSent, totalBytes: totalBytes))
+              },
+              downloadProgress: { bytesReceived, totalBytes in
+                stateHandler?(.downloading(bytesReceived: bytesReceived, totalBytes: totalBytes))
+              },
+              feedback: feedback,
+              completion: completion
+            )
+          } else {
+            do {
+              try environment.storage.generateLocally(
                 prompt: prompt,
                 negativePrompt: negativePrompt,
                 configuration: runtimeConfiguration,
@@ -607,42 +624,22 @@ public struct MediaGenerationPipeline: Sendable {
                 mask: executionInputs.mask,
                 hints: executionInputs.hints,
                 cancellationBridge: cancellationBridge,
-                uploadProgress: { bytesSent, totalBytes in
-                  stateHandler?(.uploading(bytesSent: bytesSent, totalBytes: totalBytes))
-                },
-                downloadProgress: { bytesReceived, totalBytes in
-                  stateHandler?(.downloading(bytesReceived: bytesReceived, totalBytes: totalBytes))
-                },
                 feedback: feedback,
                 completion: completion
               )
-            } else {
-              do {
-                try environment.storage.generateLocally(
-                  prompt: prompt,
-                  negativePrompt: negativePrompt,
-                  configuration: runtimeConfiguration,
-                  image: executionInputs.image,
-                  mask: executionInputs.mask,
-                  hints: executionInputs.hints,
-                  cancellationBridge: cancellationBridge,
-                  feedback: feedback,
-                  completion: completion
-                )
-              } catch let error as MediaGenerationKitError {
-                cancellationBridge.finish()
-                continuation.resume(throwing: error)
-              } catch {
-                cancellationBridge.finish()
-                continuation.resume(
-                  throwing: MediaGenerationKitError.generationFailed(error.localizedDescription))
-              }
+            } catch let error as MediaGenerationKitError {
+              cancellationBridge.finish()
+              continuation.resume(throwing: error)
+            } catch {
+              cancellationBridge.finish()
+              continuation.resume(
+                throwing: MediaGenerationKitError.generationFailed(error.localizedDescription))
             }
           }
-        },
-        onCancel: {
-          cancellationBridge.cancel()
-        })
+        }
+      }, onCancel: {
+        cancellationBridge.cancel()
+      })
 
       let outputs = tensors.map(MediaGenerationPipeline.Result.init(tensor:))
       logger.debug(
@@ -810,8 +807,7 @@ public struct MediaGenerationPipeline: Sendable {
     if let source = input as? MediaGenerationImageDataSource {
       return try source.mediaGenerationEncodedData()
     }
-    if let masked = input as? MaskInput,
-      let source = masked.source as? MediaGenerationImageDataSource
+    if let masked = input as? MaskInput, let source = masked.source as? MediaGenerationImageDataSource
     {
       return try source.mediaGenerationEncodedData()
     }
@@ -820,8 +816,7 @@ public struct MediaGenerationPipeline: Sendable {
     {
       return try source.mediaGenerationEncodedData()
     }
-    if let depth = input as? DepthInput,
-      let source = depth.source as? MediaGenerationImageDataSource
+    if let depth = input as? DepthInput, let source = depth.source as? MediaGenerationImageDataSource
     {
       return try source.mediaGenerationEncodedData()
     }
@@ -829,20 +824,20 @@ public struct MediaGenerationPipeline: Sendable {
   }
 }
 
-extension MediaGenerationImageInput {
-  public var role: MediaGenerationPipeline.InputRole {
+public extension MediaGenerationImageInput {
+  var role: MediaGenerationPipeline.InputRole {
     .image
   }
 
-  public func mask() -> MediaGenerationPipeline.Input {
+  func mask() -> MediaGenerationPipeline.Input {
     MediaGenerationPipeline.MaskInput(self)
   }
 
-  public func moodboard() -> MediaGenerationPipeline.Input {
+  func moodboard() -> MediaGenerationPipeline.Input {
     MediaGenerationPipeline.MoodboardInput(self)
   }
 
-  public func depth() -> MediaGenerationPipeline.Input {
+  func depth() -> MediaGenerationPipeline.Input {
     MediaGenerationPipeline.DepthInput(self)
   }
 }
@@ -893,15 +888,14 @@ extension MediaGenerationPipeline.Backend {
         } else {
           .none
         }
-      let remoteExecutor = try MediaGenerationRemoteExecutor(
-        configuration:
-          MediaGenerationRemoteConfiguration(
-            serverURL: endpoint.host,
-            port: endpoint.port,
-            useTLS: options.useTLS,
-            authentication: authentication,
-            deviceName: options.deviceName
-          )
+      let remoteExecutor = try MediaGenerationRemoteExecutor(configuration:
+        MediaGenerationRemoteConfiguration(
+          serverURL: endpoint.host,
+          port: endpoint.port,
+          useTLS: options.useTLS,
+          authentication: authentication,
+          deviceName: options.deviceName
+        )
       )
       return PreparedStorage(
         environment: environment,
@@ -912,19 +906,18 @@ extension MediaGenerationPipeline.Backend {
       let environment = MediaGenerationEnvironment.default
       let resolvedAPIKey = try MediaGenerationDefaults.resolveAPIKey(explicitAPIKey: apiKey)
       let resolvedBaseURL = options.baseURL ?? CloudConfiguration.defaultBaseURL
-      let remoteExecutor = try MediaGenerationRemoteExecutor(
-        configuration:
-          MediaGenerationRemoteConfiguration(
-            serverURL: "compute.drawthings.ai",
-            port: 443,
-            useTLS: true,
-            authentication: .cloudCompute(
-              apiKey: resolvedAPIKey,
-              baseURL: resolvedBaseURL,
-              appCheck: options.appCheck
-            ),
-            deviceName: options.deviceName
-          )
+      let remoteExecutor = try MediaGenerationRemoteExecutor(configuration:
+        MediaGenerationRemoteConfiguration(
+          serverURL: "compute.drawthings.ai",
+          port: 443,
+          useTLS: true,
+          authentication: .cloudCompute(
+            apiKey: resolvedAPIKey,
+            baseURL: resolvedBaseURL,
+            appCheck: options.appCheck
+          ),
+          deviceName: options.deviceName
+        )
       )
       return PreparedStorage(
         environment: environment,
@@ -945,14 +938,12 @@ extension CIImage: MediaGenerationImageDataSource {
       throw MediaGenerationKitError.generationFailed("failed to render CIImage input")
     }
     let mutableData = NSMutableData()
-    guard
-      let destination = CGImageDestinationCreateWithData(
-        mutableData,
-        UTType.png.identifier as CFString,
-        1,
-        nil
-      )
-    else {
+    guard let destination = CGImageDestinationCreateWithData(
+      mutableData,
+      UTType.png.identifier as CFString,
+      1,
+      nil
+    ) else {
       throw MediaGenerationKitError.generationFailed("failed to create PNG destination")
     }
     CGImageDestinationAddImage(destination, cgImage, nil)
@@ -963,8 +954,8 @@ extension CIImage: MediaGenerationImageDataSource {
   }
 }
 
-extension CIImage {
-  public convenience init(_ result: MediaGenerationPipeline.Result) {
+public extension CIImage {
+  convenience init(_ result: MediaGenerationPipeline.Result) {
     guard let imageData = try? MediaGenerationImageCodec.encode(result.tensor, type: UTType.png),
       let image = CIImage(data: imageData),
       let cgImage = CIContext(options: nil).createCGImage(image, from: image.extent)
@@ -987,8 +978,8 @@ extension CIImage {
     }
   }
 
-  extension UIImage {
-    public convenience init(_ result: MediaGenerationPipeline.Result) {
+  public extension UIImage {
+    convenience init(_ result: MediaGenerationPipeline.Result) {
       guard let imageData = try? MediaGenerationImageCodec.encode(result.tensor, type: UTType.png),
         let image = UIImage(data: imageData)
       else {

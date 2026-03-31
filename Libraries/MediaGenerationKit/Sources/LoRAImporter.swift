@@ -87,8 +87,7 @@ public struct LoRAImporter: Sendable {
     )
     try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
 
-    let outputFilename =
-      destinationFile?.lastPathComponent
+    let outputFilename = destinationFile?.lastPathComponent
       ?? "__inspect_\(UUID().uuidString)_lora_f16.ckpt"
     let outputName =
       destinationFile?.deletingPathExtension().lastPathComponent

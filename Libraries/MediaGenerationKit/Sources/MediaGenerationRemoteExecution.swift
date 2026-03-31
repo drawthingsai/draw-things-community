@@ -37,8 +37,7 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
   private var remoteGeneratorInstance: RemoteImageGenerator?
 
   init(configuration: MediaGenerationRemoteConfiguration) throws {
-    self.queue = DispatchQueue(
-      label: "com.drawthings.mediagenerationkit.remote", qos: .userInteractive)
+    self.queue = DispatchQueue(label: "com.drawthings.mediagenerationkit.remote", qos: .userInteractive)
     try configure(configuration)
   }
 

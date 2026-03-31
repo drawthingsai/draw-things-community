@@ -30,8 +30,8 @@ swift_library(
 swift_test(
     name = "MediaGenerationKitTests",
     srcs = [
-        "Tests/MediaGenerationKitExampleCompileTests.swift",
         "Tests/MediaGenerationKitTests.swift",
+        "Tests/MediaGenerationKitExampleCompileTests.swift",
     ],
     deps = [
         ":MediaGenerationKit",

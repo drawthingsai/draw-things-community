@@ -83,8 +83,7 @@ public struct LoRAStore: Sendable {
 
   public func list() async throws -> [File] {
     throw MediaGenerationKitError.generationFailed(
-      "LoRAStore.list() is not implemented because the current cloud API does not expose a list endpoint"
-    )
+      "LoRAStore.list() is not implemented because the current cloud API does not expose a list endpoint")
   }
 
   /// Upload raw LoRA bytes to the store.

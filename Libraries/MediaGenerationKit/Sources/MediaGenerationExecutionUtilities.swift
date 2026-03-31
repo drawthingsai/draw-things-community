@@ -269,8 +269,7 @@ internal enum MediaGenerationExecutionUtilities {
   ) {
     guard
       let cgImage = ImageConverter.cgImage(from: data),
-      let bitmapContext = ImageConverter.resize(
-        from: cgImage, imageWidth: width, imageHeight: height)
+      let bitmapContext = ImageConverter.resize(from: cgImage, imageWidth: width, imageHeight: height)
     else {
       return (nil, nil)
     }
@@ -281,8 +280,7 @@ internal enum MediaGenerationExecutionUtilities {
   private static func maskDataToTensor(_ data: Data, width: Int, height: Int) -> Tensor<UInt8>? {
     guard
       let cgImage = ImageConverter.cgImage(from: data),
-      let bitmapContext = ImageConverter.resize(
-        from: cgImage, imageWidth: width, imageHeight: height)
+      let bitmapContext = ImageConverter.resize(from: cgImage, imageWidth: width, imageHeight: height)
     else {
       return nil
     }

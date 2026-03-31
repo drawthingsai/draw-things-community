@@ -62,6 +62,15 @@ public struct MediaGenerationEnvironment: Sendable {
       return localResources
     }
 
+    var maxTotalWeightsCacheSize: UInt64 {
+      get {
+        DeviceCapability.maxTotalWeightsCacheSize
+      }
+      set {
+        DeviceCapability.maxTotalWeightsCacheSize = newValue
+      }
+    }
+
     func ensure(
       _ model: String,
       offline: Bool,
@@ -117,6 +126,29 @@ public struct MediaGenerationEnvironment: Sendable {
       }
       return try MediaGenerationDefaults.ensureDirectory(primaryURL)
     }
+
+    func resolveModel(_ model: String, offline: Bool) -> MediaGenerationResolvedModel? {
+      try? ModelResolver.resolve(model, offline: offline)
+    }
+
+    func suggestions(for model: String, limit: Int, offline: Bool) -> [MediaGenerationResolvedModel] {
+      ModelResolver.suggestions(model, limit: limit, offline: offline)
+    }
+
+    func inspect(_ model: String, offline: Bool) throws -> MediaGenerationResolvedModel {
+      guard let specification = ModelResolver.specification(for: model, offline: offline) else {
+        throw MediaGenerationKitError.unresolvedModelReference(
+          query: model,
+          suggestions: ModelResolver.suggestions(model, limit: 5, offline: offline).map(\.file)
+        )
+      }
+
+      return ModelResolver.model(from: specification)
+    }
+
+    func downloadableModels(includeDownloaded: Bool, offline: Bool) -> [MediaGenerationResolvedModel] {
+      ModelResolver.catalogModels(includeDownloaded: includeDownloaded, offline: offline)
+    }
   }
 
   public static var `default` = MediaGenerationEnvironment(
@@ -134,12 +166,50 @@ public struct MediaGenerationEnvironment: Sendable {
     }
   }
 
+  public var maxTotalWeightsCacheSize: UInt64 {
+    get {
+      storage.maxTotalWeightsCacheSize
+    }
+    nonmutating set {
+      storage.maxTotalWeightsCacheSize = newValue
+    }
+  }
+
   public func ensure(
     _ model: String,
     offline: Bool = false,
     stateHandler: (@Sendable (EnsureState) -> Void)? = nil
   ) async throws -> MediaGenerationResolvedModel {
     try await storage.ensure(model, offline: offline, stateHandler: stateHandler)
+  }
+
+  public func resolveModel(
+    _ model: String,
+    offline: Bool = false
+  ) -> MediaGenerationResolvedModel? {
+    storage.resolveModel(model, offline: offline)
+  }
+
+  public func suggestedModels(
+    for model: String,
+    limit: Int = 5,
+    offline: Bool = false
+  ) -> [MediaGenerationResolvedModel] {
+    storage.suggestions(for: model, limit: limit, offline: offline)
+  }
+
+  public func inspectModel(
+    _ model: String,
+    offline: Bool = false
+  ) throws -> MediaGenerationResolvedModel {
+    try storage.inspect(model, offline: offline)
+  }
+
+  public func downloadableModels(
+    includeDownloaded: Bool = true,
+    offline: Bool = false
+  ) -> [MediaGenerationResolvedModel] {
+    storage.downloadableModels(includeDownloaded: includeDownloaded, offline: offline)
   }
 
   internal init(storage: Storage) {
@@ -177,7 +247,8 @@ internal enum MediaGenerationDefaults {
     }
     if let documentsURL = FileManager.default.urls(
       for: .documentDirectory, in: .userDomainMask
-    ).first {
+    ).first
+    {
       return [documentsURL.appendingPathComponent("Models", isDirectory: true)]
     }
     return []

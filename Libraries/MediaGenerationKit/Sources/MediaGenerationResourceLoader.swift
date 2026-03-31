@@ -1,8 +1,7 @@
 import Foundation
 
 internal enum MediaGenerationResourceLoader {
-  static func bundledData(resource name: String, extension fileExtension: String = "json") -> Data?
-  {
+  static func bundledData(resource name: String, extension fileExtension: String = "json") -> Data? {
     if let resourceURL = Bundle.main.url(forResource: name, withExtension: fileExtension),
       let data = try? Data(contentsOf: resourceURL)
     {

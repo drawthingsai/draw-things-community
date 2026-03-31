@@ -30,8 +30,7 @@ internal enum ConfigurationZooLoader {
         return bundledCache
       }
       lock.unlock()
-      let loaded =
-        MediaGenerationResourceLoader.bundledData(resource: "configs").flatMap(parse) ?? []
+      let loaded = MediaGenerationResourceLoader.bundledData(resource: "configs").flatMap(parse) ?? []
       lock.lock()
       bundledCache = loaded
       lock.unlock()
@@ -44,8 +43,7 @@ internal enum ConfigurationZooLoader {
         return remoteCache
       }
       lock.unlock()
-      let loaded =
-        MediaGenerationResourceLoader.fetchRemoteData(url: remoteURL).flatMap(parse) ?? []
+      let loaded = MediaGenerationResourceLoader.fetchRemoteData(url: remoteURL).flatMap(parse) ?? []
       lock.lock()
       remoteCache = loaded
       lock.unlock()

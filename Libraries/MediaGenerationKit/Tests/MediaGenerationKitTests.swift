@@ -2,8 +2,8 @@ import Darwin
 import Foundation
 import ImageGenerator
 import Logging
-import UniformTypeIdentifiers
 import XCTest
+import UniformTypeIdentifiers
 
 @testable import MediaGenerationKit
 
@@ -36,6 +36,48 @@ final class MediaGenerationKitTests: XCTestCase {
 
     XCTAssertEqual(pipeline.model, "sd_v1.5_f16.ckpt")
     XCTAssertEqual(pipeline.configuration.model, "sd_v1.5_f16.ckpt")
+  }
+
+  func testEnvironmentResolvesKnownModelReference() {
+    let resolved = MediaGenerationEnvironment.default.resolveModel("Stable Diffusion v1.5")
+
+    XCTAssertEqual(resolved?.file, "sd_v1.5_f16.ckpt")
+    XCTAssertEqual(resolved?.name, "Stable Diffusion v1.5")
+  }
+
+  func testEnvironmentSuggestsClosestModels() {
+    let suggestions = MediaGenerationEnvironment.default.suggestedModels(for: "Stable Diffusion")
+
+    XCTAssertFalse(suggestions.isEmpty)
+    XCTAssertTrue(suggestions.contains { $0.file == "sd_v1.5_f16.ckpt" })
+  }
+
+  func testEnvironmentCanInspectKnownModel() throws {
+    let inspection = try MediaGenerationEnvironment.default.inspectModel("sd_v1.5_f16.ckpt")
+
+    XCTAssertEqual(inspection.file, "sd_v1.5_f16.ckpt")
+    XCTAssertEqual(inspection.name, "Stable Diffusion v1.5")
+    XCTAssertNotNil(inspection.version)
+    XCTAssertEqual(inspection.version, "Stable Diffusion v1")
+  }
+
+  func testEnvironmentListsDownloadableModels() {
+    let models = MediaGenerationEnvironment.default.downloadableModels()
+
+    XCTAssertFalse(models.isEmpty)
+    XCTAssertTrue(models.contains { $0.file == "sd_v1.5_f16.ckpt" })
+  }
+
+  func testEnvironmentMaxTotalWeightsCacheSizeRoundTrips() {
+    let original = MediaGenerationEnvironment.default.maxTotalWeightsCacheSize
+    addTeardownBlock {
+      MediaGenerationEnvironment.default.maxTotalWeightsCacheSize = original
+    }
+
+    let expected = UInt64(6) * 1_024 * 1_024 * 1_024
+    MediaGenerationEnvironment.default.maxTotalWeightsCacheSize = expected
+
+    XCTAssertEqual(MediaGenerationEnvironment.default.maxTotalWeightsCacheSize, expected)
   }
 
   func testLocalBackendPrefersEnvironmentModelsDirectory() throws {
