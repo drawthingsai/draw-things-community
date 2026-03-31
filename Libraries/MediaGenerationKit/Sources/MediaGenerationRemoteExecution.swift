@@ -15,14 +15,14 @@ internal struct MediaGenerationRemoteConfiguration {
   public let port: Int
   public let useTLS: Bool
   public let authentication: MediaGenerationRemoteAuthenticationMode
-  public let deviceName: String?
+  public let deviceName: String
 
   public init(
     serverURL: String,
     port: Int = 7859,
-    useTLS: Bool = false,
+    useTLS: Bool = true,
     authentication: MediaGenerationRemoteAuthenticationMode = .none,
-    deviceName: String? = nil
+    deviceName: String = "MediaGenerationKit"
   ) {
     self.serverURL = serverURL
     self.port = port
@@ -34,11 +34,21 @@ internal struct MediaGenerationRemoteConfiguration {
 
 internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
   private let authenticationMode: MediaGenerationRemoteAuthenticationMode
+  private let cloudAuthenticator: CloudAuthenticator?
   private let queue: DispatchQueue
   private var remoteGeneratorInstance: RemoteImageGenerator?
 
   init(configuration: MediaGenerationRemoteConfiguration) throws {
     self.authenticationMode = configuration.authentication
+    switch configuration.authentication {
+    case .cloudCompute(let apiKey, let baseURL, _):
+      self.cloudAuthenticator = CloudAuthenticatorRegistry.shared.authenticator(
+        apiKey: apiKey,
+        baseURL: baseURL
+      )
+    case .none, .sharedSecret:
+      self.cloudAuthenticator = nil
+    }
     self.queue = DispatchQueue(label: "com.drawthings.mediagenerationkit.remote", qos: .userInteractive)
     try configure(configuration)
   }
@@ -95,8 +105,9 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
       throw MediaGenerationKitError.remoteNotConfigured
     }
 
-    if case .cloudCompute = authenticationMode, let requestedModel {
-      let remoteModels = try listRemoteModels()
+    if case .cloudCompute = authenticationMode, let requestedModel, let cloudAuthenticator
+    {
+      let remoteModels = cloudAuthenticator.remoteModels()
       if !remoteModels.contains(requestedModel) {
         throw MediaGenerationKitError.modelNotFoundOnRemote(requestedModel)
       }
@@ -137,8 +148,7 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
       sharedSecret = nil
     }
 
-    let deviceName = config.deviceName ?? "MediaGenerationKit"
-    let client = ImageGenerationClientWrapper(deviceName: deviceName)
+    let client = ImageGenerationClientWrapper(deviceName: config.deviceName)
 
     do {
       try client.connect(
@@ -156,10 +166,19 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
     echoGroup.enter()
     var echoSucceeded = false
     var serverIdentifier: UInt64 = 0
+    var discoveredRemoteModels = Set<String>()
 
     client.echo { success, authenticated, resources, labHours, serverIdent in
       echoSucceeded = success
       serverIdentifier = serverIdent
+      if success {
+        for model in resources.models {
+          discoveredRemoteModels.insert(model.file)
+        }
+        for file in resources.files {
+          discoveredRemoteModels.insert(file)
+        }
+      }
       echoGroup.leave()
     }
 
@@ -169,10 +188,11 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
       throw MediaGenerationKitError.generationFailed(
         echoResult == .timedOut ? "echo timed out (5s)" : "echo returned success=false")
     }
+    cloudAuthenticator?.updateRemoteModelsFromHandshake(discoveredRemoteModels)
 
     let authHandler = createAuthenticationHandler(from: config.authentication)
     remoteGeneratorInstance = RemoteImageGenerator(
-      name: deviceName,
+      name: config.deviceName,
       deviceType: deviceType,
       client: client,
       serverIdentifier: serverIdentifier,
@@ -186,42 +206,6 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
     remoteGeneratorInstance = nil
   }
 
-  private func listRemoteModels(timeout: TimeInterval = 10) throws -> [String] {
-    guard let remoteGeneratorInstance else {
-      throw MediaGenerationKitError.remoteNotConfigured
-    }
-    let client = remoteGeneratorInstance.client
-    guard client.client != nil else {
-      throw MediaGenerationKitError.remoteNotConfigured
-    }
-
-    let queryGroup = DispatchGroup()
-    queryGroup.enter()
-
-    var echoSucceeded = false
-    var discovered = Set<String>()
-
-    client.echo { success, authenticated, resources, labHours, serverIdentifier in
-      defer { queryGroup.leave() }
-      guard success else { return }
-      echoSucceeded = true
-      for model in resources.models {
-        discovered.insert(model.file)
-      }
-      for file in resources.files {
-        discovered.insert(file)
-      }
-    }
-
-    let waitResult = queryGroup.wait(timeout: .now() + timeout)
-    guard waitResult != .timedOut, echoSucceeded else {
-      throw MediaGenerationKitError.generationFailed(
-        waitResult == .timedOut
-          ? "listRemoteModels echo timed out (\(timeout)s)" : "listRemoteModels echo success=false")
-    }
-    return discovered.sorted()
-  }
-
   private func createAuthenticationHandler(
     from mode: MediaGenerationRemoteAuthenticationMode
   ) -> (
@@ -231,10 +215,12 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
     case .none, .sharedSecret:
       return nil
     case .cloudCompute(let apiKey, let baseURL, let appCheck):
-      let authenticator = CloudAuthenticatorRegistry.shared.authenticator(
-        apiKey: apiKey,
-        baseURL: baseURL
-      )
+      let authenticator =
+        cloudAuthenticator
+        ?? CloudAuthenticatorRegistry.shared.authenticator(
+          apiKey: apiKey,
+          baseURL: baseURL
+        )
       return { _, encodedBlob, configuration, hasImage, shuffleCount, cancellation in
         let shortTermToken: String
         switch self.blockingShortTermToken(authenticator: authenticator, appCheck: appCheck) {

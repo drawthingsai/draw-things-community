@@ -355,6 +355,37 @@ final class MediaGenerationKitTests: XCTestCase {
     XCTAssertFalse(first === different)
   }
 
+  func testCloudAuthenticatorRegistrySharesCachedRemoteModels() {
+    let apiKey = "test-api-key-\(UUID().uuidString)"
+    let first = CloudAuthenticatorRegistry.shared.authenticator(
+      apiKey: apiKey,
+      baseURL: CloudConfiguration.defaultBaseURL
+    )
+    let second = CloudAuthenticatorRegistry.shared.authenticator(
+      apiKey: apiKey,
+      baseURL: CloudConfiguration.defaultBaseURL
+    )
+
+    first.updateRemoteModelsFromHandshake([
+      "flux_2_klein_4b_i8x.ckpt",
+      "qwen_image_2512_i8x.ckpt",
+    ])
+
+    XCTAssertEqual(
+      second.remoteModels(),
+      Set(["flux_2_klein_4b_i8x.ckpt", "qwen_image_2512_i8x.ckpt"])
+    )
+  }
+
+  func testCloudAuthenticatorRemoteModelsDefaultsToEmptySet() {
+    let authenticator = CloudAuthenticatorRegistry.shared.authenticator(
+      apiKey: "test-api-key-\(UUID().uuidString)",
+      baseURL: CloudConfiguration.defaultBaseURL
+    )
+
+    XCTAssertEqual(authenticator.remoteModels(), Set<String>())
+  }
+
   func testLoRAImporterMissingFileThrowsFileNotFound() {
     let missingFile = FileManager.default.temporaryDirectory.appendingPathComponent(
       "mediagenerationkit-missing-\(UUID().uuidString).safetensors"

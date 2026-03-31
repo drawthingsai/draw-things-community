@@ -42,16 +42,13 @@ public struct MediaGenerationPipeline: Sendable {
   public struct RemoteOptions: Sendable {
     public var useTLS: Bool
     public var sharedSecret: String?
-    public var deviceName: String?
 
     public init(
-      useTLS: Bool = false,
-      sharedSecret: String? = nil,
-      deviceName: String? = nil
+      useTLS: Bool = true,
+      sharedSecret: String? = nil
     ) {
       self.useTLS = useTLS
       self.sharedSecret = sharedSecret
-      self.deviceName = deviceName
     }
   }
 
@@ -897,8 +894,7 @@ extension MediaGenerationPipeline.Backend {
           serverURL: endpoint.host,
           port: endpoint.port,
           useTLS: options.useTLS,
-          authentication: authentication,
-          deviceName: options.deviceName
+          authentication: authentication
         )
       )
       return PreparedStorage(
@@ -920,7 +916,7 @@ extension MediaGenerationPipeline.Backend {
             baseURL: resolvedBaseURL,
             appCheck: options.appCheck
           ),
-          deviceName: options.deviceName
+          deviceName: options.deviceName ?? "MediaGenerationKit"
         )
       )
       return PreparedStorage(

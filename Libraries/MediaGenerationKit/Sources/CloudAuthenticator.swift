@@ -23,6 +23,7 @@ internal final class CloudAuthenticator {
   private var appCheckRevision: UInt64 = 0
   private var cachedShortTermToken: String?
   private var tokenExpiry: Date?
+  private var cachedRemoteModels = Set<String>()
   private let tokenQueue = DispatchQueue(label: "com.drawthings.mediagenerationkit.cloud-auth")
 
   private var sdkTokenEndpoint: URL {
@@ -58,6 +59,22 @@ internal final class CloudAuthenticator {
       }
       self.getShortTermTokenLocked(completion: completion)
     }
+  }
+
+  func updateRemoteModelsFromHandshake(_ models: some Sequence<String>) {
+    tokenQueue.sync {
+      cacheRemoteModels(models)
+    }
+  }
+
+  func remoteModels() -> Set<String> {
+    tokenQueue.sync {
+      cachedRemoteModels
+    }
+  }
+
+  private func cacheRemoteModels(_ models: some Sequence<String>) {
+    cachedRemoteModels = Set(models)
   }
 
   private func getShortTermTokenLocked(
