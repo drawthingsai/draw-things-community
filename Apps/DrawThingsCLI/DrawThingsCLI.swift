@@ -26,6 +26,7 @@ import Trainer
 
 #if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo)
   import AVFoundation
+  import AudioToolbox
   import CoreMedia
   import CoreVideo
 #endif
@@ -46,6 +47,7 @@ private enum DrawThingsCLIError: LocalizedError {
   case missingModelFiles([String])
   case generationFailed
   case unsupportedTensorShape(String)
+  case invalidAudioTensorShape(String)
   case invalidImageDimensions(Int, Int)
   case pngEncodeFailed(String)
   case videoEncodeFailed(String)
@@ -74,6 +76,8 @@ private enum DrawThingsCLIError: LocalizedError {
       return "Generation failed (no tensors returned)"
     case .unsupportedTensorShape(let shape):
       return "Unsupported output tensor shape: \(shape)"
+    case .invalidAudioTensorShape(let shape):
+      return "Unsupported audio tensor shape: \(shape)"
     case .invalidImageDimensions(let width, let height):
       return "Image dimensions must be multiples of 64, got \(width)x\(height)"
     case .pngEncodeFailed(let outputPath):
@@ -1708,7 +1712,7 @@ private final class LocalGenerationRunner {
     let timingTracker = GenerationTimingTracker()
     let hints = [(ControlHintType, [(AnyTensor, Float)])]()
     progressPrinter.update(progress: 0, label: "Starting...", detail: nil)
-    let (images, _, _) = queue.sync {
+    let (images, audio, _) = queue.sync {
       imageGenerator.generate(
         trace: trace, image: inputImage, scaleFactor: 1, mask: nil, hints: hints, text: prompt,
         negativeText: negativePrompt, configuration: configuration, fileMapping: [:], keywords: [],
@@ -1732,14 +1736,15 @@ private final class LocalGenerationRunner {
     }
     let timing = timingTracker.summary()
     let outputPaths = try saveOutputs(
-      images, outputPath: outputPath, configuration: configuration, videoFormat: videoFormat)
+      images, audio: audio?.first, outputPath: outputPath, configuration: configuration,
+      videoFormat: videoFormat)
     progressPrinter.update(progress: 1, label: "Generated", detail: nil)
     return GenerationRunResult(outputPaths: outputPaths, timing: timing)
   }
 
   private func saveOutputs(
-    _ tensors: [Tensor<FloatType>], outputPath: String, configuration: GenerationConfiguration,
-    videoFormat: VideoExportFormat?
+    _ tensors: [Tensor<FloatType>], audio: Tensor<Float>?, outputPath: String,
+    configuration: GenerationConfiguration, videoFormat: VideoExportFormat?
   ) throws -> [String] {
     let destination = try normalizedOutputDestination(outputPath)
     switch destination {
@@ -1754,9 +1759,13 @@ private final class LocalGenerationRunner {
       return outputPaths
     case .video(let outputURL, let containerExtension):
       let framesPerSecond = ModelZoo.framesPerSecondForModel(configuration.model ?? "")
+      let audioSampleRate = audio.map { _ in
+        Double(ModelZoo.audioSampleRateForModel(configuration.model ?? ""))
+      }
       let path = try writeVideo(
         tensors: tensors, to: outputURL, containerExtension: containerExtension,
-        framesPerSecond: framesPerSecond, videoFormat: videoFormat ?? .h264)
+        framesPerSecond: framesPerSecond, videoFormat: videoFormat ?? .h264, audio: audio,
+        audioSampleRate: audioSampleRate)
       return [path]
     }
   }
@@ -1841,7 +1850,8 @@ private final class LocalGenerationRunner {
 
   private func writeVideo(
     tensors: [Tensor<FloatType>], to outputURL: URL, containerExtension: String,
-    framesPerSecond: Double, videoFormat: VideoExportFormat
+    framesPerSecond: Double, videoFormat: VideoExportFormat, audio: Tensor<Float>?,
+    audioSampleRate: Double?
   ) throws -> String {
     #if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo)
       guard let first = tensors.first else {
@@ -1876,6 +1886,18 @@ private final class LocalGenerationRunner {
       let writer = try AVAssetWriter(outputURL: outputURL, fileType: fileType)
       let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
       writerInput.expectsMediaDataInRealTime = false
+      let audioWriterInput: AVAssetWriterInput?
+      if let audio, let audioSampleRate {
+        _ = try audioTensorShape(audio)
+        let input = AVAssetWriterInput(
+          mediaType: .audio,
+          outputSettings: audioSettings(
+            for: containerExtension, sampleRate: audioSampleRate))
+        input.expectsMediaDataInRealTime = false
+        audioWriterInput = input
+      } else {
+        audioWriterInput = nil
+      }
       let pixelBufferAttributes: [String: Any] = [
         kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
         kCVPixelBufferWidthKey as String: firstShape.width,
@@ -1887,7 +1909,13 @@ private final class LocalGenerationRunner {
       guard writer.canAdd(writerInput) else {
         throw DrawThingsCLIError.videoEncodeFailed(outputURL.path)
       }
+      if let audioWriterInput, !writer.canAdd(audioWriterInput) {
+        throw DrawThingsCLIError.videoEncodeFailed(outputURL.path)
+      }
       writer.add(writerInput)
+      if let audioWriterInput {
+        writer.add(audioWriterInput)
+      }
       guard writer.startWriting() else {
         throw writer.error ?? DrawThingsCLIError.videoEncodeFailed(outputURL.path)
       }
@@ -1897,36 +1925,114 @@ private final class LocalGenerationRunner {
       }
 
       let frameDuration = frameDurationForVideo(frameRate: framesPerSecond)
-      for (index, tensor) in tensors.enumerated() {
-        while !writerInput.isReadyForMoreMediaData {
-          Thread.sleep(forTimeInterval: 0.002)
-        }
-        var pixelBuffer: CVPixelBuffer?
-        let status = CVPixelBufferPoolCreatePixelBuffer(nil, pixelBufferPool, &pixelBuffer)
-        guard status == kCVReturnSuccess, let pixelBuffer else {
-          throw DrawThingsCLIError.videoEncodeFailed(outputURL.path)
-        }
-        try populate(
-          pixelBuffer: pixelBuffer, with: tensor, expected: firstShape, outputPath: outputURL.path)
-        let presentationTime = CMTimeMultiply(frameDuration, multiplier: Int32(index))
-        guard adaptor.append(pixelBuffer, withPresentationTime: presentationTime) else {
-          throw writer.error ?? DrawThingsCLIError.videoEncodeFailed(outputURL.path)
+      let audioChunkFrameCount = 1024
+      let writerQueue = DispatchQueue(label: "draw-things-cli.video-export")
+      let semaphore = DispatchSemaphore(value: 0)
+      var finishError: Error?
+      var completionCalled = false
+      var videoInputFinished = false
+      var audioInputFinished = (audioWriterInput == nil)
+      var frameIndex = 0
+      var sampleOffset = 0
+      var presentationTime = CMTime.zero
+      let totalSampleCount: Int
+      if let audio {
+        totalSampleCount = try audioTensorShape(audio)
+      } else {
+        totalSampleCount = 0
+      }
+
+      func cancelAndComplete(_ error: Error) {
+        guard !completionCalled else { return }
+        completionCalled = true
+        finishError = error
+        writer.cancelWriting()
+        semaphore.signal()
+      }
+
+      func finishWritingIfReady() {
+        guard !completionCalled, videoInputFinished, audioInputFinished else { return }
+        completionCalled = true
+        writer.finishWriting {
+          if writer.status != .completed {
+            finishError = writer.error ?? DrawThingsCLIError.videoEncodeFailed(outputURL.path)
+          }
+          semaphore.signal()
         }
       }
 
-      writerInput.markAsFinished()
-      let semaphore = DispatchSemaphore(value: 0)
-      var finishError: Error?
-      writer.finishWriting {
-        if writer.status != .completed {
-          finishError = writer.error ?? DrawThingsCLIError.videoEncodeFailed(outputURL.path)
+      writerInput.requestMediaDataWhenReady(on: writerQueue) {
+        while writerInput.isReadyForMoreMediaData {
+          guard !completionCalled else { return }
+          if frameIndex < tensors.count {
+            let tensor = tensors[frameIndex]
+            var pixelBuffer: CVPixelBuffer?
+            let status = CVPixelBufferPoolCreatePixelBuffer(nil, pixelBufferPool, &pixelBuffer)
+            guard status == kCVReturnSuccess, let pixelBuffer else {
+              cancelAndComplete(DrawThingsCLIError.videoEncodeFailed(outputURL.path))
+              return
+            }
+            do {
+              try self.populate(
+                pixelBuffer: pixelBuffer, with: tensor, expected: firstShape,
+                outputPath: outputURL.path)
+            } catch {
+              cancelAndComplete(error)
+              return
+            }
+            guard adaptor.append(pixelBuffer, withPresentationTime: presentationTime) else {
+              cancelAndComplete(
+                writer.error ?? DrawThingsCLIError.videoEncodeFailed(outputURL.path))
+              return
+            }
+            presentationTime = CMTimeAdd(presentationTime, frameDuration)
+            frameIndex += 1
+          } else {
+            if !videoInputFinished {
+              writerInput.markAsFinished()
+              videoInputFinished = true
+            }
+            finishWritingIfReady()
+            break
+          }
         }
-        semaphore.signal()
       }
+
+      if let audioWriterInput, let audio, let audioSampleRate {
+        audioWriterInput.requestMediaDataWhenReady(on: writerQueue) {
+          while audioWriterInput.isReadyForMoreMediaData {
+            guard !completionCalled else { return }
+            if sampleOffset < totalSampleCount {
+              let sampleCount = min(audioChunkFrameCount, totalSampleCount - sampleOffset)
+              guard
+                let sampleBuffer = self.newAudioSampleBuffer(
+                  from: audio, tensorSampleOffset: sampleOffset,
+                  presentationSampleOffset: sampleOffset, sampleCount: sampleCount,
+                  sampleRate: audioSampleRate)
+              else {
+                cancelAndComplete(DrawThingsCLIError.videoEncodeFailed(outputURL.path))
+                return
+              }
+              guard audioWriterInput.append(sampleBuffer) else {
+                cancelAndComplete(
+                  writer.error ?? DrawThingsCLIError.videoEncodeFailed(outputURL.path))
+                return
+              }
+              sampleOffset += sampleCount
+            } else {
+              if !audioInputFinished {
+                audioWriterInput.markAsFinished()
+                audioInputFinished = true
+              }
+              finishWritingIfReady()
+              break
+            }
+          }
+        }
+      }
+
       semaphore.wait()
-      if let finishError {
-        throw finishError
-      }
+      if let finishError { throw finishError }
       return outputURL.path
     #else
       throw DrawThingsCLIError.unsupportedVideoOutput(outputURL.path)
@@ -1934,6 +2040,36 @@ private final class LocalGenerationRunner {
   }
 
   #if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo)
+    private func audioTensorShape(_ tensor: Tensor<Float>) throws -> Int {
+      let shape = tensor.shape
+      guard shape.count == 2, shape[0] == 2, shape[1] > 0 else {
+        throw DrawThingsCLIError.invalidAudioTensorShape("\(shape)")
+      }
+      return shape[1]
+    }
+
+    private func audioSettings(
+      for containerExtension: String, sampleRate: Double
+    ) -> [String: Any] {
+      if containerExtension == "mp4" {
+        return [
+          AVFormatIDKey: kAudioFormatMPEG4AAC,
+          AVSampleRateKey: sampleRate,
+          AVNumberOfChannelsKey: 2,
+          AVEncoderBitRateKey: 192_000,
+        ]
+      }
+      return [
+        AVFormatIDKey: kAudioFormatLinearPCM,
+        AVSampleRateKey: sampleRate,
+        AVNumberOfChannelsKey: 2,
+        AVLinearPCMBitDepthKey: 32,
+        AVLinearPCMIsFloatKey: true,
+        AVLinearPCMIsBigEndianKey: false,
+        AVLinearPCMIsNonInterleaved: false,
+      ]
+    }
+
     private func videoSettings(
       for format: VideoExportFormat, width: Int, height: Int
     ) -> [String: Any] {
@@ -1974,6 +2110,70 @@ private final class LocalGenerationRunner {
           ],
         ]
       }
+    }
+
+    private func newAudioSampleBuffer(
+      from audioTensor: Tensor<Float>, tensorSampleOffset: Int, presentationSampleOffset: Int,
+      sampleCount: Int, sampleRate: Double
+    ) -> CMSampleBuffer? {
+      guard sampleCount > 0 else { return nil }
+
+      let channelCount = 2
+      let byteCount = sampleCount * channelCount * MemoryLayout<Float32>.size
+      var interleaved = [Float32](repeating: 0, count: sampleCount * channelCount)
+      for i in 0..<sampleCount {
+        interleaved[i * 2] = max(-1, min(1, audioTensor[0, tensorSampleOffset + i]))
+        interleaved[i * 2 + 1] = max(-1, min(1, audioTensor[1, tensorSampleOffset + i]))
+      }
+
+      var blockBuffer: CMBlockBuffer?
+      let blockBufferStatus = CMBlockBufferCreateWithMemoryBlock(
+        allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: byteCount,
+        blockAllocator: kCFAllocatorDefault, customBlockSource: nil, offsetToData: 0,
+        dataLength: byteCount, flags: 0, blockBufferOut: &blockBuffer)
+      guard blockBufferStatus == kCMBlockBufferNoErr, let blockBuffer else {
+        return nil
+      }
+
+      let replaceStatus = interleaved.withUnsafeBytes { rawBuffer in
+        CMBlockBufferReplaceDataBytes(
+          with: rawBuffer.baseAddress!, blockBuffer: blockBuffer, offsetIntoDestination: 0,
+          dataLength: byteCount)
+      }
+      guard replaceStatus == kCMBlockBufferNoErr else { return nil }
+
+      let bytesPerFrame = UInt32(channelCount * MemoryLayout<Float32>.size)
+      var asbd = AudioStreamBasicDescription(
+        mSampleRate: sampleRate,
+        mFormatID: kAudioFormatLinearPCM,
+        mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+        mBytesPerPacket: bytesPerFrame,
+        mFramesPerPacket: 1,
+        mBytesPerFrame: bytesPerFrame,
+        mChannelsPerFrame: 2,
+        mBitsPerChannel: 32,
+        mReserved: 0)
+
+      var audioFormatDescription: CMAudioFormatDescription?
+      let formatStatus = CMAudioFormatDescriptionCreate(
+        allocator: kCFAllocatorDefault, asbd: &asbd, layoutSize: 0, layout: nil,
+        magicCookieSize: 0, magicCookie: nil, extensions: nil,
+        formatDescriptionOut: &audioFormatDescription)
+      guard formatStatus == noErr, let audioFormatDescription else {
+        return nil
+      }
+
+      let presentationTime = CMTime(
+        value: CMTimeValue(presentationSampleOffset),
+        timescale: CMTimeScale(max(1, Int(sampleRate.rounded()))))
+      var sampleBuffer: CMSampleBuffer?
+      let sampleBufferStatus = CMAudioSampleBufferCreateWithPacketDescriptions(
+        allocator: kCFAllocatorDefault, dataBuffer: blockBuffer, dataReady: true,
+        makeDataReadyCallback: nil, refcon: nil, formatDescription: audioFormatDescription,
+        sampleCount: sampleCount, presentationTimeStamp: presentationTime,
+        packetDescriptions: nil, sampleBufferOut: &sampleBuffer)
+      guard sampleBufferStatus == noErr else { return nil }
+      return sampleBuffer
     }
   #endif
 
