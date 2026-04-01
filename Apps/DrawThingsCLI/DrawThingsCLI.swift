@@ -483,6 +483,9 @@ struct GenerateExecutionOptions: ParsableArguments {
   @Flag(name: .long, inversion: .prefixedNo, help: "Auto-download missing model files.")
   var downloadMissing: Bool = true
 
+  @Flag(name: .long, help: "Disable live sampling preview during generation.")
+  var disablePreview: Bool = false
+
   @Flag(
     name: .long,
     help:
@@ -1704,7 +1707,8 @@ private final class LocalGenerationRunner {
   func generate(
     prompt: String, negativePrompt: String, configuration: GenerationConfiguration,
     outputPath: String,
-    inputImage: Tensor<FloatType>?, videoFormat: VideoExportFormat?
+    inputImage: Tensor<FloatType>?, videoFormat: VideoExportFormat?,
+    livePreviewSession: TerminalImageRenderer.LivePreviewSession? = nil
   ) throws -> GenerationRunResult {
     let trace = ImageGeneratorTrace(fromBridge: true)
     let progressPrinter = ProgressBarPrinter()
@@ -1717,7 +1721,7 @@ private final class LocalGenerationRunner {
         trace: trace, image: inputImage, scaleFactor: 1, mask: nil, hints: hints, text: prompt,
         negativeText: negativePrompt, configuration: configuration, fileMapping: [:], keywords: [],
         cancellation: { _ in },
-        feedback: { signpost, signposts, _ in
+        feedback: { signpost, signposts, previewTensor in
           timingTracker.record(signpost: signpost, signposts: signposts)
           let (elapsed, estimatedTotal) = GenerationEstimator.estimateUpToDateDuration(
             from: estimation, signpost: signpost, signposts: signposts)
@@ -1727,6 +1731,9 @@ private final class LocalGenerationRunner {
             progressPrinter.update(
               progress: progress, label: progressText.label, detail: progressText.detail
             )
+          }
+          if let previewTensor {
+            livePreviewSession?.update(tensor: previewTensor)
           }
           return true
         })
@@ -2325,6 +2332,130 @@ private enum TerminalImageRenderer {
   private static let iTerm2PayloadLimit = 900_000
   private static let iTerm2MultipartChunkSize = 32_768
   private static let kittyChunkSize = 4_096
+  private static var kittyLivePreviewImageID: Int { max(1, Int(getpid())) }
+  private static let kittyLivePreviewPlacementID = 1
+  final class LivePreviewSession {
+    private let resolvedProtocol: ResolvedProtocol
+    private let modelVersion: ModelVersion
+    private let previewColumns: Int
+    private let previewRows: Int
+    private var didReserveRegion = false
+    private var didRenderFinalImage = false
+
+    private init?(
+      mode: TerminalImageRenderMode, protocolChoice: TerminalImageProtocol,
+      outputPixelSize: PixelSize, modelVersion: ModelVersion
+    ) {
+      guard mode != .disabled, isStandardOutputTTY else { return nil }
+      let environment = ProcessInfo.processInfo.environment
+      guard
+        let resolvedProtocol = TerminalImageRenderer.resolvedProtocol(
+          for: protocolChoice, environment: environment)
+      else {
+        return nil
+      }
+      self.resolvedProtocol = resolvedProtocol
+      self.modelVersion = modelVersion
+      let previewSize = TerminalImageRenderer.fittedPreviewSize(
+        for: outputPixelSize, environment: environment)
+      switch resolvedProtocol {
+      case .iterm2:
+        self.previewColumns = previewSize.columns
+        self.previewRows = TerminalImageRenderer.fittedPreviewRows(
+          for: outputPixelSize, columns: previewSize.columns, environment: environment)
+      case .kitty:
+        self.previewColumns = previewSize.columns
+        self.previewRows = previewSize.rows
+      }
+    }
+
+    func update(tensor: Tensor<FloatType>) {
+      let previewImages = ImageConverter.cgImages(
+        fromLatent: tensor, canUseTAESD: true, version: modelVersion)
+      guard let previewImage = previewImages.0.first else { return }
+      switch resolvedProtocol {
+      case .iterm2:
+        guard previewRows > 0 else { return }
+        ensureReservedRegion()
+        guard let data = pngData(from: previewImage) else { return }
+        clearPreviewRegion(rows: previewRows)
+        renderITerm2(
+          data: data, fileName: "preview.png", columns: previewColumns, rows: previewRows)
+        moveCursor(up: previewRows)
+        write("\r", to: .standardOutput)
+      case .kitty:
+        guard previewRows > 0 else { return }
+        ensureReservedRegion()
+        guard let image = rgbaData(from: previewImage) else { return }
+        renderKittyLivePreview(
+          data: image.data, size: image.size, columns: previewColumns, rows: previewRows)
+      }
+    }
+
+    func renderFinalImage(path: String) throws -> Bool {
+      let fileURL = URL(fileURLWithPath: path)
+      switch resolvedProtocol {
+      case .iterm2:
+        guard previewRows > 0 else { return false }
+        ensureReservedRegion()
+        let data = try Data(contentsOf: fileURL)
+        clearPreviewRegion(rows: previewRows)
+        let finalColumns = TerminalImageRenderer.previewColumns(
+          environment: ProcessInfo.processInfo.environment)
+        renderITerm2(data: data, fileName: fileURL.lastPathComponent, columns: finalColumns)
+        didRenderFinalImage = true
+      case .kitty:
+        guard previewRows > 0 else { return false }
+        ensureReservedRegion()
+        let image = try loadKittyImage(path: fileURL)
+        deleteKittyImage(imageID: kittyLivePreviewImageID)
+        renderKittyInline(data: image.data, size: image.size)
+        didRenderFinalImage = true
+      }
+      return true
+    }
+
+    func finish() {
+      switch resolvedProtocol {
+      case .iterm2:
+        guard didReserveRegion else { return }
+        if !didRenderFinalImage {
+          moveCursor(down: previewRows)
+          write("\r", to: .standardOutput)
+        }
+        didReserveRegion = false
+        didRenderFinalImage = false
+      case .kitty:
+        if didReserveRegion && !didRenderFinalImage {
+          moveCursor(down: previewRows)
+          write("\r", to: .standardOutput)
+        }
+        didReserveRegion = false
+        didRenderFinalImage = false
+      }
+    }
+
+    private func ensureReservedRegion() {
+      if !didReserveRegion {
+        reservePreviewRegion(rows: previewRows)
+        moveCursor(up: previewRows)
+        didReserveRegion = true
+      }
+    }
+
+    fileprivate static func make(
+      mode: TerminalImageRenderMode, protocolChoice: TerminalImageProtocol,
+      configuration: GenerationConfiguration
+    ) -> LivePreviewSession? {
+      let outputPixelSize = PixelSize(
+        width: Int(configuration.startWidth) * 64,
+        height: Int(configuration.startHeight) * 64)
+      let modelVersion = ModelZoo.versionForModel(configuration.model ?? "")
+      return LivePreviewSession(
+        mode: mode, protocolChoice: protocolChoice, outputPixelSize: outputPixelSize,
+        modelVersion: modelVersion)
+    }
+  }
 
   static func validateRequestedOutput(
     outputPath: String, mode: TerminalImageRenderMode, protocolChoice: TerminalImageProtocol,
@@ -2431,6 +2562,49 @@ private enum TerminalImageRenderer {
     return max(1, rawColumns - 2)
   }
 
+  private static func previewRows(environment: [String: String]) -> Int {
+    let rawRows = Int(environment["LINES"] ?? "") ?? 24
+    return max(1, rawRows - 2)
+  }
+
+  private static func fittedPreviewRows(
+    for imageSize: PixelSize, columns: Int, environment: [String: String]
+  ) -> Int {
+    guard imageSize.width > 0, imageSize.height > 0 else {
+      return min(previewRows(environment: environment), max(1, columns / 2))
+    }
+    let cellWidth = 1.0
+    let cellHeight = 2.0
+    let estimatedRows = Int(
+      ceil(
+        Double(imageSize.height) * Double(columns) * cellWidth
+          / (Double(imageSize.width) * cellHeight)))
+    return max(1, min(previewRows(environment: environment), estimatedRows))
+  }
+
+  private static func fittedPreviewSize(
+    for imageSize: PixelSize, environment: [String: String]
+  ) -> (columns: Int, rows: Int) {
+    let maxColumns = previewColumns(environment: environment)
+    let maxRows = previewRows(environment: environment)
+    guard maxColumns > 0, maxRows > 0 else { return (1, 1) }
+    guard imageSize.width > 0, imageSize.height > 0 else {
+      return (max(1, min(maxColumns, maxRows * 2)), maxRows)
+    }
+    let cellWidth = 1.0
+    let cellHeight = 2.0
+    let rowsAtMaxColumns =
+      Double(imageSize.height) * Double(maxColumns) * cellWidth
+      / (Double(imageSize.width) * cellHeight)
+    if Int(ceil(rowsAtMaxColumns)) <= maxRows {
+      return (max(1, maxColumns), max(1, Int(floor(rowsAtMaxColumns))))
+    }
+    let columnsAtMaxRows =
+      Double(imageSize.width) * Double(maxRows) * cellHeight
+      / (Double(imageSize.height) * cellWidth)
+    return (max(1, min(maxColumns, Int(floor(columnsAtMaxRows)))), max(1, maxRows))
+  }
+
   private static var isStandardOutputTTY: Bool {
     #if canImport(Darwin) || canImport(Glibc)
       return isatty(STDOUT_FILENO) != 0
@@ -2439,10 +2613,13 @@ private enum TerminalImageRenderer {
     #endif
   }
 
-  private static func renderITerm2(data: Data, fileName: String, columns: Int) {
+  private static func renderITerm2(data: Data, fileName: String, columns: Int, rows: Int? = nil) {
     let encodedName = Data(fileName.utf8).base64EncodedString()
-    let arguments =
+    var arguments =
       "name=\(encodedName);size=\(data.count);width=\(columns);preserveAspectRatio=1;inline=1"
+    if let rows, rows > 0 {
+      arguments += ";height=\(rows)"
+    }
     let encoded = data.base64EncodedString()
     if ProcessInfo.processInfo.environment["TMUX"] == nil,
       encoded.count + arguments.count < iTerm2PayloadLimit
@@ -2457,21 +2634,100 @@ private enum TerminalImageRenderer {
     write("\u{1B}]1337;FileEnd\u{07}\n", to: .standardOutput)
   }
 
-  private static func renderKitty(path: URL) throws {
-    let image = try loadKittyImage(path: path)
-    let encoded = image.data.base64EncodedString()
+  private static func renderKittyInline(data: Data, size: PixelSize) {
+    let encoded = data.base64EncodedString()
     let chunks = base64Chunks(encoded, chunkSize: kittyChunkSize)
     for (index, chunk) in chunks.enumerated() {
       let isLast = index == chunks.count - 1
       if index == 0 {
         write(
-          "\u{1B}_Ga=T,f=32,s=\(image.size.width),v=\(image.size.height),q=2,m=\(isLast ? 0 : 1);\(chunk)\u{1B}\\",
+          "\u{1B}_Ga=T,f=32,s=\(size.width),v=\(size.height),q=2,m=\(isLast ? 0 : 1);\(chunk)\u{1B}\\",
           to: .standardOutput)
       } else {
         write("\u{1B}_Gm=\(isLast ? 0 : 1);\(chunk)\u{1B}\\", to: .standardOutput)
       }
     }
     write("\r", to: .standardOutput)
+  }
+
+  private static func renderKittyLivePreview(
+    data: Data, size: PixelSize, columns: Int? = nil, rows: Int? = nil, moveCursor: Bool = false
+  ) {
+    transmitKittyImage(data: data, size: size, imageID: kittyLivePreviewImageID)
+    placeKittyImage(
+      imageID: kittyLivePreviewImageID, placementID: kittyLivePreviewPlacementID,
+      columns: columns, rows: rows, moveCursor: moveCursor)
+  }
+
+  private static func transmitKittyImage(data: Data, size: PixelSize, imageID: Int) {
+    let encoded = data.base64EncodedString()
+    let chunks = base64Chunks(encoded, chunkSize: kittyChunkSize)
+    for (index, chunk) in chunks.enumerated() {
+      let isLast = index == chunks.count - 1
+      if index == 0 {
+        write(
+          "\u{1B}_Ga=t,f=32,s=\(size.width),v=\(size.height),i=\(imageID),q=2,m=\(isLast ? 0 : 1);\(chunk)\u{1B}\\",
+          to: .standardOutput)
+      } else {
+        write("\u{1B}_Gm=\(isLast ? 0 : 1);\(chunk)\u{1B}\\", to: .standardOutput)
+      }
+    }
+  }
+
+  private static func placeKittyImage(
+    imageID: Int, placementID: Int, columns: Int? = nil, rows: Int? = nil, moveCursor: Bool
+  ) {
+    var arguments = "a=p,i=\(imageID),p=\(placementID),C=\(moveCursor ? 0 : 1),q=2"
+    if let columns, columns > 0 {
+      arguments += ",c=\(columns)"
+    }
+    if let rows, rows > 0 {
+      arguments += ",r=\(rows)"
+    }
+    write(
+      "\u{1B}_G\(arguments)\u{1B}\\",
+      to: .standardOutput)
+    if !moveCursor {
+      write("\r", to: .standardOutput)
+    }
+  }
+
+  private static func deleteKittyImage(imageID: Int) {
+    write("\u{1B}_Ga=d,i=\(imageID),q=2\u{1B}\\", to: .standardOutput)
+  }
+
+  private static func renderKitty(path: URL) throws {
+    let image = try loadKittyImage(path: path)
+    renderKittyInline(data: image.data, size: image.size)
+  }
+
+  private static func reservePreviewRegion(rows: Int) {
+    guard rows > 0 else { return }
+    write(String(repeating: "\n", count: rows), to: .standardOutput)
+  }
+
+  private static func clearPreviewRegion(rows: Int) {
+    guard rows > 0 else { return }
+    for row in 0..<rows {
+      write("\r\u{1B}[2K", to: .standardOutput)
+      if row < rows - 1 {
+        write("\u{1B}[1B", to: .standardOutput)
+      }
+    }
+    if rows > 1 {
+      moveCursor(up: rows - 1)
+    }
+    write("\r", to: .standardOutput)
+  }
+
+  private static func moveCursor(up rows: Int) {
+    guard rows > 0 else { return }
+    write("\u{1B}[\(rows)A", to: .standardOutput)
+  }
+
+  private static func moveCursor(down rows: Int) {
+    guard rows > 0 else { return }
+    write("\u{1B}[\(rows)B", to: .standardOutput)
   }
 
   private static func inspectImage(path: URL) -> PixelSize? {
@@ -2531,6 +2787,42 @@ private enum TerminalImageRenderer {
       return (Data(bytes), PixelSize(width: width, height: height))
     #else
       throw DrawThingsCLIError.invalidInputImage(path.path)
+    #endif
+  }
+
+  private static func rgbaData(from cgImage: CGImage) -> (data: Data, size: PixelSize)? {
+    let width = cgImage.width
+    let height = cgImage.height
+    guard width > 0, height > 0 else { return nil }
+    var bytes = [UInt8](repeating: 0, count: width * height * 4)
+    guard
+      let context = CGContext(
+        data: &bytes, width: width, height: height, bitsPerComponent: 8,
+        bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else {
+      return nil
+    }
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+    return (Data(bytes), PixelSize(width: width, height: height))
+  }
+
+  private static func pngData(from cgImage: CGImage) -> Data? {
+    #if canImport(ImageIO)
+      guard
+        let mutableData = CFDataCreateMutable(nil, 0),
+        let destination = CGImageDestinationCreateWithData(
+          mutableData, "public.png" as CFString, 1, nil)
+      else {
+        return nil
+      }
+      CGImageDestinationAddImage(destination, cgImage, nil)
+      guard CGImageDestinationFinalize(destination) else {
+        return nil
+      }
+      return mutableData as Data
+    #else
+      return nil
     #endif
   }
 
@@ -2977,6 +3269,7 @@ extension DrawThingsCLI {
         ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
           "draw-things-cli-preview-\(UUID().uuidString).png"
         ).path
+      let livePreviewEnabled = !writesOutputFile && !execution.disablePreview
       let terminalImageMode: TerminalImageRenderMode =
         if output.terminalImage {
           .explicit
@@ -3032,11 +3325,27 @@ extension DrawThingsCLI {
         }
 
       let runner = try LocalGenerationRunner()
+      let livePreviewSession =
+        livePreviewEnabled
+        ? TerminalImageRenderer.LivePreviewSession.make(
+          mode: terminalImageMode, protocolChoice: output.terminalImageProtocol,
+          configuration: configuration)
+        : nil
+      defer {
+        livePreviewSession?.finish()
+      }
       print("Models directory: \(modelsDirectory.path)")
       let result = try runner.generate(
         prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
         configuration: configuration, outputPath: outputPath, inputImage: inputImageTensor,
-        videoFormat: output.videoFormat)
+        videoFormat: output.videoFormat, livePreviewSession: livePreviewSession)
+      let renderedFinalImageInPlace =
+        livePreviewSession.flatMap { session in
+          result.outputPaths.first.flatMap { path in
+            try? session.renderFinalImage(path: path)
+          }
+        } ?? false
+      livePreviewSession?.finish()
       defer {
         if !writesOutputFile {
           for path in result.outputPaths {
@@ -3049,9 +3358,11 @@ extension DrawThingsCLI {
           print("Wrote: \(path)")
         }
       }
-      TerminalImageRenderer.renderGeneratedOutputsIfRequested(
-        result.outputPaths, mode: terminalImageMode,
-        protocolChoice: output.terminalImageProtocol)
+      if !renderedFinalImageInPlace {
+        TerminalImageRenderer.renderGeneratedOutputsIfRequested(
+          result.outputPaths, mode: terminalImageMode,
+          protocolChoice: output.terminalImageProtocol)
+      }
       printGenerationTimingSummary(result.timing)
     }
   }
