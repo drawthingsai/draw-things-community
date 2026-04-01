@@ -24,6 +24,7 @@ swift_library(
         "@SwiftLog//:Logging",
         "@dflat//:SQLiteDflat",
         "@s4nnc//nnc",
+        "@swift-atomics//:SwiftAtomics",
     ],
 )
 

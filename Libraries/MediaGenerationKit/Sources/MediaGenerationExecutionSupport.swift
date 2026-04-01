@@ -1,5 +1,7 @@
+import Atomics
 import Diffusion
 import Foundation
+import GRPCServer
 
 internal struct MediaGenerationExecutionHintImage {
   let data: Data
@@ -18,50 +20,58 @@ internal struct MediaGenerationExecutionInputs {
 }
 
 internal final class MediaGenerationCancellationBridge {
-  private let lock = NSLock()
-  private var cancellation: (() -> Void)?
-  private var cancelled = false
-  private var completed = false
+  private struct State {
+    var cancellation: (() -> Void)?
+    var completed = false
+  }
+
+  private let cancelled = ManagedAtomic(false)
+  private var state = ProtectedValue(State())
 
   var isCancelled: Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    return cancelled
+    cancelled.load(ordering: .relaxed)
   }
 
   func setCancellation(_ cancellation: @escaping () -> Void) {
-    var shouldCancelImmediately = false
-    lock.lock()
-    if completed {
-      lock.unlock()
+    var isCompleted = false
+    state.modify { state in
+      if state.completed {
+        isCompleted = true
+        return
+      }
+      state.cancellation = cancellation
+    }
+    if isCompleted {
       return
     }
-    self.cancellation = cancellation
-    shouldCancelImmediately = cancelled
-    lock.unlock()
-    if shouldCancelImmediately {
+
+    if cancelled.load(ordering: .acquiring) {
       cancellation()
     }
   }
 
   func cancel() {
-    let cancellation: (() -> Void)?
-    lock.lock()
-    if completed {
-      lock.unlock()
-      return
+    var shouldCancelImmediately = false
+    var cancellation: (() -> Void)?
+    state.modify { state in
+      if state.completed {
+        return
+      }
+      cancellation = state.cancellation
     }
-    cancelled = true
-    cancellation = self.cancellation
-    lock.unlock()
-    cancellation?()
+
+    cancelled.store(true, ordering: .releasing)
+    shouldCancelImmediately = cancellation != nil
+    if shouldCancelImmediately {
+      cancellation?()
+    }
   }
 
   func finish() {
-    lock.lock()
-    completed = true
-    cancellation = nil
-    lock.unlock()
+    state.modify { state in
+      state.completed = true
+      state.cancellation = nil
+    }
   }
 }
 

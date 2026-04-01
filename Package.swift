@@ -491,6 +491,7 @@ let package = Package(
         "ScriptDataModels",
         "Tokenizer",
         "GRPCServer",
+        .product(name: "Atomics", package: "swift-atomics"),
         .product(name: "NNC", package: "s4nnc"),
         .product(name: "SQLiteDflat", package: "dflat"),
         .product(name: "Crypto", package: "swift-crypto"),

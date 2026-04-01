@@ -137,7 +137,6 @@ public final class ModelPreloader {
     queue: DispatchQueue, weightsCache: WeightsCache,
     configurations: FetchedResult<GenerationConfiguration>, workspace: Workspace
   ) {
-    dispatchPrecondition(condition: .onQueue(.main))
     self.queue = queue
     self.weightsCache = weightsCache
     self.workspace = workspace
