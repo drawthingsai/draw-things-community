@@ -1,53 +1,79 @@
 import CryptoKit
 import Downloader
 import Foundation
+import GRPCServer
 import ModelZoo
 
 private final class MediaGenerationVerifiedSHACache {
   static let shared = MediaGenerationVerifiedSHACache()
 
-  private var cache: [String: String] = [:]
-  private var cacheURL: URL?
-  private let lock = NSLock()
+  private struct State {
+    var cache: [String: String] = [:]
+    var cacheURL: URL?
+  }
+
+  private var state = ProtectedValue(State())
 
   private init() {}
 
   func configure(directory: URL) {
-    lock.lock()
-    defer { lock.unlock() }
     let url = directory.appendingPathComponent(".verified_sha256.json")
-    guard cacheURL != url else { return }
-    cacheURL = url
+    var shouldReload = false
+    state.modify { state in
+      guard state.cacheURL != url else { return }
+      state.cacheURL = url
+      state.cache = [:]
+      shouldReload = true
+    }
+    guard shouldReload else { return }
     if let data = try? Data(contentsOf: url),
       let decoded = try? JSONDecoder().decode([String: String].self, from: data)
     {
-      cache = decoded
+      state.modify { state in
+        if state.cacheURL == url {
+          state.cache = decoded
+        }
+      }
     } else {
-      cache = [:]
+      state.modify { state in
+        if state.cacheURL == url {
+          state.cache = [:]
+        }
+      }
     }
   }
 
   func cached(for file: String) -> String? {
-    lock.lock()
-    defer { lock.unlock() }
-    return cache[file]
+    var sha: String?
+    state.modify { state in
+      sha = state.cache[file]
+    }
+    return sha
   }
 
   func set(_ sha: String, for file: String) {
-    lock.lock()
-    defer { lock.unlock() }
-    cache[file] = sha
-    persist()
+    var snapshot: [String: String] = [:]
+    var cacheURL: URL?
+    state.modify { state in
+      state.cache[file] = sha
+      snapshot = state.cache
+      cacheURL = state.cacheURL
+    }
+    persist(cache: snapshot, cacheURL: cacheURL)
   }
 
   func remove(file: String) {
-    lock.lock()
-    defer { lock.unlock() }
-    cache.removeValue(forKey: file)
-    persist()
+    var snapshot: [String: String] = [:]
+    var cacheURL: URL?
+    state.modify { state in
+      state.cache.removeValue(forKey: file)
+      snapshot = state.cache
+      cacheURL = state.cacheURL
+    }
+    persist(cache: snapshot, cacheURL: cacheURL)
   }
 
-  private func persist() {
+  private func persist(cache: [String: String], cacheURL: URL?) {
     guard let cacheURL, let data = try? JSONEncoder().encode(cache) else { return }
     try? data.write(to: cacheURL, options: .atomic)
   }

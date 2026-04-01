@@ -1,4 +1,5 @@
 import Foundation
+import GRPCServer
 
 internal enum MediaGenerationRemoteAuthenticationMode {
   /// No authentication (open server)
@@ -41,34 +42,39 @@ internal enum MediaGenerationCloudAuthentication {
   }
 
   private final class TaskCancellationBag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var cancelled = false
-    private var tasks: [URLSessionTask] = []
+    private struct State {
+      var cancelled = false
+      var tasks: [URLSessionTask] = []
+    }
+
+    private var state = ProtectedValue(State())
 
     func register(_ task: URLSessionTask) {
-      let shouldCancelImmediately: Bool
-      lock.lock()
-      shouldCancelImmediately = cancelled
-      if !cancelled {
-        tasks.append(task)
+      var shouldCancelImmediately = false
+      state.modify { state in
+        shouldCancelImmediately = state.cancelled
+        if !state.cancelled {
+          state.tasks.append(task)
+        }
       }
-      lock.unlock()
       if shouldCancelImmediately {
         task.cancel()
       }
     }
 
     func cancelAll() {
-      let tasks: [URLSessionTask]
-      lock.lock()
-      if cancelled {
-        lock.unlock()
-        return
+      var tasks: [URLSessionTask] = []
+      var shouldCancel = false
+      state.modify { state in
+        if state.cancelled {
+          return
+        }
+        state.cancelled = true
+        tasks = state.tasks
+        state.tasks.removeAll()
+        shouldCancel = true
       }
-      cancelled = true
-      tasks = self.tasks
-      self.tasks.removeAll()
-      lock.unlock()
+      guard shouldCancel else { return }
       tasks.forEach { $0.cancel() }
     }
   }

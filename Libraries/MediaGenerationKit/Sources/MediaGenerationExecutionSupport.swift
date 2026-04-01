@@ -76,20 +76,27 @@ internal final class MediaGenerationCancellationBridge {
 }
 
 internal final class MediaGenerationAsyncResultBridge<Value>: @unchecked Sendable {
-  private let lock = NSLock()
-  private var continuation: CheckedContinuation<Value, Error>?
-  private var finished = false
+  private struct State {
+    var continuation: CheckedContinuation<Value, Error>?
+    var finished = false
+  }
+
+  private var state = ProtectedValue(State())
 
   @discardableResult
   func install(_ continuation: CheckedContinuation<Value, Error>) -> Bool {
-    lock.lock()
-    if finished {
-      lock.unlock()
+    var alreadyFinished = false
+    state.modify { state in
+      if state.finished {
+        alreadyFinished = true
+        return
+      }
+      state.continuation = continuation
+    }
+    if alreadyFinished {
       continuation.resume(throwing: CancellationError())
       return false
     }
-    self.continuation = continuation
-    lock.unlock()
     return true
   }
 
@@ -102,17 +109,20 @@ internal final class MediaGenerationAsyncResultBridge<Value>: @unchecked Sendabl
   }
 
   func resume(with result: Result<Value, Error>) {
-    let continuation: CheckedContinuation<Value, Error>?
-    lock.lock()
-    if finished {
-      lock.unlock()
-      return
+    var continuation: CheckedContinuation<Value, Error>?
+    var shouldResume = false
+    state.modify { state in
+      if state.finished {
+        return
+      }
+      state.finished = true
+      continuation = state.continuation
+      state.continuation = nil
+      shouldResume = true
     }
-    finished = true
-    continuation = self.continuation
-    self.continuation = nil
-    lock.unlock()
-    continuation?.resume(with: result)
+    if shouldResume {
+      continuation?.resume(with: result)
+    }
   }
 
   func cancel() {

@@ -2,6 +2,7 @@ import ConfigurationZoo
 @preconcurrency import DataModels
 @preconcurrency import Diffusion
 import Foundation
+import GRPCServer
 import ModelZoo
 import ScriptDataModels
 
@@ -13,10 +14,13 @@ internal enum ConfigurationZooSource {
 
 internal enum ConfigurationZooLoader {
   private static let remoteURL = URL(string: "https://models.drawthings.ai/configs.json")!
-  private static let lock = NSLock()
-  private static var bundledCache: [ConfigurationZoo.Specification]?
-  private static var remoteCache: [ConfigurationZoo.Specification]?
-  private static var remoteLoadTask: Task<[ConfigurationZoo.Specification], Never>?
+  private struct State {
+    var bundledCache: [ConfigurationZoo.Specification]?
+    var remoteCache: [ConfigurationZoo.Specification]?
+    var remoteLoadTask: Task<[ConfigurationZoo.Specification], Never>?
+  }
+
+  private static var state = ProtectedValue(State())
 
   static func specificationsSync(from source: ConfigurationZooSource, offline: Bool)
     -> [ConfigurationZoo.Specification]
@@ -25,30 +29,38 @@ internal enum ConfigurationZooLoader {
     case .builtin:
       return ConfigurationZoo.community
     case .bundled:
-      lock.lock()
-      if let bundledCache {
-        lock.unlock()
-        return bundledCache
+      var bundledCache: [ConfigurationZoo.Specification]?
+      state.modify { state in
+        bundledCache = state.bundledCache
       }
-      lock.unlock()
+      if let bundledCache { return bundledCache }
       let loaded = MediaGenerationResourceLoader.bundledData(resource: "configs").flatMap(parse) ?? []
-      lock.lock()
-      bundledCache = loaded
-      lock.unlock()
-      return loaded
+      var resolved = loaded
+      state.modify { state in
+        if let cached = state.bundledCache {
+          resolved = cached
+        } else {
+          state.bundledCache = loaded
+        }
+      }
+      return resolved
     case .remote:
       guard !offline else { return [] }
-      lock.lock()
-      if let remoteCache {
-        lock.unlock()
-        return remoteCache
+      var remoteCache: [ConfigurationZoo.Specification]?
+      state.modify { state in
+        remoteCache = state.remoteCache
       }
-      lock.unlock()
+      if let remoteCache { return remoteCache }
       let loaded = MediaGenerationResourceLoader.fetchRemoteData(url: remoteURL).flatMap(parse) ?? []
-      lock.lock()
-      remoteCache = loaded
-      lock.unlock()
-      return loaded
+      var resolved = loaded
+      state.modify { state in
+        if let cached = state.remoteCache {
+          resolved = cached
+        } else {
+          state.remoteCache = loaded
+        }
+      }
+      return resolved
     }
   }
 
@@ -87,21 +99,25 @@ internal enum ConfigurationZooLoader {
   private static func cachedRemoteState() -> (
     cache: [ConfigurationZoo.Specification]?, task: Task<[ConfigurationZoo.Specification], Never>?
   ) {
-    lock.lock()
-    defer { lock.unlock() }
-    return (remoteCache, remoteLoadTask)
+    var cache: [ConfigurationZoo.Specification]?
+    var task: Task<[ConfigurationZoo.Specification], Never>?
+    state.modify { state in
+      cache = state.remoteCache
+      task = state.remoteLoadTask
+    }
+    return (cache, task)
   }
 
   private static func updateRemoteState(
     cache: [ConfigurationZoo.Specification]?,
     task: Task<[ConfigurationZoo.Specification], Never>?
   ) {
-    lock.lock()
-    if let cache {
-      remoteCache = cache
+    state.modify { state in
+      if let cache {
+        state.remoteCache = cache
+      }
+      state.remoteLoadTask = task
     }
-    remoteLoadTask = task
-    lock.unlock()
   }
 
   private static func parse(_ data: Data) -> [ConfigurationZoo.Specification] {

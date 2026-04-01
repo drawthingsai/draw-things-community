@@ -1,4 +1,5 @@
 import Foundation
+import GRPCServer
 
 internal final class CloudAuthenticatorRegistry {
   static let shared = CloudAuthenticatorRegistry()
@@ -8,8 +9,7 @@ internal final class CloudAuthenticatorRegistry {
     let baseURL: URL
   }
 
-  private let lock = NSLock()
-  private var authenticators: [Key: CloudAuthenticator] = [:]
+  private var authenticators = ProtectedValue([Key: CloudAuthenticator]())
 
   private init() {}
 
@@ -18,20 +18,23 @@ internal final class CloudAuthenticatorRegistry {
     baseURL: URL = CloudConfiguration.defaultBaseURL
   ) -> CloudAuthenticator {
     let key = Key(apiKey: apiKey, baseURL: baseURL)
-    lock.lock()
-    defer { lock.unlock() }
-    if let authenticator = authenticators[key] {
-      return authenticator
-    }
-    let authenticator = CloudAuthenticator(
-      configuration: CloudConfiguration(
-        apiKey: apiKey,
-        appCheck: .none,
-        baseURL: baseURL,
-        tokenRefreshThreshold: 300
+    var authenticator: CloudAuthenticator?
+    authenticators.modify { authenticators in
+      if let cached = authenticators[key] {
+        authenticator = cached
+        return
+      }
+      let created = CloudAuthenticator(
+        configuration: CloudConfiguration(
+          apiKey: apiKey,
+          appCheck: .none,
+          baseURL: baseURL,
+          tokenRefreshThreshold: 300
+        )
       )
-    )
-    authenticators[key] = authenticator
-    return authenticator
+      authenticators[key] = created
+      authenticator = created
+    }
+    return authenticator!
   }
 }
