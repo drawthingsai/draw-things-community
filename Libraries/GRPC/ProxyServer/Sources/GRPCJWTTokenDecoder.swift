@@ -94,6 +94,7 @@ public enum UserClass: String, Codable {
 public enum ConsumableType: String, Codable {
   case boost = "boost"
   case payg = "payg"
+  case paygFree = "payg_free"
 }
 
 // JWT Payload structure matching your token

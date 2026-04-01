@@ -853,7 +853,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     for key: String, payload: JWTPayload, throttlePolicies: [String: Int]
   ) -> Int? {
     // Payg users get their own throttle limits
-    if payload.consumableType == .payg {
+    if payload.consumableType == .payg || payload.consumableType == .paygFree {
       return throttlePolicies["\(key)_payg"] ?? throttlePolicies[key]
     }
     // Bridge users (SDK/API/HTTP) without boost get separate limits
@@ -998,7 +998,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   )
     -> ProxyTaskPriority
   {
-    if payload.consumableType == .boost || payload.consumableType == .payg {
+    if payload.consumableType == .boost || payload.consumableType == .payg || payload.consumableType == .paygFree {
       return .real
     }
 
