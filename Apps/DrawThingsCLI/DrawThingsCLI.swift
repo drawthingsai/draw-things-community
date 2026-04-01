@@ -2317,6 +2317,11 @@ private enum TerminalImageRenderer {
     case kitty
   }
 
+  private struct PixelSize {
+    let width: Int
+    let height: Int
+  }
+
   private static let iTerm2PayloadLimit = 900_000
   private static let iTerm2MultipartChunkSize = 32_768
   private static let kittyChunkSize = 4_096
@@ -2388,13 +2393,13 @@ private enum TerminalImageRenderer {
     }
     let fileURL = URL(fileURLWithPath: path)
     let fileName = fileURL.lastPathComponent
-    let data = try Data(contentsOf: fileURL)
     switch resolvedProtocol {
     case .iterm2:
+      let data = try Data(contentsOf: fileURL)
       renderITerm2(
         data: data, fileName: fileName, columns: previewColumns(environment: environment))
     case .kitty:
-      renderKitty(data: data, columns: previewColumns(environment: environment))
+      try renderKitty(path: fileURL)
     }
   }
 
@@ -2452,20 +2457,81 @@ private enum TerminalImageRenderer {
     write("\u{1B}]1337;FileEnd\u{07}\n", to: .standardOutput)
   }
 
-  private static func renderKitty(data: Data, columns: Int) {
-    let encoded = data.base64EncodedString()
+  private static func renderKitty(path: URL) throws {
+    let image = try loadKittyImage(path: path)
+    let encoded = image.data.base64EncodedString()
     let chunks = base64Chunks(encoded, chunkSize: kittyChunkSize)
     for (index, chunk) in chunks.enumerated() {
       let isLast = index == chunks.count - 1
       if index == 0 {
         write(
-          "\u{1B}_Ga=T,f=100,c=\(columns),q=2,m=\(isLast ? 0 : 1);\(chunk)\u{1B}\\",
+          "\u{1B}_Ga=T,f=32,s=\(image.size.width),v=\(image.size.height),q=2,m=\(isLast ? 0 : 1);\(chunk)\u{1B}\\",
           to: .standardOutput)
       } else {
         write("\u{1B}_Gm=\(isLast ? 0 : 1);\(chunk)\u{1B}\\", to: .standardOutput)
       }
     }
-    write("\n", to: .standardOutput)
+    write("\r", to: .standardOutput)
+  }
+
+  private static func inspectImage(path: URL) -> PixelSize? {
+    if let image = try? PNG.Data.Rectangular.decompress(path: path.path) {
+      return PixelSize(width: image.size.x, height: image.size.y)
+    }
+    #if canImport(ImageIO)
+      guard
+        let source = CGImageSourceCreateWithURL(path as CFURL, nil),
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+        let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+        let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue
+      else {
+        return nil
+      }
+      return PixelSize(width: width, height: height)
+    #else
+      return nil
+    #endif
+  }
+
+  private static func loadKittyImage(path: URL) throws -> (data: Data, size: PixelSize) {
+    if let image = try? PNG.Data.Rectangular.decompress(path: path.path) {
+      let rgba: [PNG.RGBA<UInt8>] = image.unpack(as: PNG.RGBA<UInt8>.self)
+      var bytes = [UInt8]()
+      bytes.reserveCapacity(rgba.count * 4)
+      for pixel in rgba {
+        bytes.append(pixel.r)
+        bytes.append(pixel.g)
+        bytes.append(pixel.b)
+        bytes.append(pixel.a)
+      }
+      return (Data(bytes), PixelSize(width: image.size.x, height: image.size.y))
+    }
+    #if canImport(ImageIO) && canImport(CoreGraphics)
+      guard
+        let source = CGImageSourceCreateWithURL(path as CFURL, nil),
+        let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
+      else {
+        throw DrawThingsCLIError.invalidInputImage(path.path)
+      }
+      let width = cgImage.width
+      let height = cgImage.height
+      guard width > 0, height > 0 else {
+        throw DrawThingsCLIError.invalidInputImage(path.path)
+      }
+      var bytes = [UInt8](repeating: 0, count: width * height * 4)
+      guard
+        let context = CGContext(
+          data: &bytes, width: width, height: height, bitsPerComponent: 8,
+          bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+      else {
+        throw DrawThingsCLIError.invalidInputImage(path.path)
+      }
+      context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+      return (Data(bytes), PixelSize(width: width, height: height))
+    #else
+      throw DrawThingsCLIError.invalidInputImage(path.path)
+    #endif
   }
 
   private static func base64Chunks(_ encoded: String, chunkSize: Int) -> [Substring] {
