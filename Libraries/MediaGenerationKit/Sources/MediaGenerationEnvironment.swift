@@ -2,7 +2,12 @@ import DataModels
 import Foundation
 import ModelZoo
 
+/// Process-scoped environment helpers for model resolution, downloads, and local execution settings.
+///
+/// Most applications use ``default`` and only override `externalUrls` or
+/// `maxTotalWeightsCacheSize` when they need custom model search paths or cache sizing.
 public struct MediaGenerationEnvironment: Sendable {
+  /// Progress states emitted by ``ensure(_:offline:stateHandler:)``.
   public enum EnsureState: Sendable, Equatable {
     case resolving
     case verifying(file: String, fileIndex: Int, totalFiles: Int)
@@ -175,12 +180,14 @@ public struct MediaGenerationEnvironment: Sendable {
     }
   }
 
+  /// Shared process-scoped environment.
   public static var `default` = MediaGenerationEnvironment(
     storage: Storage(externalUrls: MediaGenerationDefaults.defaultExternalURLs())
   )
 
   internal let storage: Storage
 
+  /// Model search roots used for local model resolution.
   public var externalUrls: [URL] {
     get {
       storage.externalUrls
@@ -190,6 +197,7 @@ public struct MediaGenerationEnvironment: Sendable {
     }
   }
 
+  /// Maximum total weights-cache size in bytes.
   public var maxTotalWeightsCacheSize: UInt64 {
     get {
       storage.maxTotalWeightsCacheSize
@@ -199,6 +207,7 @@ public struct MediaGenerationEnvironment: Sendable {
     }
   }
 
+  /// Resolves a model reference and downloads the files needed for local execution.
   public func ensure(
     _ model: String,
     offline: Bool = false,
@@ -207,6 +216,7 @@ public struct MediaGenerationEnvironment: Sendable {
     try await storage.ensure(model, offline: offline, stateHandler: stateHandler)
   }
 
+  /// Resolves a model reference synchronously using offline or already-cached catalog data.
   public func resolveModel(
     _ model: String,
     offline: Bool = true
@@ -214,6 +224,7 @@ public struct MediaGenerationEnvironment: Sendable {
     try storage.resolveModel(model, offline: offline)
   }
 
+  /// Resolves a model reference, allowing remote catalog fetches when `offline` is `false`.
   public func resolveModel(
     _ model: String,
     offline: Bool = false
@@ -221,6 +232,7 @@ public struct MediaGenerationEnvironment: Sendable {
     await storage.resolveModel(model, offline: offline)
   }
 
+  /// Returns close model matches synchronously using offline or already-cached catalog data.
   public func suggestedModels(
     for model: String,
     limit: Int = 5,
@@ -229,6 +241,7 @@ public struct MediaGenerationEnvironment: Sendable {
     try storage.suggestions(for: model, limit: limit, offline: offline)
   }
 
+  /// Returns close model matches, allowing remote catalog fetches when `offline` is `false`.
   public func suggestedModels(
     for model: String,
     limit: Int = 5,
@@ -237,6 +250,7 @@ public struct MediaGenerationEnvironment: Sendable {
     await storage.suggestions(for: model, limit: limit, offline: offline)
   }
 
+  /// Returns detailed information for a resolved model using offline or already-cached catalog data.
   public func inspectModel(
     _ model: String,
     offline: Bool = true
@@ -244,6 +258,7 @@ public struct MediaGenerationEnvironment: Sendable {
     return try storage.inspect(model, offline: offline)
   }
 
+  /// Returns detailed information for a resolved model, allowing remote catalog fetches when `offline` is `false`.
   public func inspectModel(
     _ model: String,
     offline: Bool = false
@@ -251,6 +266,7 @@ public struct MediaGenerationEnvironment: Sendable {
     try await storage.inspect(model, offline: offline)
   }
 
+  /// Lists downloadable models synchronously using offline or already-cached catalog data.
   public func downloadableModels(
     includeDownloaded: Bool = true,
     offline: Bool = true
@@ -258,6 +274,7 @@ public struct MediaGenerationEnvironment: Sendable {
     try storage.downloadableModels(includeDownloaded: includeDownloaded, offline: offline)
   }
 
+  /// Lists downloadable models, allowing remote catalog fetches when `offline` is `false`.
   public func downloadableModels(
     includeDownloaded: Bool = true,
     offline: Bool = false

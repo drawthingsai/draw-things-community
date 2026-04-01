@@ -1,10 +1,7 @@
 import Crypto
 import Foundation
 
-/// Cloud-side LoRA storage operations.
-///
-/// This is separate from `LoRAImporter`: importing converts a local file into
-/// Draw Things format, while `LoRAStore` manages remote stored LoRA files.
+/// Result returned after a successful LoRA upload.
 public struct LoRAUploadResult {
   public let file: String
   public let sha256: String
@@ -33,7 +30,12 @@ public enum LoRAUploadError: Error, LocalizedError {
   }
 }
 
+/// Manages LoRA files stored on Draw Things cloud compute.
+///
+/// This is separate from ``LoRAImporter``: importing converts a local file
+/// into Draw Things format, while `LoRAStore` manages remote stored LoRA files.
 public struct LoRAStore: Sendable {
+  /// Remote LoRA file metadata.
   public struct File: Sendable, Hashable {
     public let key: String
     public let file: String
@@ -81,6 +83,9 @@ public struct LoRAStore: Sendable {
     )
   }
 
+  /// Lists remote LoRA files.
+  ///
+  /// The current public cloud API does not expose a list endpoint, so this method throws.
   public func list() async throws -> [File] {
     throw MediaGenerationKitError.generationFailed(
       "LoRAStore.list() is not implemented because the current cloud API does not expose a list endpoint")
@@ -112,10 +117,12 @@ public struct LoRAStore: Sendable {
     )
   }
 
+  /// Deletes remote LoRA files using keys returned by the cloud API.
   public func delete(_ files: [File]) async throws {
     try await delete(keys: files.map(\.key))
   }
 
+  /// Deletes remote LoRA files by key.
   public func delete(keys: [String]) async throws {
     let filteredKeys = keys.filter { !$0.isEmpty }
     guard filteredKeys.count == keys.count else {

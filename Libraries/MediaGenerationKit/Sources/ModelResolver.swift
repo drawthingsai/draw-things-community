@@ -2,6 +2,7 @@ import Foundation
 import GRPCServer
 import ModelZoo
 
+/// Resolved model metadata returned by ``MediaGenerationEnvironment`` helpers.
 public struct MediaGenerationResolvedModel: Sendable, Hashable {
   public var file: String
   public var name: String

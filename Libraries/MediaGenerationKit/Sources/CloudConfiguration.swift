@@ -23,7 +23,7 @@ import Foundation
 ///    let tokenResult = try await AppCheck.appCheck().token(forcingRefresh: false)
 ///
 ///    let pipeline = try await MediaGenerationPipeline.fromPretrained(
-///      "z_image_turbo_1.0_q6p.ckpt",
+///      "hf://black-forest-labs/FLUX.2-klein-4B",
 ///      backend: .cloudCompute(
 ///        apiKey: "dk_xxx",
 ///        options: .init(appCheck: .firebase(token: tokenResult.token))
@@ -44,7 +44,7 @@ import Foundation
 ///    let authSession = try await client.auth.signInAnonymously()
 ///
 ///    let pipeline = try await MediaGenerationPipeline.fromPretrained(
-///      "z_image_turbo_1.0_q6p.ckpt",
+///      "hf://black-forest-labs/FLUX.2-klein-4B",
 ///      backend: .cloudCompute(
 ///        apiKey: "dk_xxx",
 ///        options: .init(appCheck: .supabase(token: authSession.accessToken))

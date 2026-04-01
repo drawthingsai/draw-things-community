@@ -24,7 +24,9 @@ public enum LoRAConvertError: Error, LocalizedError {
   }
 }
 
+/// Converts local LoRA files into Draw Things format.
 public struct LoRAImporter: Sendable {
+  /// Source LoRA file to inspect or convert.
   public let file: URL
 
   /// `nil` means auto-detect. Calling `inspect()` resolves and stores the
@@ -33,6 +35,7 @@ public struct LoRAImporter: Sendable {
 
   private static let importLock = NSLock()
 
+  /// Creates an importer for a LoRA source file.
   public init(file: URL, version: ModelVersion? = nil) {
     self.file = file
     self.version = version
@@ -55,6 +58,10 @@ public struct LoRAImporter: Sendable {
     version = inspectedVersion
   }
 
+  /// Converts the source LoRA file into Draw Things format.
+  ///
+  /// On success, ``version`` is updated to the detected or forced model
+  /// version used during conversion.
   public mutating func `import`(
     to file: URL,
     scaleFactor: Double = 1.0,

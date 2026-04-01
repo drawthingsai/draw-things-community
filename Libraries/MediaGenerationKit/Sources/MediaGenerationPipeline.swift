@@ -15,34 +15,49 @@ import UniformTypeIdentifiers
   import UIKit
 #endif
 
+/// A typed input passed to ``MediaGenerationPipeline/generate(prompt:negativePrompt:inputs:stateHandler:)``.
+///
+/// Use ``MediaGenerationPipeline/file(_:)`` or ``MediaGenerationPipeline/data(_:)`` to create image
+/// inputs, then wrap them with role-specific helpers such as ``MediaGenerationPipeline/MaskInput``.
 public protocol MediaGenerationInput {
   var role: MediaGenerationPipeline.InputRole { get }
 }
 
+/// An input that can provide encoded image bytes.
 public protocol MediaGenerationImageInput: MediaGenerationInput {}
 
 internal protocol MediaGenerationImageDataSource {
   func mediaGenerationEncodedData() throws -> Data
 }
 
+/// A configured generation pipeline for local, remote, or cloud compute inference.
+///
+/// Build a pipeline with ``fromPretrained(_:backend:)``, adjust ``configuration``, then call
+/// ``generate(prompt:negativePrompt:inputs:stateHandler:)``.
 public struct MediaGenerationPipeline: Sendable {
   public typealias Input = any MediaGenerationInput
   public typealias ImageInput = any MediaGenerationImageInput
 
+  /// Network location of a remote Draw Things generation server.
   public struct Endpoint: Hashable, Sendable {
     public var host: String
     public var port: Int
 
+    /// Creates a remote server endpoint.
     public init(host: String, port: Int) {
       self.host = host
       self.port = port
     }
   }
 
+  /// Options for plain remote generation.
   public struct RemoteOptions: Sendable {
+    /// Whether to use TLS when talking to the remote server.
     public var useTLS: Bool
+    /// Optional shared-secret header for password-protected remote servers.
     public var sharedSecret: String?
 
+    /// Creates remote generation options.
     public init(
       useTLS: Bool = true,
       sharedSecret: String? = nil
@@ -52,11 +67,16 @@ public struct MediaGenerationPipeline: Sendable {
     }
   }
 
+  /// Options for Draw Things cloud compute.
   public struct CloudComputeOptions: Sendable {
+    /// Optional override for the Draw Things cloud API base URL.
     public var baseURL: URL?
+    /// Optional device name to send to the cloud backend.
     public var deviceName: String?
+    /// Optional app-verification token source.
     public var appCheck: AppCheckConfiguration
 
+    /// Creates cloud compute options.
     public init(
       baseURL: URL? = nil,
       deviceName: String? = nil,
@@ -68,16 +88,26 @@ public struct MediaGenerationPipeline: Sendable {
     }
   }
 
+  /// Execution backend for a pipeline.
   public enum Backend: Sendable {
+    /// Run locally with models resolved from the default environment or an explicit directory.
     case local(directory: String?)
+    /// Run against a remote Draw Things server.
     case remote(_ endpoint: Endpoint, options: RemoteOptions = .init())
+    /// Run against Draw Things cloud compute.
     case cloudCompute(apiKey: String? = nil, options: CloudComputeOptions = .init())
 
+    /// Local generation using ``MediaGenerationEnvironment/default``.
     public static var local: Backend {
       .local(directory: nil)
     }
   }
 
+  /// Generation settings derived from the model's recommended configuration.
+  ///
+  /// The public surface intentionally tracks the canonical `JSGenerationConfiguration` bridge. In
+  /// practice, most callers only need to adjust a small subset such as `width`, `height`, `steps`,
+  /// `strength`, `loras`, and `controls`.
   public struct Configuration: Sendable {
     // Keep this surface in sync with JSGenerationConfiguration.
     // Configuration is derived from JSGenerationConfiguration(configuration:) and converted back through
@@ -417,6 +447,7 @@ public struct MediaGenerationPipeline: Sendable {
     }
   }
 
+  /// Semantic role for an input image.
   public enum InputRole: Sendable, Equatable {
     case image
     case mask
@@ -424,25 +455,31 @@ public struct MediaGenerationPipeline: Sendable {
     case depth
   }
 
+  /// Image input backed by in-memory encoded data.
   public struct DataInput: MediaGenerationImageInput {
     public let data: Data
 
+    /// Creates an input from encoded image bytes.
     public init(_ data: Data) {
       self.data = data
     }
   }
 
+  /// Image input backed by a filesystem path.
   public struct FileInput: MediaGenerationImageInput {
     public let path: String
 
+    /// Creates an input from a filesystem path.
     public init(_ path: String) {
       self.path = path
     }
   }
 
+  /// Wraps an image input as an inpainting mask.
   public struct MaskInput: MediaGenerationInput {
     public let source: any MediaGenerationImageInput
 
+    /// Creates a mask input from an image input.
     public init(_ source: any MediaGenerationImageInput) {
       self.source = source
     }
@@ -452,9 +489,11 @@ public struct MediaGenerationPipeline: Sendable {
     }
   }
 
+  /// Wraps an image input as a moodboard/reference image.
   public struct MoodboardInput: MediaGenerationInput {
     public let source: any MediaGenerationImageInput
 
+    /// Creates a moodboard input from an image input.
     public init(_ source: any MediaGenerationImageInput) {
       self.source = source
     }
@@ -464,9 +503,11 @@ public struct MediaGenerationPipeline: Sendable {
     }
   }
 
+  /// Wraps an image input as a depth hint.
   public struct DepthInput: MediaGenerationInput {
     public let source: any MediaGenerationImageInput
 
+    /// Creates a depth input from an image input.
     public init(_ source: any MediaGenerationImageInput) {
       self.source = source
     }
@@ -476,6 +517,7 @@ public struct MediaGenerationPipeline: Sendable {
     }
   }
 
+  /// Progress states emitted during generation.
   public enum State: Sendable {
     case resolvingBackend(Backend)
     case resolvingModel(String)
@@ -510,6 +552,7 @@ public struct MediaGenerationPipeline: Sendable {
     }
   }
 
+  /// A generated image result backed by a tensor.
   public struct Result: @unchecked Sendable {
     public let tensor: Tensor<FloatType>
 
@@ -529,6 +572,7 @@ public struct MediaGenerationPipeline: Sendable {
       self.tensor = try MediaGenerationImageCodec.decode(encodedData)
     }
 
+    /// Encodes the result image and writes it to disk.
     public func write(
       to url: URL,
       type: UTType,
@@ -657,9 +701,13 @@ public struct MediaGenerationPipeline: Sendable {
     }
   }
 
+  /// Backend used by this pipeline.
   public let backend: Backend
+  /// Mutable generation settings for the next call to ``generate(prompt:negativePrompt:inputs:stateHandler:)``.
   public var configuration: Configuration
+  /// Logger used for pipeline messages and progress diagnostics.
   public var logger: Logger
+  /// Canonical resolved model identifier for this pipeline.
   public let model: String
 
   private let storage: Storage
@@ -682,10 +730,14 @@ public struct MediaGenerationPipeline: Sendable {
     DataInput(data)
   }
 
+  /// Creates an image input from a filesystem path.
   public static func file(_ path: String) -> FileInput {
     FileInput(path)
   }
 
+  /// Builds a pipeline from a model reference and backend.
+  ///
+  /// `model` may be a local file id, a catalog name, or a supported Hugging Face reference.
   public static func fromPretrained(_ model: String, backend: Backend) async throws
     -> MediaGenerationPipeline
   {
@@ -730,6 +782,14 @@ public struct MediaGenerationPipeline: Sendable {
     )
   }
 
+  /// Runs generation with the current configuration.
+  ///
+  /// - Parameters:
+  ///   - prompt: Positive prompt text.
+  ///   - negativePrompt: Optional negative prompt text.
+  ///   - inputs: Optional image inputs such as init image, mask, moodboard, or depth.
+  ///   - stateHandler: Optional progress callback.
+  /// - Returns: One or more generated image results.
   public func generate(
     prompt: String,
     negativePrompt: String = "",
