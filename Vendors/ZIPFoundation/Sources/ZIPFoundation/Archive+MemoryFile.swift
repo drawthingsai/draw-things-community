@@ -33,7 +33,7 @@ extension Archive {
       let cookie = Unmanaged.passRetained(self)
       let writable = mode.count > 0 && (mode.first! != "r" || mode.last! == "+")
       let append = mode.count > 0 && mode.first! == "a"
-      #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(Android)
+      #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS) || os(Android)
         let result =
           writable
           ? funopen(cookie.toOpaque(), readStub, writeStub, seekStub, closeStub)
@@ -103,7 +103,7 @@ extension Archive {
     return 0
   }
 
-  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(Android)
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS) || os(Android)
     private func readStub(
       _ cookie: UnsafeMutableRawPointer?,
       _ bytePtr: UnsafeMutablePointer<Int8>?,

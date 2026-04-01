@@ -69,7 +69,7 @@ extension Data {
   public static func compress(size: Int64, bufferSize: Int, provider: Provider, consumer: Consumer)
     throws -> CRC32
   {
-    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
       return try self.process(
         operation: COMPRESSION_STREAM_ENCODE, size: size, bufferSize: bufferSize,
         provider: provider, consumer: consumer)
@@ -91,7 +91,7 @@ extension Data {
     size: Int64, bufferSize: Int, skipCRC32: Bool,
     provider: Provider, consumer: Consumer
   ) throws -> CRC32 {
-    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
       return try self.process(
         operation: COMPRESSION_STREAM_DECODE, size: size, bufferSize: bufferSize,
         skipCRC32: skipCRC32, provider: provider, consumer: consumer)
@@ -104,7 +104,7 @@ extension Data {
 
 // MARK: - Apple Platforms
 
-#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
   import Compression
 
   extension Data {
@@ -403,7 +403,7 @@ extension Data {
       }
     }
 
-    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
     #else
       mutating func withUnsafeMutableBytes<T>(_ body: (UnsafeMutableRawBufferPointer) throws -> T)
         rethrows -> T

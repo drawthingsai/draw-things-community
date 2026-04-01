@@ -306,7 +306,7 @@ extension Date {
 #if swift(>=4.2)
 #else
 
-  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
   #else
 
     // The swift-corelibs-foundation version of NSError.swift was missing a convenience method to create

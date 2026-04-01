@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
   name: "DrawThings",
-  platforms: [.macOS(.v13), .iOS(.v16)],
+  platforms: [.macOS(.v13), .iOS(.v16), .tvOS(.v16), .visionOS(.v1)],
   products: [
     .executable(name: "gRPCServerCLI", targets: ["gRPCServerCLI"]),
     .executable(name: "draw-things-cli", targets: ["DrawThingsCLI"]),
