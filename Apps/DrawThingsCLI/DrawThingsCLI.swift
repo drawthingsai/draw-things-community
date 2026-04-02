@@ -98,6 +98,7 @@ private enum DrawThingsCLIError: LocalizedError {
 private struct ResolvedGenerationConfiguration {
   let configuration: GenerationConfiguration
   let recommendedNegativePrompt: String?
+  let loraOverrideMapping: [String: LoRAZoo.Specification]
 }
 
 private enum NetworkAccessPolicy {
@@ -275,13 +276,14 @@ private let modelReferenceHelp = ArgumentHelp(
 private let generateConfigJSONHelp = ArgumentHelp(
   "Inline JSON override in JSGenerationConfiguration format.",
   discussion:
-    "This is merged onto the model's recommended settings. It is not treated as a complete configuration by itself."
+    "This is merged onto the model's recommended settings. It is not treated as a complete configuration by itself. For custom local LoRAs that are not registered in custom_lora.json, include loras[].version (for example \"flux1\") so the CLI can construct per-invocation LoRA metadata."
 )
 
 private let generateConfigFileHelp = ArgumentHelp(
   "Path to a JSON override file in JSGenerationConfiguration format.",
   discussion:
-    "The file is parsed as a partial override and merged onto the model's recommended settings.")
+    "The file is parsed as a partial override and merged onto the model's recommended settings. For custom local LoRAs that are not registered in custom_lora.json, include loras[].version (for example \"flux1\") so the CLI can construct per-invocation LoRA metadata."
+)
 
 private let promptFileHelp = ArgumentHelp(
   "Read prompt text from a file, or `-` for stdin.",
@@ -717,6 +719,7 @@ private enum ConfigurationLoader {
     }
     let overrideDictionary = try loadOverrideDictionary(
       configJSON: configJSON, configFile: configFile)
+    let loraOverrideMapping = loraOverrideMapping(from: overrideDictionary)
     let (recommendedConfiguration, recommendedNegativePrompt) =
       RecommendedSettingsResolver.resolve(
         modelSpecification: modelSpecification, overrideDictionary: overrideDictionary,
@@ -724,7 +727,8 @@ private enum ConfigurationLoader {
     let configuration = try mergeOverrides(
       overrideDictionary, onto: recommendedConfiguration, forcingModel: modelSpecification.file)
     return ResolvedGenerationConfiguration(
-      configuration: configuration, recommendedNegativePrompt: recommendedNegativePrompt)
+      configuration: configuration, recommendedNegativePrompt: recommendedNegativePrompt,
+      loraOverrideMapping: loraOverrideMapping)
   }
 
   private static func loadOverrideDictionary(
@@ -778,6 +782,38 @@ private enum ConfigurationLoader {
       return try String(contentsOfFile: configFile, encoding: .utf8)
     }
     return nil
+  }
+
+  private static func loraOverrideMapping(
+    from overrideDictionary: [String: Any]?
+  ) -> [String: LoRAZoo.Specification] {
+    guard let loras = overrideDictionary?["loras"] as? [[String: Any]] else { return [:] }
+    let normalizedLoRAs: [[String: Any]] = loras.map { lora in
+      var lora = lora
+      lora["weight"] = nil
+      if lora["name"] == nil || lora["name"] is NSNull, let file = lora["file"] as? String {
+        lora["name"] = file
+      }
+      if lora["prefix"] == nil || lora["prefix"] is NSNull {
+        lora["prefix"] = ""
+      }
+      return lora
+    }
+    guard let data = try? JSONSerialization.data(withJSONObject: normalizedLoRAs) else {
+      return [:]
+    }
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    guard
+      let specifications = try? decoder.decode(
+        [FailableDecodable<LoRAZoo.Specification>].self, from: data
+      ).compactMap({ $0.value })
+    else { return [:] }
+    var mapping = [String: LoRAZoo.Specification]()
+    for specification in specifications {
+      mapping[specification.file] = specification
+    }
+    return mapping
   }
 }
 
@@ -2977,7 +3013,8 @@ private func createConfiguration(
   }
   return ResolvedGenerationConfiguration(
     configuration: builder.build(),
-    recommendedNegativePrompt: resolvedConfiguration.recommendedNegativePrompt)
+    recommendedNegativePrompt: resolvedConfiguration.recommendedNegativePrompt,
+    loraOverrideMapping: resolvedConfiguration.loraOverrideMapping)
 }
 
 private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
@@ -3305,6 +3342,10 @@ extension DrawThingsCLI {
       let configuration = resolvedConfiguration.configuration
       let resolvedNegativePrompt =
         promptValues.negative ?? resolvedConfiguration.recommendedNegativePrompt ?? ""
+      LoRAZoo.overrideMapping = resolvedConfiguration.loraOverrideMapping
+      defer {
+        LoRAZoo.overrideMapping = [:]
+      }
 
       let files = requiredFiles(for: configuration)
       try ModelDownloader.ensureFiles(
