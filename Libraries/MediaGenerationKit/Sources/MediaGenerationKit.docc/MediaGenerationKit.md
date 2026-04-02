@@ -1,41 +1,45 @@
-# MediaGenerationKit
+# ``_MediaGenerationKit``
 
 @Metadata {
-  @TechnologyRoot
+  @DocumentationExtension(mergeBehavior: override)
 }
 
 Generate images from Swift using local models, a remote Draw Things server, or Draw Things cloud compute.
 
 ## Overview
 
-`MediaGenerationKit` is centered around ``_MediaGenerationKit/MediaGenerationPipeline``:
+`MediaGenerationKit` is centered around ``MediaGenerationPipeline``:
 
-1. Create a pipeline with ``_MediaGenerationKit/MediaGenerationPipeline/fromPretrained(_:backend:)``.
-2. Adjust ``_MediaGenerationKit/MediaGenerationPipeline/Configuration`` when you need to override recommended defaults.
-3. Call ``_MediaGenerationKit/MediaGenerationPipeline/generate(prompt:negativePrompt:inputs:stateHandler:)``.
-4. Save each ``_MediaGenerationKit/MediaGenerationPipeline/Result`` to disk.
+1. Create a pipeline with ``MediaGenerationPipeline/fromPretrained(_:backend:)``.
+2. Adjust ``MediaGenerationPipeline/Configuration`` when you need to override recommended defaults.
+3. Call ``MediaGenerationPipeline/generate(prompt:negativePrompt:inputs:stateHandler:)``.
+4. Save each ``MediaGenerationPipeline/Result`` to disk.
+
+When you pass a `stateHandler`, preview-bearing progress updates can also include
+``MediaGenerationPipeline/Preview``.
 
 The package also exposes:
 
-- ``_MediaGenerationKit/MediaGenerationEnvironment`` for model resolution, catalog inspection, and download/ensure workflows.
-- ``_MediaGenerationKit/LoRAImporter`` for local LoRA conversion.
-- ``_MediaGenerationKit/LoRAStore`` for cloud-side LoRA upload and deletion.
+- ``MediaGenerationEnvironment`` for model resolution, catalog inspection, and download/ensure workflows.
+- ``LoRAImporter`` for local LoRA conversion.
+- ``LoRAStore`` for cloud-side LoRA upload and deletion.
 
 ## Topics
 
 ### Essentials
 
 - <doc:GettingStarted>
+- <doc:ModelResolutionAndDownloads>
 - <doc:RemoteGeneration>
 - <doc:CloudCompute>
-- <doc:ModelResolutionAndDownloads>
 - <doc:LoRAWorkflows>
 
 ### Main Symbols
 
-- ``_MediaGenerationKit/MediaGenerationPipeline``
-- ``_MediaGenerationKit/MediaGenerationEnvironment``
-- ``_MediaGenerationKit/MediaGenerationResolvedModel``
-- ``_MediaGenerationKit/LoRAImporter``
-- ``_MediaGenerationKit/LoRAStore``
-- ``_MediaGenerationKit/AppCheckConfiguration``
+- ``MediaGenerationPipeline``
+- ``MediaGenerationPipeline/Preview``
+- ``MediaGenerationEnvironment``
+- ``MediaGenerationResolvedModel``
+- ``LoRAImporter``
+- ``LoRAStore``
+- ``AppCheckConfiguration``

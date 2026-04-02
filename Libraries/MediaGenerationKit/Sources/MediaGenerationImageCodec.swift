@@ -71,6 +71,14 @@ internal enum MediaGenerationImageCodec {
     return 0
   }
 
+  static func previewImage(from tensor: Tensor<FloatType>, version: ModelVersion) -> CGImage? {
+    ImageConverter.cgImages(
+      fromLatent: tensor,
+      canUseTAESD: true,
+      version: version
+    ).0.first
+  }
+
   private static func pngData(from tensor: Tensor<FloatType>) -> Data? {
     #if canImport(UIKit)
       let image = ImageConverter.image(from: tensor, scaleFactor: 1.0)

@@ -1,6 +1,6 @@
 # Getting Started
 
-The smallest local workflow is:
+The smallest workflow to run generation locally.
 
 ```swift
 import Foundation
@@ -68,3 +68,20 @@ Role-specific wrappers let you provide masks and hints:
 - ``MediaGenerationPipeline/MaskInput``
 - ``MediaGenerationPipeline/MoodboardInput``
 - ``MediaGenerationPipeline/DepthInput``
+
+## Progress And Previews
+
+`generate(...)` can report both progress state and an optional live preview:
+
+```swift
+let results = try await pipeline.generate(
+  prompt: "a red cube on a table"
+) { state, preview in
+  if case .generating(let step, let totalSteps) = state {
+    print("sampling \\(step)/\\(totalSteps)")
+  }
+  if let image = preview?[0] {
+    print("received preview image: \\(image.width)x\\(image.height)")
+  }
+}
+```

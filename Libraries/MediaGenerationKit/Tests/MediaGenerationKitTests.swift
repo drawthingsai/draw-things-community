@@ -1,10 +1,12 @@
 import Darwin
+import Diffusion
 import Foundation
 import ImageGenerator
 import Logging
 import ModelZoo
-import XCTest
+import NNC
 import UniformTypeIdentifiers
+import XCTest
 
 @testable import MediaGenerationKit
 
@@ -84,7 +86,8 @@ final class MediaGenerationKitTests: XCTestCase {
 
   func testEnvironmentResolveModelSyncThrowsOnlyWhenRemoteFetchWouldBeNeeded() throws {
     XCTAssertNoThrow(
-      try MediaGenerationEnvironment.default.resolveModel("flux_2_klein_4b_q8p.ckpt", offline: false)
+      try MediaGenerationEnvironment.default.resolveModel(
+        "flux_2_klein_4b_q8p.ckpt", offline: false)
     )
 
     XCTAssertThrowsError(
@@ -116,7 +119,8 @@ final class MediaGenerationKitTests: XCTestCase {
 
   func testEnvironmentInspectModelSyncThrowsOnlyWhenRemoteFetchWouldBeNeeded() throws {
     XCTAssertNoThrow(
-      try MediaGenerationEnvironment.default.inspectModel("flux_2_klein_4b_q8p.ckpt", offline: false)
+      try MediaGenerationEnvironment.default.inspectModel(
+        "flux_2_klein_4b_q8p.ckpt", offline: false)
     )
 
     XCTAssertThrowsError(
@@ -235,6 +239,22 @@ final class MediaGenerationKitTests: XCTestCase {
         MediaGenerationPipeline.data(data),
       ])
     )
+  }
+
+  func testPreviewCollectionExposesImageBatchCount() {
+    let previewTensor = Tensor<FloatType>(
+      [
+        0, 1, 2,
+        3, 4, 5,
+      ],
+      .CPU,
+      .NHWC(2, 1, 1, 3)
+    )
+    let preview = MediaGenerationPipeline.Preview(tensor: previewTensor, version: .flux2)
+
+    XCTAssertEqual(preview.count, 2)
+    XCTAssertEqual(preview.startIndex, 0)
+    XCTAssertEqual(preview.endIndex, 2)
   }
 
   func testConfigurationValidationRejectsInvalidDimensions() async throws {

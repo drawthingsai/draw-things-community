@@ -6,7 +6,7 @@ import Foundation
   import ZIPFoundation
 #endif
 
-#if canImport(UIKit) && canImport(CoreML)
+#if canImport(CoreML)
   extension ImageConverter {
     static let flux1UnzipItem: URL? = {
       let fileManager = FileManager.default

@@ -1,7 +1,7 @@
 import Foundation
 import Logging
-import XCTest
 import UniformTypeIdentifiers
+import XCTest
 
 @testable import MediaGenerationKit
 
@@ -32,7 +32,7 @@ final class MediaGenerationKitExampleCompileTests: XCTestCase {
           MediaGenerationPipeline.data(onePixelPNGData).mask(),
           MediaGenerationPipeline.data(onePixelPNGData).moodboard(),
         ]
-      ) { _ in
+      ) { _, _ in
       }
     }
     generationTask.cancel()
