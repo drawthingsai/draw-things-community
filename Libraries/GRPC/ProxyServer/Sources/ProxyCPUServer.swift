@@ -130,6 +130,13 @@ extension Worker {
           action: isTaskSuccessful ? .complete : .cancel, generationId: generationId,
           amount: amount,
           logger: logger)
+      } else if task.payload.consumableType == .payg, let amount = task.payload.amount,
+        let generationId = task.payload.generationId
+      {
+        await proxyMessageSigner.completePayg(
+          action: isTaskSuccessful ? .complete : .cancel, generationId: generationId,
+          amount: amount,
+          logger: logger)
       }
       task.promise.succeed(status)
       task.context.statusPromise.succeed(status)
@@ -143,6 +150,12 @@ extension Worker {
         let generationId = task.payload.generationId
       {
         await proxyMessageSigner.completeBoost(
+          action: .cancel, generationId: generationId, amount: amount,
+          logger: logger)
+      } else if task.payload.consumableType == .payg, let amount = task.payload.amount,
+        let generationId = task.payload.generationId
+      {
+        await proxyMessageSigner.completePayg(
           action: .cancel, generationId: generationId, amount: amount,
           logger: logger)
       }
@@ -936,6 +949,15 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             "isValidRequest cancel consumableType generationId:\( generationId), message:\(message)"
           )
           await proxyMessageSigner.completeBoost(
+            action: .cancel, generationId: generationId, amount: amount,
+            logger: logger)
+        } else if payload.consumableType == .payg, let amount = payload.amount,
+          let generationId = payload.generationId
+        {
+          logger.info(
+            "isValidRequest cancel payg generationId:\( generationId), message:\(message)"
+          )
+          await proxyMessageSigner.completePayg(
             action: .cancel, generationId: generationId, amount: amount,
             logger: logger)
         } else {

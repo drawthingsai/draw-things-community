@@ -146,6 +146,28 @@ public actor ProxyMessageSigner {
     }
   }
 
+  public func completePayg(
+    action: CompletionCode, generationId: String, amount: Int, logger: Logger
+  ) async {
+    do {
+      struct Request: Codable {
+        var action: CompletionCode
+        var generationId: String
+        var amount: Int
+      }
+      let request = Request(action: action, generationId: generationId, amount: amount)
+      let jsonEncoder = JSONEncoder()
+      jsonEncoder.outputFormatting = [.sortedKeys]
+      let payload = try jsonEncoder.encode(request)
+      let jwtToken = try createDirectJWT(payload)
+
+      await completeConsumableGeneration(
+        token: jwtToken, generationId: generationId, logger: logger)
+    } catch {
+      logger.error("Failed to process completion: \(error)")
+    }
+  }
+
   private func completeConsumableGeneration(
     token: String, generationId: String, logger: Logger
   ) async {
