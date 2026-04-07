@@ -894,6 +894,25 @@ public struct MediaGenerationPipeline: Sendable {
     }
   }
 
+  /// Estimates Draw Things cloud compute units for the current configuration and inputs.
+  ///
+  /// This uses the same runtime-configuration normalization and compute-unit estimator used by the
+  /// cloud authentication path.
+  public func estimatedComputeUnits(inputs: [Input] = []) throws -> Int? {
+    let executionInputs = try Self.executionInputs(from: inputs)
+    let runtimeConfiguration = try configuration.runtimeConfiguration(
+      template: storage.recommendedTemplate)
+    let shuffleCount = executionInputs.hints.reduce(0) { partialResult, hint in
+      guard hint.type == .shuffle else { return partialResult }
+      return partialResult + hint.images.count
+    }
+    return ComputeUnits.from(
+      runtimeConfiguration,
+      hasImage: executionInputs.image != nil,
+      shuffleCount: shuffleCount
+    )
+  }
+
   internal static func executionInputs(from inputs: [Input]) throws
     -> MediaGenerationExecutionInputs
   {
