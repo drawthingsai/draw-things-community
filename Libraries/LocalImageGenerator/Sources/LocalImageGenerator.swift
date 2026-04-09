@@ -3663,8 +3663,10 @@ extension LocalImageGenerator {
       if !DeviceCapability.isMFAAttentionFaster {
         DynamicGraph.flags.insert(.disableMFAAttention)
       }
-      if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+      if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
         DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+      } else {
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
       }
     }
     var signposts = Set<ImageGeneratorSignpost>([
@@ -4297,8 +4299,10 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+        } else {
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
         }
       }
       let startWidth: Int
@@ -4665,8 +4669,10 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+        } else {
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
         }
       }
       guard
@@ -4730,8 +4736,10 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+        } else {
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
         }
       }
       var secondPassResult = modelPreloader.consumeFirstStageDecode(
@@ -4917,8 +4925,10 @@ extension LocalImageGenerator {
       if !DeviceCapability.isMFAAttentionFaster {
         DynamicGraph.flags.insert(.disableMFAAttention)
       }
-      if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+      if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
         DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+      } else {
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
       }
     }
     var hasHints = Set(hints.keys)
@@ -5646,8 +5656,10 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+        } else {
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
         }
       }
       var firstStageResult = modelPreloader.consumeFirstStageDecode(
@@ -6342,8 +6354,10 @@ extension LocalImageGenerator {
       if !DeviceCapability.isMFAAttentionFaster {
         DynamicGraph.flags.insert(.disableMFAAttention)
       }
-      if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+      if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
         DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+      } else {
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
       }
     }
     var hasHints = Set(hints.keys)
@@ -7051,8 +7065,10 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+        } else {
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
         }
       }
       let firstStageResult = modelPreloader.consumeFirstStageDecode(
@@ -7234,8 +7250,10 @@ extension LocalImageGenerator {
       if !DeviceCapability.isMFAAttentionFaster {
         DynamicGraph.flags.insert(.disableMFAAttention)
       }
-      if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+      if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
         DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+      } else {
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
       }
     }
     var hasHints = Set(hints.keys)
@@ -8137,8 +8155,10 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+        } else {
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
         }
       }
       let firstStageResult = modelPreloader.consumeFirstStageDecode(

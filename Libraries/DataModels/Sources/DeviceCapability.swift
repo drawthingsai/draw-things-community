@@ -188,7 +188,9 @@ public struct DeviceCapability {
       return false
     #else
       if #available(iOS 26, macOS 26, macCatalyst 26, *) {
-        if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple9) && !device.supportsFamily(.apple10) {
+        if let device = MTLCreateSystemDefaultDevice(),
+          device.supportsFamily(.apple9) && !device.supportsFamily(.apple10)
+        {
           return true
         }
         return false
@@ -197,6 +199,7 @@ public struct DeviceCapability {
     #endif
   }()
   public static let isMFAEnabled = ManagedAtomic(isMFASupported ? 1 : 0)
+  public static let isMFAAppleNeuralEngineEnabled = ManagedAtomic(isMFAAppleNeuralEngineFaster)
   public struct Scale: Equatable & Hashable & CustomDebugStringConvertible {
     public let widthScale: UInt16
     public let heightScale: UInt16

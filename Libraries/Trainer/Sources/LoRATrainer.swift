@@ -3902,8 +3902,10 @@ public struct LoRATrainer {
       if !DeviceCapability.isMFAAttentionFaster {
         DynamicGraph.flags.insert(.disableMFAAttention)
       }
-      if !DeviceCapability.isMFAAppleNeuralEngineFaster {
+      if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
         DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+      } else {
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
       }
     }
     graph.openStore(session, flags: .readOnly) { sessionStore in
