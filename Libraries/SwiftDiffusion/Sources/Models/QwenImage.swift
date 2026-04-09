@@ -576,7 +576,7 @@ public func QwenImage(
   channels: Int, layers: Int, usesFlashAttention: FlashAttentionLevel, isBF16: Bool,
   isQwenImageLayered: Bool, zeroTimestepForReference: Bool, activationQkScaling: [Int: Int],
   activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
-  activationFfnScaling: [Int: Int]
+  activationFfnScaling: [Int: Int], rotaryEmbeddingHeads: Int = 1
 ) -> (
   ModelWeightMapper, Model
 ) {
@@ -615,7 +615,7 @@ public func QwenImage(
   var context = contextIn.to(.Float32)
   var ref = zeroTimestepForReference ? referenceLatents.map { $0.to(.Float32) } : nil
   let rotResized = rot.reshaped(
-    .NHWC(1, sequenceLength + referenceSequenceLength + textLength, 1, 128))
+    .NHWC(1, sequenceLength + referenceSequenceLength + textLength, rotaryEmbeddingHeads, 128))
   for i in 0..<layers {
     let contextBlockPreOnly = i == layers - 1
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
@@ -1116,12 +1116,23 @@ private func LoRAJointTransformerBlock(
     queries = (1.0 / Float(k).squareRoot()) * queries
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, (t + hw), k * h])
-  case .scaleMerged, .quantized:
-    out = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])(
-        queries, keys, values
-      ).reshaped([b, t + hw, h * k])
+    scaledDotProductAttention.gradientCheckpointing = false
+  case .quantized:
+    let scaledDotProductAttention: Model
+    if configuration.testing {
+      scaledDotProductAttention = ScaledDotProductAttention(
+        scale: 1.0 / Float(k).squareRoot(), flags: [.Int8, .Float16])
+    } else {
+      queries = (1.0 / Float(k).squareRoot()) * queries
+      scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Int8, .Float16])
+    }
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, t + hw, h * k])
+    scaledDotProductAttention.gradientCheckpointing = false
+  case .scaleMerged:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([b, t + hw, h * k])
+    scaledDotProductAttention.gradientCheckpointing = false
   }
   let contextUnifyheads: Model?
   if !contextBlockPreOnly {
@@ -1191,6 +1202,9 @@ private func LoRAJointTransformerBlock(
         (contextNorm2(contextOut) .* contextChunks[4] + contextChunks[3]).to(.Float16)
       ).to(
         of: contextOut)
+    if configuration.gradientCheckpointingFeedForward {
+      contextFF.gradientCheckpointing = true
+    }
   } else {
     contextLinear1 = nil
     contextOutProjection = nil
@@ -1209,6 +1223,9 @@ private func LoRAJointTransformerBlock(
   } else {
     xFFIn = xFFIn .* xChunks[4] + xChunks[3]
     xFFOut = xFF(xFFIn.to(.Float16)).to(of: xOut)
+  }
+  if configuration.gradientCheckpointingFeedForward {
+    xFF.gradientCheckpointing = true
   }
   if !contextBlockPreOnly, let refIn = refOut {
     let justXFFOut = xFFOut.reshaped(
@@ -1338,7 +1355,7 @@ public func LoRAQwenImage(
   channels: Int, layers: Int, usesFlashAttention: FlashAttentionLevel, isBF16: Bool,
   isQwenImageLayered: Bool, zeroTimestepForReference: Bool, activationQkScaling: [Int: Int],
   activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
-  activationFfnScaling: [Int: Int],
+  activationFfnScaling: [Int: Int], rotaryEmbeddingHeads: Int = 1,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   ModelWeightMapper, Model
@@ -1378,7 +1395,7 @@ public func LoRAQwenImage(
   var context = contextIn.to(.Float32)
   var ref = zeroTimestepForReference ? referenceLatents.map { $0.to(.Float32) } : nil
   let rotResized = rot.reshaped(
-    .NHWC(1, sequenceLength + referenceSequenceLength + textLength, 1, 128))
+    .NHWC(1, sequenceLength + referenceSequenceLength + textLength, rotaryEmbeddingHeads, 128))
   for i in 0..<layers {
     let contextBlockPreOnly = i == layers - 1
     let contextChunks = (0..<(contextBlockPreOnly ? 2 : 6)).map { _ in Input() }
@@ -1411,6 +1428,9 @@ public func LoRAQwenImage(
     var inputs: [Model.IO] = [out, context] + (ref.map { [$0] } ?? []) + [rotResized]
     inputs.append(contentsOf: contextChunks + xChunks + refChunks)
     let blockOut = block(inputs)
+    if LoRAConfiguration.gradientCheckpointingTransformerLayer {
+      block.gradientCheckpointing = true
+    }
     if i == layers - 1 {
       out = blockOut
     } else {
@@ -1450,7 +1470,7 @@ public func LoRAQwenImage(
     mapper,
     Model(
       [x, rot] + (referenceLatents.map { [$0] } ?? []) + zeroAdaLNChunks + [contextIn]
-        + adaLNChunks, [out])
+        + adaLNChunks, [out], trainable: false)
   )
 }
 

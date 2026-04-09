@@ -803,7 +803,7 @@ private func LoRAZImageTransformerBlock(
   prefix: String, name: String, k: Int, h: Int, b: Int, t: (keyValue: Int, query: Int),
   segments: [Int], scaleFactor: ((qk: Int, proj: Int), (projUp: Int, projDown: Int)),
   modulation: Bool, usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
-  configuration: LoRANetworkConfiguration
+  configuration: LoRANetworkConfiguration, rotaryEmbeddingHeads: Int = 1
 ) -> (Model, ModelWeightMapper) {
   let x = Input()
   let chunks: [Input]
@@ -834,9 +834,12 @@ private func LoRAZImageTransformerBlock(
   var keys = tokeys(out).reshaped([b, t.keyValue, h, k])
   var queries: Model.IO
   if t.keyValue != t.query {
-    queries = toqueries(
-      out.reshaped([b, t.query, k * h], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1])
-    ).reshaped([b, t.query, h, k])
+    let queryIn = out.reshaped(
+      [b, t.query, k * h], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1]
+    ).contiguous()
+    queries = toqueries(queryIn).reshaped([
+      b, t.query, h, k,
+    ])
   } else {
     queries = toqueries(out).reshaped([b, t.0, h, k])
   }
@@ -854,10 +857,17 @@ private func LoRAZImageTransformerBlock(
   var values = tovalues(out)
   values = values.reshaped([b, t.0, h, k])
   if t.keyValue != t.query {
-    queries = Functional.cmul(
-      left: queries,
-      right: rot.reshaped(
-        [1, t.query, 1, k], offset: [0, 0, 0, 0], strides: [t.keyValue * k, k, k, 1]))
+    if rotaryEmbeddingHeads > 1 {
+      let queryRot = rot.reshaped(
+        [1, t.query, h, k], offset: [0, 0, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1]
+      ).contiguous()
+      queries = Functional.cmul(left: queries, right: queryRot)
+    } else {
+      let queryRot = rot.reshaped(
+        [1, t.query, 1, k], offset: [0, 0, 0, 0], strides: [t.keyValue * k, k, k, 1]
+      )
+      queries = Functional.cmul(left: queries, right: queryRot)
+    }
   } else {
     queries = Functional.cmul(left: queries, right: rot)
   }
@@ -891,10 +901,17 @@ private func LoRAZImageTransformerBlock(
         queries, keys, values
       )
     }
-  case .scaleMerged, .quantized:
-    let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+    scaledDotProductAttention.gradientCheckpointing = false
+  case .quantized:
+    let scaledDotProductAttention: Model
+    if configuration.testing {
+      scaledDotProductAttention = ScaledDotProductAttention(
+        scale: 1.0 / Float(k).squareRoot(), flags: [.Int8, .Float16])
+    } else {
+      queries = (1.0 / Float(k).squareRoot().squareRoot()) * queries
+      keys = (1.0 / Float(k).squareRoot().squareRoot()) * keys
+      scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Int8, .Float16])
+    }
     if segments.count > 1 {
       var offset = 0
       var outs = [Model.IO]()
@@ -919,6 +936,35 @@ private func LoRAZImageTransformerBlock(
         queries, keys, values
       )
     }
+    scaledDotProductAttention.gradientCheckpointing = false
+  case .scaleMerged:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1.0 / Float(k).squareRoot(), flags: [.Float16])
+    if segments.count > 1 {
+      var offset = 0
+      var outs = [Model.IO]()
+      for segment in segments {
+        let query = queries.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.query * h * k, h * k, k, 1]
+        ).contiguous()
+        let key = keys.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1]
+        ).contiguous()
+        let value = values.reshaped(
+          [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1]
+        ).contiguous()
+        outs.append(scaledDotProductAttention(query, key, value))
+        offset += segment
+      }
+      let concat = Concat(axis: 1)
+      concat.flags = .disableOpt
+      out = concat(outs)
+    } else {
+      out = scaledDotProductAttention(
+        queries, keys, values
+      )
+    }
+    scaledDotProductAttention.gradientCheckpointing = false
   case .none:
     queries = (1.0 / Float(k).squareRoot().squareRoot()) * queries
     keys = (1.0 / Float(k).squareRoot().squareRoot()) * keys
@@ -1016,6 +1062,9 @@ private func LoRAZImageTransformerBlock(
     hiddenSize: h * k, intermediateSize: 10_240, scaleFactor: scaleFactor.1,
     configuration: configuration, index: layerIndex,
     name: name.isEmpty ? "ffn" : "\(name)_ffn")
+  if configuration.gradientCheckpointingFeedForward {
+    ffn.gradientCheckpointing = true
+  }
   let feedForwardNorm1 = RMSNorm(
     epsilon: 1e-5, axis: [2], name: name.isEmpty ? "ffn_norm1" : "\(name)_ffn_norm1")
   var feedForwardNorm2Epsilon: Float = 1e-5
@@ -1081,7 +1130,8 @@ public func LoRAZImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: Int,
   activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
   activationFfnProjUpScaling: [Int: Int], activationFfnScaling: [Int: Int],
-  usesFlashAttention: FlashAttentionLevel, LoRAConfiguration: LoRANetworkConfiguration
+  usesFlashAttention: FlashAttentionLevel, rotaryEmbeddingHeads: Int = 1,
+  LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   Model, ModelWeightMapper
 ) {
@@ -1108,7 +1158,12 @@ public func LoRAZImage(
     xPadTokens = nil
   }
   xOut = xOut.to(.Float32)
-  let xRot = rot.reshaped([1, roundUpHW, 1, 128])
+  let xRot = rot.reshaped(
+    [1, roundUpHW, rotaryEmbeddingHeads, 128], offset: [0, 0, 0, 0],
+    strides: [
+      (roundUpHW + textLength) * rotaryEmbeddingHeads * 128, rotaryEmbeddingHeads * 128, 128, 1,
+    ]
+  ).contiguous()
   for i in 0..<2 {
     let qkScaling = activationQkScaling[i + 2] ?? 1
     var projScaling = activationProjScaling[i + 2] ?? 1
@@ -1132,13 +1187,16 @@ public func LoRAZImage(
         (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
       ),
       modulation: true, usesFlashAttention: usesFlashAttention, layerIndex: i,
-      configuration: LoRAConfiguration)
+      configuration: LoRAConfiguration, rotaryEmbeddingHeads: rotaryEmbeddingHeads)
     xOut = block([xOut, xRot] + chunks)
+    if LoRAConfiguration.gradientCheckpointingTransformerLayer {
+      block.gradientCheckpointing = true
+    }
     adaLNChunks.append(contentsOf: chunks)
     mappers.append(mapper)
   }
   var out = Functional.concat(axis: 1, xOut, txtIn)
-  let rotResized = rot.reshaped(.NHWC(1, roundUpHW + textLength, 1, 128))
+  let rotResized = rot.reshaped(.NHWC(1, roundUpHW + textLength, rotaryEmbeddingHeads, 128))
   for i in 0..<layers {
     let qkScaling = activationQkScaling[i + 4] ?? 1
     var projScaling = activationProjScaling[i + 4] ?? 1
@@ -1164,8 +1222,12 @@ public func LoRAZImage(
       scaleFactor: (
         (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
       ), modulation: true, usesFlashAttention: usesFlashAttention,
-      layerIndex: i, configuration: LoRAConfiguration)
+      layerIndex: i, configuration: LoRAConfiguration,
+      rotaryEmbeddingHeads: rotaryEmbeddingHeads)
     out = block([out, rotResized] + chunks)
+    if LoRAConfiguration.gradientCheckpointingTransformerLayer {
+      block.gradientCheckpointing = true
+    }
     adaLNChunks.append(contentsOf: chunks)
     mappers.append(mapper)
   }
@@ -1199,7 +1261,16 @@ public func LoRAZImage(
     }
     return mapping
   }
-  return (Model([x] + (xPadTokens.map { [$0] } ?? []) + [rot, txtIn] + adaLNChunks, [out]), mapper)
+  var inputs = [x]
+  if let xPadTokens {
+    inputs.append(xPadTokens)
+  }
+  inputs.append(rot)
+  inputs.append(txtIn)
+  inputs.append(contentsOf: adaLNChunks)
+  return (
+    Model(inputs, [out], trainable: false), mapper
+  )
 }
 
 private func LoRAZImageTransformerBlockFixed(
@@ -1397,5 +1468,7 @@ public func LoRAZImageFixed(
     }
     return mapping
   }
-  return (Model([txt, txtRot, t] + (capPadTokens.map { [$0] } ?? []), outs), mapper)
+  return (
+    Model([txt, txtRot, t] + (capPadTokens.map { [$0] } ?? []), outs), mapper
+  )
 }

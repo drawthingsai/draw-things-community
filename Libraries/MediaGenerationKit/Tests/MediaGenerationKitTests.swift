@@ -5,8 +5,8 @@ import ImageGenerator
 import Logging
 import ModelZoo
 import NNC
-import UniformTypeIdentifiers
 import XCTest
+import UniformTypeIdentifiers
 
 @testable import MediaGenerationKit
 
@@ -86,8 +86,7 @@ final class MediaGenerationKitTests: XCTestCase {
 
   func testEnvironmentResolveModelSyncThrowsOnlyWhenRemoteFetchWouldBeNeeded() throws {
     XCTAssertNoThrow(
-      try MediaGenerationEnvironment.default.resolveModel(
-        "flux_2_klein_4b_q8p.ckpt", offline: false)
+      try MediaGenerationEnvironment.default.resolveModel("flux_2_klein_4b_q8p.ckpt", offline: false)
     )
 
     XCTAssertThrowsError(
@@ -119,8 +118,7 @@ final class MediaGenerationKitTests: XCTestCase {
 
   func testEnvironmentInspectModelSyncThrowsOnlyWhenRemoteFetchWouldBeNeeded() throws {
     XCTAssertNoThrow(
-      try MediaGenerationEnvironment.default.inspectModel(
-        "flux_2_klein_4b_q8p.ckpt", offline: false)
+      try MediaGenerationEnvironment.default.inspectModel("flux_2_klein_4b_q8p.ckpt", offline: false)
     )
 
     XCTAssertThrowsError(

@@ -183,6 +183,19 @@ public struct DeviceCapability {
       return false
     #endif
   }()
+  public static let isMFAAppleNeuralEngineFaster: Bool = {
+    #if arch(i386) || arch(x86_64) || !canImport(Metal)
+      return false
+    #else
+      if #available(iOS 26, macOS 26, macCatalyst 26, *) {
+        if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple9) && !device.supportsFamily(.apple10) {
+          return true
+        }
+        return false
+      }
+      return false
+    #endif
+  }()
   public static let isMFAEnabled = ManagedAtomic(isMFASupported ? 1 : 0)
   public struct Scale: Equatable & Hashable & CustomDebugStringConvertible {
     public let widthScale: UInt16

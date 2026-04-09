@@ -1229,6 +1229,9 @@ private func LoRAJointTransformerBlock(
     (contextW1, contextW2, contextW3, contextFF) = LoRAFeedForward(
       hiddenSize: k * h, intermediateSize: k * h * 3, scaleFactor: scaleFactor,
       configuration: configuration, index: layerIndex, name: "c")
+    if configuration.gradientCheckpointingFeedForward {
+      contextFF.gradientCheckpointing = true
+    }
     let contextNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
     if let scaleFactor = scaleFactor {
       contextOut =
@@ -1251,6 +1254,9 @@ private func LoRAJointTransformerBlock(
   let (xW1, xW2, xW3, xFF) = LoRAFeedForward(
     hiddenSize: k * h, intermediateSize: k * h * 3, scaleFactor: scaleFactor,
     configuration: configuration, index: layerIndex, name: "x")
+  if configuration.gradientCheckpointingFeedForward {
+    xFF.gradientCheckpointing = true
+  }
   let xNorm2 = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   if let scaleFactor = scaleFactor {
     xOut = Add(rightScalar: scaleFactor)(
@@ -1698,6 +1704,7 @@ private func LoRASingleTransformerBlockImageOnly(
 public func LoRAFlux2(
   batchSize: Int, tokenLength: Int, referenceSequenceLength: Int, height: Int, width: Int,
   channels: Int, layers: (Int, Int), usesFlashAttention: FlashAttentionLevel, kvCache: Bool,
+  rotaryEmbeddingHeads: Int = 1,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -1729,7 +1736,7 @@ public func LoRAFlux2(
   let cachedAttentionKVs =
     kvCache ? (0..<(layers.0 + layers.1)).map { _ in (Input(), Input()) } : []
   let sequenceLength = h * w + tokenLength + (kvCache ? 0 : referenceSequenceLength)
-  let rotResized = rot.reshaped(.NHWC(1, sequenceLength, 1, 128))
+  let rotResized = rot.reshaped(.NHWC(1, sequenceLength, rotaryEmbeddingHeads, 128))
   var mappers = [ModelWeightMapper]()
   for i in 0..<layers.0 {
     let (mapper, block) = LoRAJointTransformerBlock(
@@ -1748,6 +1755,9 @@ public func LoRAFlux2(
     let blockOut = block(blockInputs + contextChunks + xChunks)
     context = blockOut[0]
     out = blockOut[1]
+    if LoRAConfiguration.gradientCheckpointingTransformerLayer {
+      block.gradientCheckpointing = true
+    }
     mappers.append(mapper)
   }
   let singleChunks = (0..<3).map { _ in Input() }
@@ -1768,6 +1778,9 @@ public func LoRAFlux2(
       blockInputs.append(cachedAttentionKV.1)
     }
     out = block(blockInputs + singleChunks)
+    if LoRAConfiguration.gradientCheckpointingTransformerLayer {
+      block.gradientCheckpointing = true
+    }
     mappers.append(mapper)
   }
   let scale = Input()
@@ -1800,7 +1813,7 @@ public func LoRAFlux2(
   inputs.append(contentsOf: xChunks + contextChunks + singleChunks)
   inputs.append(contentsOf: [scale, shift])
   inputs.append(contentsOf: cachedAttentionKVs.flatMap { [$0.0, $0.1] })
-  return (mapper, Model(inputs, [out]))
+  return (mapper, Model(inputs, [out], trainable: false))
 }
 
 public func LoRAFlux2Fixed(
@@ -1996,5 +2009,5 @@ public func LoRAFlux2Fixed(
   outputs.append(contentsOf: singleChunks)
   outputs.append(contentsOf: finalChunks)
   outputs.append(contentsOf: cachedReferenceKVs)
-  return (mapper, Model(inputs, outputs))
+  return (mapper, Model(inputs, outputs, trainable: false))
 }

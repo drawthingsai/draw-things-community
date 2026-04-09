@@ -1,7 +1,7 @@
 import Foundation
 import Logging
-import UniformTypeIdentifiers
 import XCTest
+import UniformTypeIdentifiers
 
 @testable import MediaGenerationKit
 

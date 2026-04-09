@@ -3158,14 +3158,24 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
 
   let tokenizers = createLoRATrainerTokenizers()
   let session = UUID().uuidString
+  let useMFA = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+  let usesFlashAttention: UseFlashAttention =
+    if useMFA == 0 {
+      .none
+    } else if useMFA == 1 {
+      DeviceCapability.isMQASupported ? .quantized : .sdpa
+    } else {
+      .sdpa
+    }
   let trainer = LoRATrainer(
     tensorBoard: nil, comment: "\(output)-",
     model: modelSpecification.file, scale: imageScale, additionalScales: additionalScales,
     useImageAspectRatio: useAspectRatio, cotrainTextModel: cotrainTextModel,
     cotrainCustomEmbedding: cotrainCustomEmbedding, clipSkip: clipSkip,
-    maxTextLength: maxTextLength, session: session, resumeIfPossible: false,
+    maxTextLength: maxTextLength, session: session,
+    resumeIfPossible: resumeCheckpoint?.isEmpty == false,
+    usesFlashAttention: usesFlashAttention,
     imageInspector: inspectTrainingImage, imageLoader: loadTrainingTensor)
-
   let tokenizerStack: [TextualInversionPoweredTokenizer & Tokenizer]
   switch trainer.version {
   case .v1:
@@ -3181,8 +3191,12 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
     }
   case .flux1:
     tokenizerStack = [tokenizers.tokenizerV2, tokenizers.tokenizerT5]
+  case .flux2_9b, .flux2_4b:
+    tokenizerStack = [tokenizers.tokenizerQwen3]
   case .qwenImage:
     tokenizerStack = [tokenizers.tokenizerQwen25]
+  case .zImage:
+    tokenizerStack = [tokenizers.tokenizerQwen3]
   default:
     throw ValidationError("Unsupported LoRA trainer model version: \(trainer.version)")
   }
@@ -3206,9 +3220,29 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
   }
   print("")
 
-  let trainableKeys: [String] = trainer.version == .flux1 ? flux1TrainableKeys() : []
+  let trainableKeys: [String]
+  let requestedTrainableLayers = Set(config.trainableLayers)
+  let requestedLayerIndices = config.layerIndices.map { Int($0) }
+  switch trainer.version {
+  case .flux1:
+    trainableKeys = flux1TrainableKeys(
+      trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
+  case .flux2_9b, .flux2_4b:
+    trainableKeys = flux2TrainableKeys(
+      version: trainer.version, trainableLayers: requestedTrainableLayers,
+      layerIndices: requestedLayerIndices)
+  case .qwenImage:
+    trainableKeys = qwenImageTrainableKeys(
+      trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
+  case .zImage:
+    trainableKeys = zImageTrainableKeys(
+      trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
+  default:
+    trainableKeys = []
+  }
   let startTime = Date()
   var lastStep = 0
+  let triggerWord = config.triggerWord ?? ""
 
   let resumingLoRAFile: (String, Int)? = {
     guard let resumeCheckpoint, !resumeCheckpoint.isEmpty else { return nil }
@@ -3256,6 +3290,15 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
         let filename = "\(output)_\(step)_lora_f32.ckpt"
         let outputPath = LoRAZoo.filePathForModelDownloaded(filename)
         checkpoint.makeLoRA(to: outputPath, scale: loraScale)
+        let specification = LoRAZoo.Specification(
+          name: "\(name) (\(step))", file: filename, prefix: triggerWord, version: trainer.version)
+        if Thread.isMainThread {
+          LoRAZoo.appendCustomSpecification(specification)
+        } else {
+          DispatchQueue.main.sync {
+            LoRAZoo.appendCustomSpecification(specification)
+          }
+        }
         print("[LoRA] Saved checkpoint: \(filename)")
       }
     }
@@ -3880,6 +3923,7 @@ private struct LoRATrainerTokenizers {
   var tokenizerT5: SentencePieceTokenizer
   var tokenizerChatGLM3: SentencePieceTokenizer
   var tokenizerQwen25: TiktokenTokenizer
+  var tokenizerQwen3: TiktokenTokenizer
 }
 
 private func createLoRATrainerTokenizers() -> LoRATrainerTokenizers {
@@ -3906,9 +3950,23 @@ private func createLoRATrainerTokenizers() -> LoRATrainerTokenizers {
       "<|object_ref_end|>": 151647, "<|object_ref_start|>": 151646, "<|im_end|>": 151645,
       "<|im_start|>": 151644, "<|endoftext|>": 151643,
     ])
+  let tokenizerQwen3 = TiktokenTokenizer(
+    vocabulary: BinaryResources.vocab_qwen3_json, merges: BinaryResources.merges_qwen3_txt,
+    specialTokens: [
+      "<|endoftext|>": 151643, "<|im_start|>": 151644, "<|im_end|>": 151645,
+      "<|object_ref_start|>": 151646, "<|object_ref_end|>": 151647, "<|box_start|>": 151648,
+      "<|box_end|>": 151649, "<|quad_start|>": 151650, "<|quad_end|>": 151651,
+      "<|vision_start|>": 151652, "<|vision_end|>": 151653, "<|vision_pad|>": 151654,
+      "<|image_pad|>": 151655, "<|video_pad|>": 151656, "<tool_call>": 151657,
+      "</tool_call>": 151658, "<|fim_prefix|>": 151659, "<|fim_middle|>": 151660,
+      "<|fim_suffix|>": 151661, "<|fim_pad|>": 151662, "<|repo_name|>": 151663,
+      "<|file_sep|>": 151664, "<tool_response>": 151665, "</tool_response>": 151666,
+      "<think>": 151667, "</think>": 151668,
+    ])
   return LoRATrainerTokenizers(
     tokenizerV1: tokenizerV1, tokenizerV2: tokenizerV2, tokenizerT5: tokenizerT5,
-    tokenizerChatGLM3: tokenizerChatGLM3, tokenizerQwen25: tokenizerQwen25)
+    tokenizerChatGLM3: tokenizerChatGLM3, tokenizerQwen25: tokenizerQwen25,
+    tokenizerQwen3: tokenizerQwen3)
 }
 
 private func inspectTrainingImage(url: URL) -> (width: Int, height: Int)? {
@@ -4088,16 +4146,171 @@ private func loadTrainingDataset(from directory: String) throws -> [LoRATrainer.
   return inputs
 }
 
-private func flux1TrainableKeys() -> [String] {
+private func flux1TrainableKeys(
+  trainableLayers: Set<LoRATrainableLayer> = [], layerIndices: [Int] = []
+) -> [String] {
+  let trainableLayers =
+    trainableLayers.isEmpty ? Set(LoRATrainableLayer.allCases) : trainableLayers
   var keys = [String]()
-  keys.append("x_embedder-")
-  keys.append("context_embedder-")
-  keys.append("linear-0-")
+  if trainableLayers.contains(.latentsEmbedder) {
+    keys.append("x_embedder-")
+  }
+  if trainableLayers.contains(.contextEmbedder) {
+    keys.append("context_embedder-")
+  }
+  if trainableLayers.contains(.projectOut) {
+    keys.append("linear-0-")
+  }
   let layerKeys = [
-    "x_q", "x_k", "x_v", "c_q", "c_k", "c_v", "x_o", "c_o", "x_linear1", "x_out_proj",
-    "c_linear1", "c_out_proj",
+    trainableLayers.contains(.qkv) ? ["x_q", "x_k", "x_v"] : [],
+    trainableLayers.contains(.qkvContext) ? ["c_q", "c_k", "c_v"] : [],
+    trainableLayers.contains(.out) ? ["x_o"] : [],
+    trainableLayers.contains(.outContext) ? ["c_o"] : [],
+    trainableLayers.contains(.feedForward) ? ["x_linear1", "x_out_proj"] : [],
+    trainableLayers.contains(.feedForwardContext) ? ["c_linear1", "c_out_proj"] : [],
   ]
-  for layerIndex in 0..<(19 + 38) {
+  .flatMap { $0 }
+  let indices = layerIndices.isEmpty ? Array(0..<(19 + 38)) : layerIndices
+  for layerIndex in indices {
+    keys.append(contentsOf: layerKeys.map { "\($0)-\(layerIndex)-" })
+  }
+  return keys
+}
+
+private func flux2TrainableKeys(
+  version: ModelVersion, trainableLayers: Set<LoRATrainableLayer> = [], layerIndices: [Int] = []
+) -> [String] {
+  let trainableLayers =
+    trainableLayers.isEmpty ? Set(LoRATrainableLayer.allCases) : trainableLayers
+  let layers: (Int, Int)
+  switch version {
+  case .flux2_9b:
+    layers = (8, 24)
+  case .flux2_4b:
+    layers = (5, 20)
+  default:
+    return []
+  }
+  var keys = [String]()
+  if trainableLayers.contains(.latentsEmbedder) {
+    keys.append("x_embedder-")
+  }
+  if trainableLayers.contains(.contextEmbedder) {
+    keys.append("context_embedder-")
+  }
+  if trainableLayers.contains(.projectOut) {
+    keys.append("linear-0-")
+  }
+  let doubleIndices =
+    layerIndices.isEmpty ? Array(0..<layers.0) : layerIndices.filter { $0 >= 0 && $0 < layers.0 }
+  let globalIndices =
+    layerIndices.isEmpty
+    ? Array(0..<(layers.0 + layers.1))
+    : layerIndices.filter { $0 >= 0 && $0 < (layers.0 + layers.1) }
+  let singleMLPIndices =
+    layerIndices.isEmpty
+    ? Array(0..<layers.1)
+    : layerIndices.compactMap { layerIndex in
+      guard layerIndex >= layers.0 && layerIndex < (layers.0 + layers.1) else { return nil }
+      return layerIndex - layers.0
+    }
+  let doubleQKVKeys =
+    trainableLayers.contains(.qkv) ? ["x_q", "x_k", "x_v"] : []
+  let doubleContextQKVKeys =
+    trainableLayers.contains(.qkvContext) ? ["c_q", "c_k", "c_v"] : []
+  let doubleOutKeys =
+    trainableLayers.contains(.out) ? ["x_o"] : []
+  let doubleContextOutKeys =
+    trainableLayers.contains(.outContext) ? ["c_o"] : []
+  let doubleFFKeys =
+    trainableLayers.contains(.feedForward) ? ["x_gate_proj", "x_up_proj", "x_down_proj"] : []
+  let doubleContextFFKeys =
+    trainableLayers.contains(.feedForwardContext)
+    ? ["c_gate_proj", "c_up_proj", "c_down_proj"] : []
+  let singleQKVKeys =
+    trainableLayers.contains(.qkv) ? ["x_q", "x_k", "x_v"] : []
+  let singleOutKeys =
+    trainableLayers.contains(.out) ? ["x_o"] : []
+  let singleFFKeys =
+    trainableLayers.contains(.feedForward) ? ["x_w1", "x_w2", "x_w3"] : []
+  for layerIndex in doubleIndices {
+    keys.append(
+      contentsOf: (doubleQKVKeys + doubleContextQKVKeys + doubleOutKeys + doubleContextOutKeys
+        + doubleFFKeys + doubleContextFFKeys).map { "\($0)-\(layerIndex)-" })
+  }
+  for layerIndex in globalIndices where layerIndex >= layers.0 {
+    keys.append(contentsOf: (singleQKVKeys + singleOutKeys).map { "\($0)-\(layerIndex)-" })
+  }
+  for layerIndex in singleMLPIndices {
+    keys.append(contentsOf: singleFFKeys.map { "\($0)-\(layerIndex)-" })
+  }
+  return keys
+}
+
+private func qwenImageTrainableKeys(
+  trainableLayers: Set<LoRATrainableLayer> = [], layerIndices: [Int] = []
+) -> [String] {
+  let trainableLayers =
+    trainableLayers.isEmpty ? Set(LoRATrainableLayer.allCases) : trainableLayers
+  var keys = [String]()
+  if trainableLayers.contains(.latentsEmbedder) {
+    keys.append("x_embedder-0-")
+  }
+  if trainableLayers.contains(.contextEmbedder) {
+    keys.append("context_embedder-0-")
+  }
+  if trainableLayers.contains(.projectOut) {
+    keys.append("linear-0-")
+  }
+  let layerKeys = [
+    trainableLayers.contains(.qkv) ? ["x_q", "x_k", "x_v"] : [],
+    trainableLayers.contains(.qkvContext) ? ["c_q", "c_k", "c_v"] : [],
+    trainableLayers.contains(.out) ? ["x_o"] : [],
+    trainableLayers.contains(.outContext) ? ["c_o"] : [],
+    trainableLayers.contains(.feedForward) ? ["x_linear1", "x_out_proj"] : [],
+    trainableLayers.contains(.feedForwardContext) ? ["c_linear1", "c_out_proj"] : [],
+  ]
+  .flatMap { $0 }
+  let indices = layerIndices.isEmpty ? Array(0..<60) : layerIndices
+  for layerIndex in indices where layerIndex >= 0 && layerIndex < 60 {
+    keys.append(contentsOf: layerKeys.map { "\($0)-\(layerIndex)-" })
+  }
+  return keys
+}
+
+private func zImageTrainableKeys(
+  trainableLayers: Set<LoRATrainableLayer> = [], layerIndices: [Int] = []
+) -> [String] {
+  let trainableLayers =
+    trainableLayers.isEmpty ? Set(LoRATrainableLayer.allCases) : trainableLayers
+  var keys = [String]()
+  if trainableLayers.contains(.latentsEmbedder) {
+    keys.append("x_embedder-0-")
+  }
+  if trainableLayers.contains(.projectOut) {
+    keys.append("linear_final-0-")
+  }
+  let noiseRefinerKeys = [
+    trainableLayers.contains(.qkv)
+      ? ["noise_refiner_q", "noise_refiner_k", "noise_refiner_v"] : [],
+    trainableLayers.contains(.out) ? ["noise_refiner_o"] : [],
+    trainableLayers.contains(.feedForward)
+      ? ["noise_refiner_ffn_gate_proj", "noise_refiner_ffn_up_proj", "noise_refiner_ffn_down_proj"]
+      : [],
+  ]
+  .flatMap { $0 }
+  for layerIndex in 0..<2 {
+    keys.append(contentsOf: noiseRefinerKeys.map { "\($0)-\(layerIndex)-" })
+  }
+  let layerKeys = [
+    trainableLayers.contains(.qkv) ? ["q", "k", "v"] : [],
+    trainableLayers.contains(.out) ? ["o"] : [],
+    trainableLayers.contains(.feedForward)
+      ? ["ffn_gate_proj", "ffn_up_proj", "ffn_down_proj"] : [],
+  ]
+  .flatMap { $0 }
+  let indices = layerIndices.isEmpty ? Array(0..<30) : layerIndices
+  for layerIndex in indices where layerIndex >= 0 && layerIndex < 30 {
     keys.append(contentsOf: layerKeys.map { "\($0)-\(layerIndex)-" })
   }
   return keys

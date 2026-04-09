@@ -3,11 +3,12 @@ import Diffusion
 public enum FeaturesMatrix {
   public static func supportsLoRATraining(_ version: ModelVersion) -> Bool {
     switch version {
-    case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .flux1:
+    case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .flux1, .zImage, .qwenImage, .flux2_4b,
+      .flux2_9b:
       return true
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
-      .auraflow, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
-      .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+      .auraflow, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .wan22_5b,
+      .flux2, .ltx2, .ltx2_3:
       return false
     }
   }
