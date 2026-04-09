@@ -117,9 +117,7 @@ public final class ModelPreloader {
   private var configurationSubscription: Workspace.Subscription? = nil
   private var keepModelInMemorySubscription: Workspace.Subscription? = nil
   private var useCoreMLSubscription: Workspace.Subscription? = nil
-  private var coreMLComputeUnitSubscription: Workspace.Subscription? = nil
   private var loraUseCoreMLSubscription: Workspace.Subscription? = nil
-  private var maxCoreMLCacheSizeSubscription: Workspace.Subscription? = nil
   private var weightsCacheSizeSubscription: Workspace.Subscription? = nil
   private var externalStoreSubscription: Workspace.Subscription? = nil
   private var useMFASubscription: Workspace.Subscription? = nil
@@ -129,7 +127,6 @@ public final class ModelPreloader {
   private let sentinel = ManagedAtomic<Int>(0)
   private var useCoreML: Bool? = nil
   private var useMFA: Int? = nil
-  private var coreMLComputeUnit: Int? = nil
   private var loraUseCoreML: Bool? = nil
   private var externalStore: Bool? = nil
   private var mergeLoRA: Int? = nil
@@ -259,22 +256,6 @@ public final class ModelPreloader {
         }
       }
     }
-    coreMLComputeUnitSubscription = workspace.dictionary.subscribe(
-      "coreml_compute_unit", of: Int.self
-    ) {
-      value in
-      queue.async { [weak self] in
-        guard let self = self else { return }
-        switch value {
-        case .deleted:
-          self.updateCoreMLComputeUnit(nil)
-        case .initial(let value):
-          self.updateCoreMLComputeUnit(value)
-        case .updated(let value):
-          self.updateCoreMLComputeUnit(value)
-        }
-      }
-    }
     loraUseCoreMLSubscription = workspace.dictionary.subscribe("lora_use_coreml", of: Bool.self) {
       value in
       queue.async { [weak self] in
@@ -286,21 +267,6 @@ public final class ModelPreloader {
           self.updateLoRAUseCoreML(value)
         case .updated(let value):
           self.updateLoRAUseCoreML(value)
-        }
-      }
-    }
-    maxCoreMLCacheSizeSubscription = workspace.dictionary.subscribe(
-      "max_coreml_cache", of: Int.self
-    ) { value in
-      queue.async { [weak self] in
-        guard let self = self else { return }
-        switch value {
-        case .deleted:
-          self.updateMaxCoreMLCacheSize(nil)
-        case .initial(let value):
-          self.updateMaxCoreMLCacheSize(value)
-        case .updated(let value):
-          self.updateMaxCoreMLCacheSize(value)
         }
       }
     }
@@ -1010,24 +976,6 @@ extension ModelPreloader {
     }
   }
 
-  func updateCoreMLComputeUnit(_ value: Int?) {
-    dispatchPrecondition(condition: .onQueue(queue))
-    let coreMLComputeUnit = value ?? 0
-    CoreMLModelManager.computeUnits.store(coreMLComputeUnit, ordering: .releasing)
-    guard self.coreMLComputeUnit != nil && self.coreMLComputeUnit != coreMLComputeUnit else {
-      self.coreMLComputeUnit = coreMLComputeUnit
-      return
-    }
-    // Changed model, need to reload the model.
-    removeAllCache()
-    self.coreMLComputeUnit = coreMLComputeUnit
-    if mode == .preload || mode == .coreml || mode == .unet {
-      // If need to preload, we do the countdown preload.
-      activeSentinel += 1
-      delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 4)
-    }
-  }
-
   func updateUseMFA(_ value: Int?) {
     dispatchPrecondition(condition: .onQueue(queue))
     let useMFA = value ?? (DeviceCapability.isMFASupported ? 1 : 0)
@@ -1075,17 +1023,6 @@ extension ModelPreloader {
       // If need to preload, we do the countdown preload.
       activeSentinel += 1
       delayedPreloadIfPossible(activeSentinel: activeSentinel, countdown: 4)
-    }
-  }
-
-  func updateMaxCoreMLCacheSize(_ value: Int?) {
-    dispatchPrecondition(condition: .onQueue(queue))
-    let maxCoreMLCacheSize = value ?? 3
-    CoreMLModelManager.maxNumberOfConvertedModels.store(maxCoreMLCacheSize, ordering: .releasing)
-    // Also if the size is 0, remove it.
-    if maxCoreMLCacheSize == 0 {
-      CoreMLModelManager.removeAllConvertedModels()  // Also need to redo the CoreML model now.
-      removeAllCache()
     }
   }
 
