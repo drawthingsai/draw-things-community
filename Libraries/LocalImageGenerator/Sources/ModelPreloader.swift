@@ -22,6 +22,13 @@ extension LoRAConfiguration.Mode {
   }
 }
 
+public enum JITWeightsLoading: Int, Codable {
+  case automatic = 0
+  case alwaysPartially = 1
+  case alwaysFully = 2
+  case never = 3
+}
+
 public final class ModelPreloader {
   public enum PreloadState: Equatable {
     case countdown(Int)
@@ -130,7 +137,7 @@ public final class ModelPreloader {
   private var useAppleNeuralEngineFor8BitSModels: Bool? = nil
   private var useMFA: Int? = nil
   private var loraUseCoreML: Bool? = nil
-  private var externalStore: Bool? = nil
+  private var externalStore: JITWeightsLoading = .automatic
   private var mergeLoRA: Int? = nil
   init(
     queue: DispatchQueue, weightsCache: WeightsCache,
@@ -302,8 +309,14 @@ public final class ModelPreloader {
         }
       }
     }
-    externalStore = workspace.dictionary["external_store", Bool.self]
-    externalStoreSubscription = workspace.dictionary.subscribe("external_store", of: Bool.self) {
+    externalStore =
+      workspace.dictionary["external_store_v2", Int.self].flatMap {
+        JITWeightsLoading(rawValue: $0)
+      }
+      ?? .automatic
+    DeviceCapability.isPartialOffloadPreferred.store(
+      externalStore == .alwaysPartially, ordering: .releasing)
+    externalStoreSubscription = workspace.dictionary.subscribe("external_store_v2", of: Int.self) {
       value in
       queue.async { [weak self] in
         guard let self = self else { return }
@@ -1066,10 +1079,13 @@ extension ModelPreloader {
     weightsCache.maxTotalCacheSize = UInt64(max(0, value)) * 8 * 1_024 * 1_024 * 1_024  // Set it to the right value.
   }
 
-  func updateExternalStore(_ value: Bool?) {
+  func updateExternalStore(_ value: Int?) {
     dispatchPrecondition(condition: .onQueue(queue))
-    guard value != externalStore else { return }
-    externalStore = value
+    let externalStore = value.flatMap { JITWeightsLoading(rawValue: $0) } ?? .automatic
+    DeviceCapability.isPartialOffloadPreferred.store(
+      externalStore == .alwaysPartially, ordering: .releasing)
+    guard externalStore != self.externalStore else { return }
+    self.externalStore = externalStore
     removeAllCache()
     if mode == .preload || mode == .coreml || mode == .unet {
       activeSentinel += 1
@@ -1089,12 +1105,13 @@ extension ModelPreloader {
     version: ModelVersion, scale: DeviceCapability.Scale, variant: SupportVariant,
     injectedControls: Int, suffix: String? = nil, is8BitModel: Bool = false
   ) -> Bool {
-    if let externalStore = externalStore {
-      return externalStore
-        ? DeviceCapability.externalOnDemand(
-          version: version, scale: scale, force: true, suffix: suffix,
-          is8BitModel: is8BitModel) : false
-    } else {
+    switch externalStore {
+    case .alwaysFully:
+      return DeviceCapability.externalOnDemand(
+        version: version, scale: scale, force: true, suffix: suffix, is8BitModel: is8BitModel)
+    case .never:
+      return false
+    case .automatic, .alwaysPartially:
       if DeviceCapability.isLowPerformance {
         return DeviceCapability.externalOnDemand(
           version: version, scale: scale, force: false, suffix: suffix,

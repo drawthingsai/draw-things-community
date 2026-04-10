@@ -495,9 +495,11 @@ public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
 }
 
 public func externalOnDemandPartially(
-  version: ModelVersion, memoryCapacity: MemoryCapacity, externalOnDemand: Bool
+  version: ModelVersion, memoryCapacity: MemoryCapacity, externalOnDemand: Bool,
+  isPartialOffloadPreferred: Bool
 ) -> Bool {
   guard !externalOnDemand else { return false }
+  let memoryCapacity = isPartialOffloadPreferred ? MemoryCapacity.medium : memoryCapacity
   switch memoryCapacity {
   case .high:
     return false
@@ -586,7 +588,8 @@ extension UNetFromNNC {
     var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
     let externalOnDemandPartially = externalOnDemandPartially(
       version: version, memoryCapacity: deviceProperties.memoryCapacity,
-      externalOnDemand: externalOnDemand)
+      externalOnDemand: externalOnDemand,
+      isPartialOffloadPreferred: deviceProperties.isPartialOffloadPreferred)
     let runLoRASeparatelyIsPreferred =
       isQuantizedModel || externalOnDemand || externalOnDemandPartially || isBF16
     let isTeaCacheEnabled = teaCacheConfiguration.threshold > 0

@@ -5136,7 +5136,8 @@ public struct LoRATrainer {
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(
                   isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
-                  cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
+                  cacheUri: URL(fileURLWithPath: NSTemporaryDirectory()),
+                  isPartialOffloadPreferred: false),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(
@@ -5184,7 +5185,8 @@ public struct LoRATrainer {
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(
                   isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
-                  cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
+                  cacheUri: URL(fileURLWithPath: NSTemporaryDirectory()),
+                  isPartialOffloadPreferred: false),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(
@@ -5225,7 +5227,8 @@ public struct LoRATrainer {
                   externalOnDemand: false,
                   deviceProperties: DeviceProperties(
                     isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
-                    cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
+                    cacheUri: URL(fileURLWithPath: NSTemporaryDirectory()),
+                    isPartialOffloadPreferred: false),
                   weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
                 c =
                   unetFixEncoder.vector(
@@ -5252,7 +5255,8 @@ public struct LoRATrainer {
                   externalOnDemand: false,
                   deviceProperties: DeviceProperties(
                     isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
-                    cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
+                    cacheUri: URL(fileURLWithPath: NSTemporaryDirectory()),
+                    isPartialOffloadPreferred: false),
                   weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
                 c =
                   unetFixEncoder.vector(
@@ -5283,7 +5287,8 @@ public struct LoRATrainer {
                 externalOnDemand: false,
                 deviceProperties: DeviceProperties(
                   isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
-                  cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
+                  cacheUri: URL(fileURLWithPath: NSTemporaryDirectory()),
+                  isPartialOffloadPreferred: false),
                 weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
               c =
                 unetFixEncoder.vector(

@@ -578,7 +578,7 @@ public enum LoRAImporter {
         canRunLoRASeparately: false, externalOnDemand: false,
         deviceProperties: DeviceProperties(
           isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
-          cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
+          cacheUri: URL(fileURLWithPath: NSTemporaryDirectory()), isPartialOffloadPreferred: false),
         weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
       for c in cArr {
         c.full(0)

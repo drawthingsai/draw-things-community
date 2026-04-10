@@ -292,10 +292,12 @@ public struct DeviceCapability {
     let urls = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
     return urls.first ?? URL(fileURLWithPath: NSTemporaryDirectory())
   }()
+  public static let isPartialOffloadPreferred = ManagedAtomic(false)
   public static var deviceProperties: DeviceProperties {
     DeviceProperties(
       isFreadPreferred: isFreadPreferred, memoryCapacity: memoryCapacity,
-      isNHWCPreferred: isNHWCPreferred, cacheUri: cacheUri)
+      isNHWCPreferred: isNHWCPreferred, cacheUri: cacheUri,
+      isPartialOffloadPreferred: isPartialOffloadPreferred.load(ordering: .acquiring))
   }
   public static var maxTotalWeightsCacheSize: UInt64 = {
     #if !canImport(Metal)

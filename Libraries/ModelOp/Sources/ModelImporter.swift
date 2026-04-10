@@ -768,7 +768,8 @@ public final class ModelImporter {
           isQuantizedModel: false, canRunLoRASeparately: false, externalOnDemand: false,
           deviceProperties: DeviceProperties(
             isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
-            cacheUri: URL(fileURLWithPath: NSTemporaryDirectory())),
+            cacheUri: URL(fileURLWithPath: NSTemporaryDirectory()), isPartialOffloadPreferred: false
+          ),
           weightsCache: WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA))
         cArr.insert(
           graph.variable(.CPU, .HWC(batchSize, 77, 768), of: FloatType.self),

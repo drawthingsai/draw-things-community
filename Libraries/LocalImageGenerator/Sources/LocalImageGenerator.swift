@@ -3943,7 +3943,8 @@ extension LocalImageGenerator {
     if externalOnDemand
       || externalOnDemandPartially(
         version: modelVersion, memoryCapacity: DeviceCapability.memoryCapacity,
-        externalOnDemand: externalOnDemand)
+        externalOnDemand: externalOnDemand,
+        isPartialOffloadPreferred: DeviceCapability.deviceProperties.isPartialOffloadPreferred)
     {
       TensorData.makeExternalData(for: ModelZoo.filePathForModelDownloaded(file), graph: graph)
       for stageModel in ModelZoo.stageModelsForModel(file) {
@@ -5147,7 +5148,8 @@ extension LocalImageGenerator {
     if externalOnDemand
       || externalOnDemandPartially(
         version: modelVersion, memoryCapacity: DeviceCapability.memoryCapacity,
-        externalOnDemand: externalOnDemand)
+        externalOnDemand: externalOnDemand,
+        isPartialOffloadPreferred: DeviceCapability.deviceProperties.isPartialOffloadPreferred)
     {
       TensorData.makeExternalData(for: ModelZoo.filePathForModelDownloaded(file), graph: graph)
       for stageModel in ModelZoo.stageModelsForModel(file) {
@@ -6567,7 +6569,8 @@ extension LocalImageGenerator {
     if externalOnDemand
       || externalOnDemandPartially(
         version: modelVersion, memoryCapacity: DeviceCapability.memoryCapacity,
-        externalOnDemand: externalOnDemand)
+        externalOnDemand: externalOnDemand,
+        isPartialOffloadPreferred: DeviceCapability.deviceProperties.isPartialOffloadPreferred)
     {
       TensorData.makeExternalData(for: ModelZoo.filePathForModelDownloaded(file), graph: graph)
       for stageModel in ModelZoo.stageModelsForModel(file) {
@@ -7463,7 +7466,8 @@ extension LocalImageGenerator {
     if externalOnDemand
       || externalOnDemandPartially(
         version: modelVersion, memoryCapacity: DeviceCapability.memoryCapacity,
-        externalOnDemand: externalOnDemand)
+        externalOnDemand: externalOnDemand,
+        isPartialOffloadPreferred: DeviceCapability.deviceProperties.isPartialOffloadPreferred)
     {
       TensorData.makeExternalData(for: ModelZoo.filePathForModelDownloaded(file), graph: graph)
       for stageModel in ModelZoo.stageModelsForModel(file) {

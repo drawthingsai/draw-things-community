@@ -90,13 +90,16 @@ public struct DeviceProperties {
   public var memoryCapacity: MemoryCapacity
   public var isNHWCPreferred: Bool
   public var cacheUri: URL
+  public var isPartialOffloadPreferred: Bool
   public init(
-    isFreadPreferred: Bool, memoryCapacity: MemoryCapacity, isNHWCPreferred: Bool, cacheUri: URL
+    isFreadPreferred: Bool, memoryCapacity: MemoryCapacity, isNHWCPreferred: Bool, cacheUri: URL,
+    isPartialOffloadPreferred: Bool
   ) {
     self.isFreadPreferred = isFreadPreferred
     self.memoryCapacity = memoryCapacity
     self.isNHWCPreferred = isNHWCPreferred
     self.cacheUri = cacheUri
+    self.isPartialOffloadPreferred = isPartialOffloadPreferred
   }
 }
 
