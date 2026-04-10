@@ -2995,7 +2995,7 @@ public struct LoRATrainer {
 
   private func trainQwen(
     graph: DynamicGraph, firstStage: FirstStage<FloatType>, sessionStore: DynamicGraph.Store,
-    resumingLoRAFile: (String, Int)?,
+    resumingLoRAFile: (String, Int)?, zeroCaption: ProcessedInput,
     dataFrame: DataFrame, trainingSteps: Int, warmupSteps: Int, gradientAccumulationSteps: Int,
     rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: ClosedRange<Float>,
     stepsBetweenRestarts: Int, seed: UInt32, trainableKeys: [String],
@@ -3053,7 +3053,7 @@ public struct LoRATrainer {
     let latentsWidth = Int(scale.widthScale) * 8
     let latentsHeight = Int(scale.heightScale) * 8
     let trainingTokenLength = max(
-      dataFrame["0", ProcessedInput.self].map(\.tokenLength).max() ?? 0, 1)
+      zeroCaption.tokenLength, dataFrame["0", ProcessedInput.self].map(\.tokenLength).max() ?? 0)
     let rotaryEmbeddingHeads = 3_072 / 128
     let dit: ModelBuilder<(width: Int, height: Int)> = ModelBuilder { size, tensors in
       let textLength = tensors[tensors.count - 719].shape[1]
@@ -3200,7 +3200,7 @@ public struct LoRATrainer {
     var batch = [
       (
         loadedImagePath: String, textEncodingPath: String, textEncoding: Tensor<FloatType>,
-        timestep: Float, guidance: Float, captionDropout: Bool
+        tokenLength: Int, timestep: Float, guidance: Float, captionDropout: Bool
       )
     ]()
     var sfmt = SFMT(seed: UInt64(seed))
@@ -3243,15 +3243,18 @@ public struct LoRATrainer {
         }
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         let guidanceEmbed = (Float.random(in: guidanceEmbed, using: &sfmt) * 10).rounded() / 10
+        let tokenLength = captionDropout ? zeroCaption.tokenLength : input.tokenLength
         batch.append(
           (
-            loadedImagePath, textEncodingPath, textEncoding, Float(timestep), guidanceEmbed,
+            loadedImagePath, textEncodingPath, textEncoding, tokenLength, Float(timestep),
+            guidanceEmbed,
             captionDropout
           ))
         if batch.count == 32 {
+          let batchTokenLength = max(batch.map(\.tokenLength).max() ?? 0, 1)
           let conditions = encodeQwenFixed(
             graph: graph, externalData: externalData, isBF16: isBF16,
-            tokenLength: trainingTokenLength,
+            tokenLength: batchTokenLength,
             activationQkScaling: activationQkScaling,
             activationProjScaling: activationProjScaling,
             activationFfnProjUpScaling: activationFfnProjUpScaling,
@@ -3280,7 +3283,7 @@ public struct LoRATrainer {
             }
             let rotaryConstant = cachedRotaryPositionEmbedder.QwenImageRotaryPositionEmbedding(
               graph: graph, height: latentsHeight / 2, width: latentsWidth / 2,
-              tokenLength: trainingTokenLength, referenceSizes: [], channels: 128,
+              tokenLength: item.tokenLength, referenceSizes: [], channels: 128,
               heads: rotaryEmbeddingHeads)
             // Build condition1 from the properly-typed tuple components:
             // - context: FloatType
@@ -3288,7 +3291,8 @@ public struct LoRATrainer {
             // - shiftScale: FloatType
             let contextConditions: [DynamicGraph.AnyTensor] = conditions.context.map {
               let shape = $0.shape
-              return graph.constant($0[j..<(j + 1), 0..<shape[1], 0..<shape[2]].copied())
+              return graph.constant(
+                $0[j..<(j + 1), 0..<min(shape[1], item.tokenLength), 0..<shape[2]].copied())
             }
             let adaLNConditions: [DynamicGraph.AnyTensor] = conditions.adaLNChunks.map {
               let shape = $0.shape
@@ -3627,7 +3631,7 @@ public struct LoRATrainer {
     var batch = [
       (
         loadedImagePath: String, textEncodingPath: String, textEncoding: Tensor<FloatType>,
-        timestep: Float, captionDropout: Bool
+        tokenLength: Int, timestep: Float, captionDropout: Bool
       )
     ]()
     var sfmt = SFMT(seed: UInt64(seed))
@@ -3670,13 +3674,16 @@ public struct LoRATrainer {
             ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
         }
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
+        let tokenLength = captionDropout ? zeroCaption.tokenLength : input.tokenLength
         batch.append(
           (
-            loadedImagePath, textEncodingPath, textEncoding, Float(timestep), captionDropout
+            loadedImagePath, textEncodingPath, textEncoding, tokenLength, Float(timestep),
+            captionDropout
           ))
         if batch.count == 32 {
+          let batchTokenLength = max(batch.map(\.tokenLength).max() ?? 0, 1)
           let conditions = encodeZImageFixed(
-            graph: graph, externalData: externalData, tokenLength: trainingTokenLength,
+            graph: graph, externalData: externalData, tokenLength: batchTokenLength,
             batch: batch.map { ($0.textEncoding, $0.timestep) })
           for (j, item) in batch.enumerated() {
             guard let tensor = sessionStore.read(item.loadedImagePath) else { continue }
@@ -3685,9 +3692,11 @@ public struct LoRATrainer {
             let sampleH = latentsHeight / 2
             let sampleW = latentsWidth / 2
             let sampleImagePaddedLength = (sampleH * sampleW + 31) / 32 * 32 - sampleH * sampleW
+            let sampleRoundUpTokenLength = (item.tokenLength + 31) / 32 * 32
             let rotaryConstant =
               cachedRotaryPositionEmbedder.ZImageRotaryPositionEmbedding(
-                graph: graph, height: sampleH, width: sampleW, tokenLength: roundUpTokenLength,
+                graph: graph, height: sampleH, width: sampleW,
+                tokenLength: sampleRoundUpTokenLength,
                 imagePaddedLength: sampleImagePaddedLength, heads: 3_840 / 128)
             let imagePadCondition: [DynamicGraph.AnyTensor]
             if sampleImagePaddedLength > 0 {
@@ -3710,7 +3719,8 @@ public struct LoRATrainer {
             let rotaryConditions: [DynamicGraph.AnyTensor] = [rotaryConstant]
             let contextConditions = conditions.context.map {
               let shape = $0.shape
-              return graph.constant($0[j..<(j + 1), 0..<shape[1], 0..<shape[2]].copied())
+              return graph.constant(
+                $0[j..<(j + 1), 0..<min(shape[1], sampleRoundUpTokenLength), 0..<shape[2]].copied())
             }
             let adaLNConditions = conditions.adaLNChunks.map { tensor in
               let shape = tensor.shape
@@ -3942,7 +3952,8 @@ public struct LoRATrainer {
       if version == .qwenImage {
         trainQwen(
           graph: graph, firstStage: firstStage, sessionStore: sessionStore,
-          resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, trainingSteps: trainingSteps,
+          resumingLoRAFile: resumingLoRAFile, zeroCaption: zeroCaption, dataFrame: dataFrame,
+          trainingSteps: trainingSteps,
           warmupSteps: warmupSteps, gradientAccumulationSteps: gradientAccumulationSteps,
           rankOfLoRA: rankOfLoRA, scaleOfLoRA: scaleOfLoRA, unetLearningRate: unetLearningRate,
           stepsBetweenRestarts: stepsBetweenRestarts, seed: seed, trainableKeys: trainableKeys,
