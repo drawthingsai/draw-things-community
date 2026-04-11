@@ -16,7 +16,7 @@ struct Quantizer: ParsableCommand {
       v1, v2, kandinsky2.1, sdxl_base_v0.9, sdxl_refiner_v0.9, ssd_1b, svd_i2v,
       wurstchen_v3.0_stage_c, wurstchen_v3.0_stage_b, sd3, pixart, auraflow,
       flux1, sd3_large, hunyuan_video, wan_v2.1_1.3b, wan_v2.1_14b, hidream_i1,
-      qwen_image, wan_v2.2_5b, z_image, flux2, flux2_9b, flux2_4b, ltx2, ltx2.3
+      qwen_image, wan_v2.2_5b, z_image, flux2, flux2_9b, flux2_4b, cosmos2.5_2b, ltx2, ltx2.3
       """)
   var modelVersion: String
 
@@ -219,6 +219,22 @@ struct Quantizer: ParsableCommand {
                   } else {
                     $0.write(key, tensor: fp16, codec: [.q6p, .ezm7])
                   }
+                }
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
+          case .cosmos2_5_2b:
+            if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-")
+              || key.contains("_linear_")
+            {
+              $0.write(key, tensor: fp16)
+            } else {
+              if squeezedDims > 1 {
+                if shape.count == 4 {  // Convolution.
+                  $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+                } else {
+                  $0.write(key, tensor: fp16, codec: [.q6p, .ezm7])
                 }
               } else {
                 $0.write(key, tensor: fp16, codec: .ezm7)

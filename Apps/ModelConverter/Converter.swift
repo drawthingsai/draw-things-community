@@ -146,6 +146,12 @@ struct Converter: ParsableCommand {
       fatalError()
     case .qwenImage:
       fatalError()
+    case .cosmos2_5_2b:
+      textEncoder = "qwen_3_0.6b_f16.ckpt"
+      clipEncoder = "\(fileName)_f16.ckpt"
+      if autoencoder == nil {
+        autoencoder = "qwen_image_vae_f16.ckpt"
+      }
     case .zImage:
       fatalError()
     case .flux2, .flux2_9b, .flux2_4b:
