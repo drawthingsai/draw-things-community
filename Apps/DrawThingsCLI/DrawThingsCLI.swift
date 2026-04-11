@@ -1412,7 +1412,7 @@ private func defaultImportScale(for version: ModelVersion, artifactFileName: Str
     return 8
   case .sdxlBase, .sdxlRefiner, .ssd1b, .hiDreamI1, .qwenImage, .zImage, .wurstchenStageC,
     .wurstchenStageB, .sd3, .sd3Large, .auraflow, .flux1, .flux2, .flux2_9b, .flux2_4b,
-    .ltx2, .ltx2_3:
+    .cosmos2_5_2b, .ltx2, .ltx2_3:
     return 16
   case .pixart:
     return artifactFileName.contains("512") ? 8 : 16
@@ -1435,7 +1435,7 @@ private func validateCustomTextEncoderSupport(
     return
   case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
     .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
-    .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+    .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
     throw ValidationError(
       "Custom text encoder import is not supported for \(ModelZoo.humanReadableNameForVersion(version))."
     )
@@ -1460,7 +1460,7 @@ private func projectedImportedOutputFiles(
       files.append("\(modelName)_open_clip_vit_bigg14_f16.ckpt")
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
       .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
-      .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+      .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
       break
     }
   }

@@ -278,6 +278,8 @@ public struct TextualInversionZoo: DownloadZoo {
       count = 12288
     case .flux2_4b:
       count = 7680
+    case .cosmos2_5_2b:
+      count = 1024
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ltx2, .ltx2_3:
       fatalError()
@@ -311,6 +313,8 @@ public struct TextualInversionZoo: DownloadZoo {
         case .gemma3:
           tensorName = "string_to_param_gemma3"
         }
+      case .cosmos2_5_2b:
+        tensorName = "string_to_param_qwen3"
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
         .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
         .ltx2_3:

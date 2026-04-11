@@ -59,6 +59,8 @@ public struct ModelZoo: DownloadZoo {
       return "FLUX.2 9B"
     case .flux2_4b:
       return "FLUX.2 4B"
+    case .cosmos2_5_2b:
+      return "Cosmos 2.5 2B"
     case .ltx2:
       return "LTX-2"
     case .ltx2_3:
@@ -786,6 +788,10 @@ public struct ModelZoo: DownloadZoo {
       "ad7fb5cb2fb935bfc33cb884868ff2319521e3f1ab375d9b9dad288fd0c73788",
     "hidream_i1_full_i8x.ckpt":
       "cf53865d9015ac08fd9e64c990160cf191b6336375bef169e669abcb5d861431",
+    "qwen_3_0.6b_f16.ckpt":
+      "357a2fd44e7ca09058d05b32d9791a5d1fcf2d25473bcfd24b7f5c09c0101c4d",
+    "anima_preview_3_f16.ckpt":
+      "534b3bd05a744796bddcaf4673e36ebfc950c13bcefa530767d705e407a77c73",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -1141,6 +1147,14 @@ public struct ModelZoo: DownloadZoo {
       note:
         "[FLUX.2 [klein] 4B Base](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B) is a 4 billion parameter rectified flow transformer capable of generating, editing and combining images based on text instructions.",
       copyright: "© 2026 Black Forest Labs"
+    ),
+    Specification(
+      name: "Anima Preview 3", file: "anima_preview_3_f16.ckpt", prefix: "",
+      version: .cosmos2_5_2b, defaultScale: 16, textEncoder: "qwen_3_0.6b_f16.ckpt",
+      autoencoder: "qwen_image_vae_f16.ckpt", clipEncoder: "anima_preview_3_f16.ckpt",
+      objective: .u(conditionScale: 1),
+      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1)),
+      paddedTextEncodingLength: 512
     ),
     Specification(
       name: "Qwen Image 1.0", file: "qwen_image_1.0_q8p.ckpt", prefix: "",
@@ -2596,6 +2610,8 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .pixart:
       return .epsilon
+    case .cosmos2_5_2b:
+      return .u(conditionScale: 1)
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
       return .u(conditionScale: 1000)
@@ -2610,8 +2626,8 @@ public struct ModelZoo: DownloadZoo {
     switch specification.version {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b,
-      .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-      .ltx2_3:
+      .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b,
+      .cosmos2_5_2b, .ltx2, .ltx2_3:
       return .timestep
     case .svdI2v:
       return .noise
@@ -2640,6 +2656,8 @@ public struct ModelZoo: DownloadZoo {
       return .edm(.init(sigmaMax: 700.0))
     case .wurstchenStageC, .wurstchenStageB:
       return .edm(.init(sigmaMin: 0.01, sigmaMax: 99.995))
+    case .cosmos2_5_2b:
+      return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1))
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
@@ -2665,7 +2683,7 @@ public struct ModelZoo: DownloadZoo {
       return 128
     case .hunyuanVideo, .qwenImage, .zImage, .flux2, .ltx2, .ltx2_3:
       return 0
-    case .wan21_1_3b, .wan21_14b, .wan22_5b, .flux2_9b, .flux2_4b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b, .flux2_9b, .flux2_4b, .cosmos2_5_2b:
       return 512
     }
   }
@@ -2702,7 +2720,7 @@ public struct ModelZoo: DownloadZoo {
       return (nil, nil, 0.3611, 0.11590, nil, nil)
     case .hunyuanVideo:
       return (nil, nil, 0.476986, nil, nil, nil)
-    case .wan21_1_3b, .wan21_14b, .qwenImage:
+    case .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b:
       return (
         [
           -0.7571, -0.7089, -0.9113, 0.1075, -0.1745, 0.9653, -0.1517, 1.5508,
@@ -2995,7 +3013,8 @@ public struct ModelZoo: DownloadZoo {
     switch specification.version {
     case .v1, .v2, .svdI2v, .ssd1b, .sdxlBase, .sdxlRefiner, .pixart, .auraflow, .kandinsky21,
       .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .flux1, .hiDreamI1, .zImage,
-      .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .wan22_5b, .flux2, .flux2_9b, .flux2_4b:
+      .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .wan22_5b, .flux2, .flux2_9b, .flux2_4b,
+      .cosmos2_5_2b:
       return 24_000
     case .ltx2:
       return 24_000
@@ -3055,7 +3074,7 @@ public struct ModelZoo: DownloadZoo {
       return 25
     case .v1, .v2, .auraflow, .flux1, .hiDreamI1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
       .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .zImage, .flux2, .flux2_9b,
-      .flux2_4b:
+      .flux2_4b, .cosmos2_5_2b:
       return 30
     }
   }
@@ -3078,7 +3097,7 @@ public struct ModelZoo: DownloadZoo {
       switch specification.version {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .qwenImage,
-        .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+        .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
         return nil
       case .flux1:
         return (4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01)
@@ -3156,6 +3175,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 13 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
       case .qwenImage:
         return fileSize < 17 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
+      case .cosmos2_5_2b:
+        return fileSize < 5 * 1_024 * 1_024 * 1_024
       case .hiDreamI1:
         return fileSize < 13 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
       case .zImage:
@@ -3216,6 +3237,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 15 * 1_024 * 1_024 * 1_024
       case .qwenImage:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
+      case .cosmos2_5_2b:
+        return fileSize < 3 * 1_024 * 1_024 * 1_024
       case .hiDreamI1:
         return fileSize < 17 * 1_024 * 1_024 * 1_024
       case .zImage:
@@ -3344,7 +3367,7 @@ extension ModelZoo {
     guard
       version == .flux1 || version == .sd3 || version == .sd3Large || version == .hiDreamI1
         || version == .qwenImage || version == .zImage || version == .flux2 || version == .flux2_9b
-        || version == .flux2_4b
+        || version == .flux2_4b || version == .cosmos2_5_2b
     else { return false }
     if isConsistencyModel {
       return false
@@ -3361,7 +3384,7 @@ extension ModelZoo {
   public static func isCLIPSkipAvailable(_ version: ModelVersion) -> Bool {
     switch version {
     case .pixart, .auraflow, .wan21_14b, .wan21_1_3b, .qwenImage, .svdI2v, .wan22_5b, .zImage,
-      .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+      .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
       return false
     case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .v1, .v2, .flux1, .hunyuanVideo, .hiDreamI1,
       .ssd1b, .kandinsky21, .wurstchenStageB, .wurstchenStageC:
@@ -3423,8 +3446,8 @@ extension ModelZoo {
       return true
     }
     // All uses Wan VAE.
-    if [.wan21_1_3b, .wan21_14b, .qwenImage].contains(version)
-      && [.wan21_1_3b, .wan21_14b, .qwenImage].contains(refinerVersion)
+    if [.wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b].contains(version)
+      && [.wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b].contains(refinerVersion)
     {
       return true
     }

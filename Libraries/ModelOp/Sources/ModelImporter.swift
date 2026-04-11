@@ -462,7 +462,7 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .wan21_1_3b, .wan21_14b, .wan22_5b:
         throw Error.noTextEncoder
-      case .qwenImage:
+      case .qwenImage, .cosmos2_5_2b:
         throw Error.noTextEncoder
       case .hiDreamI1:
         throw Error.noTextEncoder
@@ -543,7 +543,7 @@ public final class ModelImporter {
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
-            .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+            .cosmos2_5_2b, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -583,8 +583,8 @@ public final class ModelImporter {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-              .ltx2_3:
+              .hiDreamI1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .flux2, .flux2_9b,
+              .flux2_4b, .ltx2, .ltx2_3:
               fatalError()
             }
           }
@@ -736,7 +736,7 @@ public final class ModelImporter {
     case .flux2_4b:
       conditionalLength = 7680
       batchSize = 1
-    case .ltx2, .ltx2_3:
+    case .ltx2, .ltx2_3, .cosmos2_5_2b:
       fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
@@ -788,8 +788,8 @@ public final class ModelImporter {
         case .svdI2v:
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-          .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
-          .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+          .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .cosmos2_5_2b,
+          .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -957,7 +957,7 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .ltx2, .ltx2_3:
+      case .ltx2, .ltx2_3, .cosmos2_5_2b:
         fatalError()
       case .kandinsky21, .v1, .v2:
         break
@@ -1188,7 +1188,7 @@ public final class ModelImporter {
           timesteps: 1,
           channels: 3072, layers: (5, 20), numberOfReferenceImages: 0, guidanceEmbed: true,
           usesFlashAttention: .scale1, kvCache: false)
-      case .ltx2, .ltx2_3:
+      case .ltx2, .ltx2_3, .cosmos2_5_2b:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
         fatalError()
@@ -1324,7 +1324,7 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .ltx2, .ltx2_3:
+      case .ltx2, .ltx2_3, .cosmos2_5_2b:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
@@ -1517,7 +1517,8 @@ public final class ModelImporter {
             modelPrefix = "stage_c"
             modelPrefixFixed = "stage_c_fixed"
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
-            .wan22_5b, .qwenImage, .auraflow, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+            .wan22_5b, .qwenImage, .cosmos2_5_2b, .auraflow, .zImage, .flux2, .flux2_9b,
+            .flux2_4b, .ltx2, .ltx2_3:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1795,7 +1796,7 @@ public final class ModelImporter {
           if $0.keys.count != 292 && $0.keys.count != 294 {
             throw Error.tensorWritesFailed
           }
-        case .ltx2, .ltx2_3:
+        case .ltx2, .ltx2_3, .cosmos2_5_2b:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()
@@ -2066,7 +2067,7 @@ extension ModelImporter {
       }
     case .wurstchenStageC:
       textEncoder = nil
-    case .kandinsky21, .wurstchenStageB:
+    case .kandinsky21, .wurstchenStageB, .cosmos2_5_2b:
       fatalError()
     }
 
@@ -2334,7 +2335,7 @@ extension ModelImporter {
       }
       // For FLUX.2, the hires fix trigger scale is 2 of the finetune scale.
       specification.hiresFixScale = finetuneScale * 2
-    case .ltx2, .ltx2_3:
+    case .ltx2, .ltx2_3, .cosmos2_5_2b:
       fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()

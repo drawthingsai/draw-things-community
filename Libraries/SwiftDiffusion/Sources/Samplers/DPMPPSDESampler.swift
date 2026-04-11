@@ -524,7 +524,7 @@ extension DPMPPSDESampler: Sampler {
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           conditions: conditions, referenceImageCount: referenceImageCount,
           version: currentModelVersion, modifier: modifier, isCfgEnabled: isCfgEnabled)
-        let et: DynamicGraph.Tensor<FloatType>
+        var et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
           let condAugFrames = condAugFrames
         {
@@ -632,7 +632,8 @@ extension DPMPPSDESampler: Sampler {
           var denoised: DynamicGraph.Tensor<FloatType>
           switch discretization.objective {
           case .u(_):
-            denoised = Functional.add(left: x, right: et, leftScalar: 1, rightScalar: Float(-sigma))
+            denoised = Functional.add(
+              left: x, right: et, leftScalar: 1, rightScalar: Float(-sigma))
           case .v:
             denoised = Functional.add(
               left: x, right: et, leftScalar: Float(1.0 / (sigma * sigma + 1)),
@@ -692,7 +693,7 @@ extension DPMPPSDESampler: Sampler {
           case .edm(let sigmaData):
             input = Float(1.0 / (sigma * sigma + sigmaData * sigmaData).squareRoot()) * x2
           }
-          let et: DynamicGraph.Tensor<FloatType>
+          var et: DynamicGraph.Tensor<FloatType>
           let timestep: Float
           switch conditioning {
           case .noise:

@@ -1,5 +1,6 @@
 import Collections
 import DiffusionMappings
+import Foundation
 import NNC
 import WeightsCache
 
@@ -2835,6 +2836,154 @@ extension TextEncoder {
     return ([newC], [textModel])
   }
 
+  private func encodeAnima(
+    images: [DynamicGraph.Tensor<FloatType>],
+    tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
+    mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
+    tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
+    modifier: SamplerModifier, textModels existingTextModels: [Model?]
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    precondition(tokens.count >= 2)
+    precondition(filePaths.count >= 2)
+    let graph = tokens[0].graph
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || deviceProperties.memoryCapacity != .high
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    let paddedSourceTokenLength = tokens[0].shape[0] / 2
+    var sourceTokenLengthUncond: Int? = nil
+    var sourceTokenLengthCond: Int? = nil
+    for i in (0..<paddedSourceTokenLength).reversed() {
+      if sourceTokenLengthUncond == nil && tokens[0][i] != 151643 {
+        sourceTokenLengthUncond = i + 1
+      }
+      if sourceTokenLengthCond == nil && tokens[0][i + paddedSourceTokenLength] != 151643 {
+        sourceTokenLengthCond = i + 1
+      }
+      if sourceTokenLengthUncond != nil && sourceTokenLengthCond != nil {
+        break
+      }
+    }
+    let sourceTokenLengthUncondResolved = max(sourceTokenLengthUncond ?? 1, 1)
+    let sourceTokenLengthCondResolved = max(sourceTokenLengthCond ?? 1, 1)
+    let sourceTokenLength = max(sourceTokenLengthUncondResolved, sourceTokenLengthCondResolved)
+    var sourceTokensCPU = graph.variable(
+      .CPU, format: .NHWC, shape: [2 * sourceTokenLength], of: Int32.self)
+    sourceTokensCPU[0..<sourceTokenLength] =
+      DynamicGraph.Tensor<Int32>(tokens[0])[0..<sourceTokenLength]
+    sourceTokensCPU[sourceTokenLength..<(2 * sourceTokenLength)] =
+      DynamicGraph.Tensor<Int32>(tokens[0])[
+        paddedSourceTokenLength..<(paddedSourceTokenLength + sourceTokenLength)]
+    let sourceTokensGPU = sourceTokensCPU.toGPU(0)
+    let textModel = Qwen3(
+      FloatType.self, vocabularySize: 151_936,
+      maxLength: sourceTokenLength, width: 1_024,
+      tokenLength: sourceTokenLength,
+      layers: 28, MLP: 3_072, heads: 16, outputHiddenStates: [],
+      noFinalNormalizedOutput: false, batchSize: 2, usesFlashAttention: usesFlashAttention)
+    var causalAttentionMask = Tensor<FloatType>(
+      Array(repeating: 0, count: sourceTokenLength * sourceTokenLength * 2), .CPU,
+      .NHWC(2, 1, sourceTokenLength, sourceTokenLength)
+    )
+    for i in 0..<sourceTokenLength {
+      let tokenStart0 = min(sourceTokenLengthUncondResolved, i + 1)
+      if tokenStart0 < sourceTokenLength {
+        for j in tokenStart0..<sourceTokenLength {
+          causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+        }
+      }
+      let tokenStart1 = min(sourceTokenLengthCondResolved, i + 1)
+      if tokenStart1 < sourceTokenLength {
+        for j in tokenStart1..<sourceTokenLength {
+          causalAttentionMask[1, 0, i, j] = -FloatType.greatestFiniteMagnitude
+        }
+      }
+    }
+    let sourceRotaryGPU = graph.variable(
+      Qwen3RotaryEmbedding(sequenceLength: sourceTokenLength, of: FloatType.self).toGPU(0))
+    let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
+    textModel.compile(inputs: [sourceTokensGPU, sourceRotaryGPU, causalAttentionMaskGPU])
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        try! store.read(
+          "text_model", model: textModel, strict: true,
+          codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData]
+        )
+      }
+    }
+    let sourceHiddenStates = textModel(
+      inputs: sourceTokensGPU, [sourceRotaryGPU, causalAttentionMaskGPU]
+    )[0].as(
+      of: FloatType.self
+    ).reshaped(.WC(2 * sourceTokenLength, 1_024))
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
+
+    let paddedTargetTokenLength = tokens[1].shape[0] / 2
+    var targetTokenLengthUncond: Int? = nil
+    var targetTokenLengthCond: Int? = nil
+    for i in (0..<paddedTargetTokenLength).reversed() {
+      if targetTokenLengthUncond == nil && tokens[1][i] != 0 {
+        targetTokenLengthUncond = i + 1
+      }
+      if targetTokenLengthCond == nil && tokens[1][i + paddedTargetTokenLength] != 0 {
+        targetTokenLengthCond = i + 1
+      }
+      if targetTokenLengthUncond != nil && targetTokenLengthCond != nil {
+        break
+      }
+    }
+    let targetTokenLengthUncondResolved = max(targetTokenLengthUncond ?? 1, 1)
+    let targetTokenLengthCondResolved = max(targetTokenLengthCond ?? 1, 1)
+    let targetTokenLength = max(targetTokenLengthUncondResolved, targetTokenLengthCondResolved)
+    tokenLengthUncond = targetTokenLengthUncondResolved
+    tokenLengthCond = targetTokenLengthCondResolved
+    let (_, adapter) = AnimaLLMAdapter(
+      batchSize: 2, tokenLength: targetTokenLength, contextLength: sourceTokenLength,
+      usesFlashAttention: usesFlashAttention)
+    var targetTokensCPU = graph.variable(
+      .CPU, format: .NHWC, shape: [2 * targetTokenLength], of: Int32.self)
+    targetTokensCPU[0..<targetTokenLength] =
+      DynamicGraph.Tensor<Int32>(tokens[1])[0..<targetTokenLength]
+    targetTokensCPU[targetTokenLength..<(2 * targetTokenLength)] =
+      DynamicGraph.Tensor<Int32>(tokens[1])[
+        paddedTargetTokenLength..<(paddedTargetTokenLength + targetTokenLength)]
+    let targetTokensGPU = targetTokensCPU.toGPU(0)
+    let targetRotaryGPU = graph.variable(
+      Tensor<FloatType>(
+        from: AnimaRotaryPositionEmbedding(sequenceLength: targetTokenLength)
+      ).toGPU(0))
+    let sourceAdapterRotaryGPU = graph.variable(
+      Tensor<FloatType>(
+        from: AnimaRotaryPositionEmbedding(sequenceLength: sourceTokenLength)
+      ).toGPU(0))
+    adapter.compile(
+      inputs: [sourceHiddenStates, targetTokensGPU, targetRotaryGPU, sourceAdapterRotaryGPU])
+    graph.openStore(
+      filePaths[1], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[1])
+    ) { store in
+      store.read(
+        "llm_adapter", model: adapter, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+    }
+    let context = adapter(
+      inputs: sourceHiddenStates, [targetTokensGPU, targetRotaryGPU, sourceAdapterRotaryGPU]
+    )[0].as(of: FloatType.self)
+    var contextTensor = graph.variable(
+      .GPU(0), .HWC(2, paddedTargetTokenLength, 1_024), of: FloatType.self)
+    contextTensor.full(0)
+    contextTensor[0..<2, 0..<targetTokenLength, 0..<1_024] =
+      context.reshaped(.HWC(2, targetTokenLength, 1_024))
+    if sourceTokenLengthUncond == nil {
+      contextTensor[0..<1, 0..<paddedTargetTokenLength, 0..<1_024].full(0)
+    }
+    return ([contextTensor], [textModel, adapter])
+  }
+
   private func encodeLTX2(
     images: [DynamicGraph.Tensor<FloatType>],
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
@@ -3101,6 +3250,12 @@ extension TextEncoder {
         injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
         modifier: modifier, textModels: existingTextModels)
+    case .cosmos2_5_2b:
+      return encodeAnima(
+        images: images, tokens: tokens, positions: positions, mask: mask,
+        injectedEmbeddings: injectedEmbeddings,
+        tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
+        modifier: modifier, textModels: existingTextModels)
     case .ltx2, .ltx2_3:
       return encodeLTX2(
         images: images, tokens: tokens, positions: positions, mask: mask,
@@ -3219,7 +3374,8 @@ extension TextEncoder {
           ).0
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
+        .ltx2, .ltx2_3:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -3257,7 +3413,7 @@ extension TextEncoder {
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                   .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2,
-                  .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+                  .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -3297,7 +3453,7 @@ extension TextEncoder {
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                 .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2,
-                .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+                .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
                 fatalError()
               }
               return .continue(name)

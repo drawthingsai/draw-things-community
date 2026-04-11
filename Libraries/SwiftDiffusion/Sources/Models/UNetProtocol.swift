@@ -1,6 +1,7 @@
 import Atomics
 import Collections
 import DiffusionMappings
+import Foundation
 import NNC
 import WeightsCache
 
@@ -120,7 +121,8 @@ extension UNetProtocol {
             maxPeriod: 10_000)
         ).toGPU(0))
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b,
+      .cosmos2_5_2b, .ltx2, .ltx2_3:
       return nil
     case .wurstchenStageC:
       let rTimeEmbed = rEmbedding(
@@ -271,6 +273,15 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
           ].copied()
         }
       }
+  case .cosmos2_5_2b:
+    return conditions[0..<1]
+      + conditions[1..<(1 + CosmosFixedTimeConditionCount)].map {
+        let shape = $0.shape
+        return DynamicGraph.Tensor<Float>($0)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      }
+      + conditions[(1 + CosmosFixedTimeConditionCount)..<conditions.count]
   case .flux2, .flux2_9b, .flux2_4b:
     if modifier == .kontextKv && referenceImageCount > 0 {
       let cachedKVCount: Int
@@ -509,7 +520,7 @@ public func externalOnDemandPartially(
       .wurstchenStageB, .sd3, .pixart, .auraflow, .wan21_1_3b, .wan22_5b:
       return false
     case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .wan21_14b, .qwenImage, .zImage, .flux2,
-      .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+      .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
       return true
     }
   }
@@ -1482,6 +1493,23 @@ extension UNetFromNNC {
             ).1
           })
       }
+    case .cosmos2_5_2b:
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
+      tileScaleFactor = 8
+      didRunLoRASeparately = false
+      unet = ModelBuilderOrModel.modelBuilder(
+        ModelBuilder {
+          let textLength = $0[2 + CosmosFixedTimeConditionCount].shape[1]
+          return Cosmos(
+            batchSize: $0[0].shape[0], latentHeight: tiledHeight, latentWidth: tiledWidth,
+            textLength: textLength, usesFlashAttention: useFlashAttention != .none
+          ).1
+        })
     case .hiDreamI1:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -1678,7 +1706,7 @@ extension UNetFromNNC {
         c.append(contentsOf: injectedIPAdapters)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-        .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+        .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
         fatalError()
       }
     }
@@ -1737,7 +1765,8 @@ extension UNetFromNNC {
     case .wurstchenStageC:
       modelKey = "stage_c"
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
+      .ltx2, .ltx2_3:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -1855,6 +1884,11 @@ extension UNetFromNNC {
             case .flux2, .flux2_9b, .flux2_4b:
               return [Int: Int](
                 uniqueKeysWithValues: (0..<(8 + 48)).map {
+                  return ($0, $0)
+                })
+            case .cosmos2_5_2b:
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<28).map {
                   return ($0, $0)
                 })
             case .ltx2, .ltx2_3:
@@ -2309,6 +2343,18 @@ extension UNetFromNNC {
             tokenEncoding
           return finalEncoding
         }
+      case .cosmos2_5_2b:
+        if $0.0 == 0 {
+          let shape = $0.1.shape
+          let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1).reshaped(
+            .NHWC(1, originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+          let h = inputEndYPad / 2 - inputStartYPad / 2
+          let w = inputEndXPad / 2 - inputStartXPad / 2
+          return imageEncoding[
+            0..<1, (inputStartYPad / 2)..<(inputEndYPad / 2),
+            (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[3]
+          ].copied().reshaped(.NHWC(1, h * w, 1, shape[3]))
+        }
       case .ltx2, .ltx2_3:
         if $0.0 == 0 || $0.0 == 2 {
           let shape = $0.1.shape
@@ -2566,6 +2612,25 @@ extension UNetFromNNC {
       }
       unet.compile(inputs: inputs)
       // TODO: TeaCache insert here.
+      return
+    case .cosmos2_5_2b:
+      guard isCfgEnabled else {
+        unet.compile(inputs: inputs)
+        return
+      }
+      let kvStartIndex = 2 + CosmosFixedTimeConditionCount
+      let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
+        let shape = $0.1.shape
+        if $0.0 == 0 {
+          let value = DynamicGraph.Tensor<FloatType>($0.1)
+          return value[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+        } else if $0.0 < kvStartIndex {
+          return $0.1
+        } else {
+          return (($0.0 - kvStartIndex) % 2 == 0) ? $0.1 : nil
+        }
+      }
+      unet.compile(inputs: inputs)
       return
     case .ltx2:
       let firstInput = DynamicGraph.Tensor<FloatType>(inputs[0])
@@ -3397,6 +3462,39 @@ extension UNetFromNNC {
         etCond = unet(inputs: xCond, otherConds)[0].as(of: FloatType.self)
       }
       return Functional.concat(axis: 0, etUncond, etCond)
+    case .cosmos2_5_2b:
+      guard isCfgEnabled else {
+        let et = unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+        return et
+      }
+      let shape = firstInput.shape
+      let kvStartIndex = 1 + CosmosFixedTimeConditionCount
+      let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+        .copied()
+      let uncondInputs: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+        if $0.0 < kvStartIndex {
+          return $0.1
+        } else {
+          return (($0.0 - kvStartIndex) % 2 == 0) ? $0.1 : nil
+        }
+      }
+      let etUncond = unet(inputs: xUncond, uncondInputs)[0].as(of: FloatType.self)
+      etUncond.graph.joined()
+      guard !isCancelled.load(ordering: .acquiring) else {
+        return Functional.concat(axis: 0, etUncond, etUncond)
+      }
+      let xCond = firstInput[
+        (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+      ].copied()
+      let condInputs: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+        if $0.0 < kvStartIndex {
+          return $0.1
+        } else {
+          return (($0.0 - kvStartIndex) % 2 == 1) ? $0.1 : nil
+        }
+      }
+      let etCond = unet(inputs: xCond, condInputs)[0].as(of: FloatType.self)
+      return Functional.concat(axis: 0, etUncond, etCond)
     case .ltx2:
       let graph = firstInput.graph
       var shape = firstInput.shape
@@ -3660,7 +3758,8 @@ extension UNetFromNNC {
     switch version {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
-      .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
+      .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b,
+      .cosmos2_5_2b:
       return (0, 0)
     case .ltx2, .ltx2_3:
       return LTX2ExtractAudioFramesAndHeight(shape)
@@ -3773,7 +3872,7 @@ extension UNetFromNNC {
       tileScaleFactor = 1
     case .auraflow, .pixart, .flux1, .flux2, .flux2_4b, .flux2_9b, .hunyuanVideo, .hiDreamI1,
       .kandinsky21, .qwenImage, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
-      .wan21_14b, .wan21_1_3b, .zImage:
+      .wan21_14b, .wan21_1_3b, .zImage, .cosmos2_5_2b:
       tileScaleFactor = 8
     }
     let tiledWidth =
@@ -4011,7 +4110,7 @@ extension UNetFromNNC {
         c = newC
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-        .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+        .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
         fatalError()
       }
     }
@@ -4044,7 +4143,8 @@ extension UNetFromNNC {
       return x
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
+      .ltx2_3:
       return x
     }
   }
