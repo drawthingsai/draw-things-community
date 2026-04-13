@@ -887,8 +887,8 @@ public struct LoRATrainer {
           textEncoderPath, flags: .readOnly,
           externalStore: TensorData.externalStore(filePath: textEncoderPath)
         ) {
-          try! $0.read(
-            "text_model", model: textModel, strict: true,
+          $0.read(
+            "text_model", model: textModel,
             codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
         }
         for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
@@ -960,7 +960,6 @@ public struct LoRATrainer {
       CLIPTokens: [],
       originalSize: (0, 0), cropTopLeft: (0, 0), targetSize: (0, 0), loadedImagePath: "")
     var stopped = false
-    let isFill = ModelZoo.modifierForModel(model) == .inpainting
     graph.openStore(session) { store in
       graph.withNoGrad {
         var previousImageWidth: Int? = nil
@@ -995,16 +994,6 @@ public struct LoRATrainer {
           encoder = tuple.1
           let imagePath = input.imageUrl.path
           store.write(imagePath, tensor: sample)
-          if isFill {
-            let zeros = graph.variable(
-              .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
-            zeros.full(0)
-            let latentZeros = firstStage.scale(
-              firstStage.sample(zeros, encoder: encoder, cancellation: { _ in }).1
-            )
-            .copied().rawValue.toCPU()
-            store.write("\(imagePath)~latent_zeros", tensor: latentZeros)
-          }
           let (_, tokens, _, _, tokenLengths) = tokenizer.tokenize(
             text: Self.zImagePromptTemplate(input.caption), truncation: true,
             maxLength: paddedTextEncodingLength, paddingToken: nil, addSpecialTokens: false)
@@ -1049,16 +1038,6 @@ public struct LoRATrainer {
               encoder = tuple.1
               let imagePath = input.imageUrl.path
               store.write(imagePath + ":\(i)", tensor: sample)
-              if isFill {
-                let zeros = graph.variable(
-                  .GPU(0), .NHWC(1, imageHeight, imageWidth, 3), of: FloatType.self)
-                zeros.full(0)
-                let latentZeros = firstStage.scale(
-                  firstStage.sample(zeros, encoder: encoder, cancellation: { _ in })
-                    .1
-                ).copied().rawValue.toCPU()
-                store.write("\(imagePath):\(i)~latent_zeros", tensor: latentZeros)
-              }
               if var processedInput = inputMap[imagePath] {
                 processedInput.loadedImagePath = imagePath + ":\(i)"
                 processedInputs.append(processedInput)
@@ -1104,8 +1083,8 @@ public struct LoRATrainer {
           textEncoderPath, flags: .readOnly,
           externalStore: TensorData.externalStore(filePath: textEncoderPath)
         ) {
-          try! $0.read(
-            "text_model", model: textModel, strict: true,
+          $0.read(
+            "text_model", model: textModel,
             codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
         }
         for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
