@@ -860,7 +860,7 @@ public struct LoRATrainer {
       graph.withNoGrad {
         let textModel = Qwen3(
           FloatType.self, vocabularySize: 151_936,
-          maxLength: paddedTextEncodingLength, width: flux2Configuration.textChannels,
+          width: flux2Configuration.textChannels,
           tokenLength: paddedTextEncodingLength, layers: 27, MLP: flux2Configuration.MLP,
           heads: 32, outputHiddenStates: [8, 17, 26], noFinalNormalizedOutput: true,
           batchSize: 1, usesFlashAttention: true)
@@ -1055,8 +1055,7 @@ public struct LoRATrainer {
       graph.withNoGrad {
         let textModel = Qwen3(
           FloatType.self, vocabularySize: 151_936,
-          maxLength: paddedTextEncodingLength, width: 2_560,
-          tokenLength: paddedTextEncodingLength,
+          width: 2_560, tokenLength: paddedTextEncodingLength,
           layers: 35, MLP: 9_728, heads: 32,
           outputHiddenStates: [34], noFinalNormalizedOutput: true,
           batchSize: 1, usesFlashAttention: true)

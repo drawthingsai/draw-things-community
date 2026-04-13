@@ -110,7 +110,7 @@ private func TransformerBlock<T: TensorNumeric & BinaryFloatingPoint>(
 }
 
 private func TextEmbedding<T: TensorNumeric & BinaryFloatingPoint>(
-  _ dataType: T.Type, batchSize: Int, vocabularySize: Int, maxLength: Int, embeddingSize: Int
+  _ dataType: T.Type, batchSize: Int, vocabularySize: Int, embeddingSize: Int
 ) -> Model {
   let tokens = Input()
   let tokenEmbed = Embedding(
@@ -120,7 +120,7 @@ private func TextEmbedding<T: TensorNumeric & BinaryFloatingPoint>(
 }
 
 public func Qwen3<T: TensorNumeric & BinaryFloatingPoint>(
-  _ dataType: T.Type, vocabularySize: Int, maxLength: Int, width: Int, tokenLength: Int,
+  _ dataType: T.Type, vocabularySize: Int, width: Int, tokenLength: Int,
   layers: Int, MLP: Int, heads: Int, outputHiddenStates: [Int], noFinalNormalizedOutput: Bool,
   batchSize: Int, usesFlashAttention: Bool
 ) -> Model {
@@ -128,7 +128,7 @@ public func Qwen3<T: TensorNumeric & BinaryFloatingPoint>(
   let rot = Input()
   let causalAttentionMask = Input()
   let embedding = TextEmbedding(
-    T.self, batchSize: batchSize, vocabularySize: vocabularySize, maxLength: maxLength,
+    T.self, batchSize: batchSize, vocabularySize: vocabularySize,
     embeddingSize: width)
   var out = embedding(tokens).to(.Float32)
   var hiddenStates = [Model.IO]()

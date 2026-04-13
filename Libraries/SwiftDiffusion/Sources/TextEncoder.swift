@@ -2191,8 +2191,7 @@ extension TextEncoder {
     let tokenLength = tokens[0].shape[0] / 2
     let textModel = Qwen3(
       FloatType.self, vocabularySize: 151_936,
-      maxLength: tokenLength, width: 2_560,
-      tokenLength: tokenLength,
+      width: 2_560, tokenLength: tokenLength,
       layers: 35 /* Should be 36, but only 35 is enough for this purpose */, MLP: 9_728, heads: 32,
       outputHiddenStates: [34],
       noFinalNormalizedOutput: true, batchSize: 2, usesFlashAttention: usesFlashAttention)
@@ -2773,8 +2772,7 @@ extension TextEncoder {
     }
     let textModel = Qwen3(
       FloatType.self, vocabularySize: 151_936,
-      maxLength: tokenLength, width: channels,
-      tokenLength: tokenLength,
+      width: channels, tokenLength: tokenLength,
       layers: 27 /* Should be 36, but only 27 is enough for this purpose */, MLP: MLP, heads: 32,
       outputHiddenStates: [8, 17, 26], noFinalNormalizedOutput: true,
       batchSize: 2, usesFlashAttention: usesFlashAttention)
@@ -2878,8 +2876,7 @@ extension TextEncoder {
     let sourceTokensGPU = sourceTokensCPU.toGPU(0)
     let textModel = Qwen3(
       FloatType.self, vocabularySize: 151_936,
-      maxLength: sourceTokenLength, width: 1_024,
-      tokenLength: sourceTokenLength,
+      width: 1_024, tokenLength: sourceTokenLength,
       layers: 28, MLP: 3_072, heads: 16, outputHiddenStates: [],
       noFinalNormalizedOutput: false, batchSize: 2, usesFlashAttention: usesFlashAttention)
     var causalAttentionMask = Tensor<FloatType>(
