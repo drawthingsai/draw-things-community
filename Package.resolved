@@ -5,7 +5,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/liuliu/ccv.git",
       "state" : {
-        "revision" : "9982f083073f4f271aa668b80df9a847b24e838c"
+        "revision" : "2b43bdcbbd5e269e44531b9167b560cd54fb07d1"
       }
     },
     {
@@ -38,7 +38,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/liuliu/s4nnc.git",
       "state" : {
-        "revision" : "ba9838e3e360d101326e6e229ad1be5cd25b11ba"
+        "revision" : "4e22790836e81847de9c064aeb78fce60cecd870"
       }
     },
     {
