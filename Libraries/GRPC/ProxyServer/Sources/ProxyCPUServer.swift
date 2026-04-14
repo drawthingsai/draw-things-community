@@ -169,12 +169,18 @@ extension Worker {
 }
 
 actor TaskQueue {
+  private struct DeathPoolEntry {
+    var worker: Worker
+    var addedAt: Date
+  }
+
   private var highPriorityTasks: [WorkTask] = []
   private var lowPriorityTasks: [WorkTask] = []
   private var realPriorityTasks: [WorkTask] = []
   private var backgroundPriorityTasks: [WorkTask] = []
   private var pendingRemoveWorkerId = Set<String>()
   private var workers: [String: Worker]
+  private var deathPool: [String: DeathPoolEntry] = [:]
   private var busyWorkerIDs: Set<String> = []
   private let logger: Logger
   var workerIds: [String] {
@@ -335,20 +341,91 @@ actor TaskQueue {
     logger.info("add worker:\(worker) to worker TaskQueue and stream")
   }
 
-  func removeWorkerById(_ name: String) async {
+  func quarantineWorkerById(_ name: String) async {
     guard let worker = workers[name] else {
       logger.error("failed to find worker based on name \(name)")
+      return
+    }
+    if let entry = deathPool[worker.id], entry.worker.client !== worker.client {
+      try? entry.worker.client.disconnect()
+    }
+    workers[worker.id] = nil
+    busyWorkerIDs.remove(worker.id)
+    deathPool[worker.id] = DeathPoolEntry(worker: worker, addedAt: Date())
+    logger.info(
+      "move worker:\(worker) from worker TaskQueue to death pool, death pool workers:\(Array(deathPool.keys))"
+    )
+  }
+
+  func deathPoolWorkers() async -> [Worker] {
+    return deathPool.values.map { $0.worker }
+  }
+
+  func shouldAttemptDeathPoolWorker(_ workerId: String) async -> Bool {
+    return workers[workerId] == nil && deathPool[workerId] != nil
+  }
+
+  func restoreWorkerFromDeathPool(_ worker: Worker) async -> Bool {
+    guard let deathPoolEntry = deathPool[worker.id] else {
+      logger.info("worker:\(worker.id) is no longer in death pool, skip restoring")
+      return false
+    }
+    if let existingWorker = workers[worker.id] {
+      if existingWorker.client !== worker.client {
+        try? worker.client.disconnect()
+      }
+      deathPool.removeValue(forKey: worker.id)
+      logger.error(
+        "worker:\(worker.id) already exists in worker group while in death pool; removed duplicate death pool entry"
+      )
+      return existingWorker.client === worker.client
+    }
+    guard worker.client.client != nil else {
+      logger.error("worker:\(worker.id) has invalid nioclient connection, keep in death pool")
+      return false
+    }
+    workers[worker.id] = worker
+    deathPool.removeValue(forKey: worker.id)
+    availabilityContinuation.yield(worker)
+    logger.info(
+      "restore worker:\(worker) from death pool after \(Date().timeIntervalSince(deathPoolEntry.addedAt))s, death pool workers:\(Array(deathPool.keys))"
+    )
+    return true
+  }
+
+  func removeDeathPoolWorkerById(_ name: String) async {
+    guard let entry = deathPool.removeValue(forKey: name) else {
+      return
+    }
+    try? entry.worker.client.disconnect()
+    logger.info("remove worker:\(name) from death pool")
+  }
+
+  func removeWorkerById(_ name: String) async {
+    guard let worker = workers[name] else {
+      if let entry = deathPool.removeValue(forKey: name) {
+        try? entry.worker.client.disconnect()
+        logger.info("remove worker:\(name) from death pool")
+      } else {
+        logger.error("failed to find worker based on name \(name)")
+      }
       return
     }
     try? worker.client.disconnect()
     workers[worker.id] = nil
     busyWorkerIDs.remove(worker.id)
+    if let entry = deathPool.removeValue(forKey: worker.id), entry.worker.client !== worker.client {
+      try? entry.worker.client.disconnect()
+    }
     logger.info("remove worker:\(worker) from worker TaskQueue")
   }
 
   deinit {
     for worker in workers.values {
       try? worker.client.disconnect()
+    }
+    for entry in deathPool.values {
+      try? entry.worker.client.disconnect()
     }
     availabilityContinuation.finish()
   }
@@ -506,6 +583,7 @@ final class ControlPanelService: ControlPanelServiceProvider {
             let worker = Worker(
               id: gpuServerName, client: client,
               primaryPriority: request.serverConfig.isHighPriority ? .high : .low)
+            await taskQueue.removeDeathPoolWorkerById(gpuServerName)
             await taskQueue.addWorker(worker)
             let workersId = await taskQueue.workerIds
             let response = GPUServerResponse.with {
@@ -703,9 +781,11 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
   private let logger: Logger
   private var controlConfigs: ControlConfigs
   private var healthCheckTask: Task<Void, Never>?
+  private var deathPoolRevivalTask: Task<Void, Never>?
   private var proxyMessageSigner: ProxyMessageSigner
   private var workerFailureCounts: [String: Int] = [:]
   private let maxFailureCount: Int
+  private let deathPoolRevivalIntervalSeconds = 6 * 60 * 60
 
   init(
     taskQueue: TaskQueue, controlConfigs: ControlConfigs, logger: Logger, healthCheck: Bool,
@@ -718,6 +798,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
     self.maxFailureCount = maxFailureCount
     if healthCheck {
       self.startHealthCheck()
+      self.startDeathPoolRevivalTask()
     }
   }
 
@@ -739,9 +820,9 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
             )
 
             if currentCount >= maxFailureCount {
-              logger.error("Worker \(worker.id) exceeded max failure count, removing from queue")
+              logger.error("Worker \(worker.id) exceeded max failure count, moving to death pool")
               workerFailureCounts.removeValue(forKey: worker.id)
-              await taskQueue.removeWorkerById(worker.id)
+              await taskQueue.quarantineWorkerById(worker.id)
             } else {
               await taskQueue.returnWorker(worker)
             }
@@ -750,6 +831,47 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         }
       }
     }
+  }
+
+  private func startDeathPoolRevivalTask() {
+    let intervalSeconds = deathPoolRevivalIntervalSeconds
+    deathPoolRevivalTask = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(intervalSeconds))
+        guard let self = self, !Task.isCancelled else { break }
+        await self.reviveDeathPoolWorkers()
+      }
+    }
+  }
+
+  private func reviveDeathPoolWorkers() async {
+    let workers = await taskQueue.deathPoolWorkers()
+    guard !workers.isEmpty else {
+      logger.info("death pool revive skipped, no workers in death pool")
+      return
+    }
+    logger.info("try revive \(workers.count) worker(s) from death pool")
+    for worker in workers {
+      guard !Task.isCancelled else { return }
+      guard await taskQueue.shouldAttemptDeathPoolWorker(worker.id) else {
+        continue
+      }
+      let (success, _) = await worker.client.echo()
+      if success {
+        logger.info("death pool worker:\(worker.id) echo succeeded, restoring to worker group")
+        let restored = await taskQueue.restoreWorkerFromDeathPool(worker)
+        if !restored {
+          try? worker.client.disconnect()
+        }
+      } else {
+        logger.error("death pool worker:\(worker.id) echo failed, keep in death pool")
+      }
+    }
+  }
+
+  deinit {
+    healthCheckTask?.cancel()
+    deathPoolRevivalTask?.cancel()
   }
 
   func parseBearer(from string: String) -> String? {
