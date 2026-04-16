@@ -3,8 +3,10 @@
 # Script to start 8 separate Docker containers, each running one gRPCServerCLI process
 # Each container will automatically restart if the process crashes
 # Usage:
-#   Remote: ./LaunchGPUServer.sh <remote_host> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]
-#   Local:  ./LaunchGPUServer.sh <address_or_hostname> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]
+#   Remote: ./LaunchGPUServer.sh <remote_host> <models_path> <utils_path> <lora_models_path> [--tmpfs-list <filename>]
+#   Local:  ./LaunchGPUServer.sh <address_or_hostname> <models_path> <utils_path> <lora_models_path> [--tmpfs-list <filename>]
+#
+# If --tmpfs-list is omitted, the tmpfs overlay is skipped and the models path is mounted directly.
 #
 # For remote execution, the address is automatically derived from <remote_host> (e.g., root@dfw-026-001 -> dfw-026-001)
 #
@@ -82,11 +84,12 @@ if [ $# -lt 4 ]; then
     echo "Error: Insufficient arguments"
     echo ""
     echo "Usage:"
-    echo "  Remote: $SCRIPT_NAME <remote_host> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]"
-    echo "  Local:  $SCRIPT_NAME <address> <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]"
+    echo "  Remote: $SCRIPT_NAME <remote_host> <models_path> <utils_path> <lora_models_path> [--tmpfs-list <filename>]"
+    echo "  Local:  $SCRIPT_NAME <address> <models_path> <utils_path> <lora_models_path> [--tmpfs-list <filename>]"
     echo ""
     echo "Options:"
-    echo "  --skip-tmpfs    Skip tmpfs overlay setup and use models path directly"
+    echo "  --tmpfs-list <filename> File list (relative to script dir) for tmpfs overlay."
+    echo "                          If omitted, tmpfs overlay is skipped and models path is used directly."
     echo ""
     echo "Environment variables:"
     echo "  PROXY_HOST       Proxy server host (default: 100.80.251.87)"
@@ -108,14 +111,26 @@ if [ $# -lt 4 ]; then
 fi
 
 # Initialize flags
-SKIP_TMPFS=false
+TMPFS_LIST_NAME=""
 
 # Parse optional flags from all arguments
+NEXT_IS_TMPFS_LIST=false
 for arg in "$@"; do
+    if [ "$NEXT_IS_TMPFS_LIST" = true ]; then
+        TMPFS_LIST_NAME="$arg"
+        NEXT_IS_TMPFS_LIST=false
+        continue
+    fi
     case "$arg" in
-        --skip-tmpfs) SKIP_TMPFS=true ;;
+        --tmpfs-list) NEXT_IS_TMPFS_LIST=true ;;
     esac
 done
+
+# Validate that --tmpfs-list got a filename when used
+if [ "$NEXT_IS_TMPFS_LIST" = true ]; then
+    echo "Error: --tmpfs-list requires a filename argument"
+    exit 1
+fi
 
 # Check if first argument is a remote host
 REMOTE_HOST=""
@@ -162,7 +177,7 @@ if [ -n "$REMOTE_HOST" ]; then
     # Validate argument count
     if [ -z "$LORA_MODELS_PATH" ]; then
         echo "Error: Missing required arguments"
-        echo "Usage: $SCRIPT_NAME $REMOTE_HOST <models_path> <utils_path> <lora_models_path> [--skip-tmpfs]"
+        echo "Usage: $SCRIPT_NAME $REMOTE_HOST <models_path> <utils_path> <lora_models_path> [--tmpfs-list <filename>]"
         exit 1
     fi
 
@@ -180,7 +195,7 @@ if [ -n "$REMOTE_HOST" ]; then
     echo "  Models path: $MODELS_PATH"
     echo "  Utils path: $UTILS_PATH"
     echo "  LoRA models path: $LORA_MODELS_PATH"
-    echo "  Skip tmpfs: $SKIP_TMPFS"
+    echo "  Tmpfs list: ${TMPFS_LIST_NAME:-<none: tmpfs overlay skipped>}"
     echo ""
 
     # Remove GPU from proxy server before launching
@@ -194,8 +209,8 @@ if [ -n "$REMOTE_HOST" ]; then
     # Scripts are expected to be synced via update_scripts.sh
     REMOTE_DIR="${UTILS_PATH}"
     REMOTE_CMD="cd $REMOTE_DIR && sudo bash $SCRIPT_NAME $RESOLVED_ADDRESS $MODELS_PATH $UTILS_PATH $LORA_MODELS_PATH"
-    if [ "$SKIP_TMPFS" = true ]; then
-        REMOTE_CMD="$REMOTE_CMD --skip-tmpfs"
+    if [ -n "$TMPFS_LIST_NAME" ]; then
+        REMOTE_CMD="$REMOTE_CMD --tmpfs-list $TMPFS_LIST_NAME"
     fi
 
     # Execute the script remotely
@@ -249,11 +264,15 @@ echo "  Address (resolved): $ADDRESS"
 echo "  Models path: $MODELS_PATH"
 echo "  Utils path: $UTILS_PATH"
 echo "  LoRA models path: $LORA_MODELS_PATH"
-echo "  Skip tmpfs: $SKIP_TMPFS"
+echo "  Tmpfs list: ${TMPFS_LIST_NAME:-<none: tmpfs overlay skipped>}"
 echo ""
 
 OVERLAY_MOUNT="/mnt/unified-models"
-TMPFS_FILE_LIST="${SCRIPT_DIR}/tmpfs.ls"
+if [ -n "$TMPFS_LIST_NAME" ]; then
+    TMPFS_FILE_LIST="${SCRIPT_DIR}/${TMPFS_LIST_NAME}"
+else
+    TMPFS_FILE_LIST=""
+fi
 
 # Function to setup overlay using mount_overlay.sh
 setup_overlay() {
@@ -387,8 +406,8 @@ echo "=================================================="
 echo "  Overlay Filesystem Setup"
 echo "=================================================="
 
-if [ "$SKIP_TMPFS" = true ]; then
-    echo "⏭️  Skipping tmpfs overlay setup (--skip-tmpfs flag)"
+if [ -z "$TMPFS_LIST_NAME" ]; then
+    echo "⏭️  Skipping tmpfs overlay setup (no --tmpfs-list specified)"
     MODELS_MOUNT_PATH="$MODELS_PATH"
     echo "Containers will use direct path: $MODELS_MOUNT_PATH"
 else

@@ -4,12 +4,15 @@
 # Usage: ./batch_launch_gpu_server.sh <config.csv> [--dry-run]
 #
 # CSV format (one server per line):
-#   remote_host, models_path, utils_path, lora_models_path, [--skip-tmpfs]
+#   remote_host, models_path, utils_path, lora_models_path, [--tmpfs-list <filename>]
+#
+# If the --tmpfs-list field is omitted, the tmpfs overlay is skipped and
+# the models path is mounted directly.
 #
 # Example config.csv:
-#   root@dfw-026-001, /mnt/models/official-models, /root/utils, /mnt/loraModels, --skip-tmpfs
-#   root@dfw-026-002, /mnt/models/official-models, /root/utils, /mnt/loraModels
-#   root@dfw-026-003, /mnt/models/official-models, /root/utils, /mnt/loraModels, --skip-tmpfs
+#   root@dfw-026-001, /mnt/models/official-models, /root/utils, /mnt/loraModels
+#   root@dfw-026-002, /mnt/models/official-models, /root/utils, /mnt/loraModels, --tmpfs-list tmpfs_thpc.ls
+#   root@dfw-026-003, /mnt/models/official-models, /root/utils, /mnt/loraModels, --tmpfs-list tmpfs_4090.ls
 
 set -e
 
@@ -43,11 +46,15 @@ if [ -z "$CONFIG_FILE" ]; then
     echo "  --dry-run    Show what would be executed without actually running"
     echo ""
     echo "CSV format (one server per line):"
-    echo "  remote_host, models_path, utils_path, lora_models_path, [--skip-tmpfs]"
+    echo "  remote_host, models_path, utils_path, lora_models_path, [--tmpfs-list <filename>]"
+    echo ""
+    echo "If --tmpfs-list is omitted, the tmpfs overlay is skipped and the models path"
+    echo "is mounted directly."
     echo ""
     echo "Example config.csv:"
-    echo "  root@dfw-026-001, /mnt/models/official-models, /root/utils, /mnt/loraModels, --skip-tmpfs"
-    echo "  root@dfw-026-002, /mnt/models/official-models, /root/utils, /mnt/loraModels"
+    echo "  root@dfw-026-001, /mnt/models/official-models, /root/utils, /mnt/loraModels"
+    echo "  root@dfw-026-002, /mnt/models/official-models, /root/utils, /mnt/loraModels, --tmpfs-list tmpfs_thpc.ls"
+    echo "  root@dfw-026-003, /mnt/models/official-models, /root/utils, /mnt/loraModels, --tmpfs-list tmpfs_4090.ls"
     exit 1
 fi
 
