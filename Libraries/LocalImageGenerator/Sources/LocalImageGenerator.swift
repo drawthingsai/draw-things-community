@@ -162,7 +162,7 @@ extension LocalImageGenerator {
       ]
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB,
       .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-      .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1576,6 +1576,11 @@ extension LocalImageGenerator {
         paddingToken: nil, addSpecialTokens: false, conditionalLength: 2560, modifier: .qwen3,
         potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
       return result
+    case .ernieImage:
+      return tokenize(
+        graph: graph, tokenizer: tokenizerMistral3, text: text, negativeText: negativeText,
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 3072, modifier: .mistral3,
+        potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
     case .flux2:
       let promptWithTemplate =
         "<s>[SYSTEM_PROMPT]You are an AI that reasons about image descriptions. You give structured responses focusing on object relationships, object\nattribution and actions without speculation.[/SYSTEM_PROMPT][INST]\(text)[/INST]"
@@ -3125,7 +3130,7 @@ extension LocalImageGenerator {
         fatalError()
       case .qwenImage, .cosmos2_5_2b:
         fatalError()
-      case .zImage:
+      case .zImage, .ernieImage:
         fatalError()
       case .flux2, .flux2_9b, .flux2_4b:
         fatalError()
@@ -3224,7 +3229,7 @@ extension LocalImageGenerator {
         )
       case .hiDreamI1:
         fatalError()
-      case .zImage:
+      case .zImage, .ernieImage:
         fatalError()
       case .flux2, .flux2_9b, .flux2_4b:
         fatalError()
@@ -3241,8 +3246,8 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b,
-        .ltx2, .ltx2_3:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
         return (nil, [])
       case .flux1:
         guard
@@ -3266,7 +3271,7 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .wan22_5b, .zImage, .cosmos2_5_2b:
+        .hiDreamI1, .wan22_5b, .zImage, .ernieImage, .cosmos2_5_2b:
         return (nil, [])
       case .ltx2, .ltx2_3:
         guard let image = image else { return (nil, []) }
@@ -3336,8 +3341,8 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .wan22_5b, .zImage, .flux1, .qwenImage, .cosmos2_5_2b, .flux2, .flux2_9b,
-        .flux2_4b:
+        .hiDreamI1, .wan22_5b, .zImage, .ernieImage, .flux1, .qwenImage, .cosmos2_5_2b, .flux2,
+        .flux2_9b, .flux2_4b:
         return x
       case .ltx2, .ltx2_3:
         guard let firstFrame = imageCond.1.first else { return x }
@@ -3356,7 +3361,7 @@ extension LocalImageGenerator {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .wurstchenStageB, .wurstchenStageC, .flux1, .hiDreamI1, .qwenImage,
-      .cosmos2_5_2b, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
+      .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       return false
     case .svdI2v:
       return true
@@ -3372,7 +3377,7 @@ extension LocalImageGenerator {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1, .hiDreamI1,
-      .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b:
+      .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       return (1, image, nil)
     case .ltx2, .ltx2_3:
       guard forSample else {
@@ -3473,7 +3478,7 @@ extension LocalImageGenerator {
     case .hunyuanVideo, .auraflow, .flux1, .hiDreamI1, .qwenImage, .cosmos2_5_2b, .kandinsky21,
       .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
       .wurstchenStageB,
-      .wurstchenStageC, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+      .wurstchenStageC, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
       return (batchSize, 0)
     }
   }
@@ -3523,7 +3528,7 @@ extension LocalImageGenerator {
       fatalError()
     case .qwenImage, .cosmos2_5_2b:
       fatalError()
-    case .zImage:
+    case .zImage, .ernieImage:
       fatalError()
     case .flux1:
       let shape = encodedImage.shape
@@ -3895,7 +3900,7 @@ extension LocalImageGenerator {
             ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
           * 8
         firstPassAudioHeight = 0
-      case .flux2, .flux2_9b, .flux2_4b:
+      case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
         firstPassChannels = 32
         firstPassScaleFactor = 8
         firstPassStartWidth =
@@ -4136,7 +4141,7 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .qwenImage,
-        .cosmos2_5_2b, .zImage, .flux2, .flux2_9b, .flux2_4b:
+        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
         break
       }
       if modifier == .inpainting || modifier == .editing || modifier == .double {
@@ -4639,7 +4644,7 @@ extension LocalImageGenerator {
         case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage:
           channels = 16
-        case .flux2, .flux2_9b, .flux2_4b:
+        case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
           channels = 32
         case .wan22_5b:
           channels = 48
@@ -5137,7 +5142,7 @@ extension LocalImageGenerator {
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
         audioHeight = 0
-      case .flux2, .flux2_9b, .flux2_4b:
+      case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
         channels = 32
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -5356,7 +5361,7 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .qwenImage,
-        .cosmos2_5_2b, .zImage, .flux2, .flux2_9b, .flux2_4b:
+        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
         break
       }
       let imageSize: Int
@@ -6464,7 +6469,7 @@ extension LocalImageGenerator {
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
         audioHeight = 0
-      case .flux2, .flux2_9b, .flux2_4b:
+      case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
         channels = 32
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -6760,7 +6765,7 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .qwenImage,
-        .cosmos2_5_2b, .zImage, .flux2, .flux2_9b, .flux2_4b:
+        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
         break
       }
       let imageSize: Int
@@ -7361,7 +7366,7 @@ extension LocalImageGenerator {
         startWidth = image.shape[2] / 8 / imageScaleFactor
         startHeight = image.shape[1] / 8 / imageScaleFactor
         audioHeight = 0
-      case .flux2, .flux2_9b, .flux2_4b:
+      case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
         channels = 32
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -7656,7 +7661,7 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .qwenImage,
-        .cosmos2_5_2b, .zImage, .flux2, .flux2_9b, .flux2_4b:
+        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
         break
       }
       let imageSize: Int

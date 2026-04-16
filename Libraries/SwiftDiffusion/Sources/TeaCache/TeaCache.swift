@@ -77,7 +77,8 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       switch modelVersion {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_14b, .wan21_1_3b, .hiDreamI1,
-        .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
+        .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
+        .ltx2,
         .ltx2_3:
         fatalError()
       case .hunyuanVideo:
@@ -131,8 +132,9 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
   public func compile(model: ModelBuilderOrModel, inputs: [DynamicGraph.AnyTensor]) {
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .qwenImage, .wan22_5b, .zImage, .flux2,
-      .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .qwenImage, .wan22_5b, .zImage,
+      .ernieImage,
+      .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
       fatalError()
     case .hunyuanVideo:
       if let inferModel = inferModel {
@@ -196,8 +198,8 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     switch modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2, .ltx2_3:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+      .cosmos2_5_2b, .ltx2, .ltx2_3:
       shift = restInputs[restInputs.count - 2]
       scale = restInputs[restInputs.count - 1]
     case .flux1:

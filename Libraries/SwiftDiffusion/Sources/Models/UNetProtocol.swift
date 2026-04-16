@@ -121,7 +121,7 @@ extension UNetProtocol {
             maxPeriod: 10_000)
         ).toGPU(0))
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b,
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
       .cosmos2_5_2b, .ltx2, .ltx2_3:
       return nil
     case .wurstchenStageC:
@@ -272,6 +272,15 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
             index..<(index + 1), 0..<shape[1], 0..<shape[2]
           ].copied()
         }
+      }
+  case .ernieImage:
+    let fixedConditionCount = isCfgEnabled ? 5 : 3
+    return conditions[0..<fixedConditionCount]
+      + conditions[fixedConditionCount..<conditions.count].map {
+        let shape = $0.shape
+        return DynamicGraph.Tensor<FloatType>($0)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
       }
   case .cosmos2_5_2b:
     return conditions[0..<1]
@@ -519,8 +528,8 @@ public func externalOnDemandPartially(
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .wan21_1_3b, .wan22_5b:
       return false
-    case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .wan21_14b, .qwenImage, .zImage, .flux2,
-      .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+    case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .wan21_14b, .qwenImage, .zImage,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
       return true
     }
   }
@@ -1420,6 +1429,21 @@ extension UNetFromNNC {
             ).0
           })
       }
+    case .ernieImage:
+      tiledWidth = startWidth
+      tiledHeight = startHeight
+      tiledAudioHeight = 0
+      tileScaleFactor = 8
+      didRunLoRASeparately = false
+      unet = ModelBuilderOrModel.modelBuilder(
+        ModelBuilder {
+          let textLength = $0[3].shape[1]
+          return ErnieImage(
+            batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+            textLength: textLength, layers: 36, channels: 4_096, intermediateSize: 12_288,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1)
+          ).1
+        })
     case .flux2, .flux2_9b, .flux2_4b:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -1706,7 +1730,7 @@ extension UNetFromNNC {
         c.append(contentsOf: injectedIPAdapters)
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-        .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+        .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
         fatalError()
       }
     }
@@ -1765,8 +1789,8 @@ extension UNetFromNNC {
     case .wurstchenStageC:
       modelKey = "stage_c"
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2, .ltx2_3:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+      .cosmos2_5_2b, .ltx2, .ltx2_3:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -1874,6 +1898,11 @@ extension UNetFromNNC {
             case .zImage:
               return [Int: Int](
                 uniqueKeysWithValues: (0..<30).map {
+                  return ($0, $0)
+                })
+            case .ernieImage:
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<36).map {
                   return ($0, $0)
                 })
             case .auraflow:
@@ -2313,6 +2342,8 @@ extension UNetFromNNC {
             tokenEncoding
           return finalEncoding
         }
+      case .ernieImage:
+        break
       case .flux2, .flux2_9b, .flux2_4b:
         if $0.0 == 0 {
           let shape = $0.1.shape
@@ -2577,6 +2608,49 @@ extension UNetFromNNC {
       }
       unet.compile(inputs: inputs)
       // TODO: TeaCache insert here.
+      return
+    case .ernieImage:
+      guard isCfgEnabled else {
+        let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 3:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              (shape[0] / 2)..<shape[0], 0..<tokenLengthCond, 0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        unet.compile(inputs: inputs)
+        return
+      }
+      let useConditional = tokenLengthCond > tokenLengthUncond
+      let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
+        let shape = $0.1.shape
+        switch $0.0 {
+        case 0:
+          let range =
+            useConditional ? ((shape[0] / 2)..<shape[0]) : (0..<(shape[0] / 2))
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            range, 0..<shape[1], 0..<shape[2], 0..<shape[3]
+          ].copied()
+        case 1, 2:
+          return useConditional ? nil : $0.1
+        case 3, 4:
+          return useConditional ? $0.1 : nil
+        case 5:
+          let tokenLength = useConditional ? tokenLengthCond : tokenLengthUncond
+          let range =
+            useConditional ? ((shape[0] / 2)..<shape[0]) : (0..<(shape[0] / 2))
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            range, 0..<tokenLength, 0..<shape[2]
+          ].copied()
+        default:
+          return $0.1
+        }
+      }
+      unet.compile(inputs: inputs)
       return
     case .flux2, .flux2_9b, .flux2_4b:
       guard isCfgEnabled else {
@@ -3462,6 +3536,104 @@ extension UNetFromNNC {
         etCond = unet(inputs: xCond, otherConds)[0].as(of: FloatType.self)
       }
       return Functional.concat(axis: 0, etUncond, etCond)
+    case .ernieImage:
+      guard isCfgEnabled else {
+        let restInputs: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+          let shape = $0.1.shape
+          switch $0.0 {
+          case 2:
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              (shape[0] / 2)..<shape[0], 0..<tokenLengthCond, 0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        return unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
+      }
+      let shape = firstInput.shape
+      let etUncond: DynamicGraph.Tensor<FloatType>
+      let etCond: DynamicGraph.Tensor<FloatType>
+      if tokenLengthCond > tokenLengthUncond {
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+          switch $0.0 {
+          case 0, 1:
+            return nil
+          case 4:
+            let shape = $0.1.shape
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              (shape[0] / 2)..<shape[0], 0..<tokenLengthCond, 0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etCond = unet(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+        etCond.graph.joined()
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etCond, etCond)
+        }
+        let xUncond = firstInput[
+          0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+          switch $0.0 {
+          case 2, 3:
+            return nil
+          case 4:
+            let shape = $0.1.shape
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<(shape[0] / 2), 0..<tokenLengthUncond, 0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etUncond = unet(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+      } else {
+        let xUncond = firstInput[
+          0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let otherUnconds: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+          switch $0.0 {
+          case 2, 3:
+            return nil
+          case 4:
+            let shape = $0.1.shape
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              0..<(shape[0] / 2), 0..<tokenLengthUncond, 0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etUncond = unet(inputs: xUncond, otherUnconds)[0].as(of: FloatType.self)
+        etUncond.graph.joined()
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etUncond, etUncond)
+        }
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let otherConds: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
+          switch $0.0 {
+          case 0, 1:
+            return nil
+          case 4:
+            let shape = $0.1.shape
+            return DynamicGraph.Tensor<FloatType>($0.1)[
+              (shape[0] / 2)..<shape[0], 0..<tokenLengthCond, 0..<shape[2]
+            ].copied()
+          default:
+            return $0.1
+          }
+        }
+        etCond = unet(inputs: xCond, otherConds)[0].as(of: FloatType.self)
+      }
+      return Functional.concat(axis: 0, etUncond, etCond)
     case .cosmos2_5_2b:
       guard isCfgEnabled else {
         let et = unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
@@ -3758,7 +3930,8 @@ extension UNetFromNNC {
     switch version {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
-      .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b,
+      .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
+      .flux2_4b,
       .cosmos2_5_2b:
       return (0, 0)
     case .ltx2, .ltx2_3:
@@ -3870,7 +4043,8 @@ extension UNetFromNNC {
       tileScaleFactor = 2
     case .wurstchenStageC:
       tileScaleFactor = 1
-    case .auraflow, .pixart, .flux1, .flux2, .flux2_4b, .flux2_9b, .hunyuanVideo, .hiDreamI1,
+    case .auraflow, .pixart, .flux1, .ernieImage, .flux2, .flux2_4b, .flux2_9b, .hunyuanVideo,
+      .hiDreamI1,
       .kandinsky21, .qwenImage, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
       .wan21_14b, .wan21_1_3b, .zImage, .cosmos2_5_2b:
       tileScaleFactor = 8
@@ -4110,7 +4284,7 @@ extension UNetFromNNC {
         c = newC
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-        .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+        .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
         fatalError()
       }
     }
@@ -4143,7 +4317,8 @@ extension UNetFromNNC {
       return x
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
+      .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
+      .ltx2,
       .ltx2_3:
       return x
     }

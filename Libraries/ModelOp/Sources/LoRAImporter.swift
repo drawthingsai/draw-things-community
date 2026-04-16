@@ -222,7 +222,7 @@ public enum LoRAImporter {
         time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
         layers: 48, contextProjection: false, textCrossAttentionAdaLN: true, KV: false,
         usesFlashAttention: .scale1)
-    case .auraflow, .cosmos2_5_2b:
+    case .auraflow, .cosmos2_5_2b, .ernieImage:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
@@ -299,7 +299,8 @@ public enum LoRAImporter {
       case .ltx2_3:
         inputDim = 128
         conditionalLength = 6144
-      case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .cosmos2_5_2b:
+      case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .cosmos2_5_2b,
+        .ernieImage:
         fatalError()
       }
       let crossattn: [DynamicGraph.Tensor<FloatType>]
@@ -544,7 +545,7 @@ public enum LoRAImporter {
           textAudioAggregateEmbed.bias.name
         ]
         otherMappings.append(("text_feature_extractor", textFeatureExtractorMapping))
-      case .auraflow, .cosmos2_5_2b:
+      case .auraflow, .cosmos2_5_2b, .ernieImage:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
@@ -593,8 +594,8 @@ public enum LoRAImporter {
       case .svdI2v:
         vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
       case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
-        .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2,
-        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .cosmos2_5_2b:
+        .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
+        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .cosmos2_5_2b:
         vectors = []
       case .kandinsky21, .v1, .v2:
         fatalError()
@@ -799,7 +800,7 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .kandinsky21, .v1, .v2, .cosmos2_5_2b:
+      case .kandinsky21, .v1, .v2, .cosmos2_5_2b, .ernieImage:
         fatalError()
       }
       let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
@@ -1341,7 +1342,7 @@ public enum LoRAImporter {
     case .zImage:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
-    case .flux2, .flux2_9b, .flux2_4b:
+    case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
     case .ltx2, .ltx2_3:
@@ -1709,7 +1710,7 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .flux2, .flux2_9b, .flux2_4b:
+      case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
         if let tensorDescMistral3 = stateDict["mistral3"] {
           try archive.with(tensorDescMistral3) {
             let tensor = Tensor<FloatType>(from: $0)
@@ -1772,8 +1773,8 @@ public enum LoRAImporter {
         modelPrefix = "stage_c"
         modelPrefixFixed = "stage_c_fixed"
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b,
-        .ltx2, .ltx2_3:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

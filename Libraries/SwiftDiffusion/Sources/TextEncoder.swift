@@ -1090,7 +1090,12 @@ extension TextEncoder {
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) { store in
         store.read(
-          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData]
+        ) { name, dataType, _, _ in
+          FileHandle.standardError.write(
+            Data("ERNIE text_model load: \(name) expected: \(dataType)\n".utf8))
+          return .continue(name)
+        }
       }
     }
     var c = textModel(inputs: tokensTensorGPU, attentionMaskGPU, relativePositionBucketsGPU)[0].as(
@@ -2633,11 +2638,10 @@ extension TextEncoder {
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let tokenLength = tokens[0].shape[0] / 2
     let textModel = Mistral3(
-      FloatType.self, vocabularySize: 131_072, maxLength: tokenLength, width: 5_120,
-      tokenLength: tokenLength,
+      FloatType.self, vocabularySize: 131_072, width: 5_120, tokenLength: tokenLength,
       layers: 30 /* Should be 40, but only 30 is enough for this purpose */, MLP: 32_768,
       heads: 32, outputHiddenStates: [9, 19, 29], noFinalNormalizedOutput: true, batchSize: 2,
-      usesFlashAttention: usesFlashAttention)
+      usesAdditionalTokens: true, usesFlashAttention: usesFlashAttention)
     var causalAttentionMask = Tensor<FloatType>(
       Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
       .NHWC(1, 1, tokenLength, tokenLength)
@@ -2732,6 +2736,62 @@ extension TextEncoder {
     tokenLengthCond = max(maxTokenLength, tokenLengthCond)
     tokenLengthUncond = max(maxTokenLength, tokenLengthUncond)
     return ([newC], [textModel])
+  }
+
+  private func encodeErnieImage(
+    images: [DynamicGraph.Tensor<FloatType>],
+    tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
+    mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
+    tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
+    modifier: SamplerModifier, textModels existingTextModels: [Model?]
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let graph = tokens[0].graph
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || deviceProperties.memoryCapacity != .high
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    let tokenLength = tokens[0].shape[0] / 2
+    let textModel = Mistral3(
+      FloatType.self, vocabularySize: 131_072, width: 3_072,
+      tokenLength: tokenLength, layers: 25, MLP: 9_216, heads: 32, outputHiddenStates: [24],
+      noFinalNormalizedOutput: true, batchSize: 2, usesAdditionalTokens: false,
+      usesFlashAttention: usesFlashAttention)
+    var causalAttentionMask = Tensor<FloatType>(
+      Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
+      .NHWC(1, 1, tokenLength, tokenLength)
+    )
+    for i in 0..<(tokenLength - 1) {
+      for j in (i + 1)..<tokenLength {
+        causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    let tokensTensorGPU = tokens[0].toGPU(0)
+    let rotaryTensorGPU = graph.variable(
+      Ministral3YaRNRotaryEmbedding(
+        sequenceLength: tokenLength, of: FloatType.self
+      ).toGPU(0))
+    let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
+    textModel.compile(
+      inputs: [tokensTensorGPU, rotaryTensorGPU, causalAttentionMaskGPU])
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        try! store.read(
+          "text_model", model: textModel, strict: true,
+          codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+      }
+    }
+    let c = textModel(
+      inputs: tokensTensorGPU, [rotaryTensorGPU, causalAttentionMaskGPU]
+    )[0].as(
+      of: FloatType.self
+    ).reshaped(.HWC(2, tokenLength, 3_072))
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
+    return ([c], [textModel])
   }
 
   private func encodeFlux2Qwen3(
@@ -3235,6 +3295,12 @@ extension TextEncoder {
         injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
         modifier: modifier, textModels: existingTextModels)
+    case .ernieImage:
+      return encodeErnieImage(
+        images: images, tokens: tokens, positions: positions, mask: mask,
+        injectedEmbeddings: injectedEmbeddings,
+        tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
+        modifier: modifier, textModels: existingTextModels)
     case .flux2:
       return encodeFlux2Mistral(
         images: images, tokens: tokens, positions: positions, mask: mask,
@@ -3371,8 +3437,8 @@ extension TextEncoder {
           ).0
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-        .ltx2, .ltx2_3:
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+        .cosmos2_5_2b, .ltx2, .ltx2_3:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -3409,8 +3475,8 @@ extension TextEncoder {
                   }
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-                  .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2,
-                  .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+                  .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
+                  .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -3449,8 +3515,8 @@ extension TextEncoder {
                 }
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-                .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2,
-                .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+                .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
+                .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
                 fatalError()
               }
               return .continue(name)

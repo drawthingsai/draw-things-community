@@ -17,6 +17,59 @@ public func Mistral3RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoi
   return rotary
 }
 
+public func Ministral3YaRNRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  sequenceLength: Int, positionOffset: Int = 0, headDim: Int = 128,
+  ropeTheta: Double = 1_000_000.0, factor: Double = 16.0,
+  originalMaxPositionEmbeddings: Double = 16_384.0, betaFast: Double = 32.0,
+  betaSlow: Double = 1.0, mscale: Double = 1.0, mscaleAllDim: Double = 1.0,
+  of dataType: FloatType.Type = FloatType.self
+) -> Tensor<FloatType> {
+  let lowCorrection =
+    Double(headDim) * log(originalMaxPositionEmbeddings / (betaFast * 2.0 * Double.pi))
+    / (2.0 * log(ropeTheta))
+  let highCorrection =
+    Double(headDim) * log(originalMaxPositionEmbeddings / (betaSlow * 2.0 * Double.pi))
+    / (2.0 * log(ropeTheta))
+  let low = max(
+    Int(floor(lowCorrection)), 0)
+  let high = min(
+    Int(ceil(highCorrection)), headDim - 1)
+  let attentionFactorNumerator =
+    factor <= 1.0 ? 1.0 : 0.1 * mscale * log(factor) + 1.0
+  let attentionFactorDenominator =
+    factor <= 1.0 ? 1.0 : 0.1 * mscaleAllDim * log(factor) + 1.0
+  let attentionFactor = attentionFactorNumerator / attentionFactorDenominator
+  let halfDim = headDim / 2
+  var invFreq = [Double](repeating: 0, count: halfDim)
+  for k in 0..<halfDim {
+    let posFreq = pow(ropeTheta, Double(k * 2) / Double(headDim))
+    let invFreqExtrapolation = 1.0 / posFreq
+    let invFreqInterpolation = 1.0 / (factor * posFreq)
+    let rampFactor: Double
+    if low == high {
+      rampFactor = k >= high ? 1.0 : 0.0
+    } else {
+      rampFactor = Swift.min(
+        Swift.max((Double(k) - Double(low)) / Double(high - low), 0.0), 1.0)
+    }
+    let invFreqExtrapolationFactor = 1.0 - rampFactor
+    invFreq[k] =
+      invFreqInterpolation * (1.0 - invFreqExtrapolationFactor)
+      + invFreqExtrapolation * invFreqExtrapolationFactor
+  }
+
+  var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, headDim))
+  for i in 0..<sequenceLength {
+    let position = Double(positionOffset + i)
+    for k in 0..<halfDim {
+      let theta = position * invFreq[k]
+      rotary[0, i, 0, k * 2] = FloatType(cos(theta) * attentionFactor)
+      rotary[0, i, 0, k * 2 + 1] = FloatType(sin(theta) * attentionFactor)
+    }
+  }
+  return rotary
+}
+
 private func SelfAttention(
   prefix: String, width: Int, k: Int, h: Int, hk: Int, b: Int, t: Int, usesFlashAttention: Bool
 ) -> Model {
@@ -107,7 +160,7 @@ private func TransformerBlock<T: TensorNumeric & BinaryFloatingPoint>(
 }
 
 private func TextEmbedding<T: TensorNumeric>(
-  _ dataType: T.Type, batchSize: Int, vocabularySize: Int, maxLength: Int, embeddingSize: Int
+  _ dataType: T.Type, batchSize: Int, vocabularySize: Int, embeddingSize: Int
 ) -> Model {
   let tokens = Input()
   let tokenEmbed = Embedding(
@@ -117,19 +170,19 @@ private func TextEmbedding<T: TensorNumeric>(
 }
 
 public func Mistral3<T: TensorNumeric & BinaryFloatingPoint>(
-  _ dataType: T.Type, vocabularySize: Int, maxLength: Int, width: Int, tokenLength: Int,
+  _ dataType: T.Type, vocabularySize: Int, width: Int, tokenLength: Int,
   layers: Int, MLP: Int, heads: Int, outputHiddenStates: [Int], noFinalNormalizedOutput: Bool,
-  batchSize: Int, usesFlashAttention: Bool
+  batchSize: Int, usesAdditionalTokens: Bool, usesFlashAttention: Bool
 ) -> Model {
   let tokens = Input()
   let rot = Input()
   let causalAttentionMask = Input()
-  let additionalTokens = Input()
+  let additionalTokens: Input? = usesAdditionalTokens ? Input() : nil
   let embedding = TextEmbedding(
-    BFloat16.self, batchSize: batchSize, vocabularySize: vocabularySize, maxLength: maxLength,
+    BFloat16.self, batchSize: batchSize, vocabularySize: vocabularySize,
     embeddingSize: width)
   var out = embedding(tokens).to(.Float32)
-  let additionalEmbeds = embedding(additionalTokens).to(T.dataType)
+  let additionalEmbeds = additionalTokens.map { embedding($0).to(T.dataType) }
   var hiddenStates = [Model.IO]()
   for i in 0..<layers {
     let layer = TransformerBlock(
@@ -146,5 +199,6 @@ public func Mistral3<T: TensorNumeric & BinaryFloatingPoint>(
     hiddenStates.append(norm(out).to(T.dataType))
   }
   return Model(
-    [tokens, rot, causalAttentionMask, additionalTokens], hiddenStates + [additionalEmbeds])
+    [tokens, rot, causalAttentionMask] + (additionalTokens.map { [$0] } ?? []),
+    hiddenStates + (additionalEmbeds.map { [$0] } ?? []))
 }

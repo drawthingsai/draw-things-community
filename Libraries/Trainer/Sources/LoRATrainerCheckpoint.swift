@@ -64,7 +64,7 @@ extension LoRATrainerCheckpoint {
         switch version {
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo,
           .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-          .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+          .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
           $0.write("string_to_param", variable: textEmbedding1)
         case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           $0.write("string_to_param_clip_g", variable: textEmbedding1)
@@ -95,8 +95,8 @@ extension LoRATrainerCheckpoint {
       case .v1, .v2, .ssd1b, .sdxlBase, .sdxlRefiner:
         modelName = "unet"
       case .sd3, .pixart, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-        .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-        .ltx2_3:
+        .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
+        .flux2_4b, .ltx2, .ltx2_3:
         modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
@@ -124,7 +124,7 @@ extension LoRATrainerCheckpoint {
         switch version {
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo,
           .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-          .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+          .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
           store.write("string_to_param", variable: textEmbedding1)
         case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           store.write("string_to_param_clip_g", variable: textEmbedding1)
@@ -142,7 +142,8 @@ extension LoRATrainerCheckpoint {
           textModelMapping = LoRAMapping.OpenCLIPTextModel
         case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
           .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
-          .cosmos2_5_2b, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+          .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
+          .ltx2_3:
           fatalError()
         case .sdxlBase, .ssd1b, .sdxlRefiner:
           textModelMapping = LoRAMapping.OpenCLIPTextModelG
@@ -254,6 +255,12 @@ extension LoRATrainerCheckpoint {
             return ($0, $0)
           })
         modelName = "dit"
+      case .ernieImage:
+        UNetMapping = [Int: Int](
+          uniqueKeysWithValues: (0..<36).map {
+            return ($0, $0)
+          })
+        modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
         .wan21_1_3b, .wan21_14b, .hiDreamI1, .cosmos2_5_2b, .wan22_5b, .ltx2, .ltx2_3:
         fatalError()
@@ -294,7 +301,7 @@ extension LoRATrainerCheckpoint {
         switch version {
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo,
           .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-          .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+          .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
           store.write("string_to_param", tensor: textEmbedding1)
         case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC, .wurstchenStageB:
           store.write("string_to_param_clip_g", tensor: textEmbedding1)
@@ -312,7 +319,8 @@ extension LoRATrainerCheckpoint {
           textModelMapping = LoRAMapping.OpenCLIPTextModel
         case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
           .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
-          .cosmos2_5_2b, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+          .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
+          .ltx2_3:
           fatalError()
         case .sdxlBase, .ssd1b, .sdxlRefiner:
           textModelMapping = LoRAMapping.OpenCLIPTextModelG
@@ -428,6 +436,12 @@ extension LoRATrainerCheckpoint {
       case .zImage:
         UNetMapping = [Int: Int](
           uniqueKeysWithValues: (0..<30).map {
+            return ($0, $0)
+          })
+        modelName = "dit"
+      case .ernieImage:
+        UNetMapping = [Int: Int](
+          uniqueKeysWithValues: (0..<36).map {
             return ($0, $0)
           })
         modelName = "dit"

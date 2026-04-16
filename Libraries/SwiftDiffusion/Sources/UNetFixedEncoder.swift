@@ -56,7 +56,8 @@ extension UNetFixedEncoder {
     switch version {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
+      .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
+      .ltx2,
       .ltx2_3:
       return true
     case .v1, .v2, .kandinsky21:
@@ -200,8 +201,8 @@ extension UNetFixedEncoder {
       // We don't need other vectors for sampling.
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2, .ltx2_3:
+      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+      .cosmos2_5_2b, .ltx2, .ltx2_3:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -561,7 +562,7 @@ extension UNetFixedEncoder {
           dualAttentionLayers: [])
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b,
+        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
         .cosmos2_5_2b, .ltx2, .ltx2_3:
         fatalError()
       }
@@ -1788,6 +1789,64 @@ extension UNetFixedEncoder {
         (xPadTokens.map { [graph.variable($0.toGPU(0))] } ?? []) + rotaryEmbeddings + conditions,
         nil
       )
+    case .ernieImage:
+      let c0 = textEncoding[0]
+      let textLength = c0.shape[1]
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let channels = 4_096
+      var timeEmbeds = graph.variable(
+        .GPU(0), .HWC(timesteps.count, 1, channels), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: ErnieImageTimeEmbedding(
+              timestep: timestep, batchSize: 1, embeddingSize: channels
+            )
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<1, 0..<channels] = timeEmbed.reshaped(
+          .HWC(1, 1, channels))
+      }
+      let unetFixed = ErnieImageFixed(
+        tokenLength: textLength, timesteps: timesteps.count, channels: channels)
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: c0, timeEmbeds)
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
+      if !loadedFromWeightsCache {
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          store.read(
+            "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+          )
+        }
+      }
+      let conditions = unetFixed(inputs: c0, timeEmbeds).map {
+        $0.as(of: FloatType.self)
+      }
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      let rotaryEmbeddings: [DynamicGraph.Tensor<FloatType>]
+      if isCfgEnabled {
+        let (rotaryEmbeddingCosUncond, rotaryEmbeddingSinUncond) =
+          ErnieImageRotaryPositionEmbedding(height: h, width: w, textLength: tokenLengthUncond)
+        let (rotaryEmbeddingCosCond, rotaryEmbeddingSinCond) =
+          ErnieImageRotaryPositionEmbedding(height: h, width: w, textLength: tokenLengthCond)
+        rotaryEmbeddings = [
+          graph.variable(Tensor<FloatType>(from: rotaryEmbeddingCosUncond).toGPU(0)),
+          graph.variable(Tensor<FloatType>(from: rotaryEmbeddingSinUncond).toGPU(0)),
+          graph.variable(Tensor<FloatType>(from: rotaryEmbeddingCosCond).toGPU(0)),
+          graph.variable(Tensor<FloatType>(from: rotaryEmbeddingSinCond).toGPU(0)),
+        ]
+      } else {
+        let (rotaryEmbeddingCos, rotaryEmbeddingSin) =
+          ErnieImageRotaryPositionEmbedding(height: h, width: w, textLength: tokenLengthCond)
+        rotaryEmbeddings = [
+          graph.variable(Tensor<FloatType>(from: rotaryEmbeddingCos).toGPU(0)),
+          graph.variable(Tensor<FloatType>(from: rotaryEmbeddingSin).toGPU(0)),
+        ]
+      }
+      return (rotaryEmbeddings + conditions, nil)
     case .flux2, .flux2_9b, .flux2_4b:
       let c0 = textEncoding[0]
       let cBatchSize = c0.shape[0]
