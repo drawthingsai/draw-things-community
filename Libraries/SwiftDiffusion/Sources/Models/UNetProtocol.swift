@@ -1440,7 +1440,7 @@ extension UNetFromNNC {
           let textLength = $0[3].shape[1]
           return ErnieImage(
             batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
-            textLength: textLength, layers: 36, channels: 4_096, intermediateSize: 12_288,
+            textLength: textLength, layers: 36, channels: 4_096,
             usesFlashAttention: valueOr(useFlashAttention, .scale1)
           ).1
         })

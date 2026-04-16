@@ -1807,7 +1807,7 @@ extension UNetFixedEncoder {
         timeEmbeds[i..<(i + 1), 0..<1, 0..<channels] = timeEmbed.reshaped(
           .HWC(1, 1, channels))
       }
-      let unetFixed = ErnieImageFixed(
+      let (_, unetFixed) = ErnieImageFixed(
         tokenLength: textLength, timesteps: timesteps.count, channels: channels)
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: c0, timeEmbeds)

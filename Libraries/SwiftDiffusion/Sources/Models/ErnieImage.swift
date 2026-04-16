@@ -62,7 +62,9 @@ public func ErnieImageRotaryPositionEmbedding(
   return (cosTensor, sinTensor)
 }
 
-public func ErnieImageFixed(tokenLength: Int, timesteps: Int, channels: Int) -> Model {
+public func ErnieImageFixed(tokenLength: Int, timesteps: Int, channels: Int) -> (
+  ModelWeightMapper, Model
+) {
   let txt = Input()
   let t = Input()
   let textProj = Dense(count: channels, noBias: true, name: "c_embedder")
@@ -80,27 +82,51 @@ public func ErnieImageFixed(tokenLength: Int, timesteps: Int, channels: Int) -> 
   let gateMLP = adaLNs[5](timeModulation)
   let finalScale = Dense(count: channels, name: "scale")
   let finalShift = Dense(count: channels, name: "shift")
-  return Model(
-    [txt, t],
-    [
-      projectedText, shiftMSA, scaleMSA, gateMSA, shiftMLP, scaleMLP, gateMLP,
-      1 + finalScale(timeCondition), finalShift(timeCondition),
-    ])
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = ModelWeightMapping()
+    mapping["text_proj.weight"] = [textProj.weight.name]
+    mapping["time_embedding.linear_1.weight"] = [timeMlp0.weight.name]
+    mapping["time_embedding.linear_1.bias"] = [timeMlp0.bias.name]
+    mapping["time_embedding.linear_2.weight"] = [timeMlp2.weight.name]
+    mapping["time_embedding.linear_2.bias"] = [timeMlp2.bias.name]
+    mapping["adaLN_modulation.1.weight"] = ModelWeightElement(adaLNs.map { $0.weight.name })
+    mapping["adaLN_modulation.1.bias"] = ModelWeightElement(adaLNs.map { $0.bias.name })
+    mapping["final_norm.linear.weight"] = [finalScale.weight.name, finalShift.weight.name]
+    mapping["final_norm.linear.bias"] = [finalScale.bias.name, finalShift.bias.name]
+    return mapping
+  }
+  return (
+    mapper,
+    Model(
+      [txt, t],
+      [
+        projectedText, shiftMSA, scaleMSA, gateMSA, shiftMLP, scaleMLP, gateMLP,
+        1 + finalScale(timeCondition), finalShift(timeCondition),
+      ])
+  )
 }
 
-private func ErnieImageFeedForward(hiddenSize: Int, intermediateSize: Int, name: String) -> (
+private func ErnieImageFeedForward(
+  hiddenSize: Int, intermediateSize: Int, scaleFactor: Int, name: String
+) -> (
   Model, Model, Model, Model
 ) {
   let x = Input()
   let gate = Dense(count: intermediateSize, noBias: true, name: "\(name)_gate_proj")
-  let up = Dense(count: intermediateSize, noBias: true, name: "\(name)_up_proj")
-  var out = up(x) .* gate(x).GELU()
+  let up = Dense(count: intermediateSize, noBias: true, flags: [.Float16], name: "\(name)_up_proj")
+  var out: Model.IO
+  if scaleFactor > 1 {
+    out = up((1.0 / Float(scaleFactor)) * x)
+  } else {
+    out = up(x)
+  }
+  out = out .* gate(x).GELU()
   let down = Dense(count: hiddenSize, noBias: true, name: "\(name)_down_proj")
   out = down(out).to(.Float32)
   return (gate, down, up, Model([x], [out]))
 }
 
-private func ErnieImageApplyRotary(
+private func ErnieImageApplyRotaryEmbedding(
   _ x: Model.IO, cos: Model.IO, sin: Model.IO, batchSize: Int, tokenLength: Int, heads: Int,
   headDim: Int
 ) -> Model.IO {
@@ -119,8 +145,9 @@ private func ErnieImageApplyRotary(
 
 private func ErnieImageTransformerBlock(
   prefix: String, hiddenSize: Int, k: Int, h: Int, batchSize: Int, t: (keyValue: Int, query: Int),
-  intermediateSize: Int, usesFlashAttention: FlashAttentionLevel
-) -> Model {
+  intermediateSize: Int, scaleFactor: (qk: Int, v: Int, projDown: Int),
+  usesFlashAttention: FlashAttentionLevel
+) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rotCos = Input()
   let rotSin = Input()
@@ -133,9 +160,12 @@ private func ErnieImageTransformerBlock(
 
   let attentionNorm = RMSNorm(epsilon: 1e-6, axis: [2], name: "attention_norm1")
   var out = attentionNorm(x)
-  out = (scaleMSA.to(of: out) .* out + shiftMSA.to(of: out)).to(.Float16)
+  out = out.to(.Float16) .* scaleMSA + shiftMSA
+  if scaleFactor.qk > 1 {
+    out = (1 / Float(scaleFactor.qk)) * out
+  }
   let tokeys = Dense(count: k * h, noBias: true, name: "k")
-  let toqueries = Dense(count: k * h, noBias: true, name: "q")
+  let toqueries = Dense(count: k * h, noBias: true, flags: [.Float16], name: "q")
   let tovalues = Dense(count: k * h, noBias: true, name: "v")
   var keys = tokeys(out).reshaped([batchSize, t.keyValue, h, k])
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_k")
@@ -151,6 +181,9 @@ private func ErnieImageTransformerBlock(
   }
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_q")
   queries = normQ(queries)
+  if scaleFactor.v > 1 {
+    out = (1 / Float(scaleFactor.v)) * out
+  }
   let values = tovalues(out).reshaped([batchSize, t.keyValue, h, k])
   let queryCos: Model.IO
   let querySin: Model.IO
@@ -163,10 +196,10 @@ private func ErnieImageTransformerBlock(
     queryCos = rotCos
     querySin = rotSin
   }
-  queries = ErnieImageApplyRotary(
+  queries = ErnieImageApplyRotaryEmbedding(
     queries, cos: queryCos, sin: querySin, batchSize: batchSize, tokenLength: t.query, heads: h,
     headDim: k)
-  keys = ErnieImageApplyRotary(
+  keys = ErnieImageApplyRotaryEmbedding(
     keys, cos: rotCos, sin: rotSin, batchSize: batchSize, tokenLength: t.keyValue, heads: h,
     headDim: k)
 
@@ -205,24 +238,56 @@ private func ErnieImageTransformerBlock(
   }
 
   let attentionOutProj = Dense(count: hiddenSize, noBias: true, name: "o")
-  attentionOut = attentionOutProj(attentionOut).to(.Float32)
-  out = xIn + gateMSA.to(of: attentionOut) .* attentionOut
+  attentionOut = attentionOutProj(attentionOut)
+  if scaleFactor.v * scaleFactor.qk > 1 {
+    attentionOut = Functional.mul(
+      left: attentionOut, right: gateMSA,
+      scalar: Float(scaleFactor.qk * scaleFactor.v))
+  } else {
+    attentionOut = attentionOut .* gateMSA
+  }
+  out = xIn + attentionOut.to(of: xIn)
 
   let mlpNorm = RMSNorm(epsilon: 1e-6, axis: [2], name: "attention_norm2")
-  var mlpIn = mlpNorm(out)
-  mlpIn = (scaleMLP.to(of: mlpIn) .* mlpIn + shiftMLP.to(of: mlpIn)).to(.Float16)
-  let (_, _, _, ffn) = ErnieImageFeedForward(
-    hiddenSize: hiddenSize, intermediateSize: intermediateSize, name: "ffn")
-  let mlpOut = ffn(mlpIn)
-  out = out + gateMLP.to(of: mlpOut) .* mlpOut.to(of: out)
+  var mlpIn = mlpNorm(out).to(.Float16)
+  mlpIn = mlpIn .* scaleMLP + shiftMLP
+  let (ffnGate, ffnDown, ffnUp, ffn) = ErnieImageFeedForward(
+    hiddenSize: hiddenSize, intermediateSize: intermediateSize, scaleFactor: scaleFactor.projDown,
+    name: "ffn")
+  var mlpOut = ffn(mlpIn)
+  if scaleFactor.projDown > 1 {
+    mlpOut = Functional.mul(
+      left: mlpOut, right: gateMLP.to(of: mlpOut), scalar: Float(scaleFactor.projDown))
+  } else {
+    mlpOut = mlpOut .* gateMLP.to(of: mlpOut)
+  }
+  out = out + mlpOut
 
-  return Model(
-    [x, rotCos, rotSin, shiftMSA, scaleMSA, gateMSA, shiftMLP, scaleMLP, gateMLP], [out])
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).adaLN_sa_ln.weight"] = [attentionNorm.weight.name]
+    mapping["\(prefix).self_attention.to_q.weight"] = [toqueries.weight.name]
+    mapping["\(prefix).self_attention.to_k.weight"] = [tokeys.weight.name]
+    mapping["\(prefix).self_attention.to_v.weight"] = [tovalues.weight.name]
+    mapping["\(prefix).self_attention.norm_k.weight"] = [normK.weight.name]
+    mapping["\(prefix).self_attention.norm_q.weight"] = [normQ.weight.name]
+    mapping["\(prefix).self_attention.to_out.0.weight"] = [attentionOutProj.weight.name]
+    mapping["\(prefix).adaLN_mlp_ln.weight"] = [mlpNorm.weight.name]
+    mapping["\(prefix).mlp.gate_proj.weight"] = [ffnGate.weight.name]
+    mapping["\(prefix).mlp.up_proj.weight"] = [ffnUp.weight.name]
+    mapping["\(prefix).mlp.linear_fc2.weight"] = [ffnDown.weight.name]
+    return mapping
+  }
+  return (
+    mapper,
+    Model(
+      [x, rotCos, rotSin, shiftMSA, scaleMSA, gateMSA, shiftMLP, scaleMLP, gateMLP], [out])
+  )
 }
 
 public func ErnieImage(
   batchSize: Int, height: Int, width: Int, textLength: Int,
-  layers: Int, channels: Int, intermediateSize: Int, usesFlashAttention: FlashAttentionLevel
+  layers: Int, channels: Int, usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rotCos = Input()
@@ -252,20 +317,23 @@ public func ErnieImage(
   let rotCosResized = rotCos.reshaped([1, sequenceLength, 1, 128])
   let rotSinResized = rotSin.reshaped([1, sequenceLength, 1, 128])
   var out = Functional.concat(axis: 1, img, txt.to(.Float32))
+  var mappers = [ModelWeightMapper]()
   for i in 0..<layers {
-    let block = ErnieImageTransformerBlock(
+    let (blockMapper, block) = ErnieImageTransformerBlock(
       prefix: "layers.\(i)", hiddenSize: channels, k: headDim, h: heads, batchSize: batchSize,
       t: (
         keyValue: sequenceLength, query: i == layers - 1 ? patchHeight * patchWidth : sequenceLength
       ),
-      intermediateSize: intermediateSize, usesFlashAttention: usesFlashAttention)
+      intermediateSize: channels * 3, scaleFactor: (qk: 1, v: 8, projDown: 8),
+      usesFlashAttention: usesFlashAttention)
     out = block(
       out, rotCosResized, rotSinResized, shiftMSA, scaleMSA, gateMSA, shiftMLP, scaleMLP,
       gateMLP)
+    mappers.append(blockMapper)
   }
 
   let finalNorm = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false, name: "final_norm")
-  out = (finalScale.to(of: out) .* finalNorm(out) + finalShift.to(of: out)).to(.Float16)
+  out = finalNorm(out).to(.Float16) .* finalScale + finalShift
   let finalLinear = Dense(count: 128, name: "linear")
   out = finalLinear(out)
 
@@ -273,8 +341,19 @@ public func ErnieImage(
     [batchSize, patchHeight, patchWidth, 32, 2, 2]
   ).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([batchSize, height, width, 32])
 
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    mapping["x_embedder.proj.weight"] = [xEmbedder.weight.name]
+    mapping["x_embedder.proj.bias"] = [xEmbedder.bias.name]
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    mapping["final_linear.weight"] = [finalLinear.weight.name]
+    mapping["final_linear.bias"] = [finalLinear.bias.name]
+    return mapping
+  }
   return (
-    { _ in [:] },
+    mapper,
     Model(
       [
         x, rotCos, rotSin, txt, shiftMSA, scaleMSA, gateMSA, shiftMLP, scaleMLP, gateMLP,
