@@ -154,6 +154,14 @@ struct Converter: ParsableCommand {
       }
     case .zImage:
       fatalError()
+    case .ernieImage:
+      textEncoder =
+        fileNames.first {
+          $0.hasSuffix("_ministral_3_3b_f16.ckpt")
+        } ?? "ministral_3_3b_f16.ckpt"
+      if autoencoder == nil {
+        autoencoder = "flux_2_vae_f16.ckpt"
+      }
     case .flux2, .flux2_9b, .flux2_4b:
       fatalError()
     case .ltx2, .ltx2_3:
