@@ -165,10 +165,7 @@ public struct LoRATrainer {
         }
       })()
     CLIPEncoder = ModelZoo.CLIPEncodersForModel(model).first
-    if version == .qwenImage {
-      // Qwen uses fixed 128 in production for LoRA (matches checkpoint expectations)
-      paddedTextEncodingLength = 128
-    } else if version == .zImage || version == .ernieImage {
+    if version == .qwenImage || version == .zImage || version == .ernieImage {
       paddedTextEncodingLength = maxTextLength
     } else {
       paddedTextEncodingLength = min(
@@ -218,6 +215,19 @@ public struct LoRATrainer {
   private static func tokenLength(from lengths: [Int], fallback: Int) -> Int {
     let tokenLength = lengths.reduce(0, +)
     return tokenLength > 0 ? tokenLength : fallback
+  }
+
+  private static func truncatedTokens(_ tokens: [Int32], maxLength: Int) -> [Int32] {
+    guard maxLength > 0, tokens.count > maxLength else { return tokens }
+    return Array(tokens.prefix(maxLength))
+  }
+
+  private static func paddedTextEncodingLength(
+    configuredLength: Int, zeroCaption: ProcessedInput, processedInputs: [ProcessedInput]
+  ) -> Int {
+    guard configuredLength == 0 else { return configuredLength }
+    let maxTokenCount = ([zeroCaption] + processedInputs).map(\.tokens.count).max() ?? 0
+    return max((maxTokenCount + 31) / 32 * 32, 32)
   }
 
   private static func flux2Configuration(for version: ModelVersion)
@@ -557,13 +567,15 @@ public struct LoRATrainer {
     let tokenizer = tokenizers[0]
     let modifier = ModelZoo.modifierForModel(model)
     let prefixLength = Self.qwenImagePrefixLength(modifier)
-    let (_, zeroTokens, _, _, zeroTokenLengths) = tokenizer.tokenize(
+    let (_, zeroTokensRaw, _, _, zeroTokenLengths) = tokenizer.tokenize(
       text: Self.qwenImagePromptTemplate(" ", modifier: modifier), truncation: true,
       maxLength: paddedTextEncodingLength, paddingToken: nil, addSpecialTokens: false)
+    let zeroTokens = Self.truncatedTokens(zeroTokensRaw, maxLength: paddedTextEncodingLength)
     let zeroCaptionInput = ProcessedInput(
       imagePath: "", tokens: zeroTokens,
       tokenLength: max(
-        Self.tokenLength(from: zeroTokenLengths, fallback: zeroTokens.count) - prefixLength, 1),
+        min(Self.tokenLength(from: zeroTokenLengths, fallback: zeroTokens.count), zeroTokens.count)
+          - prefixLength, 1),
       CLIPTokens: [],  // CLIPTokens empty for Qwen
       originalSize: (0, 0), cropTopLeft: (0, 0), targetSize: (0, 0), loadedImagePath: "")
     var stopped = false
@@ -604,16 +616,18 @@ public struct LoRATrainer {
           let imagePath = input.imageUrl.path
           store.write(imagePath, tensor: sample)
           // Qwen uses a single tokenizer
-          let (_, tokens, _, _, tokenLengths) = tokenizer.tokenize(
+          let (_, tokensRaw, _, _, tokenLengths) = tokenizer.tokenize(
             text: Self.qwenImagePromptTemplate(input.caption, modifier: modifier),
             truncation: true, maxLength: paddedTextEncodingLength, paddingToken: nil,
             addSpecialTokens: false)
+          let tokens = Self.truncatedTokens(tokensRaw, maxLength: paddedTextEncodingLength)
           // No embedding support.
           processedInputs.append(
             ProcessedInput(
               imagePath: imagePath, tokens: tokens,
               tokenLength: max(
-                Self.tokenLength(from: tokenLengths, fallback: tokens.count) - prefixLength, 1),
+                min(Self.tokenLength(from: tokenLengths, fallback: tokens.count), tokens.count)
+                  - prefixLength, 1),
               CLIPTokens: [],  // CLIPTokens empty for Qwen
               originalSize: originalSize, cropTopLeft: cropTopLeft, targetSize: targetSize,
               loadedImagePath: imagePath))
@@ -667,6 +681,9 @@ public struct LoRATrainer {
         }
       }
       graph.withNoGrad {
+        let paddedTextEncodingLength = Self.paddedTextEncodingLength(
+          configuredLength: self.paddedTextEncodingLength, zeroCaption: zeroCaptionInput,
+          processedInputs: processedInputs)
         // Qwen uses a single QwenVL text model
         let textModel = Qwen2VL(
           FloatType.self, injectEmbeddings: false, vocabularySize: 152_064,
@@ -705,7 +722,7 @@ public struct LoRATrainer {
         for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
           guard input.imagePath == input.loadedImagePath else { continue }
           for i in 0..<paddedTextEncodingLength {
-            tokensTensor[i] = input.tokens[i]
+            tokensTensor[i] = i < input.tokens.count ? input.tokens[i] : tokenizer.unknownToken
           }
           let rotaryEmbedding = Qwen2VLRotaryEmbedding(
             sequenceLength: paddedTextEncodingLength, token: tokensTensor,
@@ -953,12 +970,14 @@ public struct LoRATrainer {
     let graph = DynamicGraph()
     var processedInputs = [ProcessedInput]()
     let tokenizer = tokenizers[0]
-    let (_, zeroTokens, _, _, zeroTokenLengths) = tokenizer.tokenize(
+    let (_, zeroTokensRaw, _, _, zeroTokenLengths) = tokenizer.tokenize(
       text: Self.zImagePromptTemplate(""), truncation: true, maxLength: paddedTextEncodingLength,
       paddingToken: nil, addSpecialTokens: false)
+    let zeroTokens = Self.truncatedTokens(zeroTokensRaw, maxLength: paddedTextEncodingLength)
     let zeroCaptionInput = ProcessedInput(
       imagePath: "", tokens: zeroTokens,
-      tokenLength: Self.tokenLength(from: zeroTokenLengths, fallback: zeroTokens.count),
+      tokenLength: min(
+        Self.tokenLength(from: zeroTokenLengths, fallback: zeroTokens.count), zeroTokens.count),
       CLIPTokens: [],
       originalSize: (0, 0), cropTopLeft: (0, 0), targetSize: (0, 0), loadedImagePath: "")
     var stopped = false
@@ -996,13 +1015,15 @@ public struct LoRATrainer {
           encoder = tuple.1
           let imagePath = input.imageUrl.path
           store.write(imagePath, tensor: sample)
-          let (_, tokens, _, _, tokenLengths) = tokenizer.tokenize(
+          let (_, tokensRaw, _, _, tokenLengths) = tokenizer.tokenize(
             text: Self.zImagePromptTemplate(input.caption), truncation: true,
             maxLength: paddedTextEncodingLength, paddingToken: nil, addSpecialTokens: false)
+          let tokens = Self.truncatedTokens(tokensRaw, maxLength: paddedTextEncodingLength)
           processedInputs.append(
             ProcessedInput(
               imagePath: imagePath, tokens: tokens,
-              tokenLength: Self.tokenLength(from: tokenLengths, fallback: tokens.count),
+              tokenLength: min(
+                Self.tokenLength(from: tokenLengths, fallback: tokens.count), tokens.count),
               CLIPTokens: [],
               originalSize: originalSize, cropTopLeft: cropTopLeft, targetSize: targetSize,
               loadedImagePath: imagePath))
@@ -1055,6 +1076,9 @@ public struct LoRATrainer {
         }
       }
       graph.withNoGrad {
+        let paddedTextEncodingLength = Self.paddedTextEncodingLength(
+          configuredLength: self.paddedTextEncodingLength, zeroCaption: zeroCaptionInput,
+          processedInputs: processedInputs)
         let textModel = Qwen3(
           FloatType.self, vocabularySize: 151_936,
           width: 2_560, tokenLength: paddedTextEncodingLength,
@@ -1091,7 +1115,7 @@ public struct LoRATrainer {
         for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
           guard input.imagePath == input.loadedImagePath else { continue }
           for i in 0..<paddedTextEncodingLength {
-            tokensTensor[i] = input.tokens[i]
+            tokensTensor[i] = i < input.tokens.count ? input.tokens[i] : tokenizer.unknownToken
           }
           let tokensTensorGPU = tokensTensor.toGPU(0)
           let c = textModel(inputs: tokensTensorGPU, rotaryTensorGPU, causalAttentionMaskGPU)[0].as(
