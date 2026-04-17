@@ -126,23 +126,6 @@ private func ErnieImageFeedForward(
   return (gate, down, up, Model([x], [out]))
 }
 
-private func ErnieImageApplyRotaryEmbedding(
-  _ x: Model.IO, cos: Model.IO, sin: Model.IO, batchSize: Int, tokenLength: Int, heads: Int,
-  headDim: Int
-) -> Model.IO {
-  let halfDim = headDim / 2
-  let firstHalf = x.reshaped(
-    [batchSize, tokenLength, heads, halfDim], offset: [0, 0, 0, 0],
-    strides: [tokenLength * heads * headDim, heads * headDim, headDim, 1]
-  ).copied()
-  let secondHalf = x.reshaped(
-    [batchSize, tokenLength, heads, halfDim], offset: [0, 0, 0, halfDim],
-    strides: [tokenLength * heads * headDim, heads * headDim, headDim, 1]
-  ).copied()
-  let rotated = Functional.concat(axis: 3, secondHalf, firstHalf)
-  return x .* cos + rotated .* sin
-}
-
 private func ErnieImageTransformerBlock(
   prefix: String, hiddenSize: Int, k: Int, h: Int, batchSize: Int, t: (keyValue: Int, query: Int),
   intermediateSize: Int, scaleFactor: (qk: Int, v: Int, projDown: Int),
@@ -196,12 +179,8 @@ private func ErnieImageTransformerBlock(
     queryCos = rotCos
     querySin = rotSin
   }
-  queries = ErnieImageApplyRotaryEmbedding(
-    queries, cos: queryCos, sin: querySin, batchSize: batchSize, tokenLength: t.query, heads: h,
-    headDim: k)
-  keys = ErnieImageApplyRotaryEmbedding(
-    keys, cos: rotCos, sin: rotSin, batchSize: batchSize, tokenLength: t.keyValue, heads: h,
-    headDim: k)
+  queries = queries .* queryCos + Functional.rotateHalf(queries) .* querySin
+  keys = keys .* rotCos + Functional.rotateHalf(keys) .* rotSin
 
   var attentionOut: Model.IO
   switch usesFlashAttention {
