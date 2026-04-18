@@ -190,6 +190,9 @@ public final class ModelImporter {
     var isZImage = stateDict.keys.contains {
       $0.contains("layers.29.feed_forward.w3.")
     }
+    var isErnieImage = stateDict.keys.contains {
+      $0.contains("layers.35.mlp.linear_fc2.") || $0.contains("layers_35_mlp_linear_fc2")
+    }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
     let inputDim: Int
@@ -262,6 +265,7 @@ public final class ModelImporter {
       isQwenImage = false
       isAuraFlow = false
       isZImage = false
+      isErnieImage = false
       isFlux2 = false
       isFlux2_9B = false
       isFlux2_4B = false
@@ -377,6 +381,12 @@ public final class ModelImporter {
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("layers.29.attention.to_out.0.")
       }
+    } else if isErnieImage {
+      modelVersion = .ernieImage
+      modifier = .none
+      inputDim = 32
+      expectedTotalAccess = 421
+      isDiffusersFormat = false
     } else if isFlux2 {
       modelVersion = .flux2
       modifier = .kontext
@@ -728,6 +738,9 @@ public final class ModelImporter {
     case .zImage:
       conditionalLength = 2560
       batchSize = 1
+    case .ernieImage:
+      conditionalLength = 3072
+      batchSize = 1
     case .flux2:
       conditionalLength = 15360
       batchSize = 1
@@ -737,7 +750,7 @@ public final class ModelImporter {
     case .flux2_4b:
       conditionalLength = 7680
       batchSize = 1
-    case .ernieImage, .ltx2, .ltx2_3, .cosmos2_5_2b:
+    case .ltx2, .ltx2_3, .cosmos2_5_2b:
       fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
@@ -919,6 +932,19 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .ernieImage:
+        let (rotCos, rotSin) = ErnieImageRotaryPositionEmbedding(
+          height: 32, width: 32, textLength: 512)
+        cArr =
+          [
+            graph.variable(Tensor<FloatType>(from: rotCos)),
+            graph.variable(Tensor<FloatType>(from: rotSin)),
+          ]
+          + ErnieImageFixedOutputShapes(
+            tokenLength: 512, channels: 4096
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .flux2:
         cArr =
           [
@@ -958,7 +984,7 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .ernieImage, .ltx2, .ltx2_3, .cosmos2_5_2b:
+      case .ltx2, .ltx2_3, .cosmos2_5_2b:
         fatalError()
       case .kandinsky21, .v1, .v2:
         break
@@ -1165,6 +1191,12 @@ public final class ModelImporter {
           activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:],
           usesFlashAttention: .scale1
         )
+      case .ernieImage:
+        (unetMapper, unet) = ErnieImage(
+          batchSize: 1, height: 64, width: 64, textLength: 512, layers: 36, channels: 4_096,
+          usesFlashAttention: .scale1)
+        (unetFixedMapper, unetFixed) = ErnieImageFixed(
+          tokenLength: 512, timesteps: 1, channels: 4_096)
       case .flux2:
         (unetMapper, unet) = Flux2(
           batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
@@ -1189,7 +1221,7 @@ public final class ModelImporter {
           timesteps: 1,
           channels: 3072, layers: (5, 20), numberOfReferenceImages: 0, guidanceEmbed: true,
           usesFlashAttention: .scale1, kvCache: false)
-      case .ernieImage, .ltx2, .ltx2_3, .cosmos2_5_2b:
+      case .ltx2, .ltx2_3, .cosmos2_5_2b:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
         fatalError()
@@ -1298,6 +1330,12 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
+      case .ernieImage:
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 3072), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 1, 4096), of: FloatType.self),
+        ]
+        tEmb = nil
       case .auraflow:
         crossattn = [
           graph.variable(.CPU, .HWC(1, 256, 2048), of: FloatType.self),
@@ -1325,7 +1363,7 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .ernieImage, .ltx2, .ltx2_3, .cosmos2_5_2b:
+      case .ltx2, .ltx2_3, .cosmos2_5_2b:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
@@ -1433,6 +1471,15 @@ public final class ModelImporter {
           }
         }
       } else if modelVersion == .zImage {
+        // Remove the model.diffusion_model / model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          } else if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
+          }
+        }
+      } else if modelVersion == .ernieImage {
         // Remove the model.diffusion_model / model prefix.
         for (key, value) in stateDict {
           if key.hasPrefix("model.diffusion_model.") {
@@ -1785,6 +1832,10 @@ public final class ModelImporter {
           if $0.keys.count != 713 {
             throw Error.tensorWritesFailed
           }
+        case .ernieImage:
+          if $0.keys.count != 421 {
+            throw Error.tensorWritesFailed
+          }
         case .flux2:
           if $0.keys.count != 600 {
             throw Error.tensorWritesFailed
@@ -1797,7 +1848,7 @@ public final class ModelImporter {
           if $0.keys.count != 292 && $0.keys.count != 294 {
             throw Error.tensorWritesFailed
           }
-        case .ernieImage, .ltx2, .ltx2_3, .cosmos2_5_2b:
+        case .ltx2, .ltx2_3, .cosmos2_5_2b:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()
@@ -2298,9 +2349,9 @@ extension ModelImporter {
         specification.autoencoder = "flux_2_vae_f16.ckpt"
       }
       specification.highPrecisionAutoencoder = true
-      specification.objective = .u(conditionScale: 1)
+      specification.objective = .u(conditionScale: 1000)
       specification.noiseDiscretization = .rf(
-        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1))
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1000))
       specification.hiresFixScale = finetuneScale * 2
     case .flux2:
       if specification.textEncoder == nil {
