@@ -276,11 +276,17 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
   case .ernieImage:
     let fixedConditionCount = isCfgEnabled ? 5 : 3
     return conditions[0..<fixedConditionCount]
-      + conditions[fixedConditionCount..<conditions.count].map {
-        let shape = $0.shape
-        return DynamicGraph.Tensor<FloatType>($0)[
+    + Array(conditions[fixedConditionCount..<conditions.count]).enumerated().map {
+      let shape = $0.1.shape
+      if $0.0 == 2 || $0.0 == 5 { // These are Float32.
+        return DynamicGraph.Tensor<Float>($0.1)[
           index..<(index + 1), 0..<shape[1], 0..<shape[2]
         ].copied()
+      } else {
+        return DynamicGraph.Tensor<FloatType>($0.1)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      }
       }
   case .cosmos2_5_2b:
     return conditions[0..<1]
@@ -1430,20 +1436,40 @@ extension UNetFromNNC {
           })
       }
     case .ernieImage:
-      tiledWidth = startWidth
-      tiledHeight = startHeight
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tiledAudioHeight = 0
       tileScaleFactor = 8
-      didRunLoRASeparately = false
-      unet = ModelBuilderOrModel.modelBuilder(
-        ModelBuilder {
-          let textLength = $0[3].shape[1]
-          return ErnieImage(
-            batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
-            textLength: textLength, layers: 36, channels: 4_096,
-            usesFlashAttention: valueOr(useFlashAttention, .scale1)
-          ).1
-        })
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let textLength = $0[3].shape[1]
+            return LoRAErnieImage(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: textLength, layers: 36, channels: 4_096,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              LoRAConfiguration: configuration
+            ).0
+          })
+      } else {
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let textLength = $0[3].shape[1]
+            return ErnieImage(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: textLength, layers: 36, channels: 4_096,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1)
+            ).1
+          })
+      }
     case .flux2, .flux2_9b, .flux2_4b:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -1525,15 +1551,31 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tiledAudioHeight = 0
       tileScaleFactor = 8
-      didRunLoRASeparately = false
-      unet = ModelBuilderOrModel.modelBuilder(
-        ModelBuilder {
-          let textLength = $0[2 + CosmosFixedTimeConditionCount].shape[1]
-          return Cosmos(
-            batchSize: $0[0].shape[0], latentHeight: tiledHeight, latentWidth: tiledWidth,
-            textLength: textLength, usesFlashAttention: useFlashAttention != .none
-          ).1
-        })
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let textLength = $0[2 + CosmosFixedTimeConditionCount].shape[1]
+            return LoRACosmos(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: textLength, usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              LoRAConfiguration: configuration
+            ).0
+          })
+      } else {
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let textLength = $0[2 + CosmosFixedTimeConditionCount].shape[1]
+            return Cosmos(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: textLength, usesFlashAttention: valueOr(useFlashAttention, .scale1)
+            ).1
+          })
+      }
     case .hiDreamI1:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -2343,7 +2385,34 @@ extension UNetFromNNC {
           return finalEncoding
         }
       case .ernieImage:
-        break
+        let shape = $0.1.shape
+        let imageLength = (originalShape[1] / 2) * (originalShape[2] / 2)
+        guard shape.count == 4, shape[0] == 1, shape[1] > imageLength, shape[3] == 128 else {
+          break
+        }
+        let tokenLength = shape[1] - imageLength
+        let graph = $0.1.graph
+        let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+          0..<shape[0], 0..<imageLength, 0..<shape[2], 0..<shape[3]
+        ].copied().reshaped(
+          .NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[2] * shape[3]))
+        let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+          0..<shape[0], imageLength..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let h = inputEndYPad / 2 - inputStartYPad / 2
+        let w = inputEndXPad / 2 - inputStartXPad / 2
+        let sliceEncoding = imageEncoding[
+          0..<shape[0], (inputStartYPad / 2)..<(inputEndYPad / 2),
+          (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<(shape[2] * shape[3])
+        ].copied().reshaped(.NHWC(shape[0], h * w, shape[2], shape[3]))
+        var finalEncoding = graph.variable(
+          $0.1.kind, .NHWC(shape[0], h * w + tokenLength, shape[2], shape[3]),
+          of: FloatType.self)
+        finalEncoding[0..<shape[0], 0..<(h * w), 0..<shape[2], 0..<shape[3]] = sliceEncoding
+        finalEncoding[
+          0..<shape[0], (h * w)..<(h * w + tokenLength), 0..<shape[2], 0..<shape[3]] =
+          tokenEncoding
+        return finalEncoding
       case .flux2, .flux2_9b, .flux2_4b:
         if $0.0 == 0 {
           let shape = $0.1.shape

@@ -1459,7 +1459,7 @@ private func projectedImportedOutputFiles(
     case .sdxlRefiner:
       files.append("\(modelName)_open_clip_vit_bigg14_f16.ckpt")
     case .ernieImage:
-      files.append("\(modelName)_ministral_3_3b_f16.ckpt")
+      files.append("\(modelName)_ministral_3_3b_q8p.ckpt")
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
       .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
       .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
@@ -3199,6 +3199,10 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
     tokenizerStack = [tokenizers.tokenizerQwen25]
   case .zImage:
     tokenizerStack = [tokenizers.tokenizerQwen3]
+  case .ernieImage:
+    tokenizerStack = [tokenizers.tokenizerMistral3]
+  case .cosmos2_5_2b:
+    tokenizerStack = [tokenizers.tokenizerQwen3, tokenizers.tokenizerT5]
   default:
     throw ValidationError("Unsupported LoRA trainer model version: \(trainer.version)")
   }
@@ -3238,6 +3242,12 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
       trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
   case .zImage:
     trainableKeys = zImageTrainableKeys(
+      trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
+  case .ernieImage:
+    trainableKeys = ernieImageTrainableKeys(
+      trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
+  case .cosmos2_5_2b:
+    trainableKeys = cosmosTrainableKeys(
       trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
   default:
     trainableKeys = []
@@ -3926,6 +3936,7 @@ private struct LoRATrainerTokenizers {
   var tokenizerChatGLM3: SentencePieceTokenizer
   var tokenizerQwen25: TiktokenTokenizer
   var tokenizerQwen3: TiktokenTokenizer
+  var tokenizerMistral3: TiktokenTokenizer
 }
 
 private func createLoRATrainerTokenizers() -> LoRATrainerTokenizers {
@@ -3965,10 +3976,19 @@ private func createLoRATrainerTokenizers() -> LoRATrainerTokenizers {
       "<|file_sep|>": 151664, "<tool_response>": 151665, "</tool_response>": 151666,
       "<think>": 151667, "</think>": 151668,
     ])
+  let tokenizerMistral3 = TiktokenTokenizer(
+    vocabulary: BinaryResources.vocab_mistral3_json, merges: BinaryResources.merges_mistral3_txt,
+    specialTokens: [
+      "<unk>": 0, "<s>": 1, "</s>": 2, "[INST]": 3, "[/INST]": 4, "[AVAILABLE_TOOLS]": 5,
+      "[/AVAILABLE_TOOLS]": 6, "[TOOL_RESULTS]": 7, "[/TOOL_RESULTS]": 8, "[TOOL_CALLS]": 9,
+      "[IMG]": 10, "<pad>": 11, "[IMG_BREAK]": 12, "[IMG_END]": 13, "[PREFIX]": 14,
+      "[MIDDLE]": 15, "[SUFFIX]": 16, "[SYSTEM_PROMPT]": 17, "[/SYSTEM_PROMPT]": 18,
+      "[TOOL_CONTENT]": 19,
+    ], unknownToken: "<unk>", startToken: "<s>", endToken: "</s>")
   return LoRATrainerTokenizers(
     tokenizerV1: tokenizerV1, tokenizerV2: tokenizerV2, tokenizerT5: tokenizerT5,
     tokenizerChatGLM3: tokenizerChatGLM3, tokenizerQwen25: tokenizerQwen25,
-    tokenizerQwen3: tokenizerQwen3)
+    tokenizerQwen3: tokenizerQwen3, tokenizerMistral3: tokenizerMistral3)
 }
 
 private func inspectTrainingImage(url: URL) -> (width: Int, height: Int)? {
@@ -4313,6 +4333,59 @@ private func zImageTrainableKeys(
   .flatMap { $0 }
   let indices = layerIndices.isEmpty ? Array(0..<30) : layerIndices
   for layerIndex in indices where layerIndex >= 0 && layerIndex < 30 {
+    keys.append(contentsOf: layerKeys.map { "\($0)-\(layerIndex)-" })
+  }
+  return keys
+}
+
+private func ernieImageTrainableKeys(
+  trainableLayers: Set<LoRATrainableLayer> = [], layerIndices: [Int] = []
+) -> [String] {
+  let trainableLayers =
+    trainableLayers.isEmpty ? Set(LoRATrainableLayer.allCases) : trainableLayers
+  var keys = [String]()
+  if trainableLayers.contains(.latentsEmbedder) {
+    keys.append("x_embedder-0-")
+  }
+  if trainableLayers.contains(.projectOut) {
+    keys.append("linear-0-")
+  }
+  let layerKeys = [
+    trainableLayers.contains(.qkv) ? ["q", "k", "v"] : [],
+    trainableLayers.contains(.out) ? ["o"] : [],
+    trainableLayers.contains(.feedForward)
+      ? ["ffn_gate_proj", "ffn_up_proj", "ffn_down_proj"] : [],
+  ]
+  .flatMap { $0 }
+  let indices = layerIndices.isEmpty ? Array(0..<36) : layerIndices
+  for layerIndex in indices where layerIndex >= 0 && layerIndex < 36 {
+    keys.append(contentsOf: layerKeys.map { "\($0)-\(layerIndex)-" })
+  }
+  return keys
+}
+
+private func cosmosTrainableKeys(
+  trainableLayers: Set<LoRATrainableLayer> = [], layerIndices: [Int] = []
+) -> [String] {
+  let trainableLayers =
+    trainableLayers.isEmpty ? Set(LoRATrainableLayer.allCases) : trainableLayers
+  var keys = [String]()
+  if trainableLayers.contains(.latentsEmbedder) {
+    keys.append("x_embedder-0-")
+  }
+  if trainableLayers.contains(.projectOut) {
+    keys.append("proj_out-0-")
+  }
+  let layerKeys = [
+    trainableLayers.contains(.qkv) ? ["q_proj", "k_proj", "v_proj"] : [],
+    trainableLayers.contains(.qkvContext) ? ["c_q_proj"] : [],
+    trainableLayers.contains(.out) ? ["out_proj"] : [],
+    trainableLayers.contains(.outContext) ? ["c_out_proj"] : [],
+    trainableLayers.contains(.feedForward) ? ["fc1", "fc2"] : [],
+  ]
+  .flatMap { $0 }
+  let indices = layerIndices.isEmpty ? Array(0..<28) : layerIndices
+  for layerIndex in indices where layerIndex >= 0 && layerIndex < 28 {
     keys.append(contentsOf: layerKeys.map { "\($0)-\(layerIndex)-" })
   }
   return keys

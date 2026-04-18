@@ -202,6 +202,18 @@ public enum LoRAImporter {
         timesteps: 1,
         channels: 3072, layers: (5, 20), numberOfReferenceImages: 0, guidanceEmbed: true,
         usesFlashAttention: .scale1, kvCache: false)
+    case .ernieImage:
+      (unetMapper, unet) = ErnieImage(
+        batchSize: 1, height: 64, width: 64, textLength: 512, layers: 36, channels: 4_096,
+        usesFlashAttention: .scale1)
+      (unetFixedMapper, unetFixed) = ErnieImageFixed(
+        tokenLength: 512, timesteps: 1, channels: 4_096)
+    case .cosmos2_5_2b:
+      (unetMapper, unet) = Cosmos(
+        batchSize: 1, height: 64, width: 64, textLength: 512,
+        usesFlashAttention: .scale1)
+      (unetFixedMapper, unetFixed) = CosmosFixed(
+        timesteps: 1, batchSize: 1, textLength: 512, usesFlashAttention: .scale1)
     case .ltx2:
       (unetMapper, unet) = LTX2(
         time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
@@ -222,7 +234,7 @@ public enum LoRAImporter {
         time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
         layers: 48, contextProjection: false, textCrossAttentionAdaLN: true, KV: false,
         usesFlashAttention: .scale1)
-    case .auraflow, .cosmos2_5_2b, .ernieImage:
+    case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
@@ -293,14 +305,19 @@ public enum LoRAImporter {
       case .flux2_4b:
         inputDim = 32
         conditionalLength = 7680
+      case .ernieImage:
+        inputDim = 32
+        conditionalLength = 4096
+      case .cosmos2_5_2b:
+        inputDim = 16
+        conditionalLength = 1024
       case .ltx2:
         inputDim = 128
         conditionalLength = 3840
       case .ltx2_3:
         inputDim = 128
         conditionalLength = 6144
-      case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .cosmos2_5_2b,
-        .ernieImage:
+      case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
       }
       let crossattn: [DynamicGraph.Tensor<FloatType>]
@@ -443,6 +460,40 @@ public enum LoRAImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
+      case .ernieImage:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 3072), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 1, 4096), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .cosmos2_5_2b:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 1024), of: FloatType.self),
+          graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: 1000, batchSize: 1, embeddingSize: 2048, maxPeriod: 10_000))
+          ),
+        ]
+        tEmb = nil
+        let (adapterMapper, adapter) = AnimaLLMAdapter(
+          batchSize: 2, tokenLength: 16, contextLength: 16, usesFlashAttention: true)
+        let sourceHiddenStates = graph.variable(.CPU, .WC(32, 1024), of: FloatType.self)
+        let targetInputIDs = graph.variable(.CPU, format: .NHWC, shape: [32], of: Int32.self)
+        let targetRot = graph.variable(
+          Tensor<FloatType>(from: AnimaRotaryPositionEmbedding(sequenceLength: 16)))
+        let sourceRot = graph.variable(
+          Tensor<FloatType>(from: AnimaRotaryPositionEmbedding(sequenceLength: 16)))
+        adapter.compile(inputs: [sourceHiddenStates, targetInputIDs, targetRot, sourceRot])
+        otherMappings.append(
+          (
+            "llm_adapter",
+            adapterMapper(format.contains(.diffusers) ? .diffusers : .generativeModels)
+          ))
       case .ltx2:
         isCfgEnabled = false
         isGuidanceEmbedEnabled = false
@@ -545,7 +596,7 @@ public enum LoRAImporter {
           textAudioAggregateEmbed.bias.name
         ]
         otherMappings.append(("text_feature_extractor", textFeatureExtractorMapping))
-      case .auraflow, .cosmos2_5_2b, .ernieImage:
+      case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
         fatalError()
@@ -764,6 +815,31 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .ernieImage:
+        let (rotCos, rotSin) = ErnieImageRotaryPositionEmbedding(
+          height: 32, width: 32, textLength: 512)
+        cArr =
+          [
+            graph.variable(Tensor<FloatType>(from: rotCos)),
+            graph.variable(Tensor<FloatType>(from: rotSin)),
+          ]
+          + ErnieImageFixedOutputShapes(
+            tokenLength: 512, channels: 4096
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
+      case .cosmos2_5_2b:
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: CosmosRotaryPositionEmbedding(height: 32, width: 32)))
+          ]
+          + CosmosFixedOutputShapes(
+            timesteps: 1, batchSize: 1, textLength: 512
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .ltx2:
         let (rotaryEmbedding, rotaryEmbeddingAudio, rotaryEmbeddingVideoToAudio) =
           LTX2VideoAudioRotaryPositionEmbedding(
@@ -800,7 +876,7 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .kandinsky21, .v1, .v2, .cosmos2_5_2b, .ernieImage:
+      case .kandinsky21, .v1, .v2:
         fatalError()
       }
       let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
@@ -1156,6 +1232,17 @@ public enum LoRAImporter {
           || $0.contains("single_transformer_blocks.39.attn.to_qkv_mlp_proj.")
           || $0.contains("single_transformer_blocks_39_attn_to_qkv_mlp_proj")
       }
+      let isErnieImage = stateDict.keys.contains {
+        $0.contains("layers.35.self_attention.to_q.")
+          || $0.contains("layers_35_self_attention_to_q")
+          || $0.contains("layers.35.mlp.linear_fc2.")
+          || $0.contains("layers_35_mlp_linear_fc2")
+      }
+      let isCosmosAnima = stateDict.keys.contains {
+        $0.contains("patch_embed.proj.") || $0.contains("patch_embed_proj")
+          || $0.contains("blocks.5.self_attn.q_proj.")
+          || $0.contains("blocks_5_self_attn_q_proj")
+      }
       let isSDOrSDXL = stateDict.keys.contains {
         $0.hasSuffix(
           "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -1174,6 +1261,12 @@ public enum LoRAImporter {
           return forceVersion
         }
         return version
+      }
+      if isErnieImage {
+        return forceVersionOr(.ernieImage)
+      }
+      if isCosmosAnima {
+        return forceVersionOr(.cosmos2_5_2b)
       }
       // Only confident about these if it is SD or SDXL. In any other cases, prefer the force version.
       switch (

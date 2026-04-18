@@ -2780,8 +2780,8 @@ extension TextEncoder {
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) { store in
-        try! store.read(
-          "text_model", model: textModel, strict: true,
+        store.read(
+          "text_model", model: textModel,
           codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
       }
     }
@@ -2967,8 +2967,8 @@ extension TextEncoder {
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
       ) { store in
-        try! store.read(
-          "text_model", model: textModel, strict: true,
+        store.read(
+          "text_model", model: textModel,
           codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData]
         )
       }
@@ -2999,9 +2999,37 @@ extension TextEncoder {
     let targetTokenLength = max(targetTokenLengthUncondResolved, targetTokenLengthCondResolved)
     tokenLengthUncond = targetTokenLengthUncondResolved
     tokenLengthCond = targetTokenLengthCondResolved
-    let (_, adapter) = AnimaLLMAdapter(
-      batchSize: 2, tokenLength: targetTokenLength, contextLength: sourceTokenLength,
-      usesFlashAttention: usesFlashAttention)
+    let lora = Array(
+      (OrderedDictionary<String, LoRAConfiguration>(
+        lora.filter({ $0.version == version }).map {
+          ($0.file, $0)
+        }
+      ) {
+        LoRAConfiguration(
+          file: $0.file, weight: $0.weight + $1.weight, version: $0.version, isLoHa: $0.isLoHa,
+          modifier: $0.modifier, mode: $0.mode)
+      })
+      .values
+    ).filter { $0.weight != 0 }
+    let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
+      graph, of: lora.map { $0.file }, modelFile: filePaths[1])
+    let isLoHa = lora.contains { $0.isLoHa }
+    var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+    let shouldRunLoRASeparately = !lora.isEmpty && !isLoHa && rankOfLoRA > 0
+    let adapter: Model
+    if shouldRunLoRASeparately {
+      let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePaths[1])
+      configuration.keys = keys
+      adapter =
+        LoRAAnimaLLMAdapter(
+          batchSize: 2, tokenLength: targetTokenLength, contextLength: sourceTokenLength,
+          usesFlashAttention: usesFlashAttention, LoRAConfiguration: configuration
+        ).1
+    } else {
+      (_, adapter) = AnimaLLMAdapter(
+        batchSize: 2, tokenLength: targetTokenLength, contextLength: sourceTokenLength,
+        usesFlashAttention: usesFlashAttention)
+    }
     var targetTokensCPU = graph.variable(
       .CPU, format: .NHWC, shape: [2 * targetTokenLength], of: Int32.self)
     targetTokensCPU[0..<targetTokenLength] =
@@ -3024,8 +3052,45 @@ extension TextEncoder {
       filePaths[1], flags: .readOnly,
       externalStore: TensorData.externalStore(filePath: filePaths[1])
     ) { store in
-      store.read(
-        "llm_adapter", model: adapter, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+      if shouldRunLoRASeparately {
+        let mapping = [Int: Int](uniqueKeysWithValues: (0..<6).map { ($0, $0) })
+        LoRALoader.openStore(graph, lora: lora) { loader in
+          store.read(
+            "llm_adapter", model: adapter,
+            codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData]
+          ) { name, dataType, format, shape in
+            if dataType == .Float32 {
+              return loader.concatenateLoRA(
+                graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                store: store, dataType: dataType, format: format, shape: shape, of: Float32.self)
+            } else {
+              return loader.concatenateLoRA(
+                graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self)
+            }
+          }
+        }
+      } else if !lora.isEmpty {
+        LoRALoader.openStore(graph, lora: lora) { loader in
+          store.read(
+            "llm_adapter", model: adapter,
+            codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData]
+          ) { name, dataType, _, shape in
+            if dataType == .Float32 {
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape, of: Float32.self)
+            } else {
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
+            }
+          }
+        }
+      } else {
+        store.read(
+          "llm_adapter", model: adapter, codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData]
+        )
+      }
     }
     let context = adapter(
       inputs: sourceHiddenStates, [targetTokensGPU, targetRotaryGPU, sourceAdapterRotaryGPU]

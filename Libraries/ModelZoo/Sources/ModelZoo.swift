@@ -790,19 +790,79 @@ public struct ModelZoo: DownloadZoo {
       "ad7fb5cb2fb935bfc33cb884868ff2319521e3f1ab375d9b9dad288fd0c73788",
     "hidream_i1_full_i8x.ckpt":
       "cf53865d9015ac08fd9e64c990160cf191b6336375bef169e669abcb5d861431",
-    "qwen_3_0.6b_f16.ckpt":
-      "357a2fd44e7ca09058d05b32d9791a5d1fcf2d25473bcfd24b7f5c09c0101c4d",
-    "anima_preview_3_f16.ckpt":
-      "534b3bd05a744796bddcaf4673e36ebfc950c13bcefa530767d705e407a77c73",
+    "ernie_image_i8x.ckpt":
+      "2ae4d881a9d740f4aa18ce270563df105841111ff466505b35054801085b8c5a",
+    "ernie_image_q8p.ckpt":
+      "724f86513cca83a551aff17877851819ad4da7dfdbbc873996cbfda31c0e3323",
+    "ernie_image_q6p.ckpt":
+      "63a2b89afe233a3f0108b6b9e0e8dd73d429a11aa03d2abbfc8abb06e3e932bd",
+    "ernie_image_turbo_i8x.ckpt":
+      "6286758f178bee9dbdcfadb5c9781372b6222e2c546aa0b223bec81cb80d34de",
+    "ernie_image_turbo_q8p.ckpt":
+      "939315c139f2a47a307bb9405a6992325fc416cfaf60de36e9537be8e8b5ca85",
+    "ernie_image_turbo_q6p.ckpt":
+      "592ed1c171f0efcfb3633a948c98326cd66d0d1dd3f9fce05b9042be0c8be861",
+    "ministral_3_3b_q8p.ckpt":
+      "64be13a9f12230731be6acf01df1aecced00b7ffe6d5d9cc552321edfe3a46bd",
+    "ltx_2.3_22b_distilled_1.1_q8p.ckpt":
+      "ebb0c337ef43a39d6952ca35a1f245b33bfc3e4c9d9451e7138b926075f0b8dd",
+    "ltx_2.3_22b_distilled_1.1_q6p.ckpt":
+      "f7c804dd0e4ae14af2ff200fc96b2848b2967f7595bac830bf270ea39b47a611",
+    "ltx_2.3_22b_distilled_1.1_i8x.ckpt":
+      "c2bb0ac129aab08a0759b1c4d9a3e0c2202a4ae7a4e942c32d362f6559613d92",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
 
   public static let builtinSpecifications: [Specification] = [
     Specification(
-      name: "LTX-2.3 22B [distilled]", file: "ltx_2.3_22b_distilled_q8p.ckpt", prefix: "",
+      name: "LTX-2.3 22B [distilled] 1.1", file: "ltx_2.3_22b_distilled_1.1_q8p.ckpt", prefix: "",
       version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
       autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      clipEncoder: "ltx_2.3_22b_distilled_1.1_q8p.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      latentsUpscalers: [
+        .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
+      ],
+      note:
+        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a significant update to LTX-2 with improved audio and visual quality and enhanced prompt adherence. It is a state-of-the-art open-source audio-video foundation model developed by Lightricks and can generate synchronized video and audio within a single model. The [distilled] checkpoint is the distilled version of the full model and is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
+      copyright: "© 2026 Lightricks", huggingFaceLink: "Lightricks/LTX-2.3"
+    ),
+    Specification(
+      name: "LTX-2.3 22B [distilled] 1.1 (8-bit S)", file: "ltx_2.3_22b_distilled_1.1_i8x.ckpt",
+      prefix: "",
+      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      clipEncoder: "ltx_2.3_22b_distilled_1.1_i8x.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      latentsUpscalers: [
+        .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
+      ],
+      note:
+        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a significant update to LTX-2 with improved audio and visual quality and enhanced prompt adherence. It is a state-of-the-art open-source audio-video foundation model developed by Lightricks and can generate synchronized video and audio within a single model. The [distilled] checkpoint is the distilled version of the full model and is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
+      copyright: "© 2026 Lightricks", huggingFaceLink: "Lightricks/LTX-2.3"
+    ),
+    Specification(
+      name: "LTX-2.3 22B [distilled] 1.1 (6-bit)", file: "ltx_2.3_22b_distilled_1.1_q6p.ckpt",
+      prefix: "",
+      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      clipEncoder: "ltx_2.3_22b_distilled_1.1_q6p.ckpt", objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      latentsUpscalers: [
+        .init(file: "ltx_2.3_spatial_upscaler_x2_1.1_f16.ckpt", scale: .x2),
+        .init(file: "ltx_2.3_spatial_upscaler_x1.5_f16.ckpt", scale: .x1_5),
+      ],
+      note:
+        "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a significant update to LTX-2 with improved audio and visual quality and enhanced prompt adherence. It is a state-of-the-art open-source audio-video foundation model developed by Lightricks and can generate synchronized video and audio within a single model. The [distilled] checkpoint is the distilled version of the full model and is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
+      copyright: "© 2026 Lightricks"
+    ),
+    Specification(
+      name: "LTX-2.3 22B [distilled]", file: "ltx_2.3_22b_distilled_q8p.ckpt", prefix: "",
+      version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext, deprecated: true,
       clipEncoder: "ltx_2.3_22b_distilled_q8p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       latentsUpscalers: [
@@ -811,12 +871,12 @@ public struct ModelZoo: DownloadZoo {
       ],
       note:
         "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a significant update to LTX-2 with improved audio and visual quality and enhanced prompt adherence. It is a state-of-the-art open-source audio-video foundation model developed by Lightricks and can generate synchronized video and audio within a single model. The [distilled] checkpoint is the distilled version of the full model and is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
-      copyright: "© 2026 Lightricks", huggingFaceLink: "Lightricks/LTX-2.3"
+      copyright: "© 2026 Lightricks"
     ),
     Specification(
       name: "LTX-2.3 22B [distilled] (8-bit S)", file: "ltx_2.3_22b_distilled_i8x.ckpt", prefix: "",
       version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
-      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext, deprecated: true,
       clipEncoder: "ltx_2.3_22b_distilled_i8x.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       latentsUpscalers: [
@@ -825,12 +885,12 @@ public struct ModelZoo: DownloadZoo {
       ],
       note:
         "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a significant update to LTX-2 with improved audio and visual quality and enhanced prompt adherence. It is a state-of-the-art open-source audio-video foundation model developed by Lightricks and can generate synchronized video and audio within a single model. The [distilled] checkpoint is the distilled version of the full model and is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
-      copyright: "© 2026 Lightricks", huggingFaceLink: "Lightricks/LTX-2.3"
+      copyright: "© 2026 Lightricks"
     ),
     Specification(
       name: "LTX-2.3 22B [distilled] (6-bit)", file: "ltx_2.3_22b_distilled_q6p.ckpt", prefix: "",
       version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
-      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
+      autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext, deprecated: true,
       clipEncoder: "ltx_2.3_22b_distilled_q6p.ckpt", objective: .u(conditionScale: 1000),
       hiresFixScale: 24,
       latentsUpscalers: [
@@ -924,6 +984,54 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2026 Lightricks"
     ),
     Specification(
+      name: "ERNIE Image Base 1.0", file: "ernie_image_q8p.ckpt", prefix: "",
+      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
+      note:
+        "[ERNIE-Image](https://huggingface.co/baidu/ERNIE-Image) is Baidu's Apache 2.0-licensed 8B single-stream DiT text-to-image model. It focuses on instruction following, text rendering, and structured layouts such as posters, comics, and multi-panel compositions. The base model is intended for higher-fidelity generation, with 50 sampling steps recommended.",
+      copyright: "© 2026 Baidu", huggingFaceLink: "baidu/ERNIE-Image"
+    ),
+    Specification(
+      name: "ERNIE Image Base 1.0 (8-bit S)", file: "ernie_image_i8x.ckpt", prefix: "",
+      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
+      note:
+        "[ERNIE-Image](https://huggingface.co/baidu/ERNIE-Image) is a distilled rectified-flow image model from Baidu. It uses the Ministral 3 text encoder family together with the FLUX.2 VAE path, and works best with trailing samplers, CFG 1, and around 8 sampling steps.",
+      copyright: "© 2026 Baidu", huggingFaceLink: "baidu/ERNIE-Image"
+    ),
+    Specification(
+      name: "ERNIE Image Base 1.0 (6-bit)", file: "ernie_image_q6p.ckpt", prefix: "",
+      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
+      note:
+        "[ERNIE-Image](https://huggingface.co/baidu/ERNIE-Image) is Baidu's Apache 2.0-licensed 8B single-stream DiT text-to-image model. It focuses on instruction following, text rendering, and structured layouts such as posters, comics, and multi-panel compositions. The base model is intended for higher-fidelity generation, with 50 sampling steps recommended.",
+      copyright: "© 2026 Baidu"
+    ),
+    Specification(
+      name: "ERNIE Image Turbo 1.0", file: "ernie_image_turbo_q8p.ckpt", prefix: "",
+      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
+      note:
+        "[ERNIE-Image-Turbo](https://huggingface.co/baidu/ERNIE-Image-Turbo) is Baidu's Apache 2.0-licensed distilled release of ERNIE-Image, optimized with DMD and RL for fast generation. It keeps the same focus on instruction following, text rendering, and structured layouts, while targeting strong results with CFG 1 and 8 sampling steps.",
+      copyright: "© 2026 Baidu", huggingFaceLink: "baidu/ERNIE-Image-Turbo"
+    ),
+    Specification(
+      name: "ERNIE Image Turbo 1.0 (8-bit S)", file: "ernie_image_turbo_i8x.ckpt", prefix: "",
+      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
+      note:
+        "[ERNIE-Image-Turbo](https://huggingface.co/baidu/ERNIE-Image-Turbo) is Baidu's Apache 2.0-licensed distilled release of ERNIE-Image, optimized with DMD and RL for fast generation. It keeps the same focus on instruction following, text rendering, and structured layouts, while targeting strong results with CFG 1 and 8 sampling steps.",
+      copyright: "© 2026 Baidu", huggingFaceLink: "baidu/ERNIE-Image-Turbo"
+    ),
+    Specification(
+      name: "ERNIE Image Turbo 1.0 (6-bit)", file: "ernie_image_turbo_q6p.ckpt", prefix: "",
+      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
+      note:
+        "[ERNIE-Image-Turbo](https://huggingface.co/baidu/ERNIE-Image-Turbo) is Baidu's Apache 2.0-licensed distilled release of ERNIE-Image, optimized with DMD and RL for fast generation. It keeps the same focus on instruction following, text rendering, and structured layouts, while targeting strong results with CFG 1 and 8 sampling steps.",
+      copyright: "© 2026 Baidu"
+    ),
+    Specification(
       name: "Z Image Turbo 1.0", file: "z_image_turbo_1.0_q8p.ckpt", prefix: "",
       version: .zImage, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_q8p.ckpt",
       autoencoder: "flux_1_vae_f16.ckpt", objective: .u(conditionScale: 1000),
@@ -1006,14 +1114,6 @@ public struct ModelZoo: DownloadZoo {
       note:
         "[Z Image](https://huggingface.co/Tongyi-MAI/Z-Image) is a powerful and highly efficient image generation model with 6B parameters. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 28 to 50 sampling steps recommended.",
       copyright: "© 2026 Alibaba"
-    ),
-    Specification(
-      name: "ERNIE Image Turbo", file: "ernie_image_turbo_f16.ckpt", prefix: "",
-      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_f16.ckpt",
-      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
-      note:
-        "[ERNIE-Image-Turbo](https://huggingface.co/baidu/ERNIE-Image-Turbo) is a distilled rectified-flow image model from Baidu. It uses the Ministral 3 text encoder family together with the FLUX.2 VAE path, and works best with trailing samplers, CFG 1, and around 8 sampling steps.",
-      copyright: "© 2026 Baidu", huggingFaceLink: "baidu/ERNIE-Image-Turbo"
     ),
     Specification(
       name: "Qwen Image 2512", file: "qwen_image_2512_q8p.ckpt", prefix: "",
@@ -1157,14 +1257,6 @@ public struct ModelZoo: DownloadZoo {
       note:
         "[FLUX.2 [klein] 4B Base](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B) is a 4 billion parameter rectified flow transformer capable of generating, editing and combining images based on text instructions.",
       copyright: "© 2026 Black Forest Labs"
-    ),
-    Specification(
-      name: "Anima Preview 3", file: "anima_preview_3_f16.ckpt", prefix: "",
-      version: .cosmos2_5_2b, defaultScale: 16, textEncoder: "qwen_3_0.6b_f16.ckpt",
-      autoencoder: "qwen_image_vae_f16.ckpt", clipEncoder: "anima_preview_3_f16.ckpt",
-      objective: .u(conditionScale: 1),
-      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1)),
-      paddedTextEncodingLength: 512
     ),
     Specification(
       name: "Qwen Image 1.0", file: "qwen_image_1.0_q8p.ckpt", prefix: "",
@@ -3189,13 +3281,13 @@ public struct ModelZoo: DownloadZoo {
       case .qwenImage:
         return fileSize < 17 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
       case .cosmos2_5_2b:
-        return fileSize < 5 * 1_024 * 1_024 * 1_024
+        return fileSize < 3 * 1_024 * 1_024 * 1_024
       case .hiDreamI1:
         return fileSize < 13 * 1_024 * 1_024 * 1_024 + 512 * 1_024 * 1_024
       case .zImage:
         return fileSize < 5 * 1_024 * 1_024 * 1_024
       case .ernieImage:
-        return fileSize < 5 * 1_024 * 1_024 * 1_024
+        return fileSize < 9 * 1_024 * 1_024 * 1_024
       case .flux2:
         return fileSize < 26 * 1_024 * 1_024 * 1_024
       case .flux2_9b:
@@ -3257,9 +3349,9 @@ public struct ModelZoo: DownloadZoo {
       case .hiDreamI1:
         return fileSize < 17 * 1_024 * 1_024 * 1_024
       case .zImage:
-        return fileSize < 7 * 1_024 * 1_024 * 1_024
+        return fileSize < 8 * 1_024 * 1_024 * 1_024
       case .ernieImage:
-        return fileSize < 7 * 1_024 * 1_024 * 1_024
+        return fileSize < 9 * 1_024 * 1_024 * 1_024
       case .flux2:
         return fileSize < 40 * 1_024 * 1_024 * 1_024
       case .flux2_9b:
@@ -3267,7 +3359,7 @@ public struct ModelZoo: DownloadZoo {
       case .flux2_4b:
         return fileSize < 7 * 1_024 * 1_024 * 1_024
       case .ltx2, .ltx2_3:
-        return fileSize < 17 * 1_024 * 1_024 * 1_024
+        return fileSize < 20 * 1_024 * 1_024 * 1_024
       }
     }
     return false

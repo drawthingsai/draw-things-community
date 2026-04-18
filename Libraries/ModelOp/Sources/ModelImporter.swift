@@ -193,6 +193,11 @@ public final class ModelImporter {
     var isErnieImage = stateDict.keys.contains {
       $0.contains("layers.35.mlp.linear_fc2.") || $0.contains("layers_35_mlp_linear_fc2")
     }
+    var isCosmosAnima = stateDict.keys.contains {
+      $0.contains("patch_embed.proj.") || $0.contains("patch_embed_proj")
+        || $0.contains("blocks.5.self_attn.q_proj.")
+        || $0.contains("blocks_5_self_attn_q_proj")
+    }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
     let inputDim: Int
@@ -266,6 +271,7 @@ public final class ModelImporter {
       isAuraFlow = false
       isZImage = false
       isErnieImage = false
+      isCosmosAnima = false
       isFlux2 = false
       isFlux2_9B = false
       isFlux2_4B = false
@@ -387,6 +393,14 @@ public final class ModelImporter {
       inputDim = 32
       expectedTotalAccess = 421
       isDiffusersFormat = false
+    } else if isCosmosAnima {
+      modelVersion = .cosmos2_5_2b
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 856
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("patch_embed.proj.")
+      }
     } else if isFlux2 {
       modelVersion = .flux2
       modifier = .kontext
@@ -741,6 +755,9 @@ public final class ModelImporter {
     case .ernieImage:
       conditionalLength = 3072
       batchSize = 1
+    case .cosmos2_5_2b:
+      conditionalLength = 1024
+      batchSize = 1
     case .flux2:
       conditionalLength = 15360
       batchSize = 1
@@ -750,7 +767,7 @@ public final class ModelImporter {
     case .flux2_4b:
       conditionalLength = 7680
       batchSize = 1
-    case .ltx2, .ltx2_3, .cosmos2_5_2b:
+    case .ltx2, .ltx2_3:
       fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
@@ -945,6 +962,18 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
+      case .cosmos2_5_2b:
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: CosmosRotaryPositionEmbedding(height: 32, width: 32)))
+          ]
+          + CosmosFixedOutputShapes(
+            timesteps: 1, batchSize: 1, textLength: 512
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .flux2:
         cArr =
           [
@@ -984,13 +1013,14 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .ltx2, .ltx2_3, .cosmos2_5_2b:
+      case .ltx2, .ltx2_3:
         fatalError()
       case .kandinsky21, .v1, .v2:
         break
       }
       let unetFixed: Model?
       let unetFixedMapper: ModelWeightMapper?
+      var additionalMappings = [(prefix: String, mapping: ModelWeightMapping)]()
       switch modelVersion {
       case .v1:
         (unet, unetReader) = UNet(
@@ -1197,6 +1227,26 @@ public final class ModelImporter {
           usesFlashAttention: .scale1)
         (unetFixedMapper, unetFixed) = ErnieImageFixed(
           tokenLength: 512, timesteps: 1, channels: 4_096)
+      case .cosmos2_5_2b:
+        (unetMapper, unet) = Cosmos(
+          batchSize: 1, height: 64, width: 64, textLength: 512,
+          usesFlashAttention: .scale1)
+        (unetFixedMapper, unetFixed) = CosmosFixed(
+          timesteps: 1, batchSize: 1, textLength: 512, usesFlashAttention: .scale1)
+        let (adapterMapper, adapter) = AnimaLLMAdapter(
+          batchSize: 2, tokenLength: 16, contextLength: 16, usesFlashAttention: true)
+        let sourceHiddenStates = graph.variable(.CPU, .WC(32, 1024), of: FloatType.self)
+        let targetInputIDs = graph.variable(.CPU, format: .NHWC, shape: [32], of: Int32.self)
+        let targetRot = graph.variable(
+          Tensor<FloatType>(from: AnimaRotaryPositionEmbedding(sequenceLength: 16)))
+        let sourceRot = graph.variable(
+          Tensor<FloatType>(from: AnimaRotaryPositionEmbedding(sequenceLength: 16)))
+        adapter.compile(inputs: [sourceHiddenStates, targetInputIDs, targetRot, sourceRot])
+        var adapterMapping = ModelWeightMapping()
+        for (key, value) in adapterMapper(.generativeModels) {
+          adapterMapping["llm_adapter.\(key)"] = value
+        }
+        additionalMappings.append((prefix: "llm_adapter", mapping: adapterMapping))
       case .flux2:
         (unetMapper, unet) = Flux2(
           batchSize: 1, tokenLength: 512, referenceSequenceLength: 0, height: 64, width: 64,
@@ -1221,7 +1271,7 @@ public final class ModelImporter {
           timesteps: 1,
           channels: 3072, layers: (5, 20), numberOfReferenceImages: 0, guidanceEmbed: true,
           usesFlashAttention: .scale1, kvCache: false)
-      case .ltx2, .ltx2_3, .cosmos2_5_2b:
+      case .ltx2, .ltx2_3:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
         fatalError()
@@ -1336,6 +1386,15 @@ public final class ModelImporter {
           graph.variable(.CPU, .HWC(1, 1, 4096), of: FloatType.self),
         ]
         tEmb = nil
+      case .cosmos2_5_2b:
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 1024), of: FloatType.self),
+          graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: 1000, batchSize: 1, embeddingSize: 2048, maxPeriod: 10_000))),
+        ]
+        tEmb = nil
       case .auraflow:
         crossattn = [
           graph.variable(.CPU, .HWC(1, 256, 2048), of: FloatType.self),
@@ -1363,7 +1422,7 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .ltx2, .ltx2_3, .cosmos2_5_2b:
+      case .ltx2, .ltx2_3:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
@@ -1486,6 +1545,17 @@ public final class ModelImporter {
             stateDict[String(key.dropFirst(22))] = value
           } else if key.hasPrefix("model.") {
             stateDict[String(key.dropFirst(6))] = value
+          }
+        }
+      } else if modelVersion == .cosmos2_5_2b {
+        // Remove the model.diffusion_model / model / net prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          } else if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
+          } else if key.hasPrefix("net.") {
+            stateDict[String(key.dropFirst(4))] = value
           }
         }
       }
@@ -1742,8 +1812,72 @@ public final class ModelImporter {
                     let _ = interrupt()
                     return "__\(modelPrefixFixed)__[\($0)]"
                   }
-                } else if let name = value.first {
-                  store.write("__\(modelPrefixFixed)__[\(name)]", tensor: tensor)
+                } else if !value.isEmpty {
+                  value.write(
+                    graph: graph,
+                    to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
+                    isDiagonalDown: false
+                  ) {
+                    let _ = interrupt()
+                    return "__\(modelPrefixFixed)__[\($0)]"
+                  }
+                  let _ = interrupt()
+                }
+              }
+            }
+            for additionalMapping in additionalMappings {
+              let reverseAdditionalMapping = reverseMapping(original: additionalMapping.mapping)
+              for (key, value) in additionalMapping.mapping.sorted(by: { $0.key < $1.key }) {
+                guard let _ = stateDict[key], !consumed.contains(key) else {
+                  continue
+                }
+                let values =
+                  value.count == 1
+                  ? (reverseAdditionalMapping[value[0]] ?? [key])
+                  : [
+                    key
+                  ]
+                consumed.formUnion(values)
+                let tensorDescriptors = values.compactMap { stateDict[$0] }
+                try archive.with(tensorDescriptors) { tensors in
+                  guard !tensors.isEmpty else { return }
+                  let tensor: Tensor<FloatType>
+                  if tensors.count == 1 {
+                    tensor = Tensor<FloatType>(from: tensors[0])
+                  } else {
+                    let shape = [tensors.count] + Array(tensors[0].shape)
+                    var combined = Tensor<FloatType>(.CPU, format: .NCHW, shape: TensorShape(shape))
+                    for (i, tensor) in tensors.enumerated() {
+                      let shape = tensor.shape
+                      if shape.count == 4 {
+                        combined[
+                          i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
+                          Tensor<FloatType>(from: tensor).reshaped(
+                            format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                      } else if shape.count == 3 {
+                        combined[i..<(i + 1), 0..<shape[0], 0..<shape[1], 0..<shape[2]] = Tensor<
+                          FloatType
+                        >(from: tensor).reshaped(
+                          format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                      } else if shape.count == 2 {
+                        combined[i..<(i + 1), 0..<shape[0], 0..<shape[1]] = Tensor<FloatType>(
+                          from: tensor
+                        ).reshaped(format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                      } else if shape.count == 1 {
+                        combined[i..<(i + 1), 0..<shape[0]] = Tensor<FloatType>(from: tensor)
+                          .reshaped(format: .NCHW, shape: TensorShape([1] + Array(shape)))
+                      }
+                    }
+                    tensor = combined
+                  }
+                  value.write(
+                    graph: graph,
+                    to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
+                    isDiagonalDown: false
+                  ) {
+                    let _ = interrupt()
+                    return "__\(additionalMapping.prefix)__[\($0)]"
+                  }
                   let _ = interrupt()
                 }
               }
@@ -1836,6 +1970,10 @@ public final class ModelImporter {
           if $0.keys.count != 421 {
             throw Error.tensorWritesFailed
           }
+        case .cosmos2_5_2b:
+          if $0.keys.count != 856 {
+            throw Error.tensorWritesFailed
+          }
         case .flux2:
           if $0.keys.count != 600 {
             throw Error.tensorWritesFailed
@@ -1848,7 +1986,7 @@ public final class ModelImporter {
           if $0.keys.count != 292 && $0.keys.count != 294 {
             throw Error.tensorWritesFailed
           }
-        case .ltx2, .ltx2_3, .cosmos2_5_2b:
+        case .ltx2, .ltx2_3:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()
@@ -2097,6 +2235,10 @@ extension ModelImporter {
       textEncoder = fileNames.first {
         $0.hasSuffix("_qwen_2.5_vl_7b_f16.ckpt")
       }
+    case .cosmos2_5_2b:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_qwen_3_0.6b_q8p.ckpt")
+      }
     case .zImage:
       textEncoder = fileNames.first {
         $0.hasSuffix("_qwen_3_vl_4b_instruct_f16.ckpt")
@@ -2123,7 +2265,7 @@ extension ModelImporter {
       }
     case .wurstchenStageC:
       textEncoder = nil
-    case .kandinsky21, .wurstchenStageB, .cosmos2_5_2b:
+    case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
 
@@ -2311,6 +2453,20 @@ extension ModelImporter {
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
       specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
       specification.isBf16 = true
+    case .cosmos2_5_2b:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "qwen_3_0.6b_q8p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "qwen_image_vae_f16.ckpt"
+      }
+      if specification.clipEncoder == nil {
+        specification.clipEncoder = "\(fileName)_f16.ckpt"
+      }
+      specification.objective = .u(conditionScale: 1)
+      specification.noiseDiscretization = .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1))
+      specification.paddedTextEncodingLength = 512
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
     case .sd3, .sd3Large:
       if specification.textEncoder == nil {
         specification.textEncoder = "open_clip_vit_bigg14_f16.ckpt"
@@ -2343,7 +2499,7 @@ extension ModelImporter {
       specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
     case .ernieImage:
       if specification.textEncoder == nil {
-        specification.textEncoder = "ministral_3_3b_f16.ckpt"
+        specification.textEncoder = "ministral_3_3b_q8p.ckpt"
       }
       if specification.autoencoder == nil {
         specification.autoencoder = "flux_2_vae_f16.ckpt"
@@ -2403,7 +2559,7 @@ extension ModelImporter {
       }
       // For FLUX.2, the hires fix trigger scale is 2 of the finetune scale.
       specification.hiresFixScale = finetuneScale * 2
-    case .ltx2, .ltx2_3, .cosmos2_5_2b:
+    case .ltx2, .ltx2_3:
       fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()

@@ -165,7 +165,9 @@ public struct LoRATrainer {
         }
       })()
     CLIPEncoder = ModelZoo.CLIPEncodersForModel(model).first
-    if version == .qwenImage || version == .zImage || version == .ernieImage {
+    if version == .qwenImage || version == .zImage || version == .ernieImage
+      || version == .cosmos2_5_2b
+    {
       paddedTextEncodingLength = maxTextLength
     } else {
       paddedTextEncodingLength = min(
@@ -227,6 +229,14 @@ public struct LoRATrainer {
   ) -> Int {
     guard configuredLength == 0 else { return configuredLength }
     let maxTokenCount = ([zeroCaption] + processedInputs).map(\.tokens.count).max() ?? 0
+    return max((maxTokenCount + 31) / 32 * 32, 32)
+  }
+
+  private static func paddedCLIPTextEncodingLength(
+    configuredLength: Int, zeroCaption: ProcessedInput, processedInputs: [ProcessedInput]
+  ) -> Int {
+    guard configuredLength == 0 else { return configuredLength }
+    let maxTokenCount = ([zeroCaption] + processedInputs).map(\.CLIPTokens.count).max() ?? 0
     return max((maxTokenCount + 31) / 32 * 32, 32)
   }
 
@@ -1137,6 +1147,459 @@ public struct LoRATrainer {
     return (dataFrame, zeroCaptionInput)
   }
 
+  public func prepareDatasetForErnieImage(
+    inputs: [Input], tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
+    customEmbeddingLength: Int, progressHandler: (PrepareState, Int) -> Bool
+  ) -> (DataFrame, ProcessedInput)? {
+    let latentsScaling = ModelZoo.latentsScalingForModel(model)
+    let firstStage = FirstStage<FloatType>(
+      filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
+      latentsScaling: latentsScaling, highPrecisionKeysAndValues: false,
+      highPrecisionFallback: true,
+      tiledDecoding: TiledConfiguration(
+        isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
+        tileOverlap: 0),
+      tiledDiffusion: TiledConfiguration(
+        isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
+        tileOverlap: 0),
+      externalOnDemand: false, usesFlashAttention: false, alternativeFilePath: nil,
+      alternativeDecoderVersion: nil, deviceProperties: DeviceCapability.deviceProperties)
+    let graph = DynamicGraph()
+    var processedInputs = [ProcessedInput]()
+    let tokenizer = tokenizers[0]
+    let (_, zeroTokensRaw, _, _, zeroTokenLengths) = tokenizer.tokenize(
+      text: "", truncation: true, maxLength: paddedTextEncodingLength, paddingToken: nil,
+      addSpecialTokens: true)
+    let zeroTokens = Self.truncatedTokens(zeroTokensRaw, maxLength: paddedTextEncodingLength)
+    let zeroCaptionInput = ProcessedInput(
+      imagePath: "", tokens: zeroTokens,
+      tokenLength: min(
+        Self.tokenLength(from: zeroTokenLengths, fallback: zeroTokens.count), zeroTokens.count),
+      CLIPTokens: [],
+      originalSize: (0, 0), cropTopLeft: (0, 0), targetSize: (0, 0), loadedImagePath: "")
+    var stopped = false
+    graph.openStore(session) { store in
+      graph.withNoGrad {
+        var previousImageWidth: Int? = nil
+        var previousImageHeight: Int? = nil
+        var encoder: Model? = nil
+        for input in inputs {
+          guard let originalSize = imageInspector(input.imageUrl),
+            originalSize.width > 0 && originalSize.height > 0
+          else { continue }
+          let imageWidth: Int
+          let imageHeight: Int
+          if useImageAspectRatio {
+            let imageSize = Self.sizeThatFits(size: originalSize, scale: scale)
+            imageWidth = imageSize.width * 64
+            imageHeight = imageSize.height * 64
+          } else {
+            imageWidth = Int(scale.widthScale) * 64
+            imageHeight = Int(scale.heightScale) * 64
+          }
+          guard
+            let (tensor, originalSize, cropTopLeft, targetSize) = imageLoader(
+              input.imageUrl, imageWidth, imageHeight)
+          else { continue }
+          if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
+            encoder = nil
+          }
+          previousImageWidth = imageWidth
+          previousImageHeight = imageHeight
+          let tuple = firstStage.encode(
+            graph.constant(tensor.toGPU(0)), encoder: encoder, cancellation: { _ in })
+          let sample = tuple.0.rawValue.toCPU()
+          encoder = tuple.1
+          let imagePath = input.imageUrl.path
+          store.write(imagePath, tensor: sample)
+          let (_, tokensRaw, _, _, tokenLengths) = tokenizer.tokenize(
+            text: input.caption, truncation: true, maxLength: paddedTextEncodingLength,
+            paddingToken: nil, addSpecialTokens: true)
+          let tokens = Self.truncatedTokens(tokensRaw, maxLength: paddedTextEncodingLength)
+          processedInputs.append(
+            ProcessedInput(
+              imagePath: imagePath, tokens: tokens,
+              tokenLength: min(
+                Self.tokenLength(from: tokenLengths, fallback: tokens.count), tokens.count),
+              CLIPTokens: [],
+              originalSize: originalSize, cropTopLeft: cropTopLeft, targetSize: targetSize,
+              loadedImagePath: imagePath))
+          guard progressHandler(.imageEncoding, processedInputs.count) else {
+            stopped = true
+            break
+          }
+        }
+        guard !stopped else { return }
+        if useImageAspectRatio && !additionalScales.isEmpty {
+          var inputMap = [String: ProcessedInput]()
+          for input in processedInputs {
+            inputMap[input.imagePath] = input
+          }
+          for (i, scale) in additionalScales.enumerated() {
+            for input in inputs {
+              guard let originalSize = imageInspector(input.imageUrl),
+                originalSize.width > 0 && originalSize.height > 0
+              else { continue }
+              let imageSize = Self.sizeThatFits(size: originalSize, scale: scale)
+              let imageWidth = imageSize.width * 64
+              let imageHeight = imageSize.height * 64
+              guard
+                let (tensor, _, _, _) = imageLoader(
+                  input.imageUrl, imageWidth, imageHeight)
+              else { continue }
+              if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
+                encoder = nil
+              }
+              previousImageWidth = imageWidth
+              previousImageHeight = imageHeight
+              let tuple = firstStage.encode(
+                graph.constant(tensor.toGPU(0)), encoder: encoder, cancellation: { _ in })
+              let sample = tuple.0.rawValue.toCPU()
+              encoder = tuple.1
+              let imagePath = input.imageUrl.path
+              store.write(imagePath + ":\(i)", tensor: sample)
+              if var processedInput = inputMap[imagePath] {
+                processedInput.loadedImagePath = imagePath + ":\(i)"
+                processedInputs.append(processedInput)
+              }
+              guard progressHandler(.imageEncoding, processedInputs.count) else {
+                stopped = true
+                break
+              }
+            }
+            guard !stopped else { break }
+          }
+          guard !stopped else { return }
+        }
+      }
+      graph.withNoGrad {
+        let paddedTextEncodingLength = Self.paddedTextEncodingLength(
+          configuredLength: self.paddedTextEncodingLength, zeroCaption: zeroCaptionInput,
+          processedInputs: processedInputs)
+        let textModel = Mistral3(
+          FloatType.self, vocabularySize: 131_072, width: 3_072,
+          tokenLength: paddedTextEncodingLength, layers: 25, MLP: 9_216, heads: 32,
+          outputHiddenStates: [24], noFinalNormalizedOutput: true, batchSize: 1,
+          usesAdditionalTokens: false, usesFlashAttention: true)
+        let tokensTensor = graph.variable(
+          .CPU, format: .NHWC, shape: [paddedTextEncodingLength], of: Int32.self)
+        for i in 0..<paddedTextEncodingLength {
+          tokensTensor[i] = tokenizer.unknownToken
+        }
+        let tokensTensorGPU = tokensTensor.toGPU(0)
+        let rotaryTensorGPU = graph.variable(
+          Ministral3YaRNRotaryEmbedding(
+            sequenceLength: paddedTextEncodingLength, of: FloatType.self
+          ).toGPU(0))
+        let causalAttentionMask = graph.variable(
+          .CPU, .NHWC(1, 1, paddedTextEncodingLength, paddedTextEncodingLength),
+          of: FloatType.self)
+        causalAttentionMask.full(0)
+        for i in 0..<(paddedTextEncodingLength - 1) {
+          for j in (i + 1)..<paddedTextEncodingLength {
+            causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+          }
+        }
+        let causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
+        textModel.maxConcurrency = .limit(4)
+        textModel.compile(inputs: [tokensTensorGPU, rotaryTensorGPU, causalAttentionMaskGPU])
+        let textEncoderPath = ModelZoo.filePathForModelDownloaded(textEncoder)
+        graph.openStore(
+          textEncoderPath, flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: textEncoderPath)
+        ) {
+          $0.read(
+            "text_model", model: textModel,
+            codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
+        }
+        for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
+          guard input.imagePath == input.loadedImagePath else { continue }
+          for i in 0..<paddedTextEncodingLength {
+            tokensTensor[i] = i < input.tokens.count ? input.tokens[i] : tokenizer.unknownToken
+          }
+          let c = textModel(
+            inputs: tokensTensor.toGPU(0), [rotaryTensorGPU, causalAttentionMaskGPU]
+          )[0].as(
+            of: FloatType.self
+          ).reshaped(.HWC(1, paddedTextEncodingLength, 3_072))
+          store.write("cond_\(input.imagePath)", tensor: c.rawValue.toCPU())
+          guard progressHandler(.conditionalEncoding, index) else {
+            stopped = true
+            return
+          }
+        }
+      }
+    }
+    if stopped {
+      return nil
+    }
+    var dataFrame = DataFrame(from: processedInputs)
+    dataFrame["imagePath"] = dataFrame["0", ProcessedInput.self].map(\.imagePath)
+    return (dataFrame, zeroCaptionInput)
+  }
+
+  public func prepareDatasetForCosmos(
+    inputs: [Input], tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
+    customEmbeddingLength: Int, progressHandler: (PrepareState, Int) -> Bool
+  ) -> (DataFrame, ProcessedInput)? {
+    let animaAdapter = ModelZoo.T5EncoderForModel(model) ?? CLIPEncoder
+    guard tokenizers.count >= 2, let animaAdapter else {
+      return nil
+    }
+    let latentsScaling = ModelZoo.latentsScalingForModel(model)
+    let firstStage = FirstStage<FloatType>(
+      filePath: ModelZoo.filePathForModelDownloaded(autoencoder), version: version,
+      latentsScaling: latentsScaling, highPrecisionKeysAndValues: false,
+      highPrecisionFallback: true,
+      tiledDecoding: TiledConfiguration(
+        isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
+        tileOverlap: 0),
+      tiledDiffusion: TiledConfiguration(
+        isEnabled: false, tileSize: TiledConfiguration.Size(width: 0, height: 0),
+        tileOverlap: 0),
+      externalOnDemand: false, usesFlashAttention: false, alternativeFilePath: nil,
+      alternativeDecoderVersion: nil, deviceProperties: DeviceCapability.deviceProperties)
+    let graph = DynamicGraph()
+    var processedInputs = [ProcessedInput]()
+    let sourceTokenizer = tokenizers[0]
+    let targetTokenizer = tokenizers[1]
+    let sourcePadToken: Int32 = 151_643
+    let (_, zeroSourceTokensRaw, _, _, _) = sourceTokenizer.tokenize(
+      text: "", truncation: true, maxLength: paddedTextEncodingLength, paddingToken: nil,
+      addSpecialTokens: false)
+    let zeroSourceTokens = Self.truncatedTokens(
+      zeroSourceTokensRaw, maxLength: paddedTextEncodingLength)
+    let (_, zeroTargetTokensRaw, _, _, zeroTargetTokenLengths) = targetTokenizer.tokenize(
+      text: "", truncation: true, maxLength: paddedTextEncodingLength, paddingToken: nil,
+      addSpecialTokens: true)
+    let zeroTargetTokens = Self.truncatedTokens(
+      zeroTargetTokensRaw, maxLength: paddedTextEncodingLength)
+    let zeroCaptionInput = ProcessedInput(
+      imagePath: "", tokens: zeroTargetTokens,
+      tokenLength: max(
+        min(
+          Self.tokenLength(from: zeroTargetTokenLengths, fallback: zeroTargetTokens.count),
+          zeroTargetTokens.count), 1),
+      CLIPTokens: zeroSourceTokens,
+      originalSize: (0, 0), cropTopLeft: (0, 0), targetSize: (0, 0), loadedImagePath: "")
+    var stopped = false
+    graph.openStore(session) { store in
+      graph.withNoGrad {
+        var previousImageWidth: Int? = nil
+        var previousImageHeight: Int? = nil
+        var encoder: Model? = nil
+        for input in inputs {
+          guard let originalSize = imageInspector(input.imageUrl),
+            originalSize.width > 0 && originalSize.height > 0
+          else { continue }
+          let imageWidth: Int
+          let imageHeight: Int
+          if useImageAspectRatio {
+            let imageSize = Self.sizeThatFits(size: originalSize, scale: scale)
+            imageWidth = imageSize.width * 64
+            imageHeight = imageSize.height * 64
+          } else {
+            imageWidth = Int(scale.widthScale) * 64
+            imageHeight = Int(scale.heightScale) * 64
+          }
+          guard
+            let (tensor, originalSize, cropTopLeft, targetSize) = imageLoader(
+              input.imageUrl, imageWidth, imageHeight)
+          else { continue }
+          if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
+            encoder = nil
+          }
+          previousImageWidth = imageWidth
+          previousImageHeight = imageHeight
+          let tuple = firstStage.encode(
+            graph.constant(tensor.toGPU(0)), encoder: encoder, cancellation: { _ in })
+          let sample = tuple.0.rawValue.toCPU()
+          encoder = tuple.1
+          let imagePath = input.imageUrl.path
+          store.write(imagePath, tensor: sample)
+          let (_, sourceTokensRaw, _, _, _) = sourceTokenizer.tokenize(
+            text: input.caption, truncation: true, maxLength: paddedTextEncodingLength,
+            paddingToken: nil, addSpecialTokens: false)
+          let sourceTokens = Self.truncatedTokens(
+            sourceTokensRaw, maxLength: paddedTextEncodingLength)
+          let (_, targetTokensRaw, _, _, targetTokenLengths) = targetTokenizer.tokenize(
+            text: input.caption, truncation: true, maxLength: paddedTextEncodingLength,
+            paddingToken: nil, addSpecialTokens: true)
+          let targetTokens = Self.truncatedTokens(
+            targetTokensRaw, maxLength: paddedTextEncodingLength)
+          processedInputs.append(
+            ProcessedInput(
+              imagePath: imagePath, tokens: targetTokens,
+              tokenLength: max(
+                min(
+                  Self.tokenLength(from: targetTokenLengths, fallback: targetTokens.count),
+                  targetTokens.count), 1),
+              CLIPTokens: sourceTokens,
+              originalSize: originalSize, cropTopLeft: cropTopLeft, targetSize: targetSize,
+              loadedImagePath: imagePath))
+          guard progressHandler(.imageEncoding, processedInputs.count) else {
+            stopped = true
+            break
+          }
+        }
+        guard !stopped else { return }
+        if useImageAspectRatio && !additionalScales.isEmpty {
+          var inputMap = [String: ProcessedInput]()
+          for input in processedInputs {
+            inputMap[input.imagePath] = input
+          }
+          for (i, scale) in additionalScales.enumerated() {
+            for input in inputs {
+              guard let originalSize = imageInspector(input.imageUrl),
+                originalSize.width > 0 && originalSize.height > 0
+              else { continue }
+              let imageSize = Self.sizeThatFits(size: originalSize, scale: scale)
+              let imageWidth = imageSize.width * 64
+              let imageHeight = imageSize.height * 64
+              guard
+                let (tensor, _, _, _) = imageLoader(
+                  input.imageUrl, imageWidth, imageHeight)
+              else { continue }
+              if previousImageWidth != imageWidth || previousImageHeight != imageHeight {
+                encoder = nil
+              }
+              previousImageWidth = imageWidth
+              previousImageHeight = imageHeight
+              let tuple = firstStage.encode(
+                graph.constant(tensor.toGPU(0)), encoder: encoder, cancellation: { _ in })
+              let sample = tuple.0.rawValue.toCPU()
+              encoder = tuple.1
+              let imagePath = input.imageUrl.path
+              store.write(imagePath + ":\(i)", tensor: sample)
+              if var processedInput = inputMap[imagePath] {
+                processedInput.loadedImagePath = imagePath + ":\(i)"
+                processedInputs.append(processedInput)
+              }
+              guard progressHandler(.imageEncoding, processedInputs.count) else {
+                stopped = true
+                break
+              }
+            }
+            guard !stopped else { break }
+          }
+          guard !stopped else { return }
+        }
+      }
+      graph.withNoGrad {
+        let paddedSourceTextEncodingLength = Self.paddedCLIPTextEncodingLength(
+          configuredLength: self.paddedTextEncodingLength, zeroCaption: zeroCaptionInput,
+          processedInputs: processedInputs)
+        let paddedTargetTextEncodingLength = Self.paddedTextEncodingLength(
+          configuredLength: self.paddedTextEncodingLength, zeroCaption: zeroCaptionInput,
+          processedInputs: processedInputs)
+        let textModel = Qwen3(
+          FloatType.self, vocabularySize: 151_936,
+          width: 1_024, tokenLength: paddedSourceTextEncodingLength,
+          layers: 28, MLP: 3_072, heads: 16,
+          outputHiddenStates: [], noFinalNormalizedOutput: false,
+          batchSize: 1, usesFlashAttention: true)
+        let sourceTokensTensor = graph.variable(
+          .CPU, format: .NHWC, shape: [paddedSourceTextEncodingLength], of: Int32.self)
+        for i in 0..<paddedSourceTextEncodingLength {
+          sourceTokensTensor[i] = sourcePadToken
+        }
+        let sourceTokensTensorGPU = sourceTokensTensor.toGPU(0)
+        let sourceRotaryTensorGPU = graph.variable(
+          Qwen3RotaryEmbedding(sequenceLength: paddedSourceTextEncodingLength, of: FloatType.self)
+            .toGPU(0))
+        let sourceCausalAttentionMask = graph.variable(
+          .CPU,
+          .NHWC(1, 1, paddedSourceTextEncodingLength, paddedSourceTextEncodingLength),
+          of: FloatType.self)
+        sourceCausalAttentionMask.full(0)
+        for i in 0..<(paddedSourceTextEncodingLength - 1) {
+          for j in (i + 1)..<paddedSourceTextEncodingLength {
+            sourceCausalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+          }
+        }
+        let sourceCausalAttentionMaskGPU = sourceCausalAttentionMask.toGPU(0)
+        textModel.maxConcurrency = .limit(4)
+        textModel.compile(
+          inputs: [sourceTokensTensorGPU, sourceRotaryTensorGPU, sourceCausalAttentionMaskGPU])
+        let textEncoderPath = ModelZoo.filePathForModelDownloaded(textEncoder)
+        graph.openStore(
+          textEncoderPath, flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: textEncoderPath)
+        ) {
+          $0.read(
+            "text_model", model: textModel,
+            codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
+        }
+        let adapter = AnimaLLMAdapter(
+          batchSize: 1, tokenLength: paddedTargetTextEncodingLength,
+          contextLength: paddedSourceTextEncodingLength, usesFlashAttention: true
+        ).1
+        let sourceHiddenStates = graph.variable(
+          .GPU(0), .WC(paddedSourceTextEncodingLength, 1_024), of: FloatType.self)
+        let targetTokensTensor = graph.variable(
+          .CPU, format: .NHWC, shape: [paddedTargetTextEncodingLength], of: Int32.self)
+        targetTokensTensor.full(0)
+        let targetTokensTensorGPU = targetTokensTensor.toGPU(0)
+        let targetRotaryTensorGPU = graph.variable(
+          Tensor<FloatType>(
+            from: AnimaRotaryPositionEmbedding(sequenceLength: paddedTargetTextEncodingLength)
+          ).toGPU(0))
+        let sourceAdapterRotaryTensorGPU = graph.variable(
+          Tensor<FloatType>(
+            from: AnimaRotaryPositionEmbedding(sequenceLength: paddedSourceTextEncodingLength)
+          ).toGPU(0))
+        adapter.maxConcurrency = .limit(4)
+        adapter.compile(
+          inputs: [
+            sourceHiddenStates, targetTokensTensorGPU, targetRotaryTensorGPU,
+            sourceAdapterRotaryTensorGPU,
+          ])
+        let animaAdapterPath = ModelZoo.filePathForModelDownloaded(animaAdapter)
+        graph.openStore(
+          animaAdapterPath, flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: animaAdapterPath)
+        ) {
+          $0.read(
+            "llm_adapter", model: adapter,
+            codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, .externalData])
+        }
+        for (index, input) in ([zeroCaptionInput] + processedInputs).enumerated() {
+          guard input.imagePath == input.loadedImagePath else { continue }
+          for i in 0..<paddedSourceTextEncodingLength {
+            sourceTokensTensor[i] = sourcePadToken
+          }
+          for i in 0..<min(input.CLIPTokens.count, paddedSourceTextEncodingLength) {
+            sourceTokensTensor[i] = input.CLIPTokens[i]
+          }
+          targetTokensTensor.full(0)
+          for i in 0..<min(input.tokens.count, paddedTargetTextEncodingLength) {
+            targetTokensTensor[i] = input.tokens[i]
+          }
+          let sourceHiddenStates = textModel(
+            inputs: sourceTokensTensor.toGPU(0),
+            [sourceRotaryTensorGPU, sourceCausalAttentionMaskGPU]
+          )[0].as(of: FloatType.self).reshaped(.WC(paddedSourceTextEncodingLength, 1_024))
+          let context = adapter(
+            inputs: sourceHiddenStates,
+            [targetTokensTensor.toGPU(0), targetRotaryTensorGPU, sourceAdapterRotaryTensorGPU]
+          )[0].as(of: FloatType.self).reshaped(
+            .HWC(1, paddedTargetTextEncodingLength, 1_024))
+          store.write("cond_\(input.imagePath)", tensor: context.rawValue.toCPU())
+          guard progressHandler(.conditionalEncoding, index) else {
+            stopped = true
+            return
+          }
+        }
+      }
+    }
+    if stopped {
+      return nil
+    }
+    var dataFrame = DataFrame(from: processedInputs)
+    dataFrame["imagePath"] = dataFrame["0", ProcessedInput.self].map(\.imagePath)
+    return (dataFrame, zeroCaptionInput)
+  }
+
   public func prepareKolorsTextEncodings(
     graph: DynamicGraph, store: DynamicGraph.Store, zeroCaptionInput: ProcessedInput,
     processedInputs: [ProcessedInput], progressHandler: (PrepareState, Int) -> Bool
@@ -1458,6 +1921,18 @@ public struct LoRATrainer {
 
     if version == .zImage {
       return prepareDatasetForZImage(
+        inputs: inputs, tokenizers: tokenizers, customEmbeddingLength: customEmbeddingLength,
+        progressHandler: progressHandler)
+    }
+
+    if version == .ernieImage {
+      return prepareDatasetForErnieImage(
+        inputs: inputs, tokenizers: tokenizers, customEmbeddingLength: customEmbeddingLength,
+        progressHandler: progressHandler)
+    }
+
+    if version == .cosmos2_5_2b {
+      return prepareDatasetForCosmos(
         inputs: inputs, tokenizers: tokenizers, customEmbeddingLength: customEmbeddingLength,
         progressHandler: progressHandler)
     }
@@ -2009,6 +2484,87 @@ public struct LoRATrainer {
     }
   }
 
+  private func encodeErnieImageFixed(
+    graph: DynamicGraph,
+    externalData: DynamicGraph.Store.Codec,
+    tokenLength: Int,
+    batch: [(
+      textEncoding: Tensor<FloatType>, timestep: Float
+    )]
+  ) -> [DynamicGraph.AnyTensor] {
+    return graph.withNoGrad {
+      let filePath = ModelZoo.filePathForModelDownloaded(model)
+      let unetFixed = ErnieImageFixed(
+        tokenLength: tokenLength, timesteps: batch.count, channels: 4_096
+      ).1
+      var timeEmbeds = graph.variable(
+        .GPU(0), .HWC(batch.count, 1, 4_096), of: FloatType.self)
+      var textEncodings = graph.variable(
+        .GPU(0), .HWC(batch.count, tokenLength, 3_072), of: FloatType.self)
+      textEncodings.full(0)
+      for (i, item) in batch.enumerated() {
+        let copyLength = min(item.textEncoding.shape[1], tokenLength)
+        textEncodings[i..<(i + 1), 0..<copyLength, 0..<3_072] = graph.variable(
+          item.textEncoding[0..<1, 0..<copyLength, 0..<3_072].copied().toGPU(0))
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: ErnieImageTimeEmbedding(
+              timestep: item.timestep * 1_000, batchSize: 1, embeddingSize: 4_096)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<1, 0..<4_096] = timeEmbed.reshaped(
+          .HWC(1, 1, 4_096))
+      }
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: textEncodings, timeEmbeds)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) {
+        $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+      }
+      return unetFixed(inputs: textEncodings, timeEmbeds)
+    }
+  }
+
+  private func encodeCosmosFixed(
+    graph: DynamicGraph,
+    externalData: DynamicGraph.Store.Codec,
+    tokenLength: Int,
+    batch: [(
+      textEncoding: Tensor<FloatType>, timestep: Float
+    )]
+  ) -> [DynamicGraph.AnyTensor] {
+    return graph.withNoGrad {
+      let filePath = ModelZoo.filePathForModelDownloaded(model)
+      let unetFixed = CosmosFixed(
+        timesteps: batch.count, batchSize: batch.count, textLength: tokenLength,
+        usesFlashAttention: .scaleMerged
+      ).1
+      var timeEmbeds = graph.variable(.GPU(0), .WC(batch.count, 2_048), of: Float.self)
+      var textEncodings = graph.variable(
+        .GPU(0), .HWC(batch.count, tokenLength, 1_024), of: FloatType.self)
+      textEncodings.full(0)
+      for (i, item) in batch.enumerated() {
+        let copyLength = min(item.textEncoding.shape[1], tokenLength)
+        textEncodings[i..<(i + 1), 0..<copyLength, 0..<1_024] = graph.variable(
+          item.textEncoding[0..<1, 0..<copyLength, 0..<1_024].copied().toGPU(0))
+        let timeEmbed = graph.variable(
+          Tensor<Float>(
+            from: timeEmbedding(
+              timestep: item.timestep, batchSize: 1, embeddingSize: 2_048, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<2_048] = timeEmbed
+      }
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: textEncodings, timeEmbeds)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) {
+        $0.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+      }
+      return unetFixed(inputs: textEncodings, timeEmbeds)
+    }
+  }
+
   public enum TrainingState {
     case compile
     case step(Int)
@@ -2096,6 +2652,7 @@ public struct LoRATrainer {
       var tokenLength: Int
     }
     private var rotaryEmbeddings = [Size: Tensor<FloatType>]()
+    private var ernieRotaryEmbeddings = [Size: (cos: Tensor<FloatType>, sin: Tensor<FloatType>)]()
     mutating func Flux1RotaryPositionEmbedding(
       graph: DynamicGraph, height: Int, width: Int, tokenLength: Int
     ) -> DynamicGraph.Tensor<FloatType> {
@@ -2213,6 +2770,44 @@ public struct LoRATrainer {
           embedding[0..<1, 0..<queryLength, 0..<1, 0..<128]
       }
       return graph.constant(fullRotary.toGPU(0))
+    }
+
+    mutating func ErnieImageRotaryPositionEmbedding(
+      graph: DynamicGraph, height: Int, width: Int, tokenLength: Int, heads: Int
+    ) -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>) {
+      let size = Size(height: height, width: width, tokenLength: tokenLength)
+      if let embedding = ernieRotaryEmbeddings[size] {
+        return (graph.constant(embedding.cos), graph.constant(embedding.sin))
+      }
+      let (cos, sin) = Diffusion.ErnieImageRotaryPositionEmbedding(
+        height: height, width: width, textLength: tokenLength, heads: heads)
+      let cosTensor = Tensor<FloatType>(from: cos).toGPU(0)
+      let sinTensor = Tensor<FloatType>(from: sin).toGPU(0)
+      ernieRotaryEmbeddings[size] = (cos: cosTensor, sin: sinTensor)
+      return (graph.constant(cosTensor), graph.constant(sinTensor))
+    }
+
+    mutating func CosmosRotaryPositionEmbedding(
+      graph: DynamicGraph, height: Int, width: Int, heads: Int
+    ) -> DynamicGraph.Tensor<FloatType> {
+      let size = Size(height: height, width: width, tokenLength: 0)
+      let sequenceLength = height * width
+      if let embedding = rotaryEmbeddings[size] {
+        var fullRotary = Tensor<FloatType>(.GPU(0), .NHWC(1, sequenceLength, heads, 128))
+        for i in 0..<heads {
+          fullRotary[0..<1, 0..<sequenceLength, i..<(i + 1), 0..<128] = embedding
+        }
+        return graph.constant(fullRotary)
+      }
+      let rotary = Tensor<FloatType>(
+        from: Diffusion.CosmosRotaryPositionEmbedding(height: height, width: width, heads: 1)
+      ).toGPU(0)
+      rotaryEmbeddings[size] = rotary
+      var fullRotary = Tensor<FloatType>(.GPU(0), .NHWC(1, sequenceLength, heads, 128))
+      for i in 0..<heads {
+        fullRotary[0..<1, 0..<sequenceLength, i..<(i + 1), 0..<128] = rotary
+      }
+      return graph.constant(fullRotary)
     }
   }
 
@@ -3860,6 +4455,782 @@ public struct LoRATrainer {
     }
   }
 
+  private func trainErnieImage(
+    graph: DynamicGraph, firstStage: FirstStage<FloatType>, sessionStore: DynamicGraph.Store,
+    resumingLoRAFile: (String, Int)?,
+    dataFrame: DataFrame, zeroCaption: ProcessedInput, trainingSteps: Int, warmupSteps: Int,
+    gradientAccumulationSteps: Int,
+    rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: ClosedRange<Float>,
+    stepsBetweenRestarts: Int, seed: UInt32, trainableKeys: [String],
+    resolutionDependentShift: Bool, shift: Float, noiseOffset: Float,
+    guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
+    captionDropoutRate: Float, orthonormalLoRADown: Bool, powerEMA: ClosedRange<Float>?,
+    memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
+    progressHandler: (TrainingState, Float, LoRATrainerCheckpoint)
+      -> Bool
+  ) {
+    guard unetLearningRate.upperBound > 0 else {
+      return
+    }
+    let gammas: (lowerBound: Double, upperBound: Double)? = powerEMA.flatMap {
+      guard
+        let gammaLowerBound = Self.powerFunctionExponentialMovingAverageFromWidthToGamma(
+          Double($0.lowerBound)),
+        let gammaUpperBound = Self.powerFunctionExponentialMovingAverageFromWidthToGamma(
+          Double($0.upperBound))
+      else { return nil }
+      return (lowerBound: gammaLowerBound, upperBound: gammaUpperBound)
+    }
+    let queueWatermark = DynamicGraph.queueWatermark
+    if #unavailable(iOS 18.0, macOS 15.0) {
+      DynamicGraph.queueWatermark = min(2, queueWatermark)
+    }
+    defer {
+      DynamicGraph.queueWatermark = queueWatermark
+    }
+    DynamicGraph.setSeed(seed)
+    var dataFrame = dataFrame
+    let configuration: LoRANetworkConfiguration
+    switch memorySaver {
+    case .minimal:
+      configuration = LoRANetworkConfiguration(
+        rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
+        gradientCheckpointingFeedForward: true, gradientCheckpointingTransformerLayer: true,
+        keys: trainableKeys, orthonormalDown: orthonormalLoRADown)
+    case .balanced:
+      configuration = LoRANetworkConfiguration(
+        rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
+        gradientCheckpointingFeedForward: true, keys: trainableKeys,
+        orthonormalDown: orthonormalLoRADown)
+    case .speed, .turbo:
+      configuration = LoRANetworkConfiguration(
+        rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
+        keys: trainableKeys, orthonormalDown: orthonormalLoRADown)
+    }
+    let trainingTokenLength = max(
+      max(
+        zeroCaption.tokenLength, dataFrame["0", ProcessedInput.self].map(\.tokenLength).max() ?? 0),
+      1)
+    let latentsWidth = Int(scale.widthScale) * 8
+    let latentsHeight = Int(scale.heightScale) * 8
+    let dit: ModelBuilder<(width: Int, height: Int)> = ModelBuilder { size, inputs in
+      let textLength = inputs[3].shape[1]
+      return LoRAErnieImage(
+        batchSize: 1, height: size.height, width: size.width, textLength: textLength,
+        layers: 36, channels: 4_096, usesFlashAttention: .scale1,
+        LoRAConfiguration: configuration
+      ).0
+    }
+    dit.maxConcurrency = .limit(1)
+    dit.memoryReduction = (memorySaver != .turbo)
+    precondition(ModelZoo.modifierForModel(model) == .none)
+    let latents = graph.variable(
+      .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 32), of: FloatType.self)
+    var cachedRotaryPositionEmbedder = CachedRotaryPositionEmbedder()
+    let (rotaryCosConstant, rotarySinConstant) =
+      cachedRotaryPositionEmbedder.ErnieImageRotaryPositionEmbedding(
+        graph: graph, height: latentsHeight / 2, width: latentsWidth / 2,
+        tokenLength: trainingTokenLength, heads: 1)
+    let fixedShapes = ErnieImageFixedOutputShapes(
+      tokenLength: trainingTokenLength, channels: 4_096)
+    let cArr =
+      [rotaryCosConstant, rotarySinConstant]
+      + fixedShapes.enumerated().map { index, shape -> DynamicGraph.AnyTensor in
+        if index == 3 || index == 6 {
+          return graph.constant(.GPU(0), format: .NHWC, shape: shape, of: Float.self)
+        }
+        return graph.constant(.GPU(0), format: .NHWC, shape: shape, of: FloatType.self)
+      }
+    guard progressHandler(.compile, 0, LoRATrainerCheckpoint(version: version, unet: dit, step: 0))
+    else {
+      return
+    }
+    dit.compile((width: latentsWidth, height: latentsHeight), inputs: [latents] + cArr)
+    let externalData: DynamicGraph.Store.Codec =
+      weightsMemory == .justInTime ? .externalOnDemand : .externalData
+    let filePath = ModelZoo.filePathForModelDownloaded(model)
+    graph.openStore(
+      filePath, flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePath)
+    ) { store in
+      store.read(
+        "dit", model: dit, codec: [.jit, .q5p, .q6p, .q8p, .i8x, .ezm7, .fpzip, externalData]
+      ) {
+        name, dataType, format, shape in
+        if resumeIfPossible && (name.contains("[i-") || name.contains("lora")) {
+          if let resumingLoRAFile = resumingLoRAFile?.0, name.contains("lora") {
+            if let tensor = try?
+              (graph.openStore(
+                LoRAZoo.filePathForModelDownloaded(resumingLoRAFile), flags: .readOnly
+              ) {
+                return $0.read(
+                  Self.originalLoRA(name: name, LoRAMapping: nil),
+                  codec: [.q8p, .ezm7, .fpzip, .externalData])
+              }).get()
+            {
+              return .final(Tensor<Float>(from: tensor).toCPU())
+            }
+          } else if let tensor = sessionStore.read(name) {
+            return .final(Tensor<Float>(tensor).toCPU())
+          }
+        }
+        if name.contains("lora_up") {
+          switch dataType {
+          case .Float16, .BFloat16:
+            #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+              var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
+              tensor.withUnsafeMutableBytes {
+                let size = shape.reduce(MemoryLayout<Float16>.size, *)
+                memset($0.baseAddress, 0, size)
+              }
+              return .final(tensor)
+            #else
+              break
+            #endif
+          case .Float32:
+            var tensor = Tensor<Float32>(.CPU, format: format, shape: shape)
+            tensor.withUnsafeMutableBytes {
+              let size = shape.reduce(MemoryLayout<Float32>.size, *)
+              memset($0.baseAddress, 0, size)
+            }
+            return .final(tensor)
+          case .Float64, .Int32, .Int64, .UInt8:
+            fatalError()
+          }
+        } else if orthonormalLoRADown && name.contains("lora_down") {
+          switch dataType {
+          case .Float16, .BFloat16:
+            #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+              let tensor = Self.randomOrthonormalMatrix(
+                graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *), of: Float16.self)
+              return .final(tensor)
+            #else
+              break
+            #endif
+          case .Float32:
+            let tensor = Self.randomOrthonormalMatrix(
+              graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *), of: Float32.self)
+            return .final(tensor)
+          case .Float64, .Int32, .Int64, .UInt8:
+            fatalError()
+          }
+        }
+        return .continue(name)
+      }
+    }
+    var optimizer = AdamWOptimizer(
+      graph, rate: unetLearningRate.upperBound, betas: (0.9, 0.999), decay: 0.001, epsilon: 1e-8)
+    optimizer.parameters = [dit.parameters]
+    var optimizers = [optimizer]
+    var scaler = GradScaler(scale: 4_096)
+    var i: Int
+    if resumeIfPossible {
+      if let resumingStep = resumingLoRAFile?.1 {
+        i = resumingStep
+      } else {
+        let stepTensor = sessionStore.read("current_step").flatMap { Tensor<Int32>(from: $0) }
+        i = stepTensor.map { max(Int($0[0]), 0) } ?? 0
+      }
+    } else {
+      i = 0
+    }
+    var stopped = false
+    var batchCount = 0
+    var batch = [
+      (
+        loadedImagePath: String, textEncodingPath: String, textEncoding: Tensor<FloatType>,
+        tokenLength: Int, timestep: Float, captionDropout: Bool
+      )
+    ]()
+    var sfmt = SFMT(seed: UInt64(seed))
+    let _ = dit((width: latentsWidth, height: latentsHeight), inputs: latents, cArr)
+    guard progressHandler(.step(0), 0, LoRATrainerCheckpoint(version: version, unet: dit, step: 0))
+    else {
+      return
+    }
+    var ditEMALowerBoundWeights = [String: Tensor<Float>]()
+    var ditEMAUpperBoundWeights = [String: Tensor<Float>]()
+    while i < trainingSteps && !stopped {
+      dataFrame.shuffle()
+      for value in dataFrame["0", "imagePath"] {
+        guard let input = value[0] as? ProcessedInput, let imagePath = value[1] as? String else {
+          continue
+        }
+        let loadedImagePath = input.loadedImagePath
+        guard let tensor = sessionStore.read(like: loadedImagePath) else { continue }
+        let shape = tensor.shape
+        let latentsHeight = tensor.shape[1]
+        let latentsWidth = tensor.shape[2]
+        guard shape[3] == 64 else {
+          continue
+        }
+        let captionDropout = Float.random(in: 0...1, using: &sfmt) < captionDropoutRate
+        let textEncodingPath = captionDropout ? "" : imagePath
+        guard
+          let textEncoding = sessionStore.read("cond_\(textEncodingPath)").map({
+            Tensor<FloatType>(from: $0)
+          })
+        else { continue }
+        var timestep: Double = Double.random(
+          in: (Double(denoisingTimesteps.lowerBound) / 999)...(Double(
+            denoisingTimesteps.upperBound) / 999), using: &sfmt)
+        var shift = shift
+        if resolutionDependentShift {
+          shift = Float(
+            ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
+        }
+        timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
+        let tokenLength = captionDropout ? zeroCaption.tokenLength : input.tokenLength
+        batch.append(
+          (
+            loadedImagePath, textEncodingPath, textEncoding, tokenLength, Float(timestep),
+            captionDropout
+          ))
+        let targetBatchSize = min(32, trainingSteps - i)
+        if batch.count >= targetBatchSize {
+          let batchTokenLength = max(batch.map(\.tokenLength).max() ?? 0, 1)
+          let conditions = encodeErnieImageFixed(
+            graph: graph, externalData: externalData, tokenLength: batchTokenLength,
+            batch: batch.map { ($0.textEncoding, $0.timestep) })
+          for (j, item) in batch.enumerated() {
+            guard let tensor = sessionStore.read(item.loadedImagePath) else { continue }
+            let latentsHeight = tensor.shape[1]
+            let latentsWidth = tensor.shape[2]
+            let sampleH = latentsHeight / 2
+            let sampleW = latentsWidth / 2
+            let (rotaryCosCondition, rotarySinCondition) =
+              cachedRotaryPositionEmbedder.ErnieImageRotaryPositionEmbedding(
+                graph: graph, height: sampleH, width: sampleW,
+                tokenLength: item.tokenLength, heads: 1)
+            func condition(_ tensor: DynamicGraph.AnyTensor, index: Int, length: Int? = nil)
+              -> DynamicGraph.AnyTensor
+            {
+              if index == 3 || index == 6 {
+                let typed = tensor.as(of: Float.self).rawValue
+                let copiedLength = length ?? typed.shape[1]
+                return graph.constant(
+                  typed[j..<(j + 1), 0..<copiedLength, 0..<typed.shape[2]].copied())
+              }
+              let typed = tensor.as(of: FloatType.self).rawValue
+              let copiedLength = length ?? typed.shape[1]
+              return graph.constant(
+                typed[j..<(j + 1), 0..<copiedLength, 0..<typed.shape[2]].copied())
+            }
+            let fixedConditions: [DynamicGraph.AnyTensor] = conditions.enumerated().map {
+              index, tensor in
+              let length = index == 0 ? min(tensor.shape[1], item.tokenLength) : tensor.shape[1]
+              return condition(tensor, index: index, length: length)
+            }
+            let (zt, target): (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>) =
+              graph.withNoGrad {
+                let parameters = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
+                let noise = graph.variable(
+                  .CPU, .NHWC(1, latentsHeight, latentsWidth, 32), of: Float.self)
+                noise.randn(std: 1, mean: 0)
+                let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
+                let latents = firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0
+                let z1 = graph.variable(like: latents)
+                z1.randn()
+                let zt = Functional.add(
+                  left: latents, right: z1, leftScalar: 1 - item.timestep,
+                  rightScalar: item.timestep)
+                return (zt, z1 - latents)
+              }
+            let ditOutputs = dit(
+              (width: latentsWidth, height: latentsHeight), inputs: zt,
+              [rotaryCosCondition, rotarySinCondition] + fixedConditions
+            )
+            let vtheta = ditOutputs[0].as(of: FloatType.self)
+            let d = target - vtheta
+            let loss = (d .* d).reduced(.mean, axis: [1, 2, 3])
+            scaler.scale(loss).backward(to: [zt])
+            let value = Float(loss.toCPU()[0, 0, 0, 0])
+            print(
+              "loss \(value), scale \(scaler.scale), step \(i), timestep \(item.timestep), image \(latentsWidth)x\(latentsHeight)"
+            )
+            batchCount += 1
+            let learningRate: Float
+            if stepsBetweenRestarts > 1 {
+              learningRate =
+                unetLearningRate.lowerBound + 0.5
+                * (unetLearningRate.upperBound - unetLearningRate.lowerBound)
+                * (1
+                  + cos(
+                    (Float(i % (stepsBetweenRestarts - 1)) / Float(stepsBetweenRestarts - 1))
+                      * .pi))
+            } else {
+              learningRate = unetLearningRate.upperBound
+            }
+            if (i + 1) < warmupSteps {
+              optimizers[0].rate = learningRate * (Float(i + 1) / Float(warmupSteps))
+            } else {
+              optimizers[0].rate = learningRate
+            }
+            if let summaryWriter = summaryWriter {
+              summaryWriter.addScalar("loss", value, step: i)
+              summaryWriter.addScalar("scale", scaler.scale, step: i)
+              summaryWriter.addScalar("timestep", item.timestep, step: i)
+              summaryWriter.addScalar("latents_width", Float(latentsWidth), step: i)
+              summaryWriter.addScalar("latents_height", Float(latentsHeight), step: i)
+              summaryWriter.addScalar("learning_rate", optimizers[0].rate, step: i)
+            }
+            if batchCount == gradientAccumulationSteps {
+              scaler.step(&optimizers)
+              batchCount = 0
+              if let gammas = gammas, let optimizer = optimizers.first {
+                let betaLowerBound = Float(
+                  pow((1 - 1 / Double(optimizer.step)), gammas.lowerBound + 1))
+                let betaUpperBound = Float(
+                  pow((1 - 1 / Double(optimizer.step)), gammas.upperBound + 1))
+                graph.withNoGrad {
+                  let loraUps = dit.parameters.filter(where: { $0.contains("lora_up") })
+                  let loraDowns = dit.parameters.filter(where: { $0.contains("lora_down") })
+                  let parameters = loraUps + loraDowns
+                  for parameter in parameters {
+                    let name = parameter.name
+                    let value = parameter.copied(Float.self).toGPU(0)
+                    if let oldEma1 = ditEMALowerBoundWeights[name],
+                      let oldEma2 = ditEMAUpperBoundWeights[name]
+                    {
+                      let value = graph.variable(value)
+                      ditEMALowerBoundWeights[name] =
+                        Functional.add(
+                          left: graph.variable(oldEma1), right: value, leftScalar: betaLowerBound,
+                          rightScalar: 1 - betaLowerBound
+                        ).rawValue
+                      ditEMAUpperBoundWeights[name] =
+                        Functional.add(
+                          left: graph.variable(oldEma2), right: value, leftScalar: betaUpperBound,
+                          rightScalar: 1 - betaUpperBound
+                        ).rawValue
+                    } else {
+                      ditEMALowerBoundWeights[name] = value
+                      ditEMAUpperBoundWeights[name] = value
+                    }
+                  }
+                }
+              }
+            }
+            i += 1
+            guard
+              progressHandler(
+                .step(i), Float(value),
+                LoRATrainerCheckpoint(
+                  version: version, unet: dit, step: i,
+                  exponentialMovingAverageLowerBound:
+                    LoRATrainerCheckpoint.ExponentialMovingAverage(
+                      textModel1: [:], textModel2: [:], unetFixed: [:],
+                      unet: ditEMALowerBoundWeights),
+                  exponentialMovingAverageUpperBound:
+                    LoRATrainerCheckpoint.ExponentialMovingAverage(
+                      textModel1: [:], textModel2: [:], unetFixed: [:],
+                      unet: ditEMAUpperBoundWeights)))
+            else {
+              stopped = true
+              break
+            }
+            if i >= trainingSteps {
+              break
+            }
+          }
+          if stopped {
+            break
+          }
+          batch = []
+          if i >= trainingSteps {
+            break
+          }
+        }
+      }
+    }
+  }
+
+  private func trainCosmos(
+    graph: DynamicGraph, firstStage: FirstStage<FloatType>, sessionStore: DynamicGraph.Store,
+    resumingLoRAFile: (String, Int)?,
+    dataFrame: DataFrame, zeroCaption: ProcessedInput, trainingSteps: Int, warmupSteps: Int,
+    gradientAccumulationSteps: Int,
+    rankOfLoRA: Int, scaleOfLoRA: Float, unetLearningRate: ClosedRange<Float>,
+    stepsBetweenRestarts: Int, seed: UInt32, trainableKeys: [String],
+    resolutionDependentShift: Bool, shift: Float, noiseOffset: Float,
+    guidanceEmbed: ClosedRange<Float>, denoisingTimesteps: ClosedRange<Int>,
+    captionDropoutRate: Float, orthonormalLoRADown: Bool, powerEMA: ClosedRange<Float>?,
+    memorySaver: MemorySaver, weightsMemory: WeightsMemoryManagement,
+    progressHandler: (TrainingState, Float, LoRATrainerCheckpoint)
+      -> Bool
+  ) {
+    guard unetLearningRate.upperBound > 0 else {
+      return
+    }
+    let gammas: (lowerBound: Double, upperBound: Double)? = powerEMA.flatMap {
+      guard
+        let gammaLowerBound = Self.powerFunctionExponentialMovingAverageFromWidthToGamma(
+          Double($0.lowerBound)),
+        let gammaUpperBound = Self.powerFunctionExponentialMovingAverageFromWidthToGamma(
+          Double($0.upperBound))
+      else { return nil }
+      return (lowerBound: gammaLowerBound, upperBound: gammaUpperBound)
+    }
+    let queueWatermark = DynamicGraph.queueWatermark
+    if #unavailable(iOS 18.0, macOS 15.0) {
+      DynamicGraph.queueWatermark = min(2, queueWatermark)
+    }
+    defer {
+      DynamicGraph.queueWatermark = queueWatermark
+    }
+    DynamicGraph.setSeed(seed)
+    var dataFrame = dataFrame
+    let configuration: LoRANetworkConfiguration
+    switch memorySaver {
+    case .minimal:
+      configuration = LoRANetworkConfiguration(
+        rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
+        gradientCheckpointingFeedForward: true, gradientCheckpointingTransformerLayer: true,
+        keys: trainableKeys, orthonormalDown: orthonormalLoRADown)
+    case .balanced:
+      configuration = LoRANetworkConfiguration(
+        rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
+        gradientCheckpointingFeedForward: true, keys: trainableKeys,
+        orthonormalDown: orthonormalLoRADown)
+    case .speed, .turbo:
+      configuration = LoRANetworkConfiguration(
+        rank: rankOfLoRA, scale: scaleOfLoRA, highPrecision: true, testing: false,
+        keys: trainableKeys, orthonormalDown: orthonormalLoRADown)
+    }
+    let trainingTokenLength = max(
+      max(
+        paddedTextEncodingLength,
+        dataFrame["0", ProcessedInput.self].map(\.tokenLength).max() ?? zeroCaption.tokenLength),
+      1)
+    var cachedRotaryPositionEmbedder = CachedRotaryPositionEmbedder()
+    let rotaryEmbeddingHeads = 16
+    let latentsWidth = Int(scale.widthScale) * 8
+    let latentsHeight = Int(scale.heightScale) * 8
+    let dit: ModelBuilder<(width: Int, height: Int)> = ModelBuilder { size, inputs in
+      let textLength = inputs[2 + CosmosFixedTimeConditionCount].shape[1]
+      return LoRACosmos(
+        batchSize: 1, height: size.height, width: size.width, textLength: textLength,
+        usesFlashAttention: valueOr(.scale1), LoRAConfiguration: configuration
+      ).0
+    }
+    dit.maxConcurrency = .limit(1)
+    dit.memoryReduction = (memorySaver != .turbo)
+    precondition(ModelZoo.modifierForModel(model) == .none)
+    let latents = graph.variable(
+      .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 16), of: FloatType.self)
+    let rotaryCondition = cachedRotaryPositionEmbedder.CosmosRotaryPositionEmbedding(
+      graph: graph, height: latentsHeight / 2, width: latentsWidth / 2,
+      heads: rotaryEmbeddingHeads)
+    let fixedShapes = CosmosFixedOutputShapes(
+      timesteps: 1, batchSize: 1, textLength: trainingTokenLength)
+    let cArr =
+      [rotaryCondition]
+      + fixedShapes.enumerated().map { index, shape -> DynamicGraph.AnyTensor in
+        if index < CosmosFixedTimeConditionCount {
+          return graph.constant(.GPU(0), format: .NHWC, shape: shape, of: Float.self)
+        }
+        return graph.constant(.GPU(0), format: .NHWC, shape: shape, of: FloatType.self)
+      }
+    guard progressHandler(.compile, 0, LoRATrainerCheckpoint(version: version, unet: dit, step: 0))
+    else {
+      return
+    }
+    dit.compile((width: latentsWidth, height: latentsHeight), inputs: [latents] + cArr)
+    let externalData: DynamicGraph.Store.Codec =
+      weightsMemory == .justInTime ? .externalOnDemand : .externalData
+    let filePath = ModelZoo.filePathForModelDownloaded(model)
+    graph.openStore(
+      filePath, flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePath)
+    ) { store in
+      store.read(
+        "dit", model: dit, codec: [.jit, .q5p, .q6p, .q8p, .i8x, .ezm7, .fpzip, externalData]
+      ) {
+        name, dataType, format, shape in
+        if resumeIfPossible && (name.contains("[i-") || name.contains("lora")) {
+          if let resumingLoRAFile = resumingLoRAFile?.0, name.contains("lora") {
+            if let tensor = try?
+              (graph.openStore(
+                LoRAZoo.filePathForModelDownloaded(resumingLoRAFile), flags: .readOnly
+              ) {
+                return $0.read(
+                  Self.originalLoRA(name: name, LoRAMapping: nil),
+                  codec: [.q8p, .ezm7, .fpzip, .externalData])
+              }).get()
+            {
+              return .final(Tensor<Float>(from: tensor).toCPU())
+            }
+          } else if let tensor = sessionStore.read(name) {
+            return .final(Tensor<Float>(tensor).toCPU())
+          }
+        }
+        if name.contains("lora_up") {
+          switch dataType {
+          case .Float16, .BFloat16:
+            #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+              var tensor = Tensor<Float16>(.CPU, format: format, shape: shape)
+              tensor.withUnsafeMutableBytes {
+                let size = shape.reduce(MemoryLayout<Float16>.size, *)
+                memset($0.baseAddress, 0, size)
+              }
+              return .final(tensor)
+            #else
+              break
+            #endif
+          case .Float32:
+            var tensor = Tensor<Float32>(.CPU, format: format, shape: shape)
+            tensor.withUnsafeMutableBytes {
+              let size = shape.reduce(MemoryLayout<Float32>.size, *)
+              memset($0.baseAddress, 0, size)
+            }
+            return .final(tensor)
+          case .Float64, .Int32, .Int64, .UInt8:
+            fatalError()
+          }
+        } else if orthonormalLoRADown && name.contains("lora_down") {
+          switch dataType {
+          case .Float16, .BFloat16:
+            #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+              let tensor = Self.randomOrthonormalMatrix(
+                graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *), of: Float16.self)
+              return .final(tensor)
+            #else
+              break
+            #endif
+          case .Float32:
+            let tensor = Self.randomOrthonormalMatrix(
+              graph: graph, M: shape[0], N: shape[1..<shape.count].reduce(1, *), of: Float32.self)
+            return .final(tensor)
+          case .Float64, .Int32, .Int64, .UInt8:
+            fatalError()
+          }
+        }
+        return .continue(name)
+      }
+    }
+    var optimizer = AdamWOptimizer(
+      graph, rate: unetLearningRate.upperBound, betas: (0.9, 0.999), decay: 0.001, epsilon: 1e-8)
+    optimizer.parameters = [dit.parameters]
+    var optimizers = [optimizer]
+    var scaler = GradScaler(scale: 32_768)
+    var i: Int
+    if resumeIfPossible {
+      if let resumingStep = resumingLoRAFile?.1 {
+        i = resumingStep
+      } else {
+        let stepTensor = sessionStore.read("current_step").flatMap { Tensor<Int32>(from: $0) }
+        i = stepTensor.map { max(Int($0[0]), 0) } ?? 0
+      }
+    } else {
+      i = 0
+    }
+    var stopped = false
+    var batchCount = 0
+    var batch = [
+      (
+        loadedImagePath: String, textEncodingPath: String, textEncoding: Tensor<FloatType>,
+        tokenLength: Int, timestep: Float, captionDropout: Bool
+      )
+    ]()
+    var sfmt = SFMT(seed: UInt64(seed))
+    let _ = dit((width: latentsWidth, height: latentsHeight), inputs: latents, cArr)
+    guard progressHandler(.step(0), 0, LoRATrainerCheckpoint(version: version, unet: dit, step: 0))
+    else {
+      return
+    }
+    var ditEMALowerBoundWeights = [String: Tensor<Float>]()
+    var ditEMAUpperBoundWeights = [String: Tensor<Float>]()
+    while i < trainingSteps && !stopped {
+      dataFrame.shuffle()
+      for value in dataFrame["0", "imagePath"] {
+        guard let input = value[0] as? ProcessedInput, let imagePath = value[1] as? String else {
+          continue
+        }
+        let loadedImagePath = input.loadedImagePath
+        guard let tensor = sessionStore.read(like: loadedImagePath) else { continue }
+        let shape = tensor.shape
+        let latentsHeight = tensor.shape[1]
+        let latentsWidth = tensor.shape[2]
+        guard shape[3] == 32 else {
+          continue
+        }
+        let captionDropout = Float.random(in: 0...1, using: &sfmt) < captionDropoutRate
+        let textEncodingPath = captionDropout ? "" : imagePath
+        guard
+          let textEncoding = sessionStore.read("cond_\(textEncodingPath)").map({
+            Tensor<FloatType>(from: $0)
+          })
+        else { continue }
+        var timestep: Double = Double.random(
+          in: (Double(denoisingTimesteps.lowerBound) / 999)...(Double(
+            denoisingTimesteps.upperBound) / 999), using: &sfmt)
+        var shift = shift
+        if resolutionDependentShift {
+          shift = Float(
+            ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
+        }
+        timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
+        let tokenLength = textEncoding.shape[1]
+        batch.append(
+          (
+            loadedImagePath, textEncodingPath, textEncoding, tokenLength, Float(timestep),
+            captionDropout
+          ))
+        let targetBatchSize = 1
+        if batch.count >= targetBatchSize {
+          let batchTokenLength = max(batch.map(\.tokenLength).max() ?? 0, 1)
+          let conditions = encodeCosmosFixed(
+            graph: graph, externalData: externalData, tokenLength: batchTokenLength,
+            batch: batch.map { ($0.textEncoding, $0.timestep) })
+          for (j, item) in batch.enumerated() {
+            guard let tensor = sessionStore.read(item.loadedImagePath) else { continue }
+            let latentsHeight = tensor.shape[1]
+            let latentsWidth = tensor.shape[2]
+            let rotaryCondition = cachedRotaryPositionEmbedder.CosmosRotaryPositionEmbedding(
+              graph: graph, height: latentsHeight / 2, width: latentsWidth / 2,
+              heads: rotaryEmbeddingHeads)
+            func condition(_ tensor: DynamicGraph.AnyTensor, index: Int)
+              -> DynamicGraph.AnyTensor
+            {
+              if index < CosmosFixedTimeConditionCount {
+                let typed = tensor.as(of: Float.self).rawValue
+                return graph.constant(
+                  typed[j..<(j + 1), 0..<typed.shape[1], 0..<typed.shape[2]].copied())
+              }
+              let typed = tensor.as(of: FloatType.self).rawValue
+              let copiedLength = min(typed.shape[1], item.tokenLength)
+              return graph.constant(
+                typed[
+                  j..<(j + 1), 0..<copiedLength, 0..<typed.shape[2], 0..<typed.shape[3]
+                ].copied())
+            }
+            let fixedConditions: [DynamicGraph.AnyTensor] = conditions.enumerated().map {
+              index, tensor in
+              return condition(tensor, index: index)
+            }
+            let (zt, target): (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>) =
+              graph.withNoGrad {
+                let parameters = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))
+                let noise = graph.variable(
+                  .CPU, .NHWC(1, latentsHeight, latentsWidth, 16), of: Float.self)
+                noise.randn(std: 1, mean: 0)
+                let noiseGPU = DynamicGraph.Tensor<FloatType>(from: noise.toGPU(0))
+                let latents = firstStage.sampleFromDistribution(parameters, noise: noiseGPU).0
+                let z1 = graph.variable(like: latents)
+                z1.randn()
+                let zt = Functional.add(
+                  left: latents, right: z1, leftScalar: 1 - item.timestep,
+                  rightScalar: item.timestep)
+                return (zt, z1 - latents)
+              }
+            let ditOutputs = dit(
+              (width: latentsWidth, height: latentsHeight), inputs: zt,
+              [rotaryCondition] + fixedConditions)
+            let vtheta = ditOutputs[0].as(of: FloatType.self)
+            let d = target - vtheta
+            let loss = (d .* d).reduced(.mean, axis: [1, 2, 3])
+            scaler.scale(loss).backward(to: [zt])
+            let value = Float(loss.toCPU()[0, 0, 0, 0])
+            print(
+              "loss \(value), scale \(scaler.scale), step \(i), timestep \(item.timestep), image \(latentsWidth)x\(latentsHeight)"
+            )
+            batchCount += 1
+            let learningRate: Float
+            if stepsBetweenRestarts > 1 {
+              learningRate =
+                unetLearningRate.lowerBound + 0.5
+                * (unetLearningRate.upperBound - unetLearningRate.lowerBound)
+                * (1
+                  + cos(
+                    (Float(i % (stepsBetweenRestarts - 1)) / Float(stepsBetweenRestarts - 1))
+                      * .pi))
+            } else {
+              learningRate = unetLearningRate.upperBound
+            }
+            if (i + 1) < warmupSteps {
+              optimizers[0].rate = learningRate * (Float(i + 1) / Float(warmupSteps))
+            } else {
+              optimizers[0].rate = learningRate
+            }
+            if let summaryWriter = summaryWriter {
+              summaryWriter.addScalar("loss", value, step: i)
+              summaryWriter.addScalar("scale", scaler.scale, step: i)
+              summaryWriter.addScalar("timestep", item.timestep, step: i)
+              summaryWriter.addScalar("latents_width", Float(latentsWidth), step: i)
+              summaryWriter.addScalar("latents_height", Float(latentsHeight), step: i)
+              summaryWriter.addScalar("learning_rate", optimizers[0].rate, step: i)
+            }
+            if batchCount == gradientAccumulationSteps {
+              scaler.step(&optimizers)
+              batchCount = 0
+              if let gammas = gammas, let optimizer = optimizers.first {
+                let betaLowerBound = Float(
+                  pow((1 - 1 / Double(optimizer.step)), gammas.lowerBound + 1))
+                let betaUpperBound = Float(
+                  pow((1 - 1 / Double(optimizer.step)), gammas.upperBound + 1))
+                graph.withNoGrad {
+                  let loraUps = dit.parameters.filter(where: { $0.contains("lora_up") })
+                  let loraDowns = dit.parameters.filter(where: { $0.contains("lora_down") })
+                  let parameters = loraUps + loraDowns
+                  for parameter in parameters {
+                    let name = parameter.name
+                    let value = parameter.copied(Float.self).toGPU(0)
+                    if let oldEma1 = ditEMALowerBoundWeights[name],
+                      let oldEma2 = ditEMAUpperBoundWeights[name]
+                    {
+                      let value = graph.variable(value)
+                      ditEMALowerBoundWeights[name] =
+                        Functional.add(
+                          left: graph.variable(oldEma1), right: value, leftScalar: betaLowerBound,
+                          rightScalar: 1 - betaLowerBound
+                        ).rawValue
+                      ditEMAUpperBoundWeights[name] =
+                        Functional.add(
+                          left: graph.variable(oldEma2), right: value, leftScalar: betaUpperBound,
+                          rightScalar: 1 - betaUpperBound
+                        ).rawValue
+                    } else {
+                      ditEMALowerBoundWeights[name] = value
+                      ditEMAUpperBoundWeights[name] = value
+                    }
+                  }
+                }
+              }
+            }
+            i += 1
+            guard
+              progressHandler(
+                .step(i), Float(value),
+                LoRATrainerCheckpoint(
+                  version: version, unet: dit, step: i,
+                  exponentialMovingAverageLowerBound:
+                    LoRATrainerCheckpoint.ExponentialMovingAverage(
+                      textModel1: [:], textModel2: [:], unetFixed: [:],
+                      unet: ditEMALowerBoundWeights),
+                  exponentialMovingAverageUpperBound:
+                    LoRATrainerCheckpoint.ExponentialMovingAverage(
+                      textModel1: [:], textModel2: [:], unetFixed: [:],
+                      unet: ditEMAUpperBoundWeights)))
+            else {
+              stopped = true
+              break
+            }
+            if i >= trainingSteps {
+              break
+            }
+          }
+          if stopped {
+            break
+          }
+          batch = []
+          if i >= trainingSteps {
+            break
+          }
+        }
+      }
+    }
+  }
+
   public func train(
     resumingLoRAFile: (String, Int)?, tokenizers: [TextualInversionPoweredTokenizer & Tokenizer],
     dataFrame: DataFrame, zeroCaption: ProcessedInput, trainingSteps: Int, warmupSteps: Int,
@@ -3973,6 +5344,38 @@ public struct LoRATrainer {
 
       if version == .zImage {
         trainZImage(
+          graph: graph, firstStage: firstStage, sessionStore: sessionStore,
+          resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, zeroCaption: zeroCaption,
+          trainingSteps: trainingSteps, warmupSteps: warmupSteps,
+          gradientAccumulationSteps: gradientAccumulationSteps,
+          rankOfLoRA: rankOfLoRA, scaleOfLoRA: scaleOfLoRA, unetLearningRate: unetLearningRate,
+          stepsBetweenRestarts: stepsBetweenRestarts, seed: seed, trainableKeys: trainableKeys,
+          resolutionDependentShift: resolutionDependentShift, shift: shift,
+          noiseOffset: noiseOffset, guidanceEmbed: guidanceEmbed,
+          denoisingTimesteps: denoisingTimesteps, captionDropoutRate: captionDropoutRate,
+          orthonormalLoRADown: orthonormalLoRADown, powerEMA: powerEMA, memorySaver: memorySaver,
+          weightsMemory: weightsMemory, progressHandler: progressHandler)
+        return
+      }
+
+      if version == .ernieImage {
+        trainErnieImage(
+          graph: graph, firstStage: firstStage, sessionStore: sessionStore,
+          resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, zeroCaption: zeroCaption,
+          trainingSteps: trainingSteps, warmupSteps: warmupSteps,
+          gradientAccumulationSteps: gradientAccumulationSteps,
+          rankOfLoRA: rankOfLoRA, scaleOfLoRA: scaleOfLoRA, unetLearningRate: unetLearningRate,
+          stepsBetweenRestarts: stepsBetweenRestarts, seed: seed, trainableKeys: trainableKeys,
+          resolutionDependentShift: resolutionDependentShift, shift: shift,
+          noiseOffset: noiseOffset, guidanceEmbed: guidanceEmbed,
+          denoisingTimesteps: denoisingTimesteps, captionDropoutRate: captionDropoutRate,
+          orthonormalLoRADown: orthonormalLoRADown, powerEMA: powerEMA, memorySaver: memorySaver,
+          weightsMemory: weightsMemory, progressHandler: progressHandler)
+        return
+      }
+
+      if version == .cosmos2_5_2b {
+        trainCosmos(
           graph: graph, firstStage: firstStage, sessionStore: sessionStore,
           resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, zeroCaption: zeroCaption,
           trainingSteps: trainingSteps, warmupSteps: warmupSteps,
