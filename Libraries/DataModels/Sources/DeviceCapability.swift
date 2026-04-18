@@ -188,7 +188,7 @@ public struct DeviceCapability {
       return false
     #else
       if #available(iOS 26, macOS 26, macCatalyst 26, *) {
-        if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple9) {
+        if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple9) && !device.supportsFamily(.apple10) {
           return true
         }
         return false
