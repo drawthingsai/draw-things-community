@@ -1,6 +1,7 @@
 .bazelrc.darwin
 .bazelrc.linux
 .swift-format.json
+.agents/
 external/
 AGENTS.md
 Apps/EmbeddingConverter
