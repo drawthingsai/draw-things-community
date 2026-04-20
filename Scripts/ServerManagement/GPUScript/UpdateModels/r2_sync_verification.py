@@ -19,8 +19,8 @@ import subprocess
 import shutil
 
 class R2ModelSync:
-    def __init__(self, account_id, access_key_id, secret_access_key, bucket_name, target_dir, 
-                 enable_cleanup=False, max_retries=3, size_tolerance_mb=10):
+    def __init__(self, account_id, access_key_id, secret_access_key, bucket_name, target_dir,
+                 enable_cleanup=False, max_retries=3, size_tolerance_mb=10, exclude_suffix=None):
         self.account_id = account_id
         self.bucket_name = bucket_name
         self.target_dir = target_dir
@@ -29,6 +29,7 @@ class R2ModelSync:
         self.max_retries = max_retries
         self.size_tolerance_mb = size_tolerance_mb  # Size tolerance in MB
         self.size_tolerance_bytes = size_tolerance_mb * 1024 * 1024  # Convert to bytes
+        self.exclude_suffix = exclude_suffix
         self.r2_client = self._setup_r2_client(account_id, access_key_id, secret_access_key)
         self.sha256_dict = self._get_sha256_dict()
 
@@ -418,10 +419,15 @@ class R2ModelSync:
         # Determine files to download or re-download
         to_download = []
         size_mismatches = []
-        
+        skipped_files = []
+
         for key, remote_info in remote_objects.items():
+            if self.exclude_suffix and os.path.basename(key).endswith(self.exclude_suffix):
+                skipped_files.append(key)
+                continue
+
             local_path = os.path.join(self.target_dir, key)
-            
+
             if key not in local_objects:
                 # File doesn't exist locally, need to download
                 to_download.append((key, remote_info))
@@ -453,14 +459,19 @@ class R2ModelSync:
         logging.info(f"Found {len(remote_objects)} files in R2")
         logging.info(f"Found {len(local_objects)} files in Local path")
         logging.info(f"Size tolerance: {self.size_tolerance_mb} MB")
-        
+
+        if skipped_files:
+            logging.info(f"  - {len(skipped_files)} files skipped (exclude suffix: {self.exclude_suffix}):")
+            for f in sorted(skipped_files):
+                logging.info(f"      {f}")
+
         if size_mismatches:
             logging.info(f"  - {len(size_mismatches)} files with size mismatches to re-download")
-        
+
         new_downloads = len(to_download) - len(size_mismatches)
         if new_downloads > 0:
             logging.info(f"  - {new_downloads} new files to download")
-        
+
         unchanged_files = len(remote_objects) - len(to_download)
         logging.info(f"  - {unchanged_files} files unchanged")
 
@@ -574,6 +585,9 @@ def parse_args():
     parser.add_argument('--size-tolerance', '-t',
                        help='File size tolerance in MB for skipping downloads (default: 10)',
                        type=int, default=10)
+    parser.add_argument('--exclude',
+                       help='Skip files whose name ends with this suffix (default: i8x.ckpt)',
+                       default='i8x.ckpt')
     parser.add_argument('--debug', '-d',
                        help='Enable debug logging',
                        action='store_true')
@@ -615,7 +629,8 @@ def main(args):
         args.path,
         enable_cleanup=args.cleanup,
         max_retries=args.retries,
-        size_tolerance_mb=args.size_tolerance
+        size_tolerance_mb=args.size_tolerance,
+        exclude_suffix=args.exclude
     )
     
     syncer.sync(max_workers=args.workers)

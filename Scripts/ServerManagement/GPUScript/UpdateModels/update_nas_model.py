@@ -68,6 +68,7 @@ def run_local(
     access_key: str | None,
     secret_key: str | None,
     dry_run: bool = False,
+    exclude: str | None = None,
 ) -> None:
     """Run operations locally."""
     print_header("Local NAS Model Update" + (" (DRY RUN)" if dry_run else ""))
@@ -92,13 +93,16 @@ def run_local(
         r2_script = os.path.join(utils_path, "r2_sync_verification.py")
         validate_file_exists(r2_script, "R2 sync script")
 
-        run_command([
+        cmd = [
             "python3", r2_script,
             "-p", models_path,
             "--account-id", account_id,
             "--access-key", access_key,
             "--secret-key", secret_key,
-        ], dry_run=dry_run)
+        ]
+        if exclude:
+            cmd += ["--exclude", exclude]
+        run_command(cmd, dry_run=dry_run)
 
         print("✅ R2 sync verification completed")
         print()
@@ -173,6 +177,7 @@ def run_remote(
     access_key: str | None,
     secret_key: str | None,
     dry_run: bool = False,
+    exclude: str | None = None,
 ) -> None:
     """Run operations on a remote server via SSH."""
     print_header("Remote NAS Model Update" + (" (DRY RUN)" if dry_run else ""))
@@ -217,6 +222,8 @@ def run_remote(
 
         r2_script = f"{utils_path}/r2_sync_verification.py"
         r2_cmd = f"python3 {r2_script} -p {models_path} --account-id {account_id} --access-key {access_key} --secret-key {secret_key}"
+        if exclude:
+            r2_cmd += f" --exclude {exclude}"
         run_ssh_command(remote_host, r2_cmd, dry_run=dry_run)
 
         print("✅ R2 sync verification completed")
@@ -343,6 +350,11 @@ Examples:
         help="R2 secret key (required for sync mode)",
     )
     parser.add_argument(
+        "--exclude",
+        help="Skip files whose name ends with this suffix (default: i8x.ckpt)",
+        default="i8x.ckpt",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be done without making any changes",
@@ -372,6 +384,7 @@ Examples:
             access_key=args.access_key,
             secret_key=args.secret_key,
             dry_run=args.dry_run,
+            exclude=args.exclude,
         )
     else:
         run_local(
@@ -383,6 +396,7 @@ Examples:
             access_key=args.access_key,
             secret_key=args.secret_key,
             dry_run=args.dry_run,
+            exclude=args.exclude,
         )
 
 
