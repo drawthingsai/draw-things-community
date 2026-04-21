@@ -480,16 +480,16 @@ func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
           let etCondF32 = DynamicGraph.Tensor<Float>(from: etCond)
           if isBatchEnabled {
             dotProduct = (etUncondF32 .* etCondF32).reduced(
-              .sum, axis: [0, 1, 2, 3])
-            squaredSum =
-              (etUncondF32 .* etUncondF32).reduced(
-                .sum, axis: [0, 1, 2, 3]) + 1e-8
-          } else {
-            dotProduct = (etUncondF32 .* etCondF32).reduced(
               .sum, axis: [1, 2, 3])
             squaredSum =
               (etUncondF32 .* etUncondF32).reduced(.sum, axis: [1, 2, 3])
               + 1e-8
+          } else {
+            dotProduct = (etUncondF32 .* etCondF32).reduced(
+              .sum, axis: [0, 1, 2, 3])
+            squaredSum =
+              (etUncondF32 .* etUncondF32).reduced(
+                .sum, axis: [0, 1, 2, 3]) + 1e-8
           }
           let stStar = dotProduct ./ squaredSum
           etUncond = DynamicGraph.Tensor<FloatType>(from: etUncondF32 .* stStar)
@@ -540,17 +540,18 @@ func applyCfg<FloatType: TensorNumeric & BinaryFloatingPoint>(
         let etUncondF32 = DynamicGraph.Tensor<Float>(from: etUncond)
         let etCondF32 = DynamicGraph.Tensor<Float>(from: etCond)
         if isBatchEnabled {
-          dotProduct = (etUncondF32 .* etCondF32).reduced(
-            .sum, axis: [0, 1, 2, 3])
-          squaredSum =
-            (etUncondF32 .* etUncondF32).reduced(
-              .sum, axis: [0, 1, 2, 3]) + 1e-8
-        } else {
+          // Batch should be independent to the batch dimension.
           dotProduct = (etUncondF32 .* etCondF32).reduced(
             .sum, axis: [1, 2, 3])
           squaredSum =
             (etUncondF32 .* etUncondF32).reduced(.sum, axis: [1, 2, 3])
             + 1e-8
+        } else {
+          dotProduct = (etUncondF32 .* etCondF32).reduced(
+            .sum, axis: [0, 1, 2, 3])
+          squaredSum =
+            (etUncondF32 .* etUncondF32).reduced(
+              .sum, axis: [0, 1, 2, 3]) + 1e-8
         }
         let stStar = dotProduct ./ squaredSum
         etUncond = DynamicGraph.Tensor<FloatType>(from: etUncondF32 .* stStar)
