@@ -2,6 +2,45 @@
 
 Python client for Draw Things `MediaGenerationKit` remote and cloud generation.
 
+## Current API Shape
+
+`MediaGenerationKitPy` is a small, pipeline-centered client:
+
+- `MediaGenerationPipeline` is the main entry point
+- `MediaGenerationEnvironment.default` provides catalog/model helpers
+- `RemoteBackend(...)` connects to a direct Draw Things gRPC server
+- `CloudComputeBackend(...)` connects to Draw Things cloud compute
+
+Execution is currently:
+
+- supported: remote generation, cloud generation
+- not supported: local generation, LoRA import/store, Pipecat integration
+
+Typical flow:
+
+1. build a backend
+2. `await MediaGenerationPipeline.from_pretrained(...)`
+3. mutate `pipeline.configuration`
+4. `await pipeline.generate(...)`
+5. `await results[0].write(...)`
+
+Supported model reference forms:
+
+- exact file id, for example `flux_2_klein_4b_f16.ckpt`
+- display name, for example `FLUX.2 [klein] 4B`
+- Hugging Face references:
+  - `hf://black-forest-labs/FLUX.2-klein-4B`
+  - `black-forest-labs/FLUX.2-klein-4B`
+  - `https://huggingface.co/black-forest-labs/FLUX.2-klein-4B`
+
+Cloud auth in Python is API-key-only:
+
+- pass `api_key=` to `CloudComputeBackend(...)`, or
+- omit it and set `DRAWTHINGS_API_KEY`
+
+`offline=True` on environment catalog helpers only means "use bundled catalog data and do not fetch
+remote catalog JSON". It does not mean local generation.
+
 This package mirrors the Swift `Libraries/MediaGenerationKit` public shape where it applies to
 remote generation. It is intentionally small: create a remote backend, load a model reference,
 mutate the pipeline configuration, then call `generate`.
