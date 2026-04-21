@@ -2221,14 +2221,16 @@ extension UNetFixedEncoder {
           conditions.append(element)
         default:
           let shape = element.shape
-          guard shape[0] > 1 else {
+          guard isCfgEnabled else {
             conditions.append(element)
             break
           }
+          precondition(shape[0] == batchSize * 2)
           let value = DynamicGraph.Tensor<FloatType>(element)
           conditions.append(contentsOf: [
-            value[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
-            value[1..<2, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+            value[0..<batchSize, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+            value[batchSize..<(batchSize * 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+              .copied(),
           ])
         }
         conditionOrNils[offset] = nil
