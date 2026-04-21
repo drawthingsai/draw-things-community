@@ -1791,7 +1791,6 @@ extension UNetFixedEncoder {
       )
     case .ernieImage:
       let c0 = textEncoding[0]
-      let textLength = c0.shape[1]
       let h = startHeight / 2
       let w = startWidth / 2
       let channels = 4_096
