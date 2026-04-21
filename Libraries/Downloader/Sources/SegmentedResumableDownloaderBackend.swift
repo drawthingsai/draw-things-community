@@ -10,11 +10,17 @@ final class SegmentedResumableDownloaderBackend: NSObject, DownloadBackend {
   private let manifestUrl: URL
   private let lock = NSLock()
   private let connectionCount: Int
+  private lazy var delegateQueue: OperationQueue = {
+    let queue = OperationQueue()
+    queue.maxConcurrentOperationCount = 1
+    queue.name = "org.drawthings.segmented-downloader"
+    return queue
+  }()
   private lazy var session: URLSession = {
     let configuration = URLSessionConfiguration.default
     configuration.httpMaximumConnectionsPerHost = connectionCount
     configuration.waitsForConnectivity = true
-    return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+    return URLSession(configuration: configuration, delegate: self, delegateQueue: delegateQueue)
   }()
 
   private var file: RandomAccessFile? = nil
@@ -327,7 +333,7 @@ extension SegmentedResumableDownloaderBackend {
     lock.unlock()
 
     guard data.count == assignment.length else {
-      fail(ResumableDownloader.DownloadError.unexpected)
+      retryBlock(taskIdentifier: task.taskIdentifier, assignment: assignment)
       return
     }
 
@@ -335,7 +341,7 @@ extension SegmentedResumableDownloaderBackend {
       try activeFile.write(data, at: assignment.offset)
       let digest = sha256Digest(data)
 
-      let manifestToSave: SegmentedDownloadManifest
+      var manifestToSave: SegmentedDownloadManifest
       lock.lock()
       guard !isCancelling, !isFinalizing, !didFinish else {
         activeDownloads[task.taskIdentifier] = nil
@@ -355,29 +361,19 @@ extension SegmentedResumableDownloaderBackend {
       manifest.completedBlocks[assignment.index] = true
       manifest.blockDigests[assignment.index] = digest
       manifestToSave = manifest
-      lock.unlock()
-
-      try saveManifest(manifestToSave)
-
-      let progress: Int64
-      let shouldFinalize: Bool
-      lock.lock()
-      guard !isCancelling, !isFinalizing, !didFinish,
-        activeDownloads[task.taskIdentifier] != nil
-      else {
-        activeDownloads[task.taskIdentifier] = nil
-        activeTasks[assignment.index] = nil
-        claimedBlocks[assignment.index] = false
+      do {
+        try saveManifest(manifestToSave)
+      } catch {
         lock.unlock()
-        return
+        throw error
       }
       activeDownloads[task.taskIdentifier] = nil
       activeTasks[assignment.index] = nil
       claimedBlocks[assignment.index] = false
       self.manifest = manifestToSave
       verifiedBytes += Int64(assignment.length)
-      progress = displayProgressLocked()
-      shouldFinalize = activeTasks.isEmpty && manifestToSave.completedBlocks.allSatisfy { $0 }
+      let progress = displayProgressLocked()
+      let shouldFinalize = activeTasks.isEmpty && manifestToSave.completedBlocks.allSatisfy { $0 }
       if shouldFinalize {
         isFinalizing = true
       }
@@ -408,23 +404,31 @@ extension SegmentedResumableDownloaderBackend {
 
     if isTransientDownloadError(error) {
       lock.lock()
-      if let download = activeDownloads[task.taskIdentifier] {
-        activeDownloads[task.taskIdentifier] = nil
-        activeTasks[download.assignment.index] = nil
-        claimedBlocks[download.assignment.index] = false
-      }
-      let shouldRetry = !isCancelling && !isFinalizing && !didFinish
+      let assignment = activeDownloads[task.taskIdentifier]?.assignment
       lock.unlock()
-      if shouldRetry {
-        Task { [weak self] in
-          try? await Task.sleep(nanoseconds: 200_000_000)
-          self?.scheduleMoreTasks()
-        }
+      if let assignment {
+        retryBlock(taskIdentifier: task.taskIdentifier, assignment: assignment)
       }
       return
     }
 
     fail(ResumableDownloader.DownloadError.local(error))
+  }
+
+  fileprivate func retryBlock(taskIdentifier: Int, assignment: DownloadBlockAssignment) {
+    lock.lock()
+    let wasActive =
+      activeDownloads[taskIdentifier] != nil || activeTasks[assignment.index] != nil
+    activeDownloads[taskIdentifier] = nil
+    activeTasks[assignment.index] = nil
+    claimedBlocks[assignment.index] = false
+    let shouldRetry = wasActive && !isCancelling && !isFinalizing && !didFinish
+    lock.unlock()
+    guard shouldRetry else { return }
+    Task { [weak self] in
+      try? await Task.sleep(nanoseconds: 200_000_000)
+      self?.scheduleMoreTasks()
+    }
   }
 
   fileprivate func completeDownload() {
@@ -494,7 +498,8 @@ extension SegmentedResumableDownloaderBackend: URLSessionDataDelegate {
   ) {
     let shouldAccept: Bool
     lock.lock()
-    shouldAccept = !isCancelling && !isFinalizing && !didFinish
+    shouldAccept =
+      !isCancelling && !isFinalizing && !didFinish
       && activeDownloads[dataTask.taskIdentifier] != nil
     lock.unlock()
     guard shouldAccept else {

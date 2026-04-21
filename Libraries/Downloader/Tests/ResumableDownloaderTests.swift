@@ -274,6 +274,78 @@ final class ResumableDownloaderTests: XCTestCase {
     XCTAssertTrue(sawSubBlockProgress)
   }
 
+  func testSegmentedDownloadRetriesTransientRangeFailure() throws {
+    let payload = makePayload(size: 12 * 1024 * 1024)
+    let server = try LocalRangeServer(
+      payload: payload, chunkDelay: 0.003, transientRangeFailuresToInject: 1)
+    defer {
+      server.stop()
+    }
+
+    let destination = temporaryDirectory.appendingPathComponent("segmented-transient-retry.bin")
+    let downloader = ResumableDownloader(
+      remoteUrl: server.url,
+      localUrl: destination,
+      sha256: Data(SHA256.hash(data: payload)).hexString)
+
+    let completion = expectation(description: "segmented-transient-retry-complete")
+    var reportedError: Error? = nil
+
+    downloader.resume { _, _, isComplete, error in
+      if let error {
+        reportedError = error
+        completion.fulfill()
+        return
+      }
+      if isComplete {
+        completion.fulfill()
+      }
+    }
+
+    wait(for: [completion], timeout: 60)
+    XCTAssertNil(reportedError)
+    XCTAssertEqual(try Data(contentsOf: destination), payload)
+    let failedOffsets = server.transientFailureStartOffsets()
+    XCTAssertEqual(failedOffsets.count, 1)
+    XCTAssertGreaterThanOrEqual(server.rangeRequestCount(forStartOffset: failedOffsets[0]), 2)
+  }
+
+  func testSegmentedDownloadRetriesIncompleteRangeBody() throws {
+    let payload = makePayload(size: 12 * 1024 * 1024)
+    let server = try LocalRangeServer(
+      payload: payload, chunkDelay: 0.003, shortRangeResponsesToInject: 1)
+    defer {
+      server.stop()
+    }
+
+    let destination = temporaryDirectory.appendingPathComponent("segmented-short-body-retry.bin")
+    let downloader = ResumableDownloader(
+      remoteUrl: server.url,
+      localUrl: destination,
+      sha256: Data(SHA256.hash(data: payload)).hexString)
+
+    let completion = expectation(description: "segmented-short-body-retry-complete")
+    var reportedError: Error? = nil
+
+    downloader.resume { _, _, isComplete, error in
+      if let error {
+        reportedError = error
+        completion.fulfill()
+        return
+      }
+      if isComplete {
+        completion.fulfill()
+      }
+    }
+
+    wait(for: [completion], timeout: 60)
+    XCTAssertNil(reportedError)
+    XCTAssertEqual(try Data(contentsOf: destination), payload)
+    let shortBodyOffsets = server.shortResponseStartOffsets()
+    XCTAssertEqual(shortBodyOffsets.count, 1)
+    XCTAssertGreaterThanOrEqual(server.rangeRequestCount(forStartOffset: shortBodyOffsets[0]), 2)
+  }
+
 }
 
 private func makePayload(size: Int) -> Data {
@@ -290,15 +362,24 @@ private final class LocalRangeServer {
   private let stateLock = NSLock()
   private let etag = "\"resumable-downloader-test\""
   private let lastModified = "Sun, 29 Mar 2026 00:00:00 GMT"
+  private var transientRangeFailuresToInject: Int
+  private var shortRangeResponsesToInject: Int
 
   private var rangeRequests: [ClosedRange<Int64>] = []
+  private var transientFailureOffsets: [Int64] = []
+  private var shortResponseOffsets: [Int64] = []
   private var activeRangeRequests = 0
   private(set) var maxConcurrentRangeRequests = 0
   private(set) var totalRangeBytesServed: Int64 = 0
 
-  init(payload: Data, chunkDelay: TimeInterval) throws {
+  init(
+    payload: Data, chunkDelay: TimeInterval, transientRangeFailuresToInject: Int = 0,
+    shortRangeResponsesToInject: Int = 0
+  ) throws {
     self.payload = payload
     self.chunkDelay = chunkDelay
+    self.transientRangeFailuresToInject = transientRangeFailuresToInject
+    self.shortRangeResponsesToInject = shortRangeResponsesToInject
     listener = try NWListener(using: .tcp, on: .any)
 
     let ready = DispatchSemaphore(value: 0)
@@ -328,6 +409,22 @@ private final class LocalRangeServer {
       stateLock.unlock()
     }
     return rangeRequests.filter { $0.lowerBound == startOffset }.count
+  }
+
+  func transientFailureStartOffsets() -> [Int64] {
+    stateLock.lock()
+    defer {
+      stateLock.unlock()
+    }
+    return transientFailureOffsets
+  }
+
+  func shortResponseStartOffsets() -> [Int64] {
+    stateLock.lock()
+    defer {
+      stateLock.unlock()
+    }
+    return shortResponseOffsets
   }
 
   private func handle(_ connection: NWConnection) {
@@ -386,7 +483,23 @@ private final class LocalRangeServer {
     let hasRangeHeader = headers["range"] != nil
     let range = headers["range"].flatMap { parseRange($0, totalLength: payload.count) } ?? fullRange
     let isRangeResponse = hasRangeHeader && range != fullRange
-    let body = payload.subdata(in: Int(range.lowerBound)..<(Int(range.upperBound) + 1))
+    var body = payload.subdata(in: Int(range.lowerBound)..<(Int(range.upperBound) + 1))
+    var responseRange = range
+    var shouldInjectShortResponse = false
+    if isRangeResponse {
+      stateLock.lock()
+      if shortRangeResponsesToInject > 0 {
+        shortRangeResponsesToInject -= 1
+        shortResponseOffsets.append(range.lowerBound)
+        shouldInjectShortResponse = true
+      }
+      stateLock.unlock()
+    }
+    if shouldInjectShortResponse {
+      let shortLength = max(1, body.count / 2)
+      body = body.subdata(in: 0..<shortLength)
+      responseRange = range.lowerBound...(range.lowerBound + Int64(shortLength) - 1)
+    }
 
     var responseHeaders =
       isRangeResponse ? "HTTP/1.1 206 Partial Content\r\n" : "HTTP/1.1 200 OK\r\n"
@@ -396,7 +509,7 @@ private final class LocalRangeServer {
     responseHeaders += "Last-Modified: \(lastModified)\r\n"
     if isRangeResponse {
       responseHeaders +=
-        "Content-Range: bytes \(range.lowerBound)-\(range.upperBound)/\(payload.count)\r\n"
+        "Content-Range: bytes \(responseRange.lowerBound)-\(responseRange.upperBound)/\(payload.count)\r\n"
     }
     responseHeaders += "\r\n"
 
@@ -410,11 +523,29 @@ private final class LocalRangeServer {
     }
 
     let headerData = Data(responseHeaders.utf8)
+    let shouldInjectTransientFailure: Bool
+    if isRangeResponse {
+      stateLock.lock()
+      if transientRangeFailuresToInject > 0 {
+        transientRangeFailuresToInject -= 1
+        transientFailureOffsets.append(range.lowerBound)
+        shouldInjectTransientFailure = true
+      } else {
+        shouldInjectTransientFailure = false
+      }
+      stateLock.unlock()
+    } else {
+      shouldInjectTransientFailure = false
+    }
     connection.send(
       content: headerData,
       completion: .contentProcessed { [weak self] error in
         guard let self else { return }
         if error != nil {
+          self.finish(connection: connection, isRangeResponse: isRangeResponse)
+          return
+        }
+        if shouldInjectTransientFailure {
           self.finish(connection: connection, isRangeResponse: isRangeResponse)
           return
         }
