@@ -1,5 +1,12 @@
 # Session Learnings
 
+## Downloader Naming + Compatibility Policy
+- In this repo, prefer one canonical name for a behavior or mode instead of compatibility aliases.
+- For the downloader split, use `SegmentedResumableDownloaderBackend` vs `URLSessionDownloadTaskResumableDownloaderBackend`.
+- For `ResumableDownloader`, select backend via an explicit constructor parameter with a default instead of process-global environment variables.
+- Do not keep compatibility flags or alternate spellings such as `legacy` when renaming internal APIs or test harness flags unless persisted data or an external contract requires it.
+- If compatibility is required, constrain it to persisted data / externally consumed formats rather than duplicating internal source-of-truth names in code paths.
+
 ## FrameCompression (VideoToolbox + s4nnc)
 - Prefer a synchronous public API for single-frame artifact injection:
   - `FrameCompression.applyCompressionArtifacts(to:codec:quality:) throws -> Tensor<FloatType>`
