@@ -148,8 +148,9 @@ extension SegmentedResumableDownloaderBackend {
         continue
       }
       let assignment = blockAssignment(index: index, blockSize: validatedManifest.blockSize)
-      let data = try file.read(length: assignment.length, at: assignment.offset)
-      if sha256Digest(data) == digest {
+      let blockDigest = try sha256Digest(
+        forFileAt: partUrl, offset: assignment.offset, length: Int64(assignment.length))
+      if blockDigest == digest {
         verifiedBytes += Int64(assignment.length)
       } else {
         validatedManifest.completedBlocks[index] = false

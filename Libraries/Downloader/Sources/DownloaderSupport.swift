@@ -77,26 +77,6 @@ final class RandomAccessFile {
     }
   }
 
-  func read(length: Int, at offset: Int64) throws -> Data {
-    var data = Data(count: length)
-    var readCount = 0
-    try data.withUnsafeMutableBytes { rawBuffer in
-      guard let baseAddress = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
-        return
-      }
-      while readCount < length {
-        let count = pread(
-          fd,
-          baseAddress + readCount,
-          length - readCount,
-          off_t(offset + Int64(readCount)))
-        guard count >= 0 else { throw posixError(errno) }
-        guard count > 0 else { throw ResumableDownloader.DownloadError.unexpected }
-        readCount += count
-      }
-    }
-    return data
-  }
 }
 
 func posixError(_ code: Int32) -> Error {
@@ -141,18 +121,48 @@ func sha256Digest(_ data: Data) -> Data {
   Data(SHA256.hash(data: data))
 }
 
-func sha256Hex(forFileAt url: URL) throws -> String {
+func sha256Digest(forFileAt url: URL, offset: Int64 = 0, length: Int64? = nil) throws -> Data {
+  guard offset >= 0 else {
+    throw ResumableDownloader.DownloadError.unexpected
+  }
+  if let length, length < 0 {
+    throw ResumableDownloader.DownloadError.unexpected
+  }
   let handle = try FileHandle(forReadingFrom: url)
   defer {
     try? handle.close()
   }
-  var hasher = SHA256()
-  while true {
-    let data = try handle.read(upToCount: 1024 * 1024) ?? Data()
-    if data.isEmpty { break }
-    hasher.update(data: data)
+  if offset > 0 {
+    try handle.seek(toOffset: UInt64(offset))
   }
-  return Data(hasher.finalize()).hexString
+  var remaining = length
+  var hasher = SHA256()
+  while remaining == nil || remaining! > 0 {
+    var reachedEndOfFile = false
+    try autoreleasepool {
+      let readLength = remaining.map { Int(min(Int64(1024 * 1024), $0)) } ?? 1024 * 1024
+      let data = try handle.read(upToCount: readLength) ?? Data()
+      if data.isEmpty {
+        guard remaining == nil else {
+          throw ResumableDownloader.DownloadError.unexpected
+        }
+        reachedEndOfFile = true
+        return
+      }
+      hasher.update(data: data)
+      if let currentRemaining = remaining {
+        remaining = currentRemaining - Int64(data.count)
+      }
+    }
+    if reachedEndOfFile {
+      break
+    }
+  }
+  return Data(hasher.finalize())
+}
+
+func sha256Hex(forFileAt url: URL) throws -> String {
+  try sha256Digest(forFileAt: url).hexString
 }
 
 func fileSize(at url: URL) -> Int64 {
