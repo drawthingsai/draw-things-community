@@ -1225,8 +1225,7 @@ public final class ModelImporter {
         (unetMapper, unet) = ErnieImage(
           batchSize: 1, height: 64, width: 64, textLength: 512, layers: 36, channels: 4_096,
           usesFlashAttention: .scale1)
-        (unetFixedMapper, unetFixed) = ErnieImageFixed(
-          tokenLength: 512, timesteps: 1, channels: 4_096)
+        (unetFixedMapper, unetFixed) = ErnieImageFixed(timesteps: 1, channels: 4_096)
       case .cosmos2_5_2b:
         (unetMapper, unet) = Cosmos(
           batchSize: 1, height: 64, width: 64, textLength: 512,

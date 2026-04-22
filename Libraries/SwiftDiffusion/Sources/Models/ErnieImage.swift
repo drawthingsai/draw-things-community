@@ -62,7 +62,7 @@ public func ErnieImageRotaryPositionEmbedding(
   return (cosTensor, sinTensor)
 }
 
-public func ErnieImageFixed(tokenLength: Int, timesteps: Int, channels: Int) -> (
+public func ErnieImageFixed(timesteps: Int, channels: Int) -> (
   ModelWeightMapper, Model
 ) {
   let txt = Input()
@@ -615,8 +615,7 @@ public func LoRAErnieImage(
   )
 }
 
-public func LoRAErnieImageFixed(
-  tokenLength: Int, timesteps: Int, channels: Int, LoRAConfiguration: LoRANetworkConfiguration
+public func LoRAErnieImageFixed(timesteps: Int, channels: Int, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (Model, ModelWeightMapper) {
   let txt = Input()
   let t = Input()

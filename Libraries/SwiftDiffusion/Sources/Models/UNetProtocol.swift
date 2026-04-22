@@ -2680,17 +2680,6 @@ extension UNetFromNNC {
       return
     case .ernieImage:
       guard isCfgEnabled else {
-        let inputs: [DynamicGraph.AnyTensor] = inputs.enumerated().compactMap {
-          let shape = $0.1.shape
-          switch $0.0 {
-          case 3:
-            return DynamicGraph.Tensor<FloatType>($0.1)[
-              (shape[0] / 2)..<shape[0], 0..<tokenLengthCond, 0..<shape[2]
-            ].copied()
-          default:
-            return $0.1
-          }
-        }
         unet.compile(inputs: inputs)
         return
       }
@@ -2699,10 +2688,8 @@ extension UNetFromNNC {
         let shape = $0.1.shape
         switch $0.0 {
         case 0:
-          let range =
-            useConditional ? ((shape[0] / 2)..<shape[0]) : (0..<(shape[0] / 2))
           return DynamicGraph.Tensor<FloatType>($0.1)[
-            range, 0..<shape[1], 0..<shape[2], 0..<shape[3]
+            0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
           ].copied()
         case 1, 2:
           return useConditional ? nil : $0.1
@@ -2710,10 +2697,8 @@ extension UNetFromNNC {
           return useConditional ? $0.1 : nil
         case 5:
           let tokenLength = useConditional ? tokenLengthCond : tokenLengthUncond
-          let range =
-            useConditional ? ((shape[0] / 2)..<shape[0]) : (0..<(shape[0] / 2))
           return DynamicGraph.Tensor<FloatType>($0.1)[
-            range, 0..<tokenLength, 0..<shape[2]
+            0..<shape[0], 0..<tokenLength, 0..<shape[2]
           ].copied()
         default:
           return $0.1
@@ -3607,17 +3592,6 @@ extension UNetFromNNC {
       return Functional.concat(axis: 0, etUncond, etCond)
     case .ernieImage:
       guard isCfgEnabled else {
-        let restInputs: [DynamicGraph.AnyTensor] = restInputs.enumerated().compactMap {
-          let shape = $0.1.shape
-          switch $0.0 {
-          case 2:
-            return DynamicGraph.Tensor<FloatType>($0.1)[
-              (shape[0] / 2)..<shape[0], 0..<tokenLengthCond, 0..<shape[2]
-            ].copied()
-          default:
-            return $0.1
-          }
-        }
         return unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
       }
       let shape = firstInput.shape
@@ -3634,7 +3608,7 @@ extension UNetFromNNC {
           case 4:
             let shape = $0.1.shape
             return DynamicGraph.Tensor<FloatType>($0.1)[
-              (shape[0] / 2)..<shape[0], 0..<tokenLengthCond, 0..<shape[2]
+              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond), 0..<shape[2]
             ].copied()
           default:
             return $0.1
@@ -3655,7 +3629,7 @@ extension UNetFromNNC {
           case 4:
             let shape = $0.1.shape
             return DynamicGraph.Tensor<FloatType>($0.1)[
-              0..<(shape[0] / 2), 0..<tokenLengthUncond, 0..<shape[2]
+              0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
             ].copied()
           default:
             return $0.1
@@ -3673,7 +3647,7 @@ extension UNetFromNNC {
           case 4:
             let shape = $0.1.shape
             return DynamicGraph.Tensor<FloatType>($0.1)[
-              0..<(shape[0] / 2), 0..<tokenLengthUncond, 0..<shape[2]
+              0..<shape[0], 0..<tokenLengthUncond, 0..<shape[2]
             ].copied()
           default:
             return $0.1
@@ -3694,7 +3668,7 @@ extension UNetFromNNC {
           case 4:
             let shape = $0.1.shape
             return DynamicGraph.Tensor<FloatType>($0.1)[
-              (shape[0] / 2)..<shape[0], 0..<tokenLengthCond, 0..<shape[2]
+              0..<shape[0], tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond), 0..<shape[2]
             ].copied()
           default:
             return $0.1

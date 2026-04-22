@@ -2494,8 +2494,7 @@ public struct LoRATrainer {
   ) -> [DynamicGraph.AnyTensor] {
     return graph.withNoGrad {
       let filePath = ModelZoo.filePathForModelDownloaded(model)
-      let unetFixed = ErnieImageFixed(
-        tokenLength: tokenLength, timesteps: batch.count, channels: 4_096
+      let unetFixed = ErnieImageFixed(timesteps: batch.count, channels: 4_096
       ).1
       var timeEmbeds = graph.variable(
         .GPU(0), .HWC(batch.count, 1, 4_096), of: FloatType.self)

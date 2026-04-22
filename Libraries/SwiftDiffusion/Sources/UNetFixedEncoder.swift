@@ -1796,6 +1796,19 @@ extension UNetFixedEncoder {
       let channels = 4_096
       var timeEmbeds = graph.variable(
         .GPU(0), .HWC(timesteps.count, 1, channels), of: FloatType.self)
+      var c = graph.variable(
+        .GPU(0),
+        .HWC(batchSize, (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond, 3072),
+        of: FloatType.self)
+      if isCfgEnabled {
+        c[0..<batchSize, 0..<tokenLengthUncond, 0..<3072] =
+          c0[0..<batchSize, 0..<tokenLengthUncond, 0..<3072]
+        c[0..<batchSize, tokenLengthUncond..<(tokenLengthCond + tokenLengthUncond), 0..<3072] =
+          c0[batchSize..<(batchSize * 2), 0..<tokenLengthCond, 0..<3072]
+      } else {
+        c[0..<batchSize, 0..<tokenLengthCond, 0..<3072] =
+          c0[0..<batchSize, 0..<tokenLengthCond, 0..<3072]
+      }
       for (i, timestep) in timesteps.enumerated() {
         let timeEmbed = graph.variable(
           Tensor<FloatType>(
@@ -1819,16 +1832,14 @@ extension UNetFixedEncoder {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unetFixed =
-          LoRAErnieImageFixed(
-            tokenLength: textLength, timesteps: timesteps.count, channels: channels,
+          LoRAErnieImageFixed(timesteps: timesteps.count, channels: channels,
             LoRAConfiguration: configuration
           ).0
       } else {
-        (_, unetFixed) = ErnieImageFixed(
-          tokenLength: textLength, timesteps: timesteps.count, channels: channels)
+        (_, unetFixed) = ErnieImageFixed(timesteps: timesteps.count, channels: channels)
       }
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: c0, timeEmbeds)
+      unetFixed.compile(inputs: c, timeEmbeds)
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
@@ -1875,7 +1886,7 @@ extension UNetFixedEncoder {
             "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
-      let conditions = unetFixed(inputs: c0, timeEmbeds)
+      let conditions = unetFixed(inputs: c, timeEmbeds)
       if lora.isEmpty {
         weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       }
