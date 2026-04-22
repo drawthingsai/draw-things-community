@@ -32,7 +32,7 @@ Libraries/HTTPAPIServer
 Libraries/Invocation
 Libraries/ModelOp
 Libraries/ModelZoo
-Libraries/MediaGenerationKit
+Libraries/MediaGenerationKit/
 Libraries/SFMT
 Libraries/Scripting
 Libraries/SwiftDiffusion
