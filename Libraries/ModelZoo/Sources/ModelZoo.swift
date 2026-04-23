@@ -3476,7 +3476,7 @@ extension ModelZoo {
     guard
       version == .flux1 || version == .sd3 || version == .sd3Large || version == .hiDreamI1
         || version == .qwenImage || version == .zImage || version == .flux2 || version == .flux2_9b
-        || version == .flux2_4b || version == .cosmos2_5_2b
+        || version == .flux2_4b || version == .cosmos2_5_2b || version == .ernieImage
     else { return false }
     if isConsistencyModel {
       return false
