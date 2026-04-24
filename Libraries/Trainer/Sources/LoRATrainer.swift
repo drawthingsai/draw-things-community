@@ -5308,9 +5308,7 @@ public struct LoRATrainer {
           orthonormalLoRADown: orthonormalLoRADown, powerEMA: powerEMA, memorySaver: memorySaver,
           weightsMemory: weightsMemory, progressHandler: progressHandler)
         return
-      }
-
-      if Self.flux2Configuration(for: version) != nil {
+      } else if Self.flux2Configuration(for: version) != nil {
         trainFlux2(
           graph: graph, firstStage: firstStage, sessionStore: sessionStore,
           resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, trainingSteps: trainingSteps,
@@ -5323,9 +5321,7 @@ public struct LoRATrainer {
           orthonormalLoRADown: orthonormalLoRADown, powerEMA: powerEMA, memorySaver: memorySaver,
           weightsMemory: weightsMemory, progressHandler: progressHandler)
         return
-      }
-
-      if version == .qwenImage {
+      } else if version == .qwenImage {
         trainQwen(
           graph: graph, firstStage: firstStage, sessionStore: sessionStore,
           resumingLoRAFile: resumingLoRAFile, zeroCaption: zeroCaption, dataFrame: dataFrame,
@@ -5339,9 +5335,7 @@ public struct LoRATrainer {
           orthonormalLoRADown: orthonormalLoRADown, powerEMA: powerEMA, memorySaver: memorySaver,
           weightsMemory: weightsMemory, progressHandler: progressHandler)
         return
-      }
-
-      if version == .zImage {
+      } else if version == .zImage {
         trainZImage(
           graph: graph, firstStage: firstStage, sessionStore: sessionStore,
           resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, zeroCaption: zeroCaption,
@@ -5355,9 +5349,7 @@ public struct LoRATrainer {
           orthonormalLoRADown: orthonormalLoRADown, powerEMA: powerEMA, memorySaver: memorySaver,
           weightsMemory: weightsMemory, progressHandler: progressHandler)
         return
-      }
-
-      if version == .ernieImage {
+      } else if version == .ernieImage {
         trainErnieImage(
           graph: graph, firstStage: firstStage, sessionStore: sessionStore,
           resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, zeroCaption: zeroCaption,
@@ -5371,9 +5363,7 @@ public struct LoRATrainer {
           orthonormalLoRADown: orthonormalLoRADown, powerEMA: powerEMA, memorySaver: memorySaver,
           weightsMemory: weightsMemory, progressHandler: progressHandler)
         return
-      }
-
-      if version == .cosmos2_5_2b {
+      } else if version == .cosmos2_5_2b {
         trainCosmos(
           graph: graph, firstStage: firstStage, sessionStore: sessionStore,
           resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, zeroCaption: zeroCaption,
