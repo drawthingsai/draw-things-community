@@ -7,17 +7,22 @@ public let CosmosFixedTimeConditionCount = CosmosLayerCount * 9 + 2
 public let CosmosFixedKVConditionCount = CosmosLayerCount * 2
 
 public func AnimaRotaryPositionEmbedding(
-  sequenceLength: Int, headDimension: Int = 64, theta: Double = 10_000
+  sequenceLengths: (Int, Int), headDimension: Int = 64, theta: Double = 10_000
 ) -> Tensor<Float> {
   precondition(headDimension % 2 == 0)
   let half = headDimension / 2
-  var rotary = Tensor<Float>(.CPU, .NHWC(1, sequenceLength, 1, headDimension))
-  for i in 0..<sequenceLength {
-    for k in 0..<half {
-      let freq = Double(i) / pow(theta, Double(2 * k) / Double(headDimension))
-      rotary[0, i, 0, k * 2] = Float(cos(freq))
-      rotary[0, i, 0, k * 2 + 1] = Float(sin(freq))
+  let totalSequenceLength = sequenceLengths.0 + sequenceLengths.1
+  var rotary = Tensor<Float>(.CPU, .NHWC(1, totalSequenceLength, 1, headDimension))
+  var offset = 0
+  for sequenceLength in [sequenceLengths.0, sequenceLengths.1] {
+    for i in 0..<sequenceLength {
+      for k in 0..<half {
+        let freq = Double(i) / pow(theta, Double(2 * k) / Double(headDimension))
+        rotary[0, offset + i, 0, k * 2] = Float(cos(freq))
+        rotary[0, offset + i, 0, k * 2 + 1] = Float(sin(freq))
+      }
     }
+    offset += sequenceLength
   }
   return rotary
 }
@@ -74,43 +79,127 @@ public func CosmosRotaryPositionEmbedding(
   return rotary
 }
 
+private func AnimaSegmentedAttention(
+  queries: Model.IO, keys: Model.IO, values: Model.IO, queryLength: (Int, Int),
+  keyValueLength: (Int, Int), headDimension: Int, numberOfHeads: Int, usesFlashAttention: Bool
+)
+  -> Model.IO
+{
+  let totalQueryLength = queryLength.0 + queryLength.1
+  let totalKeyValueLength = keyValueLength.0 + keyValueLength.1
+  let segments = [
+    (query: queryLength.0, keyValue: keyValueLength.0, queryOffset: 0, keyValueOffset: 0),
+    (
+      query: queryLength.1, keyValue: keyValueLength.1, queryOffset: queryLength.0,
+      keyValueOffset: keyValueLength.0
+    ),
+  ]
+  var outs = [Model.IO]()
+  if usesFlashAttention {
+    let attentionScale = 1.0 / Float(headDimension).squareRoot().squareRoot()
+    let queries = attentionScale * queries
+    let keys = attentionScale * keys
+    for segment in segments {
+      let query = queries.reshaped(
+        [1, segment.query, numberOfHeads, headDimension],
+        offset: [0, segment.queryOffset, 0, 0],
+        strides: [
+          totalQueryLength * numberOfHeads * headDimension, numberOfHeads * headDimension,
+          headDimension, 1,
+        ]
+      ).contiguous()
+      let key = keys.reshaped(
+        [1, segment.keyValue, numberOfHeads, headDimension],
+        offset: [0, segment.keyValueOffset, 0, 0],
+        strides: [
+          totalKeyValueLength * numberOfHeads * headDimension, numberOfHeads * headDimension,
+          headDimension, 1,
+        ]
+      ).contiguous()
+      let value = values.reshaped(
+        [1, segment.keyValue, numberOfHeads, headDimension],
+        offset: [0, segment.keyValueOffset, 0, 0],
+        strides: [
+          totalKeyValueLength * numberOfHeads * headDimension, numberOfHeads * headDimension,
+          headDimension, 1,
+        ]
+      ).contiguous()
+      let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
+      let out = scaledDotProductAttention(query, key, value)
+      if let last = outs.last {
+        out.add(dependencies: [last])
+      }
+      outs.append(out)
+    }
+  } else {
+    for segment in segments {
+      let query = queries.reshaped(
+        [1, segment.query, numberOfHeads, headDimension],
+        offset: [0, segment.queryOffset, 0, 0],
+        strides: [
+          totalQueryLength * numberOfHeads * headDimension, numberOfHeads * headDimension,
+          headDimension, 1,
+        ]
+      ).transposed(1, 2).contiguous()
+      let key = keys.reshaped(
+        [1, segment.keyValue, numberOfHeads, headDimension],
+        offset: [0, segment.keyValueOffset, 0, 0],
+        strides: [
+          totalKeyValueLength * numberOfHeads * headDimension, numberOfHeads * headDimension,
+          headDimension, 1,
+        ]
+      ).transposed(1, 2).contiguous()
+      let value = values.reshaped(
+        [1, segment.keyValue, numberOfHeads, headDimension],
+        offset: [0, segment.keyValueOffset, 0, 0],
+        strides: [
+          totalKeyValueLength * numberOfHeads * headDimension, numberOfHeads * headDimension,
+          headDimension, 1,
+        ]
+      ).transposed(1, 2).contiguous()
+      var dot =
+        Matmul(transposeB: (2, 3))(
+          (1.0 / Float(headDimension).squareRoot()) * query, key)
+      dot = dot.reshaped([numberOfHeads * segment.query, segment.keyValue]).softmax()
+      dot = dot.reshaped([1, numberOfHeads, segment.query, segment.keyValue])
+      let out = (dot * value).transposed(1, 2)
+      if let last = outs.last {
+        out.add(dependencies: [last])
+      }
+      outs.append(out)
+    }
+  }
+  let concat = Concat(axis: 1)
+  concat.flags = .disableOpt
+  return concat(outs)
+}
+
 private func AnimaSelfAttention(
-  prefix: String, batchSize: Int, width: Int, headDimension: Int, numberOfHeads: Int,
-  tokenLength: Int, usesFlashAttention: Bool
+  prefix: String, width: Int, headDimension: Int, numberOfHeads: Int,
+  tokenLength: (Int, Int), usesFlashAttention: Bool
 )
   -> (ModelWeightMapper, Model)
 {
+  let totalTokenLength = tokenLength.0 + tokenLength.1
   let x = Input()
   let rot = Input()
   let toKeys = Dense(count: headDimension * numberOfHeads, noBias: true, name: "k_proj")
   let toQueries = Dense(count: headDimension * numberOfHeads, noBias: true, name: "q_proj")
   let toValues = Dense(count: headDimension * numberOfHeads, noBias: true, name: "v_proj")
-  var keys = toKeys(x).reshaped(.NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
+  var keys = toKeys(x).reshaped(.NHWC(1, totalTokenLength, numberOfHeads, headDimension))
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_k")
   let normedKeys = normK(keys)
-  keys = Functional.cmul(left: normedKeys, right: rot.to(of: normedKeys))
-  var queries = toQueries(x).reshaped(.NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
+  keys = Functional.cmul(left: normedKeys, right: rot)
+  var queries = toQueries(x).reshaped(.NHWC(1, totalTokenLength, numberOfHeads, headDimension))
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_q")
   let normedQueries = normQ(queries)
-  queries = Functional.cmul(left: normedQueries, right: rot.to(of: normedQueries))
-  let values = toValues(x).reshaped(.NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
-  let out: Model.IO
-  if usesFlashAttention {
-    let attentionScale = 1.0 / Float(headDimension).squareRoot().squareRoot()
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-    out = scaledDotProductAttention(attentionScale * queries, attentionScale * keys, values)
-  } else {
-    let query = queries.transposed(1, 2).contiguous()
-    let key = keys.transposed(1, 2).contiguous()
-    let value = values.transposed(1, 2).contiguous()
-    var dot =
-      Matmul(transposeB: (2, 3))(
-        (1.0 / Float(headDimension).squareRoot()) * query, key)
-    dot = dot.reshaped([batchSize * numberOfHeads * tokenLength, tokenLength]).softmax()
-    dot = dot.reshaped([batchSize, numberOfHeads, tokenLength, tokenLength])
-    out = (dot * value).transposed(1, 2)
-  }
-  let flattenedOut = out.reshaped([batchSize * tokenLength, width])
+  queries = Functional.cmul(left: normedQueries, right: rot)
+  let values = toValues(x).reshaped(.NHWC(1, totalTokenLength, numberOfHeads, headDimension))
+  let out = AnimaSegmentedAttention(
+    queries: queries, keys: keys, values: values, queryLength: tokenLength,
+    keyValueLength: tokenLength, headDimension: headDimension, numberOfHeads: numberOfHeads,
+    usesFlashAttention: usesFlashAttention)
+  let flattenedOut = out.reshaped([totalTokenLength, width])
   let unifyHeads = Dense(count: width, noBias: true, name: "out_proj")
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -134,9 +223,11 @@ private func AnimaSelfAttention(
 }
 
 private func AnimaCrossAttention(
-  prefix: String, batchSize: Int, queryDim: Int, headDimension: Int, numberOfHeads: Int,
-  tokenLength: Int, contextLength: Int, usesFlashAttention: Bool
+  prefix: String, queryDim: Int, headDimension: Int, numberOfHeads: Int,
+  tokenLength: (Int, Int), contextLength: (Int, Int), usesFlashAttention: Bool
 ) -> (ModelWeightMapper, Model) {
+  let totalTokenLength = tokenLength.0 + tokenLength.1
+  let totalContextLength = contextLength.0 + contextLength.1
   let x = Input()
   let context = Input()
   let queryRot = Input()
@@ -144,33 +235,21 @@ private func AnimaCrossAttention(
   let toKeys = Dense(count: headDimension * numberOfHeads, noBias: true, name: "c_k_proj")
   let toQueries = Dense(count: headDimension * numberOfHeads, noBias: true, name: "c_q_proj")
   let toValues = Dense(count: headDimension * numberOfHeads, noBias: true, name: "c_v_proj")
-  var keys = toKeys(context).reshaped(.NHWC(batchSize, contextLength, numberOfHeads, headDimension))
+  var keys = toKeys(context).reshaped(.NHWC(1, totalContextLength, numberOfHeads, headDimension))
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "c_norm_k")
   let normedKeys = normK(keys)
-  keys = Functional.cmul(left: normedKeys, right: contextRot.to(of: normedKeys))
-  var queries = toQueries(x).reshaped(.NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
+  keys = Functional.cmul(left: normedKeys, right: contextRot)
+  var queries = toQueries(x).reshaped(.NHWC(1, totalTokenLength, numberOfHeads, headDimension))
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "c_norm_q")
   let normedQueries = normQ(queries)
-  queries = Functional.cmul(left: normedQueries, right: queryRot.to(of: normedQueries))
+  queries = Functional.cmul(left: normedQueries, right: queryRot)
   let values = toValues(context).reshaped(
-    .NHWC(batchSize, contextLength, numberOfHeads, headDimension))
-  let out: Model.IO
-  if usesFlashAttention {
-    let attentionScale = 1.0 / Float(headDimension).squareRoot().squareRoot()
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-    out = scaledDotProductAttention(attentionScale * queries, attentionScale * keys, values)
-  } else {
-    let query = queries.transposed(1, 2).contiguous()
-    let key = keys.transposed(1, 2).contiguous()
-    let value = values.transposed(1, 2).contiguous()
-    var dot =
-      Matmul(transposeB: (2, 3))(
-        (1.0 / Float(headDimension).squareRoot()) * query, key)
-    dot = dot.reshaped([batchSize * numberOfHeads * tokenLength, contextLength]).softmax()
-    dot = dot.reshaped([batchSize, numberOfHeads, tokenLength, contextLength])
-    out = (dot * value).transposed(1, 2)
-  }
-  let flattenedOut = out.reshaped([batchSize * tokenLength, queryDim])
+    .NHWC(1, totalContextLength, numberOfHeads, headDimension))
+  let out = AnimaSegmentedAttention(
+    queries: queries, keys: keys, values: values, queryLength: tokenLength,
+    keyValueLength: contextLength, headDimension: headDimension, numberOfHeads: numberOfHeads,
+    usesFlashAttention: usesFlashAttention)
+  let flattenedOut = out.reshaped([totalTokenLength, queryDim])
   let unifyHeads = Dense(count: queryDim, noBias: true, name: "c_out_proj")
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
@@ -191,12 +270,13 @@ private func AnimaCrossAttention(
     return mapping
   }
   return (
-    mapper, Model([x, context, queryRot, contextRot], [unifyHeads(flattenedOut).to(of: x)])
+    mapper,
+    Model([x, context, queryRot, contextRot], [unifyHeads(flattenedOut).to(of: x)])
   )
 }
 
 private func AnimaAdapterBlock(
-  batchSize: Int, tokenLength: Int, contextLength: Int, width: Int, headDimension: Int,
+  tokenLength: (Int, Int), contextLength: (Int, Int), width: Int, headDimension: Int,
   numberOfHeads: Int, intermediateSize: Int, prefix: String, usesFlashAttention: Bool
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -205,15 +285,14 @@ private func AnimaAdapterBlock(
   let sourceRot = Input()
   let normSelf = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm_self")
   let (selfAttentionMapper, selfAttention) = AnimaSelfAttention(
-    prefix: "\(prefix).self_attn", batchSize: batchSize, width: width,
-    headDimension: headDimension, numberOfHeads: numberOfHeads, tokenLength: tokenLength,
-    usesFlashAttention: usesFlashAttention)
+    prefix: "\(prefix).self_attn", width: width, headDimension: headDimension,
+    numberOfHeads: numberOfHeads, tokenLength: tokenLength, usesFlashAttention: usesFlashAttention)
   var out = x + selfAttention(normSelf(x), targetRot)
   let normCross = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm_cross")
   let (crossAttentionMapper, crossAttention) = AnimaCrossAttention(
-    prefix: "\(prefix).cross_attn", batchSize: batchSize, queryDim: width,
-    headDimension: headDimension, numberOfHeads: numberOfHeads, tokenLength: tokenLength,
-    contextLength: contextLength, usesFlashAttention: usesFlashAttention)
+    prefix: "\(prefix).cross_attn", queryDim: width, headDimension: headDimension,
+    numberOfHeads: numberOfHeads, tokenLength: tokenLength, contextLength: contextLength,
+    usesFlashAttention: usesFlashAttention)
   out = out + crossAttention(normCross(out), context, targetRot, sourceRot)
   let normMlp = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm_mlp")
   let fc1 = Dense(count: intermediateSize, name: "mlp_fc1")
@@ -236,7 +315,7 @@ private func AnimaAdapterBlock(
 }
 
 public func AnimaLLMAdapter(
-  batchSize: Int, tokenLength: Int, contextLength: Int, vocabularySize: Int = 32_128,
+  targetLength: (Int, Int), sourceLength: (Int, Int), vocabularySize: Int = 32_128,
   modelDimension: Int = 1_024, layers: Int = 6, headDimension: Int = 64, numberOfHeads: Int = 16,
   intermediateSize: Int = 4_096, usesFlashAttention: Bool = true
 ) -> (ModelWeightMapper, Model) {
@@ -251,10 +330,10 @@ public func AnimaLLMAdapter(
   var blockMappers = [ModelWeightMapper]()
   for i in 0..<layers {
     let (mapper, block) = AnimaAdapterBlock(
-      batchSize: batchSize, tokenLength: tokenLength, contextLength: contextLength,
-      width: modelDimension, headDimension: headDimension, numberOfHeads: numberOfHeads,
-      intermediateSize: intermediateSize, prefix: "blocks.\(i)",
-      usesFlashAttention: usesFlashAttention)
+      tokenLength: targetLength, contextLength: sourceLength, width: modelDimension,
+      headDimension: headDimension, numberOfHeads: numberOfHeads,
+      intermediateSize: intermediateSize,
+      prefix: "blocks.\(i)", usesFlashAttention: usesFlashAttention)
     out = block(out, sourceHiddenStates, targetRot, sourceRot)
     blockMappers.append(mapper)
   }
@@ -276,12 +355,13 @@ public func AnimaLLMAdapter(
 }
 
 private func LoRAAnimaSelfAttention(
-  prefix: String, batchSize: Int, width: Int, headDimension: Int, numberOfHeads: Int,
-  tokenLength: Int, usesFlashAttention: Bool, layerIndex: Int,
+  prefix: String, width: Int, headDimension: Int, numberOfHeads: Int,
+  tokenLength: (Int, Int), usesFlashAttention: Bool, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 )
   -> (ModelWeightMapper, Model)
 {
+  let totalTokenLength = tokenLength.0 + tokenLength.1
   let x = Input()
   let rot = Input()
   let toKeys = LoRADense(
@@ -293,44 +373,36 @@ private func LoRAAnimaSelfAttention(
   let toValues = LoRADense(
     count: headDimension * numberOfHeads, configuration: configuration, noBias: true,
     index: layerIndex, name: "v_proj")
-  var keys = toKeys(x).reshaped(.NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
+  var keys = toKeys(x).reshaped(.NHWC(1, totalTokenLength, numberOfHeads, headDimension))
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_k")
   let normedKeys = normK(keys)
-  keys = Functional.cmul(left: normedKeys, right: rot.to(of: normedKeys))
-  var queries = toQueries(x).reshaped(.NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
+  keys = Functional.cmul(left: normedKeys, right: rot)
+  var queries = toQueries(x).reshaped(.NHWC(1, totalTokenLength, numberOfHeads, headDimension))
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_q")
   let normedQueries = normQ(queries)
-  queries = Functional.cmul(left: normedQueries, right: rot.to(of: normedQueries))
-  let values = toValues(x).reshaped(.NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
-  let out: Model.IO
-  if usesFlashAttention {
-    let attentionScale = 1.0 / Float(headDimension).squareRoot().squareRoot()
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-    out = scaledDotProductAttention(attentionScale * queries, attentionScale * keys, values)
-  } else {
-    let query = queries.transposed(1, 2).contiguous()
-    let key = keys.transposed(1, 2).contiguous()
-    let value = values.transposed(1, 2).contiguous()
-    var dot =
-      Matmul(transposeB: (2, 3))(
-        (1.0 / Float(headDimension).squareRoot()) * query, key)
-    dot = dot.reshaped([batchSize * numberOfHeads * tokenLength, tokenLength]).softmax()
-    dot = dot.reshaped([batchSize, numberOfHeads, tokenLength, tokenLength])
-    out = (dot * value).transposed(1, 2)
-  }
-  let flattenedOut = out.reshaped([batchSize * tokenLength, width])
+  queries = Functional.cmul(left: normedQueries, right: rot)
+  let values = toValues(x).reshaped(.NHWC(1, totalTokenLength, numberOfHeads, headDimension))
+  let out = AnimaSegmentedAttention(
+    queries: queries, keys: keys, values: values, queryLength: tokenLength,
+    keyValueLength: tokenLength, headDimension: headDimension, numberOfHeads: numberOfHeads,
+    usesFlashAttention: usesFlashAttention)
+  let flattenedOut = out.reshaped([totalTokenLength, width])
   let unifyHeads = LoRADense(
     count: width, configuration: configuration, noBias: true, index: layerIndex, name: "out_proj")
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
+    let normQElement = ModelWeightElement(
+      [normQ.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+    let normKElement = ModelWeightElement(
+      [normK.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
     mapping["\(prefix).q_proj.weight"] = ModelWeightElement(
       [toQueries.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
       headDimension: headDimension)
-    mapping["\(prefix).q_norm.weight"] = [normQ.weight.name]
+    mapping["\(prefix).q_norm.weight"] = normQElement
     mapping["\(prefix).k_proj.weight"] = ModelWeightElement(
       [toKeys.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
       headDimension: headDimension)
-    mapping["\(prefix).k_norm.weight"] = [normK.weight.name]
+    mapping["\(prefix).k_norm.weight"] = normKElement
     mapping["\(prefix).v_proj.weight"] = [toValues.weight.name]
     mapping["\(prefix).o_proj.weight"] = [unifyHeads.weight.name]
     return mapping
@@ -339,10 +411,12 @@ private func LoRAAnimaSelfAttention(
 }
 
 private func LoRAAnimaCrossAttention(
-  prefix: String, batchSize: Int, queryDim: Int, headDimension: Int, numberOfHeads: Int,
-  tokenLength: Int, contextLength: Int, usesFlashAttention: Bool, layerIndex: Int,
+  prefix: String, queryDim: Int, headDimension: Int, numberOfHeads: Int,
+  tokenLength: (Int, Int), contextLength: (Int, Int), usesFlashAttention: Bool, layerIndex: Int,
   configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
+  let totalTokenLength = tokenLength.0 + tokenLength.1
+  let totalContextLength = contextLength.0 + contextLength.1
   let x = Input()
   let context = Input()
   let queryRot = Input()
@@ -356,57 +430,50 @@ private func LoRAAnimaCrossAttention(
   let toValues = LoRADense(
     count: headDimension * numberOfHeads, configuration: configuration, noBias: true,
     index: layerIndex, name: "c_v_proj")
-  var keys = toKeys(context).reshaped(.NHWC(batchSize, contextLength, numberOfHeads, headDimension))
+  var keys = toKeys(context).reshaped(.NHWC(1, totalContextLength, numberOfHeads, headDimension))
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "c_norm_k")
   let normedKeys = normK(keys)
-  keys = Functional.cmul(left: normedKeys, right: contextRot.to(of: normedKeys))
-  var queries = toQueries(x).reshaped(.NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
+  keys = Functional.cmul(left: normedKeys, right: contextRot)
+  var queries = toQueries(x).reshaped(.NHWC(1, totalTokenLength, numberOfHeads, headDimension))
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "c_norm_q")
   let normedQueries = normQ(queries)
-  queries = Functional.cmul(left: normedQueries, right: queryRot.to(of: normedQueries))
+  queries = Functional.cmul(left: normedQueries, right: queryRot)
   let values = toValues(context).reshaped(
-    .NHWC(batchSize, contextLength, numberOfHeads, headDimension))
-  let out: Model.IO
-  if usesFlashAttention {
-    let attentionScale = 1.0 / Float(headDimension).squareRoot().squareRoot()
-    let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
-    out = scaledDotProductAttention(attentionScale * queries, attentionScale * keys, values)
-  } else {
-    let query = queries.transposed(1, 2).contiguous()
-    let key = keys.transposed(1, 2).contiguous()
-    let value = values.transposed(1, 2).contiguous()
-    var dot =
-      Matmul(transposeB: (2, 3))(
-        (1.0 / Float(headDimension).squareRoot()) * query, key)
-    dot = dot.reshaped([batchSize * numberOfHeads * tokenLength, contextLength]).softmax()
-    dot = dot.reshaped([batchSize, numberOfHeads, tokenLength, contextLength])
-    out = (dot * value).transposed(1, 2)
-  }
-  let flattenedOut = out.reshaped([batchSize * tokenLength, queryDim])
+    .NHWC(1, totalContextLength, numberOfHeads, headDimension))
+  let out = AnimaSegmentedAttention(
+    queries: queries, keys: keys, values: values, queryLength: tokenLength,
+    keyValueLength: contextLength, headDimension: headDimension, numberOfHeads: numberOfHeads,
+    usesFlashAttention: usesFlashAttention)
+  let flattenedOut = out.reshaped([totalTokenLength, queryDim])
   let unifyHeads = LoRADense(
     count: queryDim, configuration: configuration, noBias: true, index: layerIndex,
     name: "c_out_proj")
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
+    let normQElement = ModelWeightElement(
+      [normQ.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+    let normKElement = ModelWeightElement(
+      [normK.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
     mapping["\(prefix).q_proj.weight"] = ModelWeightElement(
       [toQueries.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
       headDimension: headDimension)
-    mapping["\(prefix).q_norm.weight"] = [normQ.weight.name]
+    mapping["\(prefix).q_norm.weight"] = normQElement
     mapping["\(prefix).k_proj.weight"] = ModelWeightElement(
       [toKeys.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
       headDimension: headDimension)
-    mapping["\(prefix).k_norm.weight"] = [normK.weight.name]
+    mapping["\(prefix).k_norm.weight"] = normKElement
     mapping["\(prefix).v_proj.weight"] = [toValues.weight.name]
     mapping["\(prefix).o_proj.weight"] = [unifyHeads.weight.name]
     return mapping
   }
   return (
-    mapper, Model([x, context, queryRot, contextRot], [unifyHeads(flattenedOut).to(of: x)])
+    mapper,
+    Model([x, context, queryRot, contextRot], [unifyHeads(flattenedOut).to(of: x)])
   )
 }
 
 private func LoRAAnimaAdapterBlock(
-  batchSize: Int, tokenLength: Int, contextLength: Int, width: Int, headDimension: Int,
+  tokenLength: (Int, Int), contextLength: (Int, Int), width: Int, headDimension: Int,
   numberOfHeads: Int, intermediateSize: Int, prefix: String, usesFlashAttention: Bool,
   layerIndex: Int, configuration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
@@ -416,15 +483,15 @@ private func LoRAAnimaAdapterBlock(
   let sourceRot = Input()
   let normSelf = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm_self")
   let (selfAttentionMapper, selfAttention) = LoRAAnimaSelfAttention(
-    prefix: "\(prefix).self_attn", batchSize: batchSize, width: width,
-    headDimension: headDimension, numberOfHeads: numberOfHeads, tokenLength: tokenLength,
-    usesFlashAttention: usesFlashAttention, layerIndex: layerIndex, configuration: configuration)
+    prefix: "\(prefix).self_attn", width: width, headDimension: headDimension,
+    numberOfHeads: numberOfHeads, tokenLength: tokenLength, usesFlashAttention: usesFlashAttention,
+    layerIndex: layerIndex, configuration: configuration)
   var out = x + selfAttention(normSelf(x), targetRot)
   let normCross = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm_cross")
   let (crossAttentionMapper, crossAttention) = LoRAAnimaCrossAttention(
-    prefix: "\(prefix).cross_attn", batchSize: batchSize, queryDim: width,
-    headDimension: headDimension, numberOfHeads: numberOfHeads, tokenLength: tokenLength,
-    contextLength: contextLength, usesFlashAttention: usesFlashAttention, layerIndex: layerIndex,
+    prefix: "\(prefix).cross_attn", queryDim: width, headDimension: headDimension,
+    numberOfHeads: numberOfHeads, tokenLength: tokenLength, contextLength: contextLength,
+    usesFlashAttention: usesFlashAttention, layerIndex: layerIndex,
     configuration: configuration)
   out = out + crossAttention(normCross(out), context, targetRot, sourceRot)
   let normMlp = RMSNorm(epsilon: 1e-6, axis: [1], name: "norm_mlp")
@@ -450,7 +517,7 @@ private func LoRAAnimaAdapterBlock(
 }
 
 public func LoRAAnimaLLMAdapter(
-  batchSize: Int, tokenLength: Int, contextLength: Int, vocabularySize: Int = 32_128,
+  targetLength: (Int, Int), sourceLength: (Int, Int), vocabularySize: Int = 32_128,
   modelDimension: Int = 1_024, layers: Int = 6, headDimension: Int = 64, numberOfHeads: Int = 16,
   intermediateSize: Int = 4_096, usesFlashAttention: Bool = true,
   LoRAConfiguration: LoRANetworkConfiguration
@@ -466,10 +533,11 @@ public func LoRAAnimaLLMAdapter(
   var blockMappers = [ModelWeightMapper]()
   for i in 0..<layers {
     let (mapper, block) = LoRAAnimaAdapterBlock(
-      batchSize: batchSize, tokenLength: tokenLength, contextLength: contextLength,
-      width: modelDimension, headDimension: headDimension, numberOfHeads: numberOfHeads,
-      intermediateSize: intermediateSize, prefix: "blocks.\(i)",
-      usesFlashAttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration)
+      tokenLength: targetLength, contextLength: sourceLength, width: modelDimension,
+      headDimension: headDimension, numberOfHeads: numberOfHeads,
+      intermediateSize: intermediateSize,
+      prefix: "blocks.\(i)", usesFlashAttention: usesFlashAttention, layerIndex: i,
+      configuration: LoRAConfiguration)
     out = block(out, sourceHiddenStates, targetRot, sourceRot)
     blockMappers.append(mapper)
   }
@@ -507,12 +575,12 @@ private func CosmosSelfAttention(
     .NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_k")
   let normedKeys = normK(keys)
-  keys = Functional.cmul(left: normedKeys, right: rot.to(of: normedKeys))
+  keys = Functional.cmul(left: normedKeys, right: rot)
   var queries = toQueries(x).reshaped(
     .NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_q")
   let normedQueries = normQ(queries)
-  queries = Functional.cmul(left: normedQueries, right: rot.to(of: normedQueries))
+  queries = Functional.cmul(left: normedQueries, right: rot)
   let values = toValues(x).reshaped(
     .NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
   let out: Model.IO
@@ -1046,12 +1114,12 @@ private func LoRACosmosSelfAttention(
   var keys = toKeys(x).reshaped(.NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_k")
   let normedKeys = normK(keys)
-  keys = Functional.cmul(left: normedKeys, right: rot.to(of: normedKeys))
+  keys = Functional.cmul(left: normedKeys, right: rot)
   var queries = toQueries(x).reshaped(
     .NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_q")
   let normedQueries = normQ(queries)
-  queries = Functional.cmul(left: normedQueries, right: rot.to(of: normedQueries))
+  queries = Functional.cmul(left: normedQueries, right: rot)
   let values = toValues(x).reshaped(.NHWC(batchSize, tokenLength, numberOfHeads, headDimension))
   let out: Model.IO
   if usesFlashAttention != .quantized && usesFlashAttention != .scaleMerged {

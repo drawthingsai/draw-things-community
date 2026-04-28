@@ -1531,22 +1531,25 @@ public struct LoRATrainer {
             codec: [.q8p, .q6p, .q4p, .ezm7, .jit, .externalData])
         }
         let adapter = AnimaLLMAdapter(
-          batchSize: 1, tokenLength: paddedTargetTextEncodingLength,
-          contextLength: paddedSourceTextEncodingLength, usesFlashAttention: true
+          targetLength: (paddedTargetTextEncodingLength, paddedTargetTextEncodingLength),
+          sourceLength: (paddedSourceTextEncodingLength, paddedSourceTextEncodingLength),
+          usesFlashAttention: true
         ).1
         let sourceHiddenStates = graph.variable(
-          .GPU(0), .WC(paddedSourceTextEncodingLength, 1_024), of: FloatType.self)
+          .GPU(0), .WC(2 * paddedSourceTextEncodingLength, 1_024), of: FloatType.self)
         let targetTokensTensor = graph.variable(
-          .CPU, format: .NHWC, shape: [paddedTargetTextEncodingLength], of: Int32.self)
+          .CPU, format: .NHWC, shape: [2 * paddedTargetTextEncodingLength], of: Int32.self)
         targetTokensTensor.full(0)
         let targetTokensTensorGPU = targetTokensTensor.toGPU(0)
         let targetRotaryTensorGPU = graph.variable(
           Tensor<FloatType>(
-            from: AnimaRotaryPositionEmbedding(sequenceLength: paddedTargetTextEncodingLength)
+            from: AnimaRotaryPositionEmbedding(
+              sequenceLengths: (paddedTargetTextEncodingLength, paddedTargetTextEncodingLength))
           ).toGPU(0))
         let sourceAdapterRotaryTensorGPU = graph.variable(
           Tensor<FloatType>(
-            from: AnimaRotaryPositionEmbedding(sequenceLength: paddedSourceTextEncodingLength)
+            from: AnimaRotaryPositionEmbedding(
+              sequenceLengths: (paddedSourceTextEncodingLength, paddedSourceTextEncodingLength))
           ).toGPU(0))
         adapter.maxConcurrency = .limit(4)
         adapter.compile(
@@ -1574,15 +1577,23 @@ public struct LoRATrainer {
           targetTokensTensor.full(0)
           for i in 0..<min(input.tokens.count, paddedTargetTextEncodingLength) {
             targetTokensTensor[i] = input.tokens[i]
+            targetTokensTensor[i + paddedTargetTextEncodingLength] = input.tokens[i]
           }
           let sourceHiddenStates = textModel(
             inputs: sourceTokensTensor.toGPU(0),
             [sourceRotaryTensorGPU, sourceCausalAttentionMaskGPU]
           )[0].as(of: FloatType.self).reshaped(.WC(paddedSourceTextEncodingLength, 1_024))
+          var packedSourceHiddenStates = graph.variable(
+            .GPU(0), .WC(2 * paddedSourceTextEncodingLength, 1_024), of: FloatType.self)
+          packedSourceHiddenStates[0..<paddedSourceTextEncodingLength, 0..<1_024] =
+            sourceHiddenStates
+          packedSourceHiddenStates[
+            paddedSourceTextEncodingLength..<(2 * paddedSourceTextEncodingLength), 0..<1_024] =
+            sourceHiddenStates
           let context = adapter(
-            inputs: sourceHiddenStates,
+            inputs: packedSourceHiddenStates,
             [targetTokensTensor.toGPU(0), targetRotaryTensorGPU, sourceAdapterRotaryTensorGPU]
-          )[0].as(of: FloatType.self).reshaped(
+          )[0].as(of: FloatType.self)[0..<paddedTargetTextEncodingLength, 0..<1_024].reshaped(
             .HWC(1, paddedTargetTextEncodingLength, 1_024))
           store.write("cond_\(input.imagePath)", tensor: context.rawValue.toCPU())
           guard progressHandler(.conditionalEncoding, index) else {
@@ -2494,7 +2505,8 @@ public struct LoRATrainer {
   ) -> [DynamicGraph.AnyTensor] {
     return graph.withNoGrad {
       let filePath = ModelZoo.filePathForModelDownloaded(model)
-      let unetFixed = ErnieImageFixed(timesteps: batch.count, channels: 4_096
+      let unetFixed = ErnieImageFixed(
+        timesteps: batch.count, channels: 4_096
       ).1
       var timeEmbeds = graph.variable(
         .GPU(0), .HWC(batch.count, 1, 4_096), of: FloatType.self)

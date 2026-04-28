@@ -480,13 +480,13 @@ public enum LoRAImporter {
         ]
         tEmb = nil
         let (adapterMapper, adapter) = AnimaLLMAdapter(
-          batchSize: 2, tokenLength: 16, contextLength: 16, usesFlashAttention: true)
+          targetLength: (16, 16), sourceLength: (16, 16), usesFlashAttention: true)
         let sourceHiddenStates = graph.variable(.CPU, .WC(32, 1024), of: FloatType.self)
         let targetInputIDs = graph.variable(.CPU, format: .NHWC, shape: [32], of: Int32.self)
         let targetRot = graph.variable(
-          Tensor<FloatType>(from: AnimaRotaryPositionEmbedding(sequenceLength: 16)))
+          Tensor<FloatType>(from: AnimaRotaryPositionEmbedding(sequenceLengths: (16, 16))))
         let sourceRot = graph.variable(
-          Tensor<FloatType>(from: AnimaRotaryPositionEmbedding(sequenceLength: 16)))
+          Tensor<FloatType>(from: AnimaRotaryPositionEmbedding(sequenceLengths: (16, 16))))
         adapter.compile(inputs: [sourceHiddenStates, targetInputIDs, targetRot, sourceRot])
         otherMappings.append(
           (

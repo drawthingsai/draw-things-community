@@ -2979,6 +2979,15 @@ extension TextEncoder {
       of: FloatType.self
     ).reshaped(.WC(2 * sourceTokenLength, 1_024))
     weightsCache.attach(filePaths[0], from: textModel.parameters)
+    let packedSourceTokenLength = sourceTokenLengthUncondResolved + sourceTokenLengthCondResolved
+    var packedSourceHiddenStates = graph.variable(
+      .GPU(0), .WC(packedSourceTokenLength, 1_024), of: FloatType.self)
+    packedSourceHiddenStates[0..<sourceTokenLengthUncondResolved, 0..<1_024] =
+      sourceHiddenStates[0..<sourceTokenLengthUncondResolved, 0..<1_024]
+    packedSourceHiddenStates[
+      sourceTokenLengthUncondResolved..<packedSourceTokenLength, 0..<1_024] =
+      sourceHiddenStates[
+        sourceTokenLength..<(sourceTokenLength + sourceTokenLengthCondResolved), 0..<1_024]
 
     let paddedTargetTokenLength = tokens[1].shape[0] / 2
     var targetTokenLengthUncond: Int? = nil
@@ -2997,6 +3006,7 @@ extension TextEncoder {
     let targetTokenLengthUncondResolved = max(targetTokenLengthUncond ?? 1, 1)
     let targetTokenLengthCondResolved = max(targetTokenLengthCond ?? 1, 1)
     let targetTokenLength = max(targetTokenLengthUncondResolved, targetTokenLengthCondResolved)
+    let packedTargetTokenLength = targetTokenLengthUncondResolved + targetTokenLengthCondResolved
     tokenLengthUncond = targetTokenLengthUncondResolved
     tokenLengthCond = targetTokenLengthCondResolved
     let lora = Array(
@@ -3022,32 +3032,36 @@ extension TextEncoder {
       configuration.keys = keys
       adapter =
         LoRAAnimaLLMAdapter(
-          batchSize: 2, tokenLength: targetTokenLength, contextLength: sourceTokenLength,
-          usesFlashAttention: usesFlashAttention, LoRAConfiguration: configuration
+          targetLength: (targetTokenLengthUncondResolved, targetTokenLengthCondResolved),
+          sourceLength: (sourceTokenLengthUncondResolved, sourceTokenLengthCondResolved),
+          usesFlashAttention: false, LoRAConfiguration: configuration
         ).1
     } else {
       (_, adapter) = AnimaLLMAdapter(
-        batchSize: 2, tokenLength: targetTokenLength, contextLength: sourceTokenLength,
-        usesFlashAttention: usesFlashAttention)
+        targetLength: (targetTokenLengthUncondResolved, targetTokenLengthCondResolved),
+        sourceLength: (sourceTokenLengthUncondResolved, sourceTokenLengthCondResolved),
+        usesFlashAttention: false)
     }
     var targetTokensCPU = graph.variable(
-      .CPU, format: .NHWC, shape: [2 * targetTokenLength], of: Int32.self)
-    targetTokensCPU[0..<targetTokenLength] =
-      DynamicGraph.Tensor<Int32>(tokens[1])[0..<targetTokenLength]
-    targetTokensCPU[targetTokenLength..<(2 * targetTokenLength)] =
+      .CPU, format: .NHWC, shape: [packedTargetTokenLength], of: Int32.self)
+    targetTokensCPU[0..<targetTokenLengthUncondResolved] =
+      DynamicGraph.Tensor<Int32>(tokens[1])[0..<targetTokenLengthUncondResolved]
+    targetTokensCPU[targetTokenLengthUncondResolved..<packedTargetTokenLength] =
       DynamicGraph.Tensor<Int32>(tokens[1])[
-        paddedTargetTokenLength..<(paddedTargetTokenLength + targetTokenLength)]
+        paddedTargetTokenLength..<(paddedTargetTokenLength + targetTokenLengthCondResolved)]
     let targetTokensGPU = targetTokensCPU.toGPU(0)
     let targetRotaryGPU = graph.variable(
       Tensor<FloatType>(
-        from: AnimaRotaryPositionEmbedding(sequenceLength: targetTokenLength)
+        from: AnimaRotaryPositionEmbedding(
+          sequenceLengths: (targetTokenLengthUncondResolved, targetTokenLengthCondResolved))
       ).toGPU(0))
     let sourceAdapterRotaryGPU = graph.variable(
       Tensor<FloatType>(
-        from: AnimaRotaryPositionEmbedding(sequenceLength: sourceTokenLength)
+        from: AnimaRotaryPositionEmbedding(
+          sequenceLengths: (sourceTokenLengthUncondResolved, sourceTokenLengthCondResolved))
       ).toGPU(0))
     adapter.compile(
-      inputs: [sourceHiddenStates, targetTokensGPU, targetRotaryGPU, sourceAdapterRotaryGPU])
+      inputs: [packedSourceHiddenStates, targetTokensGPU, targetRotaryGPU, sourceAdapterRotaryGPU])
     graph.openStore(
       filePaths[1], flags: .readOnly,
       externalStore: TensorData.externalStore(filePath: filePaths[1])
@@ -3093,16 +3107,18 @@ extension TextEncoder {
       }
     }
     let context = adapter(
-      inputs: sourceHiddenStates, [targetTokensGPU, targetRotaryGPU, sourceAdapterRotaryGPU]
+      inputs: packedSourceHiddenStates, [targetTokensGPU, targetRotaryGPU, sourceAdapterRotaryGPU]
     )[0].as(of: FloatType.self)
+    let contextTokenLength = max(targetTokenLength, 512)
     var contextTensor = graph.variable(
-      .GPU(0), .HWC(2, paddedTargetTokenLength, 1_024), of: FloatType.self)
+      .GPU(0), .HWC(2, contextTokenLength, 1_024), of: FloatType.self)
     contextTensor.full(0)
-    contextTensor[0..<2, 0..<targetTokenLength, 0..<1_024] =
-      context.reshaped(.HWC(2, targetTokenLength, 1_024))
-    if sourceTokenLengthUncond == nil {
-      contextTensor[0..<1, 0..<paddedTargetTokenLength, 0..<1_024].full(0)
-    }
+    contextTensor[0..<1, 0..<targetTokenLengthUncondResolved, 0..<1_024] =
+      context[0..<targetTokenLengthUncondResolved, 0..<1_024].reshaped(
+        .HWC(1, targetTokenLengthUncondResolved, 1_024))
+    contextTensor[1..<2, 0..<targetTokenLengthCondResolved, 0..<1_024] =
+      context[targetTokenLengthUncondResolved..<packedTargetTokenLength, 0..<1_024].reshaped(
+        .HWC(1, targetTokenLengthCondResolved, 1_024))
     return ([contextTensor], [textModel, adapter])
   }
 
