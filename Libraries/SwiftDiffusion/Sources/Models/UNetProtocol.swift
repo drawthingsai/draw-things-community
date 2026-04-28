@@ -276,17 +276,17 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
   case .ernieImage:
     let fixedConditionCount = isCfgEnabled ? 5 : 3
     return conditions[0..<fixedConditionCount]
-    + Array(conditions[fixedConditionCount..<conditions.count]).enumerated().map {
-      let shape = $0.1.shape
-      if $0.0 == 2 || $0.0 == 5 { // These are Float32.
-        return DynamicGraph.Tensor<Float>($0.1)[
-          index..<(index + 1), 0..<shape[1], 0..<shape[2]
-        ].copied()
-      } else {
-        return DynamicGraph.Tensor<FloatType>($0.1)[
-          index..<(index + 1), 0..<shape[1], 0..<shape[2]
-        ].copied()
-      }
+      + Array(conditions[fixedConditionCount..<conditions.count]).enumerated().map {
+        let shape = $0.1.shape
+        if $0.0 == 2 || $0.0 == 5 {  // These are Float32.
+          return DynamicGraph.Tensor<Float>($0.1)[
+            index..<(index + 1), 0..<shape[1], 0..<shape[2]
+          ].copied()
+        } else {
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            index..<(index + 1), 0..<shape[1], 0..<shape[2]
+          ].copied()
+        }
       }
   case .cosmos2_5_2b:
     return conditions[0..<1]
@@ -4361,8 +4361,7 @@ extension UNetFromNNC {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2,
-      .ltx2_3:
+      .ltx2, .ltx2_3:
       return x
     }
   }

@@ -3109,7 +3109,8 @@ extension TextEncoder {
     let context = adapter(
       inputs: packedSourceHiddenStates, [targetTokensGPU, targetRotaryGPU, sourceAdapterRotaryGPU]
     )[0].as(of: FloatType.self)
-    let contextTokenLength = max(targetTokenLength, 512)
+    let maxTokenLength = 512
+    let contextTokenLength = max(targetTokenLength, maxTokenLength)
     var contextTensor = graph.variable(
       .GPU(0), .HWC(2, contextTokenLength, 1_024), of: FloatType.self)
     contextTensor.full(0)
@@ -3119,6 +3120,8 @@ extension TextEncoder {
     contextTensor[1..<2, 0..<targetTokenLengthCondResolved, 0..<1_024] =
       context[targetTokenLengthUncondResolved..<packedTargetTokenLength, 0..<1_024].reshaped(
         .HWC(1, targetTokenLengthCondResolved, 1_024))
+    tokenLengthCond = max(maxTokenLength, tokenLengthCond)
+    tokenLengthUncond = max(maxTokenLength, tokenLengthUncond)
     return ([contextTensor], [textModel, adapter])
   }
 
