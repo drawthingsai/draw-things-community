@@ -265,7 +265,7 @@ internal enum ConfigurationResolver {
   }
 
   private static func modelPrefix(for model: String) -> String {
-    let stem = model.components(separatedBy: ".")[0]
+    let stem = (model as NSString).deletingPathExtension
     guard !stem.isEmpty else { return "" }
     var components = stem.components(separatedBy: "_")
     while let last = components.last, ["f16", "svd", "q5p", "q6p", "q8p", "i8x"].contains(last) {
@@ -323,7 +323,7 @@ internal enum ConfigurationResolver {
         guard let configModel = $0.configuration["model"] as? String, !prefix.isEmpty else {
           return false
         }
-        return configModel.hasPrefix(prefix)
+        return modelPrefix(for: configModel) == prefix
       }
     )
     if bestMatch == nil {

@@ -894,7 +894,7 @@ private enum RecommendedSettingsResolver {
         guard let configModel = $0.configuration["model"] as? String, !prefix.isEmpty else {
           return false
         }
-        return configModel.hasPrefix(prefix)
+        return Self.prefix(for: configModel) == prefix
       })
     if bestMatch == nil {
       bestMatch = matchWithLoRAs(configurations: configurations, loras) {
@@ -920,7 +920,7 @@ private enum RecommendedSettingsResolver {
   }
 
   private static func prefix(for file: String) -> String {
-    let stem = file.components(separatedBy: ".")[0]
+    let stem = (file as NSString).deletingPathExtension
     guard !stem.isEmpty else { return "" }
     var components = stem.components(separatedBy: "_")
     while let last = components.last, ["f16", "svd", "q5p", "q6p", "q8p", "i8x"].contains(last) {
