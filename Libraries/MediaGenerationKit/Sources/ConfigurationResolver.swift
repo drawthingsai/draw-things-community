@@ -328,6 +328,15 @@ internal enum ConfigurationResolver {
     )
     if bestMatch == nil {
       bestMatch = matchWithLoRAs(configurations: configurations, loras) {
+        guard let configModel = $0.configuration["model"] as? String, !prefix.isEmpty else {
+          return false
+        }
+        let configPrefix = modelPrefix(for: configModel)
+        return !configPrefix.isEmpty && prefix.hasPrefix("\(configPrefix)_")
+      }
+    }
+    if bestMatch == nil {
+      bestMatch = matchWithLoRAs(configurations: configurations, loras) {
         $0.version == version
       }
     }
