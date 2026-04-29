@@ -16,7 +16,6 @@ public struct SeedVR2DiTConfiguration {
   public let heads: Int
   public let headDim: Int
   public let layers: Int
-  public let sharedWeightStartLayer: Int?
   public let finalLayerContextAdaLN: Bool
   public let outputNormAda: Bool
   public let rotaryKind: SeedVR2RotaryKind
@@ -25,15 +24,14 @@ public struct SeedVR2DiTConfiguration {
   public let mlpKind: SeedVR2MLPKind
 
   public init(
-    hiddenSize: Int, heads: Int, headDim: Int, layers: Int, sharedWeightStartLayer: Int?,
-    finalLayerContextAdaLN: Bool, outputNormAda: Bool, rotaryKind: SeedVR2RotaryKind,
-    rotaryDim: Int, mlpHiddenSize: Int, mlpKind: SeedVR2MLPKind
+    hiddenSize: Int, heads: Int, headDim: Int, layers: Int, finalLayerContextAdaLN: Bool,
+    outputNormAda: Bool, rotaryKind: SeedVR2RotaryKind, rotaryDim: Int, mlpHiddenSize: Int,
+    mlpKind: SeedVR2MLPKind
   ) {
     self.hiddenSize = hiddenSize
     self.heads = heads
     self.headDim = headDim
     self.layers = layers
-    self.sharedWeightStartLayer = sharedWeightStartLayer
     self.finalLayerContextAdaLN = finalLayerContextAdaLN
     self.outputNormAda = outputNormAda
     self.rotaryKind = rotaryKind
@@ -43,24 +41,16 @@ public struct SeedVR2DiTConfiguration {
   }
 
   public static let _3B = SeedVR2DiTConfiguration(
-    hiddenSize: 2_560, heads: 20, headDim: 128, layers: 32, sharedWeightStartLayer: 10,
-    finalLayerContextAdaLN: false, outputNormAda: true, rotaryKind: .mmrope3d, rotaryDim: 126,
-    mlpHiddenSize: 6_912, mlpKind: .swiglu)
+    hiddenSize: 2_560, heads: 20, headDim: 128, layers: 32, finalLayerContextAdaLN: false,
+    outputNormAda: true, rotaryKind: .mmrope3d, rotaryDim: 126, mlpHiddenSize: 6_912,
+    mlpKind: .swiglu)
 
   public static let _7B = SeedVR2DiTConfiguration(
-    hiddenSize: 3_072, heads: 24, headDim: 128, layers: 36, sharedWeightStartLayer: nil,
-    finalLayerContextAdaLN: true, outputNormAda: false, rotaryKind: .pixelVideoOnly,
-    rotaryDim: 60,
-    mlpHiddenSize: 12_288, mlpKind: .gelu)
+    hiddenSize: 3_072, heads: 24, headDim: 128, layers: 36, finalLayerContextAdaLN: true,
+    outputNormAda: false, rotaryKind: .pixelVideoOnly, rotaryDim: 60, mlpHiddenSize: 12_288,
+    mlpKind: .gelu)
 
   var embeddingSize: Int { hiddenSize * 6 }
-
-  func sharedWeights(layerIndex: Int) -> Bool {
-    guard let sharedWeightStartLayer = sharedWeightStartLayer else {
-      return false
-    }
-    return layerIndex >= sharedWeightStartLayer
-  }
 }
 
 public func SeedVR2TimeEmbedding(

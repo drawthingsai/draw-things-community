@@ -414,9 +414,12 @@ public enum ComputeUnits {
         batchSize: 1, textLength: baseTokenLength, channels: 4_096)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     case .seedvr2_3b, .seedvr2_7b:
+      let configuration: SeedVR2DiTConfiguration =
+        context.modelVersion == .seedvr2_7b ? ._7B : ._3B
       let mainCount = ErnieImageInstructionCount(
         batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,
-        channels: 2_560, layers: 32, intermediateSize: 6_912)
+        channels: configuration.hiddenSize, layers: configuration.layers,
+        intermediateSize: configuration.mlpHiddenSize)
       return (main: mainCount * batchSize, fixed: 0)
     case .cosmos2_5_2b:
       let mainCount = ZImageInstructionCount(
