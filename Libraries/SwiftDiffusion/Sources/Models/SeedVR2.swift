@@ -447,7 +447,8 @@ public func SeedVR2RotaryPositionEmbedding(
 private func SeedVR2DiTBlock(
   configuration: SeedVR2DiTConfiguration, layerIndex: Int, frames: Int, height: Int, width: Int,
   txtLen: Int, attentionLength: Int, windowCount: Int, maxSequenceLength: Int,
-  contextBlockPreOnly: Bool = false, contextAdaLN: Bool = true
+  contextBlockPreOnly: Bool = false, contextAdaLN: Bool = true,
+  usesFlashAttention: FlashAttentionLevel
 ) -> Model {
   let vid = Input()
   let txt = Input()
@@ -532,13 +533,27 @@ private func SeedVR2DiTBlock(
   let v = IndexSelect()(vSource, attentionIndex).reshaped([
     1, attentionLength, heads, headDim,
   ])
-  let scaledDotProductAttention = ScaledDotProductAttention(
-    scale: 1.0 / Float(headDim).squareRoot(), isVariableLength: true,
-    maxSequenceLength: (query: maxSequenceLength, keyValue: maxSequenceLength),
-    flags: [.Float16])
-  let attn3D = scaledDotProductAttention([q, k, v, sequenceOffsets, sequenceOffsets]).reshaped([
-    attentionLength, heads * headDim,
-  ])
+  let attn3D: Model.IO
+  switch usesFlashAttention {
+  case .none, .scale1:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1, isVariableLength: true,
+      maxSequenceLength: (query: maxSequenceLength, keyValue: maxSequenceLength),
+      flags: [.Float16])
+    attn3D = scaledDotProductAttention([
+      (1.0 / Float(headDim).squareRoot()) * q, k, v, sequenceOffsets, sequenceOffsets,
+    ]).reshaped([
+      attentionLength, heads * headDim,
+    ])
+  case .scaleMerged, .quantized:
+    let scaledDotProductAttention = ScaledDotProductAttention(
+      scale: 1.0 / Float(headDim).squareRoot(), isVariableLength: true,
+      maxSequenceLength: (query: maxSequenceLength, keyValue: maxSequenceLength),
+      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+    attn3D = scaledDotProductAttention([q, k, v, sequenceOffsets, sequenceOffsets]).reshaped([
+      attentionLength, heads * headDim,
+    ])
+  }
   let vidAttn3D = IndexSelect()(attn3D, attentionToVideoIndex).reshaped([
     vidLen, heads, headDim,
   ])
@@ -630,7 +645,7 @@ private func SeedVR2DiTBlock(
 
 public func SeedVR2DiT(
   configuration: SeedVR2DiTConfiguration, frames: Int, latentHeight: Int, latentWidth: Int,
-  textLength: Int
+  textLength: Int, usesFlashAttention: FlashAttentionLevel
 ) -> Model {
   let vid = Input()
   let timestep = Input()
@@ -697,7 +712,8 @@ public func SeedVR2DiT(
       configuration: configuration, layerIndex: layerIndex, frames: frames, height: patchHeight,
       width: patchWidth, txtLen: textLength, attentionLength: layout.attentionLength,
       windowCount: layout.windowCount, maxSequenceLength: layout.maxSequenceLength,
-      contextBlockPreOnly: contextBlockPreOnly, contextAdaLN: contextAdaLN)
+      contextBlockPreOnly: contextBlockPreOnly, contextAdaLN: contextAdaLN,
+      usesFlashAttention: usesFlashAttention)
     var blockInputs = [
       vidOut, txtOut, emb,
       useShiftedAttention ? shiftedRotResized : rotResized,

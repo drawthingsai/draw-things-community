@@ -1759,7 +1759,8 @@ extension UNetFromNNC {
           SeedVR2DiT(
             configuration: configuration, frames: 1, latentHeight: tiledHeight,
             latentWidth: tiledWidth,
-            textLength: $0[2].shape[0])
+            textLength: $0[2].shape[0],
+            usesFlashAttention: valueOr(useFlashAttention, .scaleMerged))
         })
     }
     // Need to assign version now such that sliceInputs will have the correct version.
@@ -2626,8 +2627,9 @@ extension UNetFromNNC {
       precondition(batchSize == 1)
       let text = DynamicGraph.Tensor<FloatType>(inputs[2])
       let textShape = text.shape
-      let textIndex = isCfgEnabled ? 0 : min(textShape[0] - 1, 1)
-      let textLength = isCfgEnabled ? tokenLengthUncond : tokenLengthCond
+      let useConditional = isCfgEnabled && tokenLengthCond > tokenLengthUncond
+      let textIndex = isCfgEnabled ? (useConditional ? 1 : 0) : min(textShape[0] - 1, 1)
+      let textLength = useConditional || !isCfgEnabled ? tokenLengthCond : tokenLengthUncond
       let textInput = text[
         textIndex..<(textIndex + 1), 0..<textLength, 0..<textShape[2]
       ].copied().reshaped(.WC(textLength, textShape[2]))
@@ -2639,7 +2641,7 @@ extension UNetFromNNC {
       unet.compile(
         inputs: [
           xInput, timestepInput, textInput,
-        ] + Array(inputs[3...]))
+        ] + (useConditional ? Array(inputs[18..<33]) : Array(inputs[3..<18])))
       return
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
@@ -4014,40 +4016,79 @@ extension UNetFromNNC {
       let timestep = DynamicGraph.Tensor<FloatType>(restInputs[0])
       let text = DynamicGraph.Tensor<FloatType>(restInputs[1])
       guard isCfgEnabled else {
+        let textIndex = min(text.shape[0] - 1, 1)
         return unet(
           inputs: firstInput,
-          [timestep, text.reshaped(.WC(text.shape[1], text.shape[2]))] + restInputs[2...])[0].as(
-            of: FloatType.self)
+          [
+            timestep,
+            text[
+              textIndex..<(textIndex + 1), 0..<tokenLengthCond, 0..<text.shape[2]
+            ].copied().reshaped(.WC(tokenLengthCond, text.shape[2])),
+          ] + Array(restInputs[2..<17])
+        )[0].as(of: FloatType.self)
       }
       let shape = firstInput.shape
       let batchSize = isCfgEnabled ? shape[0] / 2 : shape[0]
       precondition(batchSize == 1)
-      let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-        .copied()
-      let etUncond = unet(
-        inputs: xUncond,
-        [
-          timestep,
-          text[
-            0..<1, 0..<tokenLengthUncond, 0..<text.shape[2]
-          ].copied().reshaped(.WC(tokenLengthUncond, text.shape[2])),
-        ] + restInputs[2...])[0]
-        .as(of: FloatType.self)
-      etUncond.graph.joined()
-      guard !isCancelled.load(ordering: .acquiring) else {
-        return Functional.concat(axis: 0, etUncond, etUncond)
+      let etUncond: DynamicGraph.Tensor<FloatType>
+      let etCond: DynamicGraph.Tensor<FloatType>
+      if tokenLengthCond > tokenLengthUncond {
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        etCond = unet(
+          inputs: xCond,
+          [
+            timestep,
+            text[
+              1..<2, 0..<tokenLengthCond, 0..<text.shape[2]
+            ].copied().reshaped(.WC(tokenLengthCond, text.shape[2])),
+          ] + Array(restInputs[17..<32])
+        )[0].as(of: FloatType.self)
+        etCond.graph.joined()
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etCond, etCond)
+        }
+        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        etUncond = unet(
+          inputs: xUncond,
+          [
+            timestep,
+            text[
+              0..<1, 0..<tokenLengthUncond, 0..<text.shape[2]
+            ].copied().reshaped(.WC(tokenLengthUncond, text.shape[2])),
+          ] + Array(restInputs[2..<17])
+        )[0].as(of: FloatType.self)
+      } else {
+        let xUncond = firstInput[0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+          .copied()
+        etUncond = unet(
+          inputs: xUncond,
+          [
+            timestep,
+            text[
+              0..<1, 0..<tokenLengthUncond, 0..<text.shape[2]
+            ].copied().reshaped(.WC(tokenLengthUncond, text.shape[2])),
+          ] + Array(restInputs[2..<17])
+        )[0].as(of: FloatType.self)
+        etUncond.graph.joined()
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etUncond, etUncond)
+        }
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        etCond = unet(
+          inputs: xCond,
+          [
+            timestep,
+            text[
+              1..<2, 0..<tokenLengthCond, 0..<text.shape[2]
+            ].copied().reshaped(.WC(tokenLengthCond, text.shape[2])),
+          ] + Array(restInputs[17..<32])
+        )[0].as(of: FloatType.self)
       }
-      let xCond = firstInput[(shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]]
-        .copied()
-      let etCond = unet(
-        inputs: xCond,
-        [
-          timestep,
-          text[
-            1..<2, 0..<tokenLengthCond, 0..<text.shape[2]
-          ].copied().reshaped(.WC(tokenLengthCond, text.shape[2])),
-        ] + restInputs[2...])[0]
-        .as(of: FloatType.self)
       return Functional.concat(axis: 0, etUncond, etCond)
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:

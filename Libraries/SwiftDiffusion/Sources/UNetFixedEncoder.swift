@@ -402,27 +402,28 @@ extension UNetFixedEncoder {
       let tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
-      let textLength = textEncoding[0].shape[1]
       let configuration: SeedVR2DiTConfiguration = version == .seedvr2_7b ? ._7B : ._3B
-      let rotaryInput = graph.variable(
-        Tensor<FloatType>(
-          from: SeedVR2RotaryPositionEmbedding(
-            configuration: configuration, frames: 1, latentHeight: tiledHeight,
-            latentWidth: tiledWidth,
-            textLength: textLength, shifted: false)
-        ).toGPU(0))
-      let shiftedRotaryInput = graph.variable(
-        Tensor<FloatType>(
-          from: SeedVR2RotaryPositionEmbedding(
-            configuration: configuration, frames: 1, latentHeight: tiledHeight,
-            latentWidth: tiledWidth,
-            textLength: textLength, shifted: true)
-        ).toGPU(0))
-      let windowIndexer = SeedVR2WindowAttentionIndexer(
-        frames: 1, latentHeight: tiledHeight, latentWidth: tiledWidth, textLength: textLength)
-      return (
-        [
-          textEncoding[0], rotaryInput, shiftedRotaryInput,
+      var inputs: [DynamicGraph.AnyTensor] = [textEncoding[0]]
+      if isCfgEnabled {
+        let rotaryInput = graph.variable(
+          Tensor<FloatType>(
+            from: SeedVR2RotaryPositionEmbedding(
+              configuration: configuration, frames: 1, latentHeight: tiledHeight,
+              latentWidth: tiledWidth,
+              textLength: tokenLengthUncond, shifted: false)
+          ).toGPU(0))
+        let shiftedRotaryInput = graph.variable(
+          Tensor<FloatType>(
+            from: SeedVR2RotaryPositionEmbedding(
+              configuration: configuration, frames: 1, latentHeight: tiledHeight,
+              latentWidth: tiledWidth,
+              textLength: tokenLengthUncond, shifted: true)
+          ).toGPU(0))
+        let windowIndexer = SeedVR2WindowAttentionIndexer(
+          frames: 1, latentHeight: tiledHeight, latentWidth: tiledWidth,
+          textLength: tokenLengthUncond)
+        inputs.append(contentsOf: [
+          rotaryInput, shiftedRotaryInput,
           graph.variable(windowIndexer.rasterToWindowIndex.toGPU(0)),
           graph.variable(windowIndexer.windowToShiftedIndex.toGPU(0)),
           graph.variable(windowIndexer.shiftedToWindowIndex.toGPU(0)),
@@ -436,7 +437,42 @@ extension UNetFixedEncoder {
           graph.variable(windowIndexer.shiftedAttentionToTextIndex.toGPU(0)),
           graph.variable(windowIndexer.regularSequenceOffsets.toGPU(0)),
           graph.variable(windowIndexer.shiftedSequenceOffsets.toGPU(0)),
-        ], nil
+        ])
+      }
+      let rotaryInput = graph.variable(
+        Tensor<FloatType>(
+          from: SeedVR2RotaryPositionEmbedding(
+            configuration: configuration, frames: 1, latentHeight: tiledHeight,
+            latentWidth: tiledWidth,
+            textLength: tokenLengthCond, shifted: false)
+        ).toGPU(0))
+      let shiftedRotaryInput = graph.variable(
+        Tensor<FloatType>(
+          from: SeedVR2RotaryPositionEmbedding(
+            configuration: configuration, frames: 1, latentHeight: tiledHeight,
+            latentWidth: tiledWidth,
+            textLength: tokenLengthCond, shifted: true)
+        ).toGPU(0))
+      let windowIndexer = SeedVR2WindowAttentionIndexer(
+        frames: 1, latentHeight: tiledHeight, latentWidth: tiledWidth, textLength: tokenLengthCond)
+      inputs.append(contentsOf: [
+        rotaryInput, shiftedRotaryInput,
+        graph.variable(windowIndexer.rasterToWindowIndex.toGPU(0)),
+        graph.variable(windowIndexer.windowToShiftedIndex.toGPU(0)),
+        graph.variable(windowIndexer.shiftedToWindowIndex.toGPU(0)),
+        graph.variable(windowIndexer.windowToRasterIndex.toGPU(0)),
+        graph.variable(windowIndexer.shiftedToRasterIndex.toGPU(0)),
+        graph.variable(windowIndexer.regularAttentionIndex.toGPU(0)),
+        graph.variable(windowIndexer.shiftedAttentionIndex.toGPU(0)),
+        graph.variable(windowIndexer.regularAttentionToVideoIndex.toGPU(0)),
+        graph.variable(windowIndexer.shiftedAttentionToVideoIndex.toGPU(0)),
+        graph.variable(windowIndexer.regularAttentionToTextIndex.toGPU(0)),
+        graph.variable(windowIndexer.shiftedAttentionToTextIndex.toGPU(0)),
+        graph.variable(windowIndexer.regularSequenceOffsets.toGPU(0)),
+        graph.variable(windowIndexer.shiftedSequenceOffsets.toGPU(0)),
+      ])
+      return (
+        inputs, nil
       )
     case .pixart:
       let tiledWidth =
