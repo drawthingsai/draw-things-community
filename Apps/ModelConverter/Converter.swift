@@ -162,6 +162,11 @@ struct Converter: ParsableCommand {
       if autoencoder == nil {
         autoencoder = "flux_2_vae_f16.ckpt"
       }
+    case .seedvr2_3b, .seedvr2_7b:
+      textEncoder = "\(fileName)_f16.ckpt"
+      if autoencoder == nil {
+        autoencoder = "seedvr2_vae_f16.ckpt"
+      }
     case .flux2, .flux2_9b, .flux2_4b:
       fatalError()
     case .ltx2, .ltx2_3:

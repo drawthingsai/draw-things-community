@@ -812,6 +812,20 @@ public struct ModelZoo: DownloadZoo {
       "f7c804dd0e4ae14af2ff200fc96b2848b2967f7595bac830bf270ea39b47a611",
     "ltx_2.3_22b_distilled_1.1_i8x.ckpt":
       "c2bb0ac129aab08a0759b1c4d9a3e0c2202a4ae7a4e942c32d362f6559613d92",
+    "seedvr2_vae_f16.ckpt":
+      "af2a4a8eeae04372667ba4d6f6dd1337af0b3685d0e335dfc5abf71374a24234",
+    "seedvr2_3b_q8p.ckpt":
+      "cdde46771a8af490b97853c8fb255864a64d1528b40b1ebf2dee161db2b76fcd",
+    "seedvr2_3b_i8x.ckpt":
+      "c6cc6f936f3acea3bd3809f176b27696aee3f7a995cbb9083b45b03a3233698e",
+    "seedvr2_3b_q6p.ckpt":
+      "160a5daefec6292b50e41a8dd74e0c91702f5571f4f5e43f51c58eb01718e0ea",
+    "seedvr2_7b_q8p.ckpt":
+      "acb88f9c581d2668eead19742c4fcc8f7af515ff3abf9a4ffd7450e731bed9ce",
+    "seedvr2_7b_i8x.ckpt":
+      "05daa3433a3719854498ea3694a14e3ecde2c1a8f2a4fc7c4f02ac9ff7ba5a78",
+    "seedvr2_7b_q6p.ckpt":
+      "92d193e4da2b2bea6e7877ca6c011d693da6dbc9bc9b735aee8c102905fa446f",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -986,24 +1000,28 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2026 Lightricks"
     ),
     Specification(
-      name: "SeedVR2 3B", file: "seedvr2_3b_f16.ckpt", prefix: "",
-      version: .seedvr2_3b, defaultScale: 8, textEncoder: "seedvr2_3b_f16.ckpt",
-      autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
-      objective: .u(conditionScale: 1000),
-      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
-      latentsScalingFactor: 0.9152,
+      name: "ERNIE Image Turbo 1.0", file: "ernie_image_turbo_q8p.ckpt", prefix: "",
+      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
       note:
-        "SeedVR2 is wired as an edit / inpainting model. Text embeddings are read from the diffusion checkpoint instead of a separate text encoder."
+        "[ERNIE-Image-Turbo](https://huggingface.co/baidu/ERNIE-Image-Turbo) is Baidu's Apache 2.0-licensed distilled release of ERNIE-Image, optimized with DMD and RL for fast generation. It keeps the same focus on instruction following, text rendering, and structured layouts, while targeting strong results with CFG 1 and 8 sampling steps.",
+      copyright: "© 2026 Baidu", huggingFaceLink: "baidu/ERNIE-Image-Turbo"
     ),
     Specification(
-      name: "SeedVR2 7B", file: "seedvr2_7b_f16.ckpt", prefix: "",
-      version: .seedvr2_7b, defaultScale: 8, textEncoder: "seedvr2_7b_f16.ckpt",
-      autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
-      objective: .u(conditionScale: 1000),
-      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
-      latentsScalingFactor: 0.9152,
+      name: "ERNIE Image Turbo 1.0 (8-bit S)", file: "ernie_image_turbo_i8x.ckpt", prefix: "",
+      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
       note:
-        "SeedVR2 is wired as an edit / inpainting model. Text embeddings are read from the diffusion checkpoint instead of a separate text encoder."
+        "[ERNIE-Image-Turbo](https://huggingface.co/baidu/ERNIE-Image-Turbo) is Baidu's Apache 2.0-licensed distilled release of ERNIE-Image, optimized with DMD and RL for fast generation. It keeps the same focus on instruction following, text rendering, and structured layouts, while targeting strong results with CFG 1 and 8 sampling steps.",
+      copyright: "© 2026 Baidu", huggingFaceLink: "baidu/ERNIE-Image-Turbo"
+    ),
+    Specification(
+      name: "ERNIE Image Turbo 1.0 (6-bit)", file: "ernie_image_turbo_q6p.ckpt", prefix: "",
+      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
+      note:
+        "[ERNIE-Image-Turbo](https://huggingface.co/baidu/ERNIE-Image-Turbo) is Baidu's Apache 2.0-licensed distilled release of ERNIE-Image, optimized with DMD and RL for fast generation. It keeps the same focus on instruction following, text rendering, and structured layouts, while targeting strong results with CFG 1 and 8 sampling steps.",
+      copyright: "© 2026 Baidu"
     ),
     Specification(
       name: "ERNIE Image Base 1.0", file: "ernie_image_q8p.ckpt", prefix: "",
@@ -1030,28 +1048,68 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2026 Baidu"
     ),
     Specification(
-      name: "ERNIE Image Turbo 1.0", file: "ernie_image_turbo_q8p.ckpt", prefix: "",
-      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
-      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
+      name: "SeedVR2 3B", file: "seedvr2_3b_q8p.ckpt", prefix: "",
+      version: .seedvr2_3b, defaultScale: 8, textEncoder: "seedvr2_3b_q8p.ckpt",
+      autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
+      objective: .u(conditionScale: 1000),
+      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
+      latentsScalingFactor: 0.9152,
       note:
-        "[ERNIE-Image-Turbo](https://huggingface.co/baidu/ERNIE-Image-Turbo) is Baidu's Apache 2.0-licensed distilled release of ERNIE-Image, optimized with DMD and RL for fast generation. It keeps the same focus on instruction following, text rendering, and structured layouts, while targeting strong results with CFG 1 and 8 sampling steps.",
-      copyright: "© 2026 Baidu", huggingFaceLink: "baidu/ERNIE-Image-Turbo"
+        "[SeedVR2 3B](https://huggingface.co/ByteDance-Seed/SeedVR2-3B) is ByteDance Seed's Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs.",
+      huggingFaceLink: "ByteDance-Seed/SeedVR2-3B"
     ),
     Specification(
-      name: "ERNIE Image Turbo 1.0 (8-bit S)", file: "ernie_image_turbo_i8x.ckpt", prefix: "",
-      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
-      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
+      name: "SeedVR2 3B (8-bit S)", file: "seedvr2_3b_i8x.ckpt", prefix: "",
+      version: .seedvr2_3b, defaultScale: 8, textEncoder: "seedvr2_3b_i8x.ckpt",
+      autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
+      objective: .u(conditionScale: 1000),
+      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
+      latentsScalingFactor: 0.9152,
       note:
-        "[ERNIE-Image-Turbo](https://huggingface.co/baidu/ERNIE-Image-Turbo) is Baidu's Apache 2.0-licensed distilled release of ERNIE-Image, optimized with DMD and RL for fast generation. It keeps the same focus on instruction following, text rendering, and structured layouts, while targeting strong results with CFG 1 and 8 sampling steps.",
-      copyright: "© 2026 Baidu", huggingFaceLink: "baidu/ERNIE-Image-Turbo"
+        "[SeedVR2 3B](https://huggingface.co/ByteDance-Seed/SeedVR2-3B) is ByteDance Seed's Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs.",
+      huggingFaceLink: "ByteDance-Seed/SeedVR2-3B"
     ),
     Specification(
-      name: "ERNIE Image Turbo 1.0 (6-bit)", file: "ernie_image_turbo_q6p.ckpt", prefix: "",
-      version: .ernieImage, defaultScale: 16, textEncoder: "ministral_3_3b_q8p.ckpt",
-      autoencoder: "flux_2_vae_f16.ckpt", hiresFixScale: 24,
+      name: "SeedVR2 3B (6-bit)", file: "seedvr2_3b_q6p.ckpt", prefix: "",
+      version: .seedvr2_3b, defaultScale: 8, textEncoder: "seedvr2_3b_q6p.ckpt",
+      autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
+      objective: .u(conditionScale: 1000),
+      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
+      latentsScalingFactor: 0.9152,
       note:
-        "[ERNIE-Image-Turbo](https://huggingface.co/baidu/ERNIE-Image-Turbo) is Baidu's Apache 2.0-licensed distilled release of ERNIE-Image, optimized with DMD and RL for fast generation. It keeps the same focus on instruction following, text rendering, and structured layouts, while targeting strong results with CFG 1 and 8 sampling steps.",
-      copyright: "© 2026 Baidu"
+        "[SeedVR2 3B](https://huggingface.co/ByteDance-Seed/SeedVR2-3B) is ByteDance Seed's Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs."
+    ),
+    Specification(
+      name: "SeedVR2 7B", file: "seedvr2_7b_q8p.ckpt", prefix: "",
+      version: .seedvr2_7b, defaultScale: 8, textEncoder: "seedvr2_7b_q8p.ckpt",
+      autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
+      objective: .u(conditionScale: 1000),
+      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
+      latentsScalingFactor: 0.9152,
+      note:
+        "[SeedVR2 7B](https://huggingface.co/ByteDance-Seed/SeedVR2-7B) is the larger ByteDance Seed Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs.",
+      huggingFaceLink: "ByteDance-Seed/SeedVR2-7B"
+    ),
+    Specification(
+      name: "SeedVR2 7B (8-bit S)", file: "seedvr2_7b_i8x.ckpt", prefix: "",
+      version: .seedvr2_7b, defaultScale: 8, textEncoder: "seedvr2_7b_i8x.ckpt",
+      autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
+      objective: .u(conditionScale: 1000),
+      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
+      latentsScalingFactor: 0.9152,
+      note:
+        "[SeedVR2 7B](https://huggingface.co/ByteDance-Seed/SeedVR2-7B) is the larger ByteDance Seed Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs.",
+      huggingFaceLink: "ByteDance-Seed/SeedVR2-7B"
+    ),
+    Specification(
+      name: "SeedVR2 7B (6-bit)", file: "seedvr2_7b_q6p.ckpt", prefix: "",
+      version: .seedvr2_7b, defaultScale: 8, textEncoder: "seedvr2_7b_q6p.ckpt",
+      autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
+      objective: .u(conditionScale: 1000),
+      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
+      latentsScalingFactor: 0.9152,
+      note:
+        "[SeedVR2 7B](https://huggingface.co/ByteDance-Seed/SeedVR2-7B) is the larger ByteDance Seed Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs."
     ),
     Specification(
       name: "Z Image Turbo 1.0", file: "z_image_turbo_1.0_q8p.ckpt", prefix: "",
