@@ -58,7 +58,7 @@ extension UNetFixedEncoder {
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
       .ltx2,
-      .ltx2_3:
+      .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       return true
     case .v1, .v2, .kandinsky21:
       return false
@@ -202,7 +202,7 @@ extension UNetFixedEncoder {
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .ltx2, .ltx2_3:
+      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -396,6 +396,48 @@ extension UNetFixedEncoder {
       return (kvs, unetFixedWeightMapper)
     case .v1, .v2, .kandinsky21:
       return (textEncoding, nil)
+    case .seedvr2_3b, .seedvr2_7b:
+      let tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      let tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      let textLength = textEncoding[0].shape[1]
+      let configuration: SeedVR2DiTConfiguration = version == .seedvr2_7b ? ._7B : ._3B
+      let rotaryInput = graph.variable(
+        Tensor<FloatType>(
+          from: SeedVR2RotaryPositionEmbedding(
+            configuration: configuration, frames: 1, latentHeight: tiledHeight,
+            latentWidth: tiledWidth,
+            textLength: textLength, shifted: false)
+        ).toGPU(0))
+      let shiftedRotaryInput = graph.variable(
+        Tensor<FloatType>(
+          from: SeedVR2RotaryPositionEmbedding(
+            configuration: configuration, frames: 1, latentHeight: tiledHeight,
+            latentWidth: tiledWidth,
+            textLength: textLength, shifted: true)
+        ).toGPU(0))
+      let windowIndexer = SeedVR2WindowAttentionIndexer(
+        frames: 1, latentHeight: tiledHeight, latentWidth: tiledWidth, textLength: textLength)
+      return (
+        [
+          textEncoding[0], rotaryInput, shiftedRotaryInput,
+          graph.variable(windowIndexer.rasterToWindowIndex.toGPU(0)),
+          graph.variable(windowIndexer.windowToShiftedIndex.toGPU(0)),
+          graph.variable(windowIndexer.shiftedToWindowIndex.toGPU(0)),
+          graph.variable(windowIndexer.windowToRasterIndex.toGPU(0)),
+          graph.variable(windowIndexer.shiftedToRasterIndex.toGPU(0)),
+          graph.variable(windowIndexer.regularAttentionIndex.toGPU(0)),
+          graph.variable(windowIndexer.shiftedAttentionIndex.toGPU(0)),
+          graph.variable(windowIndexer.regularAttentionToVideoIndex.toGPU(0)),
+          graph.variable(windowIndexer.shiftedAttentionToVideoIndex.toGPU(0)),
+          graph.variable(windowIndexer.regularAttentionToTextIndex.toGPU(0)),
+          graph.variable(windowIndexer.shiftedAttentionToTextIndex.toGPU(0)),
+          graph.variable(windowIndexer.regularSequenceOffsets.toGPU(0)),
+          graph.variable(windowIndexer.shiftedSequenceOffsets.toGPU(0)),
+        ], nil
+      )
     case .pixart:
       let tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -563,7 +605,7 @@ extension UNetFixedEncoder {
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
       var timeEmbeds = graph.variable(
@@ -1832,7 +1874,8 @@ extension UNetFixedEncoder {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unetFixed =
-          LoRAErnieImageFixed(timesteps: timesteps.count, channels: channels,
+          LoRAErnieImageFixed(
+            timesteps: timesteps.count, channels: channels,
             LoRAConfiguration: configuration
           ).0
       } else {

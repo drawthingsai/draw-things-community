@@ -95,7 +95,8 @@ public enum ComputeUnits {
     switch context.modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .flux1, .qwenImage, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .hiDreamI1:
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .hiDreamI1, .seedvr2_3b,
+      .seedvr2_7b:
       return (max(1, Int(configuration.batchSize)) * cfgChannels, 1)
     case .svdI2v:
       return (cfgChannels, max(1, Int(configuration.numFrames)))
@@ -139,6 +140,8 @@ public enum ComputeUnits {
       return 512
     case .ltx2, .ltx2_3:
       return 128
+    case .seedvr2_3b, .seedvr2_7b:
+      return 77
     case .hiDreamI1:
       return 128
     default:
@@ -410,6 +413,11 @@ public enum ComputeUnits {
       let fixedCount = ErnieImageFixedInstructionCount(
         batchSize: 1, textLength: baseTokenLength, channels: 4_096)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .seedvr2_3b, .seedvr2_7b:
+      let mainCount = ErnieImageInstructionCount(
+        batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,
+        channels: 2_560, layers: 32, intermediateSize: 6_912)
+      return (main: mainCount * batchSize, fixed: 0)
     case .cosmos2_5_2b:
       let mainCount = ZImageInstructionCount(
         batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,

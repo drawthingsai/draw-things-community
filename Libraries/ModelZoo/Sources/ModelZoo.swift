@@ -67,6 +67,8 @@ public struct ModelZoo: DownloadZoo {
       return "LTX-2"
     case .ltx2_3:
       return "LTX-2.3"
+    case .seedvr2_3b, .seedvr2_7b:
+      return "SeedVR2"
     }
   }
 
@@ -982,6 +984,26 @@ public struct ModelZoo: DownloadZoo {
       note:
         "[LTX-2](https://huggingface.co/Lightricks/LTX-2) is a state-of-the-art open-source audio-video foundation model developed by Lightricks. It can generate synchronized video and audio within a single model. The [dev] checkpoint is the full model variant. For best results, set Text Guidance to 3.5 and use 20–30 sampling steps.",
       copyright: "© 2026 Lightricks"
+    ),
+    Specification(
+      name: "SeedVR2 3B", file: "seedvr2_3b_f16.ckpt", prefix: "",
+      version: .seedvr2_3b, defaultScale: 8, textEncoder: "seedvr2_3b_f16.ckpt",
+      autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
+      objective: .u(conditionScale: 1000),
+      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
+      latentsScalingFactor: 0.9152,
+      note:
+        "SeedVR2 is wired as an edit / inpainting model. Text embeddings are read from the diffusion checkpoint instead of a separate text encoder."
+    ),
+    Specification(
+      name: "SeedVR2 7B", file: "seedvr2_7b_f16.ckpt", prefix: "",
+      version: .seedvr2_7b, defaultScale: 8, textEncoder: "seedvr2_7b_f16.ckpt",
+      autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
+      objective: .u(conditionScale: 1000),
+      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
+      latentsScalingFactor: 0.9152,
+      note:
+        "SeedVR2 is wired as an edit / inpainting model. Text embeddings are read from the diffusion checkpoint instead of a separate text encoder."
     ),
     Specification(
       name: "ERNIE Image Base 1.0", file: "ernie_image_q8p.ckpt", prefix: "",
@@ -2715,7 +2737,8 @@ public struct ModelZoo: DownloadZoo {
     case .cosmos2_5_2b:
       return .u(conditionScale: 1)
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .ernieImage:
+      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .ernieImage,
+      .seedvr2_3b, .seedvr2_7b:
       return .u(conditionScale: 1000)
     }
   }
@@ -2730,7 +2753,7 @@ public struct ModelZoo: DownloadZoo {
       .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
       .flux2_4b,
-      .cosmos2_5_2b, .ltx2, .ltx2_3:
+      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       return .timestep
     case .svdI2v:
       return .noise
@@ -2762,7 +2785,8 @@ public struct ModelZoo: DownloadZoo {
     case .cosmos2_5_2b:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1))
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .ernieImage:
+      .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .ernieImage,
+      .seedvr2_3b, .seedvr2_7b:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
@@ -2784,7 +2808,8 @@ public struct ModelZoo: DownloadZoo {
       return 512
     case .hiDreamI1:
       return 128
-    case .hunyuanVideo, .qwenImage, .zImage, .ernieImage, .flux2, .ltx2, .ltx2_3:
+    case .hunyuanVideo, .qwenImage, .zImage, .ernieImage, .flux2, .ltx2, .ltx2_3, .seedvr2_3b,
+      .seedvr2_7b:
       return 0
     case .wan21_1_3b, .wan21_14b, .wan22_5b, .flux2_9b, .flux2_4b, .cosmos2_5_2b:
       return 512
@@ -2821,6 +2846,8 @@ public struct ModelZoo: DownloadZoo {
       return (nil, nil, 1.5305, 0.0609, nil, nil)
     case .flux1, .hiDreamI1, .zImage:
       return (nil, nil, 0.3611, 0.11590, nil, nil)
+    case .seedvr2_3b, .seedvr2_7b:
+      return (nil, nil, 0.9152, nil, nil, nil)
     case .hunyuanVideo:
       return (nil, nil, 0.476986, nil, nil, nil)
     case .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b:
@@ -3117,7 +3144,7 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .svdI2v, .ssd1b, .sdxlBase, .sdxlRefiner, .pixart, .auraflow, .kandinsky21,
       .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .flux1, .hiDreamI1, .zImage,
       .ernieImage, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .wan22_5b, .flux2, .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b:
+      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
       return 24_000
     case .ltx2:
       return 24_000
@@ -3178,7 +3205,7 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .auraflow, .flux1, .hiDreamI1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
       .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .zImage, .ernieImage,
       .flux2, .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b:
+      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
       return 30
     }
   }
@@ -3202,7 +3229,7 @@ public struct ModelZoo: DownloadZoo {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .qwenImage,
         .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
-        .ltx2_3:
+        .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         return nil
       case .flux1:
         return (4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01)
@@ -3296,6 +3323,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 4 * 1_024 * 1_024 * 1_024
       case .ltx2, .ltx2_3:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
+      case .seedvr2_3b, .seedvr2_7b:
+        return fileSize < 4 * 1_024 * 1_024 * 1_024
       }
     }
     return false
@@ -3360,6 +3389,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 7 * 1_024 * 1_024 * 1_024
       case .ltx2, .ltx2_3:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
+      case .seedvr2_3b, .seedvr2_7b:
+        return fileSize < 4 * 1_024 * 1_024 * 1_024
       }
     }
     return false
@@ -3493,7 +3524,8 @@ extension ModelZoo {
   public static func isCLIPSkipAvailable(_ version: ModelVersion) -> Bool {
     switch version {
     case .pixart, .auraflow, .wan21_14b, .wan21_1_3b, .qwenImage, .svdI2v, .wan22_5b, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+      .seedvr2_7b:
       return false
     case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .v1, .v2, .flux1, .hunyuanVideo, .hiDreamI1,
       .ssd1b, .kandinsky21, .wurstchenStageB, .wurstchenStageC:

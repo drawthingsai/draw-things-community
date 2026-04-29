@@ -135,7 +135,7 @@ public struct DeviceCapability {
     #elseif arch(i386) || arch(x86_64)
       return false
     #else
-    if #available(iOS 26.2, macOS 26.2, macCatalyst 26.2, *) {
+      if #available(iOS 26.2, macOS 26.2, macCatalyst 26.2, *) {
         if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple10) {
           return true
         }
@@ -188,7 +188,9 @@ public struct DeviceCapability {
       return false
     #else
       if #available(iOS 26, macOS 26, macCatalyst 26, *) {
-        if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple9) && !device.supportsFamily(.apple10) {
+        if let device = MTLCreateSystemDefaultDevice(),
+          device.supportsFamily(.apple9) && !device.supportsFamily(.apple10)
+        {
           return true
         }
         return false
@@ -694,7 +696,7 @@ public struct DeviceCapability {
       else {
         return false
       }
-    case .flux2_4b, .cosmos2_5_2b:
+    case .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
       guard
         (!isMaxPerformance && !(isHighPerformance && is8BitModel)) || force
       else {

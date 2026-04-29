@@ -78,8 +78,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_14b, .wan21_1_3b, .hiDreamI1,
         .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-        .ltx2,
-        .ltx2_3:
+        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       case .hunyuanVideo:
         t = [inferModel(inputs: t[0], Array(t[(4 + 6)..<(6 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
@@ -134,7 +133,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .qwenImage, .wan22_5b, .zImage,
       .ernieImage,
-      .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+      .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       fatalError()
     case .hunyuanVideo:
       if let inferModel = inferModel {
@@ -199,7 +198,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .ltx2, .ltx2_3:
+      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       shift = restInputs[restInputs.count - 2]
       scale = restInputs[restInputs.count - 1]
     case .flux1:

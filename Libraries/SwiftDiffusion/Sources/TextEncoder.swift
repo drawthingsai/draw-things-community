@@ -3330,6 +3330,58 @@ extension TextEncoder {
     return (c, [textModel])
   }
 
+  private func encodeSeedVR2(
+    tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
+    tokens: [DynamicGraph.Tensor<Int32>]
+  ) -> ([DynamicGraph.Tensor<FloatType>], [Model]) {
+    let graph = tokens[0].graph
+    var positiveEmbedding: DynamicGraph.Tensor<FloatType>? = nil
+    var negativeEmbedding: DynamicGraph.Tensor<FloatType>? = nil
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    graph.openStore(
+      filePaths[0], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[0])
+    ) { store in
+      guard let positiveShape = store.read(like: "positive_embedding")?.shape,
+        let negativeShape = store.read(like: "negative_embedding")?.shape
+      else {
+        fatalError("SeedVR2 checkpoint is missing positive_embedding / negative_embedding")
+      }
+      precondition(positiveShape.count == 2)
+      precondition(negativeShape.count == 2)
+      precondition(positiveShape[1] == negativeShape[1])
+      let positive = graph.variable(
+        .GPU(0), .WC(positiveShape[0], positiveShape[1]), of: FloatType.self)
+      let negative = graph.variable(
+        .GPU(0), .WC(negativeShape[0], negativeShape[1]), of: FloatType.self)
+      store.read(
+        "positive_embedding", variable: positive, codec: [.q6p, .q8p, .ezm7, externalData])
+      store.read(
+        "negative_embedding", variable: negative, codec: [.q6p, .q8p, .ezm7, externalData])
+      positiveEmbedding = positive
+      negativeEmbedding = negative
+    }
+    guard let positiveEmbedding = positiveEmbedding, let negativeEmbedding = negativeEmbedding
+    else {
+      fatalError("SeedVR2 checkpoint embedding read failed")
+    }
+    tokenLengthUncond = negativeEmbedding.shape[0]
+    tokenLengthCond = positiveEmbedding.shape[0]
+    var conditioning = graph.variable(
+      .GPU(0), .HWC(2, max(tokenLengthUncond, tokenLengthCond), negativeEmbedding.shape[1]),
+      of: FloatType.self)
+    conditioning.full(0)
+    conditioning[0..<1, 0..<tokenLengthUncond, 0..<conditioning.shape[2]] =
+      negativeEmbedding.reshaped(
+        .HWC(1, tokenLengthUncond, conditioning.shape[2]))
+    conditioning[1..<2, 0..<tokenLengthCond, 0..<conditioning.shape[2]] =
+      positiveEmbedding.reshaped(
+        .HWC(1, tokenLengthCond, conditioning.shape[2]))
+    return ([conditioning], [])
+  }
+
   public func encode(
     tokenLengthUncond: inout Int, tokenLengthCond: inout Int,
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
@@ -3344,6 +3396,9 @@ extension TextEncoder {
   {
     let conditionalLength: Int
     switch version {
+    case .seedvr2_3b, .seedvr2_7b:
+      return encodeSeedVR2(
+        tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond, tokens: tokens)
     case .v1:
       conditionalLength = 768
     case .v2:
@@ -3522,7 +3577,7 @@ extension TextEncoder {
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -3560,7 +3615,8 @@ extension TextEncoder {
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                   .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
-                  .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+                  .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+                  .seedvr2_3b, .seedvr2_7b:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -3600,7 +3656,8 @@ extension TextEncoder {
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                 .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
-                .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+                .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+                .seedvr2_3b, .seedvr2_7b:
                 fatalError()
               }
               return .continue(name)

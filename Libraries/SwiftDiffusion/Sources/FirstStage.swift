@@ -189,7 +189,8 @@ extension FirstStage {
       .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       scaleFactor = 8
       scaleFactorZ = 1
-    case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b:
+    case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b, .seedvr2_3b,
+      .seedvr2_7b:
       scaleFactor = 8
       scaleFactorZ = 4
     case .wan22_5b:
@@ -826,6 +827,41 @@ extension FirstStage {
       }
       outputChannels = 3
       causalAttentionMask = nil
+    case .seedvr2_3b, .seedvr2_7b:
+      let startDepth = shape[0]
+      let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
+      let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
+      let decoderUsesFlashAttention = usesFlashAttention && (startWidth * startHeight >= 256 * 176)
+      decoder =
+        existingDecoder
+        ?? SeedVR2Decoder3D(
+          startDepth: startDepth, startHeight: startHeight, startWidth: startWidth,
+          usesFlashAttention: decoderUsesFlashAttention)
+      if existingDecoder == nil {
+        decoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          decoder.compile(inputs: DynamicGraph.Tensor<Float>(from: z))
+        } else {
+          decoder.compile(inputs: z)
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          if startDepth > 1 {
+            store.read("decoder", model: decoder, codec: [.jit, externalData])
+          } else {
+            store.read("decoder", model: decoder, codec: [.jit, externalData]) {
+              name, dataType, _, shape in
+              SeedVR2Conv3DToConv2D(
+                graph: graph, name: name, dataType: dataType, shape: shape, store: store,
+                externalData: externalData, modelPrefix: "decoder", of: FloatType.self)
+                ?? .continue(name)
+            }
+          }
+        }
+      }
+      outputChannels = 3
+      causalAttentionMask = nil
     case .wurstchenStageC, .wurstchenStageB:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
@@ -1228,7 +1264,8 @@ extension FirstStage {
       .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       scaleFactor = 8
       scaleFactorZ = 1
-    case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b:
+    case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b, .seedvr2_3b,
+      .seedvr2_7b:
       scaleFactor = 8
       scaleFactorZ = 4
     case .wan22_5b:
@@ -1727,6 +1764,40 @@ extension FirstStage {
       }
       x = (x + 1) * 0.5
       outputChannels = 4
+      causalAttentionMask = nil
+    case .seedvr2_3b, .seedvr2_7b:
+      let startDepth = shape[0]
+      tiledEncoding = false
+      let encoderUsesFlashAttention = usesFlashAttention && (startWidth * startHeight >= 256 * 176)
+      encoder =
+        existingEncoder
+        ?? SeedVR2Encoder3D(
+          startDepth: startDepth, startHeight: shape[1], startWidth: shape[2],
+          usesFlashAttention: encoderUsesFlashAttention)
+      if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
+        if highPrecision {
+          encoder.compile(inputs: DynamicGraph.Tensor<Float>(from: x))
+        } else {
+          encoder.compile(inputs: x)
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          if startDepth > 1 {
+            store.read("encoder", model: encoder, codec: [.jit, externalData])
+          } else {
+            store.read("encoder", model: encoder, codec: [.jit, externalData]) {
+              name, dataType, _, shape in
+              SeedVR2Conv3DToConv2D(
+                graph: graph, name: name, dataType: dataType, shape: shape, store: store,
+                externalData: externalData, modelPrefix: "encoder", of: FloatType.self)
+                ?? .continue(name)
+            }
+          }
+        }
+      }
+      outputChannels = 32
       causalAttentionMask = nil
     }
     isCancelled.store(false, ordering: .releasing)

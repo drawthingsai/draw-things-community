@@ -85,7 +85,7 @@ public enum LoRAExporter {
       fatalError()
     case .flux2, .flux2_9b, .flux2_4b:
       fatalError()
-    case .ltx2, .ltx2_3:
+    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       fatalError()
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB:
       fatalError()
@@ -124,7 +124,7 @@ public enum LoRAExporter {
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
       .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-      .ltx2_3:
+      .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       textEncoderKeys = []
       textEncoderKeysMapping = [:]
       textEncoderKeys2 = nil

@@ -162,7 +162,8 @@ extension LocalImageGenerator {
       ]
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB,
       .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b,
-      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
+      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+      .seedvr2_3b, .seedvr2_7b:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1480,6 +1481,11 @@ extension LocalImageGenerator {
       return tokenize(
         graph: graph, tokenizer: tokenizerV2, text: text, negativeText: negativeText,
         paddingToken: 0, addSpecialTokens: true, conditionalLength: 1024, modifier: .clipL,
+        potentials: potentials)
+    case .seedvr2_3b, .seedvr2_7b:
+      return tokenize(
+        graph: graph, tokenizer: tokenizerV1, text: text, negativeText: negativeText,
+        paddingToken: nil, addSpecialTokens: true, conditionalLength: 768, modifier: .clipL,
         potentials: potentials)
     case .kandinsky21:
       let (tokenTensors, positionTensors, lengthsOfUncond, lengthsOfCond) = kandinskyTokenize(
@@ -3136,7 +3142,7 @@ extension LocalImageGenerator {
         fatalError()
       case .ltx2, .ltx2_3:
         fatalError()
-      case .auraflow, .flux1, .kandinsky21, .pixart, .hunyuanVideo:
+      case .auraflow, .flux1, .kandinsky21, .pixart, .hunyuanVideo, .seedvr2_3b, .seedvr2_7b:
         break
       }
     }
@@ -3211,7 +3217,7 @@ extension LocalImageGenerator {
       else { return (nil, []) }
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
+        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .seedvr2_3b, .seedvr2_7b:
         return (Functional.averagePool(depth, filterSize: [8, 8], hint: Hint(stride: [8, 8])), [])
       case .flux1:
         let graph = depth.graph
@@ -3247,7 +3253,7 @@ extension LocalImageGenerator {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         return (nil, [])
       case .flux1:
         guard
@@ -3271,7 +3277,7 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .wan22_5b, .zImage, .ernieImage, .cosmos2_5_2b:
+        .hiDreamI1, .wan22_5b, .zImage, .ernieImage, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
         return (nil, [])
       case .ltx2, .ltx2_3:
         guard let image = image else { return (nil, []) }
@@ -3342,7 +3348,7 @@ extension LocalImageGenerator {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .wan22_5b, .zImage, .ernieImage, .flux1, .qwenImage, .cosmos2_5_2b, .flux2,
-        .flux2_9b, .flux2_4b:
+        .flux2_9b, .flux2_4b, .seedvr2_3b, .seedvr2_7b:
         return x
       case .ltx2, .ltx2_3:
         guard let firstFrame = imageCond.1.first else { return x }
@@ -3361,7 +3367,8 @@ extension LocalImageGenerator {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .wurstchenStageB, .wurstchenStageC, .flux1, .hiDreamI1, .qwenImage,
-      .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+      .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b,
+      .seedvr2_7b:
       return false
     case .svdI2v:
       return true
@@ -3377,7 +3384,8 @@ extension LocalImageGenerator {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1, .hiDreamI1,
-      .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+      .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+      .seedvr2_3b, .seedvr2_7b:
       return (1, image, nil)
     case .ltx2, .ltx2_3:
       guard forSample else {
@@ -3478,7 +3486,8 @@ extension LocalImageGenerator {
     case .hunyuanVideo, .auraflow, .flux1, .hiDreamI1, .qwenImage, .cosmos2_5_2b, .kandinsky21,
       .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
       .wurstchenStageB,
-      .wurstchenStageC, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+      .wurstchenStageC, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3,
+      .seedvr2_3b, .seedvr2_7b:
       return (batchSize, 0)
     }
   }
@@ -3490,6 +3499,16 @@ extension LocalImageGenerator {
   ) -> DynamicGraph.Tensor<FloatType> {
     let graph = encodedImage.graph
     switch version {
+    case .seedvr2_3b, .seedvr2_7b:
+      let shape = encodedImage.shape
+      // SeedVR2's validated upscaling path appends an all-one mask channel after the condition latent.
+      // The sampler-space edit / inpaint mask remains separate from this model input channel.
+      var result = graph.variable(
+        encodedImage.kind, format: encodedImage.format,
+        shape: [shape[0], shape[1], shape[2], shape[3] + 1], of: FloatType.self)
+      result[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]] = encodedImage
+      result[0..<shape[0], 0..<shape[1], 0..<shape[2], shape[3]..<(shape[3] + 1)].full(1)
+      return result
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC:
       let shape = encodedImage.shape
@@ -3889,7 +3908,7 @@ extension LocalImageGenerator {
     } else {
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b:
         firstPassChannels = 16
         firstPassScaleFactor = 8
         firstPassStartWidth =
@@ -4141,7 +4160,7 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .qwenImage,
-        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b, .seedvr2_7b:
         break
       }
       if modifier == .inpainting || modifier == .editing || modifier == .double {
@@ -4642,7 +4661,7 @@ extension LocalImageGenerator {
         let channels: Int
         switch modelVersion {
         case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-          .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage:
+          .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b:
           channels = 16
         case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
           channels = 32
@@ -5106,7 +5125,10 @@ extension LocalImageGenerator {
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
       cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
-    guard initTimestep.startStep > 0 || modelVersion == .svdI2v else {  // TODO: This check should be removed as text only should be capable of handling svdI2v too.
+    guard
+      initTimestep.startStep > 0 || modelVersion == .svdI2v || modelVersion == .seedvr2_3b
+        || modelVersion == .seedvr2_7b
+    else {  // TODO: This check should be removed as text only should be capable of handling svdI2v too.
       return generateTextOnly(
         image, scaleFactor: imageScaleFactor,
         depth: depth, hints: hints, custom: custom, shuffles: shuffles, poses: poses,
@@ -5136,7 +5158,7 @@ extension LocalImageGenerator {
     } else {
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b:
         channels = 16
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -5361,7 +5383,7 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .qwenImage,
-        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b, .seedvr2_7b:
         break
       }
       let imageSize: Int
@@ -6463,7 +6485,7 @@ extension LocalImageGenerator {
     } else {
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b:
         channels = 16
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -6765,7 +6787,7 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .qwenImage,
-        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b, .seedvr2_7b:
         break
       }
       let imageSize: Int
@@ -7360,7 +7382,7 @@ extension LocalImageGenerator {
     } else {
       switch modelVersion {
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b:
         channels = 16
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -7661,7 +7683,7 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .qwenImage,
-        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+        .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b, .seedvr2_7b:
         break
       }
       let imageSize: Int
