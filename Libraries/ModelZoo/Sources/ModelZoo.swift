@@ -1049,65 +1049,65 @@ public struct ModelZoo: DownloadZoo {
     ),
     Specification(
       name: "SeedVR2 3B", file: "seedvr2_3b_q8p.ckpt", prefix: "",
-      version: .seedvr2_3b, defaultScale: 8, textEncoder: "seedvr2_3b_q8p.ckpt",
+      version: .seedvr2_3b, defaultScale: 24, textEncoder: "seedvr2_3b_q8p.ckpt",
       autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
       objective: .u(conditionScale: 1000),
       noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
-      latentsScalingFactor: 0.9152,
+      latentsScalingFactor: 0.9152, hiresFixScale: 512,
       note:
         "[SeedVR2 3B](https://huggingface.co/ByteDance-Seed/SeedVR2-3B) is ByteDance Seed's Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs.",
       huggingFaceLink: "ByteDance-Seed/SeedVR2-3B"
     ),
     Specification(
       name: "SeedVR2 3B (8-bit S)", file: "seedvr2_3b_i8x.ckpt", prefix: "",
-      version: .seedvr2_3b, defaultScale: 8, textEncoder: "seedvr2_3b_i8x.ckpt",
+      version: .seedvr2_3b, defaultScale: 24, textEncoder: "seedvr2_3b_i8x.ckpt",
       autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
       objective: .u(conditionScale: 1000),
       noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
-      latentsScalingFactor: 0.9152,
+      latentsScalingFactor: 0.9152, hiresFixScale: 512,
       note:
         "[SeedVR2 3B](https://huggingface.co/ByteDance-Seed/SeedVR2-3B) is ByteDance Seed's Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs.",
       huggingFaceLink: "ByteDance-Seed/SeedVR2-3B"
     ),
     Specification(
       name: "SeedVR2 3B (6-bit)", file: "seedvr2_3b_q6p.ckpt", prefix: "",
-      version: .seedvr2_3b, defaultScale: 8, textEncoder: "seedvr2_3b_q6p.ckpt",
+      version: .seedvr2_3b, defaultScale: 24, textEncoder: "seedvr2_3b_q6p.ckpt",
       autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
       objective: .u(conditionScale: 1000),
       noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
-      latentsScalingFactor: 0.9152,
+      latentsScalingFactor: 0.9152, hiresFixScale: 512,
       note:
         "[SeedVR2 3B](https://huggingface.co/ByteDance-Seed/SeedVR2-3B) is ByteDance Seed's Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs."
     ),
     Specification(
       name: "SeedVR2 7B", file: "seedvr2_7b_q8p.ckpt", prefix: "",
-      version: .seedvr2_7b, defaultScale: 8, textEncoder: "seedvr2_7b_q8p.ckpt",
+      version: .seedvr2_7b, defaultScale: 24, textEncoder: "seedvr2_7b_q8p.ckpt",
       autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
       objective: .u(conditionScale: 1000),
       noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
-      latentsScalingFactor: 0.9152,
+      latentsScalingFactor: 0.9152, hiresFixScale: 512,
       note:
         "[SeedVR2 7B](https://huggingface.co/ByteDance-Seed/SeedVR2-7B) is the larger ByteDance Seed Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs.",
       huggingFaceLink: "ByteDance-Seed/SeedVR2-7B"
     ),
     Specification(
       name: "SeedVR2 7B (8-bit S)", file: "seedvr2_7b_i8x.ckpt", prefix: "",
-      version: .seedvr2_7b, defaultScale: 8, textEncoder: "seedvr2_7b_i8x.ckpt",
+      version: .seedvr2_7b, defaultScale: 24, textEncoder: "seedvr2_7b_i8x.ckpt",
       autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
       objective: .u(conditionScale: 1000),
       noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
-      latentsScalingFactor: 0.9152,
+      latentsScalingFactor: 0.9152, hiresFixScale: 512,
       note:
         "[SeedVR2 7B](https://huggingface.co/ByteDance-Seed/SeedVR2-7B) is the larger ByteDance Seed Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs.",
       huggingFaceLink: "ByteDance-Seed/SeedVR2-7B"
     ),
     Specification(
       name: "SeedVR2 7B (6-bit)", file: "seedvr2_7b_q6p.ckpt", prefix: "",
-      version: .seedvr2_7b, defaultScale: 8, textEncoder: "seedvr2_7b_q6p.ckpt",
+      version: .seedvr2_7b, defaultScale: 24, textEncoder: "seedvr2_7b_q6p.ckpt",
       autoencoder: "seedvr2_vae_f16.ckpt", modifier: .inpainting,
       objective: .u(conditionScale: 1000),
       noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
-      latentsScalingFactor: 0.9152,
+      latentsScalingFactor: 0.9152, hiresFixScale: 512,
       note:
         "[SeedVR2 7B](https://huggingface.co/ByteDance-Seed/SeedVR2-7B) is the larger ByteDance Seed Apache 2.0-licensed one-step diffusion video restoration model. It uses adversarial post-training on real data and adaptive window attention for high-resolution restoration, targeting fast video enhancement from degraded inputs."
     ),
@@ -3381,8 +3381,10 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 4 * 1_024 * 1_024 * 1_024
       case .ltx2, .ltx2_3:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
-      case .seedvr2_3b, .seedvr2_7b:
-        return fileSize < 4 * 1_024 * 1_024 * 1_024
+      case .seedvr2_3b:
+        return fileSize < 5 * 1_024 * 1_024 * 1_024
+      case .seedvr2_7b:
+        return fileSize < 8 * 1_024 * 1_024 * 1_024
       }
     }
     return false
@@ -3447,8 +3449,10 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 7 * 1_024 * 1_024 * 1_024
       case .ltx2, .ltx2_3:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
-      case .seedvr2_3b, .seedvr2_7b:
-        return fileSize < 4 * 1_024 * 1_024 * 1_024
+      case .seedvr2_3b:
+        return fileSize < 5 * 1_024 * 1_024 * 1_024
+      case .seedvr2_7b:
+        return fileSize < 8 * 1_024 * 1_024 * 1_024
       }
     }
     return false
