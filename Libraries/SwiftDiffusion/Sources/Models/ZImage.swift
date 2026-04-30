@@ -111,7 +111,7 @@ private func MLPEmbedder(channels: Int, intermediateSize: Int, name: String) -> 
 
 private func FeedForward(
   hiddenSize: Int, intermediateSize: Int, scaleFactor: (projUp: Int, projDown: Int),
-  name: String = ""
+  isBF16: Bool, name: String = ""
 )
   -> (
     Model, Model, Model, Model
@@ -140,7 +140,7 @@ private func FeedForward(
 private func ZImageTransformerBlock(
   prefix: String, name: String, k: Int, h: Int, b: Int, t: (keyValue: Int, query: Int),
   segments: [Int], scaleFactor: ((qk: Int, proj: Int), (projUp: Int, projDown: Int)),
-  modulation: Bool, usesFlashAttention: FlashAttentionLevel
+  modulation: Bool, usesFlashAttention: FlashAttentionLevel, isBF16: Bool
 ) -> (Model, ModelWeightMapper) {
   let x = Input()
   let chunks: [Input]
@@ -162,15 +162,27 @@ private func ZImageTransformerBlock(
   } else if scaleFactor.0.qk > 1 {
     out = (1 / Float(scaleFactor.0.qk)) * out
   }
-  out = out.to(.Float16)
-  var keys = tokeys(out).reshaped([b, t.keyValue, h, k])
+  if isBF16 {
+    out = out.to(.BFloat16)
+  } else {
+    out = out.to(.Float16)
+  }
+  var keys = tokeys(out)
+  keys = (isBF16 ? keys.to(.Float32) : keys).reshaped([
+    b, t.keyValue, h, k,
+  ])
   var queries: Model.IO
   if t.keyValue != t.query {
     queries = toqueries(
-      out.reshaped([b, t.query, k * h], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1])
-    ).reshaped([b, t.query, h, k])
+      out.reshaped(
+        [b, t.query, k * h], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1])
+    )
+    queries = (isBF16 ? queries.to(.Float32) : queries).reshaped([
+      b, t.query, h, k,
+    ])
   } else {
-    queries = toqueries(out).reshaped([b, t.0, h, k])
+    queries = toqueries(out)
+    queries = (isBF16 ? queries.to(.Float32) : queries).reshaped([b, t.0, h, k])
   }
   let normK = RMSNorm(
     epsilon: 1e-5 / Float(scaleFactor.0.qk * scaleFactor.0.qk), axis: [3],
@@ -185,15 +197,20 @@ private func ZImageTransformerBlock(
   }
   var values = tovalues(out)
   values = values.reshaped([b, t.0, h, k])
+  let rotaryEmbedding = isBF16 ? rot.to(.Float32) : rot
   if t.keyValue != t.query {
     queries = Functional.cmul(
       left: queries,
-      right: rot.reshaped(
+      right: rotaryEmbedding.reshaped(
         [1, t.query, 1, k], offset: [0, 0, 0, 0], strides: [t.keyValue * k, k, k, 1]))
   } else {
-    queries = Functional.cmul(left: queries, right: rot)
+    queries = Functional.cmul(left: queries, right: rotaryEmbedding)
   }
-  keys = Functional.cmul(left: keys, right: rot)
+  keys = Functional.cmul(left: keys, right: rotaryEmbedding)
+  if isBF16 {
+    queries = queries.to(.BFloat16)
+    keys = keys.to(.BFloat16)
+  }
   switch usesFlashAttention {
   case .scale1:
     queries = (1.0 / Float(k).squareRoot().squareRoot()) * queries
@@ -342,7 +359,7 @@ private func ZImageTransformerBlock(
   out = xIn + out
   let (w1, w2, w3, ffn) = FeedForward(
     hiddenSize: h * k, intermediateSize: 10_240, scaleFactor: scaleFactor.1,
-    name: name.isEmpty ? "ffn" : "\(name)_ffn")
+    isBF16: isBF16, name: name.isEmpty ? "ffn" : "\(name)_ffn")
   let feedForwardNorm1 = RMSNorm(
     epsilon: 1e-5, axis: [2], name: name.isEmpty ? "ffn_norm1" : "\(name)_ffn_norm1")
   var feedForwardNorm2Epsilon: Float = 1e-5
@@ -363,7 +380,7 @@ private func ZImageTransformerBlock(
   } else if scaleFactor.1.projUp > 1 {
     out = (1.0 / Float(scaleFactor.1.projUp)) * out
   }
-  out = out.to(.Float16)
+  out = isBF16 ? out.to(.BFloat16) : out.to(.Float16)
   out = feedForwardNorm2(ffn(out))  // Already converted to Float32.
   if modulation {
     out = out .* chunks[3]
@@ -373,31 +390,67 @@ private func ZImageTransformerBlock(
     var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
-      mapping["\(prefix).attention.qkv.weight"] = [
-        toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
-      ]
+      if isBF16 {
+        mapping["\(prefix).attention.qkv.weight"] = ModelWeightElement(
+          [toqueries.weight.name, tokeys.weight.name, tovalues.weight.name], isBF16: true)
+      } else {
+        mapping["\(prefix).attention.qkv.weight"] = [
+          toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
+        ]
+      }
       mapping["\(prefix).attention.q_norm.weight"] = [normQ.weight.name]
       mapping["\(prefix).attention.k_norm.weight"] = [normK.weight.name]
-      mapping["\(prefix).attention.out.weight"] = [unifyheads.weight.name]
+      mapping["\(prefix).attention.out.weight"] =
+        isBF16
+        ? ModelWeightElement([unifyheads.weight.name], isBF16: true)
+        : [
+          unifyheads.weight.name
+        ]
       mapping["\(prefix).attention_norm1.weight"] = [attentionNorm1.weight.name]
       mapping["\(prefix).attention_norm2.weight"] = [attentionNorm2.weight.name]
-      mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
-      mapping["\(prefix).feed_forward.w2.weight"] = [w2.weight.name]
-      mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
+      mapping["\(prefix).feed_forward.w1.weight"] =
+        isBF16 ? ModelWeightElement([w1.weight.name], isBF16: true) : [w1.weight.name]
+      mapping["\(prefix).feed_forward.w2.weight"] =
+        isBF16 ? ModelWeightElement([w2.weight.name], isBF16: true) : [w2.weight.name]
+      mapping["\(prefix).feed_forward.w3.weight"] =
+        isBF16 ? ModelWeightElement([w3.weight.name], isBF16: true) : [w3.weight.name]
       mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
       mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
     case .diffusers:
-      mapping["\(prefix).attention.to_q.weight"] = [toqueries.weight.name]
-      mapping["\(prefix).attention.to_k.weight"] = [tokeys.weight.name]
+      mapping["\(prefix).attention.to_q.weight"] =
+        isBF16
+        ? ModelWeightElement([toqueries.weight.name], isBF16: true)
+        : [
+          toqueries.weight.name
+        ]
+      mapping["\(prefix).attention.to_k.weight"] =
+        isBF16
+        ? ModelWeightElement([tokeys.weight.name], isBF16: true)
+        : [
+          tokeys.weight.name
+        ]
       mapping["\(prefix).attention.norm_q.weight"] = [normQ.weight.name]
       mapping["\(prefix).attention.norm_k.weight"] = [normK.weight.name]
-      mapping["\(prefix).attention.to_v.weight"] = [tovalues.weight.name]
-      mapping["\(prefix).attention.to_out.0.weight"] = [unifyheads.weight.name]
+      mapping["\(prefix).attention.to_v.weight"] =
+        isBF16
+        ? ModelWeightElement([tovalues.weight.name], isBF16: true)
+        : [
+          tovalues.weight.name
+        ]
+      mapping["\(prefix).attention.to_out.0.weight"] =
+        isBF16
+        ? ModelWeightElement([unifyheads.weight.name], isBF16: true)
+        : [
+          unifyheads.weight.name
+        ]
       mapping["\(prefix).attention_norm1.weight"] = [attentionNorm1.weight.name]
       mapping["\(prefix).attention_norm2.weight"] = [attentionNorm2.weight.name]
-      mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
-      mapping["\(prefix).feed_forward.w2.weight"] = [w2.weight.name]
-      mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
+      mapping["\(prefix).feed_forward.w1.weight"] =
+        isBF16 ? ModelWeightElement([w1.weight.name], isBF16: true) : [w1.weight.name]
+      mapping["\(prefix).feed_forward.w2.weight"] =
+        isBF16 ? ModelWeightElement([w2.weight.name], isBF16: true) : [w2.weight.name]
+      mapping["\(prefix).feed_forward.w3.weight"] =
+        isBF16 ? ModelWeightElement([w3.weight.name], isBF16: true) : [w3.weight.name]
       mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
       mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
     }
@@ -410,7 +463,7 @@ public func ZImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: Int,
   activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
   activationFfnProjUpScaling: [Int: Int], activationFfnScaling: [Int: Int],
-  usesFlashAttention: FlashAttentionLevel
+  usesFlashAttention: FlashAttentionLevel, isBF16: Bool
 ) -> (
   Model, ModelWeightMapper
 ) {
@@ -459,7 +512,7 @@ public func ZImage(
       scaleFactor: (
         (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
       ),
-      modulation: true, usesFlashAttention: usesFlashAttention)
+      modulation: true, usesFlashAttention: usesFlashAttention, isBF16: isBF16)
     xOut = block([xOut, xRot] + chunks)
     adaLNChunks.append(contentsOf: chunks)
     mappers.append(mapper)
@@ -469,17 +522,21 @@ public func ZImage(
   for i in 0..<layers {
     let qkScaling = activationQkScaling[i + 4] ?? 1
     var projScaling = activationProjScaling[i + 4] ?? 1
-    if projScaling < 0 {
-      projScaling = 4 / -projScaling
-    } else {
-      projScaling = 4 * projScaling
+    if !isBF16 {  // Only have default value for non-BF16 path.
+      if projScaling < 0 {
+        projScaling = 4 / -projScaling
+      } else {
+        projScaling = 4 * projScaling
+      }
     }
     let ffnProjUpScaling = activationFfnProjUpScaling[i + 4] ?? 1
     var ffnScaling = activationFfnScaling[i + 4] ?? 1
-    if ffnScaling < 0 {
-      ffnScaling = 32 / -ffnScaling
-    } else {
-      ffnScaling = 32 * ffnScaling
+    if !isBF16 {  // Only have default value for non-BF16 path.
+      if ffnScaling < 0 {
+        ffnScaling = 32 / -ffnScaling
+      } else {
+        ffnScaling = 32 * ffnScaling
+      }
     }
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = ZImageTransformerBlock(
@@ -490,7 +547,7 @@ public func ZImage(
       segments: [],
       scaleFactor: (
         (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
-      ), modulation: true, usesFlashAttention: usesFlashAttention)
+      ), modulation: true, usesFlashAttention: usesFlashAttention, isBF16: isBF16)
     out = block([out, rotResized] + chunks)
     adaLNChunks.append(contentsOf: chunks)
     mappers.append(mapper)
@@ -561,7 +618,7 @@ public func ZImageFixed(
   batchSize: Int, tokenLength: (Int, Int), channels: Int, layers: Int,
   activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
   activationFfnProjUpScaling: [Int: Int], activationFfnScaling: [Int: Int],
-  usesFlashAttention: FlashAttentionLevel
+  usesFlashAttention: FlashAttentionLevel, isBF16: Bool
 ) -> (
   Model, ModelWeightMapper
 ) {
@@ -642,7 +699,7 @@ public func ZImageFixed(
       scaleFactor: (
         (qk: qkScaling, proj: 2 * projScaling), (projUp: ffnProjUpScaling, projDown: 2 * ffnScaling)
       ), modulation: false,
-      usesFlashAttention: usesFlashAttention)
+      usesFlashAttention: usesFlashAttention, isBF16: isBF16)
     txtOut = block(txtOut, txtRot)
     mappers.append(mapper)
   }
@@ -767,7 +824,7 @@ private func LoRAMLPEmbedder(
 
 private func LoRAFeedForward(
   hiddenSize: Int, intermediateSize: Int, scaleFactor: (projUp: Int, projDown: Int),
-  configuration: LoRANetworkConfiguration, index: Int, name: String = ""
+  isBF16: Bool, configuration: LoRANetworkConfiguration, index: Int, name: String = ""
 )
   -> (
     Model, Model, Model, Model
@@ -802,7 +859,7 @@ private func LoRAFeedForward(
 private func LoRAZImageTransformerBlock(
   prefix: String, name: String, k: Int, h: Int, b: Int, t: (keyValue: Int, query: Int),
   segments: [Int], scaleFactor: ((qk: Int, proj: Int), (projUp: Int, projDown: Int)),
-  modulation: Bool, usesFlashAttention: FlashAttentionLevel, layerIndex: Int,
+  modulation: Bool, usesFlashAttention: FlashAttentionLevel, isBF16: Bool, layerIndex: Int,
   configuration: LoRANetworkConfiguration, rotaryEmbeddingHeads: Int = 1
 ) -> (Model, ModelWeightMapper) {
   let x = Input()
@@ -830,18 +887,27 @@ private func LoRAZImageTransformerBlock(
   } else if scaleFactor.0.qk > 1 {
     out = (1 / Float(scaleFactor.0.qk)) * out
   }
-  out = out.to(.Float16)
-  var keys = tokeys(out).reshaped([b, t.keyValue, h, k])
+  if isBF16 {
+    out = out.to(.BFloat16)
+  } else {
+    out = out.to(.Float16)
+  }
+  var keys = tokeys(out)
+  keys = (isBF16 ? keys.to(.Float32) : keys).reshaped([
+    b, t.keyValue, h, k,
+  ])
   var queries: Model.IO
   if t.keyValue != t.query {
     let queryIn = out.reshaped(
       [b, t.query, k * h], offset: [0, 0, 0], strides: [t.0 * h * k, h * k, 1]
     ).contiguous()
-    queries = toqueries(queryIn).reshaped([
+    queries = toqueries(queryIn)
+    queries = (isBF16 ? queries.to(.Float32) : queries).reshaped([
       b, t.query, h, k,
     ])
   } else {
-    queries = toqueries(out).reshaped([b, t.0, h, k])
+    queries = toqueries(out)
+    queries = (isBF16 ? queries.to(.Float32) : queries).reshaped([b, t.0, h, k])
   }
   let normK = RMSNorm(
     epsilon: 1e-5 / Float(scaleFactor.0.qk * scaleFactor.0.qk), axis: [3],
@@ -856,22 +922,27 @@ private func LoRAZImageTransformerBlock(
   }
   var values = tovalues(out)
   values = values.reshaped([b, t.0, h, k])
+  let rotaryEmbedding = isBF16 ? rot.to(.Float32) : rot
   if t.keyValue != t.query {
     if rotaryEmbeddingHeads > 1 {
-      let queryRot = rot.reshaped(
+      let queryRot = rotaryEmbedding.reshaped(
         [1, t.query, h, k], offset: [0, 0, 0, 0], strides: [t.keyValue * h * k, h * k, k, 1]
       ).contiguous()
       queries = Functional.cmul(left: queries, right: queryRot)
     } else {
-      let queryRot = rot.reshaped(
+      let queryRot = rotaryEmbedding.reshaped(
         [1, t.query, 1, k], offset: [0, 0, 0, 0], strides: [t.keyValue * k, k, k, 1]
       )
       queries = Functional.cmul(left: queries, right: queryRot)
     }
   } else {
-    queries = Functional.cmul(left: queries, right: rot)
+    queries = Functional.cmul(left: queries, right: rotaryEmbedding)
   }
-  keys = Functional.cmul(left: keys, right: rot)
+  keys = Functional.cmul(left: keys, right: rotaryEmbedding)
+  if isBF16 {
+    queries = queries.to(.BFloat16)
+    keys = keys.to(.BFloat16)
+  }
   switch usesFlashAttention {
   case .scale1:
     queries = (1.0 / Float(k).squareRoot().squareRoot()) * queries
@@ -1060,7 +1131,7 @@ private func LoRAZImageTransformerBlock(
   out = xIn + out
   let (w1, w2, w3, ffn) = LoRAFeedForward(
     hiddenSize: h * k, intermediateSize: 10_240, scaleFactor: scaleFactor.1,
-    configuration: configuration, index: layerIndex,
+    isBF16: isBF16, configuration: configuration, index: layerIndex,
     name: name.isEmpty ? "ffn" : "\(name)_ffn")
   if configuration.gradientCheckpointingFeedForward {
     ffn.gradientCheckpointing = true
@@ -1083,7 +1154,7 @@ private func LoRAZImageTransformerBlock(
   if modulation {
     out = out .* chunks[2]
   }
-  out = out.to(.Float16)
+  out = isBF16 ? out.to(.BFloat16) : out.to(.Float16)
   out = feedForwardNorm2(ffn(out))  // Already converted to Float32.
   if modulation {
     out = out .* chunks[3]
@@ -1093,31 +1164,67 @@ private func LoRAZImageTransformerBlock(
     var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
-      mapping["\(prefix).attention.qkv.weight"] = [
-        toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
-      ]
+      if isBF16 {
+        mapping["\(prefix).attention.qkv.weight"] = ModelWeightElement(
+          [toqueries.weight.name, tokeys.weight.name, tovalues.weight.name], isBF16: true)
+      } else {
+        mapping["\(prefix).attention.qkv.weight"] = [
+          toqueries.weight.name, tokeys.weight.name, tovalues.weight.name,
+        ]
+      }
       mapping["\(prefix).attention.q_norm.weight"] = [normQ.weight.name]
       mapping["\(prefix).attention.k_norm.weight"] = [normK.weight.name]
-      mapping["\(prefix).attention.out.weight"] = [unifyheads.weight.name]
+      mapping["\(prefix).attention.out.weight"] =
+        isBF16
+        ? ModelWeightElement([unifyheads.weight.name], isBF16: true)
+        : [
+          unifyheads.weight.name
+        ]
       mapping["\(prefix).attention_norm1.weight"] = [attentionNorm1.weight.name]
       mapping["\(prefix).attention_norm2.weight"] = [attentionNorm2.weight.name]
-      mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
-      mapping["\(prefix).feed_forward.w2.weight"] = [w2.weight.name]
-      mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
+      mapping["\(prefix).feed_forward.w1.weight"] =
+        isBF16 ? ModelWeightElement([w1.weight.name], isBF16: true) : [w1.weight.name]
+      mapping["\(prefix).feed_forward.w2.weight"] =
+        isBF16 ? ModelWeightElement([w2.weight.name], isBF16: true) : [w2.weight.name]
+      mapping["\(prefix).feed_forward.w3.weight"] =
+        isBF16 ? ModelWeightElement([w3.weight.name], isBF16: true) : [w3.weight.name]
       mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
       mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
     case .diffusers:
-      mapping["\(prefix).attention.to_q.weight"] = [toqueries.weight.name]
-      mapping["\(prefix).attention.to_k.weight"] = [tokeys.weight.name]
+      mapping["\(prefix).attention.to_q.weight"] =
+        isBF16
+        ? ModelWeightElement([toqueries.weight.name], isBF16: true)
+        : [
+          toqueries.weight.name
+        ]
+      mapping["\(prefix).attention.to_k.weight"] =
+        isBF16
+        ? ModelWeightElement([tokeys.weight.name], isBF16: true)
+        : [
+          tokeys.weight.name
+        ]
       mapping["\(prefix).attention.norm_q.weight"] = [normQ.weight.name]
       mapping["\(prefix).attention.norm_k.weight"] = [normK.weight.name]
-      mapping["\(prefix).attention.to_v.weight"] = [tovalues.weight.name]
-      mapping["\(prefix).attention.to_out.0.weight"] = [unifyheads.weight.name]
+      mapping["\(prefix).attention.to_v.weight"] =
+        isBF16
+        ? ModelWeightElement([tovalues.weight.name], isBF16: true)
+        : [
+          tovalues.weight.name
+        ]
+      mapping["\(prefix).attention.to_out.0.weight"] =
+        isBF16
+        ? ModelWeightElement([unifyheads.weight.name], isBF16: true)
+        : [
+          unifyheads.weight.name
+        ]
       mapping["\(prefix).attention_norm1.weight"] = [attentionNorm1.weight.name]
       mapping["\(prefix).attention_norm2.weight"] = [attentionNorm2.weight.name]
-      mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
-      mapping["\(prefix).feed_forward.w2.weight"] = [w2.weight.name]
-      mapping["\(prefix).feed_forward.w3.weight"] = [w3.weight.name]
+      mapping["\(prefix).feed_forward.w1.weight"] =
+        isBF16 ? ModelWeightElement([w1.weight.name], isBF16: true) : [w1.weight.name]
+      mapping["\(prefix).feed_forward.w2.weight"] =
+        isBF16 ? ModelWeightElement([w2.weight.name], isBF16: true) : [w2.weight.name]
+      mapping["\(prefix).feed_forward.w3.weight"] =
+        isBF16 ? ModelWeightElement([w3.weight.name], isBF16: true) : [w3.weight.name]
       mapping["\(prefix).ffn_norm1.weight"] = [feedForwardNorm1.weight.name]
       mapping["\(prefix).ffn_norm2.weight"] = [feedForwardNorm2.weight.name]
     }
@@ -1130,7 +1237,7 @@ public func LoRAZImage(
   batchSize: Int, height: Int, width: Int, textLength: Int, channels: Int, layers: Int,
   activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
   activationFfnProjUpScaling: [Int: Int], activationFfnScaling: [Int: Int],
-  usesFlashAttention: FlashAttentionLevel, rotaryEmbeddingHeads: Int = 1,
+  usesFlashAttention: FlashAttentionLevel, isBF16: Bool, rotaryEmbeddingHeads: Int = 1,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   Model, ModelWeightMapper
@@ -1186,7 +1293,7 @@ public func LoRAZImage(
       scaleFactor: (
         (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
       ),
-      modulation: true, usesFlashAttention: usesFlashAttention, layerIndex: i,
+      modulation: true, usesFlashAttention: usesFlashAttention, isBF16: isBF16, layerIndex: i,
       configuration: LoRAConfiguration, rotaryEmbeddingHeads: rotaryEmbeddingHeads)
     xOut = block([xOut, xRot] + chunks)
     if LoRAConfiguration.gradientCheckpointingTransformerLayer {
@@ -1200,17 +1307,21 @@ public func LoRAZImage(
   for i in 0..<layers {
     let qkScaling = activationQkScaling[i + 4] ?? 1
     var projScaling = activationProjScaling[i + 4] ?? 1
-    if projScaling < 0 {
-      projScaling = 4 / -projScaling
-    } else {
-      projScaling = 4 * projScaling
+    if !isBF16 {  // Only have default value for non-BF16 path.
+      if projScaling < 0 {
+        projScaling = 4 / -projScaling
+      } else {
+        projScaling = 4 * projScaling
+      }
     }
     let ffnProjUpScaling = activationFfnProjUpScaling[i + 4] ?? 1
     var ffnScaling = activationFfnScaling[i + 4] ?? 1
-    if ffnScaling < 0 {
-      ffnScaling = 32 / -ffnScaling
-    } else {
-      ffnScaling = 32 * ffnScaling
+    if !isBF16 {  // Only have default value for non-BF16 path.
+      if ffnScaling < 0 {
+        ffnScaling = 32 / -ffnScaling
+      } else {
+        ffnScaling = 32 * ffnScaling
+      }
     }
     let chunks = (0..<4).map { _ in Input() }
     let (block, mapper) = LoRAZImageTransformerBlock(
@@ -1221,7 +1332,7 @@ public func LoRAZImage(
       segments: [],
       scaleFactor: (
         (qk: qkScaling, proj: projScaling), (projUp: ffnProjUpScaling, projDown: ffnScaling)
-      ), modulation: true, usesFlashAttention: usesFlashAttention,
+      ), modulation: true, usesFlashAttention: usesFlashAttention, isBF16: isBF16,
       layerIndex: i, configuration: LoRAConfiguration,
       rotaryEmbeddingHeads: rotaryEmbeddingHeads)
     out = block([out, rotResized] + chunks)
@@ -1310,7 +1421,7 @@ public func LoRAZImageFixed(
   batchSize: Int, tokenLength: (Int, Int), channels: Int, layers: Int,
   activationQkScaling: [Int: Int], activationProjScaling: [Int: Int],
   activationFfnProjUpScaling: [Int: Int], activationFfnScaling: [Int: Int],
-  usesFlashAttention: FlashAttentionLevel, LoRAConfiguration: LoRANetworkConfiguration
+  usesFlashAttention: FlashAttentionLevel, isBF16: Bool, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (
   Model, ModelWeightMapper
 ) {
@@ -1392,7 +1503,8 @@ public func LoRAZImageFixed(
       scaleFactor: (
         (qk: qkScaling, proj: 2 * projScaling), (projUp: ffnProjUpScaling, projDown: 2 * ffnScaling)
       ), modulation: false,
-      usesFlashAttention: usesFlashAttention, layerIndex: i, configuration: LoRAConfiguration)
+      usesFlashAttention: usesFlashAttention, isBF16: isBF16, layerIndex: i,
+      configuration: LoRAConfiguration)
     txtOut = block(txtOut, txtRot)
     mappers.append(mapper)
   }

@@ -1692,7 +1692,8 @@ extension UNetFixedEncoder {
             activationProjScaling: activationProjScaling,
             activationFfnProjUpScaling: activationFfnProjUpScaling,
             activationFfnScaling: activationFfnScaling,
-            usesFlashAttention: valueOr(usesFlashAttention, .scale1),
+            usesFlashAttention: valueOr(usesFlashAttention, isBF16 ? .scaleMerged : .scale1),
+            isBF16: isBF16,
             LoRAConfiguration: configuration
           ).0
       } else {
@@ -1704,7 +1705,8 @@ extension UNetFixedEncoder {
             activationProjScaling: activationProjScaling,
             activationFfnProjUpScaling: activationFfnProjUpScaling,
             activationFfnScaling: activationFfnScaling,
-            usesFlashAttention: valueOr(usesFlashAttention, .scale1)
+            usesFlashAttention: valueOr(usesFlashAttention, isBF16 ? .scaleMerged : .scale1),
+            isBF16: isBF16
           ).0
       }
       unetFixed.maxConcurrency = .limit(4)

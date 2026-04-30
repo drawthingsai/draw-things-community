@@ -1423,7 +1423,8 @@ extension UNetFromNNC {
               activationProjScaling: activationProjScaling,
               activationFfnProjUpScaling: activationFfnProjUpScaling,
               activationFfnScaling: activationFfnScaling,
-              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              usesFlashAttention: valueOr(useFlashAttention, isBF16 ? .scaleMerged : .scale1),
+              isBF16: isBF16,
               LoRAConfiguration: configuration
             ).0
           })
@@ -1438,7 +1439,8 @@ extension UNetFromNNC {
               activationProjScaling: activationProjScaling,
               activationFfnProjUpScaling: activationFfnProjUpScaling,
               activationFfnScaling: activationFfnScaling,
-              usesFlashAttention: valueOr(useFlashAttention, .scale1)
+              usesFlashAttention: valueOr(useFlashAttention, isBF16 ? .scaleMerged : .scale1),
+              isBF16: isBF16
             ).0
           })
       }

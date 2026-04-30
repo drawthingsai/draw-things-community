@@ -1216,11 +1216,11 @@ public final class ModelImporter {
         (unet, unetMapper) = ZImage(
           batchSize: 1, height: 64, width: 64, textLength: 32, channels: 3840, layers: 30,
           activationQkScaling: [:], activationProjScaling: [:], activationFfnProjUpScaling: [:],
-          activationFfnScaling: [:], usesFlashAttention: .scale1)
+          activationFfnScaling: [:], usesFlashAttention: .scale1, isBF16: true)
         (unetFixed, unetFixedMapper) = ZImageFixed(
-          batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 32, activationQkScaling: [:],
+          batchSize: 1, tokenLength: (0, 32), channels: 3840, layers: 30, activationQkScaling: [:],
           activationProjScaling: [:], activationFfnProjUpScaling: [:], activationFfnScaling: [:],
-          usesFlashAttention: .scale1
+          usesFlashAttention: .scale1, isBF16: true
         )
       case .ernieImage:
         (unetMapper, unet) = ErnieImage(
@@ -2499,6 +2499,10 @@ extension ModelImporter {
       specification.noiseDiscretization = .rf(
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
       specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
+      specification.mmdit = ModelZoo.Specification.MMDiT(
+        qkNorm: true, dualAttentionLayers: [], activationQkScaling: [:],
+        activationFfnProjUpScaling: [:])
+      specification.isBf16 = true
     case .ernieImage:
       if specification.textEncoder == nil {
         specification.textEncoder = "ministral_3_3b_q8p.ckpt"

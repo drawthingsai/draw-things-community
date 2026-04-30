@@ -2411,6 +2411,7 @@ public struct LoRATrainer {
   private func encodeZImageFixed(
     graph: DynamicGraph,
     externalData: DynamicGraph.Store.Codec,
+    isBF16: Bool,
     tokenLength: Int,
     batch: [(
       textEncoding: Tensor<FloatType>, timestep: Float
@@ -2430,7 +2431,7 @@ public struct LoRATrainer {
         activationProjScaling: activationProjScaling,
         activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling,
-        usesFlashAttention: valueOr(.scale1)
+        usesFlashAttention: valueOr(.scale1), isBF16: isBF16
       ).0
       var timeEmbeds = graph.variable(.GPU(0), .WC(batch.count, 256), of: FloatType.self)
       var textEncodings = graph.variable(
@@ -4063,6 +4064,7 @@ public struct LoRATrainer {
     }
     DynamicGraph.setSeed(seed)
     var dataFrame = dataFrame
+    let isBF16 = ModelZoo.isBF16ForModel(model)
     let configuration: LoRANetworkConfiguration
     switch memorySaver {
     case .minimal:
@@ -4100,7 +4102,7 @@ public struct LoRATrainer {
         activationProjScaling: activationProjScaling,
         activationFfnProjUpScaling: activationFfnProjUpScaling,
         activationFfnScaling: activationFfnScaling, usesFlashAttention: .scale1,
-        rotaryEmbeddingHeads: 3_840 / 128, LoRAConfiguration: configuration
+        isBF16: isBF16, rotaryEmbeddingHeads: 3_840 / 128, LoRAConfiguration: configuration
       ).0
     }
     dit.maxConcurrency = .limit(1)
@@ -4296,7 +4298,8 @@ public struct LoRATrainer {
         if batch.count == 32 {
           let batchTokenLength = max(batch.map(\.tokenLength).max() ?? 0, 1)
           let conditions = encodeZImageFixed(
-            graph: graph, externalData: externalData, tokenLength: batchTokenLength,
+            graph: graph, externalData: externalData, isBF16: isBF16,
+            tokenLength: batchTokenLength,
             batch: batch.map { ($0.textEncoding, $0.timestep) })
           for (j, item) in batch.enumerated() {
             guard let tensor = sessionStore.read(item.loadedImagePath) else { continue }
