@@ -3787,7 +3787,9 @@ extension LocalImageGenerator {
         widthScale: configuration.startWidth, heightScale: configuration.startHeight),
       variant: .diffusionMapping, injectedControls: 0)
     let batchSize =
-      ImageGeneratorUtils.isVideoModel(modelVersion) ? 1 : Int(configuration.batchSize)
+      ImageGeneratorUtils.isVideoModel(modelVersion) || modelVersion == .seedvr2_3b
+        || modelVersion == .seedvr2_7b
+      ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
@@ -5137,7 +5139,9 @@ extension LocalImageGenerator {
         cancellation: cancellation, feedback: feedback)
     }
     let batchSize =
-      ImageGeneratorUtils.isVideoModel(modelVersion) ? 1 : Int(configuration.batchSize)
+      ImageGeneratorUtils.isVideoModel(modelVersion) || modelVersion == .seedvr2_3b
+        || modelVersion == .seedvr2_7b
+      ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     precondition(strength >= 0 && strength <= 1)
     let highPrecisionForAutoencoder = ModelZoo.isHighPrecisionAutoencoderForModel(file)
@@ -6438,7 +6442,9 @@ extension LocalImageGenerator {
       }
     }
     let batchSize =
-      ImageGeneratorUtils.isVideoModel(modelVersion) ? 1 : Int(configuration.batchSize)
+      ImageGeneratorUtils.isVideoModel(modelVersion) || modelVersion == .seedvr2_3b
+        || modelVersion == .seedvr2_7b
+      ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
@@ -7335,7 +7341,9 @@ extension LocalImageGenerator {
       }
     }
     let batchSize =
-      ImageGeneratorUtils.isVideoModel(modelVersion) ? 1 : Int(configuration.batchSize)
+      ImageGeneratorUtils.isVideoModel(modelVersion) || modelVersion == .seedvr2_3b
+        || modelVersion == .seedvr2_7b
+      ? 1 : Int(configuration.batchSize)
     precondition(batchSize > 0)
     let textGuidanceScale = configuration.guidanceScale
     let imageGuidanceScale = configuration.imageGuidanceScale
