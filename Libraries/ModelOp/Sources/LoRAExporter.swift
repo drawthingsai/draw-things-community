@@ -9,8 +9,15 @@ public enum LoRAExporter {
     let humanName = LoRAZoo.humanReadableNameForModel(file)
     let version = LoRAZoo.versionForModel(file)
     let prefix = LoRAZoo.textPrefixForModel(file)
+    enum ModelExportFormat {
+      case kohyaTrainer
+      case comfyUI
+    }
     let modelFixedPrefix: String
     let modelPrefix: String
+    var modelExportFormat: ModelExportFormat = .kohyaTrainer
+    var modelWeightFormats: [ModelWeightFormat] = [.generativeModels]
+    var textualInversionExport: (storeKey: String, safetensorsKey: String)? = nil
     var metadata = [String: String]()
     metadata["name"] = humanName
     switch version {
@@ -75,15 +82,59 @@ public enum LoRAExporter {
       metadata["ss_base_model_version"] = "wan_v2.1_1.3b"
       modelFixedPrefix = "dit"
       modelPrefix = "dit"
-    case .qwenImage, .cosmos2_5_2b:
-      fatalError()
-    case .zImage, .ernieImage:
-      fatalError()
+    case .qwenImage:
+      metadata["version"] = "qwen_image"
+      metadata["ss_base_model_version"] = "qwen_image"
+      modelFixedPrefix = "dit"
+      modelPrefix = "dit"
+      modelExportFormat = .comfyUI
+      modelWeightFormats = [.generativeModels]
+      textualInversionExport = ("string_to_param_qwen25", "qwen25")
+    case .cosmos2_5_2b:
+      metadata["version"] = "cosmos2.5_2b"
+      metadata["ss_base_model_version"] = "cosmos2.5_2b"
+      modelFixedPrefix = "dit"
+      modelPrefix = "dit"
+      modelExportFormat = .comfyUI
+      modelWeightFormats = [.generativeModels]
+      textualInversionExport = ("string_to_param_qwen3", "qwen3")
+    case .zImage:
+      metadata["version"] = "z_image"
+      metadata["ss_base_model_version"] = "z_image"
+      modelFixedPrefix = "dit"
+      modelPrefix = "dit"
+      modelExportFormat = .comfyUI
+      modelWeightFormats = [.diffusers]
+      textualInversionExport = ("string_to_param_qwen3", "qwen3")
+    case .ernieImage:
+      metadata["version"] = "ernie_image"
+      metadata["ss_base_model_version"] = "ernie_image"
+      modelFixedPrefix = "dit"
+      modelPrefix = "dit"
+      modelExportFormat = .comfyUI
+      modelWeightFormats = [.generativeModels]
+      textualInversionExport = ("string_to_param_mistral3", "mistral3")
     case .wan22_5b:
       fatalError()
     case .hiDreamI1:
       fatalError()
-    case .flux2, .flux2_9b, .flux2_4b:
+    case .flux2_4b:
+      metadata["version"] = "flux_2_4b"
+      metadata["ss_base_model_version"] = "flux_2_4b"
+      modelFixedPrefix = "dit"
+      modelPrefix = "dit"
+      modelExportFormat = .comfyUI
+      modelWeightFormats = [.generativeModels]
+      textualInversionExport = ("string_to_param_mistral3", "mistral3")
+    case .flux2_9b:
+      metadata["version"] = "flux_2_9b"
+      metadata["ss_base_model_version"] = "flux_2_9b"
+      modelFixedPrefix = "dit"
+      modelPrefix = "dit"
+      modelExportFormat = .comfyUI
+      modelWeightFormats = [.generativeModels]
+      textualInversionExport = ("string_to_param_mistral3", "mistral3")
+    case .flux2:
       fatalError()
     case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       fatalError()
@@ -134,7 +185,7 @@ public enum LoRAExporter {
     let dualAttentionLayers = [Int]()
     let (modelKeysMapping2, modelKeysMapping, _, _) = LoRAImporter.modelWeightsMapping(
       by: version, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
-      format: [.generativeModels])
+      format: modelWeightFormats)
     let modelKeys = modelKeysMapping.keys.sorted()
     let modelKeys2 = modelKeysMapping2.keys.sorted()
     let total =
@@ -202,6 +253,51 @@ public enum LoRAExporter {
         tensorClipLDescriptor["data_offsets"] = [offset, offset + clipLSize]
         offset += clipLSize
         json["clip_g"] = tensorClipLDescriptor
+      } else if let textualInversionExport = textualInversionExport,
+        let tensor = store.read(textualInversionExport.storeKey)
+      {
+        var tensorDescriptor = [String: Any]()
+        var bytesPerElement: Int
+        switch tensor.dataType {
+        case .Float16:
+          tensorDescriptor["dtype"] = "F16"
+          bytesPerElement = 2
+        case .Float32:
+          tensorDescriptor["dtype"] = "F32"
+          bytesPerElement = 4
+        default:
+          bytesPerElement = 0
+        }
+        tensorDescriptor["shape"] = [Int](tensor.shape)
+        let size = tensor.shape.reduce(bytesPerElement, *)
+        tensorDescriptor["data_offsets"] = [offset, offset + size]
+        offset += size
+        json[textualInversionExport.safetensorsKey] = tensorDescriptor
+      }
+      func loraPrefix(forModelKey key: String) -> String? {
+        var components = key.split(separator: ".")
+        guard components.count > 1 else { return nil }
+        components.removeLast()
+        switch modelExportFormat {
+        case .kohyaTrainer:
+          if components.count > 2 && components[0] == "model" && components[1] == "diffusion_model"
+          {
+            components.removeFirst(2)
+          } else if components.count > 1
+            && (components[0] == "diffusion_model" || components[0] == "model")
+          {
+            components.removeFirst()
+          }
+          return "lora_unet_" + components.joined(separator: "_")
+        case .comfyUI:
+          if components.first == "model" {
+            components.removeFirst()
+          }
+          if components.first != "diffusion_model" {
+            components.insert("diffusion_model", at: 0)
+          }
+          return components.joined(separator: ".")
+        }
       }
       for (i, key) in textEncoderKeys.enumerated() {
         guard key.hasSuffix(".weight") else { continue }
@@ -321,17 +417,7 @@ public enum LoRAExporter {
       for (i, key) in modelKeys.enumerated() {
         guard key.hasSuffix(".weight") else { continue }
         guard let names = modelKeysMapping[key] else { continue }
-        var components = key.split(separator: ".")
-        guard components.count > 1 else { continue }
-        components.removeLast()
-        if components.count > 2 && components[0] == "model" && components[1] == "diffusion_model" {
-          components.removeFirst(2)
-        } else if components.count > 1
-          && (components[0] == "diffusion_model" || components[0] == "model")
-        {
-          components.removeFirst()
-        }
-        let loraPrefix = "lora_unet_" + components.joined(separator: "_")
+        guard let loraPrefix = loraPrefix(forModelKey: key) else { continue }
         if names.count > 1 {
           var upDataType: DataType? = nil
           var upShape: [Int]? = nil
@@ -479,18 +565,7 @@ public enum LoRAExporter {
         for (i, key) in modelKeys2.enumerated() {
           guard key.hasSuffix(".weight") else { continue }
           guard let names = modelKeysMapping2[key] else { continue }
-          var components = key.split(separator: ".")
-          guard components.count > 1 else { continue }
-          components.removeLast()
-          if components.count > 2 && components[0] == "model" && components[1] == "diffusion_model"
-          {
-            components.removeFirst(2)
-          } else if components.count > 1
-            && (components[0] == "diffusion_model" || components[0] == "model")
-          {
-            components.removeFirst()
-          }
-          let loraPrefix = "lora_unet_" + components.joined(separator: "_")
+          guard let loraPrefix = loraPrefix(forModelKey: key) else { continue }
           if names.count > 1 {
             var upDataType: DataType? = nil
             var upShape: [Int]? = nil
@@ -696,6 +771,50 @@ public enum LoRAExporter {
         default:
           break
         }
+      } else if let textualInversionExport = textualInversionExport,
+        let tensor = store.read(textualInversionExport.storeKey)
+      {
+        switch tensor.dataType {
+        case .Float16:
+          #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
+            let _ = Tensor<Float16>(tensor).toCPU().withUnsafeBytes {
+              fwrite($0.baseAddress, 1, $0.count, w)
+            }
+          #endif
+        case .Float32:
+          let _ = Tensor<Float32>(tensor).toCPU().withUnsafeBytes {
+            fwrite($0.baseAddress, 1, $0.count, w)
+          }
+        default:
+          break
+        }
+      }
+      func exportUpTensor<T: TensorNumeric>(_ tensor: Tensor<T>, for names: ModelWeightElement)
+        -> Tensor<T>
+      {
+        var tensor = tensor.toCPU()
+        switch names.format {
+        case .O:
+          let numberOfHeads = names.numberOfHeads
+          let headDimension = names.headDimension
+          if names.interleaved, numberOfHeads > 0, headDimension > 0 {
+            // Inverse of TensorDescriptor's interleaved .O write transform.
+            tensor = graph.withNoGrad {
+              Tensor<T>(
+                from: graph.variable(
+                  tensor.reshaped(
+                    format: tensor.format,
+                    shape: [numberOfHeads, headDimension / 2, 2, -1]
+                  ).toGPU()
+                ).transposed(1, 2).reshaped(
+                  format: tensor.format, shape: [numberOfHeads * headDimension, -1]
+                ).toCPU().rawValue)
+            }
+          }
+        case .I:
+          break
+        }
+        return tensor
       }
       for (i, key) in textEncoderKeys.enumerated() {
         guard key.hasSuffix(".weight") else { continue }
@@ -846,7 +965,7 @@ public enum LoRAExporter {
                     tensor[
                       shapeStart0..<(shapeStart0 + shape[0]), shapeStart1..<(shapeStart1 + shape[1])
                     ] =
-                      Tensor<Float16>(from: upTensor).toCPU()
+                      exportUpTensor(Tensor<Float16>(from: upTensor), for: names)
                     shapeStart0 = shapeStart0 + shape[0]
                     shapeStart1 = shapeStart1 + shape[1]
                   }
@@ -855,7 +974,7 @@ public enum LoRAExporter {
                   for upTensor in upTensors {
                     let shape = upTensor.shape
                     tensor[0..<shape[0], shapeStart1..<(shapeStart1 + shape[1])] =
-                      Tensor<Float16>(from: upTensor).toCPU()
+                      exportUpTensor(Tensor<Float16>(from: upTensor), for: names)
                     shapeStart1 = shapeStart1 + shape[1]
                   }
                 }
@@ -876,7 +995,7 @@ public enum LoRAExporter {
                   let shape = upTensor.shape
                   tensor[
                     shapeStart0..<(shapeStart0 + shape[0]), shapeStart1..<(shapeStart1 + shape[1])] =
-                    Tensor<Float32>(from: upTensor).toCPU()
+                    exportUpTensor(Tensor<Float32>(from: upTensor), for: names)
                   shapeStart0 = shapeStart0 + shape[0]
                   shapeStart1 = shapeStart1 + shape[1]
                 }
@@ -885,7 +1004,7 @@ public enum LoRAExporter {
                 for upTensor in upTensors {
                   let shape = upTensor.shape
                   tensor[0..<shape[0], shapeStart1..<(shapeStart1 + shape[1])] =
-                    Tensor<Float32>(from: upTensor).toCPU()
+                    exportUpTensor(Tensor<Float32>(from: upTensor), for: names)
                   shapeStart1 = shapeStart1 + shape[1]
                 }
               }
@@ -1015,12 +1134,12 @@ public enum LoRAExporter {
           switch upTensor.dataType {
           case .Float16:
             #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
-              let _ = Tensor<Float16>(upTensor).toCPU().withUnsafeBytes {
+              let _ = exportUpTensor(Tensor<Float16>(upTensor), for: names).withUnsafeBytes {
                 fwrite($0.baseAddress, 1, $0.count, w)
               }
             #endif
           case .Float32:
-            let _ = Tensor<Float32>(upTensor).toCPU().withUnsafeBytes {
+            let _ = exportUpTensor(Tensor<Float32>(upTensor), for: names).withUnsafeBytes {
               fwrite($0.baseAddress, 1, $0.count, w)
             }
           default:
@@ -1100,7 +1219,7 @@ public enum LoRAExporter {
                         shapeStart0..<(shapeStart0 + shape[0]),
                         shapeStart1..<(shapeStart1 + shape[1])
                       ] =
-                        Tensor<Float16>(from: upTensor).toCPU()
+                        exportUpTensor(Tensor<Float16>(from: upTensor), for: names)
                       shapeStart0 = shapeStart0 + shape[0]
                       shapeStart1 = shapeStart1 + shape[1]
                     }
@@ -1109,7 +1228,7 @@ public enum LoRAExporter {
                     for upTensor in upTensors {
                       let shape = upTensor.shape
                       tensor[0..<shape[0], shapeStart1..<(shapeStart1 + shape[1])] =
-                        Tensor<Float16>(from: upTensor).toCPU()
+                        exportUpTensor(Tensor<Float16>(from: upTensor), for: names)
                       shapeStart1 = shapeStart1 + shape[1]
                     }
                   }
@@ -1131,7 +1250,7 @@ public enum LoRAExporter {
                     tensor[
                       shapeStart0..<(shapeStart0 + shape[0]), shapeStart1..<(shapeStart1 + shape[1])
                     ] =
-                      Tensor<Float32>(from: upTensor).toCPU()
+                      exportUpTensor(Tensor<Float32>(from: upTensor), for: names)
                     shapeStart0 = shapeStart0 + shape[0]
                     shapeStart1 = shapeStart1 + shape[1]
                   }
@@ -1140,7 +1259,7 @@ public enum LoRAExporter {
                   for upTensor in upTensors {
                     let shape = upTensor.shape
                     tensor[0..<shape[0], shapeStart1..<(shapeStart1 + shape[1])] =
-                      Tensor<Float32>(from: upTensor).toCPU()
+                      exportUpTensor(Tensor<Float32>(from: upTensor), for: names)
                     shapeStart1 = shapeStart1 + shape[1]
                   }
                 }
@@ -1274,12 +1393,12 @@ public enum LoRAExporter {
             switch upTensor.dataType {
             case .Float16:
               #if !((os(macOS) || (os(iOS) && targetEnvironment(macCatalyst))) && (arch(i386) || arch(x86_64)))
-                let _ = Tensor<Float16>(upTensor).toCPU().withUnsafeBytes {
+                let _ = exportUpTensor(Tensor<Float16>(upTensor), for: names).withUnsafeBytes {
                   fwrite($0.baseAddress, 1, $0.count, w)
                 }
               #endif
             case .Float32:
-              let _ = Tensor<Float32>(upTensor).toCPU().withUnsafeBytes {
+              let _ = exportUpTensor(Tensor<Float32>(upTensor), for: names).withUnsafeBytes {
                 fwrite($0.baseAddress, 1, $0.count, w)
               }
             default:

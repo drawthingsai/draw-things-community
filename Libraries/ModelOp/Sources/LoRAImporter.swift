@@ -1035,8 +1035,29 @@ public enum LoRAImporter {
     String, ModelWeightElement
   )? {
     for key in keys {
-      guard let value = dictionary[key] else { continue }
-      return (key, value)
+      if let value = dictionary[key] {
+        return (key, value)
+      }
+      let parts = key.components(separatedBy: ".")
+      if parts.first == "model" {
+        if parts.count > 3 && parts[1] == "diffusion_model" {
+          let strippedKey = parts[2..<parts.count].joined(separator: ".")
+          if let value = dictionary[strippedKey] {
+            return (strippedKey, value)
+          }
+        }
+        if parts.count > 2 {
+          let strippedKey = parts[1..<parts.count].joined(separator: ".")
+          if let value = dictionary[strippedKey] {
+            return (strippedKey, value)
+          }
+        }
+      } else if parts.first == "diffusion_model", parts.count > 2 {
+        let strippedKey = parts[1..<parts.count].joined(separator: ".")
+        if let value = dictionary[strippedKey] {
+          return (strippedKey, value)
+        }
+      }
     }
     return nil
   }
