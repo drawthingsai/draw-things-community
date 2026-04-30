@@ -511,16 +511,16 @@ private func SeedVR2DiTBlock(
   let kSource = Functional.concat(axis: 0, vidK, txtK).reshaped([sourceLength, heads * headDim])
   let vSource = Functional.concat(axis: 0, vidV, txtV).reshaped([sourceLength, heads * headDim])
   let q = Functional.cmul(
-    left: IndexSelect()(qSource, attentionIndex).reshaped([
+    left: Functional.indexSelect(input: qSource, index: attentionIndex).reshaped([
       1, attentionLength, heads, headDim,
     ]),
     right: rotaryEmbedding)
   let k = Functional.cmul(
-    left: IndexSelect()(kSource, attentionIndex).reshaped([
+    left: Functional.indexSelect(input: kSource, index: attentionIndex).reshaped([
       1, attentionLength, heads, headDim,
     ]),
     right: rotaryEmbedding)
-  let v = IndexSelect()(vSource, attentionIndex).reshaped([
+  let v = Functional.indexSelect(input: vSource, index: attentionIndex).reshaped([
     1, attentionLength, heads, headDim,
   ])
   let attn3D: Model.IO
@@ -544,14 +544,14 @@ private func SeedVR2DiTBlock(
       attentionLength, heads * headDim,
     ])
   }
-  let vidAttn3D = IndexSelect()(attn3D, attentionToVideoIndex).reshaped([
+  let vidAttn3D = Functional.indexSelect(input: attn3D, index: attentionToVideoIndex).reshaped([
     vidLen, heads, headDim,
   ])
   let txtAttn3D: Model.IO?
   if contextBlockPreOnly {
     txtAttn3D = nil
   } else {
-    txtAttn3D = IndexSelect()(attn3D, attentionToTextIndex)
+    txtAttn3D = Functional.indexSelect(input: attn3D, index: attentionToTextIndex)
       .reshaped([txtLen, windowCount, heads, headDim]).reduced(.mean, axis: [1])
   }
   let vidAttnFlat = vidAttn3D.contiguous().reshaped([vidLen, heads * headDim])
@@ -675,7 +675,7 @@ public func SeedVR2DiT(
     frames * patchHeight * patchWidth, 132,
   ])
   vidOut = patchIn(vidOut).to(.Float32)
-  vidOut = IndexSelect()(vidOut, rasterToWindowIndex)
+  vidOut = Functional.indexSelect(input: vidOut, index: rasterToWindowIndex)
   let emb = embIn(timestep).to(.Float32)
   var isShiftedLayout = false
   let rotResized = rotaryEmbedding.reshaped([
@@ -691,10 +691,10 @@ public func SeedVR2DiT(
     let contextAdaLN = !contextBlockPreOnly || configuration.finalLayerContextAdaLN
     let useShiftedAttention = layerIndex % 2 == 1 || !contextAdaLN
     if useShiftedAttention && !isShiftedLayout {
-      vidOut = IndexSelect()(vidOut, windowToShiftedIndex)
+      vidOut = Functional.indexSelect(input: vidOut, index: windowToShiftedIndex)
       isShiftedLayout = true
     } else if !useShiftedAttention && isShiftedLayout {
-      vidOut = IndexSelect()(vidOut, shiftedToWindowIndex)
+      vidOut = Functional.indexSelect(input: vidOut, index: shiftedToWindowIndex)
       isShiftedLayout = false
     }
     let layout = useShiftedAttention ? shiftedLayout : regularLayout
@@ -723,7 +723,8 @@ public func SeedVR2DiT(
       vidOut = blockOut
     }
   }
-  vidOut = IndexSelect()(vidOut, isShiftedLayout ? shiftedToRasterIndex : windowToRasterIndex)
+  vidOut = Functional.indexSelect(
+    input: vidOut, index: isShiftedLayout ? shiftedToRasterIndex : windowToRasterIndex)
 
   var out: Model.IO
   if configuration.outputNormAda {
