@@ -110,6 +110,15 @@ func isTransientDownloadError(_ error: NSError) -> Bool {
   return false
 }
 
+func isTransientHTTPStatusCode(_ statusCode: Int) -> Bool {
+  switch statusCode {
+  case 408, 429, 500, 502, 503, 504:
+    return true
+  default:
+    return false
+  }
+}
+
 func excludeFromBackup(_ url: URL) {
   var url = url
   var resourceValues = URLResourceValues()

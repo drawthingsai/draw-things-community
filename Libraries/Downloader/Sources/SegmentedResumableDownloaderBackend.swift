@@ -1,6 +1,8 @@
 import Foundation
 
 final class SegmentedResumableDownloaderBackend: NSObject, DownloadBackend {
+  private static let retryDelayNanoseconds: UInt64 = 2_000_000_000
+
   private let remoteUrl: URL
   private let localUrl: URL
   private let sha256: String?
@@ -394,12 +396,17 @@ extension SegmentedResumableDownloaderBackend {
   fileprivate func handleFailure(for task: URLSessionTask, error: NSError) {
     if error.domain == NSURLErrorDomain, error.code == URLError.cancelled.rawValue {
       lock.lock()
-      if let download = activeDownloads[task.taskIdentifier] {
+      let assignment = activeDownloads[task.taskIdentifier]?.assignment
+      let shouldRetry = assignment != nil && !isCancelling && !isFinalizing && !didFinish
+      if !shouldRetry, let assignment {
         activeDownloads[task.taskIdentifier] = nil
-        activeTasks[download.assignment.index] = nil
-        claimedBlocks[download.assignment.index] = false
+        activeTasks[assignment.index] = nil
+        claimedBlocks[assignment.index] = false
       }
       lock.unlock()
+      if shouldRetry, let assignment {
+        retryBlock(taskIdentifier: task.taskIdentifier, assignment: assignment)
+      }
       return
     }
 
@@ -427,7 +434,7 @@ extension SegmentedResumableDownloaderBackend {
     lock.unlock()
     guard shouldRetry else { return }
     Task { [weak self] in
-      try? await Task.sleep(nanoseconds: 200_000_000)
+      try? await Task.sleep(nanoseconds: Self.retryDelayNanoseconds)
       self?.scheduleMoreTasks()
     }
   }
@@ -491,6 +498,17 @@ extension SegmentedResumableDownloaderBackend {
 }
 
 extension SegmentedResumableDownloaderBackend: URLSessionDataDelegate {
+  func urlSession(_ session: URLSession, taskIsWaitingForConnectivity task: URLSessionTask) {
+    lock.lock()
+    let assignment = activeDownloads[task.taskIdentifier]?.assignment
+    let shouldRetry = assignment != nil && !isCancelling && !isFinalizing && !didFinish
+    lock.unlock()
+
+    guard shouldRetry, let assignment else { return }
+    retryBlock(taskIdentifier: task.taskIdentifier, assignment: assignment)
+    task.cancel()
+  }
+
   func urlSession(
     _ session: URLSession,
     dataTask: URLSessionDataTask,
@@ -498,10 +516,12 @@ extension SegmentedResumableDownloaderBackend: URLSessionDataDelegate {
     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
   ) {
     let shouldAccept: Bool
+    let assignment: DownloadBlockAssignment?
     lock.lock()
+    assignment = activeDownloads[dataTask.taskIdentifier]?.assignment
     shouldAccept =
       !isCancelling && !isFinalizing && !didFinish
-      && activeDownloads[dataTask.taskIdentifier] != nil
+      && assignment != nil
     lock.unlock()
     guard shouldAccept else {
       completionHandler(.cancel)
@@ -515,6 +535,10 @@ extension SegmentedResumableDownloaderBackend: URLSessionDataDelegate {
     }
     guard httpResponse.statusCode == 206 else {
       completionHandler(.cancel)
+      if let assignment, isTransientHTTPStatusCode(httpResponse.statusCode) {
+        retryBlock(taskIdentifier: dataTask.taskIdentifier, assignment: assignment)
+        return
+      }
       if httpResponse.statusCode >= 400 {
         fail(ResumableDownloader.DownloadError.server(httpResponse.statusCode))
       } else {

@@ -346,6 +346,43 @@ final class ResumableDownloaderTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(server.rangeRequestCount(forStartOffset: shortBodyOffsets[0]), 2)
   }
 
+  func testSegmentedDownloadRetriesTransientHTTPRangeStatus() throws {
+    let payload = makePayload(size: 12 * 1024 * 1024)
+    let server = try LocalRangeServer(
+      payload: payload, chunkDelay: 0.003, retryableStatusResponsesToInject: 1)
+    defer {
+      server.stop()
+    }
+
+    let destination = temporaryDirectory.appendingPathComponent("segmented-http-status-retry.bin")
+    let downloader = ResumableDownloader(
+      remoteUrl: server.url,
+      localUrl: destination,
+      sha256: Data(SHA256.hash(data: payload)).hexString)
+
+    let completion = expectation(description: "segmented-http-status-retry-complete")
+    var reportedError: Error? = nil
+
+    downloader.resume { _, _, isComplete, error in
+      if let error {
+        reportedError = error
+        completion.fulfill()
+        return
+      }
+      if isComplete {
+        completion.fulfill()
+      }
+    }
+
+    wait(for: [completion], timeout: 60)
+    XCTAssertNil(reportedError)
+    XCTAssertEqual(try Data(contentsOf: destination), payload)
+    let retryableStatusOffsets = server.retryableStatusStartOffsets()
+    XCTAssertEqual(retryableStatusOffsets.count, 1)
+    XCTAssertGreaterThanOrEqual(
+      server.rangeRequestCount(forStartOffset: retryableStatusOffsets[0]), 2)
+  }
+
 }
 
 private func makePayload(size: Int) -> Data {
@@ -364,22 +401,25 @@ private final class LocalRangeServer {
   private let lastModified = "Sun, 29 Mar 2026 00:00:00 GMT"
   private var transientRangeFailuresToInject: Int
   private var shortRangeResponsesToInject: Int
+  private var retryableStatusResponsesToInject: Int
 
   private var rangeRequests: [ClosedRange<Int64>] = []
   private var transientFailureOffsets: [Int64] = []
   private var shortResponseOffsets: [Int64] = []
+  private var retryableStatusOffsets: [Int64] = []
   private var activeRangeRequests = 0
   private(set) var maxConcurrentRangeRequests = 0
   private(set) var totalRangeBytesServed: Int64 = 0
 
   init(
     payload: Data, chunkDelay: TimeInterval, transientRangeFailuresToInject: Int = 0,
-    shortRangeResponsesToInject: Int = 0
+    shortRangeResponsesToInject: Int = 0, retryableStatusResponsesToInject: Int = 0
   ) throws {
     self.payload = payload
     self.chunkDelay = chunkDelay
     self.transientRangeFailuresToInject = transientRangeFailuresToInject
     self.shortRangeResponsesToInject = shortRangeResponsesToInject
+    self.retryableStatusResponsesToInject = retryableStatusResponsesToInject
     listener = try NWListener(using: .tcp, on: .any)
 
     let ready = DispatchSemaphore(value: 0)
@@ -425,6 +465,14 @@ private final class LocalRangeServer {
       stateLock.unlock()
     }
     return shortResponseOffsets
+  }
+
+  func retryableStatusStartOffsets() -> [Int64] {
+    stateLock.lock()
+    defer {
+      stateLock.unlock()
+    }
+    return retryableStatusOffsets
   }
 
   private func handle(_ connection: NWConnection) {
@@ -486,12 +534,17 @@ private final class LocalRangeServer {
     var body = payload.subdata(in: Int(range.lowerBound)..<(Int(range.upperBound) + 1))
     var responseRange = range
     var shouldInjectShortResponse = false
+    var shouldInjectRetryableStatus = false
     if isRangeResponse {
       stateLock.lock()
       if shortRangeResponsesToInject > 0 {
         shortRangeResponsesToInject -= 1
         shortResponseOffsets.append(range.lowerBound)
         shouldInjectShortResponse = true
+      } else if retryableStatusResponsesToInject > 0 {
+        retryableStatusResponsesToInject -= 1
+        retryableStatusOffsets.append(range.lowerBound)
+        shouldInjectRetryableStatus = true
       }
       stateLock.unlock()
     }
@@ -499,15 +552,22 @@ private final class LocalRangeServer {
       let shortLength = max(1, body.count / 2)
       body = body.subdata(in: 0..<shortLength)
       responseRange = range.lowerBound...(range.lowerBound + Int64(shortLength) - 1)
+    } else if shouldInjectRetryableStatus {
+      body = Data()
     }
 
-    var responseHeaders =
-      isRangeResponse ? "HTTP/1.1 206 Partial Content\r\n" : "HTTP/1.1 200 OK\r\n"
+    var responseHeaders: String
+    if shouldInjectRetryableStatus {
+      responseHeaders = "HTTP/1.1 503 Service Unavailable\r\n"
+    } else {
+      responseHeaders =
+        isRangeResponse ? "HTTP/1.1 206 Partial Content\r\n" : "HTTP/1.1 200 OK\r\n"
+    }
     responseHeaders += "Accept-Ranges: bytes\r\n"
     responseHeaders += "Content-Length: \(body.count)\r\n"
     responseHeaders += "ETag: \(etag)\r\n"
     responseHeaders += "Last-Modified: \(lastModified)\r\n"
-    if isRangeResponse {
+    if isRangeResponse && !shouldInjectRetryableStatus {
       responseHeaders +=
         "Content-Range: bytes \(responseRange.lowerBound)-\(responseRange.upperBound)/\(payload.count)\r\n"
     }
@@ -546,6 +606,10 @@ private final class LocalRangeServer {
           return
         }
         if shouldInjectTransientFailure {
+          self.finish(connection: connection, isRangeResponse: isRangeResponse)
+          return
+        }
+        if shouldInjectRetryableStatus {
           self.finish(connection: connection, isRangeResponse: isRangeResponse)
           return
         }
